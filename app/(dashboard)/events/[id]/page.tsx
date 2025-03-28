@@ -203,6 +203,12 @@ export default function EventPage({
     e.preventDefault();
     if (!event) return;
 
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      "Are you sure you want to save changes to this event?"
+    );
+    if (!confirmed) return;
+
     setSaving(true);
     try {
       await updateEvent(event.id, event);

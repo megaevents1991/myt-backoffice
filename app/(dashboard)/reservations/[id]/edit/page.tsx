@@ -86,6 +86,18 @@ export default function EditReservationPage({
     e.preventDefault();
     if (!reservation) return;
 
+    // Show confirmation dialog with text input
+    const confirmText = prompt(
+      "Type 'confirm changes' to save your changes to this reservation:"
+    );
+    if (confirmText?.toLowerCase() !== "confirm changes") {
+      toast({
+        title: "Cancelled",
+        description: "Changes were not saved.",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       await updateReservation(reservation.id, reservation);

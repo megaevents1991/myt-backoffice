@@ -94,6 +94,11 @@ export default function PartnerPage({
     e.preventDefault();
     if (!partner) return;
 
+    const confirmed = window.confirm(
+      "Are you sure you want to save changes to this partner?"
+    );
+    if (!confirmed) return;
+
     setSaving(true);
     try {
       if (isNewPartner) {

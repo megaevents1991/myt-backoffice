@@ -1,28 +1,31 @@
-import { Suspense } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { DashboardCards } from "@/components/dashboard-cards"
-import { DashboardStats } from "@/components/dashboard-stats"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Suspense } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DashboardCards } from "@/components/dashboard-cards";
+import { DashboardStats } from "@/components/dashboard-stats";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">Manage your events, partners, and reservations.</p>
+        <p className="text-muted-foreground">
+          Manage your events, partners, and reservations.
+        </p>
       </div>
-
+      <h2 className="text-xl font-semibold tracking-tight mt-8">Statistics</h2>
+      {/* Cards Section */}
       <Suspense fallback={<DashboardSkeleton />}>
         <DashboardCards />
       </Suspense>
 
+      {/* Statistics Section */}
       <h2 className="text-xl font-semibold tracking-tight mt-8">Statistics</h2>
-
       <Suspense fallback={<DashboardStatsSkeleton />}>
         <DashboardStats />
       </Suspense>
     </div>
-  )
+  );
 }
 
 function DashboardSkeleton() {
@@ -43,7 +46,7 @@ function DashboardSkeleton() {
         </Card>
       ))}
     </div>
-  )
+  );
 }
 
 function DashboardStatsSkeleton() {
@@ -63,6 +66,5 @@ function DashboardStatsSkeleton() {
         </Card>
       ))}
     </div>
-  )
+  );
 }
-

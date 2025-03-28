@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, Edit, Trash2, Copy } from "lucide-react";
+import { ArrowUpDown, Edit, Trash2, Copy, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table";
 import type { Event } from "@/types/app.types";
@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 
 export function EventsTable() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -227,7 +229,17 @@ export function EventsTable() {
     },
     {
       accessorKey: "is_prioritized",
-      header: "Prioritized",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Prioritized
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+          </Button>
+        );
+      },
       cell: ({ row }) => {
         return <div>{row.getValue("is_prioritized") ? "Yes" : "No"}</div>;
       },
@@ -250,6 +262,11 @@ export function EventsTable() {
 
         return (
           <div className="flex items-center gap-2">
+            <Link href={`/events/${event.id}/view`}>
+              <Button variant="ghost" size="icon">
+                <Eye className="h-4 w-4" />
+              </Button>
+            </Link>
             <Link href={`/events/${event.id}`}>
               <Button variant="ghost" size="icon">
                 <Edit className="h-4 w-4" />
@@ -261,47 +278,86 @@ export function EventsTable() {
     },
   ];
 
-  const BulkActions = () => (
-    <div className="flex gap-2">
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={isDeleting || selectedIds.length === 0}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete Selected
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will mark {selectedIds.length} event(s) as deleted. They will
-              no longer appear in the main list.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleBulkSoftDelete}>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+  const BulkActions = () => {
+    const [deleteConfirmation, setDeleteConfirmation] = useState("");
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={handleBulkDuplicate}
-        disabled={isDuplicating || selectedIds.length === 0}
-      >
-        <Copy className="h-4 w-4 mr-2" />
-        Duplicate Selected
-      </Button>
-    </div>
-  );
+    const expectedDeleteText = "delete these events";
+    const isDeleteConfirmed =
+      deleteConfirmation.toLowerCase() === expectedDeleteText;
+
+    return (
+      <div className="flex gap-2">
+        <AlertDialog
+          open={isDeleteDialogOpen}
+          onOpenChange={setIsDeleteDialogOpen}
+        >
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={isDeleting || selectedIds.length === 0}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Selected
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will mark {selectedIds.length} event(s) as deleted. They
+                will no longer appear in the main list.
+                <div className="mt-4">
+                  <Label
+                    htmlFor="delete-confirmation"
+                    className="text-sm font-medium"
+                  >
+                    Type <span className="font-bold">{expectedDeleteText}</span>{" "}
+                    to confirm
+                  </Label>
+                  <Input
+                    id="delete-confirmation"
+                    value={deleteConfirmation}
+                    onChange={(e) => setDeleteConfirmation(e.target.value)}
+                    className="mt-2"
+                    placeholder={expectedDeleteText}
+                  />
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setDeleteConfirmation("")}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  handleBulkSoftDelete();
+                  setDeleteConfirmation("");
+                }}
+                disabled={!isDeleteConfirmed}
+                className={
+                  !isDeleteConfirmed ? "opacity-50 cursor-not-allowed" : ""
+                }
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleBulkDuplicate}
+          disabled={isDuplicating || selectedIds.length === 0}
+        >
+          <Copy className="h-4 w-4 mr-2" />
+          Duplicate Selected
+        </Button>
+      </div>
+    );
+  };
 
   if (loading) {
     return <div>Loading events...</div>;
