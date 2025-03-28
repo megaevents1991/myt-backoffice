@@ -24,7 +24,7 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { signOut } = useAuth();
+  const { logout } = useAuth(); // Fix: Changed from signOut to logout
 
   return (
     <div className="hidden border-r bg-background md:block w-64">
@@ -57,12 +57,12 @@ export function Sidebar() {
         </nav>
         <div className="border-t p-4">
           <Button
-            variant="outline"
-            className="w-full flex items-center gap-2 justify-start"
-            onClick={signOut}
+            variant="ghost"
+            className="w-full justify-start text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => logout()} // Fix: Changed from signOut to logout
           >
-            <LogOut className="h-4 w-4" />
-            <span>Logout</span>
+            <LogOut className="mr-3 h-5 w-5" />
+            Log out
           </Button>
         </div>
       </div>
