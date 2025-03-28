@@ -1,7 +1,9 @@
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { PlusCircle } from "lucide-react"
-import { EventsTable } from "./events-table"
+"use client";
+
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { PlusCircle } from "lucide-react";
+import { EventsTable } from "./events-table";
 
 export default function EventsPage() {
   return (
@@ -9,7 +11,9 @@ export default function EventsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Events</h1>
-          <p className="text-muted-foreground">Manage your events and their details.</p>
+          <p className="text-muted-foreground">
+            Manage your events and their details.
+          </p>
         </div>
         <Link href="/events/new">
           <Button>
@@ -21,6 +25,5 @@ export default function EventsPage() {
 
       <EventsTable />
     </div>
-  )
+  );
 }
-

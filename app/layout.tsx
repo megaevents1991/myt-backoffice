@@ -1,43 +1,32 @@
-import type React from "react";
-import type { Metadata } from "next";
+"use client";
+
+import React from "react";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/contexts/auth-context";
-import { getSession } from "@/lib/actions/auth-actions";
 
 const inter = Inter({ subsets: ["latin"] });
 
-export const metadata: Metadata = {
-  title: "Backoffice Dashboard",
-  description: "Manage your events, partners, and reservations",
-  generator: "v0.dev",
-};
-
-export default async function RootLayout({
+export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
-  // Get the session on the server
-  const { user } = await getSession();
-
+}) {
   return (
     <html lang="en" suppressHydrationWarning={true}>
       <body className={inter.className} suppressHydrationWarning={true}>
         <ThemeProvider
           attribute="class"
-          defaultTheme="light"
+          defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
-          <AuthProvider initialUser={user}>{children}</AuthProvider>
+          <AuthProvider>{children}</AuthProvider>
           <Toaster />
         </ThemeProvider>
       </body>
     </html>
   );
 }
-
-import "./globals.css";

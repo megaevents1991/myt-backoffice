@@ -1,7 +1,9 @@
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { PlusCircle } from "lucide-react"
-import { PartnersTable } from "./partners-table"
+"use client";
+
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { PlusCircle } from "lucide-react";
+import { PartnersTable } from "./partners-table";
 
 export default function PartnersPage() {
   return (
@@ -9,7 +11,9 @@ export default function PartnersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Partners</h1>
-          <p className="text-muted-foreground">Manage your affiliate partners and their commission rates.</p>
+          <p className="text-muted-foreground">
+            Manage your affiliate partners and their commission rates.
+          </p>
         </div>
         <Link href="/partners/new">
           <Button>
@@ -21,6 +25,5 @@ export default function PartnersPage() {
 
       <PartnersTable />
     </div>
-  )
+  );
 }
-

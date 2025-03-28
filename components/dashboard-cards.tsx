@@ -19,14 +19,19 @@ export function DashboardCards() {
   useEffect(() => {
     async function fetchCounts() {
       try {
-        const data = await getDashboardCounts();
+        // Update to use fetch API instead of direct server action
+        const response = await fetch("/api/dashboard/counts");
+        if (!response.ok) {
+          throw new Error("Failed to fetch dashboard counts");
+        }
+        const data = await response.json();
         setCounts(data);
       } catch (error) {
-        console.error("Error fetching dashboard data:", error);
+        console.error("Error fetching dashboard counts:", error);
         toast({
           variant: "destructive",
           title: "Error",
-          description: "Failed to load dashboard data. Please try again.",
+          description: "Failed to load dashboard counts. Please try again.",
         });
       } finally {
         setLoading(false);

@@ -1,10 +1,49 @@
-import { Suspense } from "react";
+"use client";
+
+import { Suspense, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardCards } from "@/components/dashboard-cards";
 import { DashboardStats } from "@/components/dashboard-stats";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Dashboard() {
+  const [error, setError] = useState<Error | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    // Add window level error handler
+    const handleError = (event: ErrorEvent) => {
+      console.error("Caught in error handler:", event.error);
+      setError(event.error);
+      toast({
+        variant: "destructive",
+        title: "An error occurred",
+        description: event.error?.message || "Unknown error",
+      });
+    };
+
+    window.addEventListener("error", handleError);
+
+    return () => {
+      window.removeEventListener("error", handleError);
+    };
+  }, [toast]);
+
+  if (error) {
+    return (
+      <div className="p-6 bg-red-50 dark:bg-red-900/20 rounded-lg">
+        <h2 className="text-xl font-bold text-red-700 dark:text-red-400">
+          Error Loading Dashboard
+        </h2>
+        <pre className="mt-4 p-4 bg-white dark:bg-gray-800 rounded overflow-auto">
+          {error.message}
+          {error.stack && `\n\n${error.stack}`}
+        </pre>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -13,7 +52,7 @@ export default function Dashboard() {
           Manage your events, partners, and reservations.
         </p>
       </div>
-      <h2 className="text-xl font-semibold tracking-tight mt-8">Statistics</h2>
+
       {/* Cards Section */}
       <Suspense fallback={<DashboardSkeleton />}>
         <DashboardCards />
