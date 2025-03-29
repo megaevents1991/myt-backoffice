@@ -9,6 +9,7 @@ import {
   Home,
   LogOut,
   Settings,
+  Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -19,6 +20,7 @@ const navItems = [
   { name: "Events", href: "/events", icon: CalendarDays },
   { name: "Partners", href: "/partners", icon: Users },
   { name: "Reservations", href: "/reservations", icon: ClipboardList },
+  { name: "Storage", href: "/storage", icon: Database },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
