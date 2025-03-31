@@ -1,11 +1,9 @@
 "use client";
 
 import type React from "react";
-
 import { useState, useRef } from "react";
 import { Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { uploadFileToSupabase } from "@/lib/client-upload";
 
 interface FileUploadZoneProps {
   bucket: string;
@@ -55,6 +53,33 @@ export function FileUploadZone({
     }
   };
 
+  // Upload a file to the server
+  const uploadFileToServer = async (file: File): Promise<boolean> => {
+    const formData = new FormData();
+    formData.append("bucket", bucket);
+    formData.append("path", path);
+    formData.append("file", file);
+
+    try {
+      const response = await fetch("/api/storage/upload", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Server upload error:", errorData);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Upload error:", error);
+      return false;
+    }
+  };
+
   const handleFiles = async (files: File[]) => {
     if (!files.length) return;
 
@@ -66,8 +91,12 @@ export function FileUploadZone({
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       try {
-        await uploadFileToSupabase(bucket, path, file);
-        successCount++;
+        const success = await uploadFileToServer(file);
+        if (success) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
         // Update progress
         setProgress(Math.round(((i + 1) / files.length) * 100));
       } catch (error) {
