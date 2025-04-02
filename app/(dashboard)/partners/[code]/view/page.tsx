@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Edit } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,23 +16,23 @@ import { useToast } from "@/hooks/use-toast";
 import type { Partner } from "@/types/partner.types";
 import { getPartner } from "@/lib/actions/partner-actions";
 
-export default function ViewPartnerPage({
+export default async function ViewPartnerPage({
   params,
 }: {
-  params: { code: string };
+  params: Promise<{ code: string }>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
+  const param = use(params);
   const [partner, setPartner] = useState<Partner | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchPartner() {
       try {
-        const data = await getPartner(params.code);
+        const data = await getPartner(param.code);
         setPartner(data);
       } catch (error) {
-        console.error("Error fetching partner:", error);
         toast({
           variant: "destructive",
           title: "Error",
@@ -44,7 +44,7 @@ export default function ViewPartnerPage({
     }
 
     fetchPartner();
-  }, [params.code, toast]);
+  }, [param.code, toast]);
 
   if (loading) {
     return <div>Loading partner details...</div>;

@@ -65,7 +65,14 @@ export function EventsTable() {
       .filter(([_, isSelected]) => isSelected)
       .map(([id]) => Number.parseInt(id, 10));
 
-    setSelectedIds(ids);
+    const codes = [] as number[];
+    Object.entries(selectedRows).forEach(([id, isSelected]) => {
+      if (isSelected) {
+        const code = events[parseInt(id)].id;
+        codes.push(code);
+      }
+    });
+    setSelectedIds(codes);
   }, [selectedRows]);
 
   const handleBulkSoftDelete = async () => {

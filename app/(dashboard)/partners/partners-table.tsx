@@ -64,7 +64,14 @@ export function PartnersTable() {
       .filter(([_, isSelected]) => isSelected)
       .map(([id]) => id);
 
-    setSelectedTrackingCodes(trackingCodes);
+    const codes = [] as string[];
+    Object.entries(selectedRows).forEach(([id, isSelected]) => {
+      if (isSelected) {
+        const code = partners[parseInt(id)].partner_tracking_code;
+        codes.push(code);
+      }
+    });
+    setSelectedTrackingCodes(codes);
   }, [selectedRows]);
 
   const handleBulkDelete = async () => {
