@@ -3,14 +3,21 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, Edit, Trash2, Copy, Eye } from "lucide-react";
+import {
+  ArrowUpDown,
+  Edit,
+  Trash2,
+  Copy,
+  Eye,
+  MoreHorizontal,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table";
 import type { Event } from "@/types/app.types";
 import {
   getEvents,
-  bulkSoftDeleteEvents,
-  bulkDuplicateEvents,
+  softDeleteEvent,
+  duplicateEvent,
 } from "@/lib/actions/event-actions";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -26,17 +33,17 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export function EventsTable() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeleted, setShowDeleted] = useState(false);
-  const [selectedRows, setSelectedRows] = useState<Record<string, boolean>>({});
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isDuplicating, setIsDuplicating] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -59,33 +66,14 @@ export function EventsTable() {
     fetchEvents();
   }, [toast]);
 
-  useEffect(() => {
-    // Extract the IDs from the selected rows
-    const ids = Object.entries(selectedRows)
-      .filter(([_, isSelected]) => isSelected)
-      .map(([id]) => Number.parseInt(id, 10));
-
-    const codes = [] as number[];
-    Object.entries(selectedRows).forEach(([id, isSelected]) => {
-      if (isSelected) {
-        const code = events[parseInt(id)].id;
-        codes.push(code);
-      }
-    });
-    setSelectedIds(codes);
-  }, [selectedRows]);
-
-  const handleBulkSoftDelete = async () => {
-    if (selectedIds.length === 0) return;
-
-    setIsDeleting(true);
+  const handleDelete = async (id: number) => {
     try {
-      await bulkSoftDeleteEvents(selectedIds);
+      await softDeleteEvent(id);
 
       // Update the local state
       setEvents(
         events.map((event) => {
-          if (selectedIds.includes(event.id)) {
+          if (event.id === id) {
             const today = new Date();
             const formattedDate = `${(today.getMonth() + 1)
               .toString()
@@ -100,50 +88,37 @@ export function EventsTable() {
       );
 
       toast({
-        title: "Events deleted",
-        description: `${selectedIds.length} events have been marked as deleted.`,
+        title: "Event deleted",
+        description: "Event has been marked as deleted.",
       });
-
-      // Clear selection
-      setSelectedRows({});
     } catch (error) {
-      console.error("Error deleting events:", error);
+      console.error("Error deleting event:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to delete events. Please try again.",
+        description: "Failed to delete event. Please try again.",
       });
-    } finally {
-      setIsDeleting(false);
     }
   };
 
-  const handleBulkDuplicate = async () => {
-    if (selectedIds.length === 0) return;
-
-    setIsDuplicating(true);
+  const handleDuplicate = async (id: number) => {
     try {
-      const duplicatedEvents = await bulkDuplicateEvents(selectedIds);
+      const duplicatedEvent = await duplicateEvent(id);
 
       // Update the local state
-      setEvents([...duplicatedEvents, ...events]);
+      setEvents([duplicatedEvent, ...events]);
 
       toast({
-        title: "Events duplicated",
-        description: `${selectedIds.length} events have been duplicated.`,
+        title: "Event duplicated",
+        description: "Event has been duplicated.",
       });
-
-      // Clear selection
-      setSelectedRows({});
     } catch (error) {
-      console.error("Error duplicating events:", error);
+      console.error("Error duplicating event:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to duplicate events. Please try again.",
+        description: "Failed to duplicate event. Please try again.",
       });
-    } finally {
-      setIsDuplicating(false);
     }
   };
 
@@ -266,105 +241,73 @@ export function EventsTable() {
       id: "actions",
       cell: ({ row }) => {
         const event = row.original;
+        const isDeleted = Boolean(event.is_deleted);
 
         return (
-          <div className="flex items-center gap-2">
-            <Link href={`/events/${event.id}/view`}>
-              <Button variant="ghost" size="icon">
-                <Eye className="h-4 w-4" />
-              </Button>
-            </Link>
-            <Link href={`/events/${event.id}`}>
-              <Button variant="ghost" size="icon">
-                <Edit className="h-4 w-4" />
-              </Button>
-            </Link>
-          </div>
+          <AlertDialog>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <Link
+                    href={`/events/${event.id}/view`}
+                    className="flex items-center"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    <span>View</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link
+                    href={`/events/${event.id}`}
+                    className="flex items-center"
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    <span>Edit</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleDuplicate(event.id)}
+                  className="flex items-center"
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  <span>Duplicate</span>
+                </DropdownMenuItem>
+                {!isDeleted && (
+                  <AlertDialogTrigger asChild>
+                    <DropdownMenuItem className="text-destructive flex items-center focus:text-destructive">
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      <span>Delete</span>
+                    </DropdownMenuItem>
+                  </AlertDialogTrigger>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will mark this event as deleted. It will no longer appear
+                  in the main list.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => handleDelete(event.id)}>
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         );
       },
     },
   ];
-
-  const BulkActions = () => {
-    const [deleteConfirmation, setDeleteConfirmation] = useState("");
-    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-
-    const expectedDeleteText = "delete these events";
-    const isDeleteConfirmed =
-      deleteConfirmation.toLowerCase() === expectedDeleteText;
-
-    return (
-      <div className="flex gap-2">
-        <AlertDialog
-          open={isDeleteDialogOpen}
-          onOpenChange={setIsDeleteDialogOpen}
-        >
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={isDeleting || selectedIds.length === 0}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Selected
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will mark {selectedIds.length} event(s) as deleted. They
-                will no longer appear in the main list.
-                <div className="mt-4">
-                  <Label
-                    htmlFor="delete-confirmation"
-                    className="text-sm font-medium"
-                  >
-                    Type <span className="font-bold">{expectedDeleteText}</span>{" "}
-                    to confirm
-                  </Label>
-                  <Input
-                    id="delete-confirmation"
-                    value={deleteConfirmation}
-                    onChange={(e) => setDeleteConfirmation(e.target.value)}
-                    className="mt-2"
-                    placeholder={expectedDeleteText}
-                  />
-                </div>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setDeleteConfirmation("")}>
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  handleBulkSoftDelete();
-                  setDeleteConfirmation("");
-                }}
-                disabled={!isDeleteConfirmed}
-                className={
-                  !isDeleteConfirmed ? "opacity-50 cursor-not-allowed" : ""
-                }
-              >
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleBulkDuplicate}
-          disabled={isDuplicating || selectedIds.length === 0}
-        >
-          <Copy className="h-4 w-4 mr-2" />
-          Duplicate Selected
-        </Button>
-      </div>
-    );
-  };
 
   if (loading) {
     return <div>Loading events...</div>;
@@ -391,9 +334,7 @@ export function EventsTable() {
         data={filteredEvents}
         searchColumn="name"
         searchPlaceholder="Search events..."
-        enableRowSelection={true}
-        onRowSelectionChange={setSelectedRows}
-        bulkActions={<BulkActions />}
+        enableRowSelection={false}
       />
     </div>
   );

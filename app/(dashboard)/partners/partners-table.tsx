@@ -3,15 +3,11 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, Edit, Trash2, Copy, Eye } from "lucide-react";
+import { ArrowUpDown, Edit, Trash2, Eye, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table";
 import type { Partner } from "@/types/partner.types";
-import {
-  getPartners,
-  bulkDeletePartners,
-  bulkDuplicatePartners,
-} from "@/lib/actions/partner-actions";
+import { getPartners, deletePartner } from "@/lib/actions/partner-actions";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -24,18 +20,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export function PartnersTable() {
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedRows, setSelectedRows] = useState<Record<string, boolean>>({});
-  const [selectedTrackingCodes, setSelectedTrackingCodes] = useState<string[]>(
-    []
-  );
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isDuplicating, setIsDuplicating] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -58,84 +52,28 @@ export function PartnersTable() {
     fetchPartners();
   }, [toast]);
 
-  useEffect(() => {
-    // Extract the tracking codes from the selected rows
-    const trackingCodes = Object.entries(selectedRows)
-      .filter(([_, isSelected]) => isSelected)
-      .map(([id]) => id);
-
-    const codes = [] as string[];
-    Object.entries(selectedRows).forEach(([id, isSelected]) => {
-      if (isSelected) {
-        const code = partners[parseInt(id)].partner_tracking_code;
-        codes.push(code);
-      }
-    });
-    setSelectedTrackingCodes(codes);
-  }, [selectedRows]);
-
-  const handleBulkDelete = async () => {
-    if (selectedTrackingCodes.length === 0) return;
-
-    setIsDeleting(true);
+  const handleDelete = async (trackingCode: string) => {
     try {
-      await bulkDeletePartners(selectedTrackingCodes);
+      await deletePartner(trackingCode);
 
       // Update the local state
       setPartners(
         partners.filter(
-          (partner) =>
-            !selectedTrackingCodes.includes(partner.partner_tracking_code)
+          (partner) => partner.partner_tracking_code !== trackingCode
         )
       );
 
       toast({
-        title: "Partners deleted",
-        description: `${selectedTrackingCodes.length} partners have been deleted.`,
+        title: "Partner deleted",
+        description: "Partner has been deleted.",
       });
-
-      // Clear selection
-      setSelectedRows({});
     } catch (error) {
-      console.error("Error deleting partners:", error);
+      console.error("Error deleting partner:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to delete partners. Please try again.",
+        description: "Failed to delete partner. Please try again.",
       });
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const handleBulkDuplicate = async () => {
-    if (selectedTrackingCodes.length === 0) return;
-
-    setIsDuplicating(true);
-    try {
-      const duplicatedPartners = await bulkDuplicatePartners(
-        selectedTrackingCodes
-      );
-
-      // Update the local state
-      setPartners([...duplicatedPartners, ...partners]);
-
-      toast({
-        title: "Partners duplicated",
-        description: `${selectedTrackingCodes.length} partners have been duplicated.`,
-      });
-
-      // Clear selection
-      setSelectedRows({});
-    } catch (error) {
-      console.error("Error duplicating partners:", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to duplicate partners. Please try again.",
-      });
-    } finally {
-      setIsDuplicating(false);
     }
   };
 
@@ -186,105 +124,64 @@ export function PartnersTable() {
       id: "actions",
       cell: ({ row }) => {
         const partner = row.original;
+        const trackingCode = partner.partner_tracking_code;
 
         return (
-          <div className="flex items-center gap-2">
-            <Link href={`/partners/${partner.partner_tracking_code}/view`}>
-              <Button variant="ghost" size="icon">
-                <Eye className="h-4 w-4" />
-              </Button>
-            </Link>
-            <Link href={`/partners/${partner.partner_tracking_code}`}>
-              <Button variant="ghost" size="icon">
-                <Edit className="h-4 w-4" />
-              </Button>
-            </Link>
-          </div>
+          <AlertDialog>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <Link
+                    href={`/partners/${trackingCode}/view`}
+                    className="flex items-center"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    <span>View</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link
+                    href={`/partners/${trackingCode}`}
+                    className="flex items-center"
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    <span>Edit</span>
+                  </Link>
+                </DropdownMenuItem>
+                <AlertDialogTrigger asChild>
+                  <DropdownMenuItem className="text-destructive flex items-center focus:text-destructive">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    <span>Delete</span>
+                  </DropdownMenuItem>
+                </AlertDialogTrigger>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete this partner. This action cannot
+                  be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => handleDelete(trackingCode)}>
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         );
       },
     },
   ];
-
-  const BulkActions = () => {
-    const [deleteConfirmation, setDeleteConfirmation] = useState("");
-    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-
-    const expectedDeleteText = "delete these partners";
-    const isDeleteConfirmed =
-      deleteConfirmation.toLowerCase() === expectedDeleteText;
-
-    return (
-      <div className="flex gap-2">
-        <AlertDialog
-          open={isDeleteDialogOpen}
-          onOpenChange={setIsDeleteDialogOpen}
-        >
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={isDeleting || selectedTrackingCodes.length === 0}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Selected
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will permanently delete {selectedTrackingCodes.length}{" "}
-                partner(s). This action cannot be undone.
-                <div className="mt-4">
-                  <Label
-                    htmlFor="delete-confirmation"
-                    className="text-sm font-medium"
-                  >
-                    Type <span className="font-bold">{expectedDeleteText}</span>{" "}
-                    to confirm
-                  </Label>
-                  <Input
-                    id="delete-confirmation"
-                    value={deleteConfirmation}
-                    onChange={(e) => setDeleteConfirmation(e.target.value)}
-                    className="mt-2"
-                    placeholder={expectedDeleteText}
-                  />
-                </div>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setDeleteConfirmation("")}>
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  handleBulkDelete();
-                  setDeleteConfirmation("");
-                }}
-                disabled={!isDeleteConfirmed}
-                className={
-                  !isDeleteConfirmed ? "opacity-50 cursor-not-allowed" : ""
-                }
-              >
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleBulkDuplicate}
-          disabled={isDuplicating || selectedTrackingCodes.length === 0}
-        >
-          <Copy className="h-4 w-4 mr-2" />
-          Duplicate Selected
-        </Button>
-      </div>
-    );
-  };
 
   if (loading) {
     return <div>Loading partners...</div>;
@@ -296,9 +193,7 @@ export function PartnersTable() {
       data={partners}
       searchColumn="email"
       searchPlaceholder="Search partners..."
-      enableRowSelection={true}
-      onRowSelectionChange={setSelectedRows}
-      bulkActions={<BulkActions />}
+      enableRowSelection={false}
     />
   );
 }

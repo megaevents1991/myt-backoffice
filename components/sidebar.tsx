@@ -21,7 +21,6 @@ const navItems = [
   { name: "Partners", href: "/partners", icon: Users },
   { name: "Reservations", href: "/reservations", icon: ClipboardList },
   { name: "Storage", href: "/storage", icon: Database },
-  { name: "Settings", href: "/settings", icon: Settings },
 ];
 
 export function Sidebar() {
