@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Edit, Eye } from "lucide-react";
@@ -13,7 +13,10 @@ import { useToast } from "@/hooks/use-toast";
 export function ReservationsTable() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isIdle, setIsIdle] = useState(false);
   const { toast } = useToast();
+  const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     async function fetchReservations() {
@@ -34,6 +37,59 @@ export function ReservationsTable() {
 
     fetchReservations();
   }, [toast]);
+
+  // Function to check for new reservations
+  async function checkForNewReservations() {
+    try {
+      const data = await getReservations();
+      if (data.length > reservations.length) {
+        setReservations(data);
+        toast({
+          variant: "default",
+          title: "New Reservations",
+          description: "The table has been updated with new reservations.",
+        });
+      }
+    } catch (error) {
+      console.error("Error checking for new reservations:", error);
+    }
+  }
+
+  // Handle user activity to reset idle state
+  function handleUserActivity() {
+    setIsIdle(false);
+    if (idleTimeoutRef.current) {
+      clearTimeout(idleTimeoutRef.current);
+    }
+    idleTimeoutRef.current = setTimeout(() => {
+      setIsIdle(true);
+    }, 30000); // 30 seconds of inactivity to consider the user idle
+  }
+
+  useEffect(() => {
+    // Add event listeners for user activity
+    window.addEventListener("keydown", handleUserActivity);
+    window.addEventListener("click", handleUserActivity);
+
+    // Start polling for new reservations
+    pollingIntervalRef.current = setInterval(() => {
+      if (isIdle) {
+        checkForNewReservations();
+      }
+    }, 30000); // Check every 30 seconds
+
+    return () => {
+      // Cleanup event listeners and intervals
+      window.removeEventListener("keydown", handleUserActivity);
+      window.removeEventListener("click", handleUserActivity);
+      if (idleTimeoutRef.current) {
+        clearTimeout(idleTimeoutRef.current);
+      }
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, [isIdle, reservations]);
 
   const columns: ColumnDef<Reservation>[] = [
     {
