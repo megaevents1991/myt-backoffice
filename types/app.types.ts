@@ -1,5 +1,3 @@
-import type { Airline } from "aircodes"
-import type { Guest, Rate } from "./hotel.type"
 import type { EntryFieldTypes } from "contentful"
 
 export type Event = {
@@ -32,7 +30,7 @@ export type Flight = {
   price: number
   duration: string
   stops: number
-  metadata: Airline
+  metadata: string
   outbound: FlightSegment
   inbound: FlightSegment
   numOfTravelers: number
@@ -53,12 +51,12 @@ export type FlightSegment = {
 }
 
 export type OrderHotel = {
-  rate: Rate
+  rate: string
   address: string
   name: string
   id: string
   price: string
-  guests: Guest[]
+  guests: JSON[]
   checkin: string
   checkout: string
 }
@@ -196,32 +194,6 @@ export type EventTicket = {
 
 export type OrderTicket = Omit<EventTicket, "description" | "colorOnTheMap"> & {
   quantity: number
-}
-
-export interface OrderData {
-  main_contact_first_name: string
-  main_contact_last_name: string
-  main_contact_phone_number: string
-  main_contact_email: string
-  more_pax_info: {
-    first_name: string
-    last_name: string
-  }[]
-  event_order_info: {
-    event_id: number
-    date: Date
-    name: string
-    location_name: string
-    number_of_ticket: number
-    category: string
-    price_per_ticket: number
-    total_tickets_price: number
-  }
-  flight_order_info: Flight // You might need to define a specific interface here
-  hotel_order_info: OrderHotel // You might need to define a specific interface here
-  user_shown_price: number
-  event_id: number
-  aff_partner_tracking_code: string
 }
 
 export type ArtistFields = {

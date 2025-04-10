@@ -58,14 +58,21 @@ export default function ReservationPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center">
+      <div className="flex justify-between items-center">
         <Button variant="ghost" onClick={() => router.back()}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight ml-4">
+        <h1 className="text-3xl font-bold tracking-tight">
           Reservation #{reservation.id}
         </h1>
+        <Button
+          variant="outline"
+          onClick={() => window.print()}
+          className="ml-auto"
+        >
+          Print
+        </Button>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -124,33 +131,44 @@ export default function ReservationPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <p className="text-sm font-medium">Created At</p>
-              <p className="text-lg">
-                {new Date(reservation.created_at).toLocaleString()}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm font-medium">Total Price</p>
-              <p className="text-lg font-bold">
-                ${reservation.user_shown_price.toFixed(2)}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm font-medium">Event ID</p>
-              <p className="text-lg">{reservation.event_id}</p>
-            </div>
-
-            {reservation.aff_partner_tracking_code && (
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-sm font-medium">Partner Tracking Code</p>
+                <p className="text-sm font-medium">Created At</p>
                 <p className="text-lg">
-                  {reservation.aff_partner_tracking_code}
+                  {new Date(reservation.created_at).toLocaleString()}
                 </p>
               </div>
-            )}
+
+              <div>
+                <p className="text-sm font-medium">Total Price</p>
+                <p className="text-lg font-bold">
+                  ${reservation.user_shown_price.toFixed(2)}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium">Event ID</p>
+                <p className="text-lg">{reservation.event_id}</p>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium">Status</p>
+                <p className="text-lg">{reservation.status}</p>
+              </div>
+
+              {reservation.aff_partner_tracking_code && (
+                <div>
+                  <p className="text-sm font-medium">Partner Tracking Code</p>
+                  <p className="text-lg">
+                    {reservation.aff_partner_tracking_code}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-medium">Comments</p>
+              <p className="text-lg">{reservation.comments || "None"}</p>
+            </div>
           </CardContent>
         </Card>
       </div>

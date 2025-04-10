@@ -53,7 +53,9 @@ export default function EditReservationPage({
     fetchReservation();
   }, [resolvedParams.id, toast]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
     const { name, value } = e.target;
 
     if (name.includes(".")) {
@@ -170,16 +172,44 @@ export default function EditReservationPage({
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="main_contact_email">Email</Label>
-              <Input
-                id="main_contact_email"
-                name="main_contact_email"
-                type="email"
-                value={reservation.main_contact_email}
-                onChange={handleChange}
-                required
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="status">Status</Label>
+                <div className="flex items-center space-x-2">
+                  <select
+                    id="status"
+                    name="status"
+                    value={reservation.status}
+                    onChange={handleChange}
+                    className="border rounded px-2 py-1"
+                  >
+                    <option value="">Select a status</option>
+                    <option value="Paid">Paid</option>
+                    <option value="Lost">Lost</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Follow-up">Follow-up</option>
+                  </select>
+                  <Input
+                    id="custom-status"
+                    name="status"
+                    placeholder="Enter custom status"
+                    value={reservation.status}
+                    onChange={handleChange}
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="main_contact_email">Email</Label>
+                <Input
+                  id="main_contact_email"
+                  name="main_contact_email"
+                  type="email"
+                  value={reservation.main_contact_email}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -232,6 +262,17 @@ export default function EditReservationPage({
                 name="aff_partner_tracking_code"
                 value={reservation.aff_partner_tracking_code}
                 onChange={handleChange}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="comments">Comments</Label>
+              <Input
+                id="comments"
+                name="comments"
+                value={reservation.comments}
+                onChange={handleChange}
+                placeholder="Enter any additional comments"
               />
             </div>
           </CardContent>

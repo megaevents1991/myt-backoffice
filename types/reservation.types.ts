@@ -26,5 +26,7 @@ export type Reservation = {
   user_shown_price: number
   aff_partner_tracking_code: string
   event_id: number
+  status: string
+  comments: string
 }
 
