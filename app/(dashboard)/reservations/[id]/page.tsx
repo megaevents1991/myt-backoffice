@@ -69,10 +69,13 @@ export default function ReservationPage({
         <Button
           variant="outline"
           onClick={() => window.print()}
-          className="ml-auto"
+          className="ml-auto mr-4"
         >
           Print
         </Button>
+        <Link href={`/reservations/${reservation.id}/edit`}>
+          <Button>Edit Reservation</Button>
+        </Link>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -93,16 +96,18 @@ export default function ReservationPage({
                 <p className="text-sm font-medium">Last Name</p>
                 <p className="text-lg">{reservation.main_contact_last_name}</p>
               </div>
-            </div>
 
-            <div>
-              <p className="text-sm font-medium">Email</p>
-              <p className="text-lg">{reservation.main_contact_email}</p>
-            </div>
+              <div>
+                <p className="text-sm font-medium">Email</p>
+                <p className="text-lg">{reservation.main_contact_email}</p>
+              </div>
 
-            <div>
-              <p className="text-sm font-medium">Phone</p>
-              <p className="text-lg">{reservation.main_contact_phone_number}</p>
+              <div>
+                <p className="text-sm font-medium">Phone</p>
+                <p className="text-lg">
+                  {reservation.main_contact_phone_number}
+                </p>
+              </div>
             </div>
 
             {reservation.more_pax_info &&
@@ -247,36 +252,34 @@ export default function ReservationPage({
           <CardContent className="space-y-4">
             {reservation.flight_order_info && (
               <div className="space-y-4">
-                <div>
-                  <p className="text-sm font-medium">Airline</p>
-                  <p className="text-lg">
-                    {reservation.flight_order_info.airline}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium">Flight Price</p>
-                  <p className="text-lg">
-                    ${reservation.flight_order_info.price.toFixed(2)}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium">Duration</p>
-                  <p className="text-lg">
-                    {reservation.flight_order_info.duration}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium">Number of Stops</p>
-                  <p className="text-lg">
-                    {reservation.flight_order_info.stops}
-                  </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm font-medium">Airline</p>
+                    <p className="text-lg">
+                      {reservation.flight_order_info.airline}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Flight Price</p>
+                    <p className="text-lg">
+                      ${reservation.flight_order_info.price.toFixed(2)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Duration</p>
+                    <p className="text-lg">
+                      {reservation.flight_order_info.duration}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Number of Stops</p>
+                    <p className="text-lg">
+                      {reservation.flight_order_info.stops}
+                    </p>
+                  </div>
                 </div>
 
                 <Separator />
-
                 <div>
                   <p className="text-sm font-medium mb-2">Outbound Flight</p>
                   <div className="grid grid-cols-2 gap-2">
@@ -306,10 +309,28 @@ export default function ReservationPage({
                       </p>
                     </div>
                   </div>
+                  <div className="mt-2">
+                    <p className="text-sm font-medium">Luggage Information</p>
+                    <p className="text-sm">
+                      Checked Bags:{" "}
+                      {reservation.flight_order_info.outbound.checkBagsIncluded
+                        ? "Yes"
+                        : "No"}
+                    </p>
+                    <p className="text-sm">
+                      Carry-On:{" "}
+                      {reservation.flight_order_info.offer.travelerPricings[0].fareDetailsBySegment.some(
+                        (segment: {
+                          segmentId: any;
+                          includedCabinBags: { quantity: number };
+                        }) => segment.includedCabinBags.quantity > 0
+                      )
+                        ? "Yes"
+                        : "No"}
+                    </p>
+                  </div>
                 </div>
-
                 <Separator />
-
                 <div>
                   <p className="text-sm font-medium mb-2">Inbound Flight</p>
                   <div className="grid grid-cols-2 gap-2">
@@ -336,6 +357,26 @@ export default function ReservationPage({
                       </p>
                     </div>
                   </div>
+                  <div className="mt-2">
+                    <p className="text-sm font-medium">Luggage Information</p>
+                    <p className="text-sm">
+                      Checked Bags:{" "}
+                      {reservation.flight_order_info.inbound.checkBagsIncluded
+                        ? "Yes"
+                        : "No"}
+                    </p>
+                    <p className="text-sm">
+                      Carry-On:{" "}
+                      {reservation.flight_order_info.offer.travelerPricings[0].fareDetailsBySegment.some(
+                        (segment: {
+                          segmentId: any;
+                          includedCabinBags: { quantity: number };
+                        }) => segment.includedCabinBags.quantity > 0
+                      )
+                        ? "Yes"
+                        : "No"}
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -352,59 +393,73 @@ export default function ReservationPage({
           <CardContent className="space-y-4">
             {reservation.hotel_order_info && (
               <div className="space-y-4">
-                <div>
-                  <p className="text-sm font-medium">Hotel Name</p>
-                  <p className="text-lg">{reservation.hotel_order_info.name}</p>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium">Address</p>
-                  <p className="text-lg">
-                    {reservation.hotel_order_info.address}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium">Price</p>
-                  <p className="text-lg">
-                    ${reservation.hotel_order_info.price}
-                  </p>
-                </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-sm font-medium">Check-in</p>
+                    <p className="text-sm font-medium">Hotel Name</p>
                     <p className="text-lg">
-                      {new Date(
-                        reservation.hotel_order_info.checkin
-                      ).toLocaleDateString()}
+                      {reservation.hotel_order_info.name}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Check-out</p>
+                    <p className="text-sm font-medium">Price</p>
                     <p className="text-lg">
-                      {new Date(
-                        reservation.hotel_order_info.checkout
-                      ).toLocaleDateString()}
+                      ${reservation.hotel_order_info.price}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Address</p>
+                    <p className="text-lg">
+                      {reservation.hotel_order_info.address}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm font-medium">Check-in</p>
+                      <p className="text-lg">
+                        {new Date(
+                          reservation.hotel_order_info.checkin
+                        ).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Check-out</p>
+                      <p className="text-lg">
+                        {new Date(
+                          reservation.hotel_order_info.checkout
+                        ).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium">Rooms Information</p>
+                    <div className="space-y-2">
+                      {reservation.hotel_order_info.guests.map(
+                        (
+                          room: { adults: number; children: any[] },
+                          index: number
+                        ) => (
+                          <div key={index} className="text-sm">
+                            <p>Room {index + 1}:</p>
+                            <p>
+                              Adults: {room.adults}, Children:{" "}
+                              {room.children.length}
+                            </p>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium">Meal</p>
+                    <p className="text-lg">
+                      {reservation.hotel_order_info?.meal_data?.has_breakfast
+                        ? "Includes Breakfast"
+                        : "No Meal Included"}
                     </p>
                   </div>
                 </div>
-
-                {reservation.hotel_order_info.guests &&
-                  reservation.hotel_order_info.guests.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium mb-2">Guests</p>
-                      <div className="space-y-2">
-                        {reservation.hotel_order_info.guests.map(
-                          (guest, index) => (
-                            <div key={index} className="text-sm">
-                              Guest {index + 1}
-                            </div>
-                          )
-                        )}
-                      </div>
-                    </div>
-                  )}
               </div>
             )}
           </CardContent>
@@ -415,9 +470,6 @@ export default function ReservationPage({
         <Button variant="outline" onClick={() => router.back()}>
           Back
         </Button>
-        <Link href={`/reservations/${reservation.id}/edit`}>
-          <Button>Edit Reservation</Button>
-        </Link>
       </div>
     </div>
   );

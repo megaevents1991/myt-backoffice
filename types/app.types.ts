@@ -40,6 +40,7 @@ export type Flight = {
 }
 
 export type FlightSegment = {
+  [x: string]: any
   departureTime: string
   arrivalTime: string
   departureAirport: string
@@ -55,8 +56,10 @@ export type OrderHotel = {
   address: string
   name: string
   id: string
+  meal_data: { value : string; has_breakfast: boolean}
+  meal: string
   price: string
-  guests: JSON[]
+  guests: { adults : number; children: JSON[]}[]
   checkin: string
   checkout: string
 }
