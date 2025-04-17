@@ -20,6 +20,13 @@ import {
   getReservation,
   updateReservation,
 } from "@/lib/actions/reservation-actions";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function EditReservationPage({
   params,
@@ -32,6 +39,9 @@ export default function EditReservationPage({
   const [reservation, setReservation] = useState<Reservation | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [reservationToSave, setReservationToSave] =
+    useState<Reservation | null>(null);
 
   useEffect(() => {
     async function fetchReservation() {
@@ -84,30 +94,26 @@ export default function EditReservationPage({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!reservation) return;
 
-    // Show confirmation dialog with text input
-    const confirmText = prompt(
-      "Type 'confirm changes' to save your changes to this reservation:"
-    );
-    if (confirmText?.toLowerCase() !== "confirm changes") {
-      toast({
-        title: "Cancelled",
-        description: "Changes were not saved.",
-      });
-      return;
-    }
+    setReservationToSave(reservation);
+    setShowConfirmDialog(true);
+  };
+
+  const handleConfirmSave = async () => {
+    if (!reservationToSave) return;
 
     setSaving(true);
+    setShowConfirmDialog(false);
     try {
-      await updateReservation(reservation.id, reservation);
+      await updateReservation(reservationToSave.id, reservationToSave);
       toast({
         title: "Success",
         description: "Reservation has been updated successfully.",
       });
-      router.push(`/reservations/${reservation.id}`);
+      router.push(`/reservations/${reservationToSave.id}`);
     } catch (error) {
       console.error("Error updating reservation:", error);
       toast({
@@ -287,6 +293,26 @@ export default function EditReservationPage({
           </Button>
         </div>
       </form>
+
+      {showConfirmDialog && (
+        <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Are you sure?</DialogTitle>
+            </DialogHeader>
+            <p>Do you want to save the changes to this reservation?</p>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setShowConfirmDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleConfirmSave}>Yes, Save</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

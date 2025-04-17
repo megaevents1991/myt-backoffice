@@ -167,6 +167,21 @@ export function ReservationsTable() {
       },
     },
     {
+      accessorKey: "aff_partner_tracking_code",
+      header: "Is Partner",
+      cell: ({ row }) => {
+        const trackingCode = row.getValue("aff_partner_tracking_code");
+        // Convert to string or use "Organic" if trackingCode is falsy or an empty object
+        return (
+          <div>
+            {trackingCode && typeof trackingCode !== "object"
+              ? String(trackingCode)
+              : "Organic"}
+          </div>
+        );
+      },
+    },
+    {
       id: "actions",
       cell: ({ row }) => {
         const reservation = row.original;
