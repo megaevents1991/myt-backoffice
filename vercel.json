@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "api/cron/partnerMonthlyReport/route.ts": {
+      "runtime": "nodejs",
+      "schedule": "0 * * * *"
+    }
+  }
+}
