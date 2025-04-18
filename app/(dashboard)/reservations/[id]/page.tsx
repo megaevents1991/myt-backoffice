@@ -161,6 +161,18 @@ export default function ReservationPage({
                 <p className="text-lg">{reservation.status}</p>
               </div>
 
+              <div>
+                <p className="text-sm font-medium">Accounting No.</p>
+                <p className="text-lg">{reservation.accounting_number}</p>
+              </div>
+
+              {/* 
+              <div>
+                <p className="text-sm font-medium">Payment info</p>
+                <p className="text-lg">{reservation.payment_info}</p>
+              </div>
+              */}
+
               {reservation.aff_partner_tracking_code && (
                 <div>
                   <p className="text-sm font-medium">Partner Tracking Code</p>

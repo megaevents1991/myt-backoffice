@@ -272,6 +272,18 @@ export default function EditReservationPage({
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="comments">Accounting Number</Label>
+              <Input
+                id="accounting_number"
+                name="accounting_number"
+                value={reservation.accounting_number}
+                onChange={handleChange}
+                placeholder="Enter document number"
+                type="number"
+              />
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="comments">Comments</Label>
               <Input
                 id="comments"
