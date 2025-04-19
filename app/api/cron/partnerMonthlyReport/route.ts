@@ -17,6 +17,7 @@ interface PartnerData {
   partnerName: string
   email: string
   reservations: Reservation[]
+  supp_acc_number?: number | null
 }
 
 interface PartnerReportProps {
@@ -26,6 +27,7 @@ interface PartnerReportProps {
   totalReservations: number
   totalTickets: number
   reservations: Reservation[]
+  supp_acc_number?: number | null
 }
 
 export async function GET(req: Request) {
@@ -88,8 +90,179 @@ const generateEmailHtml = ({
   totalReservations,
   totalTickets,
   reservations,
+  supp_acc_number = null
 }: PartnerReportProps) => {
-  return `
+  if (supp_acc_number) {
+    return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Monthly Partner Reservations Report - ${month} ${year}</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            background-color: #f9f9f9;
+          }
+          .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #ffffff;
+          }
+          .header {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 1px solid #eaeaea;
+          }
+          .logo {
+            max-width: 150px;
+            height: auto;
+          }
+          h1 {
+            color: #2c3e50;
+            font-size: 24px;
+            margin: 0;
+          }
+          h2 {
+            color: #2c3e50;
+            font-size: 20px;
+            margin: 20px 0 10px;
+          }
+          .summary {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+          }
+          .summary-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+          }
+          .summary-label {
+            font-weight: bold;
+          }
+          .rtl-text {
+            direction: rtl;
+            text-align: right;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+          }
+          th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #eaeaea;
+          }
+          th {
+            background-color: #f1f1f1;
+            font-weight: bold;
+          }
+          tr:nth-child(even) {
+            background-color: #f9f9f9;
+          }
+          .footer {
+            text-align: center;
+            padding: 20px 0;
+            font-size: 12px;
+            color: #777;
+            border-top: 1px solid #eaeaea;
+          }
+          .highlight {
+            color: #e74c3c;
+            font-weight: bold;
+          }
+          @media only screen and (max-width: 600px) {
+            .container {
+              width: 100%;
+              padding: 10px;
+            }
+            table {
+              font-size: 14px;
+            }
+            th, td {
+              padding: 8px 5px;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1 dir="rtl"> דו"ח הזמנות חודשי לפרטנר ${partnerName} - מספר ספק ${supp_acc_number}</h1>
+            <p>${month} ${year}</p>
+          </div>         
+          <div class="summary">
+            <h2>Monthly Summary</h2>
+            <div class="summary-item">
+              <span class="summary-label">Total Reservations:</span>
+              <span>${totalReservations}</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-label">Total Tickets Sold:</span>
+              <span>${totalTickets}</span>
+            </div>
+          </div>
+          
+          <h2>Detailed Reservation Report</h2>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>Client Email</th>
+                <th>Event Name</th>
+                <th>Event Location</th>
+                <th>Tickets</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${reservations // TO DO: document number vs. supp_acc_number
+                .map(
+                  (reservation) => {
+                    // Format date as dd/mm/yyyy
+                    const date = new Date(reservation.created_at);
+                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
+                    
+                    return `
+                <tr>
+                  <td>${reservation.main_contact_email}</td>
+                  <td>${reservation.event_order_info.name}</td>
+                  <td>${reservation.event_order_info.location_name}</td>
+                  <td>${reservation.event_order_info.number_of_ticket}</td>
+                  <td>${formattedDate}</td>
+                </tr>
+              `}
+                )
+                .join("")}
+            </tbody>
+          </table>
+                    
+          <p dir="rtl" class="rtl-text">בברכה,<br>
+          Mega Events</p>
+          
+          <div class="footer">
+            <p>© ${year} Mega-Events.co.il - All rights reserved.</p>
+            <p>תל אביב, ישראל</p>
+            <p>
+              <a href="mailto:alon@mega-events.co.il">alon@mega-events.co.il</a> | 
+              <a href="https://www.mega-events.co.il">www.mega-events.co.il</a>
+            </p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `
+  } else {
+    return `
     <!DOCTYPE html>
     <html>
       <head>
@@ -268,6 +441,8 @@ const generateEmailHtml = ({
       </body>
     </html>
   `
+  }
+  
 }
 
 async function sendMonthlyReportEmail(partnerData: PartnerData) {
@@ -281,13 +456,23 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
   const totalTickets = partnerData.reservations.reduce((sum, reservation) => sum + reservation.event_order_info.number_of_ticket, 0)
 
   // Generate the email HTML
-  const emailHtml = generateEmailHtml({
+  const emailHtmlForPartner = generateEmailHtml({
     partnerName: partnerData.partnerName,
     month,
     year,
     totalReservations,
     totalTickets,
     reservations: partnerData.reservations,
+  })
+
+  const emailHtmlToOrly = generateEmailHtml({
+    partnerName: partnerData.partnerName,
+    month,
+    year,
+    totalReservations,
+    totalTickets,
+    reservations: partnerData.reservations,
+    supp_acc_number: 123456, // Example document number for Orly
   })
 
   // Configure nodemailer transporter
@@ -307,7 +492,14 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
       from: process.env.EMAIL_SERVER_USER,
       to: partnerData.email,
       subject: `Monthly Partner Activity Report - ${month} ${year}`,
-      html: emailHtml,
+      html: emailHtmlForPartner,
+    });
+    await transporter.sendMail({
+      from: process.env.EMAIL_SERVER_USER,
+      to: "orlyacc@megatr.co.il",
+      cc: "alon@megatr.co.il, gilad@mega-events.co.il",
+      subject: `Monthly Partner Activity Report - ${month} ${year} - Supplier Number ${partnerData.supp_acc_number}`,
+      html: emailHtmlToOrly,
     })
   }
   catch (error) {
