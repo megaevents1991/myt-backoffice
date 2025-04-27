@@ -129,9 +129,15 @@ export default function ViewEventPage({
               </div>
             </div>
 
-            <div>
-              <p className="text-sm font-medium">Prioritized</p>
-              <p className="text-lg">{event.is_prioritized ? "Yes" : "No"}</p>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <p className="text-sm font-medium">Prioritized</p>
+                <p className="text-lg">{event.is_prioritized ? "Yes" : "No"}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium">Tags</p>
+                <p className="text-lg">{event.tags}</p>
+              </div>
             </div>
           </CardContent>
         </Card>

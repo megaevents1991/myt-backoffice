@@ -199,7 +199,7 @@ export function EventsTable() {
             variant="ghost"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
-            Price
+            Usual Price
             <ArrowUpDown className="ml-2 h-4 w-4" />
           </Button>
         );
@@ -207,6 +207,24 @@ export function EventsTable() {
       cell: ({ row }) => {
         const price = Number.parseFloat(row.getValue("usual_price"));
         return <div>${price.toFixed(2)}</div>;
+      },
+    },
+    {
+      accessorKey: "tags",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Tags
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+          </Button>
+        );
+      },
+      cell: ({ row }) => {
+        const tags = row.getValue("tags") as string;
+        return <div>{tags || "-"}</div>;
       },
     },
     {

@@ -60,6 +60,7 @@ export default function EventPage({
           base_hotel_price: 0,
           is_prioritized: false,
           is_deleted: "",
+          tags: "",
         });
         setLoading(false);
         return;
@@ -396,6 +397,31 @@ export default function EventPage({
                   {event.is_prioritized ? "Yes" : "No"}
                 </Label>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="tags">Tag</Label>
+              <select
+                id="tags"
+                name="tags"
+                value={event.tags || "null"}
+                onChange={(e) => {
+                  const value = e.target.value === "null" ? "" : e.target.value;
+                  setEvent((prev) => {
+                    if (!prev) return prev;
+                    return {
+                      ...prev,
+                      tags: value,
+                    };
+                  });
+                }}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <option value="null">None</option>
+                <option value="Sold">Sold</option>
+                <option value="LastTickets">LastTickets</option>
+                <option value="Popular">Popular</option>
+              </select>
             </div>
           </CardContent>
         </Card>

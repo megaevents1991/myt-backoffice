@@ -22,6 +22,7 @@ export type Event = {
   base_hotel_price: number
   is_prioritized: boolean
   is_deleted: string
+  tags: string
 }
 
 export type Flight = {
