@@ -42,10 +42,7 @@ export async function GET(req: Request) {
   console.log('Cron job started!');
 
   try {
-    let now = new Date();
-    now = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    console.log(`Next week's date: ${now.toISOString().slice(0, 10)}`);
-
+    const now = new Date();
     const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const firstDayOfMonth = new Date(previousMonth.getFullYear(), previousMonth.getMonth(), 1);
     const lastDayOfMonth = new Date(previousMonth.getFullYear(), previousMonth.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -89,7 +86,7 @@ export async function GET(req: Request) {
       await sendMonthlyReportEmail({
         partnerName: partnerData?.nameHebrew,
         commission: partnerData?.commission,
-        email: "gilad@mega-events.co.il", // Replace with actual email if available // partnerData.email
+        email: partnerData.email,
         reservations: reservations as Reservation[],
         supplier_number: partnerData?.supplier_number
       } as PartnerData);
@@ -435,7 +432,6 @@ const generateEmailHtml = ({
               ${reservations
                 .map(
                   (reservation) => {
-                    // Format date as dd/mm/yyyy
                     const date = new Date(reservation.created_at);
                     const formattedDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
                     
@@ -478,20 +474,16 @@ const generateEmailHtml = ({
     </html>
   `
   }
-  
 }
 
 async function sendMonthlyReportEmail(partnerData: PartnerData) {
-  // Create date information for the report
   const now = new Date()
   const month = now.toLocaleString("default", { month: "long" })
   const year = now.getFullYear().toString()
 
-  // Calculate totals
   const totalReservations = partnerData.reservations.length
   const totalTickets = partnerData.reservations.reduce((sum, reservation) => sum + reservation.event_order_info.number_of_ticket, 0)
 
-  // Generate the email HTML
   const emailHtmlForPartner = generateEmailHtml({
     partnerName: partnerData.partnerName,
     month,
@@ -525,15 +517,15 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
     await transporter.verify();
     await transporter.sendMail({
       from: "gilad@mega-events.co.il",
-      to: "gilad@mega-events.co.il",//partnerData.email,
+      to: partnerData.email,
       subject: `Monthly Partner Activity Report - ${month} ${year}`,
       html: emailHtmlForPartner,
     });
     await transporter.sendMail({
       from: "gilad@mega-events.co.il",
-      to: "gilad@mega-events.co.il",
-      cc: "gilad@mega-events.co.il",
-      subject: `Monthly Partner Activity Report - ${month} ${year} - Supplier Number ${partnerData.supplier_number}`,
+      to: "alon@megatr.co.il",
+      cc: "alon@mega-events.co.il",
+      subject: `Monthly Partner Report - ${month} ${year} - Supplier Number ${partnerData.supplier_number}`,
       html: emailHtmlToOrly,
     })
   }
