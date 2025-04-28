@@ -4,20 +4,21 @@ import { supabase } from "@/lib/supabase-server";
 import nodemailer from "nodemailer";
 
 interface Reservation {
-  main_contact_email: string
+  main_contact_first_name: string
   event_order_info: {
     name : string,
     location_name :string,
     number_of_ticket: number
   }
   created_at: string
+  accounting_number: number
 }
 
 interface PartnerData {
   partnerName: string
   email: string
   reservations: Reservation[]
-  supp_acc_number?: number | null
+  supplier_number?: number | null
 }
 
 interface PartnerReportProps {
@@ -27,17 +28,17 @@ interface PartnerReportProps {
   totalReservations: number
   totalTickets: number
   reservations: Reservation[]
-  supp_acc_number?: number | null
+  supplier_number?: number | null
 }
 
 export async function GET(req: Request) {
-  if (req.headers.get('Authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
+  const url = new URL(req.url);
+  if (url.searchParams.get('key') !== `monthlyAlonSecret` || !process.env.NEXT_SECRET_EMAIL_SERVER_USER || !process.env.NEXT_SECRET_EMAIL_SERVER_PASSWORD) {
     return new Response('Unauthorized', { status: 401 });
   }
   console.log('Cron job started!');
 
   try {
-    // Get previous month bounds
     const now = new Date();
     const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const firstDayOfMonth = new Date(previousMonth.getFullYear(), previousMonth.getMonth(), 1);
@@ -67,13 +68,23 @@ export async function GET(req: Request) {
     }, {});
 
     for (const [trackingCode, reservations] of Object.entries(reports)) {
-      // Implement the logic to generate and store the report for each tracking code
       console.log(`Generating report for tracking code: ${trackingCode}`);
 
+      const { data: partnerData, error: partnerError } = await supabase
+        .from('partners')
+        .select('*')
+        .eq('partner_tracking_code', trackingCode)
+        .single();
+      if (partnerError) {
+        console.error(`Error fetching partner data for tracking code ${trackingCode}:`, partnerError);
+        continue;
+      }
+
       sendMonthlyReportEmail({
-        partnerName: "Gilad",
-        email: "gilad@mega-events.co.il",
+        partnerName: partnerData?.name,
+        email: "gilad@mega-events.co.il", // Replace with actual email if available // partnerData.email
         reservations: reservations as Reservation[],
+        supplier_number: partnerData?.supplier_number
       } as PartnerData);
     }
   } catch (error) {
@@ -90,9 +101,9 @@ const generateEmailHtml = ({
   totalReservations,
   totalTickets,
   reservations,
-  supp_acc_number = null
+  supplier_number = null
 }: PartnerReportProps) => {
-  if (supp_acc_number) {
+  if (supplier_number) {
     return `
     <!DOCTYPE html>
     <html>
@@ -197,7 +208,7 @@ const generateEmailHtml = ({
       <body>
         <div class="container">
           <div class="header">
-            <h1 dir="rtl"> דו"ח הזמנות חודשי לפרטנר ${partnerName} - מספר ספק ${supp_acc_number}</h1>
+            <h1 dir="rtl"> דו"ח הזמנות חודשי לפרטנר ${partnerName} - מספר ספק ${supplier_number}</h1>
             <p>${month} ${year}</p>
           </div>         
           <div class="summary">
@@ -222,23 +233,24 @@ const generateEmailHtml = ({
                 <th>Event Location</th>
                 <th>Tickets</th>
                 <th>Date</th>
+                <th>Reservation Number</th>
               </tr>
             </thead>
             <tbody>
-              ${reservations // TO DO: document number vs. supp_acc_number
+              ${reservations
                 .map(
                   (reservation) => {
-                    // Format date as dd/mm/yyyy
                     const date = new Date(reservation.created_at);
                     const formattedDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
                     
                     return `
                 <tr>
-                  <td>${reservation.main_contact_email}</td>
+                  <td>${reservation.main_contact_first_name}</td>
                   <td>${reservation.event_order_info.name}</td>
                   <td>${reservation.event_order_info.location_name}</td>
                   <td>${reservation.event_order_info.number_of_ticket}</td>
                   <td>${formattedDate}</td>
+                  <td>${reservation.accounting_number}</td>
                 </tr>
               `}
                 )
@@ -372,8 +384,8 @@ const generateEmailHtml = ({
           
           <p dir="rtl" class="rtl-text">היי ${partnerName},</p>
           
-          <p dir="rtl" class="rtl-text">תודה על שותפותכם!
-אנחנו שמחים לשתף אתכם בדוח ההזמנות החודשי שלכם עבור ${month} ${year}.</p>
+          <p dir="rtl" class="rtl-text">תודה על שותפותך!
+אנחנו שמחים לשתף אותך בדוח ההזמנות החודשי שלך עבור ${month} ${year}.</p>
           
           <div class="summary">
             <h2>Monthly Summary</h2>
@@ -397,6 +409,7 @@ const generateEmailHtml = ({
                 <th>Event Location</th>
                 <th>Tickets</th>
                 <th>Date</th>
+                <th>Reservation Number</th>
               </tr>
             </thead>
             <tbody>
@@ -409,11 +422,12 @@ const generateEmailHtml = ({
                     
                     return `
                 <tr>
-                  <td>${reservation.main_contact_email}</td>
+                  <td>${reservation.main_contact_first_name}</td>
                   <td>${reservation.event_order_info.name}</td>
                   <td>${reservation.event_order_info.location_name}</td>
                   <td>${reservation.event_order_info.number_of_ticket}</td>
                   <td>${formattedDate}</td>
+                  <td>${reservation.accounting_number || "TBD"}</td>
                 </tr>
               `}
                 )
@@ -421,11 +435,13 @@ const generateEmailHtml = ({
             </tbody>
           </table>
           
-          <p dir="rtl" class="rtl-text">אנחנו מעריכים מאוד את השותפות אתכם, ורואים בכם חלק בלתי נפרד מההצלחה שלנו.
+          <p dir="rtl" class="rtl-text">אנחנו מעריכים מאוד את השותפות עימך, ורואים בך חלק בלתי נפרד מההצלחה שלנו.
 אנו מצפים להמשך שיתוף פעולה פורה ולעוד הישגים משותפים גם בחודש הקרוב.<br>
-אם יש לכם שאלות או הבהרות בנוגע לדוח, אל תהססו לפנות לתום, אלון או אלי, אנו נשמח לעזור ולוודא שאתם מקבלים את כל התמיכה הדרושה להצלחתכם.
-נשמח שתעבירו לנו חשבונית / חשבון עסקה ע"מ שנוכל לשלם לכם בהקדם.</p>
-          
+אם יש לך שאלות או הבהרות בנוגע אנו זמינים לכל שאלה.</p>
+  
+            
+            <p dir="rtl" class="rtl-text">על מנת שנוכל לשלם לך בהקדם, נבקשך להעביר לנו חשבונית / דרישת תשלום עם הפירוט מעלה.</p>
+                      
           <p dir="rtl" class="rtl-text">בברכה,<br>
           Mega Events</p>
           
@@ -472,33 +488,30 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
     totalReservations,
     totalTickets,
     reservations: partnerData.reservations,
-    supp_acc_number: 123456, // Example document number for Orly
+    supplier_number: partnerData.supplier_number,
   })
 
-  // Configure nodemailer transporter
-  // Note: In production, use environment variables for these values
   const transporter = nodemailer.createTransport({
     service: "Zoho",
     auth: {
-      user: process.env.EMAIL_SERVER_USER,
-      pass: process.env.EMAIL_SERVER_PASSWORD,
+      user: process.env.NEXT_SECRET_EMAIL_SERVER_USER,
+      pass: process.env.NEXT_SECRET_EMAIL_SERVER_PASSWORD,
     },
   });
 
-  // Send email
   try {
     await transporter.verify();
     await transporter.sendMail({
       from: process.env.EMAIL_SERVER_USER,
-      to: partnerData.email,
+      to: "gilad@mega-events.co.il",//partnerData.email,
       subject: `Monthly Partner Activity Report - ${month} ${year}`,
       html: emailHtmlForPartner,
     });
     await transporter.sendMail({
       from: process.env.EMAIL_SERVER_USER,
-      to: "orlyacc@megatr.co.il",
+      to: "gilad@mega-events.co.il",
       cc: "alon@megatr.co.il, gilad@mega-events.co.il",
-      subject: `Monthly Partner Activity Report - ${month} ${year} - Supplier Number ${partnerData.supp_acc_number}`,
+      subject: `TEST_TEST - Monthly Partner Activity Report - ${month} ${year} - Supplier Number ${partnerData.supplier_number}`,
       html: emailHtmlToOrly,
     })
   }

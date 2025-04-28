@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/cron/partnerMonthlyReport",
+      "path": "/api/cron/partnerMonthlyReport?key=monthlyAlonSecret",
       "schedule": "0 0 1 * *"
     }
   ]
