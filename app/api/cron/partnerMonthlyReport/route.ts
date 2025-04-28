@@ -16,9 +16,10 @@ interface Reservation {
 
 interface PartnerData {
   partnerName: string
+  commission: number
   email: string
   reservations: Reservation[]
-  supplier_number?: number | null
+  supplier_number?: number | null,
 }
 
 interface PartnerReportProps {
@@ -28,10 +29,12 @@ interface PartnerReportProps {
   totalReservations: number
   totalTickets: number
   reservations: Reservation[]
+  commission: number
   supplier_number?: number | null
 }
 
 export async function GET(req: Request) {
+  
   const url = new URL(req.url);
   if (url.searchParams.get('key') !== `monthlyAlonSecret` || !process.env.NEXT_SECRET_EMAIL_SERVER_USER || !process.env.NEXT_SECRET_EMAIL_SERVER_PASSWORD) {
     return new Response('Unauthorized', { status: 401 });
@@ -39,7 +42,10 @@ export async function GET(req: Request) {
   console.log('Cron job started!');
 
   try {
-    const now = new Date();
+    let now = new Date();
+    now = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    console.log(`Next week's date: ${now.toISOString().slice(0, 10)}`);
+
     const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const firstDayOfMonth = new Date(previousMonth.getFullYear(), previousMonth.getMonth(), 1);
     const lastDayOfMonth = new Date(previousMonth.getFullYear(), previousMonth.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -80,8 +86,9 @@ export async function GET(req: Request) {
         continue;
       }
 
-      sendMonthlyReportEmail({
-        partnerName: partnerData?.name,
+      await sendMonthlyReportEmail({
+        partnerName: partnerData?.nameHebrew,
+        commission: partnerData?.commission,
         email: "gilad@mega-events.co.il", // Replace with actual email if available // partnerData.email
         reservations: reservations as Reservation[],
         supplier_number: partnerData?.supplier_number
@@ -100,6 +107,7 @@ const generateEmailHtml = ({
   year,
   totalReservations,
   totalTickets,
+  commission,
   reservations,
   supplier_number = null
 }: PartnerReportProps) => {
@@ -221,6 +229,10 @@ const generateEmailHtml = ({
               <span class="summary-label">Total Tickets Sold:</span>
               <span>${totalTickets}</span>
             </div>
+            <div class="summary-item">
+              <span class="summary-label">Total Amount (USD):</span>
+              <span>${totalTickets * commission}</span>
+            </div>
           </div>
           
           <h2>Detailed Reservation Report</h2>
@@ -233,6 +245,7 @@ const generateEmailHtml = ({
                 <th>Event Location</th>
                 <th>Tickets</th>
                 <th>Date</th>
+                <th>Commission ($)</th>
                 <th>Reservation Number</th>
               </tr>
             </thead>
@@ -250,6 +263,7 @@ const generateEmailHtml = ({
                   <td>${reservation.event_order_info.location_name}</td>
                   <td>${reservation.event_order_info.number_of_ticket}</td>
                   <td>${formattedDate}</td>
+                  <td>${reservation.event_order_info.number_of_ticket * commission}</td>
                   <td>${reservation.accounting_number}</td>
                 </tr>
               `}
@@ -397,6 +411,10 @@ const generateEmailHtml = ({
               <span class="summary-label">Total Tickets Sold:</span>
               <span>${totalTickets}</span>
             </div>
+            <div class="summary-item">
+              <span class="summary-label">Total Amount (USD):</span>
+              <span>${totalTickets * commission}</span>
+            </div>
           </div>
           
           <h2>Detailed Reservation Report</h2>
@@ -409,6 +427,7 @@ const generateEmailHtml = ({
                 <th>Event Location</th>
                 <th>Tickets</th>
                 <th>Date</th>
+                <th>Commission ($)</th>
                 <th>Reservation Number</th>
               </tr>
             </thead>
@@ -427,6 +446,7 @@ const generateEmailHtml = ({
                   <td>${reservation.event_order_info.location_name}</td>
                   <td>${reservation.event_order_info.number_of_ticket}</td>
                   <td>${formattedDate}</td>
+                  <td>${reservation.event_order_info.number_of_ticket * commission}</td>
                   <td>${reservation.accounting_number || "TBD"}</td>
                 </tr>
               `}
@@ -478,6 +498,7 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
     year,
     totalReservations,
     totalTickets,
+    commission: partnerData.commission,
     reservations: partnerData.reservations,
   })
 
@@ -488,10 +509,11 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
     totalReservations,
     totalTickets,
     reservations: partnerData.reservations,
+    commission: partnerData.commission,
     supplier_number: partnerData.supplier_number,
   })
 
-  const transporter = nodemailer.createTransport({
+  const transporter = await nodemailer.createTransport({
     service: "Zoho",
     auth: {
       user: process.env.NEXT_SECRET_EMAIL_SERVER_USER,
@@ -502,23 +524,22 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
   try {
     await transporter.verify();
     await transporter.sendMail({
-      from: process.env.EMAIL_SERVER_USER,
+      from: "gilad@mega-events.co.il",
       to: "gilad@mega-events.co.il",//partnerData.email,
       subject: `Monthly Partner Activity Report - ${month} ${year}`,
       html: emailHtmlForPartner,
     });
     await transporter.sendMail({
-      from: process.env.EMAIL_SERVER_USER,
+      from: "gilad@mega-events.co.il",
       to: "gilad@mega-events.co.il",
-      cc: "alon@megatr.co.il, gilad@mega-events.co.il",
-      subject: `TEST_TEST - Monthly Partner Activity Report - ${month} ${year} - Supplier Number ${partnerData.supplier_number}`,
+      cc: "gilad@mega-events.co.il",
+      subject: `Monthly Partner Activity Report - ${month} ${year} - Supplier Number ${partnerData.supplier_number}`,
       html: emailHtmlToOrly,
     })
   }
   catch (error) {
-    console.error("Error establishing SMTP connection:", error);
+    console.error("Error: ", error);
   }
-
   console.log(`Email sent to ${partnerData.partnerName} - ${month} ${year}`);
   return true;
 }
