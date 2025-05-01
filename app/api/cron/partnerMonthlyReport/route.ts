@@ -477,9 +477,11 @@ const generateEmailHtml = ({
 }
 
 async function sendMonthlyReportEmail(partnerData: PartnerData) {
-  const now = new Date()
-  const month = now.toLocaleString("default", { month: "long" })
-  const year = now.getFullYear().toString()
+  const now = new Date();
+  const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1);
+
+  const month = previousMonth.toLocaleString("default", { month: "long" })
+  const year = previousMonth.getFullYear().toString()
 
   const totalReservations = partnerData.reservations.length
   const totalTickets = partnerData.reservations.reduce((sum, reservation) => sum + reservation.event_order_info.number_of_ticket, 0)
