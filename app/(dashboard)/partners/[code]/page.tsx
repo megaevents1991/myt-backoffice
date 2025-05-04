@@ -168,7 +168,7 @@ export default function PartnerPage({
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="email">Hebrew Name</Label>
+              <Label htmlFor="name_hebrew">Hebrew Name</Label>
               <Input
                 id="name_hebrew"
                 name="name_hebrew"
