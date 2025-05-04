@@ -97,6 +97,14 @@ export function PartnersTable() {
       },
     },
     {
+      accessorKey: "name_hebrew",
+      header: "Hebrew Name",
+      cell: ({ row }) => {
+        const name = row.getValue("name_hebrew") as string;
+        return <div>{name}</div>;
+      },
+    },
+    {
       accessorKey: "commission",
       header: "Commission ($)",
       cell: ({ row }) => {

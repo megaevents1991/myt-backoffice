@@ -41,6 +41,7 @@ export default function PartnerPage({
         setPartner({
           created_at: new Date().toISOString(),
           partner_tracking_code: "",
+          name_hebrew: "",
           email: "",
           password: "",
           commission: 10,
@@ -165,6 +166,17 @@ export default function PartnerPage({
                 />
               </div>
             )}
+
+            <div className="space-y-2">
+              <Label htmlFor="email">Hebrew Name</Label>
+              <Input
+                id="name_hebrew"
+                name="name_hebrew"
+                value={partner.email}
+                onChange={handleChange}
+                required
+              />
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>

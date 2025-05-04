@@ -84,7 +84,7 @@ export async function GET(req: Request) {
       }
 
       await sendMonthlyReportEmail({
-        partnerName: partnerData?.nameHebrew,
+        partnerName: partnerData?.name_hebrew,
         commission: partnerData?.commission,
         email: partnerData.email,
         reservations: reservations as Reservation[],

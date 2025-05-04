@@ -92,6 +92,11 @@ export default async function ViewPartnerPage({
             <p className="text-lg">{partner.email}</p>
           </div>
 
+          <div>
+            <p className="text-sm font-medium">Hebrew Name</p>
+            <p className="text-lg">{partner.name_hebrew}</p>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-sm font-medium">Commission</p>
