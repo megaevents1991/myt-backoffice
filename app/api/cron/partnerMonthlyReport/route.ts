@@ -82,6 +82,10 @@ export async function GET(req: Request) {
         console.error(`Error fetching partner data for tracking code ${trackingCode}:`, partnerError);
         continue;
       }
+      else if (partnerData.email = 'support@mega-events.co.il') {
+        console.log(`skipping ${trackingCode}, as this is workaround for purchased user`);
+        continue;
+      }
 
       await sendMonthlyReportEmail({
         partnerName: partnerData?.name_hebrew,
