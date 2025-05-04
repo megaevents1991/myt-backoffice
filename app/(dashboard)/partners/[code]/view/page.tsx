@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Partner } from "@/types/partner.types";
 import { getPartner } from "@/lib/actions/partner-actions";
 
-export default async function ViewPartnerPage({
+export default function ViewPartnerPage({
   params,
 }: {
   params: Promise<{ code: string }>;

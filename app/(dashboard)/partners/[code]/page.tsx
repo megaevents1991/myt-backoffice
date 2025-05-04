@@ -172,7 +172,7 @@ export default function PartnerPage({
               <Input
                 id="name_hebrew"
                 name="name_hebrew"
-                value={partner.email}
+                value={partner.name_hebrew}
                 onChange={handleChange}
                 required
               />
