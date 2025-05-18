@@ -421,6 +421,7 @@ export default function EventPage({
                 <option value="Sold">Sold</option>
                 <option value="LastTickets">LastTickets</option>
                 <option value="Popular">Popular</option>
+                <option value="Restock">Restock</option>
               </select>
             </div>
           </CardContent>
