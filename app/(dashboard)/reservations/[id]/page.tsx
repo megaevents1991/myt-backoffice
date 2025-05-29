@@ -56,6 +56,18 @@ export default function ReservationPage({
     return <div>Reservation not found</div>;
   }
 
+  const paymentInfo = {
+    amount:
+      reservation.payment_info?.ashrait?.response?.inquireTransactions?.row
+        ?.amount / 100,
+    currency:
+      reservation.payment_info?.ashrait?.response?.inquireTransactions?.row
+        ?.currency,
+    status:
+      reservation.payment_info?.ashrait?.response?.inquireTransactions?.row
+        ?.statusText,
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -166,12 +178,19 @@ export default function ReservationPage({
                 <p className="text-lg">{reservation.accounting_number}</p>
               </div>
 
-              {/* 
               <div>
                 <p className="text-sm font-medium">Payment info</p>
-                <p className="text-lg">{reservation.payment_info}</p>
+                <p className="text-lg">
+                  {JSON.stringify(paymentInfo, null, 2)}
+                </p>
               </div>
-              */}
+
+              <div>
+                <p className="text-sm font-medium">Exchange Rate</p>
+                <p className="text-lg">
+                  {reservation.exchange_rate_usd_ils_100 / 100}
+                </p>
+              </div>
 
               {reservation.aff_partner_tracking_code && (
                 <div>

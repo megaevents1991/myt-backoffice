@@ -28,7 +28,9 @@ export type Reservation = {
   event_id: number
   status: string
   accounting_number: number
-  payment_info: string
+  payment_info: any;
   comments: string
+  final_purchase_price_ils: number;
+  exchange_rate_usd_ils_100: number;
 }
 

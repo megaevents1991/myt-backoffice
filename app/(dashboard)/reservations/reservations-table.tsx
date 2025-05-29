@@ -149,6 +149,15 @@ export function ReservationsTable() {
       },
     },
     {
+      id: "payment_type",
+      header: "Payment Type",
+      cell: ({ row }) => {
+        const reservation = row.original;
+        const paymentType = reservation.payment_info ? "Card" : "Phone";
+        return <div>{paymentType}</div>;
+      },
+    },
+    {
       accessorKey: "status",
       header: ({ column }) => {
         return (
