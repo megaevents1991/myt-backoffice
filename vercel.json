@@ -8,5 +8,17 @@
       "path": "/api/cron/partnerMonthlyReport?key=monthlyAlonSecret",
       "schedule": "0 0 * * *"
     }
+  ],
+  "functions": {
+    "app/api/validate-airline/route.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/validate-airline",
+      "dest": "api/validate-airline.js"
+    }
   ]
 }

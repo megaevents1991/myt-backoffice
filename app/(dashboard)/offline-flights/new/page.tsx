@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z, ZodErrorMap, ZodIssueCode } from "zod";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useTransition, useState } from "react";
 import { toast } from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
@@ -19,9 +19,16 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import { createOfflineFlight } from "@/lib/actions/offline-flight-actions";
 import { OfflineFlight } from "@/types/offline-flight.types";
+import React from "react";
 
 const getValueByPath = (obj: any, path: (string | number)[]): any => {
   let current = obj;
@@ -202,6 +209,13 @@ type OfflineFlightFormData = z.infer<typeof offlineFlightFormSchema>;
 export default function NewOfflineFlightPage() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState<{
+    airlineName: string;
+    airlineLogo: string;
+    icaoCode?: string;
+  } | null>(null);
+  const [isValidated, setIsValidated] = useState(false);
 
   const form = useForm<OfflineFlightFormData>({
     resolver: zodResolver(offlineFlightFormSchema, {
@@ -241,6 +255,65 @@ export default function NewOfflineFlightPage() {
     },
   });
 
+  // Watch airline_code field to reset validation when it changes
+  const airlineCodeValue = form.watch("airline_code");
+
+  // Reset validation when airline code changes
+  React.useEffect(() => {
+    setIsValidated(false);
+    setValidationResult(null);
+  }, [airlineCodeValue]);
+
+  const validateAirlineCode = async () => {
+    const airlineCode = form.getValues("airline_code");
+
+    if (!airlineCode) {
+      toast.error("Please enter an airline code first");
+      return;
+    }
+
+    setIsValidating(true);
+    setValidationResult(null);
+
+    try {
+      const response = await fetch("/api/validate-airline", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ airlineCode }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success(`Found: ${data.airlineName}`);
+        setValidationResult({
+          airlineName: data.airlineName,
+          airlineLogo: data.airlineLogo,
+          icaoCode: data.icaoCode,
+        });
+        setIsValidated(true);
+
+        // Auto-fill metadata fields
+        form.setValue("metadata_iata", airlineCode);
+        form.setValue("metadata_name", data.airlineName);
+        form.setValue("metadata_logo", data.airlineLogo);
+      } else {
+        toast.error(data.error || "Validation failed");
+        setValidationResult(null);
+        setIsValidated(false);
+      }
+    } catch (error) {
+      console.error("Validation error:", error);
+      toast.error("Failed to validate airline code");
+      setValidationResult(null);
+      setIsValidated(false);
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
   async function onSubmit(values: OfflineFlightFormData) {
     startTransition(async () => {
       try {
@@ -265,387 +338,449 @@ export default function NewOfflineFlightPage() {
     });
   }
 
+  // Add this for debugging
+  console.log("isValidated:", isValidated, "isPending:", isPending);
+
   return (
-    <div className="container mx-auto py-10 max-w-3xl">
-      <h1 className="text-3xl font-bold mb-6">Add New Offline Flight</h1>
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-          <h2 className="text-xl font-semibold border-b pb-2">
-            General Flight Details
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="airline_code"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Airline Code (IATA)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., LO, LH" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="price"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Price (USD)</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      step="1"
-                      placeholder="e.g., 838.76"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="initial_quantity"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Initial Quantity</FormLabel>
-                  <FormControl>
-                    <Input type="number" placeholder="e.g., 20" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="duration"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Total Duration (ISO 8601)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., PT8H30M" {...field} />
-                  </FormControl>
-                  <FormDescription>Total round trip duration.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="stops"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Stops</FormLabel>
-                  <FormControl>
-                    <Input type="number" readOnly {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    Must be 0 for direct flights.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
+    <TooltipProvider>
+      <div className="container mx-auto py-10 max-w-3xl">
+        <h1 className="text-3xl font-bold mb-6">Add New Offline Flight</h1>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+            <h2 className="text-xl font-semibold border-b pb-2">
+              General Flight Details
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="airline_code"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Airline Code (IATA)</FormLabel>
+                    <div className="flex gap-2">
+                      <FormControl>
+                        <Input placeholder="e.g., LO, LH" {...field} />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={validateAirlineCode}
+                        disabled={isValidating || isValidated}
+                      >
+                        {isValidating
+                          ? "Validating..."
+                          : isValidated
+                          ? "Validated"
+                          : "Validate"}
+                      </Button>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="price"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Price (USD)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        step="1"
+                        placeholder="e.g., 438.76"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="initial_quantity"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Initial Quantity</FormLabel>
+                    <FormControl>
+                      <Input type="number" placeholder="e.g., 20" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="duration"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Total Duration (ISO 8601)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., PT8H30M" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Total round trip duration.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="stops"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Stops</FormLabel>
+                    <FormControl>
+                      <Input type="number" readOnly {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Must be 0 for direct flights.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
-          <h2 className="text-xl font-semibold border-b pb-2 mt-6">
-            Outbound Flight
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="outbound_flight_number"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Outbound Flight Number</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., LO152" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="outbound_departure_airport"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Outbound Departure Airport (IATA)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., TLV" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="outbound_departure_time"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Outbound Departure Time</FormLabel>
-                  <FormControl>
-                    <Input type="datetime-local" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="outbound_arrival_airport"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Outbound Arrival Airport (IATA)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., WAW" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="outbound_arrival_time"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Outbound Arrival Time</FormLabel>
-                  <FormControl>
-                    <Input type="datetime-local" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="outbound_duration"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Outbound Duration (ISO 8601)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., PT4H5M" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="outbound_cabin_bags_included"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>Outbound Cabin Bags Included</FormLabel>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="outbound_check_bags_included"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>Outbound Check Bags Included</FormLabel>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
+            <h2 className="text-xl font-semibold border-b pb-2 mt-6">
+              Outbound Flight
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="outbound_flight_number"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Outbound Flight Number</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., LO152" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="outbound_departure_airport"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Outbound Departure Airport (IATA)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., TLV" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="outbound_departure_time"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Outbound Departure Time</FormLabel>
+                    <FormControl>
+                      <Input type="datetime-local" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="outbound_arrival_airport"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Outbound Arrival Airport (IATA)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., WAW" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="outbound_arrival_time"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Outbound Arrival Time</FormLabel>
+                    <FormControl>
+                      <Input type="datetime-local" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="outbound_duration"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Outbound Duration (ISO 8601)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., PT4H5M" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="outbound_cabin_bags_included"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel>Outbound Cabin Bags Included</FormLabel>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="outbound_check_bags_included"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel>Outbound Check Bags Included</FormLabel>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
-          <h2 className="text-xl font-semibold border-b pb-2 mt-6">
-            Inbound Flight
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="inbound_flight_number"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Inbound Flight Number</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., LO151" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="inbound_departure_airport"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Inbound Departure Airport (IATA)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., WAW" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="inbound_departure_time"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Inbound Departure Time</FormLabel>
-                  <FormControl>
-                    <Input type="datetime-local" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="inbound_arrival_airport"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Inbound Arrival Airport (IATA)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., TLV" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="inbound_arrival_time"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Inbound Arrival Time</FormLabel>
-                  <FormControl>
-                    <Input type="datetime-local" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="inbound_duration"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Inbound Duration (ISO 8601)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., PT3H50M" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="inbound_cabin_bags_included"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>Inbound Cabin Bags Included</FormLabel>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="inbound_check_bags_included"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>Inbound Check Bags Included</FormLabel>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
+            <h2 className="text-xl font-semibold border-b pb-2 mt-6">
+              Inbound Flight
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="inbound_flight_number"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Inbound Flight Number</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., LO151" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="inbound_departure_airport"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Inbound Departure Airport (IATA)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., WAW" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="inbound_departure_time"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Inbound Departure Time</FormLabel>
+                    <FormControl>
+                      <Input type="datetime-local" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="inbound_arrival_airport"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Inbound Arrival Airport (IATA)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., TLV" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="inbound_arrival_time"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Inbound Arrival Time</FormLabel>
+                    <FormControl>
+                      <Input type="datetime-local" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="inbound_duration"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Inbound Duration (ISO 8601)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., PT3H50M" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="inbound_cabin_bags_included"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel>Inbound Cabin Bags Included</FormLabel>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="inbound_check_bags_included"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel>Inbound Check Bags Included</FormLabel>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
-          <h2 className="text-xl font-semibold border-b pb-2 mt-6">
-            Airline Metadata
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="metadata_iata"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Metadata Airline IATA</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., LO" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    Usually same as Airline Code.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+            <h2 className="text-xl font-semibold border-b pb-2 mt-6">
+              Airline Metadata
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="metadata_iata"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Metadata Airline IATA</FormLabel>
+                    <FormControl>
+                      {/* Display as text instead of Input */}
+                      <div className="pt-2 text-sm font-medium text-gray-700 dark:text-gray-300 min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
+                        {field.value || "-"}
+                      </div>
+                    </FormControl>
+                    <FormDescription>
+                      Auto-filled from Airline Code validation.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="metadata_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Metadata Airline Name</FormLabel>
+                    <FormControl>
+                      {/* Display as text instead of Input */}
+                      <div className="pt-2 text-sm font-medium text-gray-700 dark:text-gray-300 min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
+                        {field.value || "-"}
+                      </div>
+                    </FormControl>
+                    <FormDescription>
+                      Auto-filled from validation.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="metadata_logo"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Metadata Airline Logo URL</FormLabel>
+                    <FormControl>
+                      {/* Display as link or text instead of Input */}
+                      {field.value ? (
+                        <a
+                          href={field.value}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="pt-2 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400 min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md"
+                        >
+                          {field.value}
+                        </a>
+                      ) : (
+                        <div className="pt-2 text-sm font-medium text-gray-700 dark:text-gray-300 min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
+                          -
+                        </div>
+                      )}
+                    </FormControl>
+                    <FormDescription>
+                      Auto-filled from validation.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="inline-block">
+                  <Button
+                    type="submit"
+                    disabled={isPending || !isValidated}
+                    className="mt-8"
+                    variant={
+                      isPending || !isValidated ? "secondary" : "default"
+                    }
+                  >
+                    {isPending ? "Creating..." : "Create Flight"}
+                  </Button>
+                </div>
+              </TooltipTrigger>
+              {!isValidated && !isPending && (
+                <TooltipContent>
+                  <p>Please validate the airline code first</p>
+                </TooltipContent>
               )}
-            />
-            <FormField
-              control={form.control}
-              name="metadata_name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Metadata Airline Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., LOT POLISH AIRLINES" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="metadata_logo"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Metadata Airline Logo URL</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="url"
-                      placeholder="https://example.com/logo.png"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-          <Button type="submit" disabled={isPending} className="mt-8">
-            {isPending ? "Creating..." : "Create Flight"}
-          </Button>
-        </form>
-      </Form>
-    </div>
+            </Tooltip>
+          </form>
+        </Form>
+      </div>
+    </TooltipProvider>
   );
 }
