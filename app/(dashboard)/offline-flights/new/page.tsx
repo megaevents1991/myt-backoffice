@@ -229,26 +229,26 @@ export default function NewOfflineFlightPage() {
       outbound_cabin_bags_included: true,
       inbound_check_bags_included: false,
       inbound_cabin_bags_included: true,
-      duration: "PT8H",
-      airline_code: "XX",
+      duration: "PT8H0M",
+      airline_code: "LY",
       outbound_departure_time: new Date().toISOString().slice(0, 16),
       outbound_departure_airport: "TLV",
-      outbound_arrival_airport: "BBB",
+      outbound_arrival_airport: "BER",
       outbound_arrival_time: new Date(Date.now() + 4 * 3600 * 1000)
         .toISOString()
         .slice(0, 16),
-      outbound_duration: "PT4H",
-      outbound_flight_number: "XX123",
+      outbound_duration: "PT4H25M",
+      outbound_flight_number: "LY123",
       inbound_departure_time: new Date(Date.now() + 72 * 3600 * 1000)
         .toISOString()
         .slice(0, 16),
-      inbound_departure_airport: "BBB",
+      inbound_departure_airport: "BER",
       inbound_arrival_airport: "TLV",
       inbound_arrival_time: new Date(Date.now() + 76 * 3600 * 1000)
         .toISOString()
         .slice(0, 16),
-      inbound_duration: "PT4H",
-      inbound_flight_number: "XX124",
+      inbound_duration: "PT4H25M",
+      inbound_flight_number: "LY124",
       metadata_iata: "XX",
       metadata_name: "Example Airline",
       metadata_logo: "https://example.com/logo.png",
