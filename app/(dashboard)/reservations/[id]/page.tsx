@@ -66,6 +66,9 @@ export default function ReservationPage({
     status:
       reservation.payment_info?.ashrait?.response?.inquireTransactions?.row
         ?.statusText,
+    transactionId:
+      reservation.payment_info?.ashrait?.response?.inquireTransactions?.row
+        ?.cgGatewayResponseXML?.ashrait?.response?.tranId,
   };
 
   return (
