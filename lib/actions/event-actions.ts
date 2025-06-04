@@ -18,7 +18,13 @@ export async function getEvent(id: number) {
 }
 
 export async function createEvent(event: Omit<Event, "id">) {
-  const { data, error } = await supabase.from("events").insert(event).select()
+  // Ensure is_deleted is null for new events
+  const eventData = {
+    ...event,
+    is_deleted: event.is_deleted === "" ? null : event.is_deleted,
+  }
+
+  const { data, error } = await supabase.from("events").insert(eventData).select()
 
   if (error) throw error
   return data[0] as Event

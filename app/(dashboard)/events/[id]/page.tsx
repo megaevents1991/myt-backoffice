@@ -18,7 +18,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import type { Event, EventTicket } from "@/types/app.types";
-import { getEvent, updateEvent } from "@/lib/actions/event-actions";
+import {
+  getEvent,
+  updateEvent,
+  createEvent,
+} from "@/lib/actions/event-actions";
 import { ColorPicker } from "@/components/color-picker";
 import { v4 as uuidv4 } from "uuid";
 
@@ -204,26 +208,73 @@ export default function EventPage({
     e.preventDefault();
     if (!event) return;
 
-    // Show confirmation dialog
+    // Validate required fields for new events
+    if (isNewEvent) {
+      const requiredFields = [
+        { field: "name", label: "Name" },
+        { field: "name_english", label: "English Name" },
+        { field: "date", label: "Date" },
+        { field: "location.name", label: "Location Name" },
+      ];
+
+      for (const { field, label } of requiredFields) {
+        const value = field.includes(".")
+          ? event.location.name // For nested fields
+          : event[field as keyof Event];
+
+        if (!value || value === "") {
+          toast({
+            variant: "destructive",
+            title: "Validation Error",
+            description: `${label} is required.`,
+          });
+          return;
+        }
+      }
+    }
+
+    // Show confirmation dialog with appropriate message
     const confirmed = window.confirm(
-      "Are you sure you want to save changes to this event?"
+      isNewEvent
+        ? "Are you sure you want to create this event?"
+        : "Are you sure you want to save changes to this event?"
     );
     if (!confirmed) return;
 
     setSaving(true);
     try {
-      await updateEvent(event.id, event);
-      toast({
-        title: "Success",
-        description: "Event has been saved successfully.",
-      });
+      if (isNewEvent) {
+        // For new events, remove the id and ensure proper field values
+        const { id, ...eventWithoutId } = event;
+        const eventData = {
+          ...eventWithoutId,
+        };
+
+        await createEvent(eventData);
+        toast({
+          title: "Success",
+          description: "Event has been created successfully.",
+        });
+      } else {
+        // For existing events, use updateEvent
+        await updateEvent(event.id, event);
+        toast({
+          title: "Success",
+          description: "Event has been saved successfully.",
+        });
+      }
       router.push("/events");
     } catch (error) {
-      console.error("Error saving event:", error);
+      console.error(
+        `Error ${isNewEvent ? "creating" : "saving"} event:`,
+        error
+      );
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to save event. Please try again.",
+        description: `Failed to ${
+          isNewEvent ? "create" : "save"
+        } event. Please try again.`,
       });
     } finally {
       setSaving(false);
