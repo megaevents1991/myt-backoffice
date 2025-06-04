@@ -511,11 +511,12 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
     supplier_number: partnerData.supplier_number,
   })
 
-  const transporter = await nodemailer.createTransport({
-    service: "Zoho",
+  const transporter = nodemailer.createTransport({
+    host: "smtp.zeptomail.com",
+    port: 587,
     auth: {
-      user: process.env.NEXT_SECRET_EMAIL_SERVER_USER,
-      pass: process.env.NEXT_SECRET_EMAIL_SERVER_PASSWORD,
+      user: process.env.EMAIL_SERVER_USER,
+      pass: process.env.EMAIL_SERVER_PASSWORD,
     },
   });
 
