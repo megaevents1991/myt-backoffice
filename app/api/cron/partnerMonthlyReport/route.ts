@@ -33,6 +33,15 @@ interface PartnerReportProps {
   supplier_number?: number | null
 }
 
+const transporter = nodemailer.createTransport({
+    host: "smtp.zeptomail.com",
+    port: 587,
+    auth: {
+      user: process.env.NEXT_SECRET_EMAIL_SERVER_USER,
+      pass: process.env.NEXT_SECRET_EMAIL_SERVER_PASSWORD,
+    },
+  });
+
 export async function GET(req: Request) {
   
   const url = new URL(req.url);
@@ -82,7 +91,7 @@ export async function GET(req: Request) {
         console.error(`Error fetching partner data for tracking code ${trackingCode}:`, partnerError);
         continue;
       }
-      else if (partnerData.email = 'support@mega-events.co.il') {
+      else if (partnerData.email === 'support@mega-events.co.il') {
         console.log(`skipping ${trackingCode}, as this is workaround for purchased user`);
         continue;
       }
@@ -511,15 +520,6 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
     supplier_number: partnerData.supplier_number,
   })
 
-  const transporter = nodemailer.createTransport({
-    host: "smtp.zeptomail.com",
-    port: 587,
-    auth: {
-      user: process.env.EMAIL_SERVER_USER,
-      pass: process.env.EMAIL_SERVER_PASSWORD,
-    },
-  });
-
   try {
     await transporter.verify();
     await transporter.sendMail({
@@ -535,10 +535,10 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
       subject: `Monthly Partner Report - ${month} ${year} - Supplier Number ${partnerData.supplier_number}`,
       html: emailHtmlToOrly,
     })
+    console.log(`Email sent to ${partnerData.partnerName} - ${month} ${year}`);
   }
   catch (error) {
     console.error("Error: ", error);
   }
-  console.log(`Email sent to ${partnerData.partnerName} - ${month} ${year}`);
   return true;
 }
