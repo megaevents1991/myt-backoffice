@@ -316,16 +316,17 @@ async function sendPost28DaysReportEmail(promoterData: PromoterData) {
   })
 
   const transporter = await nodemailer.createTransport({
-    service: "Zoho",
+    host: "smtp.zeptomail.com",
+    port: 587,
     auth: {
-      user: process.env.NEXT_SECRET_EMAIL_SERVER_USER,
-      pass: process.env.NEXT_SECRET_EMAIL_SERVER_PASSWORD,
+      user: process.env.EMAIL_SERVER_USER,
+      pass: process.env.EMAIL_SERVER_PASSWORD,
     },
   });
 
   try {
     await transporter.verify();
-    await transporter.sendMail({
+    await transporter.sendMail({ // @todo: complete this route and logic
       from: "gilad@mega-events.co.il",
       to: "alon@megatr.co.il",
       cc: "alon@mega-events.co.il",
