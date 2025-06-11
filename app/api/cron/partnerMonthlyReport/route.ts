@@ -244,6 +244,8 @@ const generateEmailHtml = ({
               <span>${totalTickets * commission}</span>
             </div>
           </div>
+
+          <p dir="rtl" class="rtl-text">המשווק ישלח חשבונית בימים הקרובים עבור הסכום האמור- מספרי הזמנות בגלבוע מופיעים כאן תחת Reservation Number</p>
           
           <h2>Detailed Reservation Report</h2>
           
@@ -530,7 +532,7 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
     });
     await transporter.sendMail({
       from: "gilad@mega-events.co.il",
-      to: "alon@megatr.co.il",
+      to: "alon@megatr.co.il, orlyacc@megatr.co.il",
       cc: "alon@mega-events.co.il",
       subject: `Monthly Partner Report - ${month} ${year} - Supplier Number ${partnerData.supplier_number}`,
       html: emailHtmlToOrly,
