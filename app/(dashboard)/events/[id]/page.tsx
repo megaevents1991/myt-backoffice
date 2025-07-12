@@ -683,7 +683,7 @@ export default function EventPage({
                   prev ? { ...prev, map_image_url: url } : prev
                 )
               }
-              bucketName="card-images"
+              bucketName="maps-images"
               folder="maps"
             />
           </CardContent>
@@ -799,6 +799,7 @@ export default function EventPage({
                               value
                             )
                           }
+                          mapImageUrl={event.map_image_url}
                         />
                       </div>
                     </div>
