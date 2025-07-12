@@ -15,6 +15,7 @@ import {
   X,
   Plane,
   Trophy,
+  MapPin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -39,6 +40,7 @@ const navItems: NavItem[] = [
   { name: "Sports Events", href: "/sports-events", icon: Trophy },
   { type: "divider" },
   { name: "Storage", href: "/storage", icon: Database },
+  { name: "Locations", href: "/locations", icon: MapPin },
 ];
 
 export function Sidebar() {

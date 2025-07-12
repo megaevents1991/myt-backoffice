@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -42,6 +43,7 @@ import {
   getSyncStatus,
   triggerSync,
 } from "@/lib/actions/sports-events-actions";
+import { findNearestLocation } from "@/lib/actions/location-actions";
 import {
   XS2Sport,
   XS2Tournament,
@@ -49,6 +51,7 @@ import {
   XS2Ticket,
   SyncStatusResponse,
 } from "@/types/sports-events.types";
+import { Event, EventTicket } from "@/types/app.types";
 import { formatTicketNetPrice } from "@/lib/utils";
 
 // Helper component for filter and sort controls
@@ -158,6 +161,7 @@ const PaginationControls = ({
 
 export function SportsEventsContent() {
   const { toast } = useToast();
+  const router = useRouter();
 
   // State management
   const [sports, setSports] = useState<XS2Sport[]>([]);
@@ -493,6 +497,150 @@ export function SportsEventsContent() {
     }
   };
 
+  const handleCreateEventFromList = async (event: XS2Event) => {
+    try {
+      // Get tickets for this specific event
+      const eventTickets = await getLiveTickets(event.event_id);
+
+      // Convert XS2Tickets to EventTickets (with actual prices in euros)
+      const mappedTickets: EventTicket[] = eventTickets.map((ticket) => ({
+        id: ticket.ticket_id,
+        category: ticket.category_name || ticket.ticket_title,
+        price: ticket.local_rates?.net_rate_eur
+          ? ticket.local_rates.net_rate_eur / 100
+          : 0, // Convert from cents to euros
+        description: ticket.description_supplier || ticket.ticket_title,
+        colorOnTheMap: "#3B82F6", // Default blue color
+      }));
+
+      // Try to find the nearest location
+      let locationData = {
+        latitude: Number(event.latitude) || 0,
+        longitude: Number(event.longitude) || 0,
+        name: event.venue_name || event.city || "Unknown Venue",
+        city_iata: "", // This would need to be mapped separately
+      };
+
+      try {
+        // Only search for nearest location if we have valid coordinates
+        if (event.latitude && event.longitude) {
+          const nearestLocation = await findNearestLocation(
+            Number(event.latitude),
+            Number(event.longitude)
+          );
+
+          if (nearestLocation) {
+            // Use the nearest location data instead
+            locationData = {
+              latitude: nearestLocation.latitude,
+              longitude: nearestLocation.longitude,
+              name: nearestLocation.name,
+              city_iata: nearestLocation.city_iata || "",
+            };
+
+            toast({
+              title: "Location Auto-filled",
+              description: `Found nearest location: ${
+                nearestLocation.name
+              } (${nearestLocation.distance?.toFixed(1)} km away)`,
+            });
+          }
+        }
+      } catch (locationError) {
+        console.error("Failed to find nearest location:", locationError);
+        // Continue with original location data if nearest location search fails
+      }
+
+      // Calculate average ticket price for usual_price
+      const ticketPrices = mappedTickets
+        .map((ticket) => ticket.price)
+        .filter((price) => price > 0);
+      const averageTicketPrice =
+        ticketPrices.length > 0
+          ? ticketPrices.reduce((sum, price) => sum + price, 0) /
+            ticketPrices.length
+          : 0;
+
+      // Create Event object from XS2Event data
+      const eventData: Omit<Event, "id"> = {
+        name: event.event_name,
+        name_english: event.event_name, // Fallback to same name if no translation
+        date: new Date(event.date_start).toISOString().split("T")[0], // Convert to YYYY-MM-DD format
+        location: locationData,
+        map_image_url: "", // Not available in XS2Event
+        description:
+          event.event_description ||
+          `${event.event_name} at ${event.venue_name}`,
+        card_image_url: "", // Not available in XS2Event
+        tickets_and_rates: mappedTickets,
+        def_date_depart: "", // Will be calculated by smart dates
+        def_date_return: "", // Will be calculated by smart dates
+        usual_price: Math.round(averageTicketPrice), // Average ticket price, rounded
+        base_flight_price: 0, // Would need to be set manually
+        base_hotel_price: 0, // Would need to be set manually
+        is_prioritized: event.is_popular || false,
+        is_deleted: "",
+        tags: [
+          selectedSport?.sport_id,
+          selectedTournament?.official_name,
+          event.city,
+          event.event_status,
+        ]
+          .filter(Boolean)
+          .join(", "),
+      };
+
+      // Apply smart date calculation
+      const smartDates = calculateSmartDates(eventData.date);
+      eventData.def_date_depart = smartDates.departure;
+      eventData.def_date_return = smartDates.return;
+
+      // Encode the event data and navigate to create event page
+      const encodedData = encodeURIComponent(JSON.stringify(eventData));
+      router.push(`/events/new?data=${encodedData}`);
+    } catch (error) {
+      console.error("Failed to create event from sports event:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to prepare event data. Please try again.",
+      });
+    }
+  };
+
+  // Helper function to calculate smart departure and return dates
+  const calculateSmartDates = (eventDate: string) => {
+    const event = new Date(eventDate);
+
+    // Calculate departure date (2 days before, but avoid Friday/Saturday)
+    const departure = new Date(event);
+    departure.setDate(event.getDate() - 2);
+
+    // If departure falls on Friday (5) or Saturday (6), move to Thursday
+    const departureDay = departure.getDay();
+    if (departureDay === 5) {
+      // Friday
+      departure.setDate(departure.getDate() - 1); // Move to Thursday
+    } else if (departureDay === 6) {
+      // Saturday
+      departure.setDate(departure.getDate() - 2); // Move to Thursday
+    }
+
+    // Calculate return date (1 day after, but if Saturday move to Sunday)
+    const returnDate = new Date(event);
+    returnDate.setDate(event.getDate() + 1);
+
+    // If return falls on Saturday (6), move to Sunday
+    if (returnDate.getDay() === 6) {
+      returnDate.setDate(returnDate.getDate() + 1); // Move to Sunday
+    }
+
+    return {
+      departure: departure.toISOString().split("T")[0],
+      return: returnDate.toISOString().split("T")[0],
+    };
+  };
+
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return "N/A";
     return new Date(dateString).toLocaleDateString();
@@ -786,7 +934,7 @@ export function SportsEventsContent() {
                             ? "default"
                             : "outline"
                         }
-                        className="w-full justify-start text-left h-auto p-3 pr-12"
+                        className="w-full justify-start text-left h-auto p-3 pr-20"
                         onClick={() => setSelectedEvent(event)}
                       >
                         <div>
@@ -808,18 +956,30 @@ export function SportsEventsContent() {
                           )}
                         </div>
                       </Button>
-                      <Link
-                        href={`/sports-events/${event.event_id}`}
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
+                      <div className="absolute right-2 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                        <Link href={`/sports-events/${event.event_id}`}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            title="View Details"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                        </Link>
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-8 w-8 p-0"
+                          title="Create Event"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCreateEventFromList(event);
+                          }}
                         >
-                          <ExternalLink className="h-4 w-4" />
+                          <Calendar className="h-4 w-4" />
                         </Button>
-                      </Link>
+                      </div>
                     </div>
                   ))}
                 </div>

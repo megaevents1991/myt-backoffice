@@ -104,3 +104,23 @@ CREATE TRIGGER update_xs2e_tournaments_updated_at BEFORE UPDATE ON xs2e_tourname
 
 CREATE TRIGGER update_xs2e_events_updated_at BEFORE UPDATE ON xs2e_events
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Locations table
+CREATE TABLE IF NOT EXISTS locations (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR NOT NULL,
+  latitude DECIMAL(10, 8) NOT NULL,
+  longitude DECIMAL(11, 8) NOT NULL,
+  city_iata VARCHAR(3),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes for locations
+CREATE INDEX IF NOT EXISTS idx_locations_latitude ON locations(latitude);
+CREATE INDEX IF NOT EXISTS idx_locations_longitude ON locations(longitude);
+CREATE INDEX IF NOT EXISTS idx_locations_city_iata ON locations(city_iata);
+
+-- Update trigger for locations
+CREATE TRIGGER update_locations_updated_at BEFORE UPDATE ON locations
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

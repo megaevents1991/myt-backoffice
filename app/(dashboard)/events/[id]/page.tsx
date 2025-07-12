@@ -2,7 +2,7 @@
 
 import type React from "react";
 import { useState, useEffect, use } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +32,7 @@ export default function EventPage({
   params: Promise<{ id: string }>;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const unwrappedParams = use(params);
   const [event, setEvent] = useState<Event | null>(null);
@@ -42,30 +43,88 @@ export default function EventPage({
   useEffect(() => {
     async function fetchEvent() {
       if (isNewEvent) {
-        setEvent({
-          id: 0,
-          name: "",
-          name_english: "",
-          date: new Date().toISOString().split("T")[0],
-          location: {
-            latitude: 0,
-            longitude: 0,
+        // Check if there's pre-populated data from sports events
+        const dataParam = searchParams.get("data");
+
+        if (dataParam) {
+          try {
+            const prePopulatedData = JSON.parse(
+              decodeURIComponent(dataParam)
+            ) as Omit<Event, "id">;
+
+            // Apply smart date calculation if we have an event date
+            let finalData = { ...prePopulatedData };
+            if (prePopulatedData.date) {
+              const smartDates = calculateSmartDates(prePopulatedData.date);
+              finalData.def_date_depart = smartDates.departure;
+              finalData.def_date_return = smartDates.return;
+            }
+
+            setEvent({
+              id: 0,
+              ...finalData,
+            });
+          } catch (error) {
+            console.error("Failed to parse pre-populated data:", error);
+            toast({
+              variant: "destructive",
+              title: "Error",
+              description:
+                "Failed to load pre-populated data. Using default values.",
+            });
+            // Fall back to default empty event
+            setEvent({
+              id: 0,
+              name: "",
+              name_english: "",
+              date: new Date().toISOString().split("T")[0],
+              location: {
+                latitude: 0,
+                longitude: 0,
+                name: "",
+                city_iata: "",
+              },
+              map_image_url: "",
+              description: "",
+              card_image_url: "",
+              tickets_and_rates: [],
+              def_date_depart: "",
+              def_date_return: "",
+              usual_price: 0,
+              base_flight_price: 0,
+              base_hotel_price: 0,
+              is_prioritized: false,
+              is_deleted: "",
+              tags: "",
+            });
+          }
+        } else {
+          // Default empty event
+          setEvent({
+            id: 0,
             name: "",
-            city_iata: "",
-          },
-          map_image_url: "",
-          description: "",
-          card_image_url: "",
-          tickets_and_rates: [],
-          def_date_depart: "",
-          def_date_return: "",
-          usual_price: 0,
-          base_flight_price: 0,
-          base_hotel_price: 0,
-          is_prioritized: false,
-          is_deleted: "",
-          tags: "",
-        });
+            name_english: "",
+            date: new Date().toISOString().split("T")[0],
+            location: {
+              latitude: 0,
+              longitude: 0,
+              name: "",
+              city_iata: "",
+            },
+            map_image_url: "",
+            description: "",
+            card_image_url: "",
+            tickets_and_rates: [],
+            def_date_depart: "",
+            def_date_return: "",
+            usual_price: 0,
+            base_flight_price: 0,
+            base_hotel_price: 0,
+            is_prioritized: false,
+            is_deleted: "",
+            tags: "",
+          });
+        }
         setLoading(false);
         return;
       }
@@ -86,7 +145,7 @@ export default function EventPage({
     }
 
     fetchEvent();
-  }, [unwrappedParams.id, toast, isNewEvent]);
+  }, [unwrappedParams.id, toast, isNewEvent, searchParams]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -114,10 +173,20 @@ export default function EventPage({
     } else {
       setEvent((prev) => {
         if (!prev) return prev;
-        return {
+
+        const updatedEvent = {
           ...prev,
           [name]: value,
         };
+
+        // If the date field is being changed, automatically calculate smart departure and return dates
+        if (name === "date" && value) {
+          const smartDates = calculateSmartDates(value);
+          updatedEvent.def_date_depart = smartDates.departure;
+          updatedEvent.def_date_return = smartDates.return;
+        }
+
+        return updatedEvent;
       });
     }
   };
@@ -281,6 +350,39 @@ export default function EventPage({
     }
   };
 
+  // Helper function to calculate smart departure and return dates
+  const calculateSmartDates = (eventDate: string) => {
+    const event = new Date(eventDate);
+
+    // Calculate departure date (2 days before, but avoid Friday/Saturday)
+    const departure = new Date(event);
+    departure.setDate(event.getDate() - 2);
+
+    // If departure falls on Friday (5) or Saturday (6), move to Thursday
+    const departureDay = departure.getDay();
+    if (departureDay === 5) {
+      // Friday
+      departure.setDate(departure.getDate() - 1); // Move to Thursday
+    } else if (departureDay === 6) {
+      // Saturday
+      departure.setDate(departure.getDate() - 2); // Move to Thursday
+    }
+
+    // Calculate return date (1 day after, but if Saturday move to Sunday)
+    const returnDate = new Date(event);
+    returnDate.setDate(event.getDate() + 1);
+
+    // If return falls on Saturday (6), move to Sunday
+    if (returnDate.getDay() === 6) {
+      returnDate.setDate(returnDate.getDate() + 1); // Move to Sunday
+    }
+
+    return {
+      departure: departure.toISOString().split("T")[0],
+      return: returnDate.toISOString().split("T")[0],
+    };
+  };
+
   if (loading) {
     return <div>Loading event details...</div>;
   }
@@ -296,9 +398,21 @@ export default function EventPage({
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight ml-4">
-          {isNewEvent ? "Create Event" : `Edit Event: ${event.name}`}
-        </h1>
+        <div className="ml-4">
+          <h1 className="text-3xl font-bold tracking-tight">
+            {isNewEvent
+              ? searchParams.get("data")
+                ? "Create Event from Sports Event"
+                : "Create Event"
+              : `Edit Event: ${event.name}`}
+          </h1>
+          {isNewEvent && searchParams.get("data") && (
+            <p className="text-sm text-muted-foreground mt-1">
+              Pre-populated with data from XS2Event. Review and adjust as
+              needed.
+            </p>
+          )}
+        </div>
       </div>
 
       {event.is_deleted && (
@@ -419,6 +533,10 @@ export default function EventPage({
                   }
                   onChange={handleChange}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Auto-calculated: 2 days before event (avoids Fri/Sat, uses Thu
+                  instead)
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="def_date_return">Default Return Date</Label>
@@ -433,6 +551,9 @@ export default function EventPage({
                   }
                   onChange={handleChange}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Auto-calculated: 1 day after event (if Sat, moves to Sun)
+                </p>
               </div>
             </div>
 

@@ -64,27 +64,6 @@ export interface XS2Event {
   updated_at?: string;
 }
 
-export interface XS2Venue {
-  id: string;
-  name: string;
-  address?: string;
-  city?: string;
-  country?: string;
-  latitude?: number;
-  longitude?: number;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface XS2Team {
-  id: string;
-  name: string;
-  short_name?: string;
-  country?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
 // API Response Types
 export interface SportsEventsApiResponse<T> {
   success: boolean;
