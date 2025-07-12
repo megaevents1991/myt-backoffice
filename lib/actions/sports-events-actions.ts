@@ -1,6 +1,5 @@
-// lib/actions/sports-events-actions.ts
 
-import { supabase } from '@/lib/supabase-server';
+import { supabase } from '@/lib/supabase-client';
 import { XS2Sport, XS2Tournament, XS2Event, XS2Ticket, SportsEventsApiResponse, LiveTicketsResponse } from '@/types/sports-events.types';
 
 /**

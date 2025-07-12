@@ -255,7 +255,7 @@ export default function EventDetailsPage() {
       name_english: event.event_name, // Fallback to same name if no translation
       date: new Date(event.date_start).toISOString().split("T")[0], // Convert to YYYY-MM-DD format
       location: locationData,
-      map_image_url: "", // Not available in XS2Event
+      map_image_url: `https://cdn.xs2event.com/venues/static/${event.venue_id}-legend.png`, // Auto-populated from venue_id
       description:
         event.event_description || `${event.event_name} at ${event.venue_name}`,
       card_image_url: "", // Not available in XS2Event

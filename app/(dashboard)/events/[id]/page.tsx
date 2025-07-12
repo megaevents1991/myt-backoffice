@@ -24,6 +24,7 @@ import {
   createEvent,
 } from "@/lib/actions/event-actions";
 import { ColorPicker } from "@/components/color-picker";
+import { ImageFilePicker } from "@/components/image-file-picker";
 import { v4 as uuidv4 } from "uuid";
 
 export default function EventPage({
@@ -658,29 +659,33 @@ export default function EventPage({
           <CardHeader>
             <CardTitle>Images</CardTitle>
             <CardDescription>
-              Enter the image URLs for this event.
+              Select image files from storage or enter URLs manually.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="card_image_url">Card Image URL</Label>
-              <Input
-                id="card_image_url"
-                name="card_image_url"
-                value={event.card_image_url}
-                onChange={handleChange}
-              />
-            </div>
+            <ImageFilePicker
+              label="Card Image"
+              value={event.card_image_url}
+              onChange={(url) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, card_image_url: url } : prev
+                )
+              }
+              bucketName="card-images"
+              folder=""
+            />
 
-            <div className="space-y-2">
-              <Label htmlFor="map_image_url">Map Image URL</Label>
-              <Input
-                id="map_image_url"
-                name="map_image_url"
-                value={event.map_image_url}
-                onChange={handleChange}
-              />
-            </div>
+            <ImageFilePicker
+              label="Map Image"
+              value={event.map_image_url}
+              onChange={(url) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, map_image_url: url } : prev
+                )
+              }
+              bucketName="card-images"
+              folder="maps"
+            />
           </CardContent>
         </Card>
 

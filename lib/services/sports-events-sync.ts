@@ -1,4 +1,4 @@
-// lib/services/sports-events-sync.ts
+"use server"
 
 import { supabase } from '@/lib/supabase-server';
 import { cleanupPastEvents } from '@/lib/actions/sports-events-actions';
