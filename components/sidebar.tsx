@@ -14,17 +14,30 @@ import {
   Menu,
   X,
   Plane,
+  Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 
-const navItems = [
+type NavItem =
+  | {
+      name: string;
+      href: string;
+      icon: React.ComponentType<{ className?: string }>;
+    }
+  | { type: "divider" };
+
+const navItems: NavItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: Home },
+  { type: "divider" },
   { name: "Events", href: "/events", icon: CalendarDays },
-  { name: "Offline Flights", href: "/offline-flights", icon: Plane },
   { name: "Partners", href: "/partners", icon: Users },
   { name: "Reservations", href: "/reservations", icon: ClipboardList },
+  { type: "divider" },
+  { name: "Offline Flights", href: "/offline-flights", icon: Plane },
+  { name: "Sports Events", href: "/sports-events", icon: Trophy },
+  { type: "divider" },
   { name: "Storage", href: "/storage", icon: Database },
 ];
 
@@ -58,15 +71,29 @@ export function Sidebar() {
             <h2 className="text-xl font-bold">Backoffice</h2>
           </div>
           <nav className="flex-1 space-y-1 p-4">
-            {navItems.map((item) => {
+            {navItems.map((item, index) => {
+              // Handle dividers
+              if ("type" in item && item.type === "divider") {
+                return (
+                  <div key={`divider-${index}`} className="border-b my-3" />
+                );
+              }
+
+              // TypeScript now knows this is a link item
+              const linkItem = item as {
+                name: string;
+                href: string;
+                icon: React.ComponentType<{ className?: string }>;
+              };
               const isActive =
-                pathname === item.href || pathname.startsWith(`${item.href}/`);
-              const Icon = item.icon;
+                pathname === linkItem.href ||
+                pathname.startsWith(`${linkItem.href}/`);
+              const Icon = linkItem.icon;
 
               return (
                 <Link
-                  key={item.href}
-                  href={item.href}
+                  key={linkItem.href}
+                  href={linkItem.href}
                   onClick={() => setIsOpen(false)} // Close sidebar when clicking a link on mobile
                   className={cn(
                     "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium",
@@ -76,7 +103,7 @@ export function Sidebar() {
                   )}
                 >
                   <Icon className="h-5 w-5" />
-                  {item.name}
+                  {linkItem.name}
                 </Link>
               );
             })}

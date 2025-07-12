@@ -3,12 +3,28 @@
     {
       "path": "/api/cron/partnerMonthlyReport?key=monthlyAlonSecret",
       "schedule": "0 0 1 * *"
+    },
+    {
+      "path": "/api/cron/monthlyTournamentsSync?key=monthlyAlonSecret",
+      "schedule": "0 0 1 * *"
+    },
+    {
+      "path": "/api/cron/dailyEventsSync?key=monthlyAlonSecret",
+      "schedule": "1 0 * * *"
     }
   ],
   "functions": {
     "app/api/validate-airline/route.ts": {
       "memory": 1024,
       "maxDuration": 30
+    },
+    "app/api/sports-events/sync/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "app/api/cron/*/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
     }
   },
   "routes": [

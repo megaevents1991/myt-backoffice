@@ -1,0 +1,55 @@
+// app/(dashboard)/sports-events/page.tsx
+
+import { Suspense } from "react";
+import { SportsEventsContent } from "./sports-events-content";
+import { Skeleton } from "@/components/ui/skeleton";
+
+export default function SportsEventsPage() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Sports Events</h1>
+          <p className="text-muted-foreground">
+            Browse sports events, tournaments, and live ticket availability.
+          </p>
+        </div>
+      </div>
+
+      <Suspense fallback={<SportsEventsPageSkeleton />}>
+        <SportsEventsContent />
+      </Suspense>
+    </div>
+  );
+}
+
+function SportsEventsPageSkeleton() {
+  return (
+    <div className="space-y-6">
+      {/* Sync Status Card Skeleton */}
+      <div className="p-6 bg-white rounded-lg border">
+        <Skeleton className="h-5 w-32 mb-2" />
+        <Skeleton className="h-4 w-64 mb-4" />
+        <div className="flex gap-2">
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-8 w-24" />
+        </div>
+      </div>
+
+      {/* Main Content Grid Skeleton */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="p-6 bg-white rounded-lg border">
+            <Skeleton className="h-6 w-24 mb-4" />
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, j) => (
+                <Skeleton key={j} className="h-8 w-full" />
+              ))}
+            </div>
+            <Skeleton className="h-4 w-32 mt-4" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
