@@ -21,13 +21,13 @@ export interface SyncResults {
 async function fetchXS2<T = unknown>(path: string, options: { cache?: RequestCache; revalidate?: number } = {}): Promise<T> {
   const { cache = 'no-store', revalidate } = options;
   
-  if (!process.env.XS2EVENT_API_KEY) {
+  if (!process.env.NEXT_SECRET_XS2EVENT_API_KEY) {
     throw new Error('XS2EVENT_API_KEY environment variable is not set');
   }
   
   const fetchOptions: RequestInit = {
     headers: { 
-      'X-Api-Key': process.env.XS2EVENT_API_KEY!,
+      'X-Api-Key': process.env.NEXT_SECRET_XS2EVENT_API_KEY!,
       'Content-Type': 'application/json'
     },
     cache,
@@ -35,7 +35,7 @@ async function fetchXS2<T = unknown>(path: string, options: { cache?: RequestCac
   };
 
   try {
-    const url = `${process.env.XS2EVENT_API_URL}/${path}`;
+    const url = `${process.env.NEXT_SECRET_XS2EVENT_API_URL}/${path}`;
     console.log(`🔗 Fetching from: ${url}`);
     
     const res = await fetch(url, fetchOptions);

@@ -353,12 +353,19 @@ export default function ReservationPage({
                     </p>
                     <p className="text-sm">
                       Carry-On:{" "}
-                      {reservation.flight_order_info.offer.travelerPricings[0].fareDetailsBySegment.some(
-                        (segment: {
-                          segmentId: any;
-                          includedCabinBags: { quantity: number };
-                        }) => segment.includedCabinBags.quantity > 0
-                      )
+                      {reservation.flight_order_info.offer &&
+                      reservation.flight_order_info.offer.travelerPricings
+                        ?.length > 0
+                        ? reservation.flight_order_info.offer.travelerPricings[0].fareDetailsBySegment.some(
+                            (segment: {
+                              segmentId: any;
+                              includedCabinBags: { quantity: number };
+                            }) => segment.includedCabinBags.quantity > 0
+                          )
+                          ? "Yes"
+                          : "No"
+                        : reservation.flight_order_info.outbound
+                            .cabinBagsIncluded
                         ? "Yes"
                         : "No"}
                     </p>
@@ -401,12 +408,19 @@ export default function ReservationPage({
                     </p>
                     <p className="text-sm">
                       Carry-On:{" "}
-                      {reservation.flight_order_info.offer.travelerPricings[0].fareDetailsBySegment.some(
-                        (segment: {
-                          segmentId: any;
-                          includedCabinBags: { quantity: number };
-                        }) => segment.includedCabinBags.quantity > 0
-                      )
+                      {reservation.flight_order_info.offer &&
+                      reservation.flight_order_info.offer.travelerPricings
+                        ?.length > 0
+                        ? reservation.flight_order_info.offer.travelerPricings[0].fareDetailsBySegment.some(
+                            (segment: {
+                              segmentId: any;
+                              includedCabinBags: { quantity: number };
+                            }) => segment.includedCabinBags.quantity > 0
+                          )
+                          ? "Yes"
+                          : "No"
+                        : reservation.flight_order_info.inbound
+                            .cabinBagsIncluded
                         ? "Yes"
                         : "No"}
                     </p>
@@ -508,3 +522,11 @@ export default function ReservationPage({
     </div>
   );
 }
+
+/*
+Standard JSON data for flight offer
+{"offer":{"type":"flight-offer","id":"113","source":"GDS","instantTicketingRequired":false,"nonHomogeneous":false,"oneWay":false,"isUpsellOffer":false,"lastTicketingDate":"2025-07-07","lastTicketingDateTime":"2025-07-07","numberOfBookableSeats":2,"itineraries":[{"duration":"PT5H15M","segments":[{"departure":{"iataCode":"TLV","terminal":"3","at":"2025-11-06T16:00:00"},"arrival":{"iataCode":"AMS","at":"2025-11-06T20:15:00"},"carrierCode":"LY","number":"339","aircraft":{"code":"738"},"operating":{"carrierCode":"LY"},"duration":"PT5H15M","id":"16","numberOfStops":0,"blacklistedInEU":false}]},{"duration":"PT4H25M","segments":[{"departure":{"iataCode":"AMS","at":"2025-11-11T11:30:00"},"arrival":{"iataCode":"TLV","terminal":"3","at":"2025-11-11T16:55:00"},"carrierCode":"LY","number":"338","aircraft":{"code":"738"},"operating":{"carrierCode":"LY"},"duration":"PT4H25M","id":"86","numberOfStops":0,"blacklistedInEU":false}]}],"price":{"currency":"USD","total":"1643.56","base":"1372.00","fees":[{"amount":"0.00","type":"SUPPLIER"},{"amount":"0.00","type":"TICKETING"}],"grandTotal":"1643.56"},"pricingOptions":{"fareType":["PUBLISHED"],"includedCheckedBagsOnly":false},"validatingAirlineCodes":["LY"],"travelerPricings":[{"travelerId":"1","fareOption":"STANDARD","travelerType":"ADULT","price":{"currency":"USD","total":"821.78","base":"686.00"},"fareDetailsBySegment":[{"segmentId":"16","cabin":"ECONOMY","fareBasis":"VLL1PR","brandedFare":"LITE","brandedFareLabel":"LITE","class":"V","includedCheckedBags":{"quantity":0},"includedCabinBags":{"quantity":1},"amenities":[{"description":"UPTO50LB 23KG AND62LI 158LCM","isChargeable":true,"amenityType":"BAGGAGE","amenityProvider":{"name":"BrandedFare"}},{"description":"CARRY8KG 18LB UPTO 45LI 115LCM","isChargeable":false,"amenityType":"BAGGAGE","amenityProvider":{"name":"BrandedFare"}},{"description":"MEAL","isChargeable":false,"amenityType":"MEAL","amenityProvider":{"name":"BrandedFare"}},{"description":"BASIC SEAT","isChargeable":true,"amenityType":"BRANDED_FARES","amenityProvider":{"name":"BrandedFare"}},{"description":"CHANGEABLE TICKET","isChargeable":true,"amenityType":"BRANDED_FARES","amenityProvider":{"name":"BrandedFare"}}]},{"segmentId":"86","cabin":"ECONOMY","fareBasis":"VLL1PR","brandedFare":"LITE","brandedFareLabel":"LITE","class":"V","includedCheckedBags":{"quantity":0},"includedCabinBags":{"quantity":1},"amenities":[{"description":"UPTO50LB 23KG AND62LI 158LCM","isChargeable":true,"amenityType":"BAGGAGE","amenityProvider":{"name":"BrandedFare"}},{"description":"CARRY8KG 18LB UPTO 45LI 115LCM","isChargeable":false,"amenityType":"BAGGAGE","amenityProvider":{"name":"BrandedFare"}},{"description":"MEAL","isChargeable":false,"amenityType":"MEAL","amenityProvider":{"name":"BrandedFare"}},{"description":"BASIC SEAT","isChargeable":true,"amenityType":"BRANDED_FARES","amenityProvider":{"name":"BrandedFare"}},{"description":"CHANGEABLE TICKET","isChargeable":true,"amenityType":"BRANDED_FARES","amenityProvider":{"name":"BrandedFare"}}]}]},{"travelerId":"2","fareOption":"STANDARD","travelerType":"ADULT","price":{"currency":"USD","total":"821.78","base":"686.00"},"fareDetailsBySegment":[{"segmentId":"16","cabin":"ECONOMY","fareBasis":"VLL1PR","brandedFare":"LITE","brandedFareLabel":"LITE","class":"V","includedCheckedBags":{"quantity":0},"includedCabinBags":{"quantity":1},"amenities":[{"description":"UPTO50LB 23KG AND62LI 158LCM","isChargeable":true,"amenityType":"BAGGAGE","amenityProvider":{"name":"BrandedFare"}},{"description":"CARRY8KG 18LB UPTO 45LI 115LCM","isChargeable":false,"amenityType":"BAGGAGE","amenityProvider":{"name":"BrandedFare"}},{"description":"MEAL","isChargeable":false,"amenityType":"MEAL","amenityProvider":{"name":"BrandedFare"}},{"description":"BASIC SEAT","isChargeable":true,"amenityType":"BRANDED_FARES","amenityProvider":{"name":"BrandedFare"}},{"description":"CHANGEABLE TICKET","isChargeable":true,"amenityType":"BRANDED_FARES","amenityProvider":{"name":"BrandedFare"}}]},{"segmentId":"86","cabin":"ECONOMY","fareBasis":"VLL1PR","brandedFare":"LITE","brandedFareLabel":"LITE","class":"V","includedCheckedBags":{"quantity":0},"includedCabinBags":{"quantity":1},"amenities":[{"description":"UPTO50LB 23KG AND62LI 158LCM","isChargeable":true,"amenityType":"BAGGAGE","amenityProvider":{"name":"BrandedFare"}},{"description":"CARRY8KG 18LB UPTO 45LI 115LCM","isChargeable":false,"amenityType":"BAGGAGE","amenityProvider":{"name":"BrandedFare"}},{"description":"MEAL","isChargeable":false,"amenityType":"MEAL","amenityProvider":{"name":"BrandedFare"}},{"description":"BASIC SEAT","isChargeable":true,"amenityType":"BRANDED_FARES","amenityProvider":{"name":"BrandedFare"}},{"description":"CHANGEABLE TICKET","isChargeable":true,"amenityType":"BRANDED_FARES","amenityProvider":{"name":"BrandedFare"}}]}]}]},"id":"112","numOfTravelers":2,"price":1643.56,"duration":"PT5H15M","stops":0,"airline":"LY","outbound":{"stops":[{"iataCode":"AMS","duration":null}],"departureTime":"2025-11-06T16:00:00","departureAirport":"TLV","arrivalAirport":"AMS","arrivalTime":"2025-11-06T20:15:00","duration":"PT5H15M","checkBagsIncluded":false,"cabinBagsIncluded":true,"flightNumber":"LY339"},"inbound":{"departureTime":"2025-11-11T11:30:00","departureAirport":"AMS","arrivalAirport":"TLV","arrivalTime":"2025-11-11T16:55:00","stops":[{"iataCode":"TLV","duration":null}],"duration":"PT4H25M","checkBagsIncluded":false,"cabinBagsIncluded":true,"flightNumber":"LY338"},"metadata":{"iata":"LY","icao":"ELY","name":"EL AL","logo":"https://www.avcodes.co.uk/images/logos/ELY.png"},"penalties":"PE.PENALTIES \nCANCELLATIONS\nACCORDING TO ISRAELI CONSUMER PROTECTION LAW.\nFOR MORE INFORMATION PLEASE VISIT WWW.ELAL.COM/HEB/LEGAL/TICKET-CANCELLATION.","bags":65}
+
+Charter JSON data for flight offer
+{"offer":{},"id":"1","numOfTravelers":2,"price":700,"duration":"PT8H55M","stops":0,"airline":"LY","outbound":{"stops":[{"iataCode":"BCN","duration":null}],"departureTime":"2025-10-28T06:30:00","departureAirport":"TLV","arrivalAirport":"BCN","arrivalTime":"2025-10-28T10:15:00","duration":"PT4H45M","checkBagsIncluded":true,"cabinBagsIncluded":true,"flightNumber":"LY393"},"inbound":{"stops":[{"iataCode":"TLV","duration":null}],"departureTime":"2025-11-01T22:50:00","departureAirport":"BCN","arrivalAirport":"TLV","arrivalTime":"2025-11-02T04:00:00","duration":"PT4H10M","checkBagsIncluded":true,"cabinBagsIncluded":true,"flightNumber":"LY392"},"metadata":{"iata":"LY","name":"EL AL","logo":"https://www.avcodes.co.uk/images/logos/ELY.png"},"penalties":"PE.PENALTIES \nCANCELLATIONS \n45 DAYS OR MORE BEFORE DEPARTURE CHARGE USD 100.00 FOR CANCELLATIONS PER TICKET.\n44-30 DAYS BEFORE DEPARTURE CHARGE USD 250.00 FOR CANCELLATIONS PER TICKET.\nLESS THAN 30 DAYS BEFORE DEPARTURE NON-REFUNDABLE. \nCHANGES \nBEFORE DEPARTURE CHARGE USD 120.00 FOR REISSUE/REVALIDATION. NOTE - WHEN THE FIRST FLIGHT COUPON IS BEING CHANGED NEW FARE WILL BE RECALCULATED USING FARES AND IATA RATE OF EXCHANGE IN EFFECT ON THE DATE OF REISSUE. \nAFTER DEPARTURE CHARGE USD 120.00 FOR REISSUE/REVALIDATION. CHARGE USD 200.00 FOR NO-SHOW. NOTE - BEFORE EXPIRY OF FLIGHT COUPON. UPGRADE TO ANY HIGHER FARE PERMITTED IN WHICH CASE CHANGE OF RESERVATION FEE OF USD 120.00 WILL ALSO APPLY. ------------------------------------------------ THE AP THE SECURITY AND INSURANCE SURCHARGE WHICH IS COLLECTED IN THE TFC AREA OF THE TICKET IS NOT REFUNDABLE. UNLESS THE TICKETS FARE IS FULLY REFUNDABLE ","bags":65}
+*/

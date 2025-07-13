@@ -671,7 +671,11 @@ export default function EventPage({
                   prev ? { ...prev, card_image_url: url } : prev
                 )
               }
-              bucketName="card-images"
+              bucketName={
+                process.env.NODE_ENV === "development"
+                  ? "card-images"
+                  : "card_images"
+              }
               folder=""
             />
 
@@ -683,7 +687,11 @@ export default function EventPage({
                   prev ? { ...prev, map_image_url: url } : prev
                 )
               }
-              bucketName="maps-images"
+              bucketName={
+                process.env.NODE_ENV === "development"
+                  ? "map-images"
+                  : "map_images"
+              }
               folder="maps"
             />
           </CardContent>

@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const key = searchParams.get('key');
 
     // Security check - prevent unauthorized access
-    if (!key || key !== process.env.CRON_SECRET_KEY) {
+    if (!key || key !== process.env.NEXT_SECRET_CRON_SECRET_KEY) {
       console.error('❌ Unauthorized cron job access attempt');
       return NextResponse.json(
         { error: 'Unauthorized' },

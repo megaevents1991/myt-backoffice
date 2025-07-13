@@ -12,14 +12,14 @@ import { NextRequest, NextResponse } from 'next/server';
 async function fetchXS2<T = unknown>(path: string): Promise<T> {
   const fetchOptions: RequestInit = {
     headers: { 
-      'X-Api-Key': process.env.XS2EVENT_API_KEY!,
+      'X-Api-Key': process.env.NEXT_SECRET_XS2EVENT_API_KEY!,
       'Content-Type': 'application/json'
     },
     cache: 'no-store'
   };
 
   try {
-    const res = await fetch(`${process.env.XS2EVENT_API_URL}/${path}`, fetchOptions);
+    const res = await fetch(`${process.env.NEXT_SECRET_XS2EVENT_API_URL}/${path}`, fetchOptions);
     
     if (!res.ok) {
       throw new Error(`XS2Event API error: ${res.status} ${res.statusText}`);
