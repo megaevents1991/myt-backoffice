@@ -3,11 +3,12 @@ import { supabase } from "@/lib/supabase-server";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const bucket = params.path[0];
-    const filePath = params.path.slice(1).join('/');
+    const { path } = await params;
+    const bucket = path[0];
+    const filePath = path.slice(1).join('/');
     
     if (!bucket || !filePath) {
       return NextResponse.json(

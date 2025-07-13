@@ -1,7 +1,7 @@
 "use server"
 
 import { supabase } from '@/lib/supabase-server';
-import { cleanupPastEvents } from '@/lib/actions/sports-events-actions';
+//import { cleanupPastEvents } from '@/lib/actions/sports-events-actions';
 
 // Types for sync results
 export interface SyncResult {

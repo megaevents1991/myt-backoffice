@@ -16,7 +16,7 @@ export async function getSports(): Promise<XS2Sport[]> {
     throw new Error(`Failed to fetch sports: ${error.message}`);
   }
 
-  return data || [];
+  return (data as XS2Sport[]) || [];
 }
 
 /**
@@ -53,7 +53,7 @@ export async function getTournaments(sportId: string): Promise<XS2Tournament[]> 
     throw new Error(`Failed to fetch tournaments: ${error.message}`);
   }
 
-  return data || [];
+  return (data as XS2Tournament[]) || [];
 }
 
 /**
@@ -106,7 +106,7 @@ export async function getEvents(tournamentId: string): Promise<XS2Event[]> {
     throw new Error(`Failed to fetch events: ${error.message}`);
   }
 
-  return data || [];
+  return (data as XS2Event[]) || [];
 }
 
 /**
@@ -142,7 +142,7 @@ export async function getAllTournaments(): Promise<XS2Tournament[]> {
     throw new Error(`Failed to fetch tournaments: ${error.message}`);
   }
 
-  return data || [];
+  return (data as XS2Tournament[]) || [];
 }
 
 /**
@@ -199,7 +199,7 @@ export async function getEventById(eventId: string): Promise<XS2Event | null> {
     throw new Error(`Failed to fetch event: ${error.message}`);
   }
 
-  return data;
+  return data as XS2Event;
 }
 
 /**

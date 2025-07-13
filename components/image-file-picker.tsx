@@ -193,8 +193,8 @@ export function ImageFilePicker({
               </TabsList>
 
               <TabsContent value="select" className="flex-1 overflow-hidden">
-                <div className="flex flex-col h-full">
-                  <div className="flex justify-between items-center mb-4">
+                <div className="flex flex-col h-full min-h-0">
+                  <div className="flex justify-between items-center mb-4 flex-shrink-0">
                     <p className="text-sm text-muted-foreground">
                       {files.length} image file(s) found in {bucketName}/
                       {folder || "root"}
@@ -214,76 +214,82 @@ export function ImageFilePicker({
                     </Button>
                   </div>
 
-                  <ScrollArea className="flex-1 h-96">
-                    {isLoading ? (
-                      <div className="flex items-center justify-center h-32">
-                        <RefreshCw className="h-6 w-6 animate-spin" />
-                      </div>
-                    ) : files.length > 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-1">
-                        {files.map((file) => (
-                          <Card
-                            key={file.id}
-                            className={`cursor-pointer transition-all hover:shadow-md ${
-                              selectedFile.includes(file.name)
-                                ? "ring-2 ring-primary"
-                                : ""
-                            }`}
-                            onClick={() => handleFileSelect(file.name)}
-                          >
-                            <CardHeader className="pb-2">
-                              <CardTitle className="text-sm truncate">
-                                {file.name}
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent className="pt-0">
-                              <div className="aspect-video bg-muted rounded-md mb-2 flex items-center justify-center overflow-hidden">
-                                <img
-                                  src={`/api/storage/file/${bucketName}/${
-                                    folder ? `${folder}/` : ""
-                                  }${file.name}`}
-                                  alt={file.name}
-                                  className="max-w-full max-h-full object-cover"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = "none";
-                                    e.currentTarget.nextElementSibling?.setAttribute(
-                                      "style",
-                                      "display: flex"
-                                    );
-                                  }}
-                                />
-                                <div className="hidden items-center justify-center h-full">
-                                  <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                  <ScrollArea
+                    className="flex-1 min-h-0 overflow-auto"
+                    style={{ maxHeight: "400px" }}
+                  >
+                    <div className="pr-4">
+                      {isLoading ? (
+                        <div className="flex items-center justify-center h-32">
+                          <RefreshCw className="h-6 w-6 animate-spin" />
+                        </div>
+                      ) : files.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {files.map((file) => (
+                            <Card
+                              key={file.id}
+                              className={`cursor-pointer transition-all hover:shadow-md ${
+                                selectedFile.includes(file.name)
+                                  ? "ring-2 ring-primary"
+                                  : ""
+                              }`}
+                              onClick={() => handleFileSelect(file.name)}
+                            >
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-sm truncate">
+                                  {file.name}
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent className="pt-0">
+                                <div className="aspect-video bg-muted rounded-md mb-2 flex items-center justify-center overflow-hidden">
+                                  <img
+                                    src={`/api/storage/file/${bucketName}/${
+                                      folder ? `${folder}/` : ""
+                                    }${file.name}`}
+                                    alt={file.name}
+                                    className="max-w-full max-h-full object-cover"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = "none";
+                                      e.currentTarget.nextElementSibling?.setAttribute(
+                                        "style",
+                                        "display: flex"
+                                      );
+                                    }}
+                                  />
+                                  <div className="hidden items-center justify-center h-full">
+                                    <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="space-y-1 text-xs text-muted-foreground">
-                                <div>
-                                  Size:{" "}
-                                  {formatFileSize(file.metadata?.size || 0)}
+                                <div className="space-y-1 text-xs text-muted-foreground">
+                                  <div>
+                                    Size:{" "}
+                                    {formatFileSize(file.metadata?.size || 0)}
+                                  </div>
+                                  <div>
+                                    Modified:{" "}
+                                    {formatDate(file.updated_at || "")}
+                                  </div>
                                 </div>
-                                <div>
-                                  Modified: {formatDate(file.updated_at || "")}
-                                </div>
-                              </div>
-                              {selectedFile.includes(file.name) && (
-                                <div className="flex items-center gap-1 text-primary text-xs mt-2">
-                                  <Check className="h-3 w-3" />
-                                  Selected
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
-                        <ImageIcon className="h-12 w-12 mb-2" />
-                        <p>No image files found</p>
-                        <p className="text-xs">
-                          Upload some images to get started
-                        </p>
-                      </div>
-                    )}
+                                {selectedFile.includes(file.name) && (
+                                  <div className="flex items-center gap-1 text-primary text-xs mt-2">
+                                    <Check className="h-3 w-3" />
+                                    Selected
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
+                          ))}{" "}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
+                          <ImageIcon className="h-12 w-12 mb-2" />
+                          <p>No image files found</p>
+                          <p className="text-xs">
+                            Upload some images to get started
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </ScrollArea>
                 </div>
               </TabsContent>

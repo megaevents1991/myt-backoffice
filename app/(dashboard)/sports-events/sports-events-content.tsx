@@ -563,7 +563,7 @@ export function SportsEventsContent() {
 
       // Create Event object from XS2Event data
       const eventData: Omit<Event, "id"> = {
-        name: event.event_name,
+        name: "", // TBD translate to hebrew first
         name_english: event.event_name, // Fallback to same name if no translation
         date: new Date(event.date_start).toISOString().split("T")[0], // Convert to YYYY-MM-DD format
         location: locationData,
@@ -578,16 +578,9 @@ export function SportsEventsContent() {
         usual_price: Math.round(averageTicketPrice), // Average ticket price, rounded
         base_flight_price: 0, // Would need to be set manually
         base_hotel_price: 0, // Would need to be set manually
-        is_prioritized: event.is_popular || false,
+        is_prioritized: false,
         is_deleted: "",
-        tags: [
-          selectedSport?.sport_id,
-          selectedTournament?.official_name,
-          event.city,
-          event.event_status,
-        ]
-          .filter(Boolean)
-          .join(", "),
+        tags: "",
       };
 
       // Apply smart date calculation
