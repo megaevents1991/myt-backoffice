@@ -161,11 +161,13 @@ export default function EventPage({
         const parentValue = prev[parent as keyof Event];
         // Ensure we're only spreading object types
         if (parentValue && typeof parentValue === "object") {
+          // Convert city_iata to uppercase
+          const finalValue = child === "city_iata" ? value.toUpperCase() : value;
           return {
             ...prev,
             [parent]: {
               ...parentValue,
-              [child]: value,
+              [child]: finalValue,
             },
           };
         }
