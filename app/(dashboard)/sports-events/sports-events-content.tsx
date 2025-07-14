@@ -51,7 +51,7 @@ import {
   XS2Ticket,
   SyncStatusResponse,
 } from "@/types/sports-events.types";
-import { Event, EventTicket } from "@/types/app.types";
+import { Event, EventTicket, EventType } from "@/types/app.types";
 import { formatTicketNetPrice } from "@/lib/utils";
 
 // Helper component for filter and sort controls
@@ -565,6 +565,7 @@ export function SportsEventsContent() {
       const eventData: Omit<Event, "id"> = {
         name: "", // TBD translate to hebrew first
         name_english: event.event_name, // Fallback to same name if no translation
+        type: "sports_event_dynamic", // Set type for events created from sports events
         date: new Date(event.date_start).toISOString().split("T")[0], // Convert to YYYY-MM-DD format
         location: locationData,
         map_image_url: `https://cdn.xs2event.com/venues/static/${event.venue_id}-legend.png`, // Auto-populated from venue_id

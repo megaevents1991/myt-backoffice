@@ -101,6 +101,27 @@ export default function ViewEventPage({
             </div>
 
             <div>
+              <p className="text-sm font-medium">Event Type</p>
+              <div className="flex items-center mt-1">
+                <Badge
+                  variant={
+                    event.type === "music_event"
+                      ? "default"
+                      : event.type === "sports_event"
+                      ? "secondary"
+                      : "outline"
+                  }
+                >
+                  {event.type === "music_event"
+                    ? "Music Event"
+                    : event.type === "sports_event"
+                    ? "Sports Event"
+                    : "Sports Event (Dynamic)"}
+                </Badge>
+              </div>
+            </div>
+
+            <div>
               <p className="text-sm font-medium">Date</p>
               <p className="text-lg">
                 {new Date(event.date).toLocaleDateString()}

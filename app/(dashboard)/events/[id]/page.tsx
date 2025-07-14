@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import type { Event, EventTicket } from "@/types/app.types";
+import type { Event, EventTicket, EventType } from "@/types/app.types";
 import {
   getEvent,
   updateEvent,
@@ -78,6 +78,7 @@ export default function EventPage({
               id: 0,
               name: "",
               name_english: "",
+              type: "music_event", // Default type for manually created events
               date: new Date().toISOString().split("T")[0],
               location: {
                 latitude: 0,
@@ -105,6 +106,7 @@ export default function EventPage({
             id: 0,
             name: "",
             name_english: "",
+            type: "music_event", // Default type for manually created events
             date: new Date().toISOString().split("T")[0],
             location: {
               latitude: 0,
@@ -162,7 +164,8 @@ export default function EventPage({
         // Ensure we're only spreading object types
         if (parentValue && typeof parentValue === "object") {
           // Convert city_iata to uppercase
-          const finalValue = child === "city_iata" ? value.toUpperCase() : value;
+          const finalValue =
+            child === "city_iata" ? value.toUpperCase() : value;
           return {
             ...prev,
             [parent]: {
@@ -461,6 +464,31 @@ export default function EventPage({
                   required
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="type">Event Type</Label>
+              <select
+                id="type"
+                name="type"
+                value={event.type}
+                onChange={(e) => {
+                  setEvent((prev) => {
+                    if (!prev) return prev;
+                    return {
+                      ...prev,
+                      type: e.target.value as EventType,
+                    };
+                  });
+                }}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <option value="music_event">Music Event</option>
+                <option value="sports_event">Sports Event</option>
+                <option value="sports_event_dynamic">
+                  Sports Event (Dynamic)
+                </option>
+              </select>
             </div>
 
             <div className="space-y-2">

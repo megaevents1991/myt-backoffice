@@ -166,6 +166,52 @@ export function EventsTable() {
       header: "English Name",
     },
     {
+      accessorKey: "type",
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Type
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+          </Button>
+        );
+      },
+      cell: ({ row }) => {
+        const type = row.getValue("type") as string;
+        const getTypeLabel = (type: string) => {
+          switch (type) {
+            case "music_event":
+              return "Music Event";
+            case "sports_event":
+              return "Sports Event";
+            case "sports_event_dynamic":
+              return "Sports Event (Dynamic)";
+            default:
+              return type;
+          }
+        };
+        const getTypeVariant = (type: string) => {
+          switch (type) {
+            case "music_event":
+              return "default";
+            case "sports_event":
+              return "secondary";
+            case "sports_event_dynamic":
+              return "outline";
+            default:
+              return "default";
+          }
+        };
+        return (
+          <Badge variant={getTypeVariant(type) as any}>
+            {getTypeLabel(type)}
+          </Badge>
+        );
+      },
+    },
+    {
       accessorKey: "date",
       header: ({ column }) => {
         return (

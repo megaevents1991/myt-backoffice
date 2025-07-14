@@ -1,9 +1,15 @@
 import type { EntryFieldTypes } from "contentful"
 
+export type EventType =
+  | "sports_event"
+  | "music_event"
+  | "sports_event_dynamic";
+
 export type Event = {
   id: number
   name: string
   name_english: string
+  type: EventType;
   date: string
   location: {
     latitude: number
