@@ -1,6 +1,4 @@
 {
-  "buildCommand": "npm run build",
-  "installCommand": "npm install",
   "crons": [
     {
       "path": "/api/cron/partnerMonthlyReport?key=monthlyAlonSecret",
@@ -34,5 +32,10 @@
       "src": "/api/validate-airline",
       "dest": "api/validate-airline.js"
     }
-  ]
+  ],
+  "build": {
+    "env": {
+      "NPM_CONFIG_USER_AGENT": "npm"
+    }
+  }
 }
