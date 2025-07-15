@@ -3,7 +3,7 @@
 import type React from "react";
 import { useState, useEffect, use } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -26,6 +26,10 @@ import {
 import { ColorPicker } from "@/components/color-picker";
 import { ImageFilePicker } from "@/components/image-file-picker";
 import { v4 as uuidv4 } from "uuid";
+import { 
+  searchFlightPrices, 
+  isValidIATACode 
+} from "@/lib/actions/flight-actions";
 
 export default function EventPage({
   params,
@@ -39,6 +43,7 @@ export default function EventPage({
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [searchingFlights, setSearchingFlights] = useState(false);
   const isNewEvent = unwrappedParams.id === "new";
 
   useEffect(() => {
@@ -150,6 +155,71 @@ export default function EventPage({
     fetchEvent();
   }, [unwrappedParams.id, toast, isNewEvent, searchParams]);
 
+  // Function to search for flight prices
+  const searchFlightPricesForEvent = async (
+    cityIata: string,
+    departureDate: string,
+    returnDate: string
+  ) => {
+    if (!cityIata || !departureDate || !returnDate) {
+      return;
+    }
+
+    // Validate IATA code
+    if (!isValidIATACode(cityIata)) {
+      return;
+    }
+
+    setSearchingFlights(true);
+    try {
+      const originCode = "TLV";
+      const result = await searchFlightPrices({
+        originLocationCode: originCode,
+        destinationLocationCode: cityIata,
+        departureDate,
+        returnDate,
+        adults: 1,
+        currencyCode: "USD",
+      });
+
+      if (result.success && result.cheapestPrice) {
+        // Update the base flight price with the cheapest found price
+        setEvent((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            base_flight_price: Math.round(result.cheapestPrice!),
+          };
+        });
+
+        toast({
+          title: "Flight Prices Updated",
+          description: `Found flights from ${originCode} to ${cityIata} starting at $${Math.round(result.cheapestPrice)} (${result.totalOffers} offers found)`,
+        });
+      } else if (!result.success) {
+        toast({
+          variant: "destructive",
+          title: "Flight Search Error",
+          description: result.message || "Could not fetch flight prices",
+        });
+      } else {
+        toast({
+          title: "No Flights Found",
+          description: `No flights found for ${originCode} to ${cityIata} on the selected dates`,
+        });
+      }
+    } catch (error) {
+      console.error("Flight search error:", error);
+      toast({
+        variant: "destructive",
+        title: "Flight Search Error",
+        description: "Failed to search for flight prices",
+      });
+    } finally {
+      setSearchingFlights(false);
+    }
+  };
+
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
@@ -166,13 +236,28 @@ export default function EventPage({
           // Convert city_iata to uppercase
           const finalValue =
             child === "city_iata" ? value.toUpperCase() : value;
-          return {
+          
+          const updatedEvent = {
             ...prev,
             [parent]: {
               ...parentValue,
               [child]: finalValue,
             },
           };
+
+          // If city_iata is being changed and we have departure/return dates, trigger flight search
+          // Note: Automatic search disabled - users can manually trigger with the "Search Flights" button
+          // if (child === "city_iata" && finalValue && isNewEvent && prev.def_date_depart && prev.def_date_return) {
+          //   setTimeout(() => {
+          //     searchFlightPricesForEvent(
+          //       finalValue,
+          //       prev.def_date_depart,
+          //       prev.def_date_return
+          //     );
+          //   }, 100);
+          // }
+
+          return updatedEvent;
         }
         return prev;
       });
@@ -190,7 +275,36 @@ export default function EventPage({
           const smartDates = calculateSmartDates(value);
           updatedEvent.def_date_depart = smartDates.departure;
           updatedEvent.def_date_return = smartDates.return;
+
+          // Trigger flight search if we have a city IATA code
+          // Note: Automatic search disabled - users can manually trigger with the "Search Flights" button
+          // if (prev.location.city_iata && isNewEvent) {
+          //   setTimeout(() => {
+          //     searchFlightPricesForEvent(
+          //       prev.location.city_iata,
+          //       smartDates.departure,
+          //       smartDates.return
+          //     );
+          //   }, 100); // Small delay to ensure state is updated
+          // }
         }
+
+        // If departure or return date is manually changed, trigger flight search
+        // Note: Automatic search disabled - users can manually trigger with the "Search Flights" button
+        // if ((name === "def_date_depart" || name === "def_date_return") && value && isNewEvent) {
+        //   const departureDate = name === "def_date_depart" ? value : prev.def_date_depart;
+        //   const returnDate = name === "def_date_return" ? value : prev.def_date_return;
+        //   
+        //   if (departureDate && returnDate && prev.location.city_iata) {
+        //     setTimeout(() => {
+        //       searchFlightPricesForEvent(
+        //         prev.location.city_iata,
+        //         departureDate,
+        //         returnDate
+        //       );
+        //     }, 100);
+        //   }
+        // }
 
         return updatedEvent;
       });
@@ -527,15 +641,65 @@ export default function EventPage({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="base_flight_price">Base Flight Price</Label>
-                <Input
-                  id="base_flight_price"
-                  name="base_flight_price"
-                  type="number"
-                  value={event.base_flight_price}
-                  onChange={handleNumberChange}
-                  required
-                />
+                <Label htmlFor="base_flight_price">
+                  Base Flight Price
+                  {searchingFlights && (
+                    <span className="ml-2 text-sm text-blue-600 flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Searching flights...
+                    </span>
+                  )}
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="base_flight_price"
+                    name="base_flight_price"
+                    type="number"
+                    value={event.base_flight_price}
+                    onChange={handleNumberChange}
+                    disabled={searchingFlights}
+                    required
+                    className="flex-1"
+                  />
+                  {isNewEvent && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (event.location.city_iata && event.def_date_depart && event.def_date_return) {
+                          searchFlightPricesForEvent(
+                            event.location.city_iata,
+                            event.def_date_depart,
+                            event.def_date_return
+                          );
+                        } else {
+                          toast({
+                            variant: "destructive",
+                            title: "Missing Information",
+                            description: "Please set the destination city (IATA code) and departure/return dates first.",
+                          });
+                        }
+                      }}
+                      disabled={searchingFlights || !event.location.city_iata || !event.def_date_depart || !event.def_date_return}
+                      className="whitespace-nowrap"
+                    >
+                      {searchingFlights ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Searching...
+                        </>
+                      ) : (
+                        "Search Flights"
+                      )}
+                    </Button>
+                  )}
+                </div>
+                {isNewEvent && (
+                  <p className="text-xs text-muted-foreground">
+                    Click "Search Flights" to get current prices from TLV to your destination
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="base_hotel_price">Base Hotel Price</Label>
