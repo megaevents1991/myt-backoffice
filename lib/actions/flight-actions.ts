@@ -51,7 +51,7 @@ export async function searchFlightPrices(
 // Helper function to get the origin airport code (could be from user's location or a default)
 export function getOriginAirportCode(): string {
   // Check for environment variable first
-  const defaultOrigin = process.env.NEXT_PUBLIC_DEFAULT_ORIGIN_AIRPORT;
+  const defaultOrigin = "TLV";
   if (defaultOrigin && isValidIATACode(defaultOrigin)) {
     return defaultOrigin;
   }
