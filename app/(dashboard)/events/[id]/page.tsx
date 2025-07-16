@@ -275,37 +275,7 @@ export default function EventPage({
           const smartDates = calculateSmartDates(value);
           updatedEvent.def_date_depart = smartDates.departure;
           updatedEvent.def_date_return = smartDates.return;
-
-          // Trigger flight search if we have a city IATA code
-          // Note: Automatic search disabled - users can manually trigger with the "Search Flights" button
-          // if (prev.location.city_iata && isNewEvent) {
-          //   setTimeout(() => {
-          //     searchFlightPricesForEvent(
-          //       prev.location.city_iata,
-          //       smartDates.departure,
-          //       smartDates.return
-          //     );
-          //   }, 100); // Small delay to ensure state is updated
-          // }
         }
-
-        // If departure or return date is manually changed, trigger flight search
-        // Note: Automatic search disabled - users can manually trigger with the "Search Flights" button
-        // if ((name === "def_date_depart" || name === "def_date_return") && value && isNewEvent) {
-        //   const departureDate = name === "def_date_depart" ? value : prev.def_date_depart;
-        //   const returnDate = name === "def_date_return" ? value : prev.def_date_return;
-        //   
-        //   if (departureDate && returnDate && prev.location.city_iata) {
-        //     setTimeout(() => {
-        //       searchFlightPricesForEvent(
-        //         prev.location.city_iata,
-        //         departureDate,
-        //         returnDate
-        //       );
-        //     }, 100);
-        //   }
-        // }
-
         return updatedEvent;
       });
     }
@@ -661,45 +631,41 @@ export default function EventPage({
                     required
                     className="flex-1"
                   />
-                  {isNewEvent && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (event.location.city_iata && event.def_date_depart && event.def_date_return) {
-                          searchFlightPricesForEvent(
-                            event.location.city_iata,
-                            event.def_date_depart,
-                            event.def_date_return
-                          );
-                        } else {
-                          toast({
-                            variant: "destructive",
-                            title: "Missing Information",
-                            description: "Please set the destination city (IATA code) and departure/return dates first.",
-                          });
-                        }
-                      }}
-                      disabled={searchingFlights || !event.location.city_iata || !event.def_date_depart || !event.def_date_return}
-                      className="whitespace-nowrap"
-                    >
-                      {searchingFlights ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Searching...
-                        </>
-                      ) : (
-                        "Search Flights"
-                      )}
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (event.location.city_iata && event.def_date_depart && event.def_date_return) {
+                        searchFlightPricesForEvent(
+                          event.location.city_iata,
+                          event.def_date_depart,
+                          event.def_date_return
+                        );
+                      } else {
+                        toast({
+                          variant: "destructive",
+                          title: "Missing Information",
+                          description: "Please set the destination city (IATA code) and departure/return dates first.",
+                        });
+                      }
+                    }}
+                    disabled={searchingFlights || !event.location.city_iata || !event.def_date_depart || !event.def_date_return}
+                    className="whitespace-nowrap"
+                  >
+                    {searchingFlights ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Searching...
+                      </>
+                    ) : (
+                      "Search Flights"
+                    )}
+                  </Button>
                 </div>
-                {isNewEvent && (
-                  <p className="text-xs text-muted-foreground">
-                    Click "Search Flights" to get current prices from TLV to your destination
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  Click "Search Flights" to get current prices from TLV to your destination
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="base_hotel_price">Base Hotel Price</Label>
