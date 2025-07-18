@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/dailyEventsSync?key=monthlyAlonSecret",
       "schedule": "1 0 * * *"
+    },
+    {
+      "path": "/api/cron/ticketPriceSync?key=monthlyAlonSecret",
+      "schedule": "0 */2 * * *"
     }
   ],
   "functions": {
