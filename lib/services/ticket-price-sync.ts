@@ -21,7 +21,7 @@ class SimpleExchangeRateService {
   private readonly API_KEY = "43c9bbfbf1cb4a1990c01a1a6d9ddf2f";
   private readonly FALLBACK_RATE = 1.1;
   private readonly MAX_RETRIES = 2;
-  private readonly RETRY_DELAY = 3000; // 3 seconds
+  private readonly RETRY_DELAY = 1500; // 1.5 seconds
 
   private async fetchWithTimeout(url: string, timeoutMs: number = 8000): Promise<Response> {
     const controller = new AbortController();
@@ -136,10 +136,10 @@ interface SyncSummary {
 export class TicketPriceSyncService {
   private readonly API_BASE_URL = process.env.NEXT_SECRET_XS2EVENT_API_URL || "";
   private readonly API_KEY = process.env.NEXT_SECRET_XS2EVENT_API_KEY;
-  private readonly REQUEST_DELAY = 1000; // 1 seconds between API calls
-  private readonly API_TIMEOUT = 15000; // 15 seconds timeout
+  private readonly REQUEST_DELAY = 500; // 0.5 seconds between API calls
+  private readonly API_TIMEOUT = 8000; // 8 seconds timeout
   private readonly MAX_RETRIES = 3;
-  private readonly RETRY_DELAY = 3000; // 3 seconds
+  private readonly RETRY_DELAY = 1500; // 1.5 seconds
 
   private async delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));

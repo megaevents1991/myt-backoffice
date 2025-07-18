@@ -3,6 +3,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ticketPriceSyncService } from '@/lib/services/ticket-price-sync';
 
+export const maxDuration = 300; // Maximum duration in seconds for the cron job
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
