@@ -30,6 +30,7 @@ import {
   searchFlightPrices, 
   isValidIATACode 
 } from "@/lib/actions/flight-actions";
+import { searchHotelPrices } from "@/lib/actions/hotel-actions";
 
 export default function EventPage({
   params,
@@ -44,6 +45,7 @@ export default function EventPage({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchingFlights, setSearchingFlights] = useState(false);
+  const [searchingHotels, setSearchingHotels] = useState(false);
   const isNewEvent = unwrappedParams.id === "new";
 
   useEffect(() => {
@@ -217,6 +219,70 @@ export default function EventPage({
       });
     } finally {
       setSearchingFlights(false);
+    }
+  };
+
+  // Function to search for hotel prices
+  const searchHotelPricesForEvent = async (
+    lat: number,
+    lon: number,
+    checkin: string,
+    checkout: string
+  ) => {
+    if (!lat || !lon || !checkin || !checkout) {
+      return;
+    }
+
+    setSearchingHotels(true);
+    try {
+      const result = await searchHotelPrices({
+        lat,
+        lon,
+        checkin,
+        checkout,
+      });
+
+      if (result.success && result.cheapestPrice) {
+        // Update the base hotel price with the cheapest found price
+        setEvent((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            base_hotel_price: Math.round(result.cheapestPrice!),
+          };
+        });
+
+        // Show success toast with hotel details
+        const hotelInfo = result.hotelDetails;
+        const description = hotelInfo 
+          ? `Found "${hotelInfo.name}" - ${hotelInfo.room_name} (${hotelInfo.meal}) starting at $${Math.round(result.cheapestPrice)} (${result.totalOffers} hotels found)`
+          : `Found hotels starting at $${Math.round(result.cheapestPrice)} (${result.totalOffers} hotels found)`;
+
+        toast({
+          title: "Hotel Prices Updated",
+          description,
+        });
+      } else if (!result.success) {
+        toast({
+          variant: "destructive",
+          title: "Hotel Search Error",
+          description: result.message || "Could not fetch hotel prices",
+        });
+      } else {
+        toast({
+          title: "No Hotels Found",
+          description: `No hotels found for the specified location and dates`,
+        });
+      }
+    } catch (error) {
+      console.error("Hotel search error:", error);
+      toast({
+        variant: "destructive",
+        title: "Hotel Search Error",
+        description: "Failed to search for hotel prices",
+      });
+    } finally {
+      setSearchingHotels(false);
     }
   };
 
@@ -668,15 +734,62 @@ export default function EventPage({
                 </p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="base_hotel_price">Base Hotel Price</Label>
-                <Input
-                  id="base_hotel_price"
-                  name="base_hotel_price"
-                  type="number"
-                  value={event.base_hotel_price}
-                  onChange={handleNumberChange}
-                  required
-                />
+                <Label htmlFor="base_hotel_price">
+                  Base Hotel Price
+                  {searchingHotels && (
+                    <span className="ml-2 text-sm text-blue-600 flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Searching hotels...
+                    </span>
+                  )}
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="base_hotel_price"
+                    name="base_hotel_price"
+                    type="number"
+                    value={event.base_hotel_price}
+                    onChange={handleNumberChange}
+                    disabled={searchingHotels}
+                    required
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (event.location.latitude && event.location.longitude && event.def_date_depart && event.def_date_return) {
+                        searchHotelPricesForEvent(
+                          event.location.latitude,
+                          event.location.longitude,
+                          event.def_date_depart,
+                          event.def_date_return
+                        );
+                      } else {
+                        toast({
+                          variant: "destructive",
+                          title: "Missing Information",
+                          description: "Please set the location coordinates (latitude/longitude) and departure/return dates first.",
+                        });
+                      }
+                    }}
+                    disabled={searchingHotels || !event.location.latitude || !event.location.longitude || !event.def_date_depart || !event.def_date_return}
+                    className="whitespace-nowrap"
+                  >
+                    {searchingHotels ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Searching...
+                      </>
+                    ) : (
+                      "Search Hotels"
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Click "Search Hotels" to get current prices near your event location
+                </p>
               </div>
             </div>
 
