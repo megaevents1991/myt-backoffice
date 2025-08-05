@@ -511,6 +511,7 @@ export function SportsEventsContent() {
           : 0, // Convert from cents to euros
         description: ticket.description_supplier || ticket.ticket_title,
         colorOnTheMap: "#3B82F6", // Default blue color
+        vendor: "", // Optional vendor field, can be filled manually later
       }));
 
       // Try to find the nearest location

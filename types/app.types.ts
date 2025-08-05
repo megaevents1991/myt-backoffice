@@ -200,6 +200,7 @@ export type EventTicket = {
   id: string
   description: string
   colorOnTheMap: string
+  vendor?: string
 }
 
 export type OrderTicket = Omit<EventTicket, "description" | "colorOnTheMap"> & {

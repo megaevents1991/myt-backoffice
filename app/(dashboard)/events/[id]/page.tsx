@@ -395,6 +395,7 @@ export default function EventPage({
       price: 0,
       description: "",
       colorOnTheMap: "#000000",
+      vendor: "",
     };
 
     setEvent({
@@ -1047,6 +1048,24 @@ export default function EventPage({
                             required
                           />
                         </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor={`ticket-${ticket.id}-vendor`}>
+                          Vendor (Optional)
+                        </Label>
+                        <Input
+                          id={`ticket-${ticket.id}-vendor`}
+                          value={ticket.vendor || ""}
+                          onChange={(e) =>
+                            handleTicketChange(
+                              ticket.id,
+                              "vendor",
+                              e.target.value
+                            )
+                          }
+                          placeholder="Enter ticket vendor"
+                        />
                       </div>
 
                       <div className="space-y-2">

@@ -225,6 +225,13 @@ export default function ViewEventPage({
                       <p className="text-lg">${ticket.price.toFixed(2)}</p>
                     </div>
 
+                    {ticket.vendor && (
+                      <div>
+                        <p className="text-sm font-medium">Vendor</p>
+                        <p className="text-lg">{ticket.vendor}</p>
+                      </div>
+                    )}
+
                     {ticket.description && (
                       <div>
                         <p className="text-sm font-medium">Description</p>

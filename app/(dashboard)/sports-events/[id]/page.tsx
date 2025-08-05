@@ -81,7 +81,7 @@ export default function EventDetailsPage() {
       const { data: tournament } = await supabase
         .from("xs2e_tournaments")
         .select("*")
-        .eq("tournament_id", eventData.tournament_id)
+        .eq("tournament_id", eventData.tournament_id || "")
         .single();
       tournamentData = tournament;
 
@@ -209,6 +209,7 @@ export default function EventDetailsPage() {
         : 0, // Convert from cents to euros
       description: ticket.description_supplier || ticket.ticket_title,
       colorOnTheMap: "#3B82F6", // Default blue color
+      vendor: "XS2Tickets", // Optional vendor field, can be filled manually later
     }));
 
     // Try to find the nearest location
@@ -275,6 +276,7 @@ export default function EventDetailsPage() {
       ]
         .filter(Boolean)
         .join(", "),
+      type: "sports_event"
     };
 
     // Apply smart date calculation
