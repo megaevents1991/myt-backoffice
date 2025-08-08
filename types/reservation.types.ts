@@ -19,6 +19,7 @@ export type Reservation = {
     number_of_ticket: number
     category: string
     vendor?: string
+    id?: string
     price_per_ticket: number
     total_tickets_price: number
   }

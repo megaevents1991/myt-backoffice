@@ -257,6 +257,13 @@ export default function ReservationPage({
                 </div>
               )}
 
+              {reservation.event_order_info.id && (
+                <div>
+                  <p className="text-sm font-medium">Ticket ID</p>
+                  <p className="text-lg">{reservation.event_order_info.id}</p>
+                </div>
+              )}
+
               <div>
                 <p className="text-sm font-medium">Number of Tickets</p>
                 <p className="text-lg">

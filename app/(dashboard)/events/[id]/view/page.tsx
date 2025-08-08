@@ -227,8 +227,15 @@ export default function ViewEventPage({
 
                     {ticket.vendor && (
                       <div>
-                        <p className="text-sm font-medium">Vendor</p>
+                        <p className="text-sm font-medium">Ticket Vendor</p>
                         <p className="text-lg">{ticket.vendor}</p>
+                      </div>
+                    )}
+
+                    {ticket.id && (
+                      <div>
+                        <p className="text-sm font-medium">Ticket ID</p>
+                        <p className="text-lg">{ticket.id}</p>
                       </div>
                     )}
 
