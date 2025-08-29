@@ -737,13 +737,30 @@ export function LiveEventsContent() {
       {/* Sync Status and Controls */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <RefreshCw className="h-5 w-5" />
-            LIVE Events Data Sync Status
-          </CardTitle>
-          <CardDescription>
-            Manage data synchronization with LIVE API (doctorticket.com)
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <RefreshCw className="h-5 w-5" />
+                LIVE Events Data Sync Status
+              </CardTitle>
+              <CardDescription>
+                Manage data synchronization with LIVE API (doctorticket.com)
+              </CardDescription>
+            </div>
+            <Button onClick={() => handleSync("events")} disabled={isSyncing} size="sm">
+              {isSyncing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Sync
+                </>
+              )}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {syncStatus && syncStatus.results && (
@@ -771,65 +788,6 @@ export function LiveEventsContent() {
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2 mb-4">
-            <Button onClick={() => handleSync()} disabled={isSyncing} size="sm">
-              {isSyncing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Syncing...
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Sync All
-                </>
-              )}
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={() => handleSync("categories")}
-              disabled={isSyncing}
-              size="sm"
-            >
-              Sync Categories
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={() => handleSync("performers")}
-              disabled={isSyncing}
-              size="sm"
-            >
-              Sync Performers
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={() => handleSync("events")}
-              disabled={isSyncing}
-              size="sm"
-            >
-              Sync Events
-            </Button>
-          </div>
-
-          {/* Event Type Filter */}
-          <div className="flex gap-2">
-            <Select 
-              value={eventType} 
-              onValueChange={(value: any) => setEventType(value)}
-            >
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Events</SelectItem>
-                <SelectItem value="sports_event_dynamic">Sports Events</SelectItem>
-                <SelectItem value="music_event_dynamic">Music Events</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
         </CardContent>
       </Card>
 
