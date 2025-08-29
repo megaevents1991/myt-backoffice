@@ -16,6 +16,7 @@ import {
   Plane,
   Trophy,
   MapPin,
+  Music,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -38,6 +39,7 @@ const navItems: NavItem[] = [
   { type: "divider" },
   { name: "Offline Flights", href: "/offline-flights", icon: Plane },
   { name: "Sports Events", href: "/sports-events", icon: Trophy },
+  { name: "Live Events", href: "/live-events", icon: Music },
   { type: "divider" },
   { name: "Storage", href: "/storage", icon: Database },
   { name: "Locations", href: "/locations", icon: MapPin },

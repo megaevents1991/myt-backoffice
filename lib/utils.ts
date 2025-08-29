@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { XS2Ticket } from "@/types/sports-events.types";
+import { LiveTicketCategory, CURRENCIES } from "@/types/live-events.types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -13,6 +14,16 @@ export function formatEUR(price: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "EUR",
+  }).format(price);
+}
+
+/**
+ * Format price as specified currency
+ */
+export function formatCurrency(price: number, currencyCode: string): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currencyCode,
   }).format(price);
 }
 
@@ -46,4 +57,25 @@ export function formatTicketNetPrice(ticket: XS2Ticket): string {
  */
 export function formatTicketFaceValue(ticket: XS2Ticket): string {
   return formatEUR(getTicketFaceValueEUR(ticket));
+}
+
+/**
+ * Format LIVE ticket price with proper currency
+ */
+export function formatLiveTicketPrice(ticket: LiveTicketCategory, currencyId: number): string {
+  const currencyCode = getLiveCurrencyCode(currencyId);
+  return formatCurrency(ticket.cost, currencyCode);
+}
+
+/**
+ * Get currency code from LIVE currency ID
+ */
+export function getLiveCurrencyCode(currencyId: number): string {
+  switch (currencyId) {
+    case CURRENCIES.USD: return "USD";
+    case CURRENCIES.EUR: return "EUR";
+    case CURRENCIES.GBP: return "GBP";
+    case CURRENCIES.ILS: return "ILS";
+    default: return "EUR";
+  }
 }

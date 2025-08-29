@@ -13,6 +13,10 @@
       "schedule": "1 0 * * *"
     },
     {
+      "path": "/api/cron/dailyLiveEventsSync?key=monthlyAlonSecret",
+      "schedule": "30 0 * * *"
+    },
+    {
       "path": "/api/cron/ticketPriceSync?key=monthlyAlonSecret",
       "schedule": "0 */2 * * *"
     }
@@ -23,6 +27,10 @@
       "maxDuration": 30
     },
     "app/api/sports-events/sync/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "app/api/live-events/sync/route.ts": {
       "memory": 1024,
       "maxDuration": 60
     },
