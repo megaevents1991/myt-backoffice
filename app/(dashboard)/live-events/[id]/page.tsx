@@ -156,14 +156,14 @@ export default function LiveEventDetailsPage() {
   };
 
   const getEventTypeIcon = (eventType: string) => {
-    if (eventType === 'music_event_dynamic') {
+    if (eventType === 'music_live_event_dynamic') {
       return <Ticket className="h-5 w-5" />;
     }
     return <Trophy className="h-5 w-5" />;
   };
 
   const getEventTypeBadgeColor = (eventType: string) => {
-    if (eventType === 'music_event_dynamic') {
+    if (eventType === 'music_live_event_dynamic') {
       return "bg-purple-100 text-purple-800";
     }
     return "bg-green-100 text-green-800";
@@ -389,7 +389,7 @@ export default function LiveEventDetailsPage() {
                     variant="outline"
                     className={`${getEventTypeBadgeColor(event.event_type)}`}
                   >
-                    {event.event_type === 'music_event_dynamic' ? 'Music Event' : 'Sports Event'}
+                    {event.event_type === 'music_live_event_dynamic' ? 'Music Event' : 'Sports Event'}
                   </Badge>
                 </div>
                 <div>

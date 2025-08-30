@@ -634,10 +634,16 @@ export default function EventPage({
                 }}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                <option value="music_event">Music Event</option>
-                <option value="sports_event">Sports Event</option>
+                <option value="music_event">Music Event (Offline)</option>
+                <option value="sports_event">Sports Event (Offline)</option>
                 <option value="sports_event_dynamic">
                   Sports Event (Dynamic)
+                </option>
+                <option value="sports_live_event_dynamic">
+                  Sports Event (Live)
+                </option>
+                <option value="music_live_event_dynamic">
+                  Music Event (Live)
                 </option>
               </select>
             </div>

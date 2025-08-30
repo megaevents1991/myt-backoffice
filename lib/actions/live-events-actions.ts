@@ -14,7 +14,7 @@ const safeStr = (v: string | null | undefined) => (v || '').trim();
 /**
  * Fetch live events by type (sports or music)
  */
-export async function getLiveEvents(eventType?: 'sports_event_dynamic' | 'music_event_dynamic'): Promise<LiveEventDB[]> {
+export async function getLiveEvents(eventType?: 'sports_live_event_dynamic' | 'music_live_event_dynamic'): Promise<LiveEventDB[]> {
   // Use server API endpoint to avoid RLS restrictions client-side
   const url = `/api/live-events/events?type=${encodeURIComponent(eventType || 'all')}`;
   const res = await fetch(url, { cache: 'no-store' });

@@ -111,16 +111,16 @@ function classifyEvent(event: LiveEvent): CategoryClassification {
 }
 
 // Determine event type based on classification
-function determineEventType(classification: CategoryClassification): 'sports_event_dynamic' | 'music_event_dynamic' | null {
+function determineEventType(classification: CategoryClassification): 'sports_live_event_dynamic' | 'music_live_event_dynamic' | null {
   if (classification.isSports && !classification.isMusic) {
-    return 'sports_event_dynamic';
+    return 'sports_live_event_dynamic';
   }
   if (classification.isMusic && !classification.isSports) {
-    return 'music_event_dynamic';
+    return 'music_live_event_dynamic';
   }
   if (classification.isSports && classification.isMusic) {
     // If both, prefer sports (or could be configurable)
-    return 'sports_event_dynamic';
+    return 'sports_live_event_dynamic';
   }
   
   // If neither clearly sports nor music, skip for now

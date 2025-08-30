@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS live_events (
   stop_selling_margin INTEGER DEFAULT 0,
   
   -- Classification (derived from categories)
-  event_type VARCHAR NOT NULL, -- 'sports_event_dynamic' or 'music_event_dynamic'
+  event_type VARCHAR NOT NULL, -- 'sports_live_event_dynamic' or 'music_live_event_dynamic'
   primary_category VARCHAR,
   categories JSONB, -- Store all category arrays
   

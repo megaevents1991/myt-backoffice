@@ -75,12 +75,12 @@ export async function GET() {
     const sportsEventsCount = await supabase
       .from('live_events')
       .select('event_id', { count: 'exact', head: true })
-      .eq('event_type', 'sports_event_dynamic');
+      .eq('event_type', 'sports_live_event_dynamic');
     
     const musicEventsCount = await supabase
       .from('live_events')
       .select('event_id', { count: 'exact', head: true })
-      .eq('event_type', 'music_event_dynamic');
+      .eq('event_type', 'music_live_event_dynamic');
 
     results.events = { 
       total: eventsCount.count,

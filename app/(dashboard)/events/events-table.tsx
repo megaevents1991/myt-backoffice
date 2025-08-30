@@ -183,11 +183,15 @@ export function EventsTable() {
         const getTypeLabel = (type: string) => {
           switch (type) {
             case "music_event":
-              return "Music Event";
+              return "Music Event Offline";
             case "sports_event":
-              return "Sports Event";
+              return "Sports Event Offline";
             case "sports_event_dynamic":
-              return "Sports Event (Dynamic)";
+              return "Sports Event (XS2 Dynamic)";
+            case "sports_live_event_dynamic":
+              return "Sports Event (Live Dynamic)";
+            case "music_live_event_dynamic":
+              return "Music Event (Live Dynamic)";
             default:
               return type;
           }
@@ -200,6 +204,10 @@ export function EventsTable() {
               return "secondary";
             case "sports_event_dynamic":
               return "outline";
+            case "sports_live_event_dynamic":
+              return "destructive";
+            case "music_live_event_dynamic":
+              return "destructive";
             default:
               return "default";
           }

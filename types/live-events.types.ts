@@ -122,7 +122,7 @@ export interface LiveEventDB {
   venue_map_heb_url?: string;
   currency: number;
   stop_selling_margin: number;
-  event_type: 'sports_event_dynamic' | 'music_event_dynamic';
+  event_type: 'sports_live_event_dynamic' | 'music_live_event_dynamic';
   primary_category: string;
   categories: {
     category1: LiveCategory[];
@@ -149,7 +149,7 @@ export interface LiveEventsApiResponse<T> {
 
 // Mapping types for internal use
 export interface LiveEventProcessed extends LiveEvent {
-  processedType: 'sports_event_dynamic' | 'music_event_dynamic';
+  processedType: 'sports_live_event_dynamic' | 'music_live_event_dynamic';
   internalCategories: string[];
 }
 

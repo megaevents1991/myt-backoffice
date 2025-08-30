@@ -5,7 +5,7 @@ import { LiveEventDB } from '@/types/live-events.types';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const eventType = searchParams.get('type'); // sports_event_dynamic / music_event_dynamic
+    const eventType = searchParams.get('type'); // sports_live_event_dynamic / music_live_event_dynamic
     const category = searchParams.get('category'); // This is category1 name (e.g., "CONCERTS")
     const performer = searchParams.get('performer');
     const eventId = searchParams.get('event_id');

@@ -162,7 +162,7 @@ export function LiveEventsContent() {
   const router = useRouter();
 
   // State management
-  const [eventType, setEventType] = useState<'all' | 'sports_event_dynamic' | 'music_event_dynamic'>('all');
+  const [eventType, setEventType] = useState<'all' | 'sports_live_event_dynamic' | 'music_live_event_dynamic'>('all');
   const [categories1, setCategories1] = useState<string[]>([]);
   const [categories2, setCategories2] = useState<string[]>([]);
   const [categories3, setCategories3] = useState<string[]>([]);
@@ -701,15 +701,8 @@ export function LiveEventsContent() {
     }
   };
 
-  const getEventTypeIcon = (eventType: string) => {
-    if (eventType === 'music_event_dynamic') {
-      return <Ticket className="h-4 w-4" />;
-    }
-    return <Trophy className="h-4 w-4" />;
-  };
-
   const getEventTypeBadgeColor = (eventType: string) => {
-    if (eventType === 'music_event_dynamic') {
+    if (eventType === 'music_live_event_dynamic') {
       return "bg-purple-100 text-purple-800";
     }
     return "bg-green-100 text-green-800";
@@ -1113,7 +1106,7 @@ export function LiveEventsContent() {
                               variant="outline"
                               className={`text-xs ${getEventTypeBadgeColor(event.event_type)}`}
                             >
-                              {event.event_type === 'music_event_dynamic' ? 'Music' : 'Sports'}
+                              {event.event_type === 'music_live_event_dynamic' ? 'Music' : 'Sports'}
                             </Badge>
                           </div>
                         </div>
