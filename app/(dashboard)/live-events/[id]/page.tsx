@@ -189,7 +189,7 @@ export default function LiveEventDetailsPage() {
         id: ticket.id.toString(),
         category: ticket.title || ticket.hebTitle,
         price: ticket.cost,
-        description: ticket.engComments || ticket.hebComments || ticket.title,
+        description: ticket.hebComments || ticket.engComments || "",
         colorOnTheMap: "#3B82F6",
         vendor: "LIVE",
       }));
@@ -640,9 +640,9 @@ export default function LiveEventDetailsPage() {
                           )}
                         </div>
 
-                        {(ticket.engComments || ticket.hebComments) && (
+                        {(ticket.hebComments || ticket.engComments ) && (
                           <div className="text-xs text-muted-foreground pt-2 border-t">
-                            {ticket.engComments || ticket.hebComments}
+                            {ticket.hebComments || ticket.engComments}
                           </div>
                         )}
                       </div>

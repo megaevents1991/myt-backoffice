@@ -330,16 +330,22 @@ export function LiveEventsContent() {
 
     // Filter by category1 if selected
     if (selectedCategory1) {
-      filteredEvents = filteredEvents.filter(event => 
-        event.categories?.category1?.some((cat: any) => cat.name === selectedCategory1)
-      );
+      const beforeFilter = filteredEvents.length;
+      filteredEvents = filteredEvents.filter(event => {
+        const hasCategory = event.categories?.category1?.some((cat: any) => cat.name === selectedCategory1);
+        if (!hasCategory && event.event_name.includes('SPECIFIC_ARTIST_NAME')) { // Replace with the missing artist's event name
+          console.log('Event missing from category1 filter:', event.event_name, event.categories);
+        }
+        return hasCategory;
+      });
+      console.log(`Category1 filter: ${beforeFilter} → ${filteredEvents.length} events`);
       
       // Build available category2 options from filtered events
       const category2Set = new Set<string>();
       filteredEvents.forEach((event: any) => {
         if (event.categories?.category2 && Array.isArray(event.categories.category2)) {
           event.categories.category2.forEach((cat: any) => {
-            if (cat.name) {
+            if (cat.name && cat.name !== '-') {
               category2Set.add(cat.name);
             }
           });
@@ -347,12 +353,10 @@ export function LiveEventsContent() {
       });
       setCategories2(Array.from(category2Set).sort());
       
-      // Clear category2/category3 selection if no longer available
       if (selectedCategory2 && !category2Set.has(selectedCategory2)) {
         setSelectedCategory2(null);
       }
     } else {
-      // No category1 selected, clear category2 and category3
       setCategories2([]);
       setSelectedCategory2(null);
     }
@@ -445,7 +449,7 @@ export function LiveEventsContent() {
       
       // Load all events and sync status
       const [eventsResponse, statusData] = await Promise.all([
-        fetch(`/api/live-events/events?limit=1000&upcoming=true${eventType !== 'all' ? `&type=${eventType}` : ''}`, {
+        fetch(`/api/live-events/events?limit=10000&upcoming=true${eventType !== 'all' ? `&type=${eventType}` : ''}`, {
           cache: 'no-store'
         }),
         getLiveSyncStatus(),
@@ -555,7 +559,7 @@ export function LiveEventsContent() {
         id: ticket.id.toString(),
         category: ticket.title || ticket.hebTitle,
         price: ticket.cost, // Already in base currency
-        description: ticket.engComments || ticket.hebComments || ticket.title,
+        description: ticket.hebComments || ticket.engComments || "",
         colorOnTheMap: "#3B82F6", // Default blue color
         vendor: "LIVE", // Mark as LIVE provider
       }));
