@@ -9,14 +9,13 @@ import {
   ClipboardList,
   Home,
   LogOut,
-  Settings,
   Database,
   Menu,
   X,
   Plane,
   Trophy,
   MapPin,
-  Music,
+  Ticket,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -37,9 +36,9 @@ const navItems: NavItem[] = [
   { name: "Partners", href: "/partners", icon: Users },
   { name: "Reservations", href: "/reservations", icon: ClipboardList },
   { type: "divider" },
-  { name: "Offline Flights", href: "/offline-flights", icon: Plane },
-  { name: "Sports Events", href: "/sports-events", icon: Trophy },
-  { name: "Live Events", href: "/live-events", icon: Music },
+  { name: "Offline Flights (Mega)", href: "/offline-flights", icon: Plane },
+  { name: "Sports Events (XS2E)", href: "/sports-events", icon: Trophy },
+  { name: "Live Events (LiveTickets)", href: "/live-events", icon: Ticket },
   { type: "divider" },
   { name: "Storage", href: "/storage", icon: Database },
   { name: "Locations", href: "/locations", icon: MapPin },
@@ -74,12 +73,12 @@ export function Sidebar() {
           <div className="border-b px-6 py-4">
             <h2 className="text-xl font-bold">Backoffice</h2>
           </div>
-          <nav className="flex-1 space-y-1 p-4">
+          <nav className="flex-1 p-4">
             {navItems.map((item, index) => {
               // Handle dividers
               if ("type" in item && item.type === "divider") {
                 return (
-                  <div key={`divider-${index}`} className="border-b my-3" />
+                  <div key={`divider-${index}`} className="border-b my-4" />
                 );
               }
 
@@ -100,7 +99,7 @@ export function Sidebar() {
                   href={linkItem.href}
                   onClick={() => setIsOpen(false)} // Close sidebar when clicking a link on mobile
                   className={cn(
-                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium",
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium mb-1",
                     isActive
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground"

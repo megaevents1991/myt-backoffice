@@ -33,19 +33,13 @@ import {
   SortDesc,
   ChevronLeft,
   ChevronRight,
-  Music,
   Trophy,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
-  getLiveEvents,
-  getLiveEventsByCategory,
-  getLiveEventsByPerformer,
   getLiveTickets,
   getLiveSyncStatus,
   triggerLiveSync,
-  getLiveCategories,
-  getLivePerformers,
 } from "@/lib/actions/live-events-actions";
 import { findNearestLocation } from "@/lib/actions/location-actions";
 import {
@@ -229,9 +223,6 @@ export function LiveEventsContent() {
   }, [filteredCategories, categoryPage, categoryPageSize]);
 
   const filteredPerformers = useMemo(() => {
-    console.log('performers array:', performers); // Debug log
-    console.log('performers types:', performers.map(p => typeof p)); // Debug log
-    
     let filtered = performers.filter((performer) => {
       // Ensure performer is a string before calling toLowerCase
       if (typeof performer !== 'string') {
@@ -712,7 +703,7 @@ export function LiveEventsContent() {
 
   const getEventTypeIcon = (eventType: string) => {
     if (eventType === 'music_event_dynamic') {
-      return <Music className="h-4 w-4" />;
+      return <Ticket className="h-4 w-4" />;
     }
     return <Trophy className="h-4 w-4" />;
   };
@@ -964,7 +955,7 @@ export function LiveEventsContent() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-sm font-medium">
-              <Music className="h-4 w-4" />
+              <Ticket className="h-4 w-4" />
               <span className="truncate">Performers</span>
             </CardTitle>
           </CardHeader>

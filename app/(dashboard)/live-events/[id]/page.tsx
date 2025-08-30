@@ -17,9 +17,6 @@ import {
   MapPin,
   Users,
   Ticket,
-  Clock,
-  Globe,
-  Music,
   Trophy,
   ExternalLink,
 } from "lucide-react";
@@ -28,7 +25,6 @@ import {
   getLiveEventById,
   getLiveTickets,
 } from "@/lib/actions/live-events-actions";
-import { findNearestLocation } from "@/lib/actions/location-actions";
 import {
   LiveEventDB,
   LiveTicketCategory,
@@ -161,7 +157,7 @@ export default function LiveEventDetailsPage() {
 
   const getEventTypeIcon = (eventType: string) => {
     if (eventType === 'music_event_dynamic') {
-      return <Music className="h-5 w-5" />;
+      return <Ticket className="h-5 w-5" />;
     }
     return <Trophy className="h-5 w-5" />;
   };
