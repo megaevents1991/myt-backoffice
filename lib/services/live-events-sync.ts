@@ -194,22 +194,36 @@ export async function syncLiveEvents(): Promise<LiveSyncResult> {
 
     console.log(`✅ Processed ${processedEvents.length} valid events`);
 
-    // Upsert to database
+    // Upsert to database in controllable batches to avoid large payloads / timeouts
     if (processedEvents.length > 0) {
-      const { error } = await supabase
-        .from('live_events')
-        .upsert(processedEvents, { 
-          onConflict: 'event_id',
-          ignoreDuplicates: false 
-        });
+      const BATCH_SIZE = 500; // Safe batch size for Supabase/Postgres; adjust if needed
 
-      if (error) {
-        throw new Error(`Database upsert failed: ${error.message}`);
+      const chunk = <T,>(arr: T[], size: number): T[][] => {
+        const out: T[][] = [];
+        for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+        return out;
+      };
+
+      const batches = chunk(processedEvents, BATCH_SIZE);
+      console.log(`🗃️ Upserting ${processedEvents.length} events in ${batches.length} batches (size <= ${BATCH_SIZE}).`);
+
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        const { error } = await supabase
+          .from('live_events')
+          .upsert(batch, {
+            onConflict: 'event_id',
+            ignoreDuplicates: false,
+          });
+        if (error) {
+          throw new Error(`Batch ${i + 1}/${batches.length} upsert failed: ${error.message}`);
+        }
+        console.log(`✅ Batch ${i + 1}/${batches.length} (${batch.length} events) upserted.`);
       }
     }
 
     console.log(`🎭 Successfully synced ${processedEvents.length} LIVE events`);
-    return { count: processedEvents.length, status: 'success' };
+    return { count: processedEvents.length, status: 'success', details: 'Batched upsert completed' };
 
   } catch (error) {
     console.error('❌ Failed to sync LIVE events:', error);
@@ -219,246 +233,4 @@ export async function syncLiveEvents(): Promise<LiveSyncResult> {
       count: 0
     };
   }
-}
-
-export async function syncLiveCategories(): Promise<LiveSyncResult> {
-  try {
-    console.log('📂 Syncing LIVE categories...');
-    const raw = await fetchLive<RawLiveCategory[]>('Categories/GetAllCategories');
-    if (!Array.isArray(raw)) throw new Error('Invalid categories response format');
-    const categoryMap = new Map<number, {
-      category_id: number;
-      category_name: string;
-      category_name_heb: string | null;
-      category_level: number;
-      is_sports_related: boolean;
-      is_music_related: boolean;
-    }>();
-
-    raw.forEach(r => {
-      const id = r.id;
-      if (categoryMap.has(id)) return; // keep first occurrence
-      const nameBase = r.categoryTNName || r.categoryDTName || r.categoryHebName || `CAT_${id}`;
-      if (!nameBase) return;
-      categoryMap.set(id, {
-        category_id: id,
-        category_name: nameBase,
-        category_name_heb: r.categoryHebName || null,
-        category_level: 1,
-        is_sports_related: (r.categoryTNName || r.categoryDTName || '').toLowerCase().includes('sport'),
-        is_music_related: (r.categoryTNName || r.categoryDTName || '').toLowerCase().includes('music')
-      });
-    });
-    const processedCategories = Array.from(categoryMap.values());
-    console.log(`📂 Mapped ${processedCategories.length} unique categories (raw: ${raw.length})`);
-
-    if (processedCategories.length > 0) {
-      const { error } = await supabase
-        .from('live_categories')
-        .upsert(processedCategories, { onConflict: 'category_id' });
-
-      if (error) {
-        throw new Error(`Categories sync failed: ${error.message}`);
-      }
-    }
-
-    console.log(`✅ Synced ${processedCategories.length} categories`);
-    return { count: processedCategories.length, status: 'success' };
-
-  } catch (error) {
-    console.error('❌ Failed to sync categories:', error);
-    return {
-      status: 'error',
-      error: String(error),
-      count: 0
-    };
-  }
-}
-
-export async function syncLivePerformers(): Promise<LiveSyncResult> {
-  try {
-    console.log('🎤 Syncing LIVE performers...');
-    const raw = await fetchLive<RawLivePerformer[]>('Performers/GetAllPerformers');
-    if (!Array.isArray(raw)) throw new Error('Invalid performers response format');
-    const perfMap = new Map<number, {
-      performer_id: number;
-      performer_name: string;
-      performer_name_heb: string | null;
-      is_dt_performer: boolean;
-      performer_classification_id: number | null;
-    }>();
-    raw.forEach(p => {
-      if (perfMap.has(p.id)) return;
-      if (!p.performerName) return;
-      perfMap.set(p.id, {
-        performer_id: p.id,
-        performer_name: p.performerName,
-        performer_name_heb: p.performerHebName || null,
-        is_dt_performer: p.isDtPerformer,
-        performer_classification_id: p.performerClassificationId || null
-      });
-    });
-    const processedPerformers = Array.from(perfMap.values());
-    console.log(`🎤 Mapped ${processedPerformers.length} unique performers (raw: ${raw.length})`);
-
-    if (processedPerformers.length > 0) {
-      const { error } = await supabase
-        .from('live_performers')
-        .upsert(processedPerformers, { onConflict: 'performer_id' });
-
-      if (error) {
-        throw new Error(`Performers sync failed: ${error.message}`);
-      }
-    }
-
-    console.log(`✅ Synced ${processedPerformers.length} performers`);
-    return { count: processedPerformers.length, status: 'success' };
-
-  } catch (error) {
-    console.error('❌ Failed to sync performers:', error);
-    return {
-      status: 'error',
-      error: String(error),
-      count: 0
-    };
-  }
-}
-
-export async function syncLiveVenues(): Promise<LiveSyncResult> {
-  try {
-    console.log('🏟️ Syncing LIVE venues...');
-    
-    const venues = await fetchLive<LiveVenue[]>('Venues/GetAllVenues');
-    
-    if (!Array.isArray(venues)) {
-      throw new Error('Invalid venues response format');
-    }
-
-    // Remove duplicates by venue_id and filter out null/empty names
-    const uniqueVenues = venues
-      .filter(venue => venue.name && venue.name.trim()) // Filter out null/empty names
-      .reduce((acc, venue) => {
-        if (!acc.some(v => v.id === venue.id)) {
-          acc.push(venue);
-        }
-        return acc;
-      }, [] as LiveVenue[]);
-
-    const processedVenues = uniqueVenues.map(venue => ({
-      venue_id: venue.id,
-      venue_name: venue.name,
-      venue_name_heb: venue.hebName || null,
-      is_dt_venue: venue.isDtVenue
-    }));
-
-    console.log(`🏟️ Filtered ${processedVenues.length} unique venues from ${venues.length} total`);
-
-    if (processedVenues.length > 0) {
-      const { error } = await supabase
-        .from('live_venues')
-        .upsert(processedVenues, { onConflict: 'venue_id' });
-
-      if (error) {
-        throw new Error(`Venues sync failed: ${error.message}`);
-      }
-    }
-
-    console.log(`✅ Synced ${processedVenues.length} venues`);
-    return { count: processedVenues.length, status: 'success' };
-
-  } catch (error) {
-    console.error('❌ Failed to sync venues:', error);
-    return {
-      status: 'error',
-      error: String(error),
-      count: 0
-    };
-  }
-}
-
-export async function syncLiveCities(): Promise<LiveSyncResult> {
-  try {
-    console.log('🌆 Syncing LIVE cities...');
-    const raw = await fetchLive<RawLiveCity[]>('Cities/GetAllCities');
-    if (!Array.isArray(raw)) throw new Error('Invalid cities response format');
-    const fullRecords = raw
-      .map(c => ({
-        city_id: c.id,
-        city_name: safeStr(c.cityName),
-        eng_full_name: safeStr(c.engFullName), // empty string if originally null
-        heb_full_name: safeStr(c.hebFullName),
-        iata: normalizeIata(c.iata)
-      }))
-      .filter(c => c.city_name); // city_name already trimmed / empty-string guarded
-
-    let attempt = 1;
-    let finalCount = 0;
-    let lastError: any = null;
-
-    const minimalRecords = fullRecords.map(c => ({
-      city_id: c.city_id,
-      city_name: c.city_name,
-      iata: c.iata
-    }));
-
-    for (const variant of [fullRecords, minimalRecords]) {
-      if (variant.length === 0) break;
-      const { error } = await supabase
-        .from('live_cities')
-        .upsert(variant, { onConflict: 'city_id' });
-      if (!error) {
-        finalCount = variant.length;
-        if (attempt === 2) {
-          console.log('🌆 City sync used minimal column set fallback (schema lacks eng_full_name / heb_full_name).');
-        }
-        break;
-      } else {
-        lastError = error;
-        // Only retry once with minimal variant if first attempt failed due to missing columns
-        if (attempt === 1 && /eng_full_name|heb_full_name/i.test(error.message)) {
-          attempt++;
-          continue;
-        } else {
-          throw new Error(`Cities sync failed: ${error.message}`);
-        }
-      }
-    }
-
-    console.log(`✅ Synced ${finalCount} cities`);
-    return { count: finalCount, status: 'success' };
-  } catch (error) {
-    console.error('❌ Failed to sync cities:', error);
-    return { status: 'error', error: String(error), count: 0 };
-  }
-}
-
-// Combined sync function
-export async function syncLiveEventsData(types?: string[]): Promise<LiveSyncResults> {
-  const results: LiveSyncResults = {};
-  const syncTypes = types || ['categories', 'performers', 'cities', 'venues', 'events'];
-
-  console.log(`🚀 Starting LIVE API sync for: ${syncTypes.join(', ')}`);
-
-  if (syncTypes.includes('categories')) {
-    results.categories = await syncLiveCategories();
-  }
-
-  if (syncTypes.includes('performers')) {
-    results.performers = await syncLivePerformers();
-  }
-
-  if (syncTypes.includes('cities')) {
-    results.cities = await syncLiveCities();
-  }
-
-  if (syncTypes.includes('venues')) {
-    results.venues = await syncLiveVenues();
-  }
-
-  if (syncTypes.includes('events')) {
-    results.events = await syncLiveEvents();
-  }
-
-  console.log('🏁 LIVE API sync completed', results);
-  return results;
 }

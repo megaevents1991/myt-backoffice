@@ -1,29 +1,21 @@
 // app/api/live-events/sync/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
-import { syncLiveEventsData } from '@/lib/services/live-events-sync';
+import { syncLiveEvents } from '@/lib/services/live-events-sync';
 
 /**
- * Sync API endpoint to cache master data from LIVE API to Supabase
+ * Sync API endpoint to cache LIVE events data from the LIVE API to Supabase.
  * 
  * Usage: POST /api/live-events/sync
- * Can also be called with specific data types:
- * POST /api/live-events/sync?type=categories
- * POST /api/live-events/sync?type=performers  
- * POST /api/live-events/sync?type=venues
- * POST /api/live-events/sync?type=cities
- * POST /api/live-events/sync?type=events
+ * 
+ * Only events are currently synced.
  */
 export async function POST(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const syncType = searchParams.get('type');
-
-    // Determine which types to sync
-  const typesToSync = syncType ? [syncType] : ['categories', 'performers', 'cities', 'venues', 'events'];
 
     // Use the shared sync service
-    const results = await syncLiveEventsData(typesToSync);
+    const results = await syncLiveEvents();
 
     return NextResponse.json({
       success: true,
