@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Popover,
   PopoverContent,
@@ -25,7 +25,23 @@ export function ColorPicker({
 }: ColorPickerProps) {
   const [color, setColor] = useState(value || "#000000");
   const [croppedImageUrl, setCroppedImageUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [croppingAvailable, setCroppingAvailable] = useState<boolean>(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // If the image is from doctorticket.com, proxy it through our backend to avoid CORS tainting
+  const displayImageUrl = useMemo(() => {
+    if (!mapImageUrl) return undefined;
+    try {
+      const url = new URL(mapImageUrl);
+      if (url.hostname.includes("doctorticket.com")) {
+        return `/api/proxy-image?url=${encodeURIComponent(mapImageUrl)}`;
+      }
+    } catch {
+      // ignore invalid URL
+    }
+    return mapImageUrl;
+  }, [mapImageUrl]);
 
   useEffect(() => {
     setColor(value || "#000000");
@@ -44,17 +60,17 @@ export function ColorPicker({
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    try {
+      // Set canvas size to match image
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
 
-    // Set canvas size to match image
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
+      // Draw the image
+      ctx.drawImage(img, 0, 0);
 
-    // Draw the image
-    ctx.drawImage(img, 0, 0);
-
-    // Get image data
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
+      // Attempt to read pixel data (will throw if canvas is tainted)
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
 
     // Function to check if a pixel is "content" (not white/transparent)
     const isContentPixel = (r: number, g: number, b: number, a: number) => {
@@ -93,8 +109,8 @@ export function ColorPicker({
     maxX = Math.min(canvas.width, maxX + padding);
     maxY = Math.min(canvas.height, maxY + padding);
 
-    // Check if we found any content
-    if (minX < maxX && minY < maxY) {
+  // Check if we found any content
+  if (minX < maxX && minY < maxY) {
       // Create cropped canvas
       const croppedWidth = maxX - minX;
       const croppedHeight = maxY - minY;
@@ -126,6 +142,18 @@ export function ColorPicker({
       // If no content boundaries found, use original image
       setCroppedImageUrl(null);
     }
+      setCroppingAvailable(true);
+      setImageError(null);
+    } catch (err) {
+      // Likely a CORS taint error, disable cropping gracefully
+      setCroppingAvailable(false);
+      setCroppedImageUrl(null);
+      if (!imageError) {
+        setImageError(
+          "Cannot analyze image pixels (CORS). Displaying original image."
+        );
+      }
+    }
   };
 
   // Handle image load for boundary detection
@@ -138,6 +166,8 @@ export function ColorPicker({
   useEffect(() => {
     if (!mapImageUrl) {
       setCroppedImageUrl(null);
+      setImageError(null);
+      setCroppingAvailable(true);
     }
   }, [mapImageUrl]);
 
@@ -220,7 +250,7 @@ export function ColorPicker({
           </div>
 
           {/* Map Image Display */}
-          {mapImageUrl && (
+          {displayImageUrl && (
             <div className="space-y-3">
               <Label>Map Reference</Label>
               <div className="relative">
@@ -229,16 +259,15 @@ export function ColorPicker({
 
                 {/* Hidden original image for boundary detection */}
                 <img
-                  src={mapImageUrl}
+                  src={displayImageUrl}
                   alt="Original map for processing"
                   className="hidden"
                   onLoad={handleImageLoad}
-                  crossOrigin="anonymous"
                 />
 
                 {/* Display cropped image if available, otherwise original */}
                 <img
-                  src={croppedImageUrl || mapImageUrl}
+                  src={croppedImageUrl || displayImageUrl}
                   alt="Map reference"
                   className="w-full max-h-[768px] object-contain border rounded"
                   style={{
@@ -246,12 +275,16 @@ export function ColorPicker({
                     height: "auto",
                     minHeight: "400px",
                   }}
-                  crossOrigin="anonymous"
                 />
 
                 {croppedImageUrl && (
                   <div className="mt-2 text-xs text-muted-foreground text-center">
                     ✂️ Auto-cropped to content boundaries
+                  </div>
+                )}
+                {!croppingAvailable && (
+                  <div className="mt-2 text-xs text-muted-foreground text-center italic">
+                    {imageError}
                   </div>
                 )}
               </div>

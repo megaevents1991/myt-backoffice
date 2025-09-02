@@ -41,7 +41,7 @@ import {
   getLiveSyncStatus,
   triggerLiveSync,
 } from "@/lib/actions/live-events-actions";
-import { findNearestLocation } from "@/lib/actions/location-actions";
+import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
 import {
   LiveEventDB,
   LiveTicketCategory,
@@ -258,7 +258,9 @@ export function LiveEventsContent() {
 
   const filteredTickets = useMemo(() => {
     let filtered = tickets.filter((ticket) =>
-      ticket.title.toLowerCase().includes(ticketFilter.toLowerCase())
+      ticket.title.toLowerCase().includes(ticketFilter.toLowerCase()) &&
+      ticket.seatingMethodId !== 2 && // Filter out tickets with seatingMethodId = 2 (Singles)
+      ticket.maxTicketAmount >= 2 // Filter out tickets with maxTicketAmount < 2
     );
 
     filtered.sort((a, b) => {
@@ -542,18 +544,61 @@ export function LiveEventsContent() {
 
   const handleCreateEventFromLive = async (event: LiveEventDB) => {
     try {
+      // Update exchange rates first
+      await exchangeRateClientService.updateAllExchangeRates();
+
       // Get tickets for this specific event
       const eventTickets = await getLiveTickets(event.event_id);
 
-      // Convert LIVE tickets to EventTickets
-      const mappedTickets: EventTicket[] = eventTickets.map((ticket) => ({
-        id: ticket.id.toString(),
-        category: ticket.title || ticket.hebTitle,
-        price: ticket.cost, // Already in base currency
-        description: ticket.hebComments || ticket.engComments || "",
-        colorOnTheMap: "#3B82F6", // Default blue color
-        vendor: "LIVE", // Mark as LIVE provider
-      }));
+      // Filter out tickets with seatingMethodId = 2 (Singles) and maxTicketAmount < 2
+      const filteredEventTickets = eventTickets.filter(
+        (ticket) => ticket.seatingMethodId !== 2 && ticket.maxTicketAmount >= 2
+      );
+
+      // Helper function to convert price to USD based on event currency
+      const convertPriceToUSD = async (price: number, currencyId: number): Promise<number> => {
+        let result: number;
+        switch (currencyId) {
+          case CURRENCIES.USD:
+            result = price + 40; // Markup only. Already in USD
+            break;
+          case CURRENCIES.EUR:
+            result = await exchangeRateClientService.convertToUSD(price + 40, 'EUR');
+            break;
+          case CURRENCIES.GBP:
+            result = await exchangeRateClientService.convertToUSD(price + 35, 'GBP');
+            break;
+          case CURRENCIES.ILS:
+            result = await exchangeRateClientService.convertToUSD(price + 150, 'ILS');
+            break;
+          default:
+            console.warn(`Unknown currency ${currencyId}, using price as-is`);
+            result = price;
+        }
+        
+        return result;
+      };
+
+      // Convert LiveTickets tickets to EventTickets with USD conversion
+      const mappedTickets: EventTicket[] = await Promise.all(
+        filteredEventTickets.map(async (ticket, index) => {
+          const priceInUSD = Math.round(await convertPriceToUSD(ticket.cost, event.currency));
+          
+            const roundedPrice = Math.ceil(priceInUSD / 10) * 10 - 1;
+            
+            const mappedTicket = {
+            id: ticket.id.toString(),
+            category: ticket.hebTitle || ticket.title,
+            price: roundedPrice, // Rounded to nearest 9
+            description: ticket.hebComments || ticket.engComments || "",
+            colorOnTheMap: "#fdfdfdff", // Default gray color
+            vendor: "LiveTickets",
+            available: true,
+            eid: ticket.id.toString(),
+            };
+          return mappedTicket;
+        })
+      );
 
       // Try to find the nearest location
       let locationData = {
@@ -562,16 +607,6 @@ export function LiveEventsContent() {
         name: event.city_name || "Unknown Location",
         city_iata: event.iata || "",
       };
-
-      // Calculate average ticket price for usual_price
-      const ticketPrices = mappedTickets
-        .map((ticket) => ticket.price)
-        .filter((price) => price > 0);
-      const averageTicketPrice =
-        ticketPrices.length > 0
-          ? ticketPrices.reduce((sum, price) => sum + price, 0) /
-            ticketPrices.length
-          : 0;
 
       const eventData: Omit<Event, "id"> = {
         name: event.event_name_heb || event.event_name,
@@ -585,17 +620,12 @@ export function LiveEventsContent() {
         tickets_and_rates: mappedTickets,
         def_date_depart: "",
         def_date_return: "",
-        usual_price: Math.round(averageTicketPrice),
+        usual_price: 0,
         base_flight_price: 0,
         base_hotel_price: 0,
         is_prioritized: false,
         is_deleted: "",
-        tags: [
-          event.primary_category,
-          ...event.performers.map(p => p.name),
-          event.city_name,
-          getCurrencyName(event.currency)
-        ].filter(Boolean).join(", "),
+        tags: "",
       };
 
       // Apply smart date calculation
@@ -655,14 +685,6 @@ export function LiveEventsContent() {
     return new Date(dateString).toLocaleDateString();
   };
 
-  const formatTime = (dateString: string | undefined) => {
-    if (!dateString) return "N/A";
-    return new Date(dateString).toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
   const formatPrice = (price: number, currency: number = 2) => {
     const currencyCode = getCurrencyCode(currency);
     return new Intl.NumberFormat("en-US", {
@@ -678,16 +700,6 @@ export function LiveEventsContent() {
       case CURRENCIES.GBP: return "GBP";
       case CURRENCIES.ILS: return "ILS";
       default: return "EUR";
-    }
-  };
-
-  const getCurrencyName = (currencyId: number): string => {
-    switch (currencyId) {
-      case CURRENCIES.USD: return "USD";
-      case CURRENCIES.EUR: return "EUR";
-      case CURRENCIES.GBP: return "GBP";
-      case CURRENCIES.ILS: return "ILS";
-      default: return "OTHER";
     }
   };
 

@@ -176,50 +176,6 @@ CREATE TABLE IF NOT EXISTS live_events (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- LIVE Categories lookup table (for filtering and classification)
-CREATE TABLE IF NOT EXISTS live_categories (
-  category_id INTEGER PRIMARY KEY,
-  category_name VARCHAR NOT NULL,
-  category_name_heb VARCHAR,
-  category_level INTEGER NOT NULL, -- 1, 2, or 3
-  is_sports_related BOOLEAN DEFAULT false,
-  is_music_related BOOLEAN DEFAULT false,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- LIVE Performers table (for search and filtering)
-CREATE TABLE IF NOT EXISTS live_performers (
-  performer_id INTEGER PRIMARY KEY,
-  performer_name VARCHAR NOT NULL,
-  performer_name_heb VARCHAR,
-  is_dt_performer BOOLEAN DEFAULT false,
-  performer_classification_id INTEGER,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- LIVE Venues table
-CREATE TABLE IF NOT EXISTS live_venues (
-  venue_id INTEGER PRIMARY KEY,
-  venue_name VARCHAR NOT NULL,
-  venue_name_heb VARCHAR,
-  is_dt_venue BOOLEAN DEFAULT false,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- LIVE Cities table (global list)
-CREATE TABLE IF NOT EXISTS live_cities (
-  city_id INTEGER PRIMARY KEY,
-  city_name VARCHAR NOT NULL,
-  eng_full_name VARCHAR,
-  heb_full_name VARCHAR,
-  iata VARCHAR,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
 -- Indexes for live_events
 CREATE INDEX IF NOT EXISTS idx_live_events_show_date ON live_events(show_date);
 CREATE INDEX IF NOT EXISTS idx_live_events_event_type ON live_events(event_type);
@@ -229,38 +185,11 @@ CREATE INDEX IF NOT EXISTS idx_live_events_currency ON live_events(currency);
 CREATE INDEX IF NOT EXISTS idx_live_events_is_active ON live_events(is_active);
 CREATE INDEX IF NOT EXISTS idx_live_events_primary_category ON live_events(primary_category);
 
--- Indexes for lookup tables
-CREATE INDEX IF NOT EXISTS idx_live_categories_level ON live_categories(category_level);
-CREATE INDEX IF NOT EXISTS idx_live_categories_sports ON live_categories(is_sports_related);
-CREATE INDEX IF NOT EXISTS idx_live_categories_music ON live_categories(is_music_related);
-CREATE INDEX IF NOT EXISTS idx_live_performers_classification ON live_performers(performer_classification_id);
-
 -- Full-text search indexes
 CREATE INDEX IF NOT EXISTS idx_live_events_name_search ON live_events USING gin(to_tsvector('english', event_name));
-CREATE INDEX IF NOT EXISTS idx_live_performers_name_search ON live_performers USING gin(to_tsvector('english', performer_name));
 
 -- Update triggers for LIVE tables
 CREATE TRIGGER live_events_updated_at 
     BEFORE UPDATE ON live_events 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER live_categories_updated_at 
-    BEFORE UPDATE ON live_categories 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER live_performers_updated_at 
-    BEFORE UPDATE ON live_performers 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER live_venues_updated_at 
-    BEFORE UPDATE ON live_venues 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER live_cities_updated_at 
-    BEFORE UPDATE ON live_cities 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();

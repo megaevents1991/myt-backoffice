@@ -15,6 +15,7 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
+    domains: ['www.doctorticket.com', 'doctorticket.com'],
   },
   experimental: {
     webpackBuildWorker: true,

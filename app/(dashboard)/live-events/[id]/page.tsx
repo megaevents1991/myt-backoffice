@@ -25,6 +25,7 @@ import {
   getLiveEventById,
   getLiveTickets,
 } from "@/lib/actions/live-events-actions";
+import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
 import {
   LiveEventDB,
   LiveTicketCategory,
@@ -179,16 +180,57 @@ export default function LiveEventDetailsPage() {
       return;
     }
 
-    try {
-      // Convert LIVE tickets to EventTickets
-      const eventTickets: EventTicket[] = tickets.map((ticket) => ({
-        id: ticket.id.toString(),
-        category: ticket.title || ticket.hebTitle,
-        price: ticket.cost,
-        description: ticket.hebComments || ticket.engComments || "",
-        colorOnTheMap: "#3B82F6",
-        vendor: "LIVE",
-      }));
+    try {      
+      // Update exchange rates first
+      await exchangeRateClientService.updateAllExchangeRates();
+
+      // Filter out tickets with seatingMethodId = 2 (Singles) and maxTicketAmount < 2
+      const filteredTickets = tickets.filter(
+        (ticket) => {
+          const keep = ticket.seatingMethodId !== 2 && ticket.maxTicketAmount >= 2;
+          console.log(`Ticket ${ticket.id}: seatingMethod=${ticket.seatingMethodId}, maxAmount=${ticket.maxTicketAmount}, keep=${keep}`);
+          return keep;
+        }
+      );
+      // Helper function to convert price to USD based on event currency
+      const convertPriceToUSD = async (price: number, currencyId: number): Promise<number> => {        
+        let result: number;
+        switch (currencyId) {
+          case CURRENCIES.USD:
+            result = price + 40; // Already in USD
+            break;
+          case CURRENCIES.EUR:
+            result = await exchangeRateClientService.convertToUSD(price + 40, 'EUR');
+            break;
+          case CURRENCIES.GBP:
+            result = await exchangeRateClientService.convertToUSD(price + 35, 'GBP');
+            break;
+          case CURRENCIES.ILS:
+            result = await exchangeRateClientService.convertToUSD(price + 150, 'ILS');
+            break;
+          default:
+            result = price;
+        }
+        return result;
+      };
+
+      const eventTickets: EventTicket[] = await Promise.all(
+        filteredTickets.map(async (ticket, index) => {
+          const priceInUSD = Math.round(await convertPriceToUSD(ticket.cost, event.currency));
+          
+          const mappedTicket = {
+            id: ticket.id.toString(),
+            category: ticket.title || ticket.hebTitle,
+            price: priceInUSD,
+            description: ticket.hebComments || ticket.engComments || "",
+            colorOnTheMap: "#3B82F6",
+            vendor: "LiveTickets",
+          };
+          return mappedTicket;
+        })
+      );
+
+      console.log('🎯 Final mapped tickets:', eventTickets);
 
       // Try to find the nearest location
       let locationData = {
@@ -568,9 +610,9 @@ export default function LiveEventDetailsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {tickets.length > 0 ? (
+              {tickets.filter(ticket => ticket.seatingMethodId !== 2 && ticket.maxTicketAmount >= 2).length > 0 ? (
                 <div className="space-y-4">
-                  {tickets.map((ticket) => (
+                  {tickets.filter(ticket => ticket.seatingMethodId !== 2 && ticket.maxTicketAmount >= 2).map((ticket) => (
                     <div
                       key={ticket.id}
                       className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
@@ -654,7 +696,12 @@ export default function LiveEventDetailsPage() {
               ) : (
                 <div className="text-center py-8">
                   <Ticket className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No tickets available</p>
+                  <p className="text-muted-foreground">
+                    {tickets.length > 0 
+                      ? "No available tickets (filtered)" 
+                      : "No tickets available"
+                    }
+                  </p>
                   <Button
                     variant="outline"
                     size="sm"

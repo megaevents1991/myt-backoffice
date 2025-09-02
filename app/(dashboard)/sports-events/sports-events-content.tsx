@@ -44,6 +44,7 @@ import {
   triggerSync,
 } from "@/lib/actions/sports-events-actions";
 import { findNearestLocation } from "@/lib/actions/location-actions";
+import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
 import {
   XS2Sport,
   XS2Tournament,
@@ -499,20 +500,41 @@ export function SportsEventsContent() {
 
   const handleCreateEventFromList = async (event: XS2Event) => {
     try {
+      // Update exchange rates first
+      await exchangeRateClientService.updateAllExchangeRates();
+
       // Get tickets for this specific event
       const eventTickets = await getLiveTickets(event.event_id);
 
-      // Convert XS2Tickets to EventTickets (with actual prices in euros)
-      const mappedTickets: EventTicket[] = eventTickets.map((ticket) => ({
-        id: ticket.ticket_id,
-        category: ticket.category_name || ticket.ticket_title,
-        price: ticket.local_rates?.net_rate_eur
-          ? ticket.local_rates.net_rate_eur / 100
-          : 0, // Convert from cents to euros
-        description: ticket.description_supplier || ticket.ticket_title,
-        colorOnTheMap: "#3B82F6", // Default blue color
-        vendor: "", // Optional vendor field, can be filled manually later
-      }));
+      // Filter out tickets with stock < 4
+      const filteredEventTickets = eventTickets.filter(
+        (ticket) => ticket.stock >= 4
+      );
+
+      // Convert XS2Tickets to EventTickets with EUR to USD conversion
+      const mappedTickets: EventTicket[] = await Promise.all(
+        filteredEventTickets.map(async (ticket) => {
+          // Get price in EUR (convert from cents to euros)
+          const priceInEUR = ticket.local_rates?.net_rate_eur
+            ? ticket.local_rates.net_rate_eur / 100
+            : 0;
+          
+          // Convert EUR to USD
+          const priceInUSD = priceInEUR > 0 
+            ? Math.round(await exchangeRateClientService.convertToUSD(priceInEUR, 'EUR'))
+            : 0;
+
+          return {
+            id: ticket.ticket_id,
+            category: ticket.category_name || ticket.ticket_title,
+            price: priceInUSD, // Price converted to USD
+            description: ticket.description_supplier || ticket.ticket_title,
+            colorOnTheMap: "#3B82F6", // Default blue color
+            vendor: "XS2Events", // Optional vendor field, can be filled manually later
+            available: true
+          };
+        })
+      );
 
       // Try to find the nearest location
       let locationData = {
@@ -552,16 +574,6 @@ export function SportsEventsContent() {
         // Continue with original location data if nearest location search fails
       }
 
-      // Calculate average ticket price for usual_price
-      const ticketPrices = mappedTickets
-        .map((ticket) => ticket.price)
-        .filter((price) => price > 0);
-      const averageTicketPrice =
-        ticketPrices.length > 0
-          ? ticketPrices.reduce((sum, price) => sum + price, 0) /
-            ticketPrices.length
-          : 0;
-
       // Create Event object from XS2Event data
       const eventData: Omit<Event, "id"> = {
         name: "", // TBD translate to hebrew first
@@ -577,7 +589,7 @@ export function SportsEventsContent() {
         tickets_and_rates: mappedTickets,
         def_date_depart: "", // Will be calculated by smart dates
         def_date_return: "", // Will be calculated by smart dates
-        usual_price: Math.round(averageTicketPrice), // Average ticket price, rounded
+        usual_price: 0, // Would need to be set manually
         base_flight_price: 0, // Would need to be set manually
         base_hotel_price: 0, // Would need to be set manually
         is_prioritized: false,

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
@@ -17,6 +17,7 @@ export default function DashboardLayout({
   const [error, setError] = useState<Error | null>(null);
   const pathname = usePathname();
   const { toast } = useToast();
+  const ignoredResourceErrors = useRef<Set<string>>(new Set());
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -26,23 +27,64 @@ export default function DashboardLayout({
     }
   }, [user, isLoading, router]);
 
-  // Global error handler
+  // Global error + unhandled promise rejection handlers
   useEffect(() => {
-    const handleError = (e: ErrorEvent) => {
-      console.error("Dashboard layout error:", e.error);
-      setError(e.error);
+    const handleError = (event: Event) => {
+      // Runtime JS errors
+      if (event instanceof ErrorEvent && event.error) {
+        console.error("Dashboard runtime error:", event.error);
+        setError(event.error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description:
+            event.error?.message ||
+            "An error occurred in the dashboard. Check console for details.",
+        });
+        return;
+      }
+
+      // Resource loading errors (images, scripts, etc.) often don't have an Error object
+      const target = event.target as (HTMLElement & { src?: string }) | null;
+      if (target) {
+        if (target.tagName === "IMG") {
+          const img = target as HTMLImageElement;
+            // Ignore known external CORS image failures & avoid spamming
+            if (img.src.includes("doctorticket.com")) {
+              if (!ignoredResourceErrors.current.has(img.src)) {
+                console.warn("Ignored image load/CORS issue:", img.src);
+                ignoredResourceErrors.current.add(img.src);
+              }
+              return; // don't surface toast
+            }
+          // For other images, log once but don't toast
+          if (!ignoredResourceErrors.current.has(img.src)) {
+            console.warn("Image failed to load:", img.src);
+            ignoredResourceErrors.current.add(img.src);
+          }
+          return;
+        }
+      }
+      // Fallback generic log (no toast to reduce noise)
+      console.warn("Unhandled non-error event captured:", event);
+    };
+
+    const handleUnhandledRejection = (e: PromiseRejectionEvent) => {
+      console.error("Unhandled promise rejection:", e.reason);
       toast({
         variant: "destructive",
-        title: "Error",
+        title: "Unexpected error",
         description:
-          "An error occurred in the dashboard. Check console for details.",
+          (e.reason && (e.reason.message || String(e.reason))) ||
+          "An asynchronous error occurred.",
       });
     };
 
-    window.addEventListener("error", handleError);
-
+    window.addEventListener("error", handleError, true); // capture to catch resource errors reliably
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
     return () => {
-      window.removeEventListener("error", handleError);
+      window.removeEventListener("error", handleError, true);
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
     };
   }, [toast]);
 
