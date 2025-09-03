@@ -71,7 +71,7 @@ export async function GET(req: Request) {
     }
 
     const reports = reservations.reduce((acc, reservation) => {
-      const trackingCode = reservation.aff_partner_tracking_code;
+      const trackingCode = reservation.aff_partner_tracking_code as string;
       if (!acc[trackingCode]) {
         acc[trackingCode] = [];
       }
@@ -245,8 +245,8 @@ const generateEmailHtml = ({
             </div>
           </div>
 
-          <p dir="rtl" class="rtl-text">המשווק ישלח חשבונית בימים הקרובים עבור הסכום האמור- מספרי הזמנות בגלבוע מופיעים כאן תחת Reservation Number</p>
-          
+          <p dir="rtl" class="rtl-text">המשווק ישלח חשבונית בימים הקרובים (עד ה- 5 לחודש) עבור הסכום האמור- מספרי הזמנות בגלבוע מופיעים כאן תחת Reservation Number</p>
+
           <h2>Detailed Reservation Report</h2>
           
           <table>
@@ -291,7 +291,7 @@ const generateEmailHtml = ({
             <p>© ${year} Mega-Events.co.il - All rights reserved.</p>
             <p>תל אביב, ישראל</p>
             <p>
-              <a href="mailto:alon@mega-events.co.il">alon@mega-events.co.il</a> | 
+              <a href="mailto:office@megatr.co.il">office@megatr.co.il</a> | 
               <a href="https://www.mega-events.co.il">www.mega-events.co.il</a>
             </p>
           </div>
@@ -469,10 +469,10 @@ const generateEmailHtml = ({
           <p dir="rtl" class="rtl-text">אנחנו מעריכים מאוד את השותפות עימך, ורואים בך חלק בלתי נפרד מההצלחה שלנו.
 אנו מצפים להמשך שיתוף פעולה פורה ולעוד הישגים משותפים גם בחודש הקרוב.<br>
 אם יש לך שאלות או הבהרות בנוגע אנו זמינים לכל שאלה.</p>
-  
-            
-            <p dir="rtl" class="rtl-text">על מנת שנוכל לשלם לך בהקדם, נבקשך להעביר לנו חשבונית / דרישת תשלום עם הפירוט מעלה.</p>
-                      
+
+
+      <p dir="rtl" class="rtl-text">על מנת שנוכל לשלם לך בהקדם, נבקשך להעביר לנו חשבונית / דרישת תשלום עם הפירוט מעלה עד ה-5 לחודש למייל <a href="mailto:office@megatr.co.il">office@megatr.co.il</a></p>
+
           <p dir="rtl" class="rtl-text">בברכה,<br>
           Mega Events</p>
           
@@ -480,7 +480,7 @@ const generateEmailHtml = ({
             <p>© ${year} Mega-Events.co.il - All rights reserved.</p>
             <p>תל אביב, ישראל</p>
             <p>
-              <a href="mailto:alon@mega-events.co.il">alon@mega-events.co.il</a> | 
+              <a href="mailto:office@megatr.co.il">office@megatr.co.il</a> | 
               <a href="https://www.mega-events.co.il">www.mega-events.co.il</a>
             </p>
           </div>
@@ -532,8 +532,7 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
     });
     await transporter.sendMail({
       from: "gilad@mega-events.co.il",
-      to: "alon@megatr.co.il, orlyacc@megatr.co.il",
-      cc: "alon@mega-events.co.il",
+      to: "alon@megatr.co.il, office@megatr.co.il",
       subject: `Monthly Partner Report - ${month} ${year} - Supplier Number ${partnerData.supplier_number}`,
       html: emailHtmlToOrly,
     })
