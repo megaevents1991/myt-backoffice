@@ -30,6 +30,8 @@ import {
   searchFlightPrices, 
   isValidIATACode 
 } from "@/lib/actions/flight-actions";
+import { getLocations } from "@/lib/actions/location-actions";
+import type { Location } from "@/types/location.types";
 import { searchHotelPrices } from "@/lib/actions/hotel-actions";
 
 export default function EventPage({
@@ -46,6 +48,9 @@ export default function EventPage({
   const [saving, setSaving] = useState(false);
   const [searchingFlights, setSearchingFlights] = useState(false);
   const [searchingHotels, setSearchingHotels] = useState(false);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [locationsLoading, setLocationsLoading] = useState(false);
+  const [selectedLocationId, setSelectedLocationId] = useState<string>("");
   const isNewEvent = unwrappedParams.id === "new";
 
   useEffect(() => {
@@ -156,6 +161,27 @@ export default function EventPage({
 
     fetchEvent();
   }, [unwrappedParams.id, toast, isNewEvent, searchParams]);
+
+  // Load saved locations for dropdown (always load so edit can also reuse)
+  useEffect(() => {
+    async function loadLocations() {
+      try {
+        setLocationsLoading(true);
+        const data = await getLocations();
+        setLocations(data);
+      } catch (error) {
+        console.error("Failed to load locations list:", error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+            description: "Failed to load saved locations",
+        });
+      } finally {
+        setLocationsLoading(false);
+      }
+    }
+    loadLocations();
+  }, [toast]);
 
   // Function to search for flight prices
   const searchFlightPricesForEvent = async (
@@ -888,6 +914,54 @@ export default function EventPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="saved-location">Select Existing Location</Label>
+              <div className="flex gap-2">
+                <select
+                  id="saved-location"
+                  value={selectedLocationId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedLocationId(val);
+                    if (!val || val === "custom") return; // user reset to custom
+                    const loc = locations.find(l => l.id === Number(val));
+                    if (loc) {
+                      setEvent(prev => {
+                        if (!prev) return prev;
+                        return {
+                          ...prev,
+                          location: {
+                            name: loc.name,
+                            latitude: loc.latitude,
+                            longitude: loc.longitude,
+                            city_iata: loc.city_iata || "",
+                          }
+                        };
+                      });
+                      toast({
+                        title: "Location applied",
+                        description: `Filled with saved location \"${loc.name}\"`,
+                      });
+                    }
+                  }}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  disabled={locationsLoading}
+                >
+                  <option value="">{locationsLoading ? "Loading locations..." : "-- Choose a saved location --"}</option>
+                  {locations.map(loc => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name} {loc.city_iata ? `(${loc.city_iata})` : ''}
+                    </option>
+                  ))}
+                  {selectedLocationId && (
+                    <option value="custom">Custom / Clear selection</option>
+                  )}
+                </select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Selecting a saved location will overwrite the fields below. You can still edit them manually afterwards.
+              </p>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="location.name">Location Name</Label>
               <Input
