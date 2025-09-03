@@ -1,6 +1,7 @@
 // app/api/cron/dailyLiveEventsSync/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
+import { syncLiveEvents } from '@/lib/services/live-events-sync';
 
 /**
  * Cron job to sync live events data daily (at 00:30 every day)
@@ -21,23 +22,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log('🎭 Daily live events sync cron job started');
+  console.log('🎭 Daily live events sync cron job started (direct function call)');
 
-    // Call the live events sync API endpoint directly
-    const syncResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/live-events/sync`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+  // Directly invoke the sync function (avoids internal HTTP hop)
+  const syncResult = await syncLiveEvents();
 
-    if (!syncResponse.ok) {
-      throw new Error(`Live events sync API returned ${syncResponse.status}: ${syncResponse.statusText}`);
-    }
-
-    const syncResult = await syncResponse.json();
-
-    console.log('✅ Daily live events sync completed:', syncResult);
+  console.log('✅ Daily live events sync completed (direct):', syncResult);
 
     return NextResponse.json({
       success: true,
