@@ -39,15 +39,33 @@ class MultiCurrencyExchangeRateService {
   
   private readonly API_BASE_URL = "https://api.twelvedata.com/exchange_rate";
   private readonly API_KEY = "43c9bbfbf1cb4a1990c01a1a6d9ddf2f";
+  // Secondary provider (used only when rate has been stale for >= 23 hours)
+  private readonly FRANKFURTER_BASE_URL = 'https://api.frankfurter.app/latest';
+  
   private readonly FALLBACK_RATES = {
-    EUR: 1.1,
-    ILS: 0.27,
+    EUR: 1.17,
+    ILS: 0.3,
     GBP: 1.25
   };
-  private readonly MAX_RETRIES = 2;
-  private readonly RETRY_DELAY = 1500; // 1.5 seconds
+  // Conservative bounds to reject outliers (currency -> USD per unit)
+  private readonly RATE_LIMITS: Record<SupportedCurrency, { min: number; max: number }> = {
+    EUR: { min: 1, max: 1.4 },  // EUR/USD
+    GBP: { min: 1.1, max: 1.6 },  // GBP/USD
+    ILS: { min: 0.25, max: 0.35 } // ILS/USD
+  };
+  private readonly MAX_RETRIES = 4;
+  private readonly BASE_RETRY_DELAY_MS = 800; // exponential backoff base
+  private readonly API_TIMEOUT_MS = 10000;
 
-  private async fetchWithTimeout(url: string, timeoutMs: number = 8000): Promise<Response> {
+  private readonly SECONDARY_PROVIDER_AFTER_MS = 23 * 60 * 60 * 1000; // 23 hours
+
+  private readonly STALE_AFTER_MS = 60 * 60 * 1000; // 1 hour
+  private readonly HARD_STALE_AFTER_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+  // Deduplicate concurrent updates per currency
+  private inFlight: Map<SupportedCurrency, Promise<void>> = new Map();
+
+  private async fetchWithTimeout(url: string, timeoutMs: number = this.API_TIMEOUT_MS): Promise<Response> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     
@@ -61,8 +79,14 @@ class MultiCurrencyExchangeRateService {
     }
   }
 
+  private isValidRate(currency: SupportedCurrency, rate: number): boolean {
+    const bounds = this.RATE_LIMITS[currency];
+    return rate >= bounds.min && rate <= bounds.max;
+  }
+
   private async fetchCurrencyRate(currency: SupportedCurrency): Promise<number | null> {
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
+      const backoff = Math.round(this.BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) * (0.75 + Math.random() * 0.5));
       try {
         console.log(`🔄 Fetching ${currency}/USD rate - attempt ${attempt}/${this.MAX_RETRIES}`);
         
@@ -70,66 +94,145 @@ class MultiCurrencyExchangeRateService {
         const response = await this.fetchWithTimeout(url);
 
         if (!response.ok) {
+          // Handle 429 rate limit with Retry-After
+          if (response.status === 429) {
+            const retryAfterHeader = response.headers.get('retry-after');
+            const retryAfterSec = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+            const waitMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 : backoff;
+            console.warn(`⏳ Rate limited for ${currency}. Waiting ${waitMs}ms before retry`);
+            if (attempt < this.MAX_RETRIES) await new Promise(r => setTimeout(r, waitMs));
+            continue;
+          }
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         const data = await response.json();
-        if (data?.rate && typeof data.rate === 'number') {
-          const rate = Math.ceil(data.rate * 100) / 100; // Round to 2 decimal places
+        const raw = data?.rate;
+        const parsed = typeof raw === 'number' ? raw : (typeof raw === 'string' ? parseFloat(raw) : NaN);
+        if (Number.isFinite(parsed)) {
+          const rate = Math.ceil(parsed * 100) / 100; // Round to 2 decimals
+          if (!this.isValidRate(currency, rate)) {
+            throw new Error(`Out-of-range rate for ${currency}: ${rate} (limits ${this.RATE_LIMITS[currency].min}-${this.RATE_LIMITS[currency].max})`);
+          }
           console.log(`✅ ${currency}/USD rate fetched: ${rate}`);
           return rate;
-        } else {
-          throw new Error(`Invalid exchange rate data structure for ${currency}`);
         }
+        throw new Error(`Invalid exchange rate data structure for ${currency}`);
       } catch (error) {
-        console.error(`❌ ${currency}/USD rate fetch attempt ${attempt} failed:`, error instanceof Error ? error.message : 'Unknown error');
-        
+        console.warn(`⚠️ ${currency}/USD rate fetch attempt ${attempt} failed:`, error instanceof Error ? error.message : 'Unknown error');
         if (attempt < this.MAX_RETRIES) {
-          await new Promise(resolve => setTimeout(resolve, this.RETRY_DELAY));
+          await new Promise(resolve => setTimeout(resolve, backoff));
         }
       }
     }
+    console.error(`🚫 All attempts failed for ${currency}/USD with primary provider`);
     return null;
   }
 
-  private async updateSingleCurrencyRate(currency: SupportedCurrency): Promise<void> {
+  // Secondary provider: Frankfurter (used only when primary fails for >= 23 hours)
+  private async fetchFromFrankfurter(currency: SupportedCurrency): Promise<number | null> {
     try {
-      const rate = await this.fetchCurrencyRate(currency);
-      
-      if (rate !== null) {
-        this.exchangeRates[currency] = {
-          rate,
-          lastUpdated: new Date(),
-          source: 'api'
-        };
-        console.log(`💱 ${currency}/USD rate updated: ${rate} (from API)`);
+      console.log(`🔄 [Secondary] Fetching ${currency}/USD from Frankfurter`);
+      const url = `${this.FRANKFURTER_BASE_URL}?from=${encodeURIComponent(currency)}&to=USD`;
+      const response = await this.fetchWithTimeout(url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const rate = data?.rates?.USD;
+      if (typeof rate === 'number' && Number.isFinite(rate)) {
+        const rounded = Math.ceil(rate * 100) / 100; // Round to 2 decimals
+        if (!this.isValidRate(currency, rounded)) {
+          throw new Error(`Out-of-range rate from Frankfurter for ${currency}: ${rounded}`);
+        }
+        console.log(`✅ [Secondary] ${currency}/USD rate fetched from Frankfurter: ${rounded}`);
+        return rounded;
       } else {
-        const fallbackRate = this.FALLBACK_RATES[currency];
-        console.warn(`⚠️ Using fallback ${currency}/USD rate: ${fallbackRate}`);
-        this.exchangeRates[currency] = {
-          rate: fallbackRate,
-          lastUpdated: new Date(),
-          source: 'fallback'
-        };
+        throw new Error(`Invalid exchange rate data structure from Frankfurter for ${currency}`);
       }
     } catch (error) {
-      console.error(`❌ Error updating ${currency}/USD rate:`, error);
-      const fallbackRate = this.FALLBACK_RATES[currency];
-      this.exchangeRates[currency] = {
-        rate: fallbackRate,
-        lastUpdated: new Date(),
-        source: 'fallback'
-      };
+      console.error(`❌ [Secondary] Frankfurter fetch failed for ${currency}:`, error instanceof Error ? error.message : 'Unknown error');
+      return null;
     }
+  }
+
+  // Coalesce concurrent updates per currency
+  private scheduleCurrencyUpdate(currency: SupportedCurrency, fn: () => Promise<void>): Promise<void> {
+    const existing = this.inFlight.get(currency);
+    if (existing) return existing;
+    const p = fn().finally(() => this.inFlight.delete(currency));
+    this.inFlight.set(currency, p);
+    return p;
+  }
+
+  private async updateSingleCurrencyRate(currency: SupportedCurrency): Promise<void> {
+    return this.scheduleCurrencyUpdate(currency, async () => {
+      try {
+        const rate = await this.fetchCurrencyRate(currency);
+        
+        if (rate !== null) {
+          this.exchangeRates[currency] = {
+            rate,
+            lastUpdated: new Date(),
+            source: 'api'
+          };
+          console.log(`💱 ${currency}/USD rate updated: ${rate} (from API)`);
+        } else {
+          // Primary provider failed. Decide whether to try secondary provider based on staleness.
+          const current = this.exchangeRates[currency];
+          if (current) {
+            const ageMs = Date.now() - current.lastUpdated.getTime();
+            if (ageMs >= this.SECONDARY_PROVIDER_AFTER_MS) {
+              console.warn(`⚠️ ${currency}/USD rate stale for ${Math.round(ageMs / 3600000)}h. Trying secondary provider (Frankfurter).`);
+              const secondaryRate = await this.fetchFromFrankfurter(currency);
+              if (secondaryRate !== null) {
+                this.exchangeRates[currency] = {
+                  rate: secondaryRate,
+                  lastUpdated: new Date(),
+                  source: 'api' // treat as API source; provider detail noted in logs
+                };
+                console.log(`💱 ${currency}/USD rate updated via secondary provider: ${secondaryRate}`);
+              } else {
+                console.warn(`⚠️ Secondary provider also failed for ${currency}. Maintaining previous rate: ${current.rate} (from ${current.source}, last updated: ${current.lastUpdated.toISOString()})`);
+                // Keep existing rate; do not overwrite timestamp to preserve staleness tracking
+              }
+            } else {
+              console.warn(`⚠️ Primary provider failed for ${currency}, but rate is not stale yet (${Math.round(ageMs / 3600000)}h old). Keeping previous rate: ${current.rate} (from ${current.source}).`);
+            }
+          } else {
+            // No previous rate (shouldn't happen due to initialization) — set static fallback
+            const fallbackRate = this.FALLBACK_RATES[currency];
+            console.warn(`⚠️ No previous ${currency}/USD rate found. Using static fallback: ${fallbackRate}`);
+            this.exchangeRates[currency] = {
+              rate: fallbackRate,
+              lastUpdated: new Date(),
+              source: 'fallback'
+            };
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Error updating ${currency}/USD rate:`, error);
+        // On unexpected error, keep existing rate if available; only fallback if no previous
+        const current = this.exchangeRates[currency];
+        if (!current) {
+          const fallbackRate = this.FALLBACK_RATES[currency];
+          this.exchangeRates[currency] = {
+            rate: fallbackRate,
+            lastUpdated: new Date(),
+            source: 'fallback'
+          };
+        } else {
+          console.warn(`⚠️ Keeping previous ${currency}/USD rate after error: ${current.rate} (from ${current.source}, last updated: ${current.lastUpdated.toISOString()})`);
+        }
+      }
+    });
   }
 
   public async updateAllExchangeRates(): Promise<void> {
     console.log('💱 Updating all exchange rates...');
     const currencies: SupportedCurrency[] = ['EUR', 'ILS', 'GBP'];
-    
-    // Update all currencies in parallel for better performance
-    const updatePromises = currencies.map(currency => this.updateSingleCurrencyRate(currency));
-    await Promise.all(updatePromises);
+    await Promise.allSettled(currencies.map(currency => this.updateSingleCurrencyRate(currency)));
     
     console.log('✅ All exchange rates updated');
   }
@@ -139,7 +242,22 @@ class MultiCurrencyExchangeRateService {
   }
 
   public getExchangeRate(currency: SupportedCurrency): ExchangeRateData {
-    return this.exchangeRates[currency];
+    const data = this.exchangeRates[currency];
+    const age = Date.now() - data.lastUpdated.getTime();
+    if (age > this.STALE_AFTER_MS) {
+      // Kick off background refresh; coalesced per currency
+      this.updateSingleCurrencyRate(currency).catch(() => {});
+    }
+    return data;
+  }
+
+  // Optional helper: ensure freshness if hard-stale (blocking)
+  public async ensureFreshIfHardStale(currency: SupportedCurrency): Promise<void> {
+    const data = this.exchangeRates[currency];
+    const age = Date.now() - data.lastUpdated.getTime();
+    if (age > this.HARD_STALE_AFTER_MS) {
+      await this.updateSingleCurrencyRate(currency);
+    }
   }
 
   public getAllExchangeRates(): ExchangeRates {
@@ -349,8 +467,7 @@ export class TicketPriceSyncService {
           available: available
         };
       } catch (error) {
-        console.error(`❌ Attempt ${attempt} failed for ticket ${ticketId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        
+        console.log(`❌ Attempt ${attempt} failed for ticket ${ticketId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         if (attempt < this.MAX_RETRIES) {
           console.log(`⏳ Retrying in ${this.RETRY_DELAY}ms...`);
           await this.delay(this.RETRY_DELAY);
@@ -392,9 +509,7 @@ export class TicketPriceSyncService {
         }
                 
         return eventData;
-      } catch (error) {
-        console.error(`❌ Live event attempt ${attempt} failed for event ${eventEid}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        
+      } catch (error) {        
         if (attempt < this.MAX_RETRIES) {
           console.log(`⏳ Retrying in ${this.RETRY_DELAY}ms...`);
           await this.delay(this.RETRY_DELAY);
