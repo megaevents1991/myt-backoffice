@@ -594,7 +594,7 @@ export function LiveEventsContent() {
             colorOnTheMap: "#fdfdfdff", // Default gray color
             vendor: "LiveTickets",
             available: true,
-            eid: ticket.id.toString(),
+            eid: event.event_id.toString(),
             };
           return mappedTicket;
         })
