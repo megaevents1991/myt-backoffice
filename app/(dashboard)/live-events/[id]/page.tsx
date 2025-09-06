@@ -280,14 +280,7 @@ export default function LiveEventDetailsPage() {
         base_hotel_price: 0,
         is_prioritized: false,
         is_deleted: "",
-        tags: [
-          event.primary_category,
-          ...event.performers.map((p: any) => p.name),
-          event.city_name,
-          getCurrencyName(event.currency),
-        ]
-          .filter(Boolean)
-          .join(", "),
+        tags: ""
       };
 
       // Apply smart date calculation

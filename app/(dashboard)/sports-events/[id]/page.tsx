@@ -268,15 +268,8 @@ export default function EventDetailsPage() {
       base_hotel_price: 0, // Would need to be set manually
       is_prioritized: event.is_popular || false,
       is_deleted: "",
-      tags: [
-        event.sport?.sport_id,
-        event.tournament?.official_name,
-        event.city,
-        event.event_status,
-      ]
-        .filter(Boolean)
-        .join(", "),
-      type: "sports_event"
+      tags: "",
+      type: "sports_event_dynamic"
     };
 
     // Apply smart date calculation
