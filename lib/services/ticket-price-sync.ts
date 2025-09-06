@@ -416,8 +416,7 @@ export class TicketPriceSyncService {
       const response = await fetch(url, {
         signal: controller.signal,
         headers: {
-          'X-Api-Key': apiKey || '',
-          'Content-Type': 'application/json'
+          'Authorization': apiKey || '',
         }
       });
       clearTimeout(timeoutId);
@@ -742,7 +741,10 @@ export class TicketPriceSyncService {
       // Sync Live/Doctor events
       console.log('\n🎯 === SYNCING LIVE/DOCTOR EVENTS ===');
       const liveSummary = await this.syncLiveTicketPrices();
-      
+      console.log('🎯 === SYNC COMPLETE ===\n');
+      console.log(`📊 XS2 Summary: ${xs2Summary.eventsProcessed} events, ${xs2Summary.totalTickets} tickets, ${xs2Summary.successfulUpdates} successful, ${xs2Summary.failedUpdates} failed`);
+      console.log(`📊 Live Summary: ${liveSummary.eventsProcessed} events, ${liveSummary.totalTickets} tickets, ${liveSummary.successfulUpdates} successful, ${liveSummary.failedUpdates} failed`);
+
       // Combine summaries
       summary.totalTickets = xs2Summary.totalTickets + liveSummary.totalTickets;
       summary.successfulUpdates = xs2Summary.successfulUpdates + liveSummary.successfulUpdates;
