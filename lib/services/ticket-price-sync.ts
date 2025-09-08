@@ -407,18 +407,24 @@ export class TicketPriceSyncService {
     return exchangeRateService.convertToUSD(amount, currency as SupportedCurrency);
   }
 
-  private async fetchWithTimeout(url: string, apiKey?: string): Promise<Response> {
+  // Generic fetch with timeout that supports both providers (liveTickets & XS2E) with different header schemes
+  private async fetchWithTimeout(
+    url: string,
+    apiKey: string | undefined,
+    provider: 'liveTickets' | 'xs2e'
+  ): Promise<Response> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.API_TIMEOUT);
-    
+
+    // Build provider-specific headers
+    const headers: Record<string, string> =
+      provider === 'liveTickets'
+        ? { 'Authorization': apiKey || '' }
+        : { 'X-Api-Key': apiKey || '', 'Content-Type': 'application/json' };
+
     try {
-      console.log(`🔄 Fetching: ${url}`);
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          'Authorization': apiKey || '',
-        }
-      });
+      console.log(`🔄 Fetching [${provider}] ${url}`);
+      const response = await fetch(url, { signal: controller.signal, headers });
       clearTimeout(timeoutId);
       return response;
     } catch (error) {
@@ -433,7 +439,7 @@ export class TicketPriceSyncService {
         console.log(`📍 Fetching ticket ${ticketId} - attempt ${attempt}/${this.MAX_RETRIES}`);
         
         const url = `${this.XS2_API_BASE_URL}/tickets/${ticketId}`;
-        const response = await this.fetchWithTimeout(url, this.XS2_API_KEY);
+  const response = await this.fetchWithTimeout(url, this.XS2_API_KEY, 'xs2e');
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -484,7 +490,7 @@ export class TicketPriceSyncService {
         console.log(`📍 Fetching Live event ${eventEid} - attempt ${attempt}/${this.MAX_RETRIES}`);
         
         const url = `${this.LIVE_API_BASE_URL}/Events/getOneEvent?eid=${eventEid}`;
-        const response = await this.fetchWithTimeout(url, this.LIVE_API_KEY);
+  const response = await this.fetchWithTimeout(url, this.LIVE_API_KEY, 'liveTickets');
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -751,7 +757,7 @@ export class TicketPriceSyncService {
       summary.failedUpdates = xs2Summary.failedUpdates + liveSummary.failedUpdates;
       summary.eventsProcessed = xs2Summary.eventsProcessed + liveSummary.eventsProcessed;
       summary.errors = [...xs2Summary.errors, ...liveSummary.errors];
-      
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('❌ Fatal error in syncAllTicketPrices:', errorMessage);
