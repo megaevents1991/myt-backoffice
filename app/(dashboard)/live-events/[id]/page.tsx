@@ -220,7 +220,7 @@ export default function LiveEventDetailsPage() {
           
           const mappedTicket = {
             id: ticket.id.toString(),
-            eid: ticket.id.toString(), // preserve original live ticket id as external id
+            eid: event.event_id.toString(), // preserve original live event id as external id
             category: ticket.title || ticket.hebTitle,
             price: priceInUSD,
             description: ticket.hebComments || ticket.engComments || "",

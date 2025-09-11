@@ -490,7 +490,7 @@ export class TicketPriceSyncService {
         console.log(`📍 Fetching Live event ${eventEid} - attempt ${attempt}/${this.MAX_RETRIES}`);
         
         const url = `${this.LIVE_API_BASE_URL}/Events/getOneEvent?eid=${eventEid}`;
-  const response = await this.fetchWithTimeout(url, this.LIVE_API_KEY, 'liveTickets');
+        const response = await this.fetchWithTimeout(url, this.LIVE_API_KEY, 'liveTickets');
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
