@@ -664,7 +664,6 @@ export class TicketPriceSyncService {
             failureCount++;
             return {
               ...ticket,
-              price: 0,
               available: false
             };
           } else {
