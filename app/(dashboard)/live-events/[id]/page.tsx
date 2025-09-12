@@ -221,7 +221,7 @@ export default function LiveEventDetailsPage() {
           const mappedTicket = {
             id: ticket.id.toString(),
             eid: event.event_id.toString(), // preserve original live event id as external id
-            category: ticket.title || ticket.hebTitle,
+            category: ticket.hebTitle || ticket.title,
             price: priceInUSD,
             description: ticket.hebComments || ticket.engComments || "",
             colorOnTheMap: "#c3c3c3ff",
@@ -614,11 +614,11 @@ export default function LiveEventDetailsPage() {
                       <div className="flex justify-between items-start mb-2">
                         <div>
                           <h4 className="font-semibold text-sm">
-                            {ticket.title}
+                            {ticket.hebTitle}
                           </h4>
-                          {ticket.hebTitle && ticket.hebTitle !== ticket.title && (
+                          {ticket.title && ticket.hebTitle !== ticket.title && (
                             <p className="text-xs text-muted-foreground">
-                              {ticket.hebTitle}
+                              {ticket.title}
                             </p>
                           )}
                         </div>

@@ -258,7 +258,7 @@ export function LiveEventsContent() {
 
   const filteredTickets = useMemo(() => {
     let filtered = tickets.filter((ticket) =>
-      ticket.title.toLowerCase().includes(ticketFilter.toLowerCase()) &&
+      ticket.hebTitle.toLowerCase().includes(ticketFilter.toLowerCase()) &&
       ticket.seatingMethodId !== 2 && // Filter out tickets with seatingMethodId = 2 (Singles)
       ticket.maxTicketAmount >= 2 // Filter out tickets with maxTicketAmount < 2
     );
@@ -267,7 +267,7 @@ export function LiveEventsContent() {
       let comparison = 0;
       switch (ticketSortBy) {
         case "title":
-          comparison = a.title.localeCompare(b.title);
+          comparison = a.hebTitle.localeCompare(b.hebTitle);
           break;
         case "price":
           comparison = a.cost - b.cost;
@@ -1219,7 +1219,7 @@ export function LiveEventsContent() {
                     >
                       <div className="flex justify-between items-start mb-2">
                         <div className="font-medium text-sm">
-                          {ticket.title}
+                          {ticket.hebTitle}
                         </div>
                         <div className="text-right">
                           <div className="font-medium text-primary">
