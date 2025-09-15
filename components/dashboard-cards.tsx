@@ -2,16 +2,17 @@
 
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarDays, Users, ClipboardList } from "lucide-react";
+import { CalendarDays, Users, ClipboardList, UserCheck, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getDashboardCounts } from "@/lib/actions/dashboard-actions";
 
 export function DashboardCards() {
   const [counts, setCounts] = useState({
     events: 0,
+    agents: 0,
     partners: 0,
-    reservations: 0,
-    upcomingEvents: 0,
+    paidReservations: 0,
+    pendingReservations: 0,
   });
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
@@ -42,46 +43,64 @@ export function DashboardCards() {
   }, [toast]);
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
+      {/* Events (>= 1 week from now) */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Events</CardTitle>
           <CalendarDays className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">
-            {loading ? "..." : counts.upcomingEvents}
-          </div>
-          <p className="text-xs text-muted-foreground">Upcoming events</p>
-          <div className="mt-3 text-sm text-muted-foreground">
-            {loading ? "..." : counts.events} total events
-          </div>
+          <div className="text-2xl font-bold">{loading ? "..." : counts.events}</div>
+          <p className="text-xs text-muted-foreground">In 7+ days</p>
         </CardContent>
       </Card>
 
+      {/* Agents */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Agents</CardTitle>
+          <UserCheck className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{loading ? "..." : counts.agents}</div>
+          <p className="text-xs text-muted-foreground">Partner type agent</p>
+        </CardContent>
+      </Card>
+
+      {/* Partners (Affiliates filtered) */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Partners</CardTitle>
           <Users className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">
-            {loading ? "..." : counts.partners}
-          </div>
-          <p className="text-xs text-muted-foreground">Active partners</p>
+          <div className="text-2xl font-bold">{loading ? "..." : counts.partners}</div>
+          <p className="text-xs text-muted-foreground">Affiliates (filtered)</p>
         </CardContent>
       </Card>
 
+      {/* Paid Reservations */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Reservations</CardTitle>
+          <CardTitle className="text-sm font-medium">Paid Reservations</CardTitle>
           <ClipboardList className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">
-            {loading ? "..." : counts.reservations}
-          </div>
-          <p className="text-xs text-muted-foreground">Total reservations</p>
+          <div className="text-2xl font-bold">{loading ? "..." : counts.paidReservations}</div>
+          <p className="text-xs text-muted-foreground">Status Paid</p>
+        </CardContent>
+      </Card>
+
+      {/* Pending Reservations */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Pending Reservations</CardTitle>
+          <UserPlus className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{loading ? "..." : counts.pendingReservations}</div>
+          <p className="text-xs text-muted-foreground">Status Pending</p>
         </CardContent>
       </Card>
     </div>
