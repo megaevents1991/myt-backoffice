@@ -109,7 +109,8 @@ export async function getDashboardStats() {
     const { data: recentRows, error: recentError } = await supabase
       .from("reservations")
       .select("created_at,more_pax_info")
-      .gte("created_at", thirtyDaysAgo.toISOString()) as unknown as { data: ReservationRow[]; error: any }
+      .gte("created_at", thirtyDaysAgo.toISOString())
+      .eq("status", "Paid") as unknown as { data: ReservationRow[]; error: any }
     if (recentError) throw recentError
     const recentReservations = (recentRows || []).length
     const recentReservationsPax = (recentRows || []).reduce<number>((sum, r) => sum + 1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0), 0)
@@ -122,7 +123,8 @@ export async function getDashboardStats() {
       .from("reservations")
       .select("created_at,more_pax_info")
       .gte("created_at", firstOfLast.toISOString())
-      .lt("created_at", firstOfCurrent.toISOString()) as unknown as { data: ReservationRow[]; error: any }
+      .lt("created_at", firstOfCurrent.toISOString())
+      .eq("status", "Paid") as unknown as { data: ReservationRow[]; error: any }
     if (lastMonthError) throw lastMonthError
     const reservationsLastMonth = (lastMonthRows || []).length
     const paxLastMonth = (lastMonthRows || []).reduce<number>((sum, r) => sum + 1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0), 0)
@@ -133,7 +135,8 @@ export async function getDashboardStats() {
     const { data: last7Rows, error: last7Error } = await supabase
       .from("reservations")
       .select("created_at,more_pax_info")
-      .gte("created_at", sevenDaysAgo.toISOString()) as unknown as { data: ReservationRow[]; error: any }
+      .gte("created_at", sevenDaysAgo.toISOString())
+      .eq("status", "Paid") as unknown as { data: ReservationRow[]; error: any }
     if (last7Error) throw last7Error
     const reservationsLast7Days = (last7Rows || []).length
     const paxLast7Days = (last7Rows || []).reduce<number>((sum, r) => sum + 1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0), 0)

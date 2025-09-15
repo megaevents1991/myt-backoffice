@@ -35,7 +35,8 @@ function toDateKey(d: Date) {
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const range = searchParams.get("range") || undefined;
+  const range = searchParams.get("range") || undefined;
+  const status = searchParams.get("status") || "Paid";
     const startParam = searchParams.get("start");
     const endParam = searchParams.get("end");
 
@@ -51,11 +52,15 @@ export async function GET(req: NextRequest) {
     }
 
     // Query only created_at to reduce payload
-    const { data, error } = await supabase
+    let query = supabase
       .from("reservations")
       .select("created_at")
       .gte("created_at", start.toISOString())
       .lt("created_at", end.toISOString());
+    if (status) {
+      query = query.eq("status", status);
+    }
+    const { data, error } = await query;
     if (error) throw error;
 
     // Aggregate by day
