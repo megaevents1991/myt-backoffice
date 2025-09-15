@@ -83,12 +83,15 @@ export async function getDashboardCounts() {
 
 export async function getDashboardStats() {
   try {
-    type ReservationRow = { user_shown_price: number | null | undefined }
+  type ReservationRow = { more_pax_info: { first_name?: string; last_name?: string }[] | null }
     const { data: reservations, error: reservationsError } = await supabase
       .from("reservations")
-      .select("user_shown_price") as unknown as { data: ReservationRow[]; error: any }
+      .select("more_pax_info") as unknown as { data: ReservationRow[]; error: any }
     if (reservationsError) throw reservationsError
-    const totalRevenue = (reservations || []).reduce<number>((sum, r) => sum + (Number(r.user_shown_price) || 0), 0)
+    const totalRevenue = (reservations || []).reduce<number>((sum, r) => {
+      const pax = 1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0)
+      return sum + pax * 175
+    }, 0)
 
     type EventRow = { usual_price: number | null | undefined }
     const { data: events, error: eventsError } = await supabase
