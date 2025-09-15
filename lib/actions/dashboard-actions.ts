@@ -83,25 +83,16 @@ export async function getDashboardCounts() {
 
 export async function getDashboardStats() {
   try {
-  type ReservationRow = { more_pax_info: { first_name?: string; last_name?: string }[] | null; status?: string }
-    const { data: reservations, error: reservationsError } = await supabase
+    type ReservationRow = { created_at?: string; more_pax_info: { first_name?: string; last_name?: string }[] | null; status?: string }
+    const { data: paidReservations, error: paidError } = await supabase
       .from("reservations")
-      .select("more_pax_info,status") as unknown as { data: ReservationRow[]; error: any }
-    if (reservationsError) throw reservationsError
-    const totalRevenue = (reservations || []).reduce<number>((sum, r) => {
-      if (r.status !== "Paid") return sum
+      .select("more_pax_info,status")
+      .eq("status", "Paid") as unknown as { data: ReservationRow[]; error: any }
+    if (paidError) throw paidError
+    const totalRevenue = (paidReservations || []).reduce<number>((sum, r) => {
       const pax = 1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0)
       return sum + pax * 175
     }, 0)
-
-    type EventRow = { usual_price: number | null | undefined }
-    const { data: events, error: eventsError } = await supabase
-      .from("events")
-      .select("usual_price") as unknown as { data: EventRow[]; error: any }
-    if (eventsError) throw eventsError
-    const avgTicketPrice = events && events.length > 0
-      ? events.reduce<number>((sum, e) => sum + (Number(e.usual_price) || 0), 0) / events.length
-      : 0
 
     type PartnerRow = { commission: number | null | undefined }
     const { data: partners, error: partnersError } = await supabase
@@ -112,19 +103,50 @@ export async function getDashboardStats() {
     if (partnersError) throw partnersError
     const topPartnerCommission = partners && partners.length > 0 ? Number(partners[0].commission) || 0 : 0
 
+    // Recent (last 30 days from now)
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-    const { count, error: recentError } = await supabase
+    const { data: recentRows, error: recentError } = await supabase
       .from("reservations")
-      .select("id", { count: "exact", head: true })
-      .gte("created_at", thirtyDaysAgo.toISOString())
+      .select("created_at,more_pax_info")
+      .gte("created_at", thirtyDaysAgo.toISOString()) as unknown as { data: ReservationRow[]; error: any }
     if (recentError) throw recentError
+    const recentReservations = (recentRows || []).length
+    const recentReservationsPax = (recentRows || []).reduce<number>((sum, r) => sum + 1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0), 0)
+
+    // Last calendar month
+    const now = new Date()
+    const firstOfCurrent = new Date(now.getFullYear(), now.getMonth(), 1)
+    const firstOfLast = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const { data: lastMonthRows, error: lastMonthError } = await supabase
+      .from("reservations")
+      .select("created_at,more_pax_info")
+      .gte("created_at", firstOfLast.toISOString())
+      .lt("created_at", firstOfCurrent.toISOString()) as unknown as { data: ReservationRow[]; error: any }
+    if (lastMonthError) throw lastMonthError
+    const reservationsLastMonth = (lastMonthRows || []).length
+    const paxLastMonth = (lastMonthRows || []).reduce<number>((sum, r) => sum + 1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0), 0)
+
+    // Last 7 days
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    const { data: last7Rows, error: last7Error } = await supabase
+      .from("reservations")
+      .select("created_at,more_pax_info")
+      .gte("created_at", sevenDaysAgo.toISOString()) as unknown as { data: ReservationRow[]; error: any }
+    if (last7Error) throw last7Error
+    const reservationsLast7Days = (last7Rows || []).length
+    const paxLast7Days = (last7Rows || []).reduce<number>((sum, r) => sum + 1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0), 0)
 
     return {
       totalRevenue,
-      avgTicketPrice,
       topPartnerCommission,
-      recentReservations: count || 0,
+      recentReservations,
+      recentReservationsPax,
+      reservationsLastMonth,
+      paxLastMonth,
+      reservationsLast7Days,
+      paxLast7Days,
     }
   } catch (error) {
     console.error("Error fetching dashboard stats:", error)

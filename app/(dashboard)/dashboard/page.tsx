@@ -6,6 +6,7 @@ import { DashboardCards } from "@/components/dashboard-cards";
 import { DashboardStats } from "@/components/dashboard-stats";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { ReservationsTrend } from "@/components/reservations-trend";
 
 export default function Dashboard() {
   const [error, setError] = useState<Error | null>(null);
@@ -63,6 +64,9 @@ export default function Dashboard() {
       <Suspense fallback={<DashboardStatsSkeleton />}>
         <DashboardStats />
       </Suspense>
+
+      {/* Reservations Trend */}
+      <ReservationsTrend />
     </div>
   );
 }
