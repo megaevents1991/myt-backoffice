@@ -8,6 +8,7 @@ import {
   type ColumnFiltersState,
   type SortingState,
   type VisibilityState,
+  type PaginationState,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -43,6 +44,7 @@ interface DataTableProps<TData, TValue> {
   enableRowSelection?: boolean;
   onRowSelectionChange?: (rowSelection: Record<string, boolean>) => void;
   bulkActions?: React.ReactNode;
+  defaultPageSize?: number;
 }
 
 export function DataTable<TData, TValue>({
@@ -53,11 +55,16 @@ export function DataTable<TData, TValue>({
   enableRowSelection = false,
   onRowSelectionChange,
   bulkActions,
+  defaultPageSize,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = useState({});
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: defaultPageSize ?? 25,
+  });
 
   // Add selection column if row selection is enabled
   const selectionColumns: ColumnDef<TData, TValue>[] = enableRowSelection
@@ -97,12 +104,17 @@ export function DataTable<TData, TValue>({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    onRowSelectionChange: (updatedRowSelection) => {
-      setRowSelection(updatedRowSelection);
+    onRowSelectionChange: (updater) => {
+      const next =
+        typeof updater === "function"
+          ? (updater as (old: any) => any)(rowSelection)
+          : updater;
+      setRowSelection(next);
       if (onRowSelectionChange) {
-        onRowSelectionChange(updatedRowSelection);
+        onRowSelectionChange(next as Record<string, boolean>);
       }
     },
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -112,8 +124,10 @@ export function DataTable<TData, TValue>({
       columnFilters,
       columnVisibility,
       rowSelection,
+      pagination,
     },
     enableRowSelection,
+    autoResetPageIndex: false,
   });
 
   return (

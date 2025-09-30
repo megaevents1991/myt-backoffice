@@ -5,15 +5,18 @@ import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Edit, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/data-table";
 import type { Reservation } from "@/types/reservation.types";
-import { getReservations } from "@/lib/actions/reservation-actions";
+import { getReservations, updateReservation, updateReservationsStatus } from "@/lib/actions/reservation-actions";
 import { useToast } from "@/hooks/use-toast";
 
 export function ReservationsTable() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [isIdle, setIsIdle] = useState(false);
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
+  const [bulkStatus, setBulkStatus] = useState<string>("");
   const { toast } = useToast();
   const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -91,6 +94,84 @@ export function ReservationsTable() {
     };
   }, [isIdle, reservations]);
 
+  async function handleInlineUpdate(
+    id: number,
+    field: keyof Pick<Reservation, "comments" | "accounting_number">,
+    value: string
+  ) {
+    // Prepare payload
+    const payload: Partial<Reservation> = {};
+    if (field === "accounting_number") {
+      // Keep only digits
+      const digits = (value || "").replace(/\D/g, "");
+      if (digits.length === 0) {
+        setReservations((prev) => prev.map((r) => (r.id === id ? { ...r, accounting_number: (null as unknown as number) } : r)));
+        try {
+          await updateReservation(id, { accounting_number: (null as unknown as number) });
+          toast({ title: "Updated", description: "Accounting number cleared." });
+        } catch (e) {
+          toast({ variant: "destructive", title: "Error", description: "Failed to clear accounting number." });
+        }
+        return;
+      }
+
+      // Validate non-negative and within safe integer range
+      try {
+        const asBig = BigInt(digits);
+        const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+        if (asBig > maxSafe) {
+          toast({
+            variant: "destructive",
+            title: "Number too large",
+            description: `Please enter a value up to ${Number.MAX_SAFE_INTEGER}.`,
+          });
+          return;
+        }
+        const num = Number(digits);
+        // Optimistic update
+        setReservations((prev) => prev.map((r) => (r.id === id ? { ...r, accounting_number: (num as unknown as number) } : r)));
+        await updateReservation(id, { accounting_number: (num as unknown as number) });
+        toast({ title: "Updated", description: "Accounting number saved." });
+      } catch (e) {
+        toast({ variant: "destructive", title: "Error", description: "Failed to save accounting number." });
+      }
+      return;
+    }
+
+    if (field === "comments") {
+      const comments = value;
+      setReservations((prev) => prev.map((r) => (r.id === id ? { ...r, comments } : r)));
+      try {
+        await updateReservation(id, { comments });
+        toast({ title: "Updated", description: "Comment saved." });
+      } catch (e) {
+        setReservations((prev) => prev);
+        toast({ variant: "destructive", title: "Error", description: "Failed to save comment." });
+      }
+    }
+  }
+
+  async function applyBulkStatus() {
+    const selectedIndexes = Object.keys(rowSelection).filter((k) => rowSelection[k]);
+    if (selectedIndexes.length === 0 || !bulkStatus) return;
+    const selectedIds = selectedIndexes
+      .map((k) => Number.parseInt(k, 10))
+      .filter((i) => !Number.isNaN(i))
+      .map((i) => reservations[i]?.id)
+      .filter((id): id is number => typeof id === "number");
+
+    if (selectedIds.length === 0) return;
+
+    try {
+      await updateReservationsStatus(selectedIds, bulkStatus);
+      setReservations((prev) => prev.map((r) => (selectedIds.includes(r.id) ? { ...r, status: bulkStatus } : r)));
+      toast({ title: "Status updated", description: `Updated ${selectedIds.length} reservation(s).` });
+      setBulkStatus("");
+    } catch (e) {
+      toast({ variant: "destructive", title: "Error", description: "Failed to update statuses." });
+    }
+  }
+
   const columns: ColumnDef<Reservation>[] = [
     {
       accessorKey: "id",
@@ -100,9 +181,14 @@ export function ReservationsTable() {
       accessorKey: "main_contact_first_name",
       header: "First Name",
     },
+    { accessorKey: "main_contact_last_name", header: "Last Name" },
     {
-      accessorKey: "main_contact_last_name",
-      header: "Last Name",
+      accessorKey: "main_contact_phone_number",
+      header: "Phone",
+      cell: ({ row }) => {
+        const phone = row.getValue("main_contact_phone_number") as string;
+        return <div>{phone || "-"}</div>;
+      },
     },
     {
       accessorKey: "main_contact_email",
@@ -146,6 +232,61 @@ export function ReservationsTable() {
       cell: ({ row }) => {
         const date = new Date(row.getValue("created_at"));
         return <div>{date.toLocaleDateString()}</div>;
+      },
+    },
+    {
+      accessorKey: "comments",
+      header: "Comment",
+      cell: ({ row }) => {
+        const reservation = row.original;
+        return (
+          <Input
+            defaultValue={reservation.comments || ""}
+            placeholder="Add a comment"
+            onBlur={(e) =>
+              handleInlineUpdate(reservation.id, "comments", e.target.value)
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+          />
+        );
+      },
+    },
+    {
+      accessorKey: "accounting_number",
+      header: "Acc No.",
+      cell: ({ row }) => {
+        const reservation = row.original;
+        return (
+          <Input
+            type="number"
+            className="min-w-[10ch] no-spinner"
+            defaultValue={reservation.accounting_number ?? undefined}
+            placeholder="TBD"
+            onChange={(e) => {
+              // Allow only digits and limit to 19 digits (Postgres BIGINT max)
+              const clean = e.target.value.replace(/\D/g, "").slice(0, 19);
+              if (e.target.value !== clean) {
+                e.currentTarget.value = clean;
+              }
+            }}
+            onBlur={(e) =>
+              handleInlineUpdate(
+                reservation.id,
+                "accounting_number",
+                e.target.value
+              )
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+          />
+        );
       },
     },
     {
@@ -223,6 +364,27 @@ export function ReservationsTable() {
       data={reservations}
       searchColumn="main_contact_email"
       searchPlaceholder="Search reservations..."
+      defaultPageSize={50}
+      enableRowSelection
+      onRowSelectionChange={(selection) => setRowSelection(selection)}
+      bulkActions={
+        <div className="flex items-center gap-2">
+          <select
+            className="border rounded px-2 py-1"
+            value={bulkStatus}
+            onChange={(e) => setBulkStatus(e.target.value)}
+          >
+            <option value="">Set status…</option>
+            <option value="Paid">Paid</option>
+            <option value="Lost">Lost</option>
+            <option value="Pending">Pending</option>
+            <option value="Follow-up">Follow-up</option>
+          </select>
+          <Button size="sm" onClick={applyBulkStatus} disabled={!bulkStatus}>
+            Apply
+          </Button>
+        </div>
+      }
     />
   );
 }

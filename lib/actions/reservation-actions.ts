@@ -31,3 +31,15 @@ export async function updateReservation(id: number, reservation: Partial<Reserva
   return data[0] as Reservation
 }
 
+export async function updateReservationsStatus(ids: number[], status: string) {
+  if (!ids || ids.length === 0) return [] as Reservation[];
+  const { data, error } = await supabase
+    .from("reservations")
+    .update({ status })
+    .in("id", ids)
+    .select();
+
+  if (error) throw error;
+  return data as Reservation[];
+}
+
