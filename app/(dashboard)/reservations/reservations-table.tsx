@@ -40,6 +40,16 @@ export function ReservationsTable() {
 
     fetchReservations();
   }, [toast]);
+  async function refreshNow() {
+    try {
+      const data = await getReservations();
+      setReservations(data);
+      toast({ title: "Refreshed", description: "Latest reservations loaded." });
+    } catch (error) {
+      console.error("Error refreshing reservations:", error);
+      toast({ variant: "destructive", title: "Error", description: "Failed to refresh reservations." });
+    }
+  }
 
   // Function to check for new reservations
   async function checkForNewReservations() {
@@ -362,9 +372,15 @@ export function ReservationsTable() {
     <DataTable
       columns={columns}
       data={reservations}
-      searchColumn="main_contact_email"
-      searchPlaceholder="Search reservations..."
+      searchColumns={[
+        "main_contact_first_name",
+        "main_contact_last_name",
+        "main_contact_phone_number",
+        "main_contact_email",
+      ]}
+      searchPlaceholder="Search by name, phone, or email..."
       defaultPageSize={50}
+  pageSizeOptions={[10, 25, 50, 100]}
       enableRowSelection
       onRowSelectionChange={(selection) => setRowSelection(selection)}
       bulkActions={
@@ -384,6 +400,11 @@ export function ReservationsTable() {
             Apply
           </Button>
         </div>
+      }
+      rightActions={
+        <Button variant="outline" size="sm" onClick={refreshNow} title="Refresh data">
+          Refresh
+        </Button>
       }
     />
   );

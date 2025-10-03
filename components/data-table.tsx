@@ -41,10 +41,13 @@ interface DataTableProps<TData, TValue> {
   data: TData[];
   searchColumn?: string;
   searchPlaceholder?: string;
+  searchColumns?: string[]; // Multi-column search (global filter)
   enableRowSelection?: boolean;
   onRowSelectionChange?: (rowSelection: Record<string, boolean>) => void;
   bulkActions?: React.ReactNode;
   defaultPageSize?: number;
+  rightActions?: React.ReactNode;
+  pageSizeOptions?: number[];
 }
 
 export function DataTable<TData, TValue>({
@@ -52,10 +55,13 @@ export function DataTable<TData, TValue>({
   data,
   searchColumn,
   searchPlaceholder = "Search...",
+  searchColumns,
   enableRowSelection = false,
   onRowSelectionChange,
   bulkActions,
   defaultPageSize,
+  rightActions,
+  pageSizeOptions = [10, 25, 50, 100],
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -65,6 +71,7 @@ export function DataTable<TData, TValue>({
     pageIndex: 0,
     pageSize: defaultPageSize ?? 25,
   });
+  const [globalFilter, setGlobalFilter] = useState<string>("");
 
   // Add selection column if row selection is enabled
   const selectionColumns: ColumnDef<TData, TValue>[] = enableRowSelection
@@ -115,6 +122,7 @@ export function DataTable<TData, TValue>({
       }
     },
     onPaginationChange: setPagination,
+    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -125,36 +133,57 @@ export function DataTable<TData, TValue>({
       columnVisibility,
       rowSelection,
       pagination,
+      globalFilter,
     },
     enableRowSelection,
     autoResetPageIndex: false,
+    globalFilterFn: (row, _columnId, filterValue) => {
+      const query = String(filterValue ?? "").toLowerCase().trim();
+      if (!query) return true;
+      const keys = Array.isArray(searchColumns) ? searchColumns : [];
+      if (keys.length === 0) {
+        // Fallback: search over all visible columns
+        return row
+          .getAllCells()
+          .some((cell) => String(cell.getValue() ?? "").toLowerCase().includes(query));
+      }
+      return keys.some((key) =>
+        String(row.getValue(key as string) ?? "").toLowerCase().includes(query)
+      );
+    },
   });
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        {searchColumn && (
+        {(searchColumns && searchColumns.length > 0) ? (
           <div className="flex items-center gap-2">
             <Search className="h-4 w-4 text-muted-foreground" />
             <Input
               placeholder={searchPlaceholder}
-              value={
-                (table.getColumn(searchColumn)?.getFilterValue() as string) ??
-                ""
-              }
+              value={(table.getState().globalFilter as string) ?? ""}
+              onChange={(event) => table.setGlobalFilter(event.target.value)}
+              className="max-w-sm"
+            />
+          </div>
+        ) : searchColumn ? (
+          <div className="flex items-center gap-2">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder={searchPlaceholder}
+              value={(table.getColumn(searchColumn!)?.getFilterValue() as string) ?? ""}
               onChange={(event) =>
-                table
-                  .getColumn(searchColumn)
-                  ?.setFilterValue(event.target.value)
+                table.getColumn(searchColumn!)?.setFilterValue(event.target.value)
               }
               className="max-w-sm"
             />
           </div>
-        )}
+        ) : null}
         <div className="flex items-center gap-2 ml-auto">
           {enableRowSelection &&
             table.getFilteredSelectedRowModel().rows.length > 0 &&
             bulkActions}
+          {rightActions}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="ml-auto">
@@ -238,7 +267,22 @@ export function DataTable<TData, TValue>({
           {table.getFilteredSelectedRowModel().rows.length} of{" "}
           {table.getFilteredRowModel().rows.length} row(s) selected.
         </div>
-        <div className="space-x-2">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Rows per page:</span>
+            <select
+              className="border rounded px-2 py-1"
+              value={table.getState().pagination.pageSize}
+              onChange={(e) => table.setPageSize(parseInt(e.target.value, 10))}
+            >
+              {pageSizeOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-x-2">
           <Button
             variant="outline"
             size="sm"
@@ -255,6 +299,7 @@ export function DataTable<TData, TValue>({
           >
             Next
           </Button>
+          </div>
         </div>
       </div>
     </div>
