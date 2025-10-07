@@ -373,6 +373,7 @@ export function ReservationsTable() {
       columns={columns}
       data={reservations}
       searchColumns={[
+        "id",
         "main_contact_first_name",
         "main_contact_last_name",
         "main_contact_phone_number",
