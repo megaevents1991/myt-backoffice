@@ -328,7 +328,7 @@ export function ReservationsTable() {
     },
     {
       accessorKey: "aff_partner_tracking_code",
-      header: "Is Partner",
+      header: "Source",
       cell: ({ row }) => {
         const trackingCode = row.getValue("aff_partner_tracking_code");
         // Convert to string or use "Organic" if trackingCode is falsy or an empty object
