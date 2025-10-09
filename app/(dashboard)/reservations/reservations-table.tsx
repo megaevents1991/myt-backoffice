@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Edit, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/data-table";
 import type { Reservation } from "@/types/reservation.types";
@@ -249,7 +250,7 @@ export function ReservationsTable() {
       header: "Comment",
       cell: ({ row }) => {
         const reservation = row.original;
-        return (
+        const input = (
           <Input
             defaultValue={reservation.comments || ""}
             placeholder="Add a comment"
@@ -262,6 +263,17 @@ export function ReservationsTable() {
               }
             }}
           />
+        );
+        if (!reservation.comments) return input;
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>{input}</TooltipTrigger>
+              <TooltipContent side="top" className="max-w-sm break-words">
+                {reservation.comments}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         );
       },
     },
