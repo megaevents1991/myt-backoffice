@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Pipette } from "lucide-react";
 
 interface ColorPickerProps {
   value: string;
@@ -27,7 +28,9 @@ export function ColorPicker({
   const [croppedImageUrl, setCroppedImageUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [croppingAvailable, setCroppingAvailable] = useState<boolean>(true);
+  const [isOpen, setIsOpen] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const eyeDropperTriggeredRef = useRef(false);
 
   // If the image is from doctorticket.com, proxy it through our backend to avoid CORS tainting
   const displayImageUrl = useMemo(() => {
@@ -46,6 +49,39 @@ export function ColorPicker({
   useEffect(() => {
     setColor(value || "#000000");
   }, [value]);
+
+  // Automatically trigger eyedropper when popover opens
+  useEffect(() => {
+    if (isOpen && !eyeDropperTriggeredRef.current) {
+      eyeDropperTriggeredRef.current = true;
+      // Small delay to ensure popover is fully rendered
+      setTimeout(() => {
+        triggerEyeDropper();
+      }, 100);
+    } else if (!isOpen) {
+      eyeDropperTriggeredRef.current = false;
+    }
+  }, [isOpen]);
+
+  const triggerEyeDropper = async () => {
+    // Check if EyeDropper API is supported
+    if (!("EyeDropper" in window)) {
+      console.log("EyeDropper API is not supported in this browser");
+      return;
+    }
+
+    try {
+      // @ts-ignore - EyeDropper is not in TypeScript types yet
+      const eyeDropper = new EyeDropper();
+      const result = await eyeDropper.open();
+      const selectedColor = result.sRGBHex;
+      setColor(selectedColor);
+      onChange(selectedColor);
+    } catch (error) {
+      // User cancelled the eyedropper or an error occurred
+      console.log("EyeDropper cancelled or error:", error);
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newColor = e.target.value;
@@ -185,7 +221,7 @@ export function ColorPicker({
   ];
 
   return (
-    <Popover>
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -227,6 +263,15 @@ export function ColorPicker({
                 onChange={handleChange}
                 className="flex-1"
               />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={triggerEyeDropper}
+                title="Pick color from screen"
+              >
+                <Pipette className="h-4 w-4" />
+              </Button>
             </div>
           </div>
 
