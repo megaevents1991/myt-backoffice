@@ -193,3 +193,75 @@ CREATE TRIGGER live_events_updated_at
     BEFORE UPDATE ON live_events 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
+
+-- P1 Tickets Events Table
+-- Store events from P1 Tickets XML feeds
+CREATE TABLE IF NOT EXISTS p1_events (
+  -- Primary identifier (UUID from P1)
+  event_id VARCHAR PRIMARY KEY,
+  
+  -- Event information
+  title VARCHAR NOT NULL,
+  title_english VARCHAR NOT NULL,
+  category VARCHAR NOT NULL, -- FOOTBALL, TENNIS, etc.
+  
+  -- Series information (optional)
+  series_id VARCHAR,
+  series_name VARCHAR,
+  
+  -- Event status flags
+  has_available_tickets BOOLEAN DEFAULT true,
+  is_advertisable BOOLEAN DEFAULT true,
+  
+  -- Event dates
+  date_start TIMESTAMP WITH TIME ZONE NOT NULL,
+  date_end TIMESTAMP WITH TIME ZONE,
+  date_confirmed BOOLEAN DEFAULT false,
+  
+  -- Stock
+  stock INTEGER DEFAULT 0,
+  
+  -- Venue information
+  venue_name VARCHAR NOT NULL,
+  venue_city VARCHAR NOT NULL,
+  venue_country_code VARCHAR(2),
+  venue_latitude DECIMAL(10, 8),
+  venue_longitude DECIMAL(11, 8),
+  
+  -- Pricing (optional compare prices)
+  compare_price_ticket_only DECIMAL(10, 2),
+  compare_price_ticket_hotel DECIMAL(10, 2),
+  
+  -- External links
+  checkout_link TEXT,
+  
+  -- Tickets (stored as JSONB array)
+  tickets JSONB,
+  
+  -- Sync metadata
+  last_synced TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  is_active BOOLEAN DEFAULT true,
+  
+  -- Timestamps
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes for p1_events
+CREATE INDEX IF NOT EXISTS idx_p1_events_date_start ON p1_events(date_start);
+CREATE INDEX IF NOT EXISTS idx_p1_events_category ON p1_events(category);
+CREATE INDEX IF NOT EXISTS idx_p1_events_series_name ON p1_events(series_name);
+CREATE INDEX IF NOT EXISTS idx_p1_events_venue_city ON p1_events(venue_city);
+CREATE INDEX IF NOT EXISTS idx_p1_events_venue_country ON p1_events(venue_country_code);
+CREATE INDEX IF NOT EXISTS idx_p1_events_is_active ON p1_events(is_active);
+CREATE INDEX IF NOT EXISTS idx_p1_events_has_tickets ON p1_events(has_available_tickets);
+CREATE INDEX IF NOT EXISTS idx_p1_events_is_advertisable ON p1_events(is_advertisable);
+
+-- Full-text search indexes for P1 events
+CREATE INDEX IF NOT EXISTS idx_p1_events_title_search ON p1_events USING gin(to_tsvector('english', title));
+
+-- Update trigger for p1_events
+CREATE TRIGGER p1_events_updated_at 
+    BEFORE UPDATE ON p1_events 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
