@@ -196,6 +196,11 @@ export type FlightSearchCriteria =
       value: string[]
     }
 
+export type VipConfig = {
+  enabled: boolean
+  details: string
+}
+
 export type EventTicket = {
   category: string
   price: number
@@ -205,6 +210,7 @@ export type EventTicket = {
   vendor?: string
   eid?: string
   available?: boolean
+  vip?: VipConfig
 }
 
 export type OrderTicket = Omit<EventTicket, "description" | "colorOnTheMap"> & {

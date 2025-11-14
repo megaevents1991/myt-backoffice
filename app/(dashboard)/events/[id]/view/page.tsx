@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Edit } from "lucide-react";
+import { ArrowLeft, Edit, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -210,9 +210,17 @@ export default function ViewEventPage({
               {event.tickets_and_rates.map((ticket, index) => (
                 <div key={ticket.id} className="border rounded-lg p-4">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-medium">
-                      Ticket #{index + 1}: {ticket.category}
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium">
+                        Ticket #{index + 1}: {ticket.category}
+                      </h3>
+                      {ticket.vip?.enabled && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-100 text-amber-900 text-xs font-medium">
+                          <Crown className="h-3 w-3" />
+                          VIP
+                        </span>
+                      )}
+                    </div>
                     <div
                       className="w-6 h-6 rounded-full"
                       style={{ backgroundColor: ticket.colorOnTheMap }}
@@ -243,6 +251,18 @@ export default function ViewEventPage({
                       <div>
                         <p className="text-sm font-medium">Description</p>
                         <p className="text-lg">{ticket.description}</p>
+                      </div>
+                    )}
+
+                    {ticket.vip?.enabled && ticket.vip.details && (
+                      <div className="border-t pt-3 mt-2">
+                        <p className="text-sm font-medium flex items-center gap-1 text-amber-900">
+                          <Crown className="h-4 w-4" />
+                          VIP Benefits
+                        </p>
+                        <p className="text-sm mt-1 text-muted-foreground whitespace-pre-wrap">
+                          {ticket.vip.details}
+                        </p>
                       </div>
                     )}
                   </div>

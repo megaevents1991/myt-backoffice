@@ -3,7 +3,7 @@
 import type React from "react";
 import { useState, useEffect, use } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -456,6 +456,36 @@ export default function EventPage({
     });
   };
 
+  const handleTicketVipChange = (
+    ticketId: string,
+    enabled: boolean,
+    details?: string
+  ) => {
+    if (!event) return;
+
+    setEvent({
+      ...event,
+      tickets_and_rates: event.tickets_and_rates.map((ticket) => {
+        if (ticket.id === ticketId) {
+          if (!enabled) {
+            // Remove vip field entirely when disabled
+            const { vip, ...ticketWithoutVip } = ticket;
+            return ticketWithoutVip;
+          }
+          // Update or create vip config
+          return {
+            ...ticket,
+            vip: {
+              enabled,
+              details: details ?? ticket.vip?.details ?? '',
+            },
+          };
+        }
+        return ticket;
+      }),
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!event) return;
@@ -901,6 +931,8 @@ export default function EventPage({
                 <option value="LastTickets">LastTickets</option>
                 <option value="Popular">Popular</option>
                 <option value="Restock">Restock</option>
+                <option value="VIPevent">VIP Event</option>
+                <option value="VIPavailable">VIP Available</option>
               </select>
             </div>
           </CardContent>
@@ -1080,7 +1112,15 @@ export default function EventPage({
                 {event.tickets_and_rates.map((ticket, index) => (
                   <div key={ticket.id} className="border rounded-lg p-4">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-medium">Ticket #{index + 1}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-medium">Ticket #{index + 1}</h3>
+                        {ticket.vip?.enabled && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-100 text-amber-900 text-xs font-medium">
+                            <Crown className="h-3 w-3" />
+                            VIP
+                          </span>
+                        )}
+                      </div>
                       <Button
                         type="button"
                         variant="ghost"
@@ -1181,6 +1221,47 @@ export default function EventPage({
                           }
                           mapImageUrl={event.map_image_url}
                         />
+                      </div>
+
+                      {/* VIP Section */}
+                      <div className="border-t pt-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor={`ticket-${ticket.id}-vip`} className="flex items-center gap-2">
+                            <Crown className="h-4 w-4 text-amber-600" />
+                            VIP Ticket
+                          </Label>
+                          <Switch
+                            id={`ticket-${ticket.id}-vip`}
+                            checked={ticket.vip?.enabled ?? false}
+                            onCheckedChange={(checked) =>
+                              handleTicketVipChange(ticket.id, checked)
+                            }
+                          />
+                        </div>
+
+                        {ticket.vip?.enabled && (
+                          <div className="space-y-2">
+                            <Label htmlFor={`ticket-${ticket.id}-vip-details`}>
+                              VIP Details
+                            </Label>
+                            <Textarea
+                              id={`ticket-${ticket.id}-vip-details`}
+                              value={ticket.vip.details}
+                              onChange={(e) =>
+                                handleTicketVipChange(
+                                  ticket.id,
+                                  true,
+                                  e.target.value
+                                )
+                              }
+                              placeholder="Enter VIP perks and benefits (e.g., Meet & Greet, Premium Lounge Access, etc.)"
+                              rows={3}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Describe what makes this ticket VIP (optional)
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
