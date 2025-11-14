@@ -486,12 +486,15 @@ export function P1EventsContent() {
         }
 
         let result: number;
-        switch (currency) {
+        switch (currency.toUpperCase()) {
           case "EUR":
             result = await exchangeRateClientService.convertToUSD(price + 40, "EUR");
             break;
           case "GBP":
             result = await exchangeRateClientService.convertToUSD(price + 35, "GBP");
+            break;
+          case "ILS":
+            result = await exchangeRateClientService.convertToUSD(price + 150, "ILS");
             break;
           default:
             console.warn(`Unknown currency ${currency}, using price as-is`);

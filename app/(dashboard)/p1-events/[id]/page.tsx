@@ -141,12 +141,15 @@ export default function P1EventDetailsPage() {
         }
 
         let result: number;
-        switch (currency) {
+        switch (currency.toUpperCase()) {
           case "EUR":
             result = await exchangeRateClientService.convertToUSD(price + 40, "EUR");
             break;
           case "GBP":
             result = await exchangeRateClientService.convertToUSD(price + 35, "GBP");
+            break;
+          case "ILS":
+            result = await exchangeRateClientService.convertToUSD(price + 150, "ILS");
             break;
           default:
             result = price;
