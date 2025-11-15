@@ -16,8 +16,9 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import type { Reservation } from "@/types/reservation.types";
 import { getReservation } from "@/lib/actions/reservation-actions";
+import { hasHotelInfo } from "@/lib/utils";
 
-export default function ReservationPage({
+export default function ReservationDetailsPage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -453,7 +454,7 @@ export default function ReservationPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {reservation.hotel_order_info && (
+            {hasHotelInfo(reservation.hotel_order_info) ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -522,6 +523,11 @@ export default function ReservationPage({
                     </p>
                   </div>
                 </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <p className="text-lg font-medium">No Hotel Included</p>
+                <p className="text-sm mt-2">This reservation does not include hotel accommodation.</p>
               </div>
             )}
           </CardContent>

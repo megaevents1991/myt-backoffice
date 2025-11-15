@@ -24,7 +24,7 @@ export type Reservation = {
     total_tickets_price: number
   }
   flight_order_info: Flight
-  hotel_order_info: OrderHotel
+  hotel_order_info: OrderHotel | Record<string, never>
   user_shown_price: number
   aff_partner_tracking_code: string
   event_id: number

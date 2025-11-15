@@ -101,3 +101,10 @@ export function getVipDetails(ticket: EventTicket): string {
 export function createDefaultVipConfig(): VipConfig {
   return { enabled: false, details: '' };
 }
+
+/**
+ * Check if hotel order info is present (not empty object)
+ */
+export function hasHotelInfo(hotelInfo: any): boolean {
+  return hotelInfo && typeof hotelInfo === 'object' && Object.keys(hotelInfo).length > 0 && 'name' in hotelInfo;
+}
