@@ -497,7 +497,7 @@ export class TicketPriceSyncService {
     return null;
   }
 
-  private async fetchLiveTicketsEventData(eventEid: string): Promise<LiveTicketsEventApiResponse | null> {
+  private async fetchLiveTicketsEventData(eventEid: string): Promise<LiveTicketsEventApiResponse | 'SOLD_OUT' | null> {
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
       try {
         console.log(`📍 Fetching Live event ${eventEid} - attempt ${attempt}/${this.MAX_RETRIES}`);
@@ -511,8 +511,14 @@ export class TicketPriceSyncService {
 
         const data: LiveTicketsEventApiResponse[] = await response.json();
 
+        // Check for empty array (Sold Out)
+        if (Array.isArray(data) && data.length === 0) {
+          console.log(`ℹ️ Event ${eventEid} returned empty array - marking as SOLD OUT`);
+          return 'SOLD_OUT';
+        }
+
         // The API returns an array with one event
-        if (!Array.isArray(data) || data.length === 0) {
+        if (!Array.isArray(data)) {
           throw new Error(`Invalid Live API response structure for event ${eventEid} - expected array with one event`);
         }
 
@@ -661,6 +667,35 @@ export class TicketPriceSyncService {
     try {
       // Fetch all ticket categories for this event
       const eventData = await this.fetchLiveTicketsEventData(eventEid);
+
+      if (eventData === 'SOLD_OUT') {
+        console.log(`⚠️ Event ${event.id} is SOLD OUT (empty API response). Marking tickets unavailable.`);
+        
+        const updatedTickets = event.tickets_and_rates.map((ticket: EventTicket) => ({
+          ...ticket,
+          available: false
+        }));
+
+        // Update tags - User requested "Sold" (Capital S) as the tag
+        const newTags = 'Sold';
+
+        const { error: updateError } = await supabase
+          .from('events')
+          .update({ 
+            tickets_and_rates: updatedTickets,
+            tags: newTags
+          })
+          .eq('id', event.id);
+
+        if (updateError) {
+            console.error(`❌ Error updating sold out event ${event.id}:`, updateError);
+            failureCount += event.tickets_and_rates.length;
+        } else {
+            successCount += event.tickets_and_rates.length;
+        }
+        
+        return { successCount, failureCount };
+      }
 
       if (!eventData || !eventData.ticketCategory || !Array.isArray(eventData.ticketCategory) || eventData.ticketCategory.length === 0) {
         console.log(`⚠️ Failed to fetch event data for ${event.id}`);
