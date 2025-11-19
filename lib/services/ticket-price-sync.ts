@@ -653,13 +653,14 @@ export class TicketPriceSyncService {
     if (updateError) throw updateError;
   }
 
-  private async processLiveTicketsEvent(event: Event): Promise<{ successCount: number; failureCount: number }> {
+  private async processLiveTicketsEvent(event: Event): Promise<{ successCount: number; failureCount: number; failedTicketIds: string[] }> {
     let successCount = 0;
     let failureCount = 0;
+    const failedTicketIds: string[] = [];
 
     if (!event.tickets_and_rates || !Array.isArray(event.tickets_and_rates)) {
       console.log(`⚠️ Event ${event.id} has no tickets to process`);
-      return { successCount, failureCount };
+      return { successCount, failureCount, failedTicketIds };
     }
 
     const eventEid = event.tickets_and_rates[0].eid || '';
@@ -690,16 +691,20 @@ export class TicketPriceSyncService {
         if (updateError) {
             console.error(`❌ Error updating sold out event ${event.id}:`, updateError);
             failureCount += event.tickets_and_rates.length;
+            event.tickets_and_rates.forEach(t => failedTicketIds.push(t.id));
         } else {
             successCount += event.tickets_and_rates.length;
         }
         
-        return { successCount, failureCount };
+        return { successCount, failureCount, failedTicketIds };
       }
 
       if (!eventData || !eventData.ticketCategory || !Array.isArray(eventData.ticketCategory) || eventData.ticketCategory.length === 0) {
         console.log(`⚠️ Failed to fetch event data for ${event.id}`);
-        return { successCount, failureCount };
+        // If we can't fetch event data, all tickets fail
+        failureCount += event.tickets_and_rates.length;
+        event.tickets_and_rates.forEach(t => failedTicketIds.push(t.id));
+        return { successCount, failureCount, failedTicketIds };
       }
       
       // Process all tickets and prepare updated tickets array
@@ -710,6 +715,7 @@ export class TicketPriceSyncService {
           if (!matchingTicket) {
             console.warn(`⚠️ No matching ticket category found for ticket ID ${ticket.id}`);
             failureCount++;
+            failedTicketIds.push(ticket.id);
             return {
               ...ticket,
               available: false
@@ -727,6 +733,7 @@ export class TicketPriceSyncService {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           console.error(`❌ Error processing Live ticket ${ticket.id}:`, errorMessage);
           failureCount++;
+          failedTicketIds.push(ticket.id);
           return ticket; // Keep original ticket data if processing fails
         }
       });
@@ -740,9 +747,10 @@ export class TicketPriceSyncService {
       
       // Mark all tickets as failed
       failureCount += event.tickets_and_rates.length;
+      event.tickets_and_rates.forEach(t => failedTicketIds.push(t.id));
     }
     
-    return { successCount, failureCount };
+    return { successCount, failureCount, failedTicketIds };
   }
 
   private async processXS2ETicket(eventId: number, ticket: EventTicket, eventName: string): Promise<boolean> {
@@ -762,6 +770,65 @@ export class TicketPriceSyncService {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(`❌ Error updating ticket ${ticket.id}:`, errorMessage);
       return false;
+    }
+  }
+
+  public async syncSingleEvent(eventId: number): Promise<{ success: boolean; message: string; failedTicketIds?: string[] }> {
+    try {
+      const { data: eventData, error } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', eventId)
+        .single();
+
+      if (error || !eventData) {
+        throw new Error(`Event ${eventId} not found`);
+      }
+      
+      const event = eventData as Event;
+
+      // Update exchange rates first to ensure accurate pricing
+      await exchangeRateService.updateAllExchangeRates();
+
+      if (event.type === 'sports_live_event_dynamic' || event.type === 'music_live_event_dynamic') {
+         const result = await this.processLiveTicketsEvent(event);
+         return {
+            success: result.failureCount === 0,
+            message: `Synced ${result.successCount} tickets. Failed: ${result.failureCount}`,
+            failedTicketIds: result.failedTicketIds
+         };
+      } else if (event.type === 'sports_event_dynamic') {
+          // For XS2 events
+          if (!event.tickets_and_rates || !Array.isArray(event.tickets_and_rates)) {
+             return { success: true, message: 'No tickets to process' };
+          }
+          
+          let successCount = 0;
+          let failureCount = 0;
+          const failedTicketIds: string[] = [];
+          
+          for (const ticket of event.tickets_and_rates) {
+             const success = await this.processXS2ETicket(event.id, ticket, event.name);
+             if (success) {
+                successCount++;
+             } else {
+                failureCount++;
+                failedTicketIds.push(ticket.id);
+             }
+          }
+          
+          return {
+            success: failureCount === 0,
+            message: `Synced ${successCount} tickets. Failed: ${failureCount}`,
+            failedTicketIds
+         };
+      }
+      
+      return { success: false, message: `Event type '${event.type}' not supported for sync` };
+
+    } catch (error) {
+       console.error(`❌ Error syncing event ${eventId}:`, error);
+       return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 

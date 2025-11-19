@@ -15,7 +15,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import type { Event } from "@/types/app.types";
-import { getEvent } from "@/lib/actions/event-actions";
+import { getEvent, syncEventPrices } from "@/lib/actions/event-actions";
+import { RefreshCw } from "lucide-react";
 
 export default function ViewEventPage({
   params,
@@ -27,6 +28,7 @@ export default function ViewEventPage({
   const unwrappedParams = use(params);
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     async function fetchEvent() {
@@ -48,6 +50,55 @@ export default function ViewEventPage({
     fetchEvent();
   }, [unwrappedParams.id, toast]);
 
+  const handleSync = async () => {
+    if (!event) return;
+    
+    setSyncing(true);
+    try {
+      const result = await syncEventPrices(event.id);
+      
+      if (result.success) {
+        toast({
+          title: "Sync Successful",
+          description: result.message,
+        });
+        // Refresh event data
+        const updatedEvent = await getEvent(event.id);
+        setEvent(updatedEvent);
+      } else {
+        // Check if it's a partial failure (some succeeded, some failed)
+        // The message usually contains "Synced X tickets. Failed: Y"
+        const isPartial = result.message.includes("Synced") && result.message.includes("Failed");
+        
+        let description = result.message;
+        if (result.failedTicketIds && result.failedTicketIds.length > 0) {
+            description += ` (IDs: ${result.failedTicketIds.join(', ')})`;
+        }
+
+        toast({
+          variant: isPartial ? "default" : "destructive", // Use default (usually black/white) for partial, destructive (red) for total failure
+          title: isPartial ? "Sync Completed with Errors" : "Sync Failed",
+          description: description,
+        });
+        
+        // Even if partial failure, we might want to refresh to show the successful ones
+        if (isPartial) {
+            const updatedEvent = await getEvent(event.id);
+            setEvent(updatedEvent);
+        }
+      }
+    } catch (error) {
+      console.error("Error syncing event:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "An unexpected error occurred during sync.",
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   if (loading) {
     return <div>Loading event details...</div>;
   }
@@ -68,12 +119,20 @@ export default function ViewEventPage({
             Event: {event.name}
           </h1>
         </div>
-        <Link href={`/events/${event.id}`}>
-          <Button>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit Event
-          </Button>
-        </Link>
+        <div className="flex gap-2">
+          {(event.type === 'sports_live_event_dynamic' || event.type === 'music_live_event_dynamic' || event.type === 'sports_event_dynamic') && (
+            <Button onClick={handleSync} disabled={syncing} variant="outline">
+              <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing...' : 'Sync Prices'}
+            </Button>
+          )}
+          <Link href={`/events/${event.id}`}>
+            <Button>
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Event
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {event.is_deleted && (

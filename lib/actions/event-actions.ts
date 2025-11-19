@@ -102,3 +102,8 @@ export async function getActiveEvents() {
   return data as Event[]
 }
 
+export async function syncEventPrices(id: number) {
+  const { ticketPriceSyncService } = await import("@/lib/services/ticket-price-sync")
+  return await ticketPriceSyncService.syncSingleEvent(id)
+}
+
