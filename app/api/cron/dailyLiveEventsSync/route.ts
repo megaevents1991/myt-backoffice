@@ -34,6 +34,12 @@ export async function GET(request: NextRequest) {
       message: 'Daily live events sync completed successfully',
       timestamp: new Date().toISOString(),
       syncResult
+    }, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
     });
 
   } catch (error) {
@@ -46,7 +52,14 @@ export async function GET(request: NextRequest) {
         details: String(error),
         timestamp: new Date().toISOString()
       },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      }
     );
   }
 }

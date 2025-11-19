@@ -416,15 +416,28 @@ export class TicketPriceSyncService {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.API_TIMEOUT);
 
-    // Build provider-specific headers
+    // Build provider-specific headers with no-cache directives
     const headers: Record<string, string> =
       provider === 'liveTickets'
-        ? { 'Authorization': apiKey || '' }
-        : { 'X-Api-Key': apiKey || '', 'Content-Type': 'application/json' };
+        ? { 
+            'Authorization': apiKey || '',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          }
+        : { 
+            'X-Api-Key': apiKey || '', 
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          };
 
     try {
       console.log(`🔄 Fetching [${provider}] ${url}`);
-      const response = await fetch(url, { signal: controller.signal, headers });
+      const response = await fetch(url, { 
+        signal: controller.signal, 
+        headers,
+        cache: 'no-store'
+      });
       clearTimeout(timeoutId);
       return response;
     } catch (error) {

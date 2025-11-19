@@ -16,8 +16,15 @@ const safeStr = (v: string | null | undefined) => (v || '').trim();
  */
 export async function getLiveEvents(eventType?: 'sports_live_event_dynamic' | 'music_live_event_dynamic'): Promise<LiveEventDB[]> {
   // Use server API endpoint to avoid RLS restrictions client-side
-  const url = `/api/live-events/events?type=${encodeURIComponent(eventType || 'all')}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const url = `/api/live-events/events?type=${encodeURIComponent(eventType || 'all')}&_=${Date.now()}`;
+  const res = await fetch(url, { 
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    }
+  });
   if (!res.ok) throw new Error('Failed to fetch live events');
   const json = await res.json();
   return json.data || [];
@@ -27,8 +34,15 @@ export async function getLiveEvents(eventType?: 'sports_live_event_dynamic' | 'm
  * Fetch live events by category
  */
 export async function getLiveEventsByCategory(categoryName: string): Promise<LiveEventDB[]> {
-  const url = `/api/live-events/events?category=${encodeURIComponent(categoryName)}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const url = `/api/live-events/events?category=${encodeURIComponent(categoryName)}&_=${Date.now()}`;
+  const res = await fetch(url, { 
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    }
+  });
   if (!res.ok) throw new Error('Failed to fetch live events (category)');
   const json = await res.json();
   return json.data || [];
@@ -38,8 +52,15 @@ export async function getLiveEventsByCategory(categoryName: string): Promise<Liv
  * Fetch live events by performer
  */
 export async function getLiveEventsByPerformer(performerName: string): Promise<LiveEventDB[]> {
-  const url = `/api/live-events/events?performer=${encodeURIComponent(performerName)}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const url = `/api/live-events/events?performer=${encodeURIComponent(performerName)}&_=${Date.now()}`;
+  const res = await fetch(url, { 
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    }
+  });
   if (!res.ok) throw new Error('Failed to fetch live events (performer)');
   const json = await res.json();
   return json.data || [];
@@ -49,8 +70,15 @@ export async function getLiveEventsByPerformer(performerName: string): Promise<L
  * Fetch a single live event by ID
  */
 export async function getLiveEventById(eventId: number): Promise<LiveEventDB | null> {
-  const url = `/api/live-events/events?limit=1&event_id=${eventId}`; // event_id filter handled below via client side filter (could extend API)
-  const res = await fetch(url, { cache: 'no-store' });
+  const url = `/api/live-events/events?limit=1&event_id=${eventId}&_=${Date.now()}`;
+  const res = await fetch(url, { 
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    }
+  });
   if (!res.ok) throw new Error('Failed to fetch live event');
   const json = await res.json();
   const list: LiveEventDB[] = json.data || [];
@@ -59,20 +87,34 @@ export async function getLiveEventById(eventId: number): Promise<LiveEventDB | n
 
 /**
  * Fetch live tickets for a specific event from the API
+ * 
+ * IMPORTANT: Always fetches from LIVE API for real-time inventory.
+ * NO CACHING - Backoffice requires fresh data at all times.
  */
 export async function getLiveTickets(eventId: number): Promise<LiveTicketCategory[]> {
-  // Tickets are embedded in the stored event row (ticket_categories JSONB)
-  try {
-    const res = await fetch(`/api/live-events/events?event_id=${eventId}&limit=1`, { cache: 'no-store' });
-    if (!res.ok) throw new Error('Failed to load event for tickets');
-    const json = await res.json();
-    const event: LiveEventDB | undefined = (json.data || [])[0];
-    if (event && Array.isArray((event as any).ticket_categories)) {
-      return (event as any).ticket_categories as LiveTicketCategory[];
+  // ✅ ALWAYS fetch fresh tickets from LIVE API endpoint - NO FALLBACK TO CACHE
+  const res = await fetch(`/api/live-events/tickets?event_id=${eventId}&_=${Date.now()}`, { 
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     }
-  } catch (e) {
-    console.error('getLiveTickets failed', e);
+  });
+  
+  if (!res.ok) {
+    console.error(`❌ LIVE API tickets fetch failed for event ${eventId}: ${res.status} ${res.statusText}`);
+    throw new Error(`Failed to fetch live tickets: ${res.statusText}`);
   }
+  
+  const json = await res.json();
+  
+  if (json.success && json.data?.tickets) {
+    console.log(`✅ Fetched ${json.data.tickets.length} live tickets for event ${eventId}`);
+    return json.data.tickets as LiveTicketCategory[];
+  }
+  
+  console.warn(`⚠️ LIVE API returned no tickets for event ${eventId}`);
   return [];
 }
 
@@ -142,7 +184,14 @@ export async function searchLiveEvents(searchTerm: string): Promise<LiveEventDB[
  * Get available categories from live events
  */
 export async function getLiveCategories() {
-  const res = await fetch('/api/live-events/categories', { cache: 'no-store' });
+  const res = await fetch(`/api/live-events/categories?_=${Date.now()}`, { 
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    }
+  });
   if (!res.ok) throw new Error('Failed to fetch categories');
   const json = await res.json();
   return json.data || [];
@@ -152,7 +201,14 @@ export async function getLiveCategories() {
  * Get available performers from live events
  */
 export async function getLivePerformers() {
-  const res = await fetch('/api/live-events/performers', { cache: 'no-store' });
+  const res = await fetch(`/api/live-events/performers?_=${Date.now()}`, { 
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    }
+  });
   if (!res.ok) throw new Error('Failed to fetch performers');
   const json = await res.json();
   return json.data || [];

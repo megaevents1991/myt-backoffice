@@ -58,7 +58,12 @@ export async function GET(request: NextRequest) {
     };
 
     return NextResponse.json(responseData, {
-      status: isSuccessful ? 200 : 207 // 207 Multi-Status for partial success
+      status: isSuccessful ? 200 : 207, // 207 Multi-Status for partial success
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
     });
 
   } catch (error) {
@@ -73,7 +78,14 @@ export async function GET(request: NextRequest) {
         message: errorMessage,
         timestamp: new Date().toISOString()
       },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      }
     );
   }
 }
@@ -102,6 +114,12 @@ export async function POST(request: NextRequest) {
       message: 'Manual ticket price sync completed',
       timestamp: new Date().toISOString(),
       result: syncResult
+    }, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
     });
 
   } catch (error) {
@@ -114,7 +132,14 @@ export async function POST(request: NextRequest) {
         details: String(error),
         timestamp: new Date().toISOString()
       },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      }
     );
   }
 }

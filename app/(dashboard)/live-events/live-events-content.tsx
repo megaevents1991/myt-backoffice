@@ -425,13 +425,8 @@ export function LiveEventsContent() {
 
   useEffect(() => {
     if (!selectedEvent) return;
-    // Optimistic: use cached ticket categories from selected event if present
-    const cached = (selectedEvent as any).ticket_categories;
-    if (Array.isArray(cached) && cached.length) {
-      setTickets(cached);
-    } else {
-      setTickets([]);
-    }
+    // Always fetch fresh tickets from LIVE API - no optimistic caching
+    setTickets([]);
     loadTickets(selectedEvent.event_id);
   }, [selectedEvent]);
 

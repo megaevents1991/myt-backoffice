@@ -109,6 +109,12 @@ export async function GET() {
       message: 'LIVE events sync status retrieved',
       timestamp: new Date().toISOString(),
       results
+    }, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
     });
 
   } catch (error) {
@@ -119,7 +125,14 @@ export async function GET() {
         error: 'Failed to get LIVE events sync status',
         details: String(error)
       },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      }
     );
   }
 }

@@ -102,9 +102,25 @@ export async function GET(request: NextRequest) {
         category,
         performer
       }
-    }, { headers: { 'Cache-Control': 'no-store' }});
+    }, { 
+      headers: { 
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   } catch (error: any) {
     console.error('API Error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      error: error.message 
+    }, { 
+      status: 500,
+      headers: { 
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   }
 }

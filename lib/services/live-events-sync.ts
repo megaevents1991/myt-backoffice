@@ -33,14 +33,23 @@ async function fetchLive<T = unknown>(endpoint: string): Promise<T> {
   const url = `${LIVE_API_BASE_URL}/${endpoint}`;
   console.log(`🔗 Fetching from LIVE API: ${url}`);
 
+  const TIMEOUT_MS = 30000; // 30 seconds
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
   try {
     const response = await fetch(url, {
       headers: {
         'Authorization': LIVE_API_KEY,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
       },
-      cache: 'no-store'
+      cache: 'no-store',
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`LIVE API error: ${response.status} ${response.statusText}`);
@@ -50,6 +59,13 @@ async function fetchLive<T = unknown>(endpoint: string): Promise<T> {
     console.log(`✅ Successfully fetched from LIVE API: ${url}`);
     return data;
   } catch (error) {
+    clearTimeout(timeoutId);
+    
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error(`⏱️ LIVE API timeout after ${TIMEOUT_MS}ms (${endpoint})`);
+      throw new Error(`Request timeout - LIVE API did not respond within ${TIMEOUT_MS}ms`);
+    }
+    
     console.error(`❌ Failed to fetch from LIVE API (${endpoint}):`, error);
     throw error;
   }
