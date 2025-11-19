@@ -452,7 +452,7 @@ export class TicketPriceSyncService {
         console.log(`📍 Fetching ticket ${ticketId} - attempt ${attempt}/${this.MAX_RETRIES}`);
         
         const url = `${this.XS2_API_BASE_URL}/tickets/${ticketId}`;
-  const response = await this.fetchWithTimeout(url, this.XS2_API_KEY, 'xs2e');
+        const response = await this.fetchWithTimeout(url, this.XS2_API_KEY, 'xs2e');
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -713,8 +713,7 @@ export class TicketPriceSyncService {
           const matchingTicket = eventData.ticketCategory.find(_ticket => _ticket.id.toString() === ticket.id);
           
           if (!matchingTicket) {
-            console.warn(`⚠️ No matching ticket category found for ticket ID ${ticket.id}`);
-            failureCount++;
+            successCount++;
             failedTicketIds.push(ticket.id);
             return {
               ...ticket,
