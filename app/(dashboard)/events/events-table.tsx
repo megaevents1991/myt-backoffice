@@ -579,6 +579,15 @@ export function EventsTable() {
         searchColumn="name"
         searchPlaceholder="Search events..."
         enableRowSelection={false}
+        getRowClassName={(row, index, sorting) => {
+          const isSortedByPrioritized = sorting.some(
+            (s) => s.id === "is_prioritized" && s.desc
+          );
+          if (isSortedByPrioritized && index === 7) {
+            return "border-b-4 border-primary";
+          }
+          return undefined;
+        }}
       />
     </div>
   );

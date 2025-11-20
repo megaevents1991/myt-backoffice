@@ -9,6 +9,7 @@ import {
   type SortingState,
   type VisibilityState,
   type PaginationState,
+  type Row,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -48,6 +49,7 @@ interface DataTableProps<TData, TValue> {
   defaultPageSize?: number;
   rightActions?: React.ReactNode;
   pageSizeOptions?: number[];
+  getRowClassName?: (row: Row<TData>, index: number, sorting: SortingState) => string | undefined;
 }
 
 export function DataTable<TData, TValue>({
@@ -62,6 +64,7 @@ export function DataTable<TData, TValue>({
   defaultPageSize,
   rightActions,
   pageSizeOptions = [10, 25, 50, 100],
+  getRowClassName,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -234,10 +237,11 @@ export function DataTable<TData, TValue>({
           </TableHeader>
           <TableBody>
             {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
+              table.getRowModel().rows.map((row, index) => (
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
+                  className={getRowClassName?.(row, index, sorting)}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
