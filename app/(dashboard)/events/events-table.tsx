@@ -44,6 +44,8 @@ export function EventsTable() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeleted, setShowDeleted] = useState(false);
+  const [hideSold, setHideSold] = useState(false);
+  const [hidePast, setHidePast] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -122,9 +124,17 @@ export function EventsTable() {
     }
   };
 
-  const filteredEvents = showDeleted
-    ? events
-    : events.filter((event) => !event.is_deleted);
+  const filteredEvents = events.filter((event) => {
+    if (!showDeleted && event.is_deleted) return false;
+    if (hideSold && event.tags?.includes("Sold")) return false;
+    if (hidePast) {
+      const eventDate = new Date(event.date);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Compare against start of today
+      if (eventDate < today) return false;
+    }
+    return true;
+  });
 
   const columns: ColumnDef<Event>[] = [
     {
@@ -397,18 +407,48 @@ export function EventsTable() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center space-x-2">
-        <Checkbox
-          id="show-deleted"
-          checked={showDeleted}
-          onCheckedChange={(checked) => setShowDeleted(checked as boolean)}
-        />
-        <label
-          htmlFor="show-deleted"
-          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-        >
-          Show deleted events
-        </label>
+      <div className="flex flex-wrap gap-6">
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="show-deleted"
+            checked={showDeleted}
+            onCheckedChange={(checked) => setShowDeleted(checked as boolean)}
+          />
+          <label
+            htmlFor="show-deleted"
+            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+          >
+            Show deleted events
+          </label>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="hide-sold"
+            checked={hideSold}
+            onCheckedChange={(checked) => setHideSold(checked as boolean)}
+          />
+          <label
+            htmlFor="hide-sold"
+            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+          >
+            Hide sold events
+          </label>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="hide-past"
+            checked={hidePast}
+            onCheckedChange={(checked) => setHidePast(checked as boolean)}
+          />
+          <label
+            htmlFor="hide-past"
+            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+          >
+            Hide past events
+          </label>
+        </div>
       </div>
 
       <DataTable
