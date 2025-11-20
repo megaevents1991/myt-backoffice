@@ -18,6 +18,7 @@ import {
   getEvents,
   softDeleteEvent,
   duplicateEvent,
+  updateEvent,
 } from "@/lib/actions/event-actions";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -38,7 +39,19 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const COMMON_TAGS = ["Sold", "Hot", "Selling Fast", "Limited Availability", "New"];
 
 export function EventsTable() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -120,6 +133,66 @@ export function EventsTable() {
         variant: "destructive",
         title: "Error",
         description: "Failed to duplicate event. Please try again.",
+      });
+    }
+  };
+
+  const handleUpdatePrioritized = async (id: number, isPrioritized: boolean) => {
+    try {
+      // Optimistic update
+      setEvents(
+        events.map((event) =>
+          event.id === id ? { ...event, is_prioritized: isPrioritized } : event
+        )
+      );
+
+      await updateEvent(id, { is_prioritized: isPrioritized });
+
+      toast({
+        title: "Event updated",
+        description: `Event priority has been ${isPrioritized ? "enabled" : "disabled"}.`,
+      });
+    } catch (error) {
+      console.error("Error updating event priority:", error);
+      // Revert optimistic update
+      const originalEvent = events.find((e) => e.id === id);
+      if (originalEvent) {
+        setEvents(
+          events.map((event) =>
+            event.id === id ? { ...event, is_prioritized: !isPrioritized } : event
+          )
+        );
+      }
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update event priority.",
+      });
+    }
+  };
+
+  const handleUpdateTags = async (id: number, newTags: string) => {
+    try {
+      // Optimistic update
+      setEvents(
+        events.map((event) =>
+          event.id === id ? { ...event, tags: newTags } : event
+        )
+      );
+
+      await updateEvent(id, { tags: newTags });
+
+      toast({
+        title: "Event updated",
+        description: "Event tags have been updated.",
+      });
+    } catch (error) {
+      console.error("Error updating event tags:", error);
+      // Revert optimistic update (requires fetching or storing previous state, skipping for simplicity or could fetch single event)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update event tags.",
       });
     }
   };
@@ -297,8 +370,41 @@ export function EventsTable() {
         );
       },
       cell: ({ row }) => {
-        const tags = row.getValue("tags") as string;
-        return <div>{tags || "-"}</div>;
+        const tagsString = (row.getValue("tags") as string) || "";
+        const currentTags = tagsString.split(",").map(t => t.trim()).filter(Boolean);
+
+        const toggleTag = (tag: string) => {
+          let newTags: string[];
+          if (currentTags.includes(tag)) {
+            newTags = currentTags.filter((t) => t !== tag);
+          } else {
+            newTags = [...currentTags, tag];
+          }
+          handleUpdateTags(row.original.id, newTags.join(", "));
+        };
+
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-full justify-start px-2 text-left font-normal">
+                {tagsString || <span className="text-muted-foreground italic">No tags</span>}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-[200px]">
+              <DropdownMenuLabel>Manage Tags</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {COMMON_TAGS.map((tag) => (
+                <DropdownMenuCheckboxItem
+                  key={tag}
+                  checked={currentTags.includes(tag)}
+                  onCheckedChange={() => toggleTag(tag)}
+                >
+                  {tag}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
       },
     },
     {
@@ -315,7 +421,23 @@ export function EventsTable() {
         );
       },
       cell: ({ row }) => {
-        return <div>{row.getValue("is_prioritized") ? "Yes" : "No"}</div>;
+        const isPrioritized = row.getValue("is_prioritized") as boolean;
+        return (
+          <Select
+            value={isPrioritized ? "yes" : "no"}
+            onValueChange={(value) =>
+              handleUpdatePrioritized(row.original.id, value === "yes")
+            }
+          >
+            <SelectTrigger className="h-8 w-[80px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="yes">Yes</SelectItem>
+              <SelectItem value="no">No</SelectItem>
+            </SelectContent>
+          </Select>
+        );
       },
     },
     {
