@@ -390,8 +390,9 @@ export function ReservationsTable() {
         "main_contact_last_name",
         "main_contact_phone_number",
         "main_contact_email",
+        "accounting_number",
       ]}
-      searchPlaceholder="Search by name, phone, or email..."
+      searchPlaceholder="Search by name, phone, email, or acc no..."
       defaultPageSize={50}
   pageSizeOptions={[10, 25, 50, 100]}
       enableRowSelection
