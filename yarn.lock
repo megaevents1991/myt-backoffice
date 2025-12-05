@@ -1077,12 +1077,12 @@
     "@radix-ui/react-compose-refs" "1.1.2"
     "@radix-ui/react-use-layout-effect" "1.1.1"
 
-"@radix-ui/react-primitive@2.0.1", "@radix-ui/react-primitive@2.1.3", "@radix-ui/react-primitive@2.1.4", "@radix-ui/react-primitive@^2.0.0":
-  version "2.0.1"
-  resolved "https://registry.yarnpkg.com/@radix-ui/react-primitive/-/react-primitive-2.0.1.tgz#6d9efc550f7520135366f333d1e820cf225fad9e"
-  integrity sha512-sHCWTtxwNn3L3fH8qAfnF3WbUZycW93SM1j3NFDzXBiz8D6F5UTTy8G1+WFEaiCdvCVRJWj6N2R4Xq6HdiHmDg==
+"@radix-ui/react-primitive@2.1.3", "@radix-ui/react-primitive@2.1.4", "@radix-ui/react-primitive@^2.0.0":
+  version "2.1.4"
+  resolved "https://registry.yarnpkg.com/@radix-ui/react-primitive/-/react-primitive-2.1.4.tgz#2626ea309ebd63bf5767d3e7fc4081f81b993df0"
+  integrity sha512-9hQc4+GNVtJAIEPEqlYqW5RiYdrr8ea5XQ0ZOnD6fgru+83kqT15mq2OCcbe8KnjRZl5vF3ks69AKz3kh1jrhg==
   dependencies:
-    "@radix-ui/react-slot" "1.1.1"
+    "@radix-ui/react-slot" "1.2.4"
 
 "@radix-ui/react-progress@^1.1.1":
   version "1.1.8"
@@ -1189,7 +1189,7 @@
     "@radix-ui/react-use-previous" "1.1.1"
     "@radix-ui/react-use-size" "1.1.1"
 
-"@radix-ui/react-slot@1.1.1", "@radix-ui/react-slot@1.2.3", "@radix-ui/react-slot@1.2.4", "@radix-ui/react-slot@^1.1.1":
+"@radix-ui/react-slot@1.2.3", "@radix-ui/react-slot@1.2.4", "@radix-ui/react-slot@^1.1.1":
   version "1.2.4"
   resolved "https://registry.yarnpkg.com/@radix-ui/react-slot/-/react-slot-1.2.4.tgz#63c0ba05fdf90cc49076b94029c852d7bac1fb83"
   integrity sha512-Jl+bCv8HxKnlTLVrcDE8zTMJ09R9/ukw4qBs/oZClOfoQk/cOTbDn+NceXfV7j09YPVQUryJPHurafcSg6EVKA==
@@ -1376,10 +1376,10 @@
     "@smithy/util-middleware" "^4.2.5"
     tslib "^2.6.2"
 
-"@smithy/core@^3.18.5", "@smithy/core@^3.18.6":
-  version "3.18.6"
-  resolved "https://registry.yarnpkg.com/@smithy/core/-/core-3.18.6.tgz#bbc0d2dce4b926ce9348bce82b85f5e1294834df"
-  integrity sha512-8Q/ugWqfDUEU1Exw71+DoOzlONJ2Cn9QA8VeeDzLLjzO/qruh9UKFzbszy4jXcIYgGofxYiT0t1TT6+CT/GupQ==
+"@smithy/core@^3.18.5", "@smithy/core@^3.18.7":
+  version "3.18.7"
+  resolved "https://registry.yarnpkg.com/@smithy/core/-/core-3.18.7.tgz#88c67b9474eadf51a632e2956c8756d36c7072c8"
+  integrity sha512-axG9MvKhMWOhFbvf5y2DuyTxQueO0dkedY9QC3mAfndLosRI/9LJv8WaL0mw7ubNhsO4IuXX9/9dYGPFvHrqlw==
   dependencies:
     "@smithy/middleware-serde" "^4.2.6"
     "@smithy/protocol-http" "^5.3.5"
@@ -1455,12 +1455,12 @@
     "@smithy/types" "^4.9.0"
     tslib "^2.6.2"
 
-"@smithy/middleware-endpoint@^4.3.12", "@smithy/middleware-endpoint@^4.3.13":
-  version "4.3.13"
-  resolved "https://registry.yarnpkg.com/@smithy/middleware-endpoint/-/middleware-endpoint-4.3.13.tgz#94a0e9fd360355bd224481b5371b39dd3f8e9c99"
-  integrity sha512-X4za1qCdyx1hEVVXuAWlZuK6wzLDv1uw1OY9VtaYy1lULl661+frY7FeuHdYdl7qAARUxH2yvNExU2/SmRFfcg==
+"@smithy/middleware-endpoint@^4.3.12", "@smithy/middleware-endpoint@^4.3.14":
+  version "4.3.14"
+  resolved "https://registry.yarnpkg.com/@smithy/middleware-endpoint/-/middleware-endpoint-4.3.14.tgz#da145b02f6a5d073595111bf73fa31da16e73773"
+  integrity sha512-v0q4uTKgBM8dsqGjqsabZQyH85nFaTnFcgpWU1uydKFsdyyMzfvOkNum9G7VK+dOP01vUnoZxIeRiJ6uD0kjIg==
   dependencies:
-    "@smithy/core" "^3.18.6"
+    "@smithy/core" "^3.18.7"
     "@smithy/middleware-serde" "^4.2.6"
     "@smithy/node-config-provider" "^4.3.5"
     "@smithy/shared-ini-file-loader" "^4.4.0"
@@ -1470,14 +1470,14 @@
     tslib "^2.6.2"
 
 "@smithy/middleware-retry@^4.4.12":
-  version "4.4.13"
-  resolved "https://registry.yarnpkg.com/@smithy/middleware-retry/-/middleware-retry-4.4.13.tgz#1038ddb69d43301e6424eb1122dd090f3789d8a2"
-  integrity sha512-RzIDF9OrSviXX7MQeKOm8r/372KTyY8Jmp6HNKOOYlrguHADuM3ED/f4aCyNhZZFLG55lv5beBin7nL0Nzy1Dw==
+  version "4.4.14"
+  resolved "https://registry.yarnpkg.com/@smithy/middleware-retry/-/middleware-retry-4.4.14.tgz#92e503946314278614f608537d77a04db6d7b810"
+  integrity sha512-Z2DG8Ej7FyWG1UA+7HceINtSLzswUgs2np3sZX0YBBxCt+CXG4QUxv88ZDS3+2/1ldW7LqtSY1UO/6VQ1pND8Q==
   dependencies:
     "@smithy/node-config-provider" "^4.3.5"
     "@smithy/protocol-http" "^5.3.5"
     "@smithy/service-error-classification" "^4.2.5"
-    "@smithy/smithy-client" "^4.9.9"
+    "@smithy/smithy-client" "^4.9.10"
     "@smithy/types" "^4.9.0"
     "@smithy/util-middleware" "^4.2.5"
     "@smithy/util-retry" "^4.2.5"
@@ -1584,13 +1584,13 @@
     "@smithy/util-utf8" "^4.2.0"
     tslib "^2.6.2"
 
-"@smithy/smithy-client@^4.9.8", "@smithy/smithy-client@^4.9.9":
-  version "4.9.9"
-  resolved "https://registry.yarnpkg.com/@smithy/smithy-client/-/smithy-client-4.9.9.tgz#c404029e85a62b5d4130839f7930f7071de00244"
-  integrity sha512-SUnZJMMo5yCmgjopJbiNeo1vlr8KvdnEfIHV9rlD77QuOGdRotIVBcOrBuMr+sI9zrnhtDtLP054bZVbpZpiQA==
+"@smithy/smithy-client@^4.9.10", "@smithy/smithy-client@^4.9.8":
+  version "4.9.10"
+  resolved "https://registry.yarnpkg.com/@smithy/smithy-client/-/smithy-client-4.9.10.tgz#a395bbc6ccf35cdbae44ce024909b6c5aec06283"
+  integrity sha512-Jaoz4Jw1QYHc1EFww/E6gVtNjhoDU+gwRKqXP6C3LKYqqH2UQhP8tMP3+t/ePrhaze7fhLE8vS2q6vVxBANFTQ==
   dependencies:
-    "@smithy/core" "^3.18.6"
-    "@smithy/middleware-endpoint" "^4.3.13"
+    "@smithy/core" "^3.18.7"
+    "@smithy/middleware-endpoint" "^4.3.14"
     "@smithy/middleware-stack" "^4.2.5"
     "@smithy/protocol-http" "^5.3.5"
     "@smithy/types" "^4.9.0"
@@ -1660,25 +1660,25 @@
     tslib "^2.6.2"
 
 "@smithy/util-defaults-mode-browser@^4.3.11":
-  version "4.3.12"
-  resolved "https://registry.yarnpkg.com/@smithy/util-defaults-mode-browser/-/util-defaults-mode-browser-4.3.12.tgz#dd0c76d0414428011437479faa1d28b68d01271f"
-  integrity sha512-TKc6FnOxFULKxLgTNHYjcFqdOYzXVPFFVm5JhI30F3RdhT7nYOtOsjgaOwfDRmA/3U66O9KaBQ3UHoXwayRhAg==
+  version "4.3.13"
+  resolved "https://registry.yarnpkg.com/@smithy/util-defaults-mode-browser/-/util-defaults-mode-browser-4.3.13.tgz#51e3cadfe772882f941f1dff07d2f8b7acb9c21e"
+  integrity sha512-hlVLdAGrVfyNei+pKIgqDTxfu/ZI2NSyqj4IDxKd5bIsIqwR/dSlkxlPaYxFiIaDVrBy0he8orsFy+Cz119XvA==
   dependencies:
     "@smithy/property-provider" "^4.2.5"
-    "@smithy/smithy-client" "^4.9.9"
+    "@smithy/smithy-client" "^4.9.10"
     "@smithy/types" "^4.9.0"
     tslib "^2.6.2"
 
 "@smithy/util-defaults-mode-node@^4.2.14":
-  version "4.2.15"
-  resolved "https://registry.yarnpkg.com/@smithy/util-defaults-mode-node/-/util-defaults-mode-node-4.2.15.tgz#f04e40ae98b49088f65bc503d3be7eefcff55100"
-  integrity sha512-94NqfQVo+vGc5gsQ9SROZqOvBkGNMQu6pjXbnn8aQvBUhc31kx49gxlkBEqgmaZQHUUfdRUin5gK/HlHKmbAwg==
+  version "4.2.16"
+  resolved "https://registry.yarnpkg.com/@smithy/util-defaults-mode-node/-/util-defaults-mode-node-4.2.16.tgz#ab4abdebae65e8628473d1493b1de5f82aa0eec9"
+  integrity sha512-F1t22IUiJLHrxW9W1CQ6B9PN+skZ9cqSuzB18Eh06HrJPbjsyZ7ZHecAKw80DQtyGTRcVfeukKaCRYebFwclbg==
   dependencies:
     "@smithy/config-resolver" "^4.4.3"
     "@smithy/credential-provider-imds" "^4.2.5"
     "@smithy/node-config-provider" "^4.3.5"
     "@smithy/property-provider" "^4.2.5"
-    "@smithy/smithy-client" "^4.9.9"
+    "@smithy/smithy-client" "^4.9.10"
     "@smithy/types" "^4.9.0"
     tslib "^2.6.2"
 
@@ -1776,31 +1776,31 @@
     follow-redirects "^1.15.9"
     tar-fs "^3.0.8"
 
-"@supabase/auth-js@2.86.0":
-  version "2.86.0"
-  resolved "https://registry.yarnpkg.com/@supabase/auth-js/-/auth-js-2.86.0.tgz#e982e5f2c8cd66666fbff2ca174fe0e2dcb4b867"
-  integrity sha512-3xPqMvBWC6Haqpr6hEWmSUqDq+6SA1BAEdbiaHdAZM9QjZ5uiQJ+6iD9pZOzOa6MVXZh4GmwjhC9ObIG0K1NcA==
+"@supabase/auth-js@2.86.2":
+  version "2.86.2"
+  resolved "https://registry.yarnpkg.com/@supabase/auth-js/-/auth-js-2.86.2.tgz#e29398115f0eb4f5684a3b8b5bf46c93e6fd064d"
+  integrity sha512-7k8IAhgSnZuD9Zex2+ohHKY3aWGDd4ls0xlxMGl3/jPyHSSXrIYfmtJyUH0+DPd4B3psBqHC0Ev0/nZEHdW58w==
   dependencies:
     tslib "2.8.1"
 
-"@supabase/functions-js@2.86.0":
-  version "2.86.0"
-  resolved "https://registry.yarnpkg.com/@supabase/functions-js/-/functions-js-2.86.0.tgz#793491d813e46c5c99f5b572b87d8b6c149d20ec"
-  integrity sha512-AlOoVfeaq9XGlBFIyXTmb+y+CZzxNO4wWbfgRM6iPpNU5WCXKawtQYSnhivi3UVxS7GA0rWovY4d6cIAxZAojA==
+"@supabase/functions-js@2.86.2":
+  version "2.86.2"
+  resolved "https://registry.yarnpkg.com/@supabase/functions-js/-/functions-js-2.86.2.tgz#02f5496319b3529368c8536ef2056576145c9b74"
+  integrity sha512-OLpy3NIlj7q3yGMFwUpPkDPJbRx4aU+u73SiXqiMnA5ARwzVcOReSzI2u4oOqioE+3ud0fRx7sRsfoklBwYOmg==
   dependencies:
     tslib "2.8.1"
 
-"@supabase/postgrest-js@2.86.0":
-  version "2.86.0"
-  resolved "https://registry.yarnpkg.com/@supabase/postgrest-js/-/postgrest-js-2.86.0.tgz#9f4a66632539635f8ec3dbfa76a915de30cabfbb"
-  integrity sha512-QVf+wIXILcZJ7IhWhWn+ozdf8B+oO0Ulizh2AAPxD/6nQL+x3r9lJ47a+fpc/jvAOGXMbkeW534Kw6jz7e8iIA==
+"@supabase/postgrest-js@2.86.2":
+  version "2.86.2"
+  resolved "https://registry.yarnpkg.com/@supabase/postgrest-js/-/postgrest-js-2.86.2.tgz#4df97d0dffc04b92f157fc6cf8c8981abba787dc"
+  integrity sha512-KVgOF2QASvUfQnzMGAmxR7f3ZF/eZ8PFp2F5Q7SAPQlmB83FEaZ7C/QMzfVXXqkMbotfh96xcaBNSKnxowFObA==
   dependencies:
     tslib "2.8.1"
 
-"@supabase/realtime-js@2.86.0":
-  version "2.86.0"
-  resolved "https://registry.yarnpkg.com/@supabase/realtime-js/-/realtime-js-2.86.0.tgz#c6d69fd7f81e8d9d931ba2be8d49dc950fee6079"
-  integrity sha512-dyS8bFoP29R/sj5zLi0AP3JfgG8ar1nuImcz5jxSx7UIW7fbFsXhUCVrSY2Ofo0+Ev6wiATiSdBOzBfWaiFyPA==
+"@supabase/realtime-js@2.86.2":
+  version "2.86.2"
+  resolved "https://registry.yarnpkg.com/@supabase/realtime-js/-/realtime-js-2.86.2.tgz#c2872fb7d0a7d0c6dec153ad677ef14c6b235ef6"
+  integrity sha512-uLUYrOMeK1qXHISxdMFVfBs0sGV5PmqYewIHvLBnMYbb//LERojxfKlVSJBgZ+aAwxANmtQKcprjGZI7DJ6lNQ==
   dependencies:
     "@types/phoenix" "^1.6.6"
     "@types/ws" "^8.18.1"
@@ -1814,24 +1814,24 @@
   dependencies:
     cookie "^1.0.1"
 
-"@supabase/storage-js@2.86.0":
-  version "2.86.0"
-  resolved "https://registry.yarnpkg.com/@supabase/storage-js/-/storage-js-2.86.0.tgz#9222354aa0bc6b2cd2e79264b1d382c199a26d7c"
-  integrity sha512-PM47jX/Mfobdtx7NNpoj9EvlrkapAVTQBZgGGslEXD6NS70EcGjhgRPBItwHdxZPM5GwqQ0cGMN06uhjeY2mHQ==
+"@supabase/storage-js@2.86.2":
+  version "2.86.2"
+  resolved "https://registry.yarnpkg.com/@supabase/storage-js/-/storage-js-2.86.2.tgz#638d920263f677f59282e4be601727a2ded6c25d"
+  integrity sha512-zyR4PkO7R4f4/xRBVJho3Dm7y4512BoCqGmD7LjNV2GVtWt8vEmambiuMB2Ty3l76mqw+ynQyHY8yFWSERrHXA==
   dependencies:
     iceberg-js "^0.8.0"
     tslib "2.8.1"
 
 "@supabase/supabase-js@latest":
-  version "2.86.0"
-  resolved "https://registry.yarnpkg.com/@supabase/supabase-js/-/supabase-js-2.86.0.tgz#3523c0991ca7206545ebe7c33ac3e3a4034481da"
-  integrity sha512-BaC9sv5+HGNy1ulZwY8/Ev7EjfYYmWD4fOMw9bDBqTawEj6JHAiOHeTwXLRzVaeSay4p17xYLN2NSCoGgXMQnw==
+  version "2.86.2"
+  resolved "https://registry.yarnpkg.com/@supabase/supabase-js/-/supabase-js-2.86.2.tgz#6175d4a03619127af7201c6f71a82350867c2692"
+  integrity sha512-KXoiqFf7zZhL/+lj7oBFFUvVDQ6gy03v9wQ5E++f7xiJUuqmI4DuBhrv8uFo6B2EGTQTA3vkXjbxmYIug/zfWw==
   dependencies:
-    "@supabase/auth-js" "2.86.0"
-    "@supabase/functions-js" "2.86.0"
-    "@supabase/postgrest-js" "2.86.0"
-    "@supabase/realtime-js" "2.86.0"
-    "@supabase/storage-js" "2.86.0"
+    "@supabase/auth-js" "2.86.2"
+    "@supabase/functions-js" "2.86.2"
+    "@supabase/postgrest-js" "2.86.2"
+    "@supabase/realtime-js" "2.86.2"
+    "@supabase/storage-js" "2.86.2"
 
 "@swc/helpers@0.5.15":
   version "0.5.15"
@@ -2072,9 +2072,9 @@ bare-url@^2.2.2:
     bare-path "^3.0.0"
 
 baseline-browser-mapping@^2.9.0:
-  version "2.9.0"
-  resolved "https://registry.yarnpkg.com/baseline-browser-mapping/-/baseline-browser-mapping-2.9.0.tgz#b4b91c7ec4deac14527bc5495b914fb9db1a251a"
-  integrity sha512-Mh++g+2LPfzZToywfE1BUzvZbfOY52Nil0rn9H1CPC5DJ7fX+Vir7nToBeoiSbB1zTNeGYbELEvJESujgGrzXw==
+  version "2.9.3"
+  resolved "https://registry.yarnpkg.com/baseline-browser-mapping/-/baseline-browser-mapping-2.9.3.tgz#5eaccdbbe2006e55ec9978a0ccacd59eb785215c"
+  integrity sha512-8QdH6czo+G7uBsNo0GiUfouPN1lRzKdJTGnKXwe12gkFbnnOUaUKGN55dMkfy+mnxmvjwl9zcI4VncczcVXDhA==
 
 binary-extensions@^2.0.0:
   version "2.3.0"
@@ -2361,9 +2361,9 @@ dunder-proto@^1.0.1:
     gopd "^1.2.0"
 
 electron-to-chromium@^1.5.263:
-  version "1.5.263"
-  resolved "https://registry.yarnpkg.com/electron-to-chromium/-/electron-to-chromium-1.5.263.tgz#bec8f2887c30001dfacf415c136eae3b4386846a"
-  integrity sha512-DrqJ11Knd+lo+dv+lltvfMDLU27g14LMdH2b0O3Pio4uk0x+z7OR+JrmyacTPN2M8w3BrZ7/RTwG3R9B7irPlg==
+  version "1.5.266"
+  resolved "https://registry.yarnpkg.com/electron-to-chromium/-/electron-to-chromium-1.5.266.tgz#41ed029b3cf641c4ee071de42954b36dca8f5f4e"
+  integrity sha512-kgWEglXvkEfMH7rxP5OSZZwnaDWT7J9EoZCujhnpLbfi0bbNtRkgdX2E3gt0Uer11c61qCYktB3hwkAS325sJg==
 
 embla-carousel-react@8.5.1:
   version "8.5.1"
@@ -2602,9 +2602,9 @@ hasown@^2.0.2:
     function-bind "^1.1.2"
 
 iceberg-js@^0.8.0:
-  version "0.8.0"
-  resolved "https://registry.yarnpkg.com/iceberg-js/-/iceberg-js-0.8.0.tgz#443e33b0c6676782bf7b74210292b3ccbea6432b"
-  integrity sha512-kmgmea2nguZEvRqW79gDqNXyxA3OS5WIgMVffrHpqXV4F/J4UmNIw2vstixioLTNSkd5rFB8G0s3Lwzogm6OFw==
+  version "0.8.1"
+  resolved "https://registry.yarnpkg.com/iceberg-js/-/iceberg-js-0.8.1.tgz#47d893468293a010385e1c70123f29d0fc1d9912"
+  integrity sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA==
 
 input-otp@1.4.1:
   version "1.4.1"
@@ -2965,9 +2965,9 @@ react-dom@19.2.1:
     scheduler "^0.27.0"
 
 react-hook-form@^7.56.4:
-  version "7.67.0"
-  resolved "https://registry.yarnpkg.com/react-hook-form/-/react-hook-form-7.67.0.tgz#fd942240fa2b774034f63b22d6f85649cf4de664"
-  integrity sha512-E55EOwKJHHIT/I6J9DmQbCWToAYSw9nN5R57MZw9rMtjh+YQreMDxRLfdjfxQbiJ3/qbg3Z02wGzBX4M+5fMtQ==
+  version "7.68.0"
+  resolved "https://registry.yarnpkg.com/react-hook-form/-/react-hook-form-7.68.0.tgz#733c6871fa4ec5e5bfb13e7650a3a912eafe1721"
+  integrity sha512-oNN3fjrZ/Xo40SWlHf1yCjlMK417JxoSJVUXQjGdvdRCU07NTFei1i1f8ApUAts+IVh14e4EdakeLEA+BEAs/Q==
 
 react-hot-toast@^2.5.2:
   version "2.6.0"
@@ -3362,9 +3362,9 @@ undici-types@~7.16.0:
   integrity sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==
 
 update-browserslist-db@^1.2.0:
-  version "1.2.0"
-  resolved "https://registry.yarnpkg.com/update-browserslist-db/-/update-browserslist-db-1.2.0.tgz#acc0f67299ff4c37c1079584d9391cd3520dbef1"
-  integrity sha512-Dn+NlSF/7+0lVSEZ57SYQg6/E44arLzsVOGgrElBn/BlG1B8WKdbLppOocFrXwRNTkNlgdGNaBgH1o0lggDPiw==
+  version "1.2.2"
+  resolved "https://registry.yarnpkg.com/update-browserslist-db/-/update-browserslist-db-1.2.2.tgz#cfb4358afa08b3d5731a2ecd95eebf4ddef8033e"
+  integrity sha512-E85pfNzMQ9jpKkA7+TJAi4TJN+tBCuWh5rUcS/sv6cFi+1q9LYDwDI5dpUL0u/73EElyQ8d3TEaeW4sPedBqYA==
   dependencies:
     escalade "^3.2.0"
     picocolors "^1.1.1"
