@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { EventComparisonModal } from "@/components/event-comparison-modal";
 import { getTixStockEventById, getTixStockTickets } from "@/lib/actions/tixstock-actions";
 import { getDynamicMaps } from "@/lib/actions/map-actions";
 import { TixStockEventDB, TixStockListing } from "@/types/tixstock.types";
@@ -372,10 +373,13 @@ export default function TixStockEventDetailsPage() {
             </div>
           </div>
         </div>
-        <Button onClick={handleCreateEventFromTixStock}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create Event
-        </Button>
+        <div className="flex items-center space-x-2">
+          <EventComparisonModal event={event} />
+          <Button onClick={handleCreateEventFromTixStock}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Event
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
