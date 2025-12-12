@@ -730,6 +730,18 @@ export function TixStockEventsContent() {
                           variant="ghost"
                           size="sm"
                           className="h-8 w-8 p-0 bg-background/80 backdrop-blur-sm hover:bg-background"
+                          title="View Details"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/tixstock-events/${event.event_id}`);
+                          }}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 bg-background/80 backdrop-blur-sm hover:bg-background"
                           title="Create Event"
                           onClick={(e) => {
                             e.stopPropagation();

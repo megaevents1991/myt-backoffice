@@ -1,0 +1,1854 @@
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 1018.4 824.5" style="enable-background:new 0 0 1018.4 824.5;" xml:space="preserve" class="svg-stadium">
+	<style>
+	.st0 {
+		fill: #599D52;
+	}
+	
+	.st1 {
+		fill: none;
+		stroke: #FFFFFF;
+		stroke-miterlimit: 10;
+	}
+	
+	.st2 {
+		fill: none;
+		stroke: #FFFFFF;
+		stroke-width: 0.75;
+		stroke-miterlimit: 10;
+	}
+	
+	.st3 {
+		fill: #080B19;
+	}
+	
+	.st4 {
+		font-family: 'DMSans-Bold';
+	}
+	
+	.st5 {
+		font-size: 15px;
+	}
+	
+	.st6 {
+		fill: none;
+		stroke: #000000;
+		stroke-miterlimit: 10;
+	}
+	
+	.st7 {
+		font-family: 'DMSans-Medium';
+	}
+	
+	.st8 {
+		font-size: 10px;
+	}
+	
+	.st9 {
+		font-size: 5.5px;
+	}
+	
+	.st10 {
+		font-size: 9.5px;
+	}
+	</style>
+
+	<g class="field">
+		<rect x="331.7" y="290.4" class="st0" width="362.7" height="239.2"/>
+		<circle class="st1" cx="515.4" cy="403" r="36.7"/>
+		<line class="st2" x1="514.8" y1="299.9" x2="514.8" y2="519.8"/>
+		<rect x="345.7" y="299.9" class="st2" width="335.2" height="219.8"/>
+		<rect x="345.7" y="335.7" class="st1" width="51.7" height="157.3"/>
+		<rect x="345.7" y="377.7" class="st1" width="18.9" height="73.2"/>
+		<path class="st1" d="M397.3,445c0,0,23.2-29.4-0.2-57.2"/>
+		<rect x="337.3" y="400.3" class="st1" width="8.4" height="24.6"/>
+		<g>
+			<rect x="629.3" y="335.7" class="st1" width="51.7" height="157.3"/>
+			<rect x="662" y="377.7" class="st1" width="18.9" height="73.2"/>
+			<path class="st1" d="M629.4,387.8c-23.4,27.8-0.2,57.2-0.2,57.2"/>
+			<rect x="680.9" y="400.3" class="st1" width="8.4" height="24.6"/>
+		</g>
+		<path class="st1" d="M345.7,308.3c0,0,7.6-0.9,8.3-8.3"/>
+		<path class="st1" d="M352.7,519.8c0,0,0.2-7.7-7.1-9.4"/>
+		<path class="st1" d="M673,299.9c0,0,0.5,7.7,7.8,8.8"/>
+		<path class="st1" d="M681,511c0,0-7.5,1.4-7.7,8.9"/>
+
+		<g data-tier="east-stand">
+			<text transform="matrix(1 0 0 1 469.3517 15.5975)" class="st3 st4 st5 tier-label">EAST STAND</text>
+		</g>
+		<g data-tier="clock-end">
+			<text transform="matrix(-1.346898e-10 1 -1 -1.346898e-10 1000.4688 369.4797)" class="st3 st4 st5 tier-label">CLOCK END</text>
+		</g>
+		<g data-tier="north-bank">
+			<text transform="matrix(4.489659e-11 -1 1 4.489659e-11 16.1619 460.9795)" class="st3 st4 st5 tier-label">NORTH BANK</text>
+		</g>
+		<g data-tier="west-stand">
+			<text transform="matrix(1 0 0 1 467.603 819.0093)" class="st3 st4 st5 tier-label">WEST STAND</text>
+		</g>
+	</g>
+
+	<g data-category="longside-lower-tier">
+		<g data-section="longside-lower-tier_1">
+			<polygon class="st6 block" points="453.9,561.5 501,561.5 501,600.5 506.9,600.5 506.9,639.5 453.9,639.5" data-seat="longside-lower-tier"></polygon>
+			<text transform="matrix(1 0 0 1 476.1912 602.584)" class="st7 st8 section-label">1</text>
+		</g>
+		<g data-section="longside-lower-tier_2">
+			<rect x="400.9" y="561.5" class="st6 block" width="49" height="78" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 421.1912 602.584)" class="st7 st8 section-label">2</text>
+		</g>
+		<g data-section="longside-lower-tier_3">
+			<rect x="348.4" y="562" class="st6 block" width="49" height="78" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 369.1912 602.584)" class="st7 st8 section-label">3</text>
+		</g>
+		<g data-section="longside-lower-tier_4">
+			<path class="st6 block" d="M317.4,555l-33,71c0,0,25,15,61,14v-78C345.4,562,328.4,561,317.4,555z" data-seat="longside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 317.1912 602.584)" class="st7 st8 section-label">4</text>
+		</g>
+		<g data-section="longside-lower-tier_13">
+			<path class="st6 block" d="M357.4,179h-28c0,0-24,3-47,13.8l35,70.2c0,0,11-4.9,20-5.9h20V179z" data-seat="longside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 322.1912 216.584)" class="st7 st8 section-label">13</text>
+		</g>
+		<g data-section="longside-lower-tier_14">
+			<rect x="360.4" y="179.5" class="st6 block" width="37" height="77" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 374.1912 218.584)" class="st7 st8 section-label">14</text>
+		</g>
+		<g data-section="longside-lower-tier_15">
+			<rect x="400.9" y="179.5" class="st6 block" width="50" height="77" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 421.1912 218.584)" class="st7 st8 section-label">15</text>
+		</g>
+		<g data-section="longside-lower-tier_16">
+			<rect x="454.4" y="179" class="st6 block" width="56" height="78" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 478.1912 218.584)" class="st7 st8 section-label">16</text>
+		</g>
+		<g data-section="longside-lower-tier_17">
+			<rect x="513.9" y="179" class="st6 block" width="50" height="78" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 536.1912 218.584)" class="st7 st8 section-label">17</text>
+		</g>
+		<g data-section="longside-lower-tier_18">
+			<rect x="567.4" y="179.5" class="st6 block" width="50" height="77" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 588.1912 219.584)" class="st7 st8 section-label">18</text>
+		</g>
+		<g data-section="longside-lower-tier_19">
+			<rect x="620.9" y="179" class="st6 block" width="36.5" height="77.5" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 634.1912 219.584)" class="st7 st8 section-label">19</text>
+		</g>
+		<g data-section="longside-lower-tier_20">
+			<path class="st6 block" d="M660.9,179h28c0,0,24,3,47,13.8l-35,70.2c0,0-11-4.9-20-5.9h-20V179z" data-seat="longside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 684.1912 219.584)" class="st7 st8 section-label">20</text>
+		</g>
+		<g data-section="longside-lower-tier_29">
+			<path class="st6 block" d="M700.9,555l33,71c0,0-25,15-61,14v-78C672.9,562,689.9,561,700.9,555z" data-seat="longside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 688.4272 602.584)" class="st7 st8 section-label">29</text>
+		</g>
+		<g data-section="longside-lower-tier_30">
+			<rect x="620.9" y="562" class="st6 block" width="49" height="78" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 640.4263 602.5845)" class="st7 st8 section-label">30</text>
+		</g>
+		<g data-section="longside-lower-tier_31">
+			<rect x="568.4" y="561.5" class="st6 block" width="49" height="78" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 587.4851 602.5845)" class="st7 st8 section-label">31</text>
+		</g>
+		<g data-section="longside-lower-tier_32">
+			<polygon class="st6 block" points="564.4,561.5 516.4,561.5 516.4,600.5 510.4,600.5 510.4,639.5 564.4,639.5" data-seat="longside-lower-tier"></polygon>
+			<text transform="matrix(1 0 0 1 536.191 602.5845)" class="st7 st8 section-label">32</text>
+		</g>
+
+
+		<g data-section="longside-lower-tier_west-stand">
+			<polygon class="st6 block" points="453.9,561.5 501,561.5 501,600.5 506.9,600.5 506.9,639.5 453.9,639.5" data-seat="longside-lower-tier"></polygon>
+			<text transform="matrix(1 0 0 1 476.1912 602.584)" class="st7 st8 section-label">1</text>
+		</g>
+		<g data-section="longside-lower-tier_west-stand">
+			<rect x="400.9" y="561.5" class="st6 block" width="49" height="78" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 421.1912 602.584)" class="st7 st8 section-label">2</text>
+		</g>
+		<g data-section="longside-lower-tier_west-stand">
+			<rect x="348.4" y="562" class="st6 block" width="49" height="78" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 369.1912 602.584)" class="st7 st8 section-label">3</text>
+		</g>
+		<g data-section="longside-lower-tier_west-stand">
+			<path class="st6 block" d="M317.4,555l-33,71c0,0,25,15,61,14v-78C345.4,562,328.4,561,317.4,555z" data-seat="longside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 317.1912 602.584)" class="st7 st8 section-label">4</text>
+		</g>
+		<g data-section="longside-lower-tier_west-stand">
+			<path class="st6 block" d="M700.9,555l33,71c0,0-25,15-61,14v-78C672.9,562,689.9,561,700.9,555z" data-seat="longside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 688.4272 602.584)" class="st7 st8 section-label">29</text>
+		</g>
+		<g data-section="longside-lower-tier_west-stand">
+			<rect x="620.9" y="562" class="st6 block" width="49" height="78" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 640.4263 602.5845)" class="st7 st8 section-label">30</text>
+		</g>
+		<g data-section="longside-lower-tier_west-stand">
+			<rect x="568.4" y="561.5" class="st6 block" width="49" height="78" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 587.4851 602.5845)" class="st7 st8 section-label">31</text>
+		</g>
+		<g data-section="longside-lower-tier_west-stand">
+			<polygon class="st6 block" points="564.4,561.5 516.4,561.5 516.4,600.5 510.4,600.5 510.4,639.5 564.4,639.5" data-seat="longside-lower-tier"></polygon>
+			<text transform="matrix(1 0 0 1 536.191 602.5845)" class="st7 st8 section-label">32</text>
+		</g>
+
+
+		<g data-section="longside-lower-tier_east-stand">
+			<path class="st6 block" d="M357.4,179h-28c0,0-24,3-47,13.8l35,70.2c0,0,11-4.9,20-5.9h20V179z" data-seat="longside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 322.1912 216.584)" class="st7 st8 section-label">13</text>
+		</g>
+		<g data-section="longside-lower-tier_east-stand">
+			<rect x="360.4" y="179.5" class="st6 block" width="37" height="77" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 374.1912 218.584)" class="st7 st8 section-label">14</text>
+		</g>
+		<g data-section="longside-lower-tier_east-stand">
+			<rect x="400.9" y="179.5" class="st6 block" width="50" height="77" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 421.1912 218.584)" class="st7 st8 section-label">15</text>
+		</g>
+		<g data-section="longside-lower-tier_east-stand">
+			<rect x="454.4" y="179" class="st6 block" width="56" height="78" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 478.1912 218.584)" class="st7 st8 section-label">16</text>
+		</g>
+		<g data-section="longside-lower-tier_east-stand">
+			<rect x="513.9" y="179" class="st6 block" width="50" height="78" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 536.1912 218.584)" class="st7 st8 section-label">17</text>
+		</g>
+		<g data-section="longside-lower-tier_east-stand">
+			<rect x="567.4" y="179.5" class="st6 block" width="50" height="77" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 588.1912 219.584)" class="st7 st8 section-label">18</text>
+		</g>
+		<g data-section="longside-lower-tier_east-stand">
+			<rect x="620.9" y="179" class="st6 block" width="36.5" height="77.5" data-seat="longside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 634.1912 219.584)" class="st7 st8 section-label">19</text>
+		</g>
+		<g data-section="longside-lower-tier_east-stand">
+			<path class="st6 block" d="M660.9,179h28c0,0,24,3,47,13.8l-35,70.2c0,0-11-4.9-20-5.9h-20V179z" data-seat="longside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 684.1912 219.584)" class="st7 st8 section-label">20</text>
+		</g>
+	</g>
+
+	<g data-category="longside-lower-tier-central">
+		<g data-section="longside-lower-tier-central_1">
+			<polygon class="st6 block" points="453.9,561.5 501,561.5 501,600.5 506.9,600.5 506.9,639.5 453.9,639.5" data-seat="longside-lower-tier-central"></polygon>
+			<text transform="matrix(1 0 0 1 476.1912 602.584)" class="st7 st8 section-label">1</text>
+		</g>
+		<g data-section="longside-lower-tier-central_2">
+			<rect x="400.9" y="561.5" class="st6 block" width="49" height="78" data-seat="longside-lower-tier-central"></rect>
+			<text transform="matrix(1 0 0 1 421.1912 602.584)" class="st7 st8 section-label">2</text>
+		</g>
+		<g data-section="longside-lower-tier-central_31">
+			<rect x="568.4" y="561.5" class="st6 block" width="49" height="78" data-seat="longside-lower-tier-central"></rect>
+			<text transform="matrix(1 0 0 1 587.4851 602.5845)" class="st7 st8 section-label">31</text>
+		</g>
+		<g data-section="longside-lower-tier-central_32">
+			<polygon class="st6 block" points="564.4,561.5 516.4,561.5 516.4,600.5 510.4,600.5 510.4,639.5 564.4,639.5" data-seat="longside-lower-tier-central"></polygon>
+			<text transform="matrix(1 0 0 1 536.191 602.5845)" class="st7 st8 section-label">32</text>
+		</g>
+
+		<g data-section="longside-lower-tier-central_15">
+			<rect x="400.9" y="179.5" class="st6 block" width="50" height="77" data-seat="longside-lower-tier-central"></rect>
+			<text transform="matrix(1 0 0 1 421.1912 218.584)" class="st7 st8 section-label">15</text>
+		</g><g data-section="longside-lower-tier-central_16">
+			<rect x="454.4" y="179" class="st6 block" width="56" height="78" data-seat="longside-lower-tier-central"></rect>
+			<text transform="matrix(1 0 0 1 478.1912 218.584)" class="st7 st8 section-label">16</text>
+		</g>
+		<g data-section="longside-lower-tier-central_17">
+			<rect x="513.9" y="179" class="st6 block" width="50" height="78" data-seat="longside-lower-tier-central"></rect>
+			<text transform="matrix(1 0 0 1 536.1912 218.584)" class="st7 st8 section-label">17</text>
+		</g>
+		<g data-section="longside-lower-tier-central_18">
+			<rect x="567.4" y="179.5" class="st6 block" width="50" height="77" data-seat="longside-lower-tier-central"></rect>
+			<text transform="matrix(1 0 0 1 588.1912 219.584)" class="st7 st8 section-label">18</text>
+		</g>
+
+
+		<g data-section="longside-lower-tier-central_west-stand">
+			<polygon class="st6 block" points="453.9,561.5 501,561.5 501,600.5 506.9,600.5 506.9,639.5 453.9,639.5" data-seat="longside-lower-tier-central"></polygon>
+			<text transform="matrix(1 0 0 1 476.1912 602.584)" class="st7 st8 section-label">1</text>
+		</g>
+		<g data-section="longside-lower-tier-central_west-stand">
+			<rect x="400.9" y="561.5" class="st6 block" width="49" height="78" data-seat="longside-lower-tier-central"></rect>
+			<text transform="matrix(1 0 0 1 421.1912 602.584)" class="st7 st8 section-label">2</text>
+		</g>
+		<g data-section="longside-lower-tier-central_west-stand">
+			<rect x="568.4" y="561.5" class="st6 block" width="49" height="78" data-seat="longside-lower-tier-central"></rect>
+			<text transform="matrix(1 0 0 1 587.4851 602.5845)" class="st7 st8 section-label">31</text>
+		</g>
+		<g data-section="longside-lower-tier-central_west-stand">
+			<polygon class="st6 block" points="564.4,561.5 516.4,561.5 516.4,600.5 510.4,600.5 510.4,639.5 564.4,639.5" data-seat="longside-lower-tier-central"></polygon>
+			<text transform="matrix(1 0 0 1 536.191 602.5845)" class="st7 st8 section-label">32</text>
+		</g>
+
+		<g data-section="longside-lower-tier-central_east-stand">
+			<rect x="400.9" y="179.5" class="st6 block" width="50" height="77" data-seat="longside-lower-tier-central"></rect>
+			<text transform="matrix(1 0 0 1 421.1912 218.584)" class="st7 st8 section-label">15</text>
+		</g><g data-section="longside-lower-tier-central_east-stand">
+			<rect x="454.4" y="179" class="st6 block" width="56" height="78" data-seat="longside-lower-tier-central"></rect>
+			<text transform="matrix(1 0 0 1 478.1912 218.584)" class="st7 st8 section-label">16</text>
+		</g>
+		<g data-section="longside-lower-tier-central_east-stand">
+			<rect x="513.9" y="179" class="st6 block" width="50" height="78" data-seat="longside-lower-tier-central"></rect>
+			<text transform="matrix(1 0 0 1 536.1912 218.584)" class="st7 st8 section-label">17</text>
+		</g>
+		<g data-section="longside-lower-tier-central_east-stand">
+			<rect x="567.4" y="179.5" class="st6 block" width="50" height="77" data-seat="longside-lower-tier-central"></rect>
+			<text transform="matrix(1 0 0 1 588.1912 219.584)" class="st7 st8 section-label">18</text>
+		</g>
+	</g>
+
+	<g data-category="longside-upper-tier">
+		<g data-section="longside-upper-tier_91">
+			<path class="st6 block" d="M446.4,698.5v96c0,0,38.6,4,61.5,3v-99H446.4z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 472.1918 743.715)" class="st7 st8 section-label">91</text>
+		</g>
+		<g data-section="longside-upper-tier_92">
+			<path class="st6 block" d="M382.4,699.5v85c0,0,29,8,59,10v-95H382.4z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 407.2507 741.5972)" class="st7 st8 section-label">92</text>
+		</g>
+		<g data-section="longside-upper-tier_93">
+			<path class="st6 block" d="M302.4,694.5l-10,62c0,0,51,23,86,28l1-85C379.4,699.5,336.4,698.5,302.4,694.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 333.4269 734.8912)" class="st7 st8 section-label">93</text>
+		</g>
+		<g data-section="longside-upper-tier_94">
+			<path class="st6 block" d="M259.4,681.5l-19,51c0,0,31,17,49,23l10-62C299.4,693.5,277.4,687.5,259.4,681.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 265.4857 718.4802)" class="st7 st8 section-label">94</text>
+		</g>
+		<g data-section="longside-upper-tier_131">
+			<path class="st6 block" d="M757.4,680.5l19,51c0,0-31,17-49,23l-10-62C717.4,692.5,739.4,686.5,757.4,680.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 739.5442 715.9501)" class="st7 st8 section-label">131</text>
+		</g>
+		<g data-section="longside-upper-tier_132">
+			<path class="st6 block" d="M714.4,693.5l10,62c0,0-51,23-86,28v-85C638.4,698.5,680.4,697.5,714.4,693.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 671.927 732.5383)" class="st7 st8 section-label">132</text>
+		</g>
+		<g data-section="longside-upper-tier_133">
+			<path class="st6 block" d="M634.4,698.5v86c0,0-29,7-59,9v-95H634.4z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 598.427 739.4797)" class="st7 st8 section-label">133</text>
+		</g>
+		<g data-section="longside-upper-tier_134">
+			<path class="st6 block" d="M571.4,698.5v95c0,0-37,4-59,3v-98H571.4z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 536.4271 741.5974)" class="st7 st8 section-label">134</text>
+		</g>
+
+		<g data-section="longside-upper-tier_109">
+			<path class="st6 block" d="M286.4,69.5c0,0-25,10-47,22l15,43l38-12L286.4,69.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 259.9266 106.8038)" class="st7 st8 section-label">109</text>
+		</g>
+		<g data-section="longside-upper-tier_110">
+			<path class="st6 block" d="M374.4,40.3c0,0-55,12.8-84,26.6l6,54.1c0,0,40-3.9,78-3.9V40.3z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 331.2205 88.4507)" class="st7 st8 section-label">110</text>
+		</g>
+		<g data-section="longside-upper-tier_111">
+			<path class="st6 block" d="M437.4,29.4c0,0-49,6.9-59,9.9v77.8h59V29.4z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 403.9265 77.5095)" class="st7 st8 section-label">111</text>
+		</g>
+		<g data-section="longside-upper-tier_112">
+			<path class="st6 block" d="M506.9,24.5c0,0-43,2-65.5,3.9V117h65.5V24.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 468.1912 73.584)" class="st7 st8 section-label">112</text>
+		</g>
+		<g data-section="longside-upper-tier_113">
+			<path class="st6 block" d="M511.4,24.5c0,0,42,1,64,3v90h-64L511.4,24.5L511.4,24.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 537.1912 73.584)" class="st7 st8 section-label">113</text>
+		</g>
+		<g data-section="longside-upper-tier_114">
+			<path class="st6 block" d="M579.4,28.5c0,0,49,7,59,10v79h-59V28.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 601.1912 73.584)" class="st7 st8 section-label">114</text>
+		</g>
+		<g data-section="longside-upper-tier_115">
+			<path class="st6 block" d="M642.4,39.5c0,0,55,13,84,27l-6,55c0,0-40-4-78-4V39.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 677.1912 86.0546)" class="st7 st8 section-label">115</text>
+		</g>
+		<g data-section="longside-upper-tier_116">
+			<path class="st6 block" d="M730.4,68.5c0,0,25,10,47,22l-15,43l-38-12L730.4,68.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 742.1909 105.1133)" class="st7 st8 section-label">116</text>
+		</g>
+
+
+
+		<g data-section="longside-upper-tier_west-stand">
+			<path class="st6 block" d="M446.4,698.5v96c0,0,38.6,4,61.5,3v-99H446.4z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 472.1918 743.715)" class="st7 st8 section-label">91</text>
+		</g>
+		<g data-section="longside-upper-tier_west-stand">
+			<path class="st6 block" d="M382.4,699.5v85c0,0,29,8,59,10v-95H382.4z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 407.2507 741.5972)" class="st7 st8 section-label">92</text>
+		</g>
+		<g data-section="longside-upper-tier_west-stand">
+			<path class="st6 block" d="M302.4,694.5l-10,62c0,0,51,23,86,28l1-85C379.4,699.5,336.4,698.5,302.4,694.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 333.4269 734.8912)" class="st7 st8 section-label">93</text>
+		</g>
+		<g data-section="longside-upper-tier_west-stand">
+			<path class="st6 block" d="M259.4,681.5l-19,51c0,0,31,17,49,23l10-62C299.4,693.5,277.4,687.5,259.4,681.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 265.4857 718.4802)" class="st7 st8 section-label">94</text>
+		</g>
+		<g data-section="longside-upper-tier_west-stand">
+			<path class="st6 block" d="M757.4,680.5l19,51c0,0-31,17-49,23l-10-62C717.4,692.5,739.4,686.5,757.4,680.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 739.5442 715.9501)" class="st7 st8 section-label">131</text>
+		</g>
+		<g data-section="longside-upper-tier_west-stand">
+			<path class="st6 block" d="M714.4,693.5l10,62c0,0-51,23-86,28v-85C638.4,698.5,680.4,697.5,714.4,693.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 671.927 732.5383)" class="st7 st8 section-label">132</text>
+		</g>
+		<g data-section="longside-upper-tier_west-stand">
+			<path class="st6 block" d="M634.4,698.5v86c0,0-29,7-59,9v-95H634.4z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 598.427 739.4797)" class="st7 st8 section-label">133</text>
+		</g>
+		<g data-section="longside-upper-tier_west-stand">
+			<path class="st6 block" d="M571.4,698.5v95c0,0-37,4-59,3v-98H571.4z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 536.4271 741.5974)" class="st7 st8 section-label">134</text>
+		</g>
+		
+		<g data-section="longside-upper-tier_east-stand">
+			<path class="st6 block" d="M286.4,69.5c0,0-25,10-47,22l15,43l38-12L286.4,69.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 259.9266 106.8038)" class="st7 st8 section-label">109</text>
+		</g>
+		<g data-section="longside-upper-tier_east-stand">
+			<path class="st6 block" d="M374.4,40.3c0,0-55,12.8-84,26.6l6,54.1c0,0,40-3.9,78-3.9V40.3z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 331.2205 88.4507)" class="st7 st8 section-label">110</text>
+		</g>
+		<g data-section="longside-upper-tier_east-stand">
+			<path class="st6 block" d="M437.4,29.4c0,0-49,6.9-59,9.9v77.8h59V29.4z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 403.9265 77.5095)" class="st7 st8 section-label">111</text>
+		</g>
+		<g data-section="longside-upper-tier_east-stand">
+			<path class="st6 block" d="M506.9,24.5c0,0-43,2-65.5,3.9V117h65.5V24.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 468.1912 73.584)" class="st7 st8 section-label">112</text>
+		</g>
+		<g data-section="longside-upper-tier_east-stand">
+			<path class="st6 block" d="M511.4,24.5c0,0,42,1,64,3v90h-64L511.4,24.5L511.4,24.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 537.1912 73.584)" class="st7 st8 section-label">113</text>
+		</g>
+		<g data-section="longside-upper-tier_east-stand">
+			<path class="st6 block" d="M579.4,28.5c0,0,49,7,59,10v79h-59V28.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 601.1912 73.584)" class="st7 st8 section-label">114</text>
+		</g>
+		<g data-section="longside-upper-tier_east-stand">
+			<path class="st6 block" d="M642.4,39.5c0,0,55,13,84,27l-6,55c0,0-40-4-78-4V39.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 677.1912 86.0546)" class="st7 st8 section-label">115</text>
+		</g>
+		<g data-section="longside-upper-tier_east-stand">
+			<path class="st6 block" d="M730.4,68.5c0,0,25,10,47,22l-15,43l-38-12L730.4,68.5z" data-seat="longside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 742.1909 105.1133)" class="st7 st8 section-label">116</text>
+		</g>
+	</g>
+
+	<g data-category="longside-upper-tier-central">
+		<g data-section="longside-upper-tier-central_111">
+			<path class="st6 block" d="M437.4,29.4c0,0-49,6.9-59,9.9v77.8h59V29.4z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 403.9265 77.5095)" class="st7 st8 section-label">111</text>
+		</g>
+		<g data-section="longside-upper-tier-central_112">
+			<path class="st6 block" d="M506.9,24.5c0,0-43,2-65.5,3.9V117h65.5V24.5z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 468.1912 73.584)" class="st7 st8 section-label">112</text>
+		</g>
+		<g data-section="longside-upper-tier-central_113">
+			<path class="st6 block" d="M511.4,24.5c0,0,42,1,64,3v90h-64L511.4,24.5L511.4,24.5z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 537.1912 73.584)" class="st7 st8 section-label">113</text>
+		</g>
+		<g data-section="longside-upper-tier-central_114">
+			<path class="st6 block" d="M579.4,28.5c0,0,49,7,59,10v79h-59V28.5z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 601.1912 73.584)" class="st7 st8 section-label">114</text>
+		</g>
+
+		<g data-section="longside-upper-tier-central_91">
+			<path class="st6 block" d="M446.4,698.5v96c0,0,38.6,4,61.5,3v-99H446.4z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 472.1918 743.715)" class="st7 st8 section-label">91</text>
+		</g>
+		<g data-section="longside-upper-tier-central_92">
+			<path class="st6 block" d="M382.4,699.5v85c0,0,29,8,59,10v-95H382.4z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 407.2507 741.5972)" class="st7 st8 section-label">92</text>
+		</g>
+		<g data-section="longside-upper-tier-central_133">
+			<path class="st6 block" d="M634.4,698.5v86c0,0-29,7-59,9v-95H634.4z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 598.427 739.4797)" class="st7 st8 section-label">133</text>
+		</g>
+		<g data-section="longside-upper-tier-central_134">
+			<path class="st6 block" d="M571.4,698.5v95c0,0-37,4-59,3v-98H571.4z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 536.4271 741.5974)" class="st7 st8 section-label">134</text>
+		</g>
+
+
+		<g data-section="longside-upper-tier-central_east-stand">
+			<path class="st6 block" d="M437.4,29.4c0,0-49,6.9-59,9.9v77.8h59V29.4z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 403.9265 77.5095)" class="st7 st8 section-label">111</text>
+		</g>
+		<g data-section="longside-upper-tier-central_east-stand">
+			<path class="st6 block" d="M506.9,24.5c0,0-43,2-65.5,3.9V117h65.5V24.5z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 468.1912 73.584)" class="st7 st8 section-label">112</text>
+		</g>
+		<g data-section="longside-upper-tier-central_east-stand">
+			<path class="st6 block" d="M511.4,24.5c0,0,42,1,64,3v90h-64L511.4,24.5L511.4,24.5z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 537.1912 73.584)" class="st7 st8 section-label">113</text>
+		</g>
+		<g data-section="longside-upper-tier-central_east-stand">
+			<path class="st6 block" d="M579.4,28.5c0,0,49,7,59,10v79h-59V28.5z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 601.1912 73.584)" class="st7 st8 section-label">114</text>
+		</g>
+		
+		<g data-section="longside-upper-tier-central_west-stand">
+			<path class="st6 block" d="M446.4,698.5v96c0,0,38.6,4,61.5,3v-99H446.4z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 472.1918 743.715)" class="st7 st8 section-label">91</text>
+		</g>
+		<g data-section="longside-upper-tier-central_west-stand">
+			<path class="st6 block" d="M382.4,699.5v85c0,0,29,8,59,10v-95H382.4z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 407.2507 741.5972)" class="st7 st8 section-label">92</text>
+		</g>
+		<g data-section="longside-upper-tier-central_west-stand">
+			<path class="st6 block" d="M634.4,698.5v86c0,0-29,7-59,9v-95H634.4z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 598.427 739.4797)" class="st7 st8 section-label">133</text>
+		</g>
+		<g data-section="longside-upper-tier-central_west-stand">
+			<path class="st6 block" d="M571.4,698.5v95c0,0-37,4-59,3v-98H571.4z" data-seat="longside-upper-tier-central"></path>
+			<text transform="matrix(1 0 0 1 536.4271 741.5974)" class="st7 st8 section-label">134</text>
+		</g>
+	</g>
+
+	<g data-category="shortside-lower-tier">
+		<g data-section="shortside-lower-tier_5">
+			<path class="st6 block" d="M292.4,536l-59,48c0,0,19,28,48,40l33-70C314.4,554,302.4,548,292.4,536z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 270.1912 585.584)" class="st7 st8 section-label">5</text>
+		</g>
+		<g data-section="shortside-lower-tier_6">
+			<path class="st6 block" d="M276.4,507l-69,16c0,0,3,33,24,58l59-47C290.4,534,283.4,526,276.4,507z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 238.1912 543.584)" class="st7 st8 section-label">6</text>
+		</g>
+		<g data-section="shortside-lower-tier_7">
+			<polygon class="st6 block" points="276.4,463 206.4,463 206.4,519 276.4,504.3" data-seat="shortside-lower-tier"></polygon>
+			<text transform="matrix(1 0 0 1 230.1912 487.584)" class="st7 st8 section-label">7</text>
+		</g>
+		<g data-section="shortside-lower-tier_8">
+			<rect x="206.9" y="410.5" class="st6 block" width="69" height="49" data-seat="shortside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 230.1912 436.584)" class="st7 st8 section-label">8</text>
+		</g>
+		<g data-section="shortside-lower-tier_9">
+			<rect x="206.4" y="358" class="st6 block" width="69" height="49" data-seat="shortside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 230.1912 384.584)" class="st7 st8 section-label">9</text>
+		</g>
+		<g data-section="shortside-lower-tier_10">
+			<polygon class="st6 block" points="206.4,299 206.4,354 275.4,354 275.4,315" data-seat="shortside-lower-tier"></polygon>
+			<text transform="matrix(1 0 0 1 230.1912 332.584)" class="st7 st8 section-label">10</text>
+		</g>
+		<g data-section="shortside-lower-tier_11">
+			<path class="st6 block" d="M226.4,245c0,0-17,23-20,51l71,16c0,0,4.5-12.5,9.5-19.5L226.4,245z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 234.1912 283.584)" class="st7 st8 section-label">11</text>
+		</g>
+		<g data-section="shortside-lower-tier_12">
+			<path class="st6 block" d="M279.4,194c0,0-30,14-51,48l28,23l7-8l30,24c0,0,13-12,21-16L279.4,194z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 268.1912 237.584)" class="st7 st8 section-label">12</text>
+		</g>
+
+		<g data-section="shortside-lower-tier_21">
+			<path class="st6 block" d="M738.9,194c0,0,30,14,51,48l-28,23l-7-8l-30,24c0,0-13-12-21-16L738.9,194z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 742.1912 240.584)" class="st7 st8 section-label">21</text>
+		</g>
+		<g data-section="shortside-lower-tier_22">
+			<path class="st6 block" d="M791.9,245c0,0,17,23,20,51l-71,16c0,0-4.5-12.5-9.5-19.5L791.9,245z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 774.1912 284.584)" class="st7 st8 section-label">22</text>
+		</g>
+		<g data-section="shortside-lower-tier_23">
+			<polygon class="st6 block" points="811.9,299 811.9,354 742.9,354 742.9,315" data-seat="shortside-lower-tier"></polygon>
+			<text transform="matrix(1 0 0 1 774.1912 332.584)" class="st7 st8 section-label">23</text>
+		</g>
+		<g data-section="shortside-lower-tier_24">
+			<rect x="742.9" y="358" class="st6 block" width="69" height="49" data-seat="shortside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 774.1912 385.684)" class="st7 st8 section-label">24</text>
+		</g>
+		<g data-section="shortside-lower-tier_25">
+			<rect x="742.4" y="410.5" class="st6 block" width="69" height="49" data-seat="shortside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 774.1912 438.684)" class="st7 st8 section-label">25</text>
+		</g>
+		<g data-section="shortside-lower-tier_26">
+			<polygon class="st6 block" points="741.9,462 811.9,462 811.9,519 741.9,504" data-seat="shortside-lower-tier"></polygon>
+			<text transform="matrix(1 0 0 1 772.8381 487.5845)" class="st7 st8 section-label">26</text>
+		</g>
+		<g data-section="shortside-lower-tier_27">
+			<path class="st6 block" d="M741.9,507l69,16c0,0-3,33-24,58l-59-47C727.9,534,734.9,526,741.9,507z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 766.2499 540.4805)" class="st7 st8 section-label">27</text>
+		</g>
+		<g data-section="shortside-lower-tier_28">
+			<path class="st6 block" d="M725.9,536l59,48c0,0-19,28-48,40l-33-70C703.9,554,715.9,548,725.9,536z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 737.1072 580.9805)" class="st7 st8 section-label">28</text>
+		</g>
+
+
+		<g data-section="shortside-lower-tier_north-bank">
+			<path class="st6 block" d="M292.4,536l-59,48c0,0,19,28,48,40l33-70C314.4,554,302.4,548,292.4,536z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 270.1912 585.584)" class="st7 st8 section-label">5</text>
+		</g>
+		<g data-section="shortside-lower-tier_north-bank">
+			<path class="st6 block" d="M276.4,507l-69,16c0,0,3,33,24,58l59-47C290.4,534,283.4,526,276.4,507z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 238.1912 543.584)" class="st7 st8 section-label">6</text>
+		</g>
+		<g data-section="shortside-lower-tier_north-bank">
+			<polygon class="st6 block" points="276.4,463 206.4,463 206.4,519 276.4,504.3" data-seat="shortside-lower-tier"></polygon>
+			<text transform="matrix(1 0 0 1 230.1912 487.584)" class="st7 st8 section-label">7</text>
+		</g>
+		<g data-section="shortside-lower-tier_north-bank">
+			<rect x="206.9" y="410.5" class="st6 block" width="69" height="49" data-seat="shortside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 230.1912 436.584)" class="st7 st8 section-label">8</text>
+		</g>
+		<g data-section="shortside-lower-tier_north-bank">
+			<rect x="206.4" y="358" class="st6 block" width="69" height="49" data-seat="shortside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 230.1912 384.584)" class="st7 st8 section-label">9</text>
+		</g>
+		<g data-section="shortside-lower-tier_north-bank">
+			<polygon class="st6 block" points="206.4,299 206.4,354 275.4,354 275.4,315" data-seat="shortside-lower-tier"></polygon>
+			<text transform="matrix(1 0 0 1 230.1912 332.584)" class="st7 st8 section-label">10</text>
+		</g>
+		<g data-section="shortside-lower-tier_north-bank">
+			<path class="st6 block" d="M226.4,245c0,0-17,23-20,51l71,16c0,0,4.5-12.5,9.5-19.5L226.4,245z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 234.1912 283.584)" class="st7 st8 section-label">11</text>
+		</g>
+		<g data-section="shortside-lower-tier_north-bank">
+			<path class="st6 block" d="M279.4,194c0,0-30,14-51,48l28,23l7-8l30,24c0,0,13-12,21-16L279.4,194z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 268.1912 237.584)" class="st7 st8 section-label">12</text>
+		</g>
+		
+		<g data-section="shortside-lower-tier_clock-end">
+			<path class="st6 block" d="M738.9,194c0,0,30,14,51,48l-28,23l-7-8l-30,24c0,0-13-12-21-16L738.9,194z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 742.1912 240.584)" class="st7 st8 section-label">21</text>
+		</g>
+		<g data-section="shortside-lower-tier_clock-end">
+			<path class="st6 block" d="M791.9,245c0,0,17,23,20,51l-71,16c0,0-4.5-12.5-9.5-19.5L791.9,245z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 774.1912 284.584)" class="st7 st8 section-label">22</text>
+		</g>
+		<g data-section="shortside-lower-tier_clock-end">
+			<polygon class="st6 block" points="811.9,299 811.9,354 742.9,354 742.9,315" data-seat="shortside-lower-tier"></polygon>
+			<text transform="matrix(1 0 0 1 774.1912 332.584)" class="st7 st8 section-label">23</text>
+		</g>
+		<g data-section="shortside-lower-tier_clock-end">
+			<rect x="742.9" y="358" class="st6 block" width="69" height="49" data-seat="shortside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 774.1912 385.684)" class="st7 st8 section-label">24</text>
+		</g>
+		<g data-section="shortside-lower-tier_clock-end">
+			<rect x="742.4" y="410.5" class="st6 block" width="69" height="49" data-seat="shortside-lower-tier"></rect>
+			<text transform="matrix(1 0 0 1 774.1912 438.684)" class="st7 st8 section-label">25</text>
+		</g>
+		<g data-section="shortside-lower-tier_clock-end">
+			<polygon class="st6 block" points="741.9,462 811.9,462 811.9,519 741.9,504" data-seat="shortside-lower-tier"></polygon>
+			<text transform="matrix(1 0 0 1 772.8381 487.5845)" class="st7 st8 section-label">26</text>
+		</g>
+		<g data-section="shortside-lower-tier_clock-end">
+			<path class="st6 block" d="M741.9,507l69,16c0,0-3,33-24,58l-59-47C727.9,534,734.9,526,741.9,507z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 766.2499 540.4805)" class="st7 st8 section-label">27</text>
+		</g>
+		<g data-section="shortside-lower-tier_clock-end">
+			<path class="st6 block" d="M725.9,536l59,48c0,0-19,28-48,40l-33-70C703.9,554,715.9,548,725.9,536z" data-seat="shortside-lower-tier"></path>
+			<text transform="matrix(1 0 0 1 737.1072 580.9805)" class="st7 st8 section-label">28</text>
+		</g>
+	</g>
+
+	<g data-category="shortside-upper-tier">
+		<g data-section="shortside-upper-tier_95">
+			<path class="st6 block" d="M222.4,661.5l-27,44c0,0,21,16,42,26l19-51C256.4,680.5,237.4,672.5,222.4,661.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 222.427 696.4802)" class="st7 st8 section-label">95</text>
+		</g>
+		<g data-section="shortside-upper-tier_96">
+			<path class="st6 block" d="M189.4,635.5l-37,37c0,0,24,22,40,31l27-43C219.4,660.5,206.4,650.5,189.4,635.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 182.517 669.8301)" class="st7 st8 section-label">96</text>
+		</g>
+		<g data-section="shortside-upper-tier_97">
+			<path class="st6 block" d="M116.4,635.5c0,0,15,20,34,35l37-37l-24-28L116.4,635.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 149.7165 638.9796)" class="st7 st8 section-label">97</text>
+		</g>
+		<g data-section="shortside-upper-tier_98">
+			<path class="st6 block" d="M141.4,570.5l-58,21c0,0,16,28,31,41l47-30C161.4,602.5,149.4,587.5,141.4,570.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 119.7165 602.5842)" class="st7 st8 section-label">98</text>
+		</g>
+		<g data-section="shortside-upper-tier_99">
+			<path class="st6 block" d="M81.4,588.5c0,0-20-32-28-50l76-9l10,38L81.4,588.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 96.4266 558.9796)" class="st7 st8 section-label">99</text>
+		</g>
+		<g data-section="shortside-upper-tier_100">
+			<path class="st6 block" d="M52.4,534.5c0,0-12-32-17-57h89l4,48L52.4,534.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 77.9266 504.6995)" class="st7 st8 section-label">100</text>
+		</g>
+		<g data-section="shortside-upper-tier_101">
+			<path class="st6 block" d="M33.9,472.5c0,0-4-15-6-59h96.5v59H33.9z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 69.7501 443.9797)" class="st7 st8 section-label">101</text>
+		</g>
+		<g data-section="shortside-upper-tier_102">
+			<path class="st6 block" d="M33.4,350.5c0,0-4,15-6,59h96.5v-59H33.4z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 69.7501 382.4797)" class="st7 st8 section-label">102</text>
+		</g>
+		<g data-section="shortside-upper-tier_103">
+			<path class="st6 block" d="M51.4,289.5c0,0-12,32-17,57h89l4-48L51.4,289.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 76.1769 323.5837)" class="st7 st8 section-label">103</text>
+		</g>
+		<g data-section="shortside-upper-tier_104">
+			<path class="st6 block" d="M80.4,235.5c0,0-20,32-28,50l76,9l10-38L80.4,235.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 91.1769 271.2307)" class="st7 st8 section-label">104</text>
+		</g>
+		<g data-section="shortside-upper-tier_105">
+			<path class="st6 block" d="M113.4,191.5c0,0-23,25-31,41l57,20l16-33L113.4,191.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 113.4122 227.4802)" class="st7 st8 section-label">105</text>
+		</g>
+		<g data-section="shortside-upper-tier_106">
+			<path class="st6 block" d="M150.4,154.5c0,0-19,16-35,34l42,27l23-30L150.4,154.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 142.9268 188.7155)" class="st7 st8 section-label">106</text>
+		</g>
+		<g data-section="shortside-upper-tier_107">
+			<path class="st6 block" d="M190.4,121.5c0,0-31,23-37,30l30,31l29-26L190.4,121.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 176.6616 154.48)" class="st7 st8 section-label">107</text>
+		</g>
+		<g data-section="shortside-upper-tier_108">
+			<polygon class="st6 block" points="235.4,92.5 193.4,118.5 215.4,154.5 251.4,135.5" data-seat="shortside-upper-tier"></polygon>
+			<text transform="matrix(1 0 0 1 215.5737 127.98)" class="st7 st8 section-label">108</text>
+		</g>
+
+		<g data-section="shortside-upper-tier_117">
+			<polygon class="st6 block" points="781.4,91.5 823.4,117.5 801.4,153.5 765.4,134.5" data-seat="shortside-upper-tier"></polygon>
+			<text transform="matrix(1 0 0 1 785.4851 126.48)" class="st7 st8 section-label">117</text>
+		</g>
+		<g data-section="shortside-upper-tier_118">
+			<path class="st6 block" d="M826.4,120.5c0,0,31,23,37,30l-30,31l-29-26L826.4,120.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 826.4265 154.2448)" class="st7 st8 section-label">118</text>
+		</g>
+		<g data-section="shortside-upper-tier_119">
+			<path class="st6 block" d="M866.4,153.5c0,0,19,16,35,34l-42,27l-23-30L866.4,153.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 859.1909 187.0544)" class="st7 st8 section-label">119</text>
+		</g>
+		<g data-section="shortside-upper-tier_120">
+			<path class="st6 block" d="M903.4,190.5c0,0,23,25,31,41l-57,20l-16-33L903.4,190.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 890.485 223.525)" class="st7 st8 section-label">120</text>
+		</g>
+		<g data-section="shortside-upper-tier_121">
+			<path class="st6 block" d="M936.4,234.5c0,0,20,32,28,50l-76,9l-10-38L936.4,234.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 909.7793 269.5842)" class="st7 st8 section-label">121</text>
+		</g>
+		<g data-section="shortside-upper-tier_122">
+			<path class="st6 block" d="M965.4,288.5c0,0,12,32,17,57h-89l-4-48L965.4,288.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 924.9556 320.9802)" class="st7 st8 section-label">122</text>
+		</g>
+		<g data-section="shortside-upper-tier_123">
+			<path class="st6 block" d="M983.4,349.5c0,0,4,15,6,59h-96.5v-59H983.4z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 926.3673 382.4802)" class="st7 st8 section-label">123</text>
+		</g>
+		<g data-section="shortside-upper-tier_124">
+			<path class="st6 block" d="M982.9,471.5c0,0,4-15,6-59h-96.5v59H982.9z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 926.3674 441.9802)" class="st7 st8 section-label">124</text>
+		</g>
+		<g data-section="shortside-upper-tier_125">
+			<path class="st6 block" d="M964.4,533.5c0,0,12-32,17-57h-89l-4,48L964.4,533.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 924.9558 504.7002)" class="st7 st8 section-label">125</text>
+		</g>
+		<g data-section="shortside-upper-tier_126">
+			<path class="st6 block" d="M935.4,587.5c0,0,20-32,28-50l-76-9l-10,38L935.4,587.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 909.3674 558.4805)" class="st7 st8 section-label">126</text>
+		</g>
+		<g data-section="shortside-upper-tier_127">
+			<path class="st6 block" d="M875.4,569.5l58,21c0,0-16,28-31,41l-47-30C855.4,601.5,867.4,586.5,875.4,569.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 883.9558 602.4703)" class="st7 st8 section-label">127</text>
+		</g>
+		<g data-section="shortside-upper-tier_128">
+			<path class="st6 block" d="M900.4,634.5c0,0-15,20-34,35l-37-37l24-28L900.4,634.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 857.1909 640.028)" class="st7 st8 section-label">128</text>
+		</g>
+		<g data-section="shortside-upper-tier_129">
+			<path class="st6 block" d="M827.4,634.5l37,37c0,0-24,22-40,31l-27-43C797.4,659.5,810.4,649.5,827.4,634.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 823.1917 669.8301)" class="st7 st8 section-label">129</text>
+		</g>
+		<g data-section="shortside-upper-tier_130">
+			<path class="st6 block" d="M794.4,660.5l27,44c0,0-21,16-42,26l-19-51C760.4,679.5,779.4,671.5,794.4,660.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 781.8976 695.4796)" class="st7 st8 section-label">130</text>
+		</g>
+
+
+
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M222.4,661.5l-27,44c0,0,21,16,42,26l19-51C256.4,680.5,237.4,672.5,222.4,661.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 222.427 696.4802)" class="st7 st8 section-label">95</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M189.4,635.5l-37,37c0,0,24,22,40,31l27-43C219.4,660.5,206.4,650.5,189.4,635.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 182.517 669.8301)" class="st7 st8 section-label">96</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M116.4,635.5c0,0,15,20,34,35l37-37l-24-28L116.4,635.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 149.7165 638.9796)" class="st7 st8 section-label">97</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M141.4,570.5l-58,21c0,0,16,28,31,41l47-30C161.4,602.5,149.4,587.5,141.4,570.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 119.7165 602.5842)" class="st7 st8 section-label">98</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M81.4,588.5c0,0-20-32-28-50l76-9l10,38L81.4,588.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 96.4266 558.9796)" class="st7 st8 section-label">99</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M52.4,534.5c0,0-12-32-17-57h89l4,48L52.4,534.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 77.9266 504.6995)" class="st7 st8 section-label">100</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M33.9,472.5c0,0-4-15-6-59h96.5v59H33.9z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 69.7501 443.9797)" class="st7 st8 section-label">101</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M33.4,350.5c0,0-4,15-6,59h96.5v-59H33.4z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 69.7501 382.4797)" class="st7 st8 section-label">102</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M51.4,289.5c0,0-12,32-17,57h89l4-48L51.4,289.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 76.1769 323.5837)" class="st7 st8 section-label">103</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M80.4,235.5c0,0-20,32-28,50l76,9l10-38L80.4,235.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 91.1769 271.2307)" class="st7 st8 section-label">104</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M113.4,191.5c0,0-23,25-31,41l57,20l16-33L113.4,191.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 113.4122 227.4802)" class="st7 st8 section-label">105</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M150.4,154.5c0,0-19,16-35,34l42,27l23-30L150.4,154.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 142.9268 188.7155)" class="st7 st8 section-label">106</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<path class="st6 block" d="M190.4,121.5c0,0-31,23-37,30l30,31l29-26L190.4,121.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 176.6616 154.48)" class="st7 st8 section-label">107</text>
+		</g>
+		<g data-section="shortside-upper-tier_north-bank">
+			<polygon class="st6 block" points="235.4,92.5 193.4,118.5 215.4,154.5 251.4,135.5" data-seat="shortside-upper-tier"></polygon>
+			<text transform="matrix(1 0 0 1 215.5737 127.98)" class="st7 st8 section-label">108</text>
+		</g>
+		
+		<g data-section="shortside-upper-tier_clock-end">
+			<polygon class="st6 block" points="781.4,91.5 823.4,117.5 801.4,153.5 765.4,134.5" data-seat="shortside-upper-tier"></polygon>
+			<text transform="matrix(1 0 0 1 785.4851 126.48)" class="st7 st8 section-label">117</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M826.4,120.5c0,0,31,23,37,30l-30,31l-29-26L826.4,120.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 826.4265 154.2448)" class="st7 st8 section-label">118</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M866.4,153.5c0,0,19,16,35,34l-42,27l-23-30L866.4,153.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 859.1909 187.0544)" class="st7 st8 section-label">119</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M903.4,190.5c0,0,23,25,31,41l-57,20l-16-33L903.4,190.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 890.485 223.525)" class="st7 st8 section-label">120</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M936.4,234.5c0,0,20,32,28,50l-76,9l-10-38L936.4,234.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 909.7793 269.5842)" class="st7 st8 section-label">121</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M965.4,288.5c0,0,12,32,17,57h-89l-4-48L965.4,288.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 924.9556 320.9802)" class="st7 st8 section-label">122</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M983.4,349.5c0,0,4,15,6,59h-96.5v-59H983.4z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 926.3673 382.4802)" class="st7 st8 section-label">123</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M982.9,471.5c0,0,4-15,6-59h-96.5v59H982.9z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 926.3674 441.9802)" class="st7 st8 section-label">124</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M964.4,533.5c0,0,12-32,17-57h-89l-4,48L964.4,533.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 924.9558 504.7002)" class="st7 st8 section-label">125</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M935.4,587.5c0,0,20-32,28-50l-76-9l-10,38L935.4,587.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 909.3674 558.4805)" class="st7 st8 section-label">126</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M875.4,569.5l58,21c0,0-16,28-31,41l-47-30C855.4,601.5,867.4,586.5,875.4,569.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 883.9558 602.4703)" class="st7 st8 section-label">127</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M900.4,634.5c0,0-15,20-34,35l-37-37l24-28L900.4,634.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 857.1909 640.028)" class="st7 st8 section-label">128</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M827.4,634.5l37,37c0,0-24,22-40,31l-27-43C797.4,659.5,810.4,649.5,827.4,634.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 823.1917 669.8301)" class="st7 st8 section-label">129</text>
+		</g>
+		<g data-section="shortside-upper-tier_clock-end">
+			<path class="st6 block" d="M794.4,660.5l27,44c0,0-21,16-42,26l-19-51C760.4,679.5,779.4,671.5,794.4,660.5z" data-seat="shortside-upper-tier"></path>
+			<text transform="matrix(1 0 0 1 781.8976 695.4796)" class="st7 st8 section-label">130</text>
+		</g>
+	</g>
+
+	<g data-category="club-level">
+		<g data-section="club-level_b41">
+			<rect x="452.4" y="642.5" class="st6 block" width="32" height="34" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 460.1912 662.584)" class="st7 st8 section-label">B41</text>
+		</g>
+		<g data-section="club-level_b42">
+			<rect x="393.4" y="642.5" class="st6 block" width="56" height="34" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 412.1912 662.584)" class="st7 st8 section-label">B42</text>
+		</g>
+		<g data-section="club-level_b43">
+			<rect x="336.4" y="642.5" class="st6 block" width="54" height="34" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 354.1912 662.584)" class="st7 st8 section-label">B43</text>
+		</g>
+		<g data-section="club-level_b44">
+			<path class="st6 block" d="M333.4,642.5v34c0,0-34-2-54-12l11-32C290.4,632.5,314.4,643.5,333.4,642.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 299.1912 659.584)" class="st7 st8 section-label">B44</text>
+		</g>
+		<g data-section="club-level_b45">
+			<path class="st6 block" d="M262.4,617.5l-18,30c0,0,13,8,32,16l11-32C287.4,631.5,270.4,623.5,262.4,617.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 258.1912 643.584)" class="st7 st8 section-label">B45</text>
+		</g>
+		<g data-section="club-level_b46">
+			<path class="st6 block" d="M213.4,621.5c0,0,12,12,28,24l19-30c0,0-21-17-23-20L213.4,621.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 228.1912 622.584)" class="st7 st8 section-label">B46</text>
+		</g>
+		<g data-section="club-level_b47">
+			<path class="st6 block" d="M218.4,569.5c0,0,10,16,17,23l-24,27c0,0-12-11-23-29L218.4,569.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 203.1912 596.584)" class="st7 st8 section-label">B47</text>
+		</g>
+		<g data-section="club-level_b48">
+			<path class="st6 block" d="M169.4,556.5l37-15c0,0,6,18,11,25l-31,21C186.4,587.5,176.4,572.5,169.4,556.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 185.1912 565.584)" class="st7 st8 section-label">B48</text>
+		</g>
+		<g data-section="club-level_b49">
+			<path class="st6 block" d="M157.4,516.5l41-6c0,0,3,18,7,28l-37,15C168.4,553.5,161.4,534.5,157.4,516.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 172.1912 532.584)" class="st7 st8 section-label">B49</text>
+		</g>
+		<g data-section="club-level_b50">
+			<path class="st6 block" d="M152.4,465.5h46v42l-42,6C156.4,513.5,151.4,487.5,152.4,465.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 165.1912 489.584)" class="st7 st8 section-label">B50</text>
+		</g>
+		<g data-section="club-level_b51">
+			<rect x="152.4" y="410.5" class="st6 block" width="46" height="52" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 166.1912 439.584)" class="st7 st8 section-label">B51</text>
+		</g>
+		<g data-section="club-level_b52">
+			<rect x="152.4" y="354.5" class="st6 block" width="46" height="53" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 165.1912 383.584)" class="st7 st8 section-label">B52</text>
+		</g>
+		<g data-section="club-level_b53">
+			<path class="st6 block" d="M197.4,310.5l-40-6c0,0-4,16-5,46h46L197.4,310.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 166.1912 332.584)" class="st7 st8 section-label">B53</text>
+		</g>
+		<g data-section="club-level_b54">
+			<path class="st6 block" d="M167.4,264.5c0,0-9,31-10,36l40,6l4-25L167.4,264.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 171.1912 292.584)" class="st7 st8 section-label">B54</text>
+		</g>
+		<g data-section="club-level_b55">
+			<path class="st6 block" d="M184.4,228.5c0,0-9,15-16,33l34,17c0,0,11-25,14-29L184.4,228.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 183.1912 257.584)" class="st7 st8 section-label">B55</text>
+		</g>
+		<g data-section="club-level_b56">
+			<path class="st6 block" d="M231.4,225.5l-26-26c0,0-12,14-19,27l31,20C217.4,246.5,223.4,236.5,231.4,225.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 200.1912 227.584)" class="st7 st8 section-label">B56</text>
+		</g>
+		<g data-section="club-level_b57">
+			<path class="st6 block" d="M236.4,172.5c0,0-18,13-29,25l26,26c0,0,19-18,24-21L236.4,172.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 224.1912 200.584)" class="st7 st8 section-label">B57</text>
+		</g>
+		<g data-section="club-level_b58">
+			<path class="st6 block" d="M270.4,153.5c0,0-21,10-31,17l20,30c0,0,17-10,24-13L270.4,153.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 254.1912 181.584)" class="st7 st8 section-label">B58</text>
+		</g>
+		<g data-section="club-level_b59">
+			<path class="st6 block" d="M334.4,138.5c0,0-0.2,0-0.5,0.1c-3.7,0.4-27.5,2.9-60.5,13.9l13,34c0,0,22-9,48-11V138.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 298.1912 164.584)" class="st7 st8 section-label">B59</text>
+		</g>
+		<g data-section="club-level_b60">
+			<rect x="337.4" y="138.5" class="st6 block" width="57" height="37" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 358.1912 160.584)" class="st7 st8 section-label">B60</text>
+		</g>
+		<g data-section="club-level_b61">
+			<rect x="397.4" y="138.5" class="st6 block" width="55" height="37" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 417.1912 160.584)" class="st7 st8 section-label">B61</text>
+		</g>
+		<g data-section="club-level_b62">
+			<rect x="455.4" y="138.5" class="st6 block" width="52" height="36" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 475.1912 159.584)" class="st7 st8 section-label">B62</text>
+		</g>
+		<g data-section="club-level_b63">
+			<rect x="510.4" y="138.5" class="st6 block" width="53" height="36" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 528.1912 159.584)" class="st7 st8 section-label">B63</text>
+		</g>
+		<g data-section="club-level_b64">
+			<rect x="566.4" y="138.5" class="st6 block" width="55" height="36" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 584.1912 159.584)" class="st7 st8 section-label">B64</text>
+		</g>
+		<g data-section="club-level_b65">
+			<rect x="624.4" y="138.5" class="st6 block" width="57" height="36" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 643.1912 159.584)" class="st7 st8 section-label">B65</text>
+		</g>
+		<g data-section="club-level_b66">
+			<path class="st6 block" d="M684.4,138.5c0,0,0.2,0,0.5,0.1c3.7,0.4,27.5,1.9,60.5,12.9l-13,34c0,0-22-9-48-11V138.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 702.1912 163.584)" class="st7 st8 section-label">B66</text>
+		</g>
+		<g data-section="club-level_b67">
+			<path class="st6 block" d="M748.4,152.5c0,0,21,10,31,17l-20,30c0,0-17-10-24-13L748.4,152.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 748.1912 178.584)" class="st7 st8 section-label">B67</text>
+		</g>
+		<g data-section="club-level_b68">
+			<path class="st6 block" d="M782.4,171.5c0,0,18,13,29,25l-26,26c0,0-19-18-24-21L782.4,171.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 777.1912 199.584)" class="st7 st8 section-label">B68</text>
+		</g>
+		<g data-section="club-level_b69">
+			<path class="st6 block" d="M787.4,224.5l26-26c0,0,12,14,19,27l-31,20C801.4,245.5,795.4,235.5,787.4,224.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 801.1912 225.584)" class="st7 st8 section-label">B69</text>
+		</g>
+		<g data-section="club-level_b70">
+			<path class="st6 block" d="M834.4,227.5c0,0,9,15,16,33l-34,17c0,0-11-25-14-29L834.4,227.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 817.1912 255.584)" class="st7 st8 section-label">B70</text>
+		</g>
+		<g data-section="club-level_b71">
+			<path class="st6 block" d="M851.4,263.5c0,0,9,31,10,36l-40,6l-4-25L851.4,263.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 830.1912 290.584)" class="st7 st8 section-label">B71</text>
+		</g>
+		<g data-section="club-level_b72">
+			<path class="st6 block" d="M821.4,309.5l40-6c0,0,4,16,5,46h-46L821.4,309.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 835.1912 330.584)" class="st7 st8 section-label">B72</text>
+		</g>
+		<g data-section="club-level_b73">
+			<rect x="820.4" y="353.5" class="st6 block" width="46" height="53" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 835.1912 384.584)" class="st7 st8 section-label">B73</text>
+		</g>
+		<g data-section="club-level_b74">
+			<rect x="820.4" y="410.5" class="st6 block" width="46" height="51" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 835.1912 439.584)" class="st7 st8 section-label">B74</text>
+		</g>
+		<g data-section="club-level_b75">
+			<path class="st6 block" d="M866.4,464.5h-46v42l41,6C861.4,512.5,867.4,486.5,866.4,464.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 834.1912 488.584)" class="st7 st8 section-label">B75</text>
+		</g>
+		<g data-section="club-level_b76">
+			<path class="st6 block" d="M861.4,515.5l-41-6c0,0-3,18-7,28l37,15C850.4,552.5,857.4,533.5,861.4,515.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 829.4265 531.1105)" class="st7 st8 section-label">B76</text>
+		</g>
+		<g data-section="club-level_b77">
+			<path class="st6 block" d="M849.4,555.5l-37-15c0,0-6,17-11,24l31,21C832.4,585.5,842.4,571.5,849.4,555.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 817.1909 565.5836)" class="st7 st8 section-label">B77</text>
+		</g>
+		<g data-section="club-level_b78">
+			<path class="st6 block" d="M800.4,567.5c0,0-9,17-16,24l24,27c0,0,11-11,22-29L800.4,567.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 798.6028 596.5842)" class="st7 st8 section-label">B78</text>
+		</g> 
+		<g data-section="club-level_b79">
+			<path class="st6 block" d="M806.4,620.5c0,0-10,11-26,23l-19-29c0,0,19-18,21-21L806.4,620.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 774.1913 621.29)" class="st7 st8 section-label">B79</text>
+		</g>
+		<g data-section="club-level_b80">
+			<path class="st6 block" d="M759.4,616.5l18,29c0,0-10,7-28.3,15.4l-12-31C737.1,629.9,751.4,622.5,759.4,616.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 748.1909 642.2903)" class="st7 st8 section-label">B80</text>
+		</g>
+		<g data-section="club-level_b81">
+			<path class="st6 block" d="M691.4,642.5v33c0,0,34-3,54-13l-11-31C734.4,631.5,724.4,638.5,691.4,642.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 707.7363 657.5399)" class="st7 st8 section-label">B81</text>
+		</g>
+		<g data-section="club-level_b82">
+			<rect x="634.4" y="642.5" class="st6 block" width="54" height="34" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 653.1482 663.1603)" class="st7 st8 section-label">B82</text>
+		</g>
+		<g data-section="club-level_b83">
+			<rect x="575.4" y="642.5" class="st6 block" width="56" height="34" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 595.4265 662.5836)" class="st7 st8 section-label">B83</text>
+		</g>
+		<g data-section="club-level_b84">
+			<rect x="540.4" y="642.5" class="st6 block" width="32" height="34" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 547.1912 662.5837)" class="st7 st8 section-label">B84</text>
+		</g>
+
+
+
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M262.4,617.5l-18,30c0,0,13,8,32,16l11-32C287.4,631.5,270.4,623.5,262.4,617.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 258.1912 643.584)" class="st7 st8 section-label">B45</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M213.4,621.5c0,0,12,12,28,24l19-30c0,0-21-17-23-20L213.4,621.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 228.1912 622.584)" class="st7 st8 section-label">B46</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M218.4,569.5c0,0,10,16,17,23l-24,27c0,0-12-11-23-29L218.4,569.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 203.1912 596.584)" class="st7 st8 section-label">B47</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M169.4,556.5l37-15c0,0,6,18,11,25l-31,21C186.4,587.5,176.4,572.5,169.4,556.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 185.1912 565.584)" class="st7 st8 section-label">B48</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M157.4,516.5l41-6c0,0,3,18,7,28l-37,15C168.4,553.5,161.4,534.5,157.4,516.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 172.1912 532.584)" class="st7 st8 section-label">B49</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M152.4,465.5h46v42l-42,6C156.4,513.5,151.4,487.5,152.4,465.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 165.1912 489.584)" class="st7 st8 section-label">B50</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<rect x="152.4" y="410.5" class="st6 block" width="46" height="52" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 166.1912 439.584)" class="st7 st8 section-label">B51</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<rect x="152.4" y="354.5" class="st6 block" width="46" height="53" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 165.1912 383.584)" class="st7 st8 section-label">B52</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M197.4,310.5l-40-6c0,0-4,16-5,46h46L197.4,310.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 166.1912 332.584)" class="st7 st8 section-label">B53</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M167.4,264.5c0,0-9,31-10,36l40,6l4-25L167.4,264.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 171.1912 292.584)" class="st7 st8 section-label">B54</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M184.4,228.5c0,0-9,15-16,33l34,17c0,0,11-25,14-29L184.4,228.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 183.1912 257.584)" class="st7 st8 section-label">B55</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M231.4,225.5l-26-26c0,0-12,14-19,27l31,20C217.4,246.5,223.4,236.5,231.4,225.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 200.1912 227.584)" class="st7 st8 section-label">B56</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M236.4,172.5c0,0-18,13-29,25l26,26c0,0,19-18,24-21L236.4,172.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 224.1912 200.584)" class="st7 st8 section-label">B57</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M270.4,153.5c0,0-21,10-31,17l20,30c0,0,17-10,24-13L270.4,153.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 254.1912 181.584)" class="st7 st8 section-label">B58</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M748.4,152.5c0,0,21,10,31,17l-20,30c0,0-17-10-24-13L748.4,152.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 748.1912 178.584)" class="st7 st8 section-label">B67</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M782.4,171.5c0,0,18,13,29,25l-26,26c0,0-19-18-24-21L782.4,171.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 777.1912 199.584)" class="st7 st8 section-label">B68</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M787.4,224.5l26-26c0,0,12,14,19,27l-31,20C801.4,245.5,795.4,235.5,787.4,224.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 801.1912 225.584)" class="st7 st8 section-label">B69</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M834.4,227.5c0,0,9,15,16,33l-34,17c0,0-11-25-14-29L834.4,227.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 817.1912 255.584)" class="st7 st8 section-label">B70</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M851.4,263.5c0,0,9,31,10,36l-40,6l-4-25L851.4,263.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 830.1912 290.584)" class="st7 st8 section-label">B71</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M821.4,309.5l40-6c0,0,4,16,5,46h-46L821.4,309.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 835.1912 330.584)" class="st7 st8 section-label">B72</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<rect x="820.4" y="353.5" class="st6 block" width="46" height="53" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 835.1912 384.584)" class="st7 st8 section-label">B73</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<rect x="820.4" y="410.5" class="st6 block" width="46" height="51" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 835.1912 439.584)" class="st7 st8 section-label">B74</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M866.4,464.5h-46v42l41,6C861.4,512.5,867.4,486.5,866.4,464.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 834.1912 488.584)" class="st7 st8 section-label">B75</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M861.4,515.5l-41-6c0,0-3,18-7,28l37,15C850.4,552.5,857.4,533.5,861.4,515.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 829.4265 531.1105)" class="st7 st8 section-label">B76</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M849.4,555.5l-37-15c0,0-6,17-11,24l31,21C832.4,585.5,842.4,571.5,849.4,555.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 817.1909 565.5836)" class="st7 st8 section-label">B77</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M800.4,567.5c0,0-9,17-16,24l24,27c0,0,11-11,22-29L800.4,567.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 798.6028 596.5842)" class="st7 st8 section-label">B78</text>
+		</g> 
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M806.4,620.5c0,0-10,11-26,23l-19-29c0,0,19-18,21-21L806.4,620.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 774.1913 621.29)" class="st7 st8 section-label">B79</text>
+		</g>
+		<g data-section="club-level_shortside">
+			<path class="st6 block" d="M759.4,616.5l18,29c0,0-10,7-28.3,15.4l-12-31C737.1,629.9,751.4,622.5,759.4,616.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 748.1909 642.2903)" class="st7 st8 section-label">B80</text>
+		</g>
+
+
+
+		<g data-section="club-level_longside">
+			<rect x="452.4" y="642.5" class="st6 block" width="32" height="34" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 460.1912 662.584)" class="st7 st8 section-label">B41</text>
+		</g>
+		<g data-section="club-level_longside">
+			<rect x="393.4" y="642.5" class="st6 block" width="56" height="34" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 412.1912 662.584)" class="st7 st8 section-label">B42</text>
+		</g>
+		<g data-section="club-level_longside">
+			<rect x="336.4" y="642.5" class="st6 block" width="54" height="34" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 354.1912 662.584)" class="st7 st8 section-label">B43</text>
+		</g>
+		<g data-section="club-level_longside">
+			<path class="st6 block" d="M333.4,642.5v34c0,0-34-2-54-12l11-32C290.4,632.5,314.4,643.5,333.4,642.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 299.1912 659.584)" class="st7 st8 section-label">B44</text>
+		</g>
+		<g data-section="club-level_longside">
+			<path class="st6 block" d="M334.4,138.5c0,0-0.2,0-0.5,0.1c-3.7,0.4-27.5,2.9-60.5,13.9l13,34c0,0,22-9,48-11V138.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 298.1912 164.584)" class="st7 st8 section-label">B59</text>
+		</g>
+		<g data-section="club-level_longside">
+			<rect x="337.4" y="138.5" class="st6 block" width="57" height="37" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 358.1912 160.584)" class="st7 st8 section-label">B60</text>
+		</g>
+		<g data-section="club-level_longside">
+			<rect x="397.4" y="138.5" class="st6 block" width="55" height="37" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 417.1912 160.584)" class="st7 st8 section-label">B61</text>
+		</g>
+		<g data-section="club-level_longside">
+			<rect x="455.4" y="138.5" class="st6 block" width="52" height="36" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 475.1912 159.584)" class="st7 st8 section-label">B62</text>
+		</g>
+		<g data-section="club-level_longside">
+			<rect x="510.4" y="138.5" class="st6 block" width="53" height="36" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 528.1912 159.584)" class="st7 st8 section-label">B63</text>
+		</g>
+		<g data-section="club-level_longside">
+			<rect x="566.4" y="138.5" class="st6 block" width="55" height="36" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 584.1912 159.584)" class="st7 st8 section-label">B64</text>
+		</g>
+		<g data-section="club-level_longside">
+			<rect x="624.4" y="138.5" class="st6 block" width="57" height="36" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 643.1912 159.584)" class="st7 st8 section-label">B65</text>
+		</g>
+		<g data-section="club-level_longside">
+			<path class="st6 block" d="M684.4,138.5c0,0,0.2,0,0.5,0.1c3.7,0.4,27.5,1.9,60.5,12.9l-13,34c0,0-22-9-48-11V138.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 702.1912 163.584)" class="st7 st8 section-label">B66</text>
+		</g>
+		<g data-section="club-level_longside">
+			<path class="st6 block" d="M691.4,642.5v33c0,0,34-3,54-13l-11-31C734.4,631.5,724.4,638.5,691.4,642.5z" data-seat="club-level"></path>
+			<text transform="matrix(1 0 0 1 707.7363 657.5399)" class="st7 st8 section-label">B81</text>
+		</g>
+		<g data-section="club-level_longside">
+			<rect x="634.4" y="642.5" class="st6 block" width="54" height="34" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 653.1482 663.1603)" class="st7 st8 section-label">B82</text>
+		</g>
+		<g data-section="club-level_longside">
+			<rect x="575.4" y="642.5" class="st6 block" width="56" height="34" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 595.4265 662.5836)" class="st7 st8 section-label">B83</text>
+		</g>
+		<g data-section="club-level_longside">
+			<rect x="540.4" y="642.5" class="st6 block" width="32" height="34" data-seat="club-level"></rect>
+			<text transform="matrix(1 0 0 1 547.1912 662.5837)" class="st7 st8 section-label">B84</text>
+		</g>
+	</g>
+
+	<g data-category="away-fan-section">
+		<g data-section="away-fan-section_20">
+			<path class="st6 block" d="M660.9,179h28c0,0,24,3,47,13.8l-35,70.2c0,0-11-4.9-20-5.9h-20V179z" data-seat="away-fan-section"></path>
+			<text transform="matrix(1 0 0 1 684.1912 219.584)" class="st7 st8 section-label">20</text>
+		</g>
+		<g data-section="away-fan-section_21">
+			<path class="st6 block" d="M738.9,194c0,0,30,14,51,48l-28,23l-7-8l-30,24c0,0-13-12-21-16L738.9,194z" data-seat="away-fan-section"></path>
+			<text transform="matrix(1 0 0 1 742.1912 240.584)" class="st7 st8 section-label">21</text>
+		</g>
+		<g data-section="away-fan-section_22">
+			<path class="st6 block" d="M791.9,245c0,0,17,23,20,51l-71,16c0,0-4.5-12.5-9.5-19.5L791.9,245z" data-seat="away-fan-section"></path>
+			<text transform="matrix(1 0 0 1 774.1912 284.584)" class="st7 st8 section-label">22</text>
+		</g>
+	</g>
+
+	<g data-category="vip-packages">
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="437.4" y="680.5" class="st6 block" width="12" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 442.4852 688.98)" class="st7 st9 section-label">1</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="421.2" y="680.5" class="st6 block" width="13.2" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 425.9559 688.584)" class="st7 st9 section-label">2</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="405.4" y="680.5" class="st6 block" width="13" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 410.5442 687.9805)" class="st7 st9 section-label">3</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="389.4" y="680.5" class="st6 block" width="13.2" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 394.5442 688.5845)" class="st7 st9 section-label">4</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="375.2" y="680.5" class="st6 block" width="12.2" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 379.427 687.9805)" class="st7 st9 section-label">5</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="358.4" y="680.5" class="st6 block" width="14" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 363.427 687.981)" class="st7 st9 section-label">6</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="343.9" y="680.5" class="st6 block" width="12.5" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 348.8976 687.981)" class="st7 st9 section-label">7</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="328.4" y="680.5" class="st6 block" width="13" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 333.4269 688.584)" class="st7 st9 section-label">8</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="315.4,678.5 325.9,679.5 325.9,692.5 315.4,691.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 319.1915 687.9816)" class="st7 st9 section-label">9</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="312.9,691.5 303.8,689.9 304.3,674.9 313.4,676.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 306.4269 685.5834)" class="st7 st9 section-label">10</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="300.8,689 288.7,686.4 291.2,672.3 301.3,674" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 293.6034 683.1849)" class="st7 st9 section-label">11</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="285.7,685.5 273.5,681.9 278.1,667.7 289.2,671.4" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 279.1915 678.9799)" class="st7 st9 section-label">12</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="270.5,681 258.3,676.4 263.9,663.2 275,666.8" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 264.4856 673.8035)" class="st7 st9 section-label">13</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="255.3,675.5 246.2,670.8 251.7,657.6 260.9,662.3" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 251.074 668.5842)" class="st7 st9 section-label">14</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="243.1,669.8 231.9,663.2 239.5,650 249.7,655.6" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 238.7209 661.5837)" class="st7 st9 section-label">15</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="229.8,661.3 219.6,654.6 228.2,642.3 237.4,649" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 225.9265 654.0543)" class="st7 st9 section-label">16</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="217.6,652.7 208.3,646 218.9,632.6 227.1,639.3" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 215.5737 644.0001)" class="st7 st9 section-label">17</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="206.3,644 197,635.3 208.6,623.9 216.9,630.7" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 204.4559 635.4796)" class="st7 st9 section-label">18</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="194.9,633.4 186.6,624.6 199.3,613.2 206.6,622" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 194.5737 624.8914)" class="st7 st9 section-label">19</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="184.6,622.7 177.3,613.9 190.9,602.5 198.2,611.3" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 184.191 614.5842)" class="st7 st9 section-label">20</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="175.2,611 168.9,601.2 183.6,591.7 188.9,600.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 176.6616 602.5842)" class="st7 st9 section-label">21</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polyline class="st6 block" points="166.8,599.2 161.5,589.4 176.2,580 182.5,588.8 167.8,599.2" data-seat="vip-packages"></polyline>
+			<text transform="matrix(1 0 0 1 168.7168 591.6998)" class="st7 st9 section-label">22</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="175.1,578 160.4,587.5 155,575.6 170.8,567.1" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 162.4814 578.584)" class="st7 st9 section-label">23</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="154,572.7 148.6,562.8 165.4,555.3 169.7,564.2" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 155.8932 565.5845)" class="st7 st9 section-label">24</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="164.3,553.3 147.6,560.9 143.2,548 160,542.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 150.7167 553.584)" class="st7 st9 section-label">25</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="158.9,540.5 142.1,546 139.7,534.1 156.6,530.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 145.9017 539.5845)" class="st7 st9 section-label">26</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="156.5,527.5 138.6,531.1 135.2,519.2 154.2,516.6" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 142.9266 525.584)" class="st7 st9 section-label">27</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="153.1,513.7 134.1,516.3 131.8,506.3 150.8,504.7" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 138.9856 512.2899)" class="st7 st9 section-label">28</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="149.7,501.8 130.7,503.4 129.2,485.7 148.4,485.7" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 136.162 496.4078)" class="st7 st9 section-label">29</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="147.7,482.3 129.4,482.3 129,470.2 146.9,469.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 134.6031 478.525)" class="st7 st9 section-label">30</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="146.6,466.4 128.6,467 128.2,451 146.2,451.4" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 134.6033 461.2902)" class="st7 st9 section-label">31</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="128.4" y="436.5" class="st6 block" width="18" height="11" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 133.6031 444.3916)" class="st7 st9 section-label">32</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="128.4" y="424.5" class="st6 block" width="18" height="10" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 133.6031 431.3328)" class="st7 st9 section-label">33</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="128.4" y="411.5" class="st6 block" width="18" height="11" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 133.6028 419.2153)" class="st7 st9 section-label">34</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="128.4" y="397.6" class="st6 block" width="18" height="11.5" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 133.603 405.4504)" class="st7 st9 section-label">35</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="128.4" y="381.5" class="st6 block" width="18" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 133.6031 389.921)" class="st7 st9 section-label">36</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="128.4" y="366.5" class="st6 block" width="18" height="11.6" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 133.6028 375.3328)" class="st7 st9 section-label">37</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="128.4" y="353.5" class="st6 block" width="18" height="10.3" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 133.6033 360.8622)" class="st7 st9 section-label">38</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="128.4" y="340.5" class="st6 block" width="18" height="10" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 133.6031 347.4504)" class="st7 st9 section-label">39</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="147.4,329.5 128.4,329.5 128.4,337.5 146.4,337.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 133.603 335.6268)" class="st7 st9 section-label">40</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="148.4,318.5 129.4,317.5 128.4,326.5 147.4,326.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 134.603 324.3328)" class="st7 st9 section-label">41</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="151.4,306.5 132.4,304.5 130.4,314.5 149.4,315.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 137.4266 311.9799)" class="st7 st9 section-label">42</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="154.4,292.5 136.4,289.5 133.4,301.5 152.4,303.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 139.9856 298.9799)" class="st7 st9 section-label">43</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="156.4,279.5 139.4,274.5 137.4,286.5 154.4,289.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 142.9269 284.5839)" class="st7 st9 section-label">44</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="161.4,266.5 144.4,259.5 140.4,272.5 157.4,277.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 146.9269 271.2308)" class="st7 st9 section-label">45</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="150.4,246.5 145.4,257.5 162.4,264.5 166.4,255.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 152.2208 257.5837)" class="st7 st9 section-label">46</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="171.4,241.5 156.4,232.5 151.4,244.5 167.4,252.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 157.9855 244.9797)" class="st7 st9 section-label">47</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polyline class="st6 block" points="163.4,220.5 157.4,230.5 172.4,239.5 178.4,230.5 163.4,220.5" data-seat="vip-packages"></polyline>
+			<text transform="matrix(1 0 0 1 163.8679 232.0388)" class="st7 st9 section-label">48</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="170.4,208.5 164.4,218.5 179.4,227.5 184.4,218.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 171.1913 220.48)" class="st7 st9 section-label">49</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="179.4,196.5 172.4,205.5 186.4,216.5 193.4,207.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 179.6326 208.48)" class="st7 st9 section-label">50</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="189.4,185.5 181.4,194.5 194.4,205.5 201.4,196.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 188.4857 197.2897)" class="st7 st9 section-label">51</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="200.4,174.5 191.4,183.5 203.4,194.5 211.4,187.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 198.1034 187.0543)" class="st7 st9 section-label">52</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="211.4,165.5 202.4,172.5 213.4,185.5 221.4,178.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 208.4269 177.3486)" class="st7 st9 section-label">53</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="223.4,156.5 213.4,163.5 222.4,175.5 231.4,168.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 219.4563 167.9955)" class="st7 st9 section-label">54</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="236.4,147.5 225.4,154.5 233.4,167.5 243.4,161.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 231.0441 159.4797)" class="st7 st9 section-label">55</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="248.4,141.5 239.4,146.5 245.4,159.5 254.4,154.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 244.0146 152.4802)" class="st7 st9 section-label">56</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="263.4,135.5 251.4,140.5 257.4,153.5 268.4,149.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 256.8087 145.8033)" class="st7 st9 section-label">57</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="278.4,130.5 266.4,134.5 271.4,148.5 282.4,144.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 271.5441 141.4799)" class="st7 st9 section-label">58</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="293.4,126.5 281.4,129.5 285.4,143.5 294.4,141.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 285.5735 136.4799)" class="st7 st9 section-label">59</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="308.4,123.5 296.4,125.5 297.4,140.5 308.4,138.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 298.9559 134.0092)" class="st7 st9 section-label">60</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="321.9,122.5 311.4,123.5 311.4,137.5 321.9,135.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 314.0735 131.9797)" class="st7 st9 section-label">61</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="334.4,121.5 324.4,122.5 324.4,135.5 334.4,134.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 326.2206 130.4799)" class="st7 st9 section-label">62</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="336.8" y="121.5" class="st6 block" width="9.6" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 338.5735 129.9799)" class="st7 st9 section-label">63</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="349.4" y="121.5" class="st6 block" width="13.4" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 352.9559 129.9789)" class="st7 st9 section-label">64</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="365.4" y="121.5" class="st6 block" width="12" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 367.7794 129.9789)" class="st7 st9 section-label">65</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="379.4" y="121.5" class="st6 block" width="12" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 381.7794 129.9789)" class="st7 st9 section-label">66</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="393.4" y="121.5" class="st6 block" width="13" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 396.6617 129.4797)" class="st7 st9 section-label">67</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="408.4" y="121.5" class="st6 block" width="13" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 411.6028 129.9799)" class="st7 st9 section-label">68</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="423.4" y="121.5" class="st6 block" width="12" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 426.0735 129.9794)" class="st7 st9 section-label">69</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="437.4" y="121.5" class="st6 block" width="10" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 439.6028 129.9792)" class="st7 st9 section-label">70</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="449.4" y="121.5" class="st6 block" width="15" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 453.7206 129.9791)" class="st7 st9 section-label">71</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="466.4" y="121.5" class="st6 block" width="12" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 469.4263 129.98)" class="st7 st9 section-label">72</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="480.4" y="121.5" class="st6 block" width="13" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 484.1324 129.9791)" class="st7 st9 section-label">73</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="496.4" y="121.5" class="st6 block" width="11" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 498.6028 129.9797)" class="st7 st9 section-label">74</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="509.4" y="121.5" class="st6 block" width="11" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 511.897 129.9799)" class="st7 st9 section-label">75</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="522.4" y="121.5" class="st6 block" width="15" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 526.1324 129.9797)" class="st7 st9 section-label">76</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="539.4" y="121.5" class="st6 block" width="12" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 542.3677 129.9797)" class="st7 st9 section-label">77</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="553.4" y="121.5" class="st6 block" width="15" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 558.2499 129.9797)" class="st7 st9 section-label">78</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="570.4" y="121.5" class="st6 block" width="10" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 571.897 129.9794)" class="st7 st9 section-label">79</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="582.4" y="121.5" class="st6 block" width="12" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 585.0735 129.4799)" class="st7 st9 section-label">80</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="596.4" y="121.5" class="st6 block" width="13" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 600.1912 129.9794)" class="st7 st9 section-label">81</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="611.4" y="121.5" class="st6 block" width="13" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 614.4854 129.9794)" class="st7 st9 section-label">82</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="626.4" y="121.5" class="st6 block" width="12" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 628.9559 129.9797)" class="st7 st9 section-label">83</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="640.4" y="121.5" class="st6 block" width="12" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 643.1913 129.9799)" class="st7 st9 section-label">84</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="654.4" y="121.5" class="st6 block" width="14" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 657.8379 129.9799)" class="st7 st9 section-label">85</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="670.4" y="121.5" class="st6 block" width="10" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 672.0732 129.9799)" class="st7 st9 section-label">86</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="682.4,121.5 692.4,122.5 692.4,135.5 682.4,134.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 684.1909 130.4799)" class="st7 st9 section-label">87</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="694.9,122.5 705.4,123.5 705.4,137.5 694.9,135.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 696.3677 131.9799)" class="st7 st9 section-label">88</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="708.4,123.5 720.4,125.5 719.4,140.5 708.4,138.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 710.4854 133.4799)" class="st7 st9 section-label">89</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="723.4,126.5 735.4,129.5 732.4,143.5 722.4,141.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 725.0737 136.7743)" class="st7 st9 section-label">90</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="738.4,130.5 750.4,134.5 745.4,148.5 735.4,144.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 739.5442 141.48)" class="st7 st9 section-label">91</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="753.4,135.5 765.4,140.5 759.4,153.5 748.4,149.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 753.4265 146.9507)" class="st7 st9 section-label">92</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="768.4,141.5 777.4,146.5 771.4,159.5 762.4,154.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 766.25 152.48)" class="st7 st9 section-label">93</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="780.4,147.5 791.4,154.5 783.4,167.5 773.4,161.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 777.7795 159.5842)" class="st7 st9 section-label">94</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="793.4,156.5 803.4,163.5 794.4,175.5 786.4,168.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 790.4265 167.9957)" class="st7 st9 section-label">95</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="806.4,164.5 815.4,171.5 804.4,184.5 796.4,177.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 802.1912 176.584)" class="st7 st9 section-label">96</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="817.4,173.5 826.4,182.5 814.4,193.5 806.4,186.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 813.1912 185.584)" class="st7 st9 section-label">97</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="828.4,184.5 836.4,193.5 823.4,204.5 816.4,195.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 823.1912 195.584)" class="st7 st9 section-label">98</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="838.4,195.5 845.4,204.5 831.4,215.5 824.4,206.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 831.1912 207.584)" class="st7 st9 section-label">99</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="847.4,207.5 853.4,217.5 838.4,226.5 833.4,217.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 839.1912 218.584)" class="st7 st9 section-label">100</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polyline class="st6 block" points="854.4,219.5 860.4,229.5 845.4,238.5 839.4,229.5 854.4,219.5" data-seat="vip-packages"></polyline>
+			<text transform="matrix(1 0 0 1 846.1912 230.584)" class="st7 st9 section-label">101</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="846.4,240.5 861.4,231.5 866.4,243.5 850.4,251.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 852.1912 243.584)" class="st7 st9 section-label">102</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="867.4,245.5 872.4,256.5 855.4,263.5 851.4,254.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 857.1912 256.584)" class="st7 st9 section-label">103</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="856.4,265.5 873.4,258.5 877.4,271.5 860.4,276.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 863.1912 269.584)" class="st7 st9 section-label">104</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="861.4,278.5 878.4,273.5 880.4,285.5 863.4,288.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 867.1912 283.584)" class="st7 st9 section-label">105</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="863.4,291.5 881.4,288.5 883.4,300.5 865.4,302.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 869.1912 297.584)" class="st7 st9 section-label">106</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="866.4,305.5 885.4,303.5 886.4,313.5 867.4,314.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 871.1912 311.584)" class="st7 st9 section-label">107</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="867.4,317.5 886.4,316.5 887.4,325.5 868.4,325.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 873.1912 323.584)" class="st7 st9 section-label">108</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="868.4,328.5 887.4,328.5 887.4,336.5 869.4,336.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 874.1912 334.584)" class="st7 st9 section-label">109</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="869.4" y="339.5" class="st6 block" width="18" height="11" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 875.1912 347.584)" class="st7 st9 section-label">110</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="869.4" y="352.5" class="st6 block" width="18" height="11" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 875.1912 359.584)" class="st7 st9 section-label">111</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="869.4" y="365.5" class="st6 block" width="18" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 874.1912 373.584)" class="st7 st9 section-label">112</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="869.4" y="380.5" class="st6 block" width="18" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 874.1912 388.584)" class="st7 st9 section-label">113</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="869.4" y="395.5" class="st6 block" width="18" height="13" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 874.1912 403.584)" class="st7 st9 section-label">114</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="869.4" y="410.5" class="st6 block" width="18" height="11" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 874.1912 417.584)" class="st7 st9 section-label">115</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="869.4" y="423.5" class="st6 block" width="18" height="10" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 875.1912 430.584)" class="st7 st9 section-label">116</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="869.4" y="435.5" class="st6 block" width="18" height="11" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 874.1912 442.584)" class="st7 st9 section-label">117</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="869.4" y="448.5" class="st6 block" width="18" height="9" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 874.1912 455.584)" class="st7 st9 section-label">118</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="869.4" y="460.5" class="st6 block" width="18" height="8" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 874.1912 466.584)" class="st7 st9 section-label">119</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="887.4,470.5 869.4,470.5 869.8,479.8 887.8,480.4" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 875.1912 477.584)" class="st7 st9 section-label">120</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="868.5,490.8 887.5,491.4 887.7,483.4 869.7,482.8" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 875.1912 489.584)" class="st7 st9 section-label">121</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="867.1,501.8 886.1,503.4 887.4,494.4 868.4,493.8" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 873.1912 500.584)" class="st7 st9 section-label">122</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="864.7,513.7 882.7,516.3 885,506.3 866,504.7" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 870.1912 511.584)" class="st7 st9 section-label">123</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="861.3,527.5 878.2,531.1 881.6,519.2 863.6,516.6" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 867.1912 525.584)" class="st7 st9 section-label">124</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="858.4,539.5 874.4,544.5 877.1,534.1 860.2,530.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 863.1912 539.584)" class="st7 st9 section-label">125</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="853.4,552.5 869.4,559.5 873.6,548 856.8,542.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 859.1912 552.584)" class="st7 st9 section-label">126</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="863.4,572.5 868.2,562.8 852.4,555.3 848.1,564.2" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 854.1912 565.584)" class="st7 st9 section-label">127</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="841.7,578 856.4,587.5 861.7,575.6 847,567.1" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 847.1912 578.584)" class="st7 st9 section-label">128</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polyline class="st6 block" points="849,599.2 855.3,589.4 840.6,580 834.3,588.8 849,599.2" data-seat="vip-packages"></polyline>
+			<text transform="matrix(1 0 0 1 840.1912 590.584)" class="st7 st9 section-label">129</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="841.6,611 848.4,602.5 833.2,591.7 827.9,600.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 833.1912 602.584)" class="st7 st9 section-label">130</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="832.2,622.7 839.5,613.9 825.9,602.5 818.6,611.3" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 825.1912 614.584)" class="st7 st9 section-label">131</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="821.9,633.4 830.2,624.6 817.5,613.2 810.2,622" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 816.1912 625.584)" class="st7 st9 section-label">132</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="810.5,644 819.8,635.3 808.2,623.9 800.9,631.7" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 805.1912 635.584)" class="st7 st9 section-label">133</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="799.2,652.7 808.5,646 798.9,633.6 790.7,640.3" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 795.1912 645.584)" class="st7 st9 section-label">134</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="787,661.3 797.2,654.6 788.6,642.3 779.4,649" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 783.1912 653.584)" class="st7 st9 section-label">135</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="773.7,669.8 784.9,663.2 777.3,650 767.1,655.6" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 771.1912 661.584)" class="st7 st9 section-label">136</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="761.5,675.5 770.7,670.8 765.1,657.6 755.9,662.3" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 759.1912 668.584)" class="st7 st9 section-label">137</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="746.3,681 758.5,676.4 752.9,663.2 741.8,667.8" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 746.1912 674.584)" class="st7 st9 section-label">138</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="731.2,685.5 743.3,681.9 738.4,668.5 727.6,672.4" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 731.1912 678.584)" class="st7 st9 section-label">139</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="716,689 728.1,686.4 724.6,673.3 715.5,675" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 717.1912 683.584)" class="st7 st9 section-label">140</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="702.9,691.5 713,689.9 712.5,675.9 702.4,678.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(1 0 0 1 704.1912 685.584)" class="st7 st9 section-label">141</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<polygon class="st6 block" points="691.4,692.5 700.4,691.5 699.4,679.5 691.4,680.5" data-seat="vip-packages"></polygon>
+			<text transform="matrix(3.680000e-02 0.9993 -0.9993 3.680000e-02 693.6011 681.855)" class="st7 st9 section-label">142</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="676.4" y="680.5" class="st6 block" width="12" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 678.1912 688.584)" class="st7 st9 section-label">143</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="661.4" y="680.5" class="st6 block" width="12" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 663.1912 688.584)" class="st7 st9 section-label">144</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="645.4" y="680.5" class="st6 block" width="13" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 647.1912 688.584)" class="st7 st9 section-label">145</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="630.4" y="680.5" class="st6 block" width="12" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 632.1912 688.584)" class="st7 st9 section-label">146</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="613.4" y="680.5" class="st6 block" width="14" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 616.1912 688.584)" class="st7 st9 section-label">147</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="598.4" y="680.5" class="st6 block" width="12" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 600.1912 688.584)" class="st7 st9 section-label">148</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="582.4" y="680.5" class="st6 block" width="13" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 584.1912 688.584)" class="st7 st9 section-label">149</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="567.4" y="680.5" class="st6 block" width="12" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 569.1912 688.584)" class="st7 st9 section-label">150</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="452.4" y="680.5" class="st6 block" width="112" height="12" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 474.1912 689.584)" class="st7 st8 section-label">DIAMOND CLUB</text>
+		</g>
+		<g data-section="vip-packages_diamond-club-executive-box">
+			<rect x="487.4" y="642.5" class="st6 block" width="50" height="34" data-seat="vip-packages"></rect>
+			<text transform="matrix(1 0 0 1 489.2493 659.584)" class="st7 st10 section-label">DIRECTOR</text>
+			<text transform="matrix(1 0 0 1 502.5193 670.9841)" class="st7 st10 section-label">BOX</text>
+		</g>
+	</g>  
+</svg>

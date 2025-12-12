@@ -16,6 +16,7 @@ import {
   Trophy,
   MapPin,
   Ticket,
+  Map,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -44,6 +45,7 @@ const navItems: NavItem[] = [
   { type: "divider" },
   { name: "Storage", href: "/storage", icon: Database },
   { name: "Locations", href: "/locations", icon: MapPin },
+  { name: "Dynamic Maps", href: "/dynamic-maps", icon: Map },
 ];
 
 export function Sidebar() {
