@@ -902,7 +902,6 @@ export function LiveEventsContent() {
             </CardContent>
           </Card>
         )}
-        </div>
 
         {/* Category 3 - Only show if category2 is selected */}
         {selectedCategory1 && selectedCategory2 && (
@@ -950,6 +949,7 @@ export function LiveEventsContent() {
             </CardContent>
           </Card>
         )}
+        </div>
 
         {/* Performers (Optional Column) */}
         <Card>
@@ -1020,7 +1020,7 @@ export function LiveEventsContent() {
         </Card>
 
         {/* Events */}
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex flex-col gap-2">
               <div className="flex items-center gap-2">

@@ -168,6 +168,10 @@ export default function ViewEventPage({
                       ? "default"
                       : event.type === "sports_event"
                       ? "secondary"
+                      : event.type === "tx_event"
+                      ? "secondary"
+                      : event.type === "sports_live_event_dynamic" || event.type === "music_live_event_dynamic"
+                      ? "destructive"
                       : "outline"
                   }
                 >
@@ -175,6 +179,12 @@ export default function ViewEventPage({
                     ? "Music Event"
                     : event.type === "sports_event"
                     ? "Sports Event"
+                    : event.type === "tx_event"
+                    ? "TixStock Event"
+                    : event.type === "sports_live_event_dynamic"
+                    ? "Sports Event (Live)"
+                    : event.type === "music_live_event_dynamic"
+                    ? "Music Event (Live)"
                     : "Sports Event (Dynamic)"}
                 </Badge>
               </div>

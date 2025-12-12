@@ -744,7 +744,7 @@ export function SportsEventsContent() {
       </Card>
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Sports Selection */}
         <Card>
           <CardHeader>
@@ -892,7 +892,7 @@ export function SportsEventsContent() {
         </Card>
 
         {/* Events */}
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex flex-col gap-2">
               <div className="flex items-center gap-2">

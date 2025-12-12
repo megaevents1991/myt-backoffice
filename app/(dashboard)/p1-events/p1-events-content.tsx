@@ -684,7 +684,8 @@ export function P1EventsContent() {
       </Card>
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="space-y-4">
         {/* Categories Panel */}
         <Card>
           <CardHeader className="pb-3">
@@ -808,6 +809,7 @@ export function P1EventsContent() {
             </CardContent>
           </Card>
         )}
+        </div>
 
         {/* Cities Panel */}
         <Card>
@@ -868,7 +870,7 @@ export function P1EventsContent() {
         </Card>
 
         {/* Events */}
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex flex-col gap-2">
               <div className="flex items-center gap-2">

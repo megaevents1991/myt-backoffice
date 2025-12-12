@@ -701,6 +701,7 @@ export default function EventPage({
                 <option value="music_live_event_dynamic">
                   Music Event (Live)
                 </option>
+                <option value="tx_event">TixStock Event</option>
               </select>
             </div>
 

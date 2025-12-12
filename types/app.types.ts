@@ -5,7 +5,8 @@ export type EventType =
   | "music_event"
   | "sports_event_dynamic"
   | "sports_live_event_dynamic"
-  | "music_live_event_dynamic";
+  | "music_live_event_dynamic"
+  | "tx_event";
 
 export type Event = {
   id: number

@@ -265,3 +265,55 @@ CREATE TRIGGER p1_events_updated_at
     BEFORE UPDATE ON p1_events 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
+
+-- ===================================
+-- TixStock Events Schema
+-- ===================================
+
+CREATE TABLE IF NOT EXISTS tixstock_events (
+  -- Primary identifier (UUID from TixStock)
+  event_id VARCHAR PRIMARY KEY,
+  
+  -- Event information
+  event_name VARCHAR NOT NULL,
+  show_date TIMESTAMP WITH TIME ZONE NOT NULL,
+  event_status VARCHAR,
+  
+  -- Venue & Location
+  venue_name VARCHAR,
+  city_name VARCHAR,
+  country_code VARCHAR(2),
+  venue_data JSONB, -- Store full venue object
+  venue_map_url TEXT,
+  
+  -- Classification
+  category_name VARCHAR, -- Top level category
+  sub_categories JSONB, -- Full category tree
+  
+  -- Metadata
+  performers JSONB, -- Store performers array
+  
+  -- Sync metadata
+  last_synced TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  is_active BOOLEAN DEFAULT true,
+  
+  -- Timestamps
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes for tixstock_events
+CREATE INDEX IF NOT EXISTS idx_tixstock_events_show_date ON tixstock_events(show_date);
+CREATE INDEX IF NOT EXISTS idx_tixstock_events_city_name ON tixstock_events(city_name);
+CREATE INDEX IF NOT EXISTS idx_tixstock_events_country_code ON tixstock_events(country_code);
+CREATE INDEX IF NOT EXISTS idx_tixstock_events_category_name ON tixstock_events(category_name);
+CREATE INDEX IF NOT EXISTS idx_tixstock_events_is_active ON tixstock_events(is_active);
+
+-- Full-text search indexes for TixStock events
+CREATE INDEX IF NOT EXISTS idx_tixstock_events_name_search ON tixstock_events USING gin(to_tsvector('english', event_name));
+
+-- Update trigger for tixstock_events
+CREATE TRIGGER tixstock_events_updated_at 
+    BEFORE UPDATE ON tixstock_events 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();

@@ -285,6 +285,8 @@ export function EventsTable() {
               return "Sports Event (Live Dynamic)";
             case "music_live_event_dynamic":
               return "Music Event (Live Dynamic)";
+            case "tx_event":
+              return "TixStock Event";
             default:
               return type;
           }
@@ -301,6 +303,8 @@ export function EventsTable() {
               return "destructive";
             case "music_live_event_dynamic":
               return "destructive";
+            case "tx_event":
+              return "secondary";
             default:
               return "default";
           }

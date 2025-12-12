@@ -109,3 +109,28 @@ export async function uploadFile(formData: FormData) {
   return { success: true, path: filePath }
 }
 
+export async function uploadImageFromUrl(imageUrl: string, bucket: string, fileName: string) {
+  try {
+    const response = await fetch(imageUrl);
+    if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(fileName, buffer, {
+        contentType: response.headers.get("content-type") || "image/svg+xml",
+        upsert: true
+      });
+      
+    if (error) throw error;
+    
+    const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    return publicUrlData.publicUrl;
+  } catch (error) {
+    console.error("Error uploading image from URL:", error);
+    return null;
+  }
+}
+
