@@ -204,9 +204,6 @@ export function LocationForm({ location, onSuccess }: LocationFormProps) {
               placeholder="e.g., TLV"
               maxLength={3}
             />
-            <p className="text-xs text-muted-foreground">
-              Optional 3-letter airport/city code
-            </p>
           </div>
 
           <div className="space-y-2">
