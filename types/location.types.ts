@@ -6,6 +6,7 @@ export interface Location {
   latitude: number;
   longitude: number;
   city_iata: string | null;
+  country_code: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -15,6 +16,7 @@ export interface CreateLocationData {
   latitude: number;
   longitude: number;
   city_iata?: string;
+  country_code?: string;
 }
 
 export interface UpdateLocationData {
@@ -22,6 +24,7 @@ export interface UpdateLocationData {
   latitude?: number;
   longitude?: number;
   city_iata?: string;
+  country_code?: string;
 }
 
 export interface LocationWithDistance extends Location {

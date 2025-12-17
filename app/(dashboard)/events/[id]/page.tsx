@@ -125,6 +125,7 @@ export default function EventPage({
               longitude: 0,
               name: "",
               city_iata: "",
+              country_code: "",
             },
             map_image_url: "",
             description: "",
@@ -968,6 +969,7 @@ export default function EventPage({
                             latitude: loc.latitude,
                             longitude: loc.longitude,
                             city_iata: loc.city_iata || "",
+                            country_code: loc.country_code || "",
                           }
                         };
                       });

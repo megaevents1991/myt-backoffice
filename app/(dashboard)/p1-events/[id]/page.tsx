@@ -183,6 +183,7 @@ export default function P1EventDetailsPage() {
         longitude: event.venue_longitude,
         name: event.venue_name,
         city_iata: "",
+        country_code: undefined,
       };
 
       const eventData: Omit<Event, "id"> = {

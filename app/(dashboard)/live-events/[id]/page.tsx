@@ -234,11 +234,12 @@ export default function LiveEventDetailsPage() {
       console.log('🎯 Final mapped tickets:', eventTickets);
 
       // Try to find the nearest location
-      let locationData = {
+      const locationData: { latitude: number; longitude: number; name: string; city_iata: string; country_code?: string } = {
         latitude: 0,
         longitude: 0,
         name: event.city_name || "Unknown Location",
         city_iata: event.iata || "",
+        country_code: undefined,
       };
 
       try {

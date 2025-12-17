@@ -375,11 +375,12 @@ export function TixStockEventsContent() {
         })
       );
 
-      const locationData = {
+      const locationData: { latitude: number; longitude: number; name: string; city_iata: string; country_code?: string } = {
         latitude: event.venue_data?.latitude || 0,
         longitude: event.venue_data?.longitude || 0,
         name: event.venue_name || "Unknown Venue",
-        city_iata: "", 
+        city_iata: "",
+        country_code: undefined,
       };
 
       const eventData: Omit<Event, "id"> = {

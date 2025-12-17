@@ -34,6 +34,7 @@ export function LocationForm({ location, onSuccess }: LocationFormProps) {
     latitude: location?.latitude?.toString() || "",
     longitude: location?.longitude?.toString() || "",
     city_iata: location?.city_iata || "",
+    country_code: location?.country_code || "",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -72,11 +73,22 @@ export function LocationForm({ location, onSuccess }: LocationFormProps) {
     setIsSubmitting(true);
 
     try {
+      const countryCode = formData.country_code.trim();
+      if (countryCode && !/^[A-Z]{2}$/.test(countryCode)) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Country code must be 2 uppercase letters (e.g., US)",
+        });
+        return;
+      }
+
       const locationData = {
         name: formData.name.trim(),
         latitude,
         longitude,
         city_iata: formData.city_iata.trim() || undefined,
+        country_code: countryCode || undefined,
       };
 
       if (location) {
@@ -194,6 +206,23 @@ export function LocationForm({ location, onSuccess }: LocationFormProps) {
             />
             <p className="text-xs text-muted-foreground">
               Optional 3-letter airport/city code
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="country_code">Country Code</Label>
+            <Input
+              id="country_code"
+              type="text"
+              value={formData.country_code}
+              onChange={(e) =>
+                handleChange("country_code", e.target.value.toUpperCase())
+              }
+              placeholder="e.g., US"
+              maxLength={2}
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional 2-letter ISO code (uppercase)
             </p>
           </div>
 

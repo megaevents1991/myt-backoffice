@@ -19,6 +19,7 @@ export type Event = {
     longitude: number
     name: string
     city_iata: string
+    country_code?: string
   }
   map_image_url: string
   description: string

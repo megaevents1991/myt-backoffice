@@ -213,7 +213,7 @@ export default function EventDetailsPage() {
     }));
 
     // Try to find the nearest location
-    let locationData = {
+    let locationData: { latitude: number; longitude: number; name: string; city_iata: string; country_code?: string } = {
       latitude: Number(event.latitude) || 0,
       longitude: Number(event.longitude) || 0,
       name: event.venue_name || event.city || "Unknown Venue",
@@ -235,6 +235,7 @@ export default function EventDetailsPage() {
             longitude: nearestLocation.longitude,
             name: nearestLocation.name,
             city_iata: nearestLocation.city_iata || "",
+            country_code: nearestLocation.country_code || undefined,
           };
 
           toast({

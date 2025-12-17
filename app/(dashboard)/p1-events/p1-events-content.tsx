@@ -527,7 +527,7 @@ export function P1EventsContent() {
       );
 
       // Location data
-      const locationData = {
+      const locationData: { latitude: number; longitude: number; name: string; city_iata: string; country_code?: string } = {
         latitude: event.venue_latitude,
         longitude: event.venue_longitude,
         name: event.venue_name,
