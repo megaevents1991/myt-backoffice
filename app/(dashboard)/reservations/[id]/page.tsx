@@ -315,11 +315,11 @@ export default function ReservationDetailsPage({
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Virtual</p>
+                    <p className="text-sm font-medium">Elal Classic (Virtual Offer)</p>
                     <p className="text-lg">
                       {reservation.flight_order_info &&
-                      "virtual" in reservation.flight_order_info
-                        ? reservation.flight_order_info.virtualOfferType
+                      "virtualOfferType" in reservation.flight_order_info
+                        ? reservation.flight_order_info.virtualOfferType === true
                           ? "Yes"
                           : "No"
                         : "—"}
