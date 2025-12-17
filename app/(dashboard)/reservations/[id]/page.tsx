@@ -315,6 +315,17 @@ export default function ReservationDetailsPage({
                     </p>
                   </div>
                   <div>
+                    <p className="text-sm font-medium">Virtual</p>
+                    <p className="text-lg">
+                      {reservation.flight_order_info &&
+                      "virtual" in reservation.flight_order_info
+                        ? reservation.flight_order_info.virtualOfferType
+                          ? "Yes"
+                          : "No"
+                        : "—"}
+                    </p>
+                  </div>
+                  <div>
                     <p className="text-sm font-medium">Duration</p>
                     <p className="text-lg">
                       {reservation.flight_order_info.duration}

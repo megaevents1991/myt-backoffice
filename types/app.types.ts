@@ -47,6 +47,7 @@ export type Flight = {
   offer: FlightOffer
   penalties?: string
   bags?: object
+  virtualOfferType?: boolean
 }
 
 export type FlightSegment = {
