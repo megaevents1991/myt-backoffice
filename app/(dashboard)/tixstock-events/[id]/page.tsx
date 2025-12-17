@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useLayoutEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { 
@@ -86,7 +86,48 @@ export default function TixStockEventDetailsPage() {
       try {
         const response = await fetch(selectedMapPath);
         const text = await response.text();
-        setSvgContent(text);
+
+        // Parse SVG to deduplicate overlapping sections
+        // (Some SVGs contain duplicate groups for the same section, causing opacity stacking)
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, "image/svg+xml");
+        const sections = Array.from(doc.querySelectorAll('[data-section]'));
+        const geometryMap = new Map<string, Element>();
+
+        sections.forEach(section => {
+          const block = section.querySelector('.block');
+          if (!block) return;
+
+          let signature = '';
+          if (block.tagName === 'path') {
+            signature = `path:${block.getAttribute('d')}`;
+          } else if (block.tagName === 'rect') {
+            signature = `rect:${block.getAttribute('x')},${block.getAttribute('y')},${block.getAttribute('width')},${block.getAttribute('height')}`;
+          } else if (block.tagName === 'polygon') {
+            signature = `poly:${block.getAttribute('points')}`;
+          }
+
+          if (signature) {
+            if (geometryMap.has(signature)) {
+              // Found a duplicate geometry - remove this redundant section
+              section.remove();
+            } else {
+              geometryMap.set(signature, section);
+            }
+          }
+        });
+
+        // Translate Tier Names
+        const textElements = Array.from(doc.querySelectorAll('text'));
+        textElements.forEach(textEl => {
+            const content = textEl.textContent?.trim();
+            if (content === 'EAST STAND') textEl.textContent = 'יציע מזרחי';
+            if (content === 'CLOCK END') textEl.textContent = 'יציע דרומי';
+            if (content === 'NORTH BANK') textEl.textContent = 'יציע צפוני';
+            if (content === 'WEST STAND') textEl.textContent = 'יציע מערבי';
+        });
+
+        setSvgContent(doc.documentElement.outerHTML);
       } catch (error) {
         console.error("Failed to load SVG:", error);
         setSvgContent(null);
@@ -107,49 +148,61 @@ export default function TixStockEventDetailsPage() {
   };
 
   // Handle SVG highlighting
-  useEffect(() => {
+  // We use useLayoutEffect to ensure classes are applied synchronously after DOM updates
+  // preventing the "flicker" when re-renders happen (like Toast updates)
+  useLayoutEffect(() => {
     if (!svgContent || !mapContainerRef.current) return;
 
-    // Clear previous highlights
-    const highlightedElements = mapContainerRef.current.querySelectorAll('.svg-highlighted');
-    highlightedElements.forEach(el => el.classList.remove('svg-highlighted'));
+    const applyHighlights = () => {
+        const allSections = mapContainerRef.current?.querySelectorAll('[data-section]');
+        if (!allSections) return;
+        
+        allSections.forEach(el => {
+            const sectionId = el.getAttribute('data-section');
+            let shouldHighlight = false;
 
-    // 1. Highlight Selected Section (Persistent)
-    if (selectedSection) {
-      const allSections = mapContainerRef.current.querySelectorAll('[data-section]');
-      allSections.forEach(el => {
-        if (el.getAttribute('data-section') === selectedSection) {
-          el.classList.add('svg-highlighted');
-        }
-      });
-    }
-
-    // 2. Highlight Hovered Ticket (Transient) - only if no section is selected OR if it matches the selected one
-    // Actually, user might want to see where the hovered ticket is even if a section is selected.
-    // But if we are filtering, we only see tickets for that section anyway.
-    if (hoveredTicket && hoveredTicket.seat_details.section) {
-      const section = hoveredTicket.seat_details.section;
-      // Simple normalization: remove "Block", "Section", trim, lowercase
-      const normalizedSection = section.replace(/block|section/gi, '').trim().toLowerCase();
-      
-      // Find elements with data-section attribute
-      const allSections = mapContainerRef.current.querySelectorAll('[data-section]');
-      allSections.forEach(el => {
-        const dataSection = el.getAttribute('data-section')?.toLowerCase();
-        if (dataSection) {
-            const isMatch = (
-                dataSection === normalizedSection || 
-                dataSection.endsWith(`_${normalizedSection}`) || 
-                dataSection.endsWith(`-${normalizedSection}`)
-            );
-
-            if (isMatch) {
-                el.classList.add('svg-highlighted');
+            // 1. Check if this section is the selected one
+            if (selectedSection && sectionId === selectedSection) {
+                shouldHighlight = true;
             }
-        }
-      });
-    }
-  }, [hoveredTicket, svgContent, selectedSection]);
+
+            // 2. Check if this section matches the hovered ticket
+            if (!shouldHighlight && hoveredTicket && hoveredTicket.seat_details.section) {
+                const section = hoveredTicket.seat_details.section;
+                const normalizedSection = section.replace(/block|section/gi, '').trim().toLowerCase();
+                const dataSection = sectionId?.toLowerCase();
+                
+                if (dataSection) {
+                    const isMatch = (
+                        dataSection === normalizedSection || 
+                        dataSection.endsWith(`_${normalizedSection}`) || 
+                        dataSection.endsWith(`-${normalizedSection}`)
+                    );
+
+                    if (isMatch) {
+                        shouldHighlight = true;
+                    }
+                }
+            }
+
+            if (shouldHighlight) {
+                el.classList.add('svg-highlighted');
+            } else {
+                el.classList.remove('svg-highlighted');
+            }
+        });
+    };
+
+    // Apply immediately
+    applyHighlights();
+
+    // Also set up a MutationObserver to re-apply if the DOM is touched by external forces
+    // (This is the ultimate fix for the "flicker on toast" issue)
+    const observer = new MutationObserver(applyHighlights);
+    observer.observe(mapContainerRef.current, { childList: true, subtree: true, attributes: false });
+
+    return () => observer.disconnect();
+  }); // Run on every render
 
   const loadEventDetails = async (id: string) => {
     try {
@@ -469,12 +522,22 @@ export default function TixStockEventDetailsPage() {
         </CardHeader>
         <CardContent>
           {selectedMapPath ? (
-            <div className="venue-map-container flex items-center justify-center min-h-[400px] p-6 bg-white rounded-md border mt-4">
+            <div className="venue-map-container flex items-center justify-center min-h-[400px] p-6 rounded-md border mt-4 bg-[hsl(var(--background))]">
               <style jsx global>{`
                 .venue-map-container text,
                 .venue-map-container tspan {
                   pointer-events: none !important;
                   user-select: none !important;
+                  fill: #F0F0F2 !important; /* Foreground */
+                  font-weight: 600 !important;
+                  text-shadow: 0px 0px 3px #000000;
+                  font-family: Arial, Helvetica, sans-serif !important;
+                }
+                .venue-map-container .tier-label {
+                  font-size: 24px !important;
+                }
+                .venue-map-container .section-label {
+                  font-size: 10px !important;
                 }
                 .venue-map-container path,
                 .venue-map-container rect,
@@ -484,17 +547,43 @@ export default function TixStockEventDetailsPage() {
                   pointer-events: all !important;
                   cursor: pointer !important;
                 }
-                .svg-highlighted,
-                .svg-highlighted * {
-                  fill: #ff0000 !important;
-                  stroke: #fff !important;
+
+                /* Many vendor SVGs include both seat blocks and decorative/outline layers.
+                   Styling *everything* under [data-section] can stack fills and make some sections look darker.
+                   We therefore color only shapes explicitly marked as seat blocks. */
+                .venue-map-container [data-section] .block,
+                .venue-map-container [data-section].block {
+                  fill: #277E89 !important; /* Secondary */
+                  fill-opacity: 0.35 !important;
+                  stroke: #277E89 !important; /* Secondary */
+                  stroke-opacity: 0.9 !important;
                   stroke-width: 1px !important;
-                  opacity: 1 !important;
-                  transition: all 0.3s ease;
+                  vector-effect: non-scaling-stroke;
+                  transition: fill-opacity 0.2s ease, stroke-width 0.2s ease, stroke 0.2s ease;
                 }
-                [data-section] {
-                  transition: fill 0.3s ease;
-                  cursor: pointer;
+                
+                /* Hover Style */
+                .venue-map-container [data-section]:hover .block,
+                .venue-map-container [data-section].block:hover {
+                  fill-opacity: 0.6 !important;
+                  stroke: #F0F0F2 !important; /* Foreground */
+                  stroke-opacity: 1 !important;
+                  stroke-width: 1.5px !important;
+                }
+
+                /* Selected / Highlighted Style */
+                .venue-map-container [data-section].svg-highlighted path,
+                .venue-map-container [data-section].svg-highlighted rect,
+                .venue-map-container [data-section].svg-highlighted polygon,
+                .venue-map-container [data-section].svg-highlighted circle,
+                .venue-map-container [data-section].svg-highlighted .block,
+                .venue-map-container [data-section].svg-highlighted.block {
+                  fill: #277E89 !important; /* Secondary */
+                  fill-opacity: 1 !important;
+                  stroke: #F0F0F2 !important; /* Foreground */
+                  stroke-opacity: 1 !important;
+                  stroke-width: 2px !important;
+                  opacity: 1 !important;
                 }
               `}</style>
               {isLoadingMap ? (
@@ -540,14 +629,22 @@ export default function TixStockEventDetailsPage() {
                     if (finalSection) {
                       if (hasTickets) {
                         // Toggle selection or select new
-                        setSelectedSection(prev => prev === finalSection ? null : finalSection);
+                        const newSelection = selectedSection === finalSection ? null : finalSection;
+                        setSelectedSection(newSelection);
                         
                         // Count tickets for toast
-                        const count = tickets.filter(t => isTicketMatchingSection(t, finalSection)).length;
-                        toast({
-                          title: "Filter Applied",
-                          description: `Showing ${count} tickets for section.`,
-                        });
+                        if (newSelection) {
+                            const count = tickets.filter(t => isTicketMatchingSection(t, newSelection)).length;
+                            toast({
+                              title: "Filter Applied",
+                              description: `Showing ${count} tickets for section.`,
+                            });
+                        } else {
+                            toast({
+                              title: "Filter Cleared",
+                              description: "Showing all tickets.",
+                            });
+                        }
                       } else {
                         // Clicked section with no tickets -> reset
                         setSelectedSection(null);

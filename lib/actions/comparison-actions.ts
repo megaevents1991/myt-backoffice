@@ -48,8 +48,10 @@ export async function getComparisonEventTickets(event: ComparisonEvent): Promise
         id: t.ticket_id,
         name: t.ticket_title || t.category_name,
         description: t.description_supplier,
-        price: t.local_rates?.net_rate_eur || t.net_rate,
-        currency: 'EUR', // XS2 usually provides EUR rates in local_rates
+        // XS2 provides prices in cents, need to divide by 100
+        // Use original currency and rate from API as requested
+        price: t.net_rate / 100,
+        currency: t.currency_code,
         stock: t.stock,
         type: t.type_ticket
       }));
