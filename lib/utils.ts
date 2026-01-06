@@ -1,8 +1,13 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { XS2Ticket } from "@/types/sports-events.types";
-import { LiveTicketCategory, CURRENCIES } from "@/types/live-events.types";
-import { EventTicket, VipConfig } from "@/types/app.types";
+import type { XS2Ticket } from "@/types/sports-events.types";
+import { CURRENCIES } from "@/types/live-events.types";
+import type { LiveTicketCategory } from "@/types/live-events.types";
+import type { EventTicket, VipConfig } from "@/types/app.types";
+import type {
+  ReservationEventOrderInfo,
+  ReservationEventOrderInfoItem,
+} from "@/types/reservation.types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -107,4 +112,25 @@ export function createDefaultVipConfig(): VipConfig {
  */
 export function hasHotelInfo(hotelInfo: any): boolean {
   return hotelInfo && typeof hotelInfo === 'object' && Object.keys(hotelInfo).length > 0 && 'name' in hotelInfo;
+}
+
+export function normalizeReservationEventOrderInfo(
+  eventOrderInfo: ReservationEventOrderInfo | null | undefined
+): ReservationEventOrderInfoItem[] {
+  if (!eventOrderInfo) return [];
+  if (
+    typeof eventOrderInfo === "object" &&
+    "events" in eventOrderInfo &&
+    Array.isArray((eventOrderInfo as { events?: unknown }).events)
+  ) {
+    return (eventOrderInfo as { events: ReservationEventOrderInfoItem[] }).events;
+  }
+  return [eventOrderInfo as ReservationEventOrderInfoItem];
+}
+
+export function getReservationEventOrderInfoPrimaryName(
+  eventOrderInfo: ReservationEventOrderInfo | null | undefined
+): string {
+  const events = normalizeReservationEventOrderInfo(eventOrderInfo);
+  return events[0]?.name || "Unknown";
 }

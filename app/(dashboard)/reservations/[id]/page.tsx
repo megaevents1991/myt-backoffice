@@ -16,7 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import type { Reservation } from "@/types/reservation.types";
 import { getReservation } from "@/lib/actions/reservation-actions";
-import { hasHotelInfo } from "@/lib/utils";
+import { hasHotelInfo, normalizeReservationEventOrderInfo } from "@/lib/utils";
 
 export default function ReservationDetailsPage({
   params,
@@ -71,6 +71,10 @@ export default function ReservationDetailsPage({
       reservation.payment_info?.ashrait?.response?.inquireTransactions?.row
         ?.cgGatewayResponseXML?.ashrait?.response?.tranId,
   };
+
+  const reservationEvents = normalizeReservationEventOrderInfo(
+    reservation.event_order_info
+  );
 
   return (
     <div className="space-y-6">
@@ -221,70 +225,76 @@ export default function ReservationDetailsPage({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {reservation.event_order_info && (
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <p className="text-sm font-medium">Event Name</p>
-                <p className="text-lg">{reservation.event_order_info.name}</p>
-              </div>
+          {reservationEvents.length > 0 && (
+            <div className="space-y-6">
+              {reservationEvents.map((evt, index) => (
+                <div key={`${evt.event_id}-${evt.id ?? index}`}>
+                  {reservationEvents.length > 1 && (
+                    <p className="text-sm font-medium mb-3">
+                      Event {index + 1}
+                    </p>
+                  )}
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <p className="text-sm font-medium">Event Name</p>
+                      <p className="text-lg">{evt.name}</p>
+                    </div>
 
-              <div>
-                <p className="text-sm font-medium">Event Date</p>
-                <p className="text-lg">
-                  {new Date(
-                    reservation.event_order_info.date
-                  ).toLocaleDateString()}
-                </p>
-              </div>
+                    <div>
+                      <p className="text-sm font-medium">Event Date</p>
+                      <p className="text-lg">
+                        {evt.date ? new Date(evt.date).toLocaleDateString() : "—"}
+                      </p>
+                    </div>
 
-              <div>
-                <p className="text-sm font-medium">Location</p>
-                <p className="text-lg">
-                  {reservation.event_order_info.location_name}
-                </p>
-              </div>
+                    <div>
+                      <p className="text-sm font-medium">Location</p>
+                      <p className="text-lg">{evt.location_name}</p>
+                    </div>
 
-              <div>
-                <p className="text-sm font-medium">Ticket Category</p>
-                <p className="text-lg">
-                  {reservation.event_order_info.category}
-                </p>
-              </div>
+                    <div>
+                      <p className="text-sm font-medium">Ticket Category</p>
+                      <p className="text-lg">{evt.category}</p>
+                    </div>
 
-              {reservation.event_order_info.vendor && (
-                <div>
-                  <p className="text-sm font-medium">Ticket Vendor</p>
-                  <p className="text-lg">{reservation.event_order_info.vendor}</p>
+                    {evt.vendor && (
+                      <div>
+                        <p className="text-sm font-medium">Ticket Vendor</p>
+                        <p className="text-lg">{evt.vendor}</p>
+                      </div>
+                    )}
+
+                    {evt.id && (
+                      <div>
+                        <p className="text-sm font-medium">Ticket ID</p>
+                        <p className="text-lg">{evt.id}</p>
+                      </div>
+                    )}
+
+                    <div>
+                      <p className="text-sm font-medium">Number of Tickets</p>
+                      <p className="text-lg">{evt.number_of_ticket}</p>
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-medium">Price per Ticket</p>
+                      <p className="text-lg">
+                        ${Number(evt.price_per_ticket || 0).toFixed(2)}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-medium">Total Tickets Price</p>
+                      <p className="text-lg">
+                        ${Number(evt.total_tickets_price || 0).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                  {index < reservationEvents.length - 1 && (
+                    <Separator className="mt-6" />
+                  )}
                 </div>
-              )}
-
-              {reservation.event_order_info.id && (
-                <div>
-                  <p className="text-sm font-medium">Ticket ID</p>
-                  <p className="text-lg">{reservation.event_order_info.id}</p>
-                </div>
-              )}
-
-              <div>
-                <p className="text-sm font-medium">Number of Tickets</p>
-                <p className="text-lg">
-                  {reservation.event_order_info.number_of_ticket}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-sm font-medium">Price per Ticket</p>
-                <p className="text-lg">
-                  ${reservation.event_order_info.price_per_ticket.toFixed(2)}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-sm font-medium">Total Tickets Price</p>
-                <p className="text-lg">
-                  ${reservation.event_order_info.total_tickets_price.toFixed(2)}
-                </p>
-              </div>
+              ))}
             </div>
           )}
         </CardContent>

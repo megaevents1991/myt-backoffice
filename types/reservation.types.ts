@@ -1,5 +1,24 @@
 import type { Flight, OrderHotel } from "./app.types"
 
+export type ReservationEventOrderInfoItem = {
+  event_id: number
+  date: string | Date
+  name: string
+  location_name: string
+  number_of_ticket: number
+  category: string
+  event_type?: string
+  event_tags?: string
+  price_per_ticket: number
+  total_tickets_price: number
+  vendor?: string
+  id?: string
+}
+
+export type ReservationEventOrderInfo =
+  | ReservationEventOrderInfoItem
+  | { events: ReservationEventOrderInfoItem[] }
+
 export type Reservation = {
   id: number
   created_at: string
@@ -11,18 +30,7 @@ export type Reservation = {
     first_name: string
     last_name: string
   }[]
-  event_order_info: {
-    event_id: number
-    date: Date
-    name: string
-    location_name: string
-    number_of_ticket: number
-    category: string
-    vendor?: string
-    id?: string
-    price_per_ticket: number
-    total_tickets_price: number
-  }
+  event_order_info: ReservationEventOrderInfo
   flight_order_info: Flight
   hotel_order_info: OrderHotel | Record<string, never>
   user_shown_price: number

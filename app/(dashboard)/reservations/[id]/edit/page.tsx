@@ -14,14 +14,16 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import type { Reservation } from "@/types/reservation.types";
-import type { Event, EventTicket } from "@/types/app.types";
+import type { EventTicket } from "@/types/app.types";
 import {
   getReservation,
   updateReservation,
 } from "@/lib/actions/reservation-actions";
 import { getEvent } from "@/lib/actions/event-actions";
+import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -39,7 +41,6 @@ export default function EditReservationPage({
   const { toast } = useToast();
   const resolvedParams = use(params);
   const [reservation, setReservation] = useState<Reservation | null>(null);
-  const [event, setEvent] = useState<Event | null>(null);
   const [ticketVendor, setTicketVendor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -53,23 +54,32 @@ export default function EditReservationPage({
         const data = await getReservation(Number.parseInt(resolvedParams.id));
         setReservation(data);
 
-        // Fetch event details to get ticket vendor information
-        if (data.event_id) {
+        const events = normalizeReservationEventOrderInfo(data.event_order_info);
+        const singleEvent = events.length === 1 ? events[0] : null;
+        const shouldFetchVendor =
+          !!singleEvent && !singleEvent.vendor && !!data.event_id;
+
+        // Legacy fallback: fetch event details to infer vendor from category
+        if (shouldFetchVendor) {
           try {
             const eventData = await getEvent(data.event_id);
-            setEvent(eventData);
 
             // Find the vendor for the ticket category in this reservation
-            if (eventData.tickets_and_rates && data.event_order_info) {
+            if (eventData.tickets_and_rates && singleEvent?.category) {
               const matchingTicket = eventData.tickets_and_rates.find(
-                (ticket: EventTicket) => ticket.category === data.event_order_info.category
+                (ticket: EventTicket) => ticket.category === singleEvent.category
               );
               setTicketVendor(matchingTicket?.vendor || null);
+            } else {
+              setTicketVendor(null);
             }
           } catch (eventError) {
             console.error("Error fetching event details:", eventError);
             // Don't show error to user for event details, just log it
+            setTicketVendor(null);
           }
+        } else {
+          setTicketVendor(null);
         }
       } catch (error) {
         console.error("Error fetching reservation:", error);
@@ -156,6 +166,10 @@ export default function EditReservationPage({
   if (!reservation) {
     return <div>Reservation not found</div>;
   }
+
+  const reservationEvents = normalizeReservationEventOrderInfo(
+    reservation.event_order_info
+  );
 
   return (
     <div className="space-y-6">
@@ -262,34 +276,63 @@ export default function EditReservationPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {reservation.event_order_info && (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Event Name</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {reservation.event_order_info.name}
-                  </p>
-                </div>
-                <div>
-                  <Label>Ticket Category</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {reservation.event_order_info.category}
-                  </p>
-                </div>
-                {ticketVendor && (
-                  <div>
-                    <Label>Ticket Vendor</Label>
-                    <p className="text-sm text-muted-foreground">
-                      {ticketVendor}
-                    </p>
-                  </div>
-                )}
-                <div>
-                  <Label>Number of Tickets</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {reservation.event_order_info.number_of_ticket}
-                  </p>
-                </div>
+            {reservationEvents.length > 0 && (
+              <div className="space-y-6">
+                {reservationEvents.map((evt, index) => {
+                  const vendor = evt.vendor || (reservationEvents.length === 1 ? ticketVendor : null);
+                  return (
+                    <div key={`${evt.event_id}-${evt.id ?? index}`}>
+                      {reservationEvents.length > 1 && (
+                        <p className="text-sm font-medium mb-3">
+                          Event {index + 1}
+                        </p>
+                      )}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>Event Name</Label>
+                          <p className="text-sm text-muted-foreground">
+                            {evt.name}
+                          </p>
+                        </div>
+                        <div>
+                          <Label>Event Date</Label>
+                          <p className="text-sm text-muted-foreground">
+                            {evt.date ? new Date(evt.date).toLocaleDateString() : "—"}
+                          </p>
+                        </div>
+                        <div>
+                          <Label>Location</Label>
+                          <p className="text-sm text-muted-foreground">
+                            {evt.location_name}
+                          </p>
+                        </div>
+                        <div>
+                          <Label>Ticket Category</Label>
+                          <p className="text-sm text-muted-foreground">
+                            {evt.category}
+                          </p>
+                        </div>
+                        <div>
+                          <Label>Number of Tickets</Label>
+                          <p className="text-sm text-muted-foreground">
+                            {evt.number_of_ticket}
+                          </p>
+                        </div>
+                        {vendor && (
+                          <div>
+                            <Label>Ticket Vendor</Label>
+                            <p className="text-sm text-muted-foreground">
+                              {vendor}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      {index < reservationEvents.length - 1 && (
+                        <Separator className="mt-6" />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>

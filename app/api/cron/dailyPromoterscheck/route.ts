@@ -2,14 +2,11 @@ export const runtime = 'nodejs';
 
 import { supabase } from "@/lib/supabase-server";
 import nodemailer from "nodemailer";
+import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 
 interface Reservation {
   main_contact_first_name: string
-  event_order_info: {
-    name : string,
-    location_name :string,
-    number_of_ticket: number
-  }
+  event_order_info: any
   created_at: string
   accounting_number: number
 }
@@ -52,23 +49,28 @@ export async function GET(req: Request) {
       .not('aff_partner_tracking_code', 'is', null) // Exclude null tracking codes
       .neq('aff_partner_tracking_code', '') // Also exclude empty string tracking codes
       .gte('created_at', firstDayOfMonth.toISOString()) // Greater than or equal to first day of month
-      .lte('created_at', lastDayOfMonth.toISOString()); // Less than or equal to last day of month
+      .lte('created_at', lastDayOfMonth.toISOString()) as { data: any[] | null; error: any }; // Less than or equal to last day of month
 
     if (error) {
       console.error('Error fetching reservations:', error);
-      return;
+      return new Response('Error fetching reservations', { status: 500 });
+    }
+
+    if (!reservations || reservations.length === 0) {
+      console.log('No reservations found');
+      return new Response('No reservations found', { status: 200 });
     }
 
     const reports = reservations.reduce((acc, reservation) => {
-      const trackingCode = reservation.aff_partner_tracking_code;
+      const trackingCode = reservation.aff_partner_tracking_code as string;
       if (!acc[trackingCode]) {
         acc[trackingCode] = [];
       }
       acc[trackingCode].push(reservation);
       return acc;
-    }, {});
+    }, {} as Record<string, typeof reservations>);
 
-    for (const [trackingCode, reservations] of Object.entries(reports)) {
+    for (const [trackingCode, promoterReservations] of Object.entries(reports)) {
       console.log(`Generating report for tracking code: ${trackingCode}`);
 
       // Calculate the date exactly 29 days ago
@@ -82,7 +84,7 @@ export async function GET(req: Request) {
         .select('*')
         .eq('partner_tracking_code', trackingCode)
         .eq('created_at', target_date)
-        .single();
+        .single() as { data: any | null; error: any };
       
       if (!promoterData) {
         console.log(`Skipping ${trackingCode}, as it's not exactly 29 days since creation`);
@@ -92,7 +94,7 @@ export async function GET(req: Request) {
         console.error(`Error fetching promoter data for tracking code ${trackingCode}:`, partnerError);
         continue;
       }
-      else if (promoterData.email != 'support@mega-events.co.il') {
+      if (promoterData.email != 'support@mega-events.co.il') {
         console.log(`skipping ${trackingCode}, as this is workaround for purchased user`);
         continue;
       }
@@ -101,7 +103,7 @@ export async function GET(req: Request) {
         promoterName: promoterData?.name_hebrew,
         commission: promoterData?.commission,
         email: promoterData.email,
-        reservations: reservations as Reservation[],
+        reservations: promoterReservations as Reservation[],
         purchaseDate: promoterData.created_at,
       } as PromoterData);
     }
@@ -268,15 +270,20 @@ const generateEmailHtml = ({
                   (reservation) => {
                     const date = new Date(reservation.created_at);
                     const formattedDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
+
+                    const events = normalizeReservationEventOrderInfo(reservation.event_order_info)
+                    const eventName = events.map(e => e.name).filter(Boolean).join(" | ") || "Unknown"
+                    const eventLocation = events.map(e => e.location_name).filter(Boolean).join(" | ") || "Unknown"
+                    const tickets = events.reduce((s, e) => s + (Number(e.number_of_ticket) || 0), 0)
                     
                     return `
                 <tr>
                   <td>${reservation.main_contact_first_name}</td>
-                  <td>${reservation.event_order_info.name}</td>
-                  <td>${reservation.event_order_info.location_name}</td>
-                  <td>${reservation.event_order_info.number_of_ticket}</td>
+                  <td>${eventName}</td>
+                  <td>${eventLocation}</td>
+                  <td>${tickets}</td>
                   <td>${formattedDate}</td>
-                  <td>${reservation.event_order_info.number_of_ticket * commission}</td>
+                  <td>${tickets * commission}</td>
                   <td>${reservation.accounting_number || "TBD"}</td>
                 </tr>
               `}
@@ -304,7 +311,11 @@ const generateEmailHtml = ({
 
 async function sendPost28DaysReportEmail(promoterData: PromoterData) {
   const totalReservations = promoterData.reservations.length
-  const totalTickets = promoterData.reservations.reduce((sum, reservation) => sum + reservation.event_order_info.number_of_ticket, 0)
+  const totalTickets = promoterData.reservations.reduce((sum, reservation) => {
+    const events = normalizeReservationEventOrderInfo(reservation.event_order_info)
+    const tickets = events.reduce((s, e) => s + (Number(e.number_of_ticket) || 0), 0)
+    return sum + tickets
+  }, 0)
 
   const emailHtmlForPartner = generateEmailHtml({
     promoterName: promoterData.promoterName,

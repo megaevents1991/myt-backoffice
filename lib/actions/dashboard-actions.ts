@@ -1,6 +1,7 @@
 "use server"
 
 import { supabase } from "@/lib/supabase-server"
+import { getReservationEventOrderInfoPrimaryName } from "@/lib/utils"
 
 export async function getDashboardCounts() {
   try {
@@ -83,7 +84,7 @@ export async function getDashboardCounts() {
 
 export async function getDashboardStats() {
   try {
-    type ReservationRow = { created_at?: string; more_pax_info: { first_name?: string; last_name?: string }[] | null; status?: string; event_order_info?: { name?: string } | null; aff_partner_tracking_code?: string | null }
+    type ReservationRow = { created_at?: string; more_pax_info: { first_name?: string; last_name?: string }[] | null; status?: string; event_order_info?: any | null; aff_partner_tracking_code?: string | null }
     const { data: paidReservations, error: paidError } = await supabase
       .from("reservations")
       .select("more_pax_info,status")
@@ -175,7 +176,7 @@ export async function getDashboardStats() {
     function topEventsByName(rows: ReservationRow[] | null | undefined, limit = 3) {
       const map = new Map<string, { count: number; label: string }>()
       ;(rows || []).forEach(r => {
-        const raw = (r.event_order_info?.name ?? "Unknown").toString()
+        const raw = getReservationEventOrderInfoPrimaryName(r.event_order_info)
         const norm = normalizeEventName(raw)
         const prev = map.get(norm)
         if (prev) {
