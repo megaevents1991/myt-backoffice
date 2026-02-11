@@ -66,6 +66,7 @@ export default function TixStockEventDetailsPage() {
   const [isLoadingMap, setIsLoadingMap] = useState(false);
   const [hoveredTicket, setHoveredTicket] = useState<TixStockListing | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -117,15 +118,10 @@ export default function TixStockEventDetailsPage() {
           }
         });
 
-        // Translate Tier Names
-        const textElements = Array.from(doc.querySelectorAll('text'));
-        textElements.forEach(textEl => {
-            const content = textEl.textContent?.trim();
-            if (content === 'EAST STAND') textEl.textContent = 'יציע מזרחי';
-            if (content === 'CLOCK END') textEl.textContent = 'יציע דרומי';
-            if (content === 'NORTH BANK') textEl.textContent = 'יציע צפוני';
-            if (content === 'WEST STAND') textEl.textContent = 'יציע מערבי';
-        });
+        // Remove tier label texts (e.g. "EAST STAND") — they are venue-specific
+        // and not relevant in the backoffice context
+        const tierLabels = Array.from(doc.querySelectorAll('.tier-label'));
+        tierLabels.forEach(el => el.remove());
 
         setSvgContent(doc.documentElement.outerHTML);
       } catch (error) {
@@ -139,12 +135,44 @@ export default function TixStockEventDetailsPage() {
     fetchSvg();
   }, [selectedMapPath]);
 
-  // Helper to check if a ticket matches a map section ID
+  // Slugify a TixStock name to match SVG data attribute format
+  // e.g. "Longside Lower Tier" -> "longside-lower-tier"
+  const slugify = (name: string) =>
+    name.replace(/block|section/gi, '').trim().toLowerCase().replace(/\s+/g, '-');
+
+  // Detect category-only tickets (seat section not finalized: category === section)
+  const isCategoryOnlyTicket = (ticket: TixStockListing) =>
+    !!(ticket.seat_details.category && ticket.seat_details.section &&
+       ticket.seat_details.category.trim().toLowerCase() === ticket.seat_details.section.trim().toLowerCase());
+
+  // Helper to check if a ticket matches a specific map section ID
   const isTicketMatchingSection = (ticket: TixStockListing, mapSectionId: string) => {
     if (!ticket.seat_details.section) return false;
     const norm = ticket.seat_details.section.replace(/block|section/gi, '').trim().toLowerCase();
     const mapId = mapSectionId.toLowerCase();
     return mapId === norm || mapId.endsWith(`_${norm}`) || mapId.endsWith(`-${norm}`);
+  };
+
+  // Helper to check if a ticket matches a map category (data-category attribute)
+  const isTicketMatchingCategory = (ticket: TixStockListing, mapCategoryId: string) => {
+    if (!isCategoryOnlyTicket(ticket)) return false;
+    return slugify(ticket.seat_details.category) === mapCategoryId.toLowerCase();
+  };
+
+  // Combined matcher: checks section match OR category match for category-only tickets
+  const isTicketMatchingSectionOrCategory = (ticket: TixStockListing, sectionEl: Element) => {
+    const sectionId = sectionEl.getAttribute('data-section');
+    if (!sectionId) return false;
+
+    // Standard section match
+    if (!isCategoryOnlyTicket(ticket)) {
+      return isTicketMatchingSection(ticket, sectionId);
+    }
+
+    // Category-only ticket: match via parent data-category
+    const categoryEl = sectionEl.closest('[data-category]');
+    const categoryId = categoryEl?.getAttribute('data-category');
+    return categoryId ? isTicketMatchingCategory(ticket, categoryId) : false;
   };
 
   // Handle SVG highlighting
@@ -159,30 +187,22 @@ export default function TixStockEventDetailsPage() {
         
         allSections.forEach(el => {
             const sectionId = el.getAttribute('data-section');
+            const parentCategory = el.closest('[data-category]')?.getAttribute('data-category');
             let shouldHighlight = false;
 
-            // 1. Check if this section is the selected one
+            // 1a. Check if this section is the selected one
             if (selectedSection && sectionId === selectedSection) {
+                shouldHighlight = true;
+            }
+
+            // 1b. Check if this section belongs to the selected category
+            if (!shouldHighlight && selectedCategory && parentCategory === selectedCategory) {
                 shouldHighlight = true;
             }
 
             // 2. Check if this section matches the hovered ticket
             if (!shouldHighlight && hoveredTicket && hoveredTicket.seat_details.section) {
-                const section = hoveredTicket.seat_details.section;
-                const normalizedSection = section.replace(/block|section/gi, '').trim().toLowerCase();
-                const dataSection = sectionId?.toLowerCase();
-                
-                if (dataSection) {
-                    const isMatch = (
-                        dataSection === normalizedSection || 
-                        dataSection.endsWith(`_${normalizedSection}`) || 
-                        dataSection.endsWith(`-${normalizedSection}`)
-                    );
-
-                    if (isMatch) {
-                        shouldHighlight = true;
-                    }
-                }
+                shouldHighlight = isTicketMatchingSectionOrCategory(hoveredTicket, el);
             }
 
             if (shouldHighlight) {
@@ -597,66 +617,86 @@ export default function TixStockEventDetailsPage() {
                   onClick={(e) => {
                     // Advanced Click Handling:
                     // 1. Get all elements under the cursor (handles overlapping layers)
-                    // 2. Prioritize elements that have matching tickets
+                    // 2. Prioritize elements that have matching tickets (section or category-only)
                     // 3. Fallback to the top-most element with a data-section
                     
                     const elements = document.elementsFromPoint(e.clientX, e.clientY);
                     
-                    let bestMatch: { section: string, hasTickets: boolean } | null = null;
+                    let bestMatch: { section: string; category: string | null; hasTickets: boolean; isCategoryMatch: boolean } | null = null;
                     let firstSectionFound: string | null = null;
 
                     for (const el of elements) {
-                        // Ensure the element is part of our map
                         if (!mapContainerRef.current?.contains(el)) continue;
 
                         const sectionEl = el.closest('[data-section]');
                         const dataSection = sectionEl?.getAttribute('data-section');
 
-                        if (dataSection) {
+                        if (dataSection && sectionEl) {
                             if (!firstSectionFound) firstSectionFound = dataSection;
 
-                            const hasTickets = tickets.some(t => isTicketMatchingSection(t, dataSection));
-                            if (hasTickets) {
-                                bestMatch = { section: dataSection, hasTickets: true };
-                                break; // Found a high-priority match!
+                            // Check for exact section match first
+                            const sectionMatch = tickets.some(t => !isCategoryOnlyTicket(t) && isTicketMatchingSection(t, dataSection));
+                            if (sectionMatch) {
+                                bestMatch = { section: dataSection, category: null, hasTickets: true, isCategoryMatch: false };
+                                break;
+                            }
+
+                            // Check for category-only ticket match
+                            const parentCategory = sectionEl.closest('[data-category]')?.getAttribute('data-category');
+                            if (parentCategory) {
+                                const categoryMatch = tickets.some(t => isTicketMatchingCategory(t, parentCategory));
+                                if (categoryMatch && !bestMatch) {
+                                    bestMatch = { section: dataSection, category: parentCategory, hasTickets: true, isCategoryMatch: true };
+                                    // Don't break — keep looking for an exact section match
+                                }
                             }
                         }
                     }
 
-                    // If no ticket-holding section was found, use the first section we hit (if any)
                     const finalSection = bestMatch ? bestMatch.section : firstSectionFound;
                     const hasTickets = bestMatch ? bestMatch.hasTickets : false;
 
                     if (finalSection) {
-                      if (hasTickets) {
-                        // Toggle selection or select new
-                        const newSelection = selectedSection === finalSection ? null : finalSection;
-                        setSelectedSection(newSelection);
-                        
-                        // Count tickets for toast
-                        if (newSelection) {
+                      if (hasTickets && bestMatch) {
+                        if (bestMatch.isCategoryMatch && bestMatch.category) {
+                          // Category-only match: toggle category selection
+                          const newCategory = selectedCategory === bestMatch.category ? null : bestMatch.category;
+                          setSelectedCategory(newCategory);
+                          setSelectedSection(null);
+                          
+                          if (newCategory) {
+                            const count = tickets.filter(t => isTicketMatchingCategory(t, newCategory)).length;
+                            toast({
+                              title: "Filter Applied",
+                              description: `Showing ${count} tickets for category.`,
+                            });
+                          } else {
+                            toast({ title: "Filter Cleared", description: "Showing all tickets." });
+                          }
+                        } else {
+                          // Exact section match: toggle section selection
+                          const newSelection = selectedSection === finalSection ? null : finalSection;
+                          setSelectedSection(newSelection);
+                          setSelectedCategory(null);
+                          
+                          if (newSelection) {
                             const count = tickets.filter(t => isTicketMatchingSection(t, newSelection)).length;
                             toast({
                               title: "Filter Applied",
                               description: `Showing ${count} tickets for section.`,
                             });
-                        } else {
-                            toast({
-                              title: "Filter Cleared",
-                              description: "Showing all tickets.",
-                            });
+                          } else {
+                            toast({ title: "Filter Cleared", description: "Showing all tickets." });
+                          }
                         }
                       } else {
-                        // Clicked section with no tickets -> reset
                         setSelectedSection(null);
-                        toast({
-                          title: "No Tickets",
-                          description: "No tickets available for this section.",
-                        });
+                        setSelectedCategory(null);
+                        toast({ title: "No Tickets", description: "No tickets available for this section." });
                       }
                     } else {
-                      // Clicked outside any section -> reset
                       setSelectedSection(null);
+                      setSelectedCategory(null);
                     }
                   }}
                 />
@@ -678,15 +718,15 @@ export default function TixStockEventDetailsPage() {
             <CardTitle>Available Tickets</CardTitle>
             <CardDescription>
               Live inventory from TixStock API
-              {selectedSection && (
+              {(selectedSection || selectedCategory) && (
                 <span className="ml-2 font-medium text-primary">
                   (Filtered by map selection)
                 </span>
               )}
             </CardDescription>
           </div>
-          {selectedSection && (
-            <Button variant="outline" size="sm" onClick={() => setSelectedSection(null)}>
+          {(selectedSection || selectedCategory) && (
+            <Button variant="outline" size="sm" onClick={() => { setSelectedSection(null); setSelectedCategory(null); }}>
               Show All Tickets
             </Button>
           )}
@@ -718,7 +758,11 @@ export default function TixStockEventDetailsPage() {
                 </TableRow>
               ) : (
                 tickets
-                  .filter(ticket => !selectedSection || isTicketMatchingSection(ticket, selectedSection))
+                  .filter(ticket => {
+                    if (selectedSection) return isTicketMatchingSection(ticket, selectedSection);
+                    if (selectedCategory) return isTicketMatchingCategory(ticket, selectedCategory);
+                    return true;
+                  })
                   .map((ticket) => (
                   <TableRow 
                     key={ticket.id}
