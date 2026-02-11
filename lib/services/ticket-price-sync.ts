@@ -7,7 +7,7 @@ import { CURRENCIES } from "@/types/live-events.types";
 interface ExchangeRateData {
   rate: number;
   lastUpdated: Date;
-  source: "api" | "fallback";
+  source: "primary" | "secondary";
 }
 
 type SupportedCurrency = "EUR" | "ILS" | "GBP";
@@ -21,32 +21,26 @@ interface ExchangeRates {
 class MultiCurrencyExchangeRateService {
   private exchangeRates: ExchangeRates = {
     EUR: {
-      rate: 1.1, // fallback rate
-      lastUpdated: new Date(),
-      source: "fallback",
+      rate: 1.1,
+      lastUpdated: new Date(0), // epoch — force refresh on first use
+      source: "primary",
     },
     ILS: {
-      rate: 0.31, // fallback rate (approximately 3.7 ILS per USD)
-      lastUpdated: new Date(),
-      source: "fallback",
+      rate: 0.31,
+      lastUpdated: new Date(0),
+      source: "primary",
     },
     GBP: {
-      rate: 1.25, // fallback rate
-      lastUpdated: new Date(),
-      source: "fallback",
+      rate: 1.25,
+      lastUpdated: new Date(0),
+      source: "primary",
     },
   };
 
   private readonly API_BASE_URL = "https://api.twelvedata.com/exchange_rate";
   private readonly API_KEY = "43c9bbfbf1cb4a1990c01a1a6d9ddf2f";
-  // Secondary provider (used only when rate has been stale for >= 23 hours)
-  private readonly FRANKFURTER_BASE_URL = "https://api.frankfurter.app/latest";
-
-  private readonly FALLBACK_RATES = {
-    EUR: 1.17,
-    ILS: 0.3,
-    GBP: 1.25,
-  };
+  // Secondary provider (used only when primary has failed for >= 24 hours)
+  private readonly FLOATRATES_URL = "https://www.floatrates.com/daily/usd.json";
   // Conservative bounds to reject outliers (currency -> USD per unit)
   private readonly RATE_LIMITS: Record<
     SupportedCurrency,
@@ -60,7 +54,7 @@ class MultiCurrencyExchangeRateService {
   private readonly BASE_RETRY_DELAY_MS = 800; // exponential backoff base
   private readonly API_TIMEOUT_MS = 10000;
 
-  private readonly SECONDARY_PROVIDER_AFTER_MS = 23 * 60 * 60 * 1000; // 23 hours
+  private readonly SECONDARY_PROVIDER_AFTER_MS = 24 * 60 * 60 * 1000; // 24 hours
 
   private readonly STALE_AFTER_MS = 60 * 60 * 1000; // 1 hour
   private readonly HARD_STALE_AFTER_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -163,39 +157,42 @@ class MultiCurrencyExchangeRateService {
     return null;
   }
 
-  // Secondary provider: Frankfurter (used only when primary fails for >= 23 hours)
-  private async fetchFromFrankfurter(
+  // Secondary provider: FloatRates (used only when primary has failed for >= 24 hours)
+  private async fetchFromFloatRates(
     currency: SupportedCurrency,
   ): Promise<number | null> {
     try {
-      console.log(`🔄 [Secondary] Fetching ${currency}/USD from Frankfurter`);
-      const url = `${this.FRANKFURTER_BASE_URL}?from=${encodeURIComponent(currency)}&to=USD`;
-      const response = await this.fetchWithTimeout(url);
+      console.log(`🔄 [Secondary] Fetching ${currency}/USD from FloatRates`);
+      const response = await this.fetchWithTimeout(this.FLOATRATES_URL);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
-      const rate = data?.rates?.USD;
-      if (typeof rate === "number" && Number.isFinite(rate)) {
-        const rounded = Math.ceil(rate * 100) / 100; // Round to 2 decimals
-        if (!this.isValidRate(currency, rounded)) {
-          throw new Error(
-            `Out-of-range rate from Frankfurter for ${currency}: ${rounded}`,
-          );
-        }
-        console.log(
-          `✅ [Secondary] ${currency}/USD rate fetched from Frankfurter: ${rounded}`,
-        );
-        return rounded;
-      } else {
+      const currencyKey = currency.toLowerCase();
+      const entry = data?.[currencyKey];
+      if (
+        !entry ||
+        typeof entry.inverseRate !== "number" ||
+        !Number.isFinite(entry.inverseRate)
+      ) {
         throw new Error(
-          `Invalid exchange rate data structure from Frankfurter for ${currency}`,
+          `Invalid exchange rate data structure from FloatRates for ${currency}`,
         );
       }
+      const rounded = Math.ceil(entry.inverseRate * 100) / 100; // Round to 2 decimals
+      if (!this.isValidRate(currency, rounded)) {
+        throw new Error(
+          `Out-of-range rate from FloatRates for ${currency}: ${rounded}`,
+        );
+      }
+      console.log(
+        `✅ [Secondary] ${currency}/USD rate fetched from FloatRates: ${rounded}`,
+      );
+      return rounded;
     } catch (error) {
       console.error(
-        `❌ [Secondary] Frankfurter fetch failed for ${currency}:`,
+        `❌ [Secondary] FloatRates fetch failed for ${currency}:`,
         error instanceof Error ? error.message : "Unknown error",
       );
       return null;
@@ -225,68 +222,47 @@ class MultiCurrencyExchangeRateService {
           this.exchangeRates[currency] = {
             rate,
             lastUpdated: new Date(),
-            source: "api",
+            source: "primary",
           };
-          console.log(`💱 ${currency}/USD rate updated: ${rate} (from API)`);
+          console.log(
+            `💱 ${currency}/USD rate updated: ${rate} (from primary API)`,
+          );
         } else {
-          // Primary provider failed. Decide whether to try secondary provider based on staleness.
+          // Primary provider failed. Use cached rate if fresh enough, otherwise try secondary.
           const current = this.exchangeRates[currency];
-          if (current) {
-            const ageMs = Date.now() - current.lastUpdated.getTime();
-            if (ageMs >= this.SECONDARY_PROVIDER_AFTER_MS) {
-              console.warn(
-                `⚠️ ${currency}/USD rate stale for ${Math.round(ageMs / 3600000)}h. Trying secondary provider (Frankfurter).`,
+          const ageMs = Date.now() - current.lastUpdated.getTime();
+          if (ageMs >= this.SECONDARY_PROVIDER_AFTER_MS) {
+            console.warn(
+              `⚠️ ${currency}/USD rate stale for ${Math.round(ageMs / 3600000)}h. Trying secondary provider (FloatRates).`,
+            );
+            const secondaryRate = await this.fetchFromFloatRates(currency);
+            if (secondaryRate !== null) {
+              this.exchangeRates[currency] = {
+                rate: secondaryRate,
+                lastUpdated: new Date(),
+                source: "secondary",
+              };
+              console.log(
+                `💱 ${currency}/USD rate updated via secondary provider (FloatRates): ${secondaryRate}`,
               );
-              const secondaryRate = await this.fetchFromFrankfurter(currency);
-              if (secondaryRate !== null) {
-                this.exchangeRates[currency] = {
-                  rate: secondaryRate,
-                  lastUpdated: new Date(),
-                  source: "api", // treat as API source; provider detail noted in logs
-                };
-                console.log(
-                  `💱 ${currency}/USD rate updated via secondary provider: ${secondaryRate}`,
-                );
-              } else {
-                console.warn(
-                  `⚠️ Secondary provider also failed for ${currency}. Maintaining previous rate: ${current.rate} (from ${current.source}, last updated: ${current.lastUpdated.toISOString()})`,
-                );
-                // Keep existing rate; do not overwrite timestamp to preserve staleness tracking
-              }
             } else {
               console.warn(
-                `⚠️ Primary provider failed for ${currency}, but rate is not stale yet (${Math.round(ageMs / 3600000)}h old). Keeping previous rate: ${current.rate} (from ${current.source}).`,
+                `⚠️ Secondary provider also failed for ${currency}. Maintaining previous rate: ${current.rate} (from ${current.source}, last updated: ${current.lastUpdated.toISOString()})`,
               );
+              // Keep existing rate; do not overwrite timestamp to preserve staleness tracking
             }
           } else {
-            // No previous rate (shouldn't happen due to initialization) — set static fallback
-            const fallbackRate = this.FALLBACK_RATES[currency];
             console.warn(
-              `⚠️ No previous ${currency}/USD rate found. Using static fallback: ${fallbackRate}`,
+              `⚠️ Primary provider failed for ${currency}, but cached rate is still fresh (${Math.round(ageMs / 3600000)}h old). Keeping cached rate: ${current.rate} (from ${current.source}).`,
             );
-            this.exchangeRates[currency] = {
-              rate: fallbackRate,
-              lastUpdated: new Date(),
-              source: "fallback",
-            };
           }
         }
       } catch (error) {
         console.error(`❌ Error updating ${currency}/USD rate:`, error);
-        // On unexpected error, keep existing rate if available; only fallback if no previous
         const current = this.exchangeRates[currency];
-        if (!current) {
-          const fallbackRate = this.FALLBACK_RATES[currency];
-          this.exchangeRates[currency] = {
-            rate: fallbackRate,
-            lastUpdated: new Date(),
-            source: "fallback",
-          };
-        } else {
-          console.warn(
-            `⚠️ Keeping previous ${currency}/USD rate after error: ${current.rate} (from ${current.source}, last updated: ${current.lastUpdated.toISOString()})`,
-          );
-        }
+        console.warn(
+          `⚠️ Keeping previous ${currency}/USD rate after error: ${current.rate} (from ${current.source}, last updated: ${current.lastUpdated.toISOString()})`,
+        );
       }
     });
   }
