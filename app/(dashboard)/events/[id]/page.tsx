@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, use, useLayoutEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,9 @@ import {
 import { getLocations } from "@/lib/actions/location-actions";
 import type { Location } from "@/types/location.types";
 import { searchHotelPrices } from "@/lib/actions/hotel-actions";
+import { getTixStockTickets } from "@/lib/actions/tixstock-actions";
+import { getDynamicMaps } from "@/lib/actions/map-actions";
+import type { TixStockListing } from "@/types/tixstock.types";
 
 export default function EventPage({
   params,
@@ -51,6 +54,18 @@ export default function EventPage({
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const [selectedLocationId, setSelectedLocationId] = useState<string>("");
+
+  // TixStock preview state (map + source tickets)
+  const [tixStockTickets, setTixStockTickets] = useState<TixStockListing[]>([]);
+  const [isLoadingTixStockTickets, setIsLoadingTixStockTickets] = useState(false);
+  const [availableMaps, setAvailableMaps] = useState<{ name: string; path: string }[]>([]);
+  const [selectedMapPath, setSelectedMapPath] = useState<string>("");
+  const [svgContent, setSvgContent] = useState<string | null>(null);
+  const [isLoadingMap, setIsLoadingMap] = useState(false);
+  const [hoveredTixTicket, setHoveredTixTicket] = useState<TixStockListing | null>(null);
+  const [selectedSection, setSelectedSection] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
   const isNewEvent = unwrappedParams.id === "new";
 
   useEffect(() => {
@@ -183,6 +198,189 @@ export default function EventPage({
     }
     loadLocations();
   }, [toast]);
+
+  const tixStockEventId =
+    event?.type === "tx_event"
+      ? event.tickets_and_rates.find((t) => !!t.eid)?.eid ?? null
+      : null;
+
+  useEffect(() => {
+    if (event?.type !== "tx_event") return;
+    getDynamicMaps().then(setAvailableMaps).catch(() => setAvailableMaps([]));
+  }, [event?.type]);
+
+  useEffect(() => {
+    if (!tixStockEventId) {
+      setTixStockTickets([]);
+      return;
+    }
+
+    const eventId = tixStockEventId;
+
+    async function loadTixStockTickets() {
+      try {
+        setIsLoadingTixStockTickets(true);
+        const data = await getTixStockTickets(eventId);
+        setTixStockTickets(data);
+      } catch (error) {
+        console.error("Failed to load TixStock source tickets:", error);
+      } finally {
+        setIsLoadingTixStockTickets(false);
+      }
+    }
+
+    loadTixStockTickets();
+  }, [tixStockEventId]);
+
+  useEffect(() => {
+    if (event?.type !== "tx_event" || availableMaps.length === 0) return;
+    if (selectedMapPath) return;
+
+    const fromEvent = availableMaps.find((m) => m.path === event.map_image_url);
+    setSelectedMapPath(fromEvent?.path ?? availableMaps[0].path);
+  }, [availableMaps, event?.type, event?.map_image_url, selectedMapPath]);
+
+  useEffect(() => {
+    setSelectedSection(null);
+    setSelectedCategory(null);
+  }, [selectedMapPath]);
+
+  useEffect(() => {
+    async function fetchSvg() {
+      if (!selectedMapPath) {
+        setSvgContent(null);
+        return;
+      }
+
+      setIsLoadingMap(true);
+      try {
+        const response = await fetch(selectedMapPath);
+        const text = await response.text();
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, "image/svg+xml");
+        const sections = Array.from(doc.querySelectorAll("[data-section]"));
+        const geometryMap = new Map<string, Element>();
+
+        sections.forEach((section) => {
+          const block = section.querySelector(".block");
+          if (!block) return;
+
+          let signature = "";
+          if (block.tagName === "path") {
+            signature = `path:${block.getAttribute("d")}`;
+          } else if (block.tagName === "rect") {
+            signature = `rect:${block.getAttribute("x")},${block.getAttribute("y")},${block.getAttribute("width")},${block.getAttribute("height")}`;
+          } else if (block.tagName === "polygon") {
+            signature = `poly:${block.getAttribute("points")}`;
+          }
+
+          if (signature) {
+            if (geometryMap.has(signature)) {
+              section.remove();
+            } else {
+              geometryMap.set(signature, section);
+            }
+          }
+        });
+
+        const tierLabels = Array.from(doc.querySelectorAll(".tier-label"));
+        tierLabels.forEach((el) => el.remove());
+
+        setSvgContent(doc.documentElement.outerHTML);
+      } catch (error) {
+        console.error("Failed to load SVG:", error);
+        setSvgContent(null);
+      } finally {
+        setIsLoadingMap(false);
+      }
+    }
+
+    fetchSvg();
+  }, [selectedMapPath]);
+
+  const slugify = (name: string) =>
+    name.replace(/block|section/gi, "").trim().toLowerCase().replace(/\s+/g, "-");
+
+  const isCategoryOnlyTicket = (ticket: TixStockListing) =>
+    !!(
+      ticket.seat_details.category &&
+      ticket.seat_details.section &&
+      ticket.seat_details.category.trim().toLowerCase() ===
+        ticket.seat_details.section.trim().toLowerCase()
+    );
+
+  const isTicketMatchingSection = (ticket: TixStockListing, mapSectionId: string) => {
+    if (!ticket.seat_details.section) return false;
+    const norm = ticket.seat_details.section
+      .replace(/block|section/gi, "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-");
+    const mapId = mapSectionId.toLowerCase();
+    return mapId === norm || mapId.endsWith(`_${norm}`) || mapId.endsWith(`-${norm}`);
+  };
+
+  const isTicketMatchingCategory = (ticket: TixStockListing, mapCategoryId: string) => {
+    if (!isCategoryOnlyTicket(ticket)) return false;
+    return slugify(ticket.seat_details.category) === mapCategoryId.toLowerCase();
+  };
+
+  const isTicketMatchingSectionOrCategory = (ticket: TixStockListing, sectionEl: Element) => {
+    const sectionId = sectionEl.getAttribute("data-section");
+    if (!sectionId) return false;
+
+    if (!isCategoryOnlyTicket(ticket)) {
+      return isTicketMatchingSection(ticket, sectionId);
+    }
+
+    const categoryEl = sectionEl.closest("[data-category]");
+    const categoryId = categoryEl?.getAttribute("data-category");
+    return categoryId ? isTicketMatchingCategory(ticket, categoryId) : false;
+  };
+
+  useLayoutEffect(() => {
+    if (!svgContent || !mapContainerRef.current) return;
+
+    const applyHighlights = () => {
+      const allSections = mapContainerRef.current?.querySelectorAll("[data-section]");
+      if (!allSections) return;
+
+      allSections.forEach((el) => {
+        const sectionId = el.getAttribute("data-section");
+        const parentCategory = el.closest("[data-category]")?.getAttribute("data-category");
+        let shouldHighlight = false;
+
+        if (selectedSection && sectionId === selectedSection) {
+          shouldHighlight = true;
+        }
+
+        if (!shouldHighlight && selectedCategory && parentCategory === selectedCategory) {
+          shouldHighlight = true;
+        }
+
+        if (!shouldHighlight && hoveredTixTicket && hoveredTixTicket.seat_details.section) {
+          shouldHighlight = isTicketMatchingSectionOrCategory(hoveredTixTicket, el);
+        }
+
+        if (shouldHighlight) {
+          el.classList.add("svg-highlighted");
+        } else {
+          el.classList.remove("svg-highlighted");
+        }
+      });
+    };
+
+    applyHighlights();
+    const observer = new MutationObserver(applyHighlights);
+    observer.observe(mapContainerRef.current, {
+      childList: true,
+      subtree: true,
+      attributes: false,
+    });
+
+    return () => observer.disconnect();
+  }, [svgContent, hoveredTixTicket, selectedSection, selectedCategory]);
 
   // Function to search for flight prices
   const searchFlightPricesForEvent = async (
@@ -1085,6 +1283,272 @@ export default function EventPage({
             />
           </CardContent>
         </Card>
+
+        {event.type === "tx_event" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>TixStock Source Preview</CardTitle>
+              <CardDescription>
+                Dynamic map + source tickets (before saving this event).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!tixStockEventId ? (
+                <div className="text-sm text-muted-foreground border rounded-md p-3">
+                  No TixStock source ID found in mapped tickets yet.
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="tx-map-select">Dynamic Map</Label>
+                    <select
+                      id="tx-map-select"
+                      value={selectedMapPath}
+                      onChange={(e) => setSelectedMapPath(e.target.value)}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      <option value="">Select a map...</option>
+                      {availableMaps.map((map) => (
+                        <option key={map.path} value={map.path}>
+                          {map.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedMapPath ? (
+                    <div className="venue-map-container flex items-center justify-center min-h-[380px] p-4 rounded-md border bg-[hsl(var(--background))]">
+                      <style jsx global>{`
+                        .venue-map-container text,
+                        .venue-map-container tspan {
+                          pointer-events: none !important;
+                          user-select: none !important;
+                          fill: #F0F0F2 !important;
+                          font-weight: 600 !important;
+                          text-shadow: 0px 0px 3px #000000;
+                          font-family: Arial, Helvetica, sans-serif !important;
+                        }
+                        .venue-map-container .section-label {
+                          font-size: 10px !important;
+                        }
+                        .venue-map-container path,
+                        .venue-map-container rect,
+                        .venue-map-container polygon,
+                        .venue-map-container circle,
+                        .venue-map-container [data-section] {
+                          pointer-events: all !important;
+                          cursor: pointer !important;
+                        }
+                        .venue-map-container [data-section] .block,
+                        .venue-map-container [data-section].block {
+                          fill: #277E89 !important;
+                          fill-opacity: 0.35 !important;
+                          stroke: #277E89 !important;
+                          stroke-opacity: 0.9 !important;
+                          stroke-width: 1px !important;
+                          vector-effect: non-scaling-stroke;
+                          transition: fill-opacity 0.2s ease, stroke-width 0.2s ease, stroke 0.2s ease;
+                        }
+                        .venue-map-container [data-section]:hover .block,
+                        .venue-map-container [data-section].block:hover {
+                          fill-opacity: 0.6 !important;
+                          stroke: #F0F0F2 !important;
+                          stroke-opacity: 1 !important;
+                          stroke-width: 1.5px !important;
+                        }
+                        .venue-map-container [data-section].svg-highlighted path,
+                        .venue-map-container [data-section].svg-highlighted rect,
+                        .venue-map-container [data-section].svg-highlighted polygon,
+                        .venue-map-container [data-section].svg-highlighted circle,
+                        .venue-map-container [data-section].svg-highlighted .block,
+                        .venue-map-container [data-section].svg-highlighted.block {
+                          fill: #277E89 !important;
+                          fill-opacity: 1 !important;
+                          stroke: #F0F0F2 !important;
+                          stroke-opacity: 1 !important;
+                          stroke-width: 2px !important;
+                          opacity: 1 !important;
+                        }
+                      `}</style>
+                      {isLoadingMap ? (
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                      ) : svgContent ? (
+                        <div
+                          ref={mapContainerRef}
+                          className="w-full h-full flex items-center justify-center [&>svg]:max-w-full [&>svg]:max-h-[560px] [&>svg]:w-auto [&>svg]:h-auto"
+                          dangerouslySetInnerHTML={{ __html: svgContent }}
+                          onClick={(e) => {
+                            const elements = document.elementsFromPoint(e.clientX, e.clientY);
+
+                            let bestMatch: {
+                              section: string;
+                              category: string | null;
+                              hasTickets: boolean;
+                              isCategoryMatch: boolean;
+                            } | null = null;
+                            let firstSectionFound: string | null = null;
+
+                            for (const el of elements) {
+                              if (!mapContainerRef.current?.contains(el)) continue;
+
+                              const sectionEl = el.closest("[data-section]");
+                              const dataSection = sectionEl?.getAttribute("data-section");
+
+                              if (dataSection && sectionEl) {
+                                if (!firstSectionFound) firstSectionFound = dataSection;
+
+                                const sectionMatch = tixStockTickets.some(
+                                  (t) => !isCategoryOnlyTicket(t) && isTicketMatchingSection(t, dataSection)
+                                );
+                                if (sectionMatch) {
+                                  bestMatch = {
+                                    section: dataSection,
+                                    category: null,
+                                    hasTickets: true,
+                                    isCategoryMatch: false,
+                                  };
+                                  break;
+                                }
+
+                                const parentCategory = sectionEl
+                                  .closest("[data-category]")
+                                  ?.getAttribute("data-category");
+                                if (parentCategory) {
+                                  const categoryMatch = tixStockTickets.some((t) =>
+                                    isTicketMatchingCategory(t, parentCategory)
+                                  );
+                                  if (categoryMatch && !bestMatch) {
+                                    bestMatch = {
+                                      section: dataSection,
+                                      category: parentCategory,
+                                      hasTickets: true,
+                                      isCategoryMatch: true,
+                                    };
+                                  }
+                                }
+                              }
+                            }
+
+                            const finalSection = bestMatch ? bestMatch.section : firstSectionFound;
+                            const hasTickets = bestMatch ? bestMatch.hasTickets : false;
+
+                            if (finalSection) {
+                              if (hasTickets && bestMatch) {
+                                if (bestMatch.isCategoryMatch && bestMatch.category) {
+                                  const newCategory =
+                                    selectedCategory === bestMatch.category ? null : bestMatch.category;
+                                  setSelectedCategory(newCategory);
+                                  setSelectedSection(null);
+                                } else {
+                                  const newSelection =
+                                    selectedSection === finalSection ? null : finalSection;
+                                  setSelectedSection(newSelection);
+                                  setSelectedCategory(null);
+                                }
+                              } else {
+                                setSelectedSection(null);
+                                setSelectedCategory(null);
+                              }
+                            } else {
+                              setSelectedSection(null);
+                              setSelectedCategory(null);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <p className="text-muted-foreground">Failed to load map</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-[80px] text-muted-foreground text-sm border-dashed border-2 rounded-md">
+                      Select a map to preview sections
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Source Tickets</Label>
+                      {(selectedSection || selectedCategory) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={() => {
+                            setSelectedSection(null);
+                            setSelectedCategory(null);
+                          }}
+                        >
+                          Show all
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="max-h-[360px] overflow-auto border rounded-md">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/40 sticky top-0">
+                          <tr>
+                            <th className="text-left p-2">Category / Section</th>
+                            <th className="text-left p-2">Row</th>
+                            <th className="text-left p-2">Qty</th>
+                            <th className="text-right p-2">Price</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {isLoadingTixStockTickets ? (
+                            <tr>
+                              <td colSpan={4} className="p-3 text-center text-muted-foreground">
+                                Loading tickets...
+                              </td>
+                            </tr>
+                          ) : tixStockTickets.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="p-3 text-center text-muted-foreground">
+                                No source tickets found.
+                              </td>
+                            </tr>
+                          ) : (
+                            tixStockTickets
+                              .filter((ticket) => {
+                                if (selectedSection) {
+                                  return isTicketMatchingSection(ticket, selectedSection);
+                                }
+                                if (selectedCategory) {
+                                  return isTicketMatchingCategory(ticket, selectedCategory);
+                                }
+                                return true;
+                              })
+                              .map((ticket) => (
+                                <tr
+                                  key={ticket.id}
+                                  className="border-t hover:bg-muted/30"
+                                  onMouseEnter={() => setHoveredTixTicket(ticket)}
+                                  onMouseLeave={() => setHoveredTixTicket(null)}
+                                >
+                                  <td className="p-2">
+                                    <div className="font-medium">{ticket.seat_details.category}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {ticket.seat_details.section}
+                                    </div>
+                                  </td>
+                                  <td className="p-2">{ticket.seat_details.row || "Any"}</td>
+                                  <td className="p-2">
+                                    {ticket.number_of_tickets_for_sale.quantity_available}
+                                  </td>
+                                  <td className="p-2 text-right">
+                                    {ticket.proceed_price.amount} {ticket.proceed_price.currency}
+                                  </td>
+                                </tr>
+                              ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">

@@ -9,7 +9,6 @@ import {
   Search, 
   RefreshCw, 
   Ticket, 
-  ExternalLink,
   Music,
   Trophy,
   Loader2,
@@ -727,18 +726,6 @@ export function TixStockEventsContent() {
                         </CardContent>
                       </Card>
                       <div className="absolute right-2 bottom-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 bg-background/80 backdrop-blur-sm hover:bg-background"
-                          title="View Details"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/tixstock-events/${event.event_id}`);
-                          }}
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
