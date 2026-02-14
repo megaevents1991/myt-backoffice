@@ -39,8 +39,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { getTixStockEvents, getTixStockTickets, triggerTixStockSync } from "@/lib/actions/tixstock-actions";
 import { TixStockEventDB, TixStockListing } from "@/types/tixstock.types";
-import { Event, EventTicket } from "@/types/app.types";
-import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
+import { Event } from "@/types/app.types";
 
 // Helper component for filter and sort controls
 const FilterSortControls = ({
@@ -315,64 +314,8 @@ export function TixStockEventsContent() {
 
   const handleCreateEventFromTixStock = async (event: TixStockEventDB) => {
     try {
-      // Update exchange rates first
-      await exchangeRateClientService.updateAllExchangeRates();
-
-      // Fetch tickets for this event
-      const tixStockTickets = await getTixStockTickets(event.event_id);
-
       // Use the map URL directly
       const mapImageUrl = event.venue_map_url || "";
-
-      // Helper function to convert price to USD
-      const convertPriceToUSD = async (
-        price: number,
-        currency: string
-      ): Promise<number> => {
-        if (currency === "USD") {
-          return price + 40; // Markup only
-        }
-
-        let result: number;
-        switch (currency.toUpperCase()) {
-          case "EUR":
-            result = await exchangeRateClientService.convertToUSD(price + 40, "EUR");
-            break;
-          case "GBP":
-            result = await exchangeRateClientService.convertToUSD(price + 35, "GBP");
-            break;
-          default:
-            console.warn(`Unknown currency ${currency}, using price as-is`);
-            result = price;
-        }
-
-        return result;
-      };
-
-      // Map tickets
-      const mappedTickets: EventTicket[] = await Promise.all(
-        tixStockTickets.map(async (ticket) => {
-            const priceVal = parseFloat(ticket.face_value?.amount || "0");
-            const currency = ticket.face_value?.currency || "EUR";
-            
-            const priceInUSD = Math.round(
-                await convertPriceToUSD(priceVal, currency)
-            );
-            
-            const roundedPrice = Math.ceil(priceInUSD / 10) * 10 - 1;
-
-            return {
-                id: ticket.id,
-                category: ticket.seat_details?.category || "Unknown",
-                price: roundedPrice,
-                description: `${ticket.seat_details?.section || ''} ${ticket.seat_details?.row ? `Row ${ticket.seat_details.row}` : ''}`.trim(),
-                colorOnTheMap: "#fdfdfdff",
-                vendor: "TixStock",
-                available: ticket.number_of_tickets_for_sale?.quantity_available > 0,
-                eid: event.event_id,
-            };
-        })
-      );
 
       const locationData: { latitude: number; longitude: number; name: string; city_iata: string; country_code?: string } = {
         latitude: event.venue_data?.latitude || 0,
@@ -391,7 +334,7 @@ export function TixStockEventsContent() {
         map_image_url: mapImageUrl,
         description: `${event.event_name} at ${event.venue_name}`,
         card_image_url: "",
-        tickets_and_rates: mappedTickets,
+        tickets_and_rates: [],
         def_date_depart: "",
         def_date_return: "",
         usual_price: 0,
@@ -409,7 +352,7 @@ export function TixStockEventsContent() {
 
       // Encode the event data and navigate to create event page
       const encodedData = encodeURIComponent(JSON.stringify(eventData));
-      router.push(`/events/new?data=${encodedData}`);
+      router.push(`/events/new?data=${encodedData}&txEventId=${event.event_id}`);
 
       toast({
         title: "Event Data Prepared",

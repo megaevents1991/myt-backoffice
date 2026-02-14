@@ -88,6 +88,12 @@ export default function EventPage({
               finalData.def_date_return = smartDates.return;
             }
 
+            // For TixStock-created events, start with empty editable tickets.
+            // User will add reviewed tickets manually from the Source Tickets list.
+            if (finalData.type === "tx_event") {
+              finalData.tickets_and_rates = [];
+            }
+
             setEvent({
               id: 0,
               ...finalData,
@@ -199,9 +205,11 @@ export default function EventPage({
     loadLocations();
   }, [toast]);
 
+  const txEventIdFromQuery = searchParams.get("txEventId");
+
   const tixStockEventId =
     event?.type === "tx_event"
-      ? event.tickets_and_rates.find((t) => !!t.eid)?.eid ?? null
+      ? txEventIdFromQuery ?? event.tickets_and_rates.find((t) => !!t.eid)?.eid ?? null
       : null;
 
   useEffect(() => {
@@ -608,6 +616,49 @@ export default function EventPage({
           [field]: Number.parseFloat(value),
         },
       };
+    });
+  };
+
+  const isSourceTicketAdded = (sourceTicketId: string) =>
+    !!event?.tickets_and_rates.some((ticket) => ticket.id === sourceTicketId);
+
+  const handleAddSourceTicket = (sourceTicket: TixStockListing) => {
+    if (!event || !tixStockEventId) return;
+
+    if (isSourceTicketAdded(sourceTicket.id)) {
+      toast({
+        title: "Already added",
+        description: "This source ticket is already in Tickets and Rates.",
+      });
+      return;
+    }
+
+    const fallbackAmount = Number.parseFloat(sourceTicket.face_value?.amount || "0");
+    const proceedAmount = Number.parseFloat(sourceTicket.proceed_price?.amount || "0");
+    const price = Number.isFinite(proceedAmount) && proceedAmount > 0 ? proceedAmount : fallbackAmount;
+
+    const mappedTicket: EventTicket = {
+      id: sourceTicket.id,
+      category: sourceTicket.seat_details?.category || "Unknown",
+      price: Math.round(price),
+      description: `${sourceTicket.seat_details?.section || ""} ${sourceTicket.seat_details?.row ? `Row ${sourceTicket.seat_details.row}` : ""}`.trim(),
+      colorOnTheMap: "#fdfdfdff",
+      vendor: "TixStock",
+      available: sourceTicket.number_of_tickets_for_sale?.quantity_available > 0,
+      eid: tixStockEventId,
+    };
+
+    setEvent((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        tickets_and_rates: [...prev.tickets_and_rates, mappedTicket],
+      };
+    });
+
+    toast({
+      title: "Ticket added",
+      description: "Source ticket added to Tickets and Rates.",
     });
   };
 
@@ -1295,7 +1346,7 @@ export default function EventPage({
             <CardContent className="space-y-4">
               {!tixStockEventId ? (
                 <div className="text-sm text-muted-foreground border rounded-md p-3">
-                  No TixStock source ID found in mapped tickets yet.
+                  Missing TixStock source ID. Open from the TixStock list using Create Event.
                 </div>
               ) : (
                 <>
@@ -1491,18 +1542,19 @@ export default function EventPage({
                             <th className="text-left p-2">Row</th>
                             <th className="text-left p-2">Qty</th>
                             <th className="text-right p-2">Price</th>
+                            <th className="text-right p-2">Action</th>
                           </tr>
                         </thead>
                         <tbody>
                           {isLoadingTixStockTickets ? (
                             <tr>
-                              <td colSpan={4} className="p-3 text-center text-muted-foreground">
+                              <td colSpan={5} className="p-3 text-center text-muted-foreground">
                                 Loading tickets...
                               </td>
                             </tr>
                           ) : tixStockTickets.length === 0 ? (
                             <tr>
-                              <td colSpan={4} className="p-3 text-center text-muted-foreground">
+                              <td colSpan={5} className="p-3 text-center text-muted-foreground">
                                 No source tickets found.
                               </td>
                             </tr>
@@ -1536,6 +1588,17 @@ export default function EventPage({
                                   </td>
                                   <td className="p-2 text-right">
                                     {ticket.proceed_price.amount} {ticket.proceed_price.currency}
+                                  </td>
+                                  <td className="p-2 text-right">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant={isSourceTicketAdded(ticket.id) ? "secondary" : "outline"}
+                                      disabled={isSourceTicketAdded(ticket.id)}
+                                      onClick={() => handleAddSourceTicket(ticket)}
+                                    >
+                                      {isSourceTicketAdded(ticket.id) ? "Added" : "Add"}
+                                    </Button>
                                   </td>
                                 </tr>
                               ))
