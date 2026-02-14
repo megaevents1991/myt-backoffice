@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState, useEffect, use, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, use, useLayoutEffect, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,8 @@ import { searchHotelPrices } from "@/lib/actions/hotel-actions";
 import { getTixStockTickets } from "@/lib/actions/tixstock-actions";
 import { getDynamicMaps } from "@/lib/actions/map-actions";
 import type { TixStockListing } from "@/types/tixstock.types";
+
+const TX_TICKET_COLOR = "rgb(5, 32, 60)";
 
 export default function EventPage({
   params,
@@ -619,6 +621,57 @@ export default function EventPage({
     });
   };
 
+  useEffect(() => {
+    if (!event || event.type !== "tx_event") return;
+
+    const hasWrongColor = event.tickets_and_rates.some(
+      (ticket) => ticket.colorOnTheMap !== TX_TICKET_COLOR
+    );
+    if (!hasWrongColor) return;
+
+    setEvent((prev) => {
+      if (!prev || prev.type !== "tx_event") return prev;
+      return {
+        ...prev,
+        tickets_and_rates: prev.tickets_and_rates.map((ticket) => ({
+          ...ticket,
+          colorOnTheMap: TX_TICKET_COLOR,
+        })),
+      };
+    });
+  }, [event]);
+
+  const getTicketAmount = (ticket: TixStockListing) => {
+    const proceed = Number.parseFloat(ticket.proceed_price?.amount || "0");
+    if (Number.isFinite(proceed) && proceed > 0) return proceed;
+    const face = Number.parseFloat(ticket.face_value?.amount || "0");
+    return Number.isFinite(face) ? face : 0;
+  };
+
+  const sourceTicketsForDisplay = useMemo(() => {
+    const filtered = tixStockTickets.filter((ticket) => {
+      if (selectedSection) {
+        return isTicketMatchingSection(ticket, selectedSection);
+      }
+      if (selectedCategory) {
+        return isTicketMatchingCategory(ticket, selectedCategory);
+      }
+      return true;
+    });
+
+    // Show unique Category+Section by cheapest ticket in each group
+    const cheapestByKey = new Map<string, TixStockListing>();
+    for (const ticket of filtered) {
+      const key = `${ticket.seat_details?.category || ""}__${ticket.seat_details?.section || ""}`.toLowerCase().trim();
+      const existing = cheapestByKey.get(key);
+      if (!existing || getTicketAmount(ticket) < getTicketAmount(existing)) {
+        cheapestByKey.set(key, ticket);
+      }
+    }
+
+    return Array.from(cheapestByKey.values());
+  }, [tixStockTickets, selectedSection, selectedCategory]);
+
   const isSourceTicketAdded = (sourceTicketId: string) =>
     !!event?.tickets_and_rates.some((ticket) => ticket.id === sourceTicketId);
 
@@ -633,16 +686,14 @@ export default function EventPage({
       return;
     }
 
-    const fallbackAmount = Number.parseFloat(sourceTicket.face_value?.amount || "0");
-    const proceedAmount = Number.parseFloat(sourceTicket.proceed_price?.amount || "0");
-    const price = Number.isFinite(proceedAmount) && proceedAmount > 0 ? proceedAmount : fallbackAmount;
+    const price = getTicketAmount(sourceTicket);
 
     const mappedTicket: EventTicket = {
       id: sourceTicket.id,
       category: sourceTicket.seat_details?.category || "Unknown",
       price: Math.round(price),
       description: `${sourceTicket.seat_details?.section || ""} ${sourceTicket.seat_details?.row ? `Row ${sourceTicket.seat_details.row}` : ""}`.trim(),
-      colorOnTheMap: "#fdfdfdff",
+      colorOnTheMap: TX_TICKET_COLOR,
       vendor: "TixStock",
       available: sourceTicket.number_of_tickets_for_sale?.quantity_available > 0,
       eid: tixStockEventId,
@@ -670,8 +721,9 @@ export default function EventPage({
       category: "",
       price: 0,
       description: "",
-      colorOnTheMap: "#000000",
-      vendor: "",
+      colorOnTheMap: event.type === "tx_event" ? TX_TICKET_COLOR : "#000000",
+      vendor: event.type === "tx_event" ? "TixStock" : "",
+      ...(event.type === "tx_event" && tixStockEventId ? { eid: tixStockEventId } : {}),
     };
 
     setEvent({
@@ -1552,24 +1604,14 @@ export default function EventPage({
                                 Loading tickets...
                               </td>
                             </tr>
-                          ) : tixStockTickets.length === 0 ? (
+                          ) : sourceTicketsForDisplay.length === 0 ? (
                             <tr>
                               <td colSpan={5} className="p-3 text-center text-muted-foreground">
                                 No source tickets found.
                               </td>
                             </tr>
                           ) : (
-                            tixStockTickets
-                              .filter((ticket) => {
-                                if (selectedSection) {
-                                  return isTicketMatchingSection(ticket, selectedSection);
-                                }
-                                if (selectedCategory) {
-                                  return isTicketMatchingCategory(ticket, selectedCategory);
-                                }
-                                return true;
-                              })
-                              .map((ticket) => (
+                            sourceTicketsForDisplay.map((ticket) => (
                                 <tr
                                   key={ticket.id}
                                   className="border-t hover:bg-muted/30"
@@ -1740,17 +1782,30 @@ export default function EventPage({
                         <Label htmlFor={`ticket-${ticket.id}-color`}>
                           Color on the Map
                         </Label>
-                        <ColorPicker
-                          value={ticket.colorOnTheMap}
-                          onChange={(value) =>
-                            handleTicketChange(
-                              ticket.id,
-                              "colorOnTheMap",
-                              value
-                            )
-                          }
-                          mapImageUrl={event.map_image_url}
-                        />
+                        {event.type === "tx_event" ? (
+                          <div className="rounded-md border p-3 text-sm text-muted-foreground flex items-center justify-between">
+                            <span>Fixed for TixStock</span>
+                            <span className="inline-flex items-center gap-2 font-medium text-foreground">
+                              <span
+                                className="h-3 w-3 rounded-full border"
+                                style={{ backgroundColor: TX_TICKET_COLOR }}
+                              />
+                              {TX_TICKET_COLOR}
+                            </span>
+                          </div>
+                        ) : (
+                          <ColorPicker
+                            value={ticket.colorOnTheMap}
+                            onChange={(value) =>
+                              handleTicketChange(
+                                ticket.id,
+                                "colorOnTheMap",
+                                value
+                              )
+                            }
+                            mapImageUrl={event.map_image_url}
+                          />
+                        )}
                       </div>
 
                       {/* VIP Section */}
