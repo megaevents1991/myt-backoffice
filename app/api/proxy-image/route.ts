@@ -1,43 +1,63 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from "next/server";
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
+}
 
 // Simple image proxy to circumvent browser CORS taint when we need to read pixels.
-// Restricts to doctorticket.com hosts for safety.
+// Restricts to approved hosts for safety.
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url)
-  const target = searchParams.get('url')
+  const { searchParams } = new URL(req.url);
+  const target = searchParams.get("url");
   if (!target) {
-    return NextResponse.json({ error: 'Missing url param' }, { status: 400 })
+    return NextResponse.json({ error: "Missing url param" }, { status: 400 });
   }
-  let parsed: URL
+  let parsed: URL;
   try {
-    parsed = new URL(target)
+    parsed = new URL(target);
   } catch {
-    return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
+    return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
   }
-  if (!parsed.hostname.includes('doctorticket.com')) {
-    return NextResponse.json({ error: 'Forbidden host' }, { status: 403 })
+  const allowedHosts = new Set([
+    "www.doctorticket.com",
+    "doctorticket.com",
+    "tixstock.s3.eu-west-2.amazonaws.com",
+  ]);
+
+  if (!allowedHosts.has(parsed.hostname)) {
+    return NextResponse.json({ error: "Forbidden host" }, { status: 403 });
   }
   try {
     const upstream = await fetch(parsed.toString(), {
       // Add headers if needed (UA, etc.)
-      headers: { 'User-Agent': 'MYT-Backoffice-ImageProxy/1.0' },
-      cache: 'no-store',
-    })
+      headers: { "User-Agent": "MYT-Backoffice-ImageProxy/1.0" },
+      cache: "no-store",
+    });
     if (!upstream.ok) {
-      return NextResponse.json({ error: 'Upstream error' }, { status: upstream.status })
+      return NextResponse.json(
+        { error: "Upstream error" },
+        { status: upstream.status },
+      );
     }
-    const contentType = upstream.headers.get('content-type') || 'image/png'
-    const body = await upstream.arrayBuffer()
+    const contentType = upstream.headers.get("content-type") || "image/png";
+    const body = await upstream.arrayBuffer();
     return new NextResponse(body, {
       status: 200,
       headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=86400',
-        'Access-Control-Allow-Origin': '*',
+        "Content-Type": contentType,
+        "Cache-Control": "public, max-age=86400",
+        "Access-Control-Allow-Origin": "*",
       },
-    })
+    });
   } catch (e) {
-    console.error('Proxy error', e)
-    return NextResponse.json({ error: 'Proxy failure' }, { status: 500 })
+    console.error("Proxy error", e);
+    return NextResponse.json({ error: "Proxy failure" }, { status: 500 });
   }
 }

@@ -45,6 +45,25 @@
       "dest": "api/validate-airline.js"
     }
   ],
+  "headers": [
+    {
+      "source": "/api/proxy-image",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type"
+        }
+      ]
+    }
+  ],
   "build": {
     "env": {
       "NPM_CONFIG_USER_AGENT": "npm"

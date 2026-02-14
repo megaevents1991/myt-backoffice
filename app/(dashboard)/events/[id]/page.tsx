@@ -34,7 +34,6 @@ import { getLocations } from "@/lib/actions/location-actions";
 import type { Location } from "@/types/location.types";
 import { searchHotelPrices } from "@/lib/actions/hotel-actions";
 import { getTixStockTickets } from "@/lib/actions/tixstock-actions";
-import { getDynamicMaps } from "@/lib/actions/map-actions";
 import type { TixStockListing } from "@/types/tixstock.types";
 
 const TX_TICKET_COLOR = "rgb(5, 32, 60)";
@@ -60,8 +59,6 @@ export default function EventPage({
   // TixStock preview state (map + source tickets)
   const [tixStockTickets, setTixStockTickets] = useState<TixStockListing[]>([]);
   const [isLoadingTixStockTickets, setIsLoadingTixStockTickets] = useState(false);
-  const [availableMaps, setAvailableMaps] = useState<{ name: string; path: string }[]>([]);
-  const [selectedMapPath, setSelectedMapPath] = useState<string>("");
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const [isLoadingMap, setIsLoadingMap] = useState(false);
   const [hoveredTixTicket, setHoveredTixTicket] = useState<TixStockListing | null>(null);
@@ -214,10 +211,10 @@ export default function EventPage({
       ? txEventIdFromQuery ?? event.tickets_and_rates.find((t) => !!t.eid)?.eid ?? null
       : null;
 
-  useEffect(() => {
-    if (event?.type !== "tx_event") return;
-    getDynamicMaps().then(setAvailableMaps).catch(() => setAvailableMaps([]));
-  }, [event?.type]);
+  const mapSourceUrl =
+    event?.type === "tx_event" && event.map_image_url
+      ? `/api/proxy-image?url=${encodeURIComponent(event.map_image_url)}`
+      : "";
 
   useEffect(() => {
     if (!tixStockEventId) {
@@ -243,28 +240,20 @@ export default function EventPage({
   }, [tixStockEventId]);
 
   useEffect(() => {
-    if (event?.type !== "tx_event" || availableMaps.length === 0) return;
-    if (selectedMapPath) return;
-
-    const fromEvent = availableMaps.find((m) => m.path === event.map_image_url);
-    setSelectedMapPath(fromEvent?.path ?? availableMaps[0].path);
-  }, [availableMaps, event?.type, event?.map_image_url, selectedMapPath]);
-
-  useEffect(() => {
     setSelectedSection(null);
     setSelectedCategory(null);
-  }, [selectedMapPath]);
+  }, [mapSourceUrl]);
 
   useEffect(() => {
     async function fetchSvg() {
-      if (!selectedMapPath) {
+      if (!mapSourceUrl) {
         setSvgContent(null);
         return;
       }
 
       setIsLoadingMap(true);
       try {
-        const response = await fetch(selectedMapPath);
+        const response = await fetch(mapSourceUrl);
         const text = await response.text();
 
         const parser = new DOMParser();
@@ -307,7 +296,7 @@ export default function EventPage({
     }
 
     fetchSvg();
-  }, [selectedMapPath]);
+  }, [mapSourceUrl]);
 
   const slugify = (name: string) =>
     name.replace(/block|section/gi, "").trim().toLowerCase().replace(/\s+/g, "-");
@@ -692,7 +681,7 @@ export default function EventPage({
       id: sourceTicket.id,
       category: sourceTicket.seat_details?.category || "Unknown",
       price: Math.round(price),
-      description: `${sourceTicket.seat_details?.section || ""} ${sourceTicket.seat_details?.row ? `Row ${sourceTicket.seat_details.row}` : ""}`.trim(),
+      description: `${sourceTicket.seat_details?.section || ""}`.trim(),
       colorOnTheMap: TX_TICKET_COLOR,
       vendor: "TixStock",
       available: sourceTicket.number_of_tickets_for_sale?.quantity_available > 0,
@@ -1403,23 +1392,13 @@ export default function EventPage({
               ) : (
                 <>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="tx-map-select">Dynamic Map</Label>
-                    <select
-                      id="tx-map-select"
-                      value={selectedMapPath}
-                      onChange={(e) => setSelectedMapPath(e.target.value)}
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      <option value="">Select a map...</option>
-                      {availableMaps.map((map) => (
-                        <option key={map.path} value={map.path}>
-                          {map.name}
-                        </option>
-                      ))}
-                    </select>
+                    <Label>Dynamic Map</Label>
+                    <div className="text-xs text-muted-foreground border rounded-md p-3 break-all">
+                      {event.map_image_url || "No map URL set in Map Image."}
+                    </div>
                   </div>
 
-                  {selectedMapPath ? (
+                  {mapSourceUrl ? (
                     <div className="venue-map-container flex items-center justify-center min-h-[380px] p-4 rounded-md border bg-[hsl(var(--background))]">
                       <style jsx global>{`
                         .venue-map-container text,
@@ -1564,7 +1543,7 @@ export default function EventPage({
                     </div>
                   ) : (
                     <div className="flex items-center justify-center h-[80px] text-muted-foreground text-sm border-dashed border-2 rounded-md">
-                      Select a map to preview sections
+                      Set Map Image URL to preview sections
                     </div>
                   )}
 
