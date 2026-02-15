@@ -235,6 +235,7 @@ export default function EventPage({
         setIsLoadingTixStockTickets(false);
       }
     }
+    
 
     loadTixStockTickets();
   }, [tixStockEventId]);
