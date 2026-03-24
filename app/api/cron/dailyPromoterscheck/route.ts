@@ -1,101 +1,131 @@
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 
 import { supabase } from "@/lib/supabase-server";
 import nodemailer from "nodemailer";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 
 interface Reservation {
-  main_contact_first_name: string
-  event_order_info: any
-  created_at: string
-  accounting_number: number
+  main_contact_first_name: string;
+  event_order_info: any;
+  created_at: string;
+  accounting_number: number;
 }
 
 interface PromoterData {
-  promoterName: string
-  commission: number
-  email: string
-  reservations: Reservation[]
-  purchaseDate: string
+  promoterName: string;
+  commission: number;
+  email: string;
+  reservations: Reservation[];
+  purchaseDate: string;
 }
 
 interface PromoterReportProps {
-  promoterName: string
-  totalReservations: number
-  totalTickets: number
-  reservations: Reservation[]
-  commission: number
-  purchaseDate: string
+  promoterName: string;
+  totalReservations: number;
+  totalTickets: number;
+  reservations: Reservation[];
+  commission: number;
+  purchaseDate: string;
 }
 
 export async function GET(req: Request) {
-  
   const url = new URL(req.url);
-  if (url.searchParams.get('key') !== `monthlyAlonSecret` || !process.env.NEXT_SECRET_EMAIL_SERVER_USER || !process.env.NEXT_SECRET_EMAIL_SERVER_PASSWORD) {
-    return new Response('Unauthorized', { status: 401 });
+  if (
+    url.searchParams.get("key") !== `monthlyAlonSecret` ||
+    !process.env.NEXT_SECRET_EMAIL_SERVER_USER ||
+    !process.env.NEXT_SECRET_EMAIL_SERVER_PASSWORD
+  ) {
+    return new Response("Unauthorized", { status: 401 });
   }
-  console.log('Cron job started!');
+  console.log("Cron job started!");
 
   try {
     const now = new Date();
     const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const firstDayOfMonth = new Date(previousMonth.getFullYear(), previousMonth.getMonth(), 1);
-    const lastDayOfMonth = new Date(previousMonth.getFullYear(), previousMonth.getMonth() + 1, 0, 23, 59, 59, 999);
-    
-    const { data: reservations, error } = await supabase
-      .from('reservations')
-      .select('*')
-      .eq('status', 'Paid')
-      .not('aff_partner_tracking_code', 'is', null) // Exclude null tracking codes
-      .neq('aff_partner_tracking_code', '') // Also exclude empty string tracking codes
-      .gte('created_at', firstDayOfMonth.toISOString()) // Greater than or equal to first day of month
-      .lte('created_at', lastDayOfMonth.toISOString()) as { data: any[] | null; error: any }; // Less than or equal to last day of month
+    const firstDayOfMonth = new Date(
+      previousMonth.getFullYear(),
+      previousMonth.getMonth(),
+      1,
+    );
+    const lastDayOfMonth = new Date(
+      previousMonth.getFullYear(),
+      previousMonth.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
+
+    const { data: reservations, error } = (await supabase
+      .from("reservations")
+      .select("*")
+      .eq("status", "Paid")
+      .not("aff_partner_tracking_code", "is", null) // Exclude null tracking codes
+      .neq("aff_partner_tracking_code", "") // Also exclude empty string tracking codes
+      .gte("created_at", firstDayOfMonth.toISOString()) // Greater than or equal to first day of month
+      .lte("created_at", lastDayOfMonth.toISOString())) as {
+      data: any[] | null;
+      error: any;
+    }; // Less than or equal to last day of month
 
     if (error) {
-      console.error('Error fetching reservations:', error);
-      return new Response('Error fetching reservations', { status: 500 });
+      console.error("Error fetching reservations:", error);
+      return new Response("Error fetching reservations", { status: 500 });
     }
 
     if (!reservations || reservations.length === 0) {
-      console.log('No reservations found');
-      return new Response('No reservations found', { status: 200 });
+      console.log("No reservations found");
+      return new Response("No reservations found", { status: 200 });
     }
 
-    const reports = reservations.reduce((acc, reservation) => {
-      const trackingCode = reservation.aff_partner_tracking_code as string;
-      if (!acc[trackingCode]) {
-        acc[trackingCode] = [];
-      }
-      acc[trackingCode].push(reservation);
-      return acc;
-    }, {} as Record<string, typeof reservations>);
+    const reports = reservations.reduce(
+      (acc, reservation) => {
+        const trackingCode = reservation.aff_partner_tracking_code as string;
+        if (!acc[trackingCode]) {
+          acc[trackingCode] = [];
+        }
+        acc[trackingCode].push(reservation);
+        return acc;
+      },
+      {} as Record<string, typeof reservations>,
+    );
 
-    for (const [trackingCode, promoterReservations] of Object.entries(reports)) {
+    for (const [trackingCode, promoterReservations] of Object.entries(
+      reports,
+    )) {
       console.log(`Generating report for tracking code: ${trackingCode}`);
 
       // Calculate the date exactly 29 days ago
       const today = new Date();
       const twentyNineDaysAgo = new Date(today);
       twentyNineDaysAgo.setDate(today.getDate() - 29);
-      const target_date = twentyNineDaysAgo.toISOString().split('T')[0]; // Format as YYYY-MM-DD
-      
-      const { data: promoterData, error: partnerError } = await supabase
-        .from('partners')
-        .select('*')
-        .eq('partner_tracking_code', trackingCode)
-        .eq('created_at', target_date)
-        .single() as { data: any | null; error: any };
-      
+      const target_date = twentyNineDaysAgo.toISOString().split("T")[0]; // Format as YYYY-MM-DD
+
+      const { data: promoterData, error: partnerError } = (await supabase
+        .from("partners")
+        .select("*")
+        .eq("partner_tracking_code", trackingCode)
+        .eq("created_at", target_date)
+        .single()) as { data: any | null; error: any };
+
       if (!promoterData) {
-        console.log(`Skipping ${trackingCode}, as it's not exactly 29 days since creation`);
+        console.log(
+          `Skipping ${trackingCode}, as it's not exactly 29 days since creation`,
+        );
         continue;
       }
       if (partnerError) {
-        console.error(`Error fetching promoter data for tracking code ${trackingCode}:`, partnerError);
+        console.error(
+          `Error fetching promoter data for tracking code ${trackingCode}:`,
+          partnerError,
+        );
         continue;
       }
-      if (promoterData.email != 'support@mega-events.co.il') {
-        console.log(`skipping ${trackingCode}, as this is workaround for purchased user`);
+      if (promoterData.email != "support@mega-events.co.il") {
+        console.log(
+          `skipping ${trackingCode}, as this is workaround for purchased user`,
+        );
         continue;
       }
 
@@ -108,10 +138,10 @@ export async function GET(req: Request) {
       } as PromoterData);
     }
   } catch (error) {
-    console.error('Error generating monthly reports:', error);
+    console.error("Error generating monthly reports:", error);
   }
 
-  return new Response('Cron job executed');
+  return new Response("Cron job executed");
 }
 
 const generateEmailHtml = ({
@@ -122,7 +152,7 @@ const generateEmailHtml = ({
   reservations,
   purchaseDate,
 }: PromoterReportProps) => {
-    return `
+  return `
     <!DOCTYPE html>
     <html>
       <head>
@@ -266,17 +296,29 @@ const generateEmailHtml = ({
             </thead>
             <tbody>
               ${reservations
-                .map(
-                  (reservation) => {
-                    const date = new Date(reservation.created_at);
-                    const formattedDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
+                .map((reservation) => {
+                  const date = new Date(reservation.created_at);
+                  const formattedDate = `${date.getDate().toString().padStart(2, "0")}/${(date.getMonth() + 1).toString().padStart(2, "0")}/${date.getFullYear()}`;
 
-                    const events = normalizeReservationEventOrderInfo(reservation.event_order_info)
-                    const eventName = events.map(e => e.name).filter(Boolean).join(" | ") || "Unknown"
-                    const eventLocation = events.map(e => e.location_name).filter(Boolean).join(" | ") || "Unknown"
-                    const tickets = events.reduce((s, e) => s + (Number(e.number_of_ticket) || 0), 0)
-                    
-                    return `
+                  const events = normalizeReservationEventOrderInfo(
+                    reservation.event_order_info,
+                  );
+                  const eventName =
+                    events
+                      .map((e) => e.name)
+                      .filter(Boolean)
+                      .join(" | ") || "Unknown";
+                  const eventLocation =
+                    events
+                      .map((e) => e.location_name)
+                      .filter(Boolean)
+                      .join(" | ") || "Unknown";
+                  const tickets = events.reduce(
+                    (s, e) => s + (Number(e.number_of_ticket) || 0),
+                    0,
+                  );
+
+                  return `
                 <tr>
                   <td>${reservation.main_contact_first_name}</td>
                   <td>${eventName}</td>
@@ -286,8 +328,8 @@ const generateEmailHtml = ({
                   <td>${tickets * commission}</td>
                   <td>${reservation.accounting_number || "TBD"}</td>
                 </tr>
-              `}
-                )
+              `;
+                })
                 .join("")}
             </tbody>
           </table>
@@ -306,16 +348,21 @@ const generateEmailHtml = ({
         </div>
       </body>
     </html>
-  `
-}
+  `;
+};
 
 async function sendPost28DaysReportEmail(promoterData: PromoterData) {
-  const totalReservations = promoterData.reservations.length
+  const totalReservations = promoterData.reservations.length;
   const totalTickets = promoterData.reservations.reduce((sum, reservation) => {
-    const events = normalizeReservationEventOrderInfo(reservation.event_order_info)
-    const tickets = events.reduce((s, e) => s + (Number(e.number_of_ticket) || 0), 0)
-    return sum + tickets
-  }, 0)
+    const events = normalizeReservationEventOrderInfo(
+      reservation.event_order_info,
+    );
+    const tickets = events.reduce(
+      (s, e) => s + (Number(e.number_of_ticket) || 0),
+      0,
+    );
+    return sum + tickets;
+  }, 0);
 
   const emailHtmlForPartner = generateEmailHtml({
     promoterName: promoterData.promoterName,
@@ -324,7 +371,7 @@ async function sendPost28DaysReportEmail(promoterData: PromoterData) {
     commission: promoterData.commission,
     reservations: promoterData.reservations,
     purchaseDate: promoterData.purchaseDate,
-  })
+  });
 
   const transporter = await nodemailer.createTransport({
     host: "smtp.zeptomail.com",
@@ -337,15 +384,15 @@ async function sendPost28DaysReportEmail(promoterData: PromoterData) {
 
   try {
     await transporter.verify();
-    await transporter.sendMail({ // @todo: complete this route and logic
-      from: "gilad@mega-events.co.il",
+    await transporter.sendMail({
+      // @todo: complete this route and logic
+      from: "alon@mega-events.co.il",
       to: "alon@megatr.co.il",
       cc: "alon@mega-events.co.il",
       subject: `Refund to Promoter - Activity Report`,
       html: emailHtmlForPartner,
     });
-  }
-  catch (error) {
+  } catch (error) {
     console.error("Error: ", error);
   }
   console.log(`Email sent to ${promoterData.promoterName}`);
