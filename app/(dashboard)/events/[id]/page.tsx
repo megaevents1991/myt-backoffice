@@ -667,8 +667,20 @@ export default function EventPage({
     return Number.isFinite(face) ? face : 0;
   };
 
+  const hasLimitedViewRestriction = (ticket: TixStockListing): boolean => {
+    const options = ticket.restrictions_benefits?.options;
+    if (!Array.isArray(options) || options.length === 0) return false;
+    return options.some((opt) => {
+      const lower = String(opt).toLowerCase();
+      return lower.includes("limited") && lower.includes("view");
+    });
+  };
+
   const sourceTicketsForDisplay = useMemo(() => {
     const filtered = tixStockTickets.filter((ticket) => {
+      // Exclude tickets with "Limited * view" restriction
+      if (hasLimitedViewRestriction(ticket)) return false;
+
       if (selectedSection) {
         return isTicketMatchingSection(ticket, selectedSection);
       }
