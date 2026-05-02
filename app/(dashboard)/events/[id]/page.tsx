@@ -3,8 +3,10 @@
 import type React from "react";
 import { useState, useEffect, use, useLayoutEffect, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown, Bug, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Card,
   CardContent,
@@ -66,6 +68,7 @@ export default function EventPage({
   const [hoveredTixTicket, setHoveredTixTicket] = useState<TixStockListing | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [excludeSectionsMode, setExcludeSectionsMode] = useState(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const isNewEvent = unwrappedParams.id === "new";
 
@@ -375,6 +378,8 @@ export default function EventPage({
       const allSections = mapContainerRef.current?.querySelectorAll("[data-section]");
       if (!allSections) return;
 
+      const excludedSections = event?.tx_excluded_sections ?? [];
+
       allSections.forEach((el) => {
         const sectionId = el.getAttribute("data-section");
         const parentCategory = el.closest("[data-category]")?.getAttribute("data-category");
@@ -397,6 +402,13 @@ export default function EventPage({
         } else {
           el.classList.remove("svg-highlighted");
         }
+
+        // Apply excluded styling
+        if (sectionId && excludedSections.includes(sectionId)) {
+          el.classList.add("svg-excluded");
+        } else {
+          el.classList.remove("svg-excluded");
+        }
       });
     };
 
@@ -409,7 +421,7 @@ export default function EventPage({
     });
 
     return () => observer.disconnect();
-  }, [svgContent, hoveredTixTicket, selectedSection, selectedCategory]);
+  }, [svgContent, hoveredTixTicket, selectedSection, selectedCategory, event?.tx_excluded_sections]);
 
   // Function to search for flight prices
   const searchFlightPricesForEvent = async (
@@ -1501,6 +1513,55 @@ export default function EventPage({
                     </div>
                   </div>
 
+                  {/* Exclude sections toggle */}
+                  <div className="flex items-center gap-3">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={excludeSectionsMode ? "destructive" : "outline"}
+                      onClick={() => setExcludeSectionsMode((v) => !v)}
+                    >
+                      {excludeSectionsMode ? "✕ Exit Exclude Mode" : "Exclude Sections"}
+                    </Button>
+                    {excludeSectionsMode && (
+                      <span className="text-xs text-muted-foreground">Click sections on the map to exclude/include them</span>
+                    )}
+                  </div>
+
+                  {/* Excluded sections list */}
+                  {(event.tx_excluded_sections ?? []).length > 0 && (
+                    <div className="space-y-1">
+                      <Label className="text-xs text-destructive">Excluded Sections ({(event.tx_excluded_sections ?? []).length})</Label>
+                      <div className="flex flex-wrap gap-1">
+                        {(event.tx_excluded_sections ?? []).map((s) => (
+                          <Badge
+                            key={s}
+                            variant="destructive"
+                            className="cursor-pointer text-xs"
+                            onClick={() =>
+                              setEvent((prev) =>
+                                prev
+                                  ? { ...prev, tx_excluded_sections: (prev.tx_excluded_sections ?? []).filter((x) => x !== s) }
+                                  : prev
+                              )
+                            }
+                          >
+                            {s} ✕
+                          </Badge>
+                        ))}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-5 text-xs text-muted-foreground"
+                          onClick={() => setEvent((prev) => prev ? { ...prev, tx_excluded_sections: [] } : prev)}
+                        >
+                          Clear all
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
                   {mapSourceUrl ? (
                     <div className="venue-map-container flex items-center justify-center min-h-[380px] p-4 rounded-md border bg-[hsl(var(--background))]">
                       <style jsx global>{`
@@ -1554,6 +1615,19 @@ export default function EventPage({
                           stroke-width: 2px !important;
                           opacity: 1 !important;
                         }
+                        .venue-map-container [data-section].svg-excluded path,
+                        .venue-map-container [data-section].svg-excluded rect,
+                        .venue-map-container [data-section].svg-excluded polygon,
+                        .venue-map-container [data-section].svg-excluded circle,
+                        .venue-map-container [data-section].svg-excluded .block,
+                        .venue-map-container [data-section].svg-excluded.block {
+                          fill: #e53e3e !important;
+                          fill-opacity: 0.7 !important;
+                          stroke: #fc8181 !important;
+                          stroke-opacity: 1 !important;
+                          stroke-width: 2px !important;
+                          opacity: 1 !important;
+                        }
                       `}</style>
                       {isLoadingMap ? (
                         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -1564,6 +1638,29 @@ export default function EventPage({
                           dangerouslySetInnerHTML={{ __html: svgContent }}
                           onClick={(e) => {
                             const elements = document.elementsFromPoint(e.clientX, e.clientY);
+
+                            // Find the clicked section
+                            let clickedSection: string | null = null;
+                            for (const el of elements) {
+                              if (!mapContainerRef.current?.contains(el)) continue;
+                              const sectionEl = el.closest("[data-section]");
+                              const dataSection = sectionEl?.getAttribute("data-section");
+                              if (dataSection) { clickedSection = dataSection; break; }
+                            }
+
+                            // Exclude sections mode: toggle section in/out of excluded list
+                            if (excludeSectionsMode) {
+                              if (!clickedSection) return;
+                              setEvent((prev) => {
+                                if (!prev) return prev;
+                                const current = prev.tx_excluded_sections ?? [];
+                                const next = current.includes(clickedSection!)
+                                  ? current.filter((s) => s !== clickedSection)
+                                  : [...current, clickedSection!];
+                                return { ...prev, tx_excluded_sections: next };
+                              });
+                              return;
+                            }
 
                             let bestMatch: {
                               section: string;

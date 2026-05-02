@@ -34,6 +34,7 @@ export type Event = {
   is_deleted: string;
   tags: string;
   event_unique_vendor_id?: string;
+  tx_excluded_sections?: string[];
 };
 
 export type Flight = {
