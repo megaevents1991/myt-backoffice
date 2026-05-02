@@ -62,6 +62,7 @@ export default function EventPage({
   const [isLoadingTixStockTickets, setIsLoadingTixStockTickets] = useState(false);
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const [isLoadingMap, setIsLoadingMap] = useState(false);
+  const [mapCategoryIds, setMapCategoryIds] = useState<string[] | null>(null);
   const [hoveredTixTicket, setHoveredTixTicket] = useState<TixStockListing | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -249,6 +250,7 @@ export default function EventPage({
   useEffect(() => {
     setSelectedSection(null);
     setSelectedCategory(null);
+    setMapCategoryIds(null);
   }, [mapSourceUrl]);
 
   useEffect(() => {
@@ -293,10 +295,16 @@ export default function EventPage({
         const tierLabels = Array.from(doc.querySelectorAll(".tier-label"));
         tierLabels.forEach((el) => el.remove());
 
+        const categoryIds = Array.from(doc.querySelectorAll("[data-category]"))
+          .map((el) => el.getAttribute("data-category")!.toLowerCase())
+          .filter((v, i, a) => a.indexOf(v) === i);
+        setMapCategoryIds(categoryIds);
+
         setSvgContent(doc.documentElement.outerHTML);
       } catch (error) {
         console.error("Failed to load SVG:", error);
         setSvgContent(null);
+        setMapCategoryIds(null);
       } finally {
         setIsLoadingMap(false);
       }
@@ -324,7 +332,22 @@ export default function EventPage({
       .toLowerCase()
       .replace(/\s+/g, "-");
     const mapId = mapSectionId.toLowerCase();
-    return mapId === norm || mapId.endsWith(`_${norm}`) || mapId.endsWith(`-${norm}`);
+    if (mapId === norm || mapId.endsWith(`_${norm}`) || mapId.endsWith(`-${norm}`)) return true;
+
+    // Handle SVGs where the category word is embedded in the section slug.
+    // e.g. mapId "pit_vip-pit-and-garden" should match norm "vip-and-garden".
+    const underscoreIdx = mapId.indexOf("_");
+    if (underscoreIdx !== -1) {
+      const categoryTokens = new Set(mapId.substring(0, underscoreIdx).split("-"));
+      const sectionPart = mapId.substring(underscoreIdx + 1);
+      const cleaned = sectionPart
+        .split("-")
+        .filter((token) => !categoryTokens.has(token))
+        .join("-");
+      if (cleaned === norm || cleaned.endsWith(`-${norm}`) || cleaned.endsWith(`_${norm}`)) return true;
+    }
+
+    return false;
   };
 
   const isTicketMatchingCategory = (ticket: TixStockListing, mapCategoryId: string) => {
@@ -679,8 +702,18 @@ export default function EventPage({
       }
     }
 
-    return Array.from(categoryMap.values());
-  }, [tixStockTickets, selectedSection, selectedCategory]);
+    const allEntries = Array.from(categoryMap.values());
+
+    // If a map is loaded, only show categories that have a corresponding section on the map
+    if (mapCategoryIds !== null) {
+      return allEntries.filter(({ ticket }) => {
+        const categorySlug = slugify(ticket.seat_details?.category || "");
+        return mapCategoryIds.includes(categorySlug);
+      });
+    }
+
+    return allEntries;
+  }, [tixStockTickets, selectedSection, selectedCategory, mapCategoryIds]);
 
   const isSourceTicketAdded = (category: string) =>
     !!event?.tickets_and_rates.some((t) => t.category.toLowerCase() === category.toLowerCase());
@@ -1681,47 +1714,6 @@ export default function EventPage({
                       </table>
                     </div>
                   </div>
-
-                  {/* DEBUG: Raw ticket list */}
-                  <details className="border rounded-md p-3 bg-yellow-50 dark:bg-yellow-950/20">
-                    <summary className="text-xs font-semibold cursor-pointer text-yellow-800 dark:text-yellow-300">
-                      🐛 DEBUG — All raw tickets ({tixStockTickets.length})
-                    </summary>
-                    <div className="mt-2 max-h-[400px] overflow-auto">
-                      <table className="w-full text-xs font-mono">
-                        <thead className="bg-yellow-100 dark:bg-yellow-900/40 sticky top-0">
-                          <tr>
-                            <th className="text-left p-1">#</th>
-                            <th className="text-left p-1">ID</th>
-                            <th className="text-left p-1">Category</th>
-                            <th className="text-left p-1">Section</th>
-                            <th className="text-right p-1">Qty</th>
-                            <th className="text-right p-1">Proceed Price</th>
-                            <th className="text-right p-1">Face Value</th>
-                            <th className="text-right p-1">Qty≥2?</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tixStockTickets.map((t, i) => {
-                            const qty = t.number_of_tickets_for_sale?.quantity_available || 0;
-                            const eligible = qty >= 2;
-                            return (
-                              <tr key={t.id} className={`border-t ${eligible ? "" : "opacity-40"}`}>
-                                <td className="p-1 text-muted-foreground">{i + 1}</td>
-                                <td className="p-1">{t.id}</td>
-                                <td className="p-1">{t.seat_details?.category}</td>
-                                <td className="p-1">{t.seat_details?.section}</td>
-                                <td className="p-1 text-right">{qty}</td>
-                                <td className="p-1 text-right">{t.proceed_price?.amount} {t.proceed_price?.currency}</td>
-                                <td className="p-1 text-right">{t.face_value?.amount} {t.face_value?.currency}</td>
-                                <td className="p-1 text-right">{eligible ? "✅" : "❌"}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </details>
                 </>
               )}
             </CardContent>

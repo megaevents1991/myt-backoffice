@@ -16,7 +16,8 @@ import {
   ChevronLeft,
   ChevronRight,
   SortAsc,
-  SortDesc
+  SortDesc,
+  ExternalLink
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -352,7 +353,7 @@ export function TixStockEventsContent() {
 
       // Encode the event data and navigate to create event page
       const encodedData = encodeURIComponent(JSON.stringify(eventData));
-      router.push(`/events/new?data=${encodedData}&txEventId=${event.event_id}`);
+      window.open(`/events/new?data=${encodedData}&txEventId=${event.event_id}`, "_blank");
 
       toast({
         title: "Event Data Prepared",
@@ -669,6 +670,18 @@ export function TixStockEventsContent() {
                         </CardContent>
                       </Card>
                       <div className="absolute right-2 bottom-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 bg-background/80 backdrop-blur-sm hover:bg-background"
+                          title="View Details"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(`/tixstock-events/${event.event_id}`, "_blank");
+                          }}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
