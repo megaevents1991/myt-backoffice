@@ -1,9 +1,8 @@
 import { supabase } from "@/lib/supabase-server";
 import type { Event, EventTicket } from "@/types/app.types";
+import { multiCurrencyExchangeRateService } from "@/lib/services/ticket-price-sync";
 
-const TIXSTOCK_API_URL =
-  process.env.NEXT_SECRET_TIXSTOCK_API_URL ||
-  "https://sandbox-pf.tixstock.com/v1";
+const TIXSTOCK_API_URL = process.env.NEXT_SECRET_TIXSTOCK_API_URL;
 const TIXSTOCK_TOKEN = process.env.NEXT_SECRET_TIXSTOCK_TOKEN;
 
 export interface TixStockPriceSyncResult {
@@ -57,6 +56,14 @@ async function fetchAllTicketsForEvent(
 export async function syncTixStockPrices(): Promise<TixStockPriceSyncResult> {
   const startedAt = new Date();
   console.log(`Starting TixStock price sync at ${startedAt.toISOString()}...`);
+
+  // Ensure fresh exchange rates before processing any prices
+  try {
+    await multiCurrencyExchangeRateService.updateAllExchangeRates();
+    console.log("Exchange rates refreshed.");
+  } catch (err) {
+    console.warn("Could not refresh exchange rates, using cached values:", err);
+  }
 
   const errors: string[] = [];
   let eventsProcessed = 0;
@@ -128,9 +135,36 @@ export async function syncTixStockPrices(): Promise<TixStockPriceSyncResult> {
               return price < minPrice ? t : min;
             });
 
-            const newPrice = Math.round(
-              parseFloat(cheapest.proceed_price?.amount || "0"),
-            );
+            const rawPrice = parseFloat(cheapest.proceed_price?.amount || "0");
+            const currency = (
+              cheapest.proceed_price?.currency ||
+              cheapest.face_value?.currency ||
+              "GBP"
+            ).toUpperCase();
+
+            // Convert to USD with the same markup used elsewhere in the app
+            let priceInUSD: number;
+            if (currency === "GBP") {
+              priceInUSD = multiCurrencyExchangeRateService.convertToUSD(
+                rawPrice + 35,
+                "GBP",
+              );
+            } else if (currency === "EUR") {
+              priceInUSD = multiCurrencyExchangeRateService.convertToUSD(
+                rawPrice + 40,
+                "EUR",
+              );
+            } else if (currency === "ILS") {
+              priceInUSD = multiCurrencyExchangeRateService.convertToUSD(
+                rawPrice + 150,
+                "ILS",
+              );
+            } else {
+              // Already USD or unknown — apply flat markup
+              priceInUSD = rawPrice + 40;
+            }
+
+            const newPrice = Math.round(priceInUSD);
 
             if (newPrice > 0 && newPrice !== ticket.price) {
               console.log(
