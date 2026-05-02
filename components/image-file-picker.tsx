@@ -179,7 +179,7 @@ export function ImageFilePicker({
             <Tabs
               value={activeTab}
               onValueChange={setActiveTab}
-              className="flex-1 flex flex-col"
+              className="flex-1 flex flex-col min-h-0"
             >
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="select" className="flex items-center gap-2">
@@ -192,7 +192,7 @@ export function ImageFilePicker({
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="select" className="flex-1 overflow-hidden">
+              <TabsContent value="select" className="flex-1 flex flex-col min-h-0 overflow-hidden">
                 <div className="flex flex-col h-full min-h-0">
                   <div className="flex justify-between items-center mb-4 flex-shrink-0">
                     <p className="text-sm text-muted-foreground">
@@ -214,10 +214,7 @@ export function ImageFilePicker({
                     </Button>
                   </div>
 
-                  <ScrollArea
-                    className="flex-1 min-h-0 overflow-auto"
-                    style={{ maxHeight: "400px" }}
-                  >
+                  <ScrollArea className="flex-1 min-h-0">
                     <div className="pr-4">
                       {isLoading ? (
                         <div className="flex items-center justify-center h-32">

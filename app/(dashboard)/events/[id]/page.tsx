@@ -35,6 +35,7 @@ import type { Location } from "@/types/location.types";
 import { searchHotelPrices } from "@/lib/actions/hotel-actions";
 import { getTixStockTickets } from "@/lib/actions/tixstock-actions";
 import type { TixStockListing } from "@/types/tixstock.types";
+import { exchangeRateClientService, type SupportedCurrency } from "@/lib/services/exchange-rate-client";
 
 const TX_TICKET_COLOR = "rgb(5, 32, 60)";
 
@@ -91,6 +92,9 @@ export default function EventPage({
             // User will add reviewed tickets manually from the Source Tickets list.
             if (finalData.type === "tx_event") {
               finalData.tickets_and_rates = [];
+              // Persist the TixStock event_id as the unique vendor identifier
+              const txId = searchParams.get("txEventId");
+              if (txId) finalData.event_unique_vendor_id = txId;
             }
 
             setEvent({
@@ -130,6 +134,7 @@ export default function EventPage({
               is_prioritized: false,
               is_deleted: "",
               tags: "",
+              event_unique_vendor_id: "",
             });
           }
         } else {
@@ -159,6 +164,7 @@ export default function EventPage({
             is_prioritized: false,
             is_deleted: "",
             tags: "",
+            event_unique_vendor_id: "",
           });
         }
         setLoading(false);
@@ -649,43 +655,94 @@ export default function EventPage({
       return true;
     });
 
-    // Show unique Category+Section by cheapest ticket in each group
-    const cheapestByKey = new Map<string, TixStockListing>();
+    // Group by category only — one row per category, cheapest price (qty>=2), count sections & qty
+    const categoryMap = new Map<string, { ticket: TixStockListing; sectionCount: number; totalQty: number }>();
     for (const ticket of filtered) {
-      const key = `${ticket.seat_details?.category || ""}__${ticket.seat_details?.section || ""}`.toLowerCase().trim();
-      const existing = cheapestByKey.get(key);
-      if (!existing || getTicketAmount(ticket) < getTicketAmount(existing)) {
-        cheapestByKey.set(key, ticket);
+      const key = (ticket.seat_details?.category || "").toLowerCase().trim();
+      const qty = ticket.number_of_tickets_for_sale?.quantity_available || 0;
+      const existing = categoryMap.get(key);
+      if (!existing) {
+        // Use this ticket as placeholder even if qty<2, so the category always shows
+        categoryMap.set(key, { ticket, sectionCount: 1, totalQty: qty });
+      } else {
+        // Only replace as cheapest representative if this ticket has qty>=2
+        const thisPrice = getTicketAmount(ticket);
+        const existingPrice = getTicketAmount(existing.ticket);
+        const existingQty = existing.ticket.number_of_tickets_for_sale?.quantity_available || 0;
+        const existingIsEligible = existingQty >= 2;
+        const thisIsEligible = qty >= 2;
+        let cheapest = existing.ticket;
+        if (thisIsEligible && (!existingIsEligible || thisPrice < existingPrice)) {
+          cheapest = ticket;
+        }
+        categoryMap.set(key, { ticket: cheapest, sectionCount: existing.sectionCount + 1, totalQty: existing.totalQty + qty });
       }
     }
 
-    return Array.from(cheapestByKey.values());
+    return Array.from(categoryMap.values());
   }, [tixStockTickets, selectedSection, selectedCategory]);
 
-  const isSourceTicketAdded = (sourceTicketId: string) =>
-    !!event?.tickets_and_rates.some((ticket) => ticket.id === sourceTicketId);
+  const isSourceTicketAdded = (category: string) =>
+    !!event?.tickets_and_rates.some((t) => t.category.toLowerCase() === category.toLowerCase());
 
-  const handleAddSourceTicket = (sourceTicket: TixStockListing) => {
+  const handleAddSourceTicket = async (sourceTicket: TixStockListing) => {
     if (!event || !tixStockEventId) return;
 
-    if (isSourceTicketAdded(sourceTicket.id)) {
+    const category = sourceTicket.seat_details?.category || "Unknown";
+
+    if (isSourceTicketAdded(category)) {
       toast({
         title: "Already added",
-        description: "This source ticket is already in Tickets and Rates.",
+        description: "This category is already in Tickets and Rates.",
       });
       return;
     }
 
-    const price = getTicketAmount(sourceTicket);
+    // Find cheapest ticket in this category with qty>=2
+    const eligibleTickets = tixStockTickets.filter((t) => {
+      const tCategory = (t.seat_details?.category || "").toLowerCase().trim();
+      const qty = t.number_of_tickets_for_sale?.quantity_available || 0;
+      return tCategory === category.toLowerCase().trim() && qty >= 2;
+    });
+
+    const cheapestEligible = eligibleTickets.length > 0
+      ? eligibleTickets.reduce((min, t) => getTicketAmount(t) < getTicketAmount(min) ? t : min)
+      : sourceTicket;
+
+    const rawPrice = getTicketAmount(cheapestEligible);
+    const currency = (
+      cheapestEligible.proceed_price?.currency ||
+      cheapestEligible.face_value?.currency ||
+      "GBP"
+    ).toUpperCase();
+
+    // Convert to USD with the same markup used elsewhere in the app
+    let priceInUSD: number;
+    try {
+      await exchangeRateClientService.updateAllExchangeRates();
+      if (currency === "GBP") {
+        priceInUSD = await exchangeRateClientService.convertToUSD(rawPrice + 35, "GBP");
+      } else if (currency === "EUR") {
+        priceInUSD = await exchangeRateClientService.convertToUSD(rawPrice + 40, "EUR");
+      } else if (currency === "ILS") {
+        priceInUSD = await exchangeRateClientService.convertToUSD(rawPrice + 150, "ILS");
+      } else {
+        // Already USD or unknown — apply flat markup
+        priceInUSD = rawPrice + 40;
+      }
+    } catch (err) {
+      console.error("Exchange rate conversion failed, using raw price:", err);
+      priceInUSD = rawPrice;
+    }
 
     const mappedTicket: EventTicket = {
-      id: sourceTicket.id,
-      category: sourceTicket.seat_details?.category || "Unknown",
-      price: Math.round(price),
-      description: `${sourceTicket.seat_details?.section || ""}`.trim(),
+      id: uuidv4(),
+      category,
+      price: Math.round(priceInUSD),
+      description: "",
       colorOnTheMap: TX_TICKET_COLOR,
       vendor: "TixStock",
-      available: sourceTicket.number_of_tickets_for_sale?.quantity_available > 0,
+      available: true,
       eid: tixStockEventId,
     };
 
@@ -1353,7 +1410,7 @@ export default function EventPage({
               }
               bucketName={
                 process.env.NODE_ENV === "development"
-                  ? "card-images"
+                  ? "card_images"
                   : "card_images"
               }
               folder=""
@@ -1369,7 +1426,7 @@ export default function EventPage({
               }
               bucketName={
                 process.env.NODE_ENV === "development"
-                  ? "map-images"
+                  ? "map_images"
                   : "map_images"
               }
               folder="maps"
@@ -1570,10 +1627,10 @@ export default function EventPage({
                       <table className="w-full text-sm">
                         <thead className="bg-muted/40 sticky top-0">
                           <tr>
-                            <th className="text-left p-2">Category / Section</th>
-                            <th className="text-left p-2">Row</th>
-                            <th className="text-left p-2">Qty</th>
-                            <th className="text-right p-2">Price</th>
+                            <th className="text-left p-2">Category</th>
+                            <th className="text-left p-2">Sections</th>
+                            <th className="text-left p-2">Total Qty</th>
+                            <th className="text-right p-2">From Price</th>
                             <th className="text-right p-2">Action</th>
                           </tr>
                         </thead>
@@ -1591,23 +1648,18 @@ export default function EventPage({
                               </td>
                             </tr>
                           ) : (
-                            sourceTicketsForDisplay.map((ticket) => (
+                            sourceTicketsForDisplay.map(({ ticket, sectionCount, totalQty }) => (
                                 <tr
-                                  key={ticket.id}
+                                  key={ticket.seat_details.category}
                                   className="border-t hover:bg-muted/30"
                                   onMouseEnter={() => setHoveredTixTicket(ticket)}
                                   onMouseLeave={() => setHoveredTixTicket(null)}
                                 >
                                   <td className="p-2">
                                     <div className="font-medium">{ticket.seat_details.category}</div>
-                                    <div className="text-xs text-muted-foreground">
-                                      {ticket.seat_details.section}
-                                    </div>
                                   </td>
-                                  <td className="p-2">{ticket.seat_details.row || "Any"}</td>
-                                  <td className="p-2">
-                                    {ticket.number_of_tickets_for_sale.quantity_available}
-                                  </td>
+                                  <td className="p-2 text-muted-foreground">{sectionCount}</td>
+                                  <td className="p-2">{totalQty}</td>
                                   <td className="p-2 text-right">
                                     {ticket.proceed_price.amount} {ticket.proceed_price.currency}
                                   </td>
@@ -1615,11 +1667,11 @@ export default function EventPage({
                                     <Button
                                       type="button"
                                       size="sm"
-                                      variant={isSourceTicketAdded(ticket.id) ? "secondary" : "outline"}
-                                      disabled={isSourceTicketAdded(ticket.id)}
+                                      variant={isSourceTicketAdded(ticket.seat_details.category) ? "secondary" : "outline"}
+                                      disabled={isSourceTicketAdded(ticket.seat_details.category)}
                                       onClick={() => handleAddSourceTicket(ticket)}
                                     >
-                                      {isSourceTicketAdded(ticket.id) ? "Added" : "Add"}
+                                      {isSourceTicketAdded(ticket.seat_details.category) ? "Added" : "Add"}
                                     </Button>
                                   </td>
                                 </tr>
@@ -1629,6 +1681,47 @@ export default function EventPage({
                       </table>
                     </div>
                   </div>
+
+                  {/* DEBUG: Raw ticket list */}
+                  <details className="border rounded-md p-3 bg-yellow-50 dark:bg-yellow-950/20">
+                    <summary className="text-xs font-semibold cursor-pointer text-yellow-800 dark:text-yellow-300">
+                      🐛 DEBUG — All raw tickets ({tixStockTickets.length})
+                    </summary>
+                    <div className="mt-2 max-h-[400px] overflow-auto">
+                      <table className="w-full text-xs font-mono">
+                        <thead className="bg-yellow-100 dark:bg-yellow-900/40 sticky top-0">
+                          <tr>
+                            <th className="text-left p-1">#</th>
+                            <th className="text-left p-1">ID</th>
+                            <th className="text-left p-1">Category</th>
+                            <th className="text-left p-1">Section</th>
+                            <th className="text-right p-1">Qty</th>
+                            <th className="text-right p-1">Proceed Price</th>
+                            <th className="text-right p-1">Face Value</th>
+                            <th className="text-right p-1">Qty≥2?</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tixStockTickets.map((t, i) => {
+                            const qty = t.number_of_tickets_for_sale?.quantity_available || 0;
+                            const eligible = qty >= 2;
+                            return (
+                              <tr key={t.id} className={`border-t ${eligible ? "" : "opacity-40"}`}>
+                                <td className="p-1 text-muted-foreground">{i + 1}</td>
+                                <td className="p-1">{t.id}</td>
+                                <td className="p-1">{t.seat_details?.category}</td>
+                                <td className="p-1">{t.seat_details?.section}</td>
+                                <td className="p-1 text-right">{qty}</td>
+                                <td className="p-1 text-right">{t.proceed_price?.amount} {t.proceed_price?.currency}</td>
+                                <td className="p-1 text-right">{t.face_value?.amount} {t.face_value?.currency}</td>
+                                <td className="p-1 text-right">{eligible ? "✅" : "❌"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
                 </>
               )}
             </CardContent>

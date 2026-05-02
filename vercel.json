@@ -19,6 +19,14 @@
     {
       "path": "/api/cron/ticketPriceSync?key=monthlyAlonSecret",
       "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/cron/nightlyTixstockSync?key=monthlyAlonSecret",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/nightlyTixstockPriceSync?key=monthlyAlonSecret",
+      "schedule": "0 3 * * *"
     }
   ],
   "functions": {
@@ -37,6 +45,14 @@
     "app/api/cron/*/route.ts": {
       "memory": 1024,
       "maxDuration": 60
+    },
+    "app/api/cron/nightlyTixstockSync/route.ts": {
+      "memory": 1024,
+      "maxDuration": 800
+    },
+    "app/api/cron/nightlyTixstockPriceSync/route.ts": {
+      "memory": 1024,
+      "maxDuration": 800
     }
   },
   "routes": [

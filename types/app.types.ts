@@ -1,4 +1,4 @@
-import type { EntryFieldTypes } from "contentful"
+import type { EntryFieldTypes } from "contentful";
 
 export type EventType =
   | "sports_event"
@@ -9,134 +9,141 @@ export type EventType =
   | "tx_event";
 
 export type Event = {
-  id: number
-  name: string
-  name_english: string
+  id: number;
+  name: string;
+  name_english: string;
   type: EventType;
-  date: string
+  date: string;
   location: {
-    latitude: number
-    longitude: number
-    name: string
-    city_iata: string
-    country_code?: string
-  }
-  map_image_url: string
-  description: string
-  card_image_url: string
-  tickets_and_rates: EventTicket[]
-  def_date_depart: string
-  def_date_return: string
-  usual_price: number
-  base_flight_price: number
-  base_hotel_price: number
-  is_prioritized: boolean
-  is_deleted: string
-  tags: string
-}
+    latitude: number;
+    longitude: number;
+    name: string;
+    city_iata: string;
+    country_code?: string;
+  };
+  map_image_url: string;
+  description: string;
+  card_image_url: string;
+  tickets_and_rates: EventTicket[];
+  def_date_depart: string;
+  def_date_return: string;
+  usual_price: number;
+  base_flight_price: number;
+  base_hotel_price: number;
+  is_prioritized: boolean;
+  is_deleted: string;
+  tags: string;
+  event_unique_vendor_id?: string;
+};
 
 export type Flight = {
-  id: string
-  airline: string
-  price: number
-  duration: string
-  stops: number
-  metadata: string
-  outbound: FlightSegment
-  inbound: FlightSegment
-  numOfTravelers: number
-  offer: FlightOffer
-  penalties?: string
-  bags?: object
-  virtualOfferType?: boolean
-}
+  id: string;
+  airline: string;
+  price: number;
+  duration: string;
+  stops: number;
+  metadata: string;
+  outbound: FlightSegment;
+  inbound: FlightSegment;
+  numOfTravelers: number;
+  offer: FlightOffer;
+  penalties?: string;
+  bags?: object;
+  virtualOfferType?: boolean;
+};
 
 export type FlightSegment = {
-  [x: string]: any
-  departureTime: string
-  arrivalTime: string
-  departureAirport: string
-  arrivalAirport: string
-  stops: { iataCode: string; duration: number | null }[]
-  duration: string
-  checkBagsIncluded: boolean
-  flightNumber?: string
-}
+  [x: string]: any;
+  departureTime: string;
+  arrivalTime: string;
+  departureAirport: string;
+  arrivalAirport: string;
+  stops: { iataCode: string; duration: number | null }[];
+  duration: string;
+  checkBagsIncluded: boolean;
+  flightNumber?: string;
+};
 
 export type OrderHotel = {
-  rate: string
-  address: string
-  name: string
-  id: string
-  meal_data: { value : string; has_breakfast: boolean}
-  meal: string
-  price: string
-  guests: { adults : number; children: JSON[]}[]
-  checkin: string
-  checkout: string
-}
+  rate: string;
+  address: string;
+  name: string;
+  id: string;
+  meal_data: { value: string; has_breakfast: boolean };
+  meal: string;
+  price: string;
+  guests: { adults: number; children: JSON[] }[];
+  checkin: string;
+  checkout: string;
+};
 
 export type Order = {
-  eventId: string
-  ticketType: string
-  quantity: number
-  flightId: string
-  hotelId: string
-  totalPrice: number
-}
+  eventId: string;
+  ticketType: string;
+  quantity: number;
+  flightId: string;
+  hotelId: string;
+  totalPrice: number;
+};
 
 export type FlightSearchOptions = {
-  originLocationCode: "TLV"
-  destinationLocationCode: string
-  departureDate: string
-  returnDate: string
-  adults: number
-  children: string
-  infants: string
-  destination: string
-  nonStop: boolean
-}
+  originLocationCode: "TLV";
+  destinationLocationCode: string;
+  departureDate: string;
+  returnDate: string;
+  adults: number;
+  children: string;
+  infants: string;
+  destination: string;
+  nonStop: boolean;
+};
 
 export type TimeRange = [
   {
-    hours: number
-    minutes: number
+    hours: number;
+    minutes: number;
   },
   {
-    hours: number
-    minutes: number
+    hours: number;
+    minutes: number;
   },
-]
+];
 
 export type AffiliateTracking = {
-  id: string
-  affiliate_id: string
-  stage: "VISIT" | "EVENT_SELECTED" | "TICKET_SELECTED" | "FLIGHT_SELECTED" | "HOTEL_SELECTED" | "CONFIRMED"
-  data: object
-  timestamp: string
-}
+  id: string;
+  affiliate_id: string;
+  stage:
+    | "VISIT"
+    | "EVENT_SELECTED"
+    | "TICKET_SELECTED"
+    | "FLIGHT_SELECTED"
+    | "HOTEL_SELECTED"
+    | "CONFIRMED";
+  data: object;
+  timestamp: string;
+};
 
-export type SortOptions = "price_asc" | "rating"
+export type SortOptions = "price_asc" | "rating";
 
 export type HotelSearchCriteria =
   | {
-      type: "rating"
-      value: boolean[]
+      type: "rating";
+      value: boolean[];
     }
   | {
-      type: "priceRange"
-      value: [number, number]
+      type: "priceRange";
+      value: [number, number];
     }
   | {
-      type: "hotelName"
-      value: string
+      type: "hotelName";
+      value: string;
     }
   | {
-      type: "meal"
-      value: ["withMeal", "withoutMeal"]
+      type: "meal";
+      value: ["withMeal", "withoutMeal"];
     }
   | {
-      type: "kind"
+      type: "kind";
       value: [
         "Resort",
         "Sanatorium",
@@ -154,144 +161,143 @@ export type HotelSearchCriteria =
         "BNB",
         "Glamping",
         "Apart-hotel",
-      ]
+      ];
     }
   | {
-      type: "sortOption"
-      value: SortOptions
+      type: "sortOption";
+      value: SortOptions;
     }
   | {
-      type: "region"
-      value: string[]
+      type: "region";
+      value: string[];
     }
   | {
-      type: "distanceFromCenter"
-      value: [number, number]
+      type: "distanceFromCenter";
+      value: [number, number];
     }
   | {
-      type: "freeCancellation"
-      value: ("withFreeCancellation" | "withoutFreeCancellation")[]
-    }
+      type: "freeCancellation";
+      value: ("withFreeCancellation" | "withoutFreeCancellation")[];
+    };
 
 export type FlightSearchCriteria =
   | {
-      type: "departureRanges" | "arrivalRanges"
-      value: TimeRange[]
+      type: "departureRanges" | "arrivalRanges";
+      value: TimeRange[];
     }
   | {
-      type: "maxPrice"
-      value: number
+      type: "maxPrice";
+      value: number;
     }
   | {
-      type: "flightDuration"
-      value: number
+      type: "flightDuration";
+      value: number;
     }
   | {
-      type: "airline"
-      value: string[]
+      type: "airline";
+      value: string[];
     }
   | {
-      type: "numOfStops"
-      value: string[]
+      type: "numOfStops";
+      value: string[];
     }
   | {
-      type: "luggage"
-      value: string[]
-    }
+      type: "luggage";
+      value: string[];
+    };
 
 export type VipConfig = {
-  enabled: boolean
-  details: string
-}
+  enabled: boolean;
+  details: string;
+};
 
 export type EventTicket = {
-  category: string
-  price: number
-  id: string
-  description: string
-  colorOnTheMap: string
-  vendor?: string
-  eid?: string
-  available?: boolean
-  vip?: VipConfig
-}
+  category: string;
+  price: number;
+  id: string;
+  description: string;
+  colorOnTheMap: string;
+  vendor?: string;
+  eid?: string;
+  available?: boolean;
+  vip?: VipConfig;
+};
 
 export type OrderTicket = Omit<EventTicket, "description" | "colorOnTheMap"> & {
-  quantity: number
-}
+  quantity: number;
+};
 
 export type ArtistFields = {
-  contentTypeId: "artistTemplate"
+  contentTypeId: "artistTemplate";
   fields: {
     bio: EntryFieldTypes.Object<{
       content: {
         content: {
-          value?: string
-        }[]
-      }[]
-    }>
-    previewText: string
+          value?: string;
+        }[];
+      }[];
+    }>;
+    previewText: string;
     heroBanner: EntryFieldTypes.Object<{
       fields?: {
         file?: {
-          url?: string
+          url?: string;
           details?: {
             image?: {
-              height?: number
-              width?: number
-            }
-          }
-        }
-        description?: string
-        title?: string
-      }
-    }>
-    name: string
-    nameDBenglish: string
+              height?: number;
+              width?: number;
+            };
+          };
+        };
+        description?: string;
+        title?: string;
+      };
+    }>;
+    name: string;
+    nameDBenglish: string;
     sys: EntryFieldTypes.Object<{
-      id: string
-    }>
-  }
-}
+      id: string;
+    }>;
+  };
+};
 
 export type FootballFields = {
-  contentTypeId: "footballTeamTemplate"
+  contentTypeId: "footballTeamTemplate";
   fields: {
     bio: EntryFieldTypes.Object<{
       content: {
         content: {
-          value?: string
-        }[]
-      }[]
-    }>
-    previewText: string
+          value?: string;
+        }[];
+      }[];
+    }>;
+    previewText: string;
     heroBanner: EntryFieldTypes.Object<{
       fields?: {
         file?: {
-          url?: string
+          url?: string;
           details?: {
             image?: {
-              height?: number
-              width?: number
-            }
-          }
-        }
-        description?: string
-        title?: string
-      }
-    }>
-    name: string
-    nameDBenglish: string
+              height?: number;
+              width?: number;
+            };
+          };
+        };
+        description?: string;
+        title?: string;
+      };
+    }>;
+    name: string;
+    nameDBenglish: string;
     sys: EntryFieldTypes.Object<{
-      id: string
-    }>
-  }
-}
+      id: string;
+    }>;
+  };
+};
 
 export type Log = {
-  type?: "error" | "warn" | "log"
-  data: Record<string, unknown> | string
-}
+  type?: "error" | "warn" | "log";
+  data: Record<string, unknown> | string;
+};
 
-export type FlightOffer = any // Define this type if needed
-
+export type FlightOffer = any; // Define this type if needed
