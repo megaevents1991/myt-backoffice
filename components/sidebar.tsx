@@ -41,15 +41,10 @@ const navItems: NavItem[] = [
   { name: "Sports Events (XS2E)", href: "/sports-events", icon: Trophy },
   { name: "Live Events (LiveTickets)", href: "/live-events", icon: Ticket },
   { name: "P1 Events (P1 Tickets)", href: "/p1-events", icon: Trophy },
-  ...(process.env.NEXT_PUBLIC_SHOW_TIXSTOCK === 'true' ? [
-    { name: "TixStock Events", href: "/tixstock-events", icon: Ticket }
-  ] : []),
+  { name: "TixStock Events", href: "/tixstock-events", icon: Ticket },
   { type: "divider" },
   { name: "Storage", href: "/storage", icon: Database },
   { name: "Locations", href: "/locations", icon: MapPin },
-  ...(process.env.NEXT_PUBLIC_SHOW_TIXSTOCK === 'true' ? [
-    { name: "Dynamic Maps", href: "/dynamic-maps", icon: Map }
-  ] : []),
 ];
 
 export function Sidebar() {
