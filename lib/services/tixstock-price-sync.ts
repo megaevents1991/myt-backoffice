@@ -76,8 +76,6 @@ export async function syncTixStockPrices(): Promise<TixStockPriceSyncResult> {
       .from("events")
       .select("*")
       .eq("type", "tx_event")
-      .not("event_unique_vendor_id", "is", null)
-      .neq("event_unique_vendor_id", "")
       .is("is_deleted", null);
 
     if (error) throw error;
@@ -86,10 +84,17 @@ export async function syncTixStockPrices(): Promise<TixStockPriceSyncResult> {
 
     for (const event of events as Event[]) {
       try {
-        const tixstockEventId = event.event_unique_vendor_id!;
-
         if (!event.tickets_and_rates?.length) {
           console.log(`Event ${event.id} has no tickets_and_rates, skipping.`);
+          continue;
+        }
+
+        const tixstockEventId = event.tickets_and_rates[0].eid;
+
+        if (!tixstockEventId) {
+          console.log(
+            `Event ${event.id} has no TixStock event ID (eid) on first ticket, skipping.`,
+          );
           continue;
         }
 

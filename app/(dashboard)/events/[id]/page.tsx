@@ -96,9 +96,6 @@ export default function EventPage({
             // User will add reviewed tickets manually from the Source Tickets list.
             if (finalData.type === "tx_event") {
               finalData.tickets_and_rates = [];
-              // Persist the TixStock event_id as the unique vendor identifier
-              const txId = searchParams.get("txEventId");
-              if (txId) finalData.event_unique_vendor_id = txId;
             }
 
             setEvent({
@@ -138,7 +135,6 @@ export default function EventPage({
               is_prioritized: false,
               is_deleted: "",
               tags: "",
-              event_unique_vendor_id: "",
             });
           }
         } else {
@@ -168,7 +164,6 @@ export default function EventPage({
             is_prioritized: false,
             is_deleted: "",
             tags: "",
-            event_unique_vendor_id: "",
           });
         }
         setLoading(false);
