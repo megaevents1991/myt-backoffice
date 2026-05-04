@@ -168,7 +168,7 @@ export function ImageFilePicker({
               <FolderOpen className="h-4 w-4" />
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogContent className="max-w-4xl h-[80vh] overflow-hidden flex flex-col">
             <DialogHeader>
               <DialogTitle>Select Image File</DialogTitle>
               <DialogDescription>
