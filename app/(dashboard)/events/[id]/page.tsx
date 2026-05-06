@@ -163,6 +163,7 @@ export default function EventPage({
               base_flight_price: 0,
               base_hotel_price: 0,
               is_prioritized: false,
+              skip_flight: false,
               is_deleted: "",
               tags: "",
             });
@@ -192,6 +193,7 @@ export default function EventPage({
             base_flight_price: 0,
             base_hotel_price: 0,
             is_prioritized: false,
+            skip_flight: false,
             is_deleted: "",
             tags: "",
           });
@@ -644,6 +646,16 @@ export default function EventPage({
       return {
         ...prev,
         is_prioritized: checked,
+      };
+    });
+  };
+
+  const handleSkipFlightChange = (checked: boolean) => {
+    setEvent((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        skip_flight: checked,
       };
     });
   };
@@ -1402,6 +1414,20 @@ export default function EventPage({
                 />
                 <Label htmlFor="is_prioritized">
                   {event.is_prioritized ? "Yes" : "No"}
+                </Label>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="skip_flight">Allow Skip Flight</Label>
+              <div className="flex items-center space-x-2 pt-2">
+                <Switch
+                  id="skip_flight"
+                  checked={event.skip_flight ?? false}
+                  onCheckedChange={handleSkipFlightChange}
+                />
+                <Label htmlFor="skip_flight">
+                  {event.skip_flight ? "Yes (clients can skip flight)" : "No"}
                 </Label>
               </div>
             </div>

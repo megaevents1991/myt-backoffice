@@ -44,7 +44,9 @@ interface DataTableProps<TData, TValue> {
   searchPlaceholder?: string;
   searchColumns?: string[]; // Multi-column search (global filter)
   enableRowSelection?: boolean;
+  rowSelection?: Record<string, boolean>;
   onRowSelectionChange?: (rowSelection: Record<string, boolean>) => void;
+  getRowId?: (row: TData) => string;
   bulkActions?: React.ReactNode;
   defaultPageSize?: number;
   rightActions?: React.ReactNode;
@@ -59,7 +61,9 @@ export function DataTable<TData, TValue>({
   searchPlaceholder = "Search...",
   searchColumns,
   enableRowSelection = false,
+  rowSelection: controlledRowSelection,
   onRowSelectionChange,
+  getRowId,
   bulkActions,
   defaultPageSize,
   rightActions,
@@ -69,7 +73,9 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const [rowSelection, setRowSelection] = useState({});
+  const [internalRowSelection, setInternalRowSelection] = useState({});
+  const isControlled = controlledRowSelection !== undefined;
+  const rowSelection = isControlled ? controlledRowSelection : internalRowSelection;
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: defaultPageSize ?? 25,
@@ -119,11 +125,12 @@ export function DataTable<TData, TValue>({
         typeof updater === "function"
           ? (updater as (old: any) => any)(rowSelection)
           : updater;
-      setRowSelection(next);
+      if (!isControlled) setInternalRowSelection(next);
       if (onRowSelectionChange) {
         onRowSelectionChange(next as Record<string, boolean>);
       }
     },
+    getRowId,
     onPaginationChange: setPagination,
     onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
@@ -256,7 +263,7 @@ export function DataTable<TData, TValue>({
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length}
+                  colSpan={allColumns.length}
                   className="h-24 text-center"
                 >
                   No results.

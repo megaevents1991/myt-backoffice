@@ -31,7 +31,7 @@ export type Reservation = {
     last_name: string
   }[]
   event_order_info: ReservationEventOrderInfo
-  flight_order_info: Flight
+  flight_order_info: Flight | Record<string, never>
   hotel_order_info: OrderHotel | Record<string, never>
   user_shown_price: number
   aff_partner_tracking_code: string

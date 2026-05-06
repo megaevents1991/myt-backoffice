@@ -79,6 +79,13 @@ export async function duplicateEvent(id: number) {
   return newEventData[0] as Event
 }
 
+export async function bulkUpdateEvents(ids: number[], update: Partial<Event>) {
+  const { data, error } = await supabase.from("events").update(update).in("id", ids).select()
+
+  if (error) throw error
+  return data as Event[]
+}
+
 export async function bulkDuplicateEvents(ids: number[]) {
   const duplicatedEvents: Event[] = []
 

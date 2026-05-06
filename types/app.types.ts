@@ -31,6 +31,7 @@ export type Event = {
   base_flight_price: number;
   base_hotel_price: number;
   is_prioritized: boolean;
+  skip_flight?: boolean;
   is_deleted: string;
   tags: string;
   tx_excluded_sections?: string[];

@@ -366,7 +366,7 @@ export default function ReservationDetailsPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {reservation.flight_order_info && (
+            {'airline' in reservation.flight_order_info && (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>

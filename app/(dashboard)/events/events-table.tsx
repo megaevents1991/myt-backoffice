@@ -19,6 +19,7 @@ import {
   softDeleteEvent,
   duplicateEvent,
   updateEvent,
+  bulkUpdateEvents,
 } from "@/lib/actions/event-actions";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -59,6 +60,9 @@ export function EventsTable() {
   const [showDeleted, setShowDeleted] = useState(false);
   const [hideSold, setHideSold] = useState(false);
   const [hidePast, setHidePast] = useState(false);
+  const [showTicketOnly, setShowTicketOnly] = useState(false);
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
+  const [bulkLoading, setBulkLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -203,11 +207,72 @@ export function EventsTable() {
     if (hidePast) {
       const eventDate = new Date(event.date);
       const today = new Date();
-      today.setHours(0, 0, 0, 0); // Compare against start of today
+      today.setHours(0, 0, 0, 0);
       if (eventDate < today) return false;
     }
+    if (showTicketOnly && !event.skip_flight) return false;
     return true;
   });
+
+  const selectedIds = Object.entries(rowSelection)
+    .filter(([, selected]) => selected)
+    .map(([id]) => Number(id))
+    .filter(Boolean) as number[];
+
+  const handleBulkUpdate = async (update: Partial<Event>) => {
+    if (selectedIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      await bulkUpdateEvents(selectedIds, update);
+      setEvents((prev) =>
+        prev.map((e) => (selectedIds.includes(e.id) ? { ...e, ...update } : e))
+      );
+      setRowSelection({});
+      toast({ title: "Updated", description: `${selectedIds.length} event(s) updated.` });
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Bulk update failed." });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkTagToggle = async (tag: string) => {
+    if (selectedIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      // Determine if ALL selected events have this tag → remove it; otherwise add it
+      const allHaveTag = selectedIds.every((id) => {
+        const event = events.find((e) => e.id === id);
+        return event?.tags?.split(",").map((t) => t.trim()).includes(tag);
+      });
+      await Promise.all(
+        selectedIds.map((id) => {
+          const event = events.find((e) => e.id === id)!;
+          const current = (event.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
+          const newTags = allHaveTag
+            ? current.filter((t) => t !== tag)
+            : current.includes(tag) ? current : [...current, tag];
+          return updateEvent(id, { tags: newTags.join(", ") });
+        })
+      );
+      setEvents((prev) =>
+        prev.map((e) => {
+          if (!selectedIds.includes(e.id)) return e;
+          const current = (e.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
+          const newTags = allHaveTag
+            ? current.filter((t) => t !== tag)
+            : current.includes(tag) ? current : [...current, tag];
+          return { ...e, tags: newTags.join(", ") };
+        })
+      );
+      setRowSelection({});
+      toast({ title: "Tags updated", description: `${selectedIds.length} event(s) updated.` });
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Bulk tag update failed." });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
 
   const columns: ColumnDef<Event>[] = [
     {
@@ -412,6 +477,46 @@ export function EventsTable() {
       },
     },
     {
+      accessorKey: "skip_flight",
+      header: ({ column }) => (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          Skip Flight
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      ),
+      cell: ({ row }) => {
+        const skipFlight = row.original.skip_flight;
+        return (
+          <Select
+            value={skipFlight ? "yes" : "no"}
+            onValueChange={(value) => {
+              const skipFlight = value === "yes";
+              setEvents((prev) =>
+                prev.map((e) => e.id === row.original.id ? { ...e, skip_flight: skipFlight } : e)
+              );
+              updateEvent(row.original.id, { skip_flight: skipFlight }).catch(() => {
+                setEvents((prev) =>
+                  prev.map((e) => e.id === row.original.id ? { ...e, skip_flight: !skipFlight } : e)
+                );
+                toast({ variant: "destructive", title: "Error", description: "Failed to update skip flight." });
+              });
+            }}
+          >
+            <SelectTrigger className={`h-8 w-[80px] ${skipFlight ? "text-teal-700 font-semibold" : ""}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="yes">Yes</SelectItem>
+              <SelectItem value="no">No</SelectItem>
+            </SelectContent>
+          </Select>
+        );
+      },
+    },
+    {
       accessorKey: "is_prioritized",
       header: ({ column }) => {
         return (
@@ -575,6 +680,20 @@ export function EventsTable() {
             Hide past events
           </label>
         </div>
+
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="show-ticket-only"
+            checked={showTicketOnly}
+            onCheckedChange={(checked) => setShowTicketOnly(checked as boolean)}
+          />
+          <label
+            htmlFor="show-ticket-only"
+            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+          >
+            Show ticket only events
+          </label>
+        </div>
       </div>
 
       <DataTable
@@ -582,7 +701,67 @@ export function EventsTable() {
         data={filteredEvents}
         searchColumn="name"
         searchPlaceholder="Search events..."
-        enableRowSelection={false}
+        enableRowSelection={true}
+        rowSelection={rowSelection}
+        onRowSelectionChange={setRowSelection}
+        getRowId={(row) => String(row.id)}
+        bulkActions={
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground font-medium">
+              {selectedIds.length} selected
+            </span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={bulkLoading}>
+                  Set Tags
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-[200px]">
+                <DropdownMenuLabel>Toggle tag on selected</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {COMMON_TAGS.map((tag) => (
+                  <DropdownMenuItem key={tag} onClick={() => handleBulkTagToggle(tag)}>
+                    {tag}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={bulkLoading}>
+                  Prioritized
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>Set prioritized</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => handleBulkUpdate({ is_prioritized: true })}>
+                  Yes
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleBulkUpdate({ is_prioritized: false })}>
+                  No
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={bulkLoading}>
+                  Skip Flight
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>Set skip flight</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => handleBulkUpdate({ skip_flight: true })}>
+                  Yes (ticket only)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleBulkUpdate({ skip_flight: false })}>
+                  No (full package)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        }
         getRowClassName={(row, index, sorting) => {
           const isSortedByPrioritized = sorting.some(
             (s) => s.id === "is_prioritized" && s.desc
