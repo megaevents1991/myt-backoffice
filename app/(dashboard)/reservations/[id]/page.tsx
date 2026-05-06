@@ -16,7 +16,29 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import type { Reservation } from "@/types/reservation.types";
 import { getReservation } from "@/lib/actions/reservation-actions";
+import {
+  getOfflineHotelsByIds,
+  type ReservationOfflineRoom,
+} from "@/lib/actions/offline-hotel-actions";
 import { hasHotelInfo, normalizeReservationEventOrderInfo } from "@/lib/utils";
+
+// Visible marker for reservations whose flight/hotel came from our own
+// offline inventory (the `flights` / `offline_hotels` tables) rather than
+// third-party suppliers like Amadeus or WorldOTA. Gold→magenta gradient so
+// it stands out against the neutral reservation cards without looking like
+// a status tag.
+function MegaBadge() {
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold text-white shadow-sm"
+      style={{
+        background: "linear-gradient(90deg, #d4af37 0%, #c026d3 100%)",
+      }}
+    >
+      Mega
+    </span>
+  );
+}
 
 export default function ReservationDetailsPage({
   params,
@@ -28,6 +50,10 @@ export default function ReservationDetailsPage({
   const resolvedParams = use(params);
   const [reservation, setReservation] = useState<Reservation | null>(null);
   const [loading, setLoading] = useState(true);
+  const [offlineRooms, setOfflineRooms] = useState<ReservationOfflineRoom[]>([]);
+  const [offlineRoomCounts, setOfflineRoomCounts] = useState<Map<number, number>>(
+    new Map()
+  );
 
   useEffect(() => {
     async function fetchReservation() {
@@ -48,6 +74,32 @@ export default function ReservationDetailsPage({
 
     fetchReservation();
   }, [resolvedParams.id, toast]);
+
+  useEffect(() => {
+    if (!reservation) return;
+    const ids =
+      reservation.offline_hotel_ids && reservation.offline_hotel_ids.length > 0
+        ? reservation.offline_hotel_ids
+        : reservation.offline_hotel_id != null
+        ? [reservation.offline_hotel_id]
+        : [];
+    if (ids.length === 0) {
+      setOfflineRooms([]);
+      setOfflineRoomCounts(new Map());
+      return;
+    }
+    const counts = new Map<number, number>();
+    for (const rowId of ids) {
+      counts.set(rowId, (counts.get(rowId) || 0) + 1);
+    }
+    setOfflineRoomCounts(counts);
+    getOfflineHotelsByIds(ids)
+      .then((rows) => setOfflineRooms(rows))
+      .catch((err) => {
+        console.error("Failed to load offline hotel rooms:", err);
+        setOfflineRooms([]);
+      });
+  }, [reservation]);
 
   if (loading) {
     return <div>Loading reservation details...</div>;
@@ -303,7 +355,12 @@ export default function ReservationDetailsPage({
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Flight Information</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <span>Flight Information</span>
+              {(reservation.offline_flight_id != null ||
+                (reservation.flight_order_info as { isOffline?: boolean })
+                  ?.isOffline) && <MegaBadge />}
+            </CardTitle>
             <CardDescription>
               Details about the flight in this reservation.
             </CardDescription>
@@ -323,6 +380,26 @@ export default function ReservationDetailsPage({
                     <p className="text-lg">
                       ${reservation.flight_order_info.price.toFixed(2)}
                     </p>
+                    {(() => {
+                      const info = reservation.flight_order_info as {
+                        isOffline?: boolean;
+                        offlineRawPrice?: number;
+                        numOfTravelers?: number;
+                      };
+                      const raw =
+                        reservation.offline_flight_cost ??
+                        info.offlineRawPrice;
+                      const isOffline =
+                        reservation.offline_flight_id != null || info.isOffline;
+                      if (!isOffline || raw == null) return null;
+                      const travelers = info.numOfTravelers || 1;
+                      return (
+                        <p className="text-xs text-muted-foreground">
+                          Mega inventory cost: ${raw.toFixed(2)} × {travelers}{" "}
+                          = ${(raw * travelers).toFixed(2)}
+                        </p>
+                      );
+                    })()}
                   </div>
                   <div>
                     <p className="text-sm font-medium">Elal Classic (Virtual Offer)</p>
@@ -469,7 +546,12 @@ export default function ReservationDetailsPage({
 
         <Card>
           <CardHeader>
-            <CardTitle>Hotel Information</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <span>Hotel Information</span>
+              {(reservation.offline_hotel_id != null ||
+                (reservation.hotel_order_info as { isOffline?: boolean })
+                  ?.isOffline) && <MegaBadge />}
+            </CardTitle>
             <CardDescription>
               Details about the hotel in this reservation.
             </CardDescription>
@@ -489,6 +571,27 @@ export default function ReservationDetailsPage({
                     <p className="text-lg">
                       ${reservation.hotel_order_info.price}
                     </p>
+                    {(() => {
+                      const info = reservation.hotel_order_info as {
+                        isOffline?: boolean;
+                        offlineRawPrice?: number;
+                        guests?: unknown[];
+                      };
+                      const raw =
+                        reservation.offline_hotel_cost ??
+                        info.offlineRawPrice;
+                      const isOffline =
+                        reservation.offline_hotel_id != null || info.isOffline;
+                      if (!isOffline || raw == null) return null;
+                      const rooms = info.guests?.length || 1;
+                      return (
+                        <p className="text-xs text-muted-foreground">
+                          Mega inventory cost: ${raw.toFixed(2)} × {rooms} room
+                          {rooms > 1 ? "s" : ""} = $
+                          {(raw * rooms).toFixed(2)}
+                        </p>
+                      );
+                    })()}
                   </div>
                   <div>
                     <p className="text-sm font-medium">Address</p>
@@ -549,6 +652,31 @@ export default function ReservationDetailsPage({
               <div className="text-center py-8 text-muted-foreground">
                 <p className="text-lg font-medium">No Hotel Included</p>
                 <p className="text-sm mt-2">This reservation does not include hotel accommodation.</p>
+              </div>
+            )}
+            {offlineRooms.length > 0 && (
+              <div className="pt-4 border-t">
+                <p className="text-sm font-medium mb-2">Mega inventory rooms</p>
+                <div className="space-y-1">
+                  {offlineRooms.map((room) => {
+                    const count = offlineRoomCounts.get(room.id) || 1;
+                    return (
+                      <div key={room.id} className="text-sm">
+                        <span className="font-medium">{room.hotel_name}</span>
+                        {" — "}
+                        {room.room_type}
+                        {count > 1 ? ` × ${count}` : ""}
+                        {" ("}
+                        {new Date(room.check_in).toLocaleDateString()}
+                        {" → "}
+                        {new Date(room.check_out).toLocaleDateString()}
+                        {") — $"}
+                        {Number(room.price).toFixed(2)} / room
+                        {room.meal_plan ? ` — ${room.meal_plan}` : ""}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </CardContent>

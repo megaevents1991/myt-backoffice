@@ -3,7 +3,7 @@
 import type React from "react";
 import { useState, useEffect, use, useLayoutEffect, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown, Bug, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown, Plane, ExternalLink, BedDouble } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -38,6 +38,22 @@ import { searchHotelPrices } from "@/lib/actions/hotel-actions";
 import { getTixStockTickets } from "@/lib/actions/tixstock-actions";
 import type { TixStockListing } from "@/types/tixstock.types";
 import { exchangeRateClientService, type SupportedCurrency } from "@/lib/services/exchange-rate-client";
+import {
+  getFlightsByEventId,
+  getOfflineFlights,
+  addEventToFlight,
+  createOfflineFlight,
+} from "@/lib/actions/offline-flight-actions";
+import type { OfflineFlight } from "@/types/offline-flight.types";
+import { InlineFlightForm, type StagedFlightData } from "@/components/inline-flight-form";
+import {
+  getHotelsByEventId,
+  getOfflineHotels,
+  addEventToHotel,
+  createOfflineHotel,
+} from "@/lib/actions/offline-hotel-actions";
+import type { OfflineHotel } from "@/types/offline-hotel.types";
+import { InlineHotelForm, type StagedHotelData } from "@/components/inline-hotel-form";
 
 const TX_TICKET_COLOR = "rgb(5, 32, 60)";
 
@@ -58,6 +74,20 @@ export default function EventPage({
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const [selectedLocationId, setSelectedLocationId] = useState<string>("");
+
+  const [linkedFlights, setLinkedFlights] = useState<OfflineFlight[]>([]);
+  const [isLoadingLinkedFlights, setIsLoadingLinkedFlights] = useState(false);
+  const [flightPanel, setFlightPanel] = useState<"add" | "link" | null>(null);
+  const [stagedFlights, setStagedFlights] = useState<StagedFlightData[]>([]);
+  const [allFlights, setAllFlights] = useState<OfflineFlight[]>([]);
+  const [isLoadingAllFlights, setIsLoadingAllFlights] = useState(false);
+
+  const [linkedHotels, setLinkedHotels] = useState<OfflineHotel[]>([]);
+  const [isLoadingLinkedHotels, setIsLoadingLinkedHotels] = useState(false);
+  const [hotelPanel, setHotelPanel] = useState<"add" | "link" | null>(null);
+  const [stagedHotels, setStagedHotels] = useState<StagedHotelData[]>([]);
+  const [allHotels, setAllHotels] = useState<OfflineHotel[]>([]);
+  const [isLoadingAllHotels, setIsLoadingAllHotels] = useState(false);
 
   // TixStock preview state (map + source tickets)
   const [tixStockTickets, setTixStockTickets] = useState<TixStockListing[]>([]);
@@ -667,6 +697,23 @@ export default function EventPage({
     });
   }, [event]);
 
+  useEffect(() => {
+    if (isNewEvent || !event?.id) return;
+    const id = event.id;
+    setIsLoadingLinkedFlights(true);
+    setIsLoadingLinkedHotels(true);
+    Promise.all([getFlightsByEventId(id), getHotelsByEventId(id)])
+      .then(([flights, hotels]) => {
+        setLinkedFlights(flights);
+        setLinkedHotels(hotels);
+      })
+      .catch(console.error)
+      .finally(() => {
+        setIsLoadingLinkedFlights(false);
+        setIsLoadingLinkedHotels(false);
+      });
+  }, [event?.id, isNewEvent]);
+
   const getTicketAmount = (ticket: TixStockListing) => {
     const proceed = Number.parseFloat(ticket.proceed_price?.amount || "0");
     if (Number.isFinite(proceed) && proceed > 0) return proceed;
@@ -929,14 +976,26 @@ export default function EventPage({
       if (isNewEvent) {
         // For new events, remove the id and ensure proper field values
         const { id, ...eventWithoutId } = event;
-        const eventData = {
-          ...eventWithoutId,
-        };
+        const createdEvent = await createEvent({ ...eventWithoutId });
 
-        await createEvent(eventData);
+        await Promise.all([
+          ...stagedFlights.map((flight) =>
+            createOfflineFlight({ ...flight, event_ids: [createdEvent.id] })
+          ),
+          ...stagedHotels.map((hotel) =>
+            createOfflineHotel({ ...hotel, event_ids: [createdEvent.id] })
+          ),
+        ]);
+
+        const extras = [];
+        if (stagedFlights.length > 0) extras.push(`${stagedFlights.length} flight(s)`);
+        if (stagedHotels.length > 0) extras.push(`${stagedHotels.length} hotel(s)`);
+
         toast({
           title: "Success",
-          description: "Event has been created successfully.",
+          description: extras.length > 0
+            ? `Event created with ${extras.join(" and ")}.`
+            : "Event has been created successfully.",
         });
       } else {
         // For existing events, use updateEvent
@@ -1004,6 +1063,43 @@ export default function EventPage({
   if (!event) {
     return <div>Event not found</div>;
   }
+
+  const availableFlights = allFlights.filter(
+    (f) =>
+      !f.is_deleted &&
+      !linkedFlights.some((l) => l.id === f.id) &&
+      (f.outbound_arrival_airport === (event?.location?.city_iata ?? "") ||
+        !event?.location?.city_iata) &&
+      // event date must fall strictly between the flight window (exclusive of depart/return)
+      (!event?.date || (
+        f.outbound_departure_time.slice(0, 10) < event.date &&
+        f.inbound_arrival_time.slice(0, 10) > event.date
+      ))
+  );
+
+  const linkedFlightDateRanges = linkedFlights.map((f) => ({
+    checkIn: f.outbound_departure_time.slice(0, 10),
+    checkOut: f.inbound_arrival_time.slice(0, 10),
+  }));
+  // All non-deleted, non-linked hotels — date-matching ones sorted first
+  const availableHotels = allHotels
+    .filter((h) =>
+      !h.is_deleted &&
+      !linkedHotels.some((l) => l.id === h.id) &&
+      // event date must fall strictly between check_in/check_out (exclusive)
+      (!event?.date || (h.check_in < event.date && h.check_out > event.date))
+    )
+    .sort((a, b) => {
+      const aMatch = linkedFlightDateRanges.some(
+        (r) => a.check_in === r.checkIn && a.check_out === r.checkOut
+      );
+      const bMatch = linkedFlightDateRanges.some(
+        (r) => b.check_in === r.checkIn && b.check_out === r.checkOut
+      );
+      if (aMatch && !bMatch) return -1;
+      if (!aMatch && bMatch) return 1;
+      return 0;
+    });
 
   return (
     <div className="space-y-6">
@@ -1823,6 +1919,407 @@ export default function EventPage({
             </CardContent>
           </Card>
         )}
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Plane className="h-5 w-5" />
+                Offline Flights
+              </CardTitle>
+              <CardDescription>
+                Charter flights linked to this event.
+                {isNewEvent && stagedFlights.length > 0 && (
+                  <span className="ml-1 text-amber-600 font-medium">
+                    {stagedFlights.length} flight(s) will be created on save.
+                  </span>
+                )}
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setFlightPanel((v) => v === "add" ? null : "add")}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                {flightPanel === "add" ? "Cancel" : "New Flight"}
+              </Button>
+              {!isNewEvent && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setFlightPanel((v) => v === "link" ? null : "link");
+                    if (flightPanel !== "link" && allFlights.length === 0) {
+                      setIsLoadingAllFlights(true);
+                      getOfflineFlights()
+                        .then(setAllFlights)
+                        .catch(console.error)
+                        .finally(() => setIsLoadingAllFlights(false));
+                    }
+                  }}
+                >
+                  {flightPanel === "link" ? "Cancel" : "Link Existing"}
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!isNewEvent && (
+              isLoadingLinkedFlights ? (
+                <div className="text-sm text-muted-foreground">Loading flights...</div>
+              ) : linkedFlights.length === 0 && flightPanel === null ? (
+                <div className="text-sm text-muted-foreground py-2">
+                  No offline flights linked to this event yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {linkedFlights.map((flight) => (
+                    <div
+                      key={flight.id}
+                      className="flex items-center justify-between rounded-md border p-3 text-sm"
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-medium">
+                          {flight.metadata_name} ({flight.airline_code})
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {flight.outbound_departure_airport} → {flight.outbound_arrival_airport} ·{" "}
+                          {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_arrival_time.slice(0, 10)} ·{" "}
+                          ${flight.price} · {flight.initial_quantity - flight.consumed_quantity} seats left
+                        </span>
+                      </div>
+                      <Button variant="ghost" size="sm" type="button" asChild>
+                        <a href={`/offline-flights/${flight.id}/edit`} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {isNewEvent && stagedFlights.length > 0 && (
+              <div className="space-y-2">
+                {stagedFlights.map((flight, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-3 text-sm"
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-medium">
+                        {flight.metadata_name} ({flight.airline_code})
+                        <span className="ml-2 text-xs text-amber-600 font-normal">pending save</span>
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {flight.outbound_departure_airport} → {flight.outbound_arrival_airport} ·{" "}
+                        {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_arrival_time.slice(0, 10)} ·{" "}
+                        ${flight.price}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      onClick={() => setStagedFlights((prev) => prev.filter((_, idx) => idx !== i))}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {flightPanel === "add" && event && (
+              isNewEvent ? (
+                <InlineFlightForm
+                  defaultDestinationIata={event.location?.city_iata ?? ""}
+                  defaultDepartureDate={event.def_date_depart ?? ""}
+                  defaultReturnDate={event.def_date_return ?? ""}
+                  onStage={(data) => {
+                    setStagedFlights((prev) => [...prev, data]);
+                    setFlightPanel(null);
+                  }}
+                  onCancel={() => setFlightPanel(null)}
+                />
+              ) : (
+                <InlineFlightForm
+                  eventId={event.id}
+                  defaultDestinationIata={event.location?.city_iata ?? ""}
+                  defaultDepartureDate={event.def_date_depart ?? ""}
+                  defaultReturnDate={event.def_date_return ?? ""}
+                  onCreated={(newFlight) => {
+                    setLinkedFlights((prev) => [...prev, newFlight]);
+                    setFlightPanel(null);
+                    toast({ title: "Flight added", description: "Linked to this event." });
+                  }}
+                  onCancel={() => setFlightPanel(null)}
+                />
+              )
+            )}
+
+            {flightPanel === "link" && !isNewEvent && event && (
+              <div className="rounded-md border p-4 space-y-3">
+                <p className="text-sm font-medium">Link an existing offline flight</p>
+                {isLoadingAllFlights ? (
+                  <p className="text-sm text-muted-foreground">Loading flights...</p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {availableFlights.map((flight) => (
+                      <div
+                        key={flight.id}
+                        className="flex items-center justify-between rounded-md border p-3 text-sm"
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-medium">
+                            {flight.metadata_name} ({flight.airline_code}) · #{flight.id}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {flight.outbound_departure_airport} → {flight.outbound_arrival_airport} ·{" "}
+                            {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_arrival_time.slice(0, 10)} ·{" "}
+                            ${flight.price}
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              const updated = await addEventToFlight(flight.id, event.id);
+                              setLinkedFlights((prev) => [...prev, updated]);
+                              setAllFlights((prev) => prev.filter((f) => f.id !== flight.id));
+                              // Update event default dates + base flight price to match the linked flight
+                              const newDepart = flight.outbound_departure_time.slice(0, 10);
+                              const newReturn = flight.inbound_arrival_time.slice(0, 10);
+                              const newFlightPrice = Number(flight.price);
+                              await updateEvent(event.id, {
+                                def_date_depart: newDepart,
+                                def_date_return: newReturn,
+                                base_flight_price: newFlightPrice,
+                              });
+                              setEvent((prev) => prev ? { ...prev, def_date_depart: newDepart, def_date_return: newReturn, base_flight_price: newFlightPrice } : prev);
+                              toast({ title: "Flight linked", description: `${flight.metadata_name} linked. Dates ${newDepart} → ${newReturn}, base flight price $${newFlightPrice}.` });
+                            } catch (err) {
+                              toast({ variant: "destructive", title: "Error", description: (err as Error)?.message });
+                            }
+                          }}
+                        >
+                          Link
+                        </Button>
+                      </div>
+                    ))}
+                    {availableFlights.length === 0 && (
+                      <p className="text-sm text-muted-foreground py-2">
+                        No unlinked flights found matching this event&apos;s destination.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <BedDouble className="h-5 w-5" />
+                Offline Hotels
+              </CardTitle>
+              <CardDescription>
+                Hotels linked to this event.
+                {isNewEvent && stagedHotels.length > 0 && (
+                  <span className="ml-1 text-amber-600 font-medium">
+                    {stagedHotels.length} hotel(s) will be created on save.
+                  </span>
+                )}
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setHotelPanel((v) => v === "add" ? null : "add")}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                {hotelPanel === "add" ? "Cancel" : "New Hotel"}
+              </Button>
+              {!isNewEvent && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setHotelPanel((v) => v === "link" ? null : "link");
+                    if (hotelPanel !== "link" && allHotels.length === 0) {
+                      setIsLoadingAllHotels(true);
+                      getOfflineHotels()
+                        .then(setAllHotels)
+                        .catch(console.error)
+                        .finally(() => setIsLoadingAllHotels(false));
+                    }
+                  }}
+                >
+                  {hotelPanel === "link" ? "Cancel" : "Link Existing"}
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!isNewEvent && (
+              isLoadingLinkedHotels ? (
+                <div className="text-sm text-muted-foreground">Loading hotels...</div>
+              ) : linkedHotels.length === 0 && hotelPanel === null ? (
+                <div className="text-sm text-muted-foreground py-2">
+                  No offline hotels linked to this event yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {linkedHotels.map((hotel) => (
+                    <div
+                      key={hotel.id}
+                      className="flex items-center justify-between rounded-md border p-3 text-sm"
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-medium">{hotel.hotel_name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {hotel.city} · {hotel.check_in} → {hotel.check_out} · {hotel.room_type} ·{" "}
+                          ${Number(hotel.price).toFixed(0)} · {hotel.num_rooms - hotel.consumed_rooms}/{hotel.num_rooms} rooms left
+                        </span>
+                      </div>
+                      <Button variant="ghost" size="sm" type="button" asChild>
+                        <a href={`/offline-hotels/${hotel.id}/edit`} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {isNewEvent && stagedHotels.length > 0 && (
+              <div className="space-y-2">
+                {stagedHotels.map((hotel, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-3 text-sm"
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-medium">
+                        {hotel.hotel_name}
+                        <span className="ml-2 text-xs text-amber-600 font-normal">pending save</span>
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {hotel.city} · {hotel.check_in} → {hotel.check_out} · {hotel.room_type} · ${Number(hotel.price).toFixed(0)}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      onClick={() => setStagedHotels((prev) => prev.filter((_, idx) => idx !== i))}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {hotelPanel === "add" && event && (
+              isNewEvent ? (
+                <InlineHotelForm
+                  defaultCity={event.location?.name ?? ""}
+                  defaultCheckIn={event.def_date_depart ?? ""}
+                  defaultCheckOut={event.def_date_return ?? ""}
+                  onStage={(data) => {
+                    setStagedHotels((prev) => [...prev, data]);
+                    setHotelPanel(null);
+                  }}
+                  onCancel={() => setHotelPanel(null)}
+                />
+              ) : (
+                <InlineHotelForm
+                  eventId={event.id}
+                  defaultCity={event.location?.name ?? ""}
+                  defaultCheckIn={event.def_date_depart ?? ""}
+                  defaultCheckOut={event.def_date_return ?? ""}
+                  onCreated={(newHotel) => {
+                    setLinkedHotels((prev) => [...prev, newHotel]);
+                    setHotelPanel(null);
+                    toast({ title: "Hotel added", description: "Linked to this event." });
+                  }}
+                  onCancel={() => setHotelPanel(null)}
+                />
+              )
+            )}
+
+            {hotelPanel === "link" && !isNewEvent && event && (
+              <div className="rounded-md border p-4 space-y-3">
+                <p className="text-sm font-medium">Link an existing offline hotel</p>
+                {isLoadingAllHotels ? (
+                  <p className="text-sm text-muted-foreground">Loading hotels...</p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {availableHotels.map((hotel) => {
+                      const dateMatch = linkedFlightDateRanges.some(
+                        (r) => hotel.check_in === r.checkIn && hotel.check_out === r.checkOut
+                      );
+                      return (
+                      <div
+                        key={hotel.id}
+                        className={`flex items-center justify-between rounded-md border p-3 text-sm${dateMatch ? " border-primary/50 bg-primary/5" : ""}`}
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-medium">
+                            {hotel.hotel_name} · #{hotel.id}
+                            {dateMatch && <span className="ml-2 text-xs text-primary font-normal">matches flight dates</span>}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {hotel.city} · {hotel.check_in} → {hotel.check_out} · {hotel.room_type} · ${Number(hotel.price).toFixed(0)}
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              const updated = await addEventToHotel(hotel.id, event.id);
+                              setLinkedHotels((prev) => [...prev, updated]);
+                              setAllHotels((prev) => prev.filter((h) => h.id !== hotel.id));
+                              // Update event base hotel price to match the linked hotel
+                              const newHotelPrice = Number(hotel.price);
+                              await updateEvent(event.id, { base_hotel_price: newHotelPrice });
+                              setEvent((prev) => prev ? { ...prev, base_hotel_price: newHotelPrice } : prev);
+                              toast({ title: "Hotel linked", description: `${hotel.hotel_name} linked. Base hotel price $${newHotelPrice}.` });
+                            } catch (err) {
+                              toast({ variant: "destructive", title: "Error", description: (err as Error)?.message });
+                            }
+                          }}
+                        >
+                          Link
+                        </Button>
+                      </div>
+                    );
+                    })}
+                    {availableHotels.length === 0 && (
+                      <p className="text-sm text-muted-foreground py-2">No unlinked hotels found.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">

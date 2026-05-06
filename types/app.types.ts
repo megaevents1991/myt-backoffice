@@ -50,6 +50,9 @@ export type Flight = {
   penalties?: string;
   bags?: object;
   virtualOfferType?: boolean;
+  isOffline?: boolean;
+  offlineId?: number;
+  offlineRawPrice?: number;
 };
 
 export type FlightSegment = {
@@ -75,6 +78,9 @@ export type OrderHotel = {
   guests: { adults: number; children: JSON[] }[];
   checkin: string;
   checkout: string;
+  isOffline?: boolean;
+  offlineId?: number;
+  offlineRawPrice?: number;
 };
 
 export type Order = {

@@ -32,4 +32,7 @@ export interface OfflineFlight {
   metadata_iata: string; // VARCHAR(3) NOT NULL
   metadata_name: string; // TEXT NOT NULL
   metadata_logo: string; // TEXT NOT NULL
+
+  // relationships
+  event_ids: number[]; // integer[] NOT NULL DEFAULT '{}'
 }

@@ -21,6 +21,7 @@ import type { EventTicket } from "@/types/app.types";
 import {
   getReservation,
   updateReservation,
+  cancelReservation,
 } from "@/lib/actions/reservation-actions";
 import { getEvent } from "@/lib/actions/event-actions";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
@@ -141,7 +142,13 @@ export default function EditReservationPage({
     setSaving(true);
     setShowConfirmDialog(false);
     try {
-      await updateReservation(reservationToSave.id, reservationToSave);
+      if (reservationToSave.status === "Cancelled") {
+        const { status, ...otherChanges } = reservationToSave;
+        await updateReservation(reservationToSave.id, otherChanges);
+        await cancelReservation(reservationToSave.id);
+      } else {
+        await updateReservation(reservationToSave.id, reservationToSave);
+      }
       toast({
         title: "Success",
         description: "Reservation has been updated successfully.",
@@ -229,6 +236,7 @@ export default function EditReservationPage({
                     <option value="">Select a status</option>
                     <option value="Paid">Paid</option>
                     <option value="Lost">Lost</option>
+                    <option value="Cancelled">Cancelled</option>
                     <option value="Pending">Pending</option>
                     <option value="Follow-up">Follow-up</option>
                   </select>

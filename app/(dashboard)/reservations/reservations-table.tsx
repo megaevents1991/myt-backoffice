@@ -12,12 +12,28 @@ import type { Reservation } from "@/types/reservation.types";
 import { getReservations, updateReservation, updateReservationsStatus } from "@/lib/actions/reservation-actions";
 import { useToast } from "@/hooks/use-toast";
 
+function MegaBadge() {
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold text-white shadow-sm"
+      style={{ background: "linear-gradient(90deg, #d4af37 0%, #c026d3 100%)" }}
+    >
+      Mega
+    </span>
+  );
+}
+
+function isOfflineReservation(r: Reservation) {
+  return r.offline_flight_id != null || r.offline_hotel_id != null;
+}
+
 export function ReservationsTable() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [isIdle, setIsIdle] = useState(false);
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [bulkStatus, setBulkStatus] = useState<string>("");
+  const [offlineOnly, setOfflineOnly] = useState(false);
   const { toast } = useToast();
   const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -228,6 +244,25 @@ export function ReservationsTable() {
       },
     },
     {
+      id: "mega",
+      header: "Mega",
+      cell: ({ row }) =>
+        isOfflineReservation(row.original) ? <MegaBadge /> : <span className="text-muted-foreground">-</span>,
+    },
+    {
+      id: "profit",
+      header: "Profit",
+      cell: ({ row }) => {
+        const r = row.original;
+        if (!isOfflineReservation(r)) return <span className="text-muted-foreground">-</span>;
+        const cost =
+          Number(r.offline_flight_cost ?? 0) + Number(r.offline_hotel_cost ?? 0);
+        const profit = Number(r.user_shown_price ?? 0) - cost;
+        const color = profit >= 0 ? "text-emerald-600" : "text-red-600";
+        return <div className={`font-medium ${color}`}>${profit.toFixed(2)}</div>;
+      },
+    },
+    {
       accessorKey: "created_at",
       header: ({ column }) => {
         return (
@@ -380,10 +415,14 @@ export function ReservationsTable() {
     return <div>Loading reservations...</div>;
   }
 
+  const visibleReservations = offlineOnly
+    ? reservations.filter(isOfflineReservation)
+    : reservations;
+
   return (
     <DataTable
       columns={columns}
-      data={reservations}
+      data={visibleReservations}
       searchColumns={[
         "id",
         "main_contact_first_name",
@@ -416,9 +455,19 @@ export function ReservationsTable() {
         </div>
       }
       rightActions={
-        <Button variant="outline" size="sm" onClick={refreshNow} title="Refresh data">
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={offlineOnly ? "default" : "outline"}
+            size="sm"
+            onClick={() => setOfflineOnly((v) => !v)}
+            title="Show only Mega offline inventory bookings"
+          >
+            {offlineOnly ? "Showing Mega only" : "Mega only"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={refreshNow} title="Refresh data">
+            Refresh
+          </Button>
+        </div>
       }
     />
   );

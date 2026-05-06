@@ -17,6 +17,7 @@ import {
   MapPin,
   Ticket,
   Map,
+  Hotel,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -38,6 +39,7 @@ const navItems: NavItem[] = [
   { name: "Reservations", href: "/reservations", icon: ClipboardList },
   { type: "divider" },
   { name: "Offline Flights (Mega)", href: "/offline-flights", icon: Plane },
+  { name: "Offline Hotels (Mega)", href: "/offline-hotels", icon: Hotel },
   { name: "Sports Events (XS2E)", href: "/sports-events", icon: Trophy },
   { name: "Live Events (LiveTickets)", href: "/live-events", icon: Ticket },
   { name: "P1 Events (P1 Tickets)", href: "/p1-events", icon: Trophy },

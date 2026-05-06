@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 const chromium = require('@sparticuz/chromium');
 const playwright = require('playwright-core');
 
+// Dev-mode lookup table so validation works without Chromium
+const DEV_AIRLINES: Record<string, { airlineName: string; icaoCode: string }> = {
+  LY: { airlineName: 'El Al Israel Airlines', icaoCode: 'ELY' },
+  W6: { airlineName: 'Wizz Air', icaoCode: 'WZZ' },
+  FR: { airlineName: 'Ryanair', icaoCode: 'RYR' },
+  LH: { airlineName: 'Lufthansa', icaoCode: 'DLH' },
+  BA: { airlineName: 'British Airways', icaoCode: 'BAW' },
+  AF: { airlineName: 'Air France', icaoCode: 'AFR' },
+  TK: { airlineName: 'Turkish Airlines', icaoCode: 'THY' },
+  LO: { airlineName: 'LOT Polish Airlines', icaoCode: 'LOT' },
+  U2: { airlineName: 'easyJet', icaoCode: 'EZY' },
+  IB: { airlineName: 'Iberia', icaoCode: 'IBE' },
+};
+
 export async function POST(request: NextRequest) {
   try {
     const { airlineCode } = await request.json();
@@ -11,6 +25,20 @@ export async function POST(request: NextRequest) {
         { error: 'Airline code is required' },
         { status: 400 }
       );
+    }
+
+    // In development, skip Chromium and use the lookup table
+    if (process.env.NODE_ENV === 'development') {
+      const entry = DEV_AIRLINES[airlineCode.toUpperCase()];
+      if (entry) {
+        return NextResponse.json({
+          success: true,
+          airlineName: entry.airlineName,
+          airlineLogo: `https://www.avcodes.co.uk/images/logos/${entry.icaoCode.substring(0, 3)}.png`,
+          icaoCode: entry.icaoCode,
+        });
+      }
+      return NextResponse.json({ error: 'Airline code not found' }, { status: 404 });
     }
 
     const browser = await playwright.chromium.launch({

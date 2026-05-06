@@ -42,5 +42,15 @@ export type Reservation = {
   comments: string
   final_purchase_price_ils: number;
   exchange_rate_usd_ils_100: number;
+  // Offline inventory linkage — populated when the reservation consumed a
+  // Mega-owned flight / hotel row. Top-level for cheap JOINs and filtering.
+  // offline_hotel_ids holds every row consumed by the booking (may repeat when
+  // one row covers multiple requested rooms). offline_hotel_id mirrors [0]
+  // for backwards compatibility with pre-2026-04-19 reservations.
+  offline_flight_id?: number | null;
+  offline_flight_cost?: number | null;
+  offline_hotel_id?: number | null;
+  offline_hotel_ids?: number[] | null;
+  offline_hotel_cost?: number | null;
 }
 
