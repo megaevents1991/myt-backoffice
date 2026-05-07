@@ -32,6 +32,9 @@ export type Event = {
   base_hotel_price: number;
   is_prioritized: boolean;
   skip_flight?: boolean;
+  // Extra per-ticket markup (USD) added when skip_flight is true.
+  // Compensates for the markup normally embedded in base_flight_price.
+  skip_flight_markup?: number | null;
   is_deleted: string;
   tags: string;
   tx_excluded_sections?: string[];

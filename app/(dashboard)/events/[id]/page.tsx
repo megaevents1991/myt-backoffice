@@ -167,6 +167,7 @@ export default function EventPage({
               base_hotel_price: 0,
               is_prioritized: false,
               skip_flight: false,
+              skip_flight_markup: null,
               is_deleted: "",
               tags: "",
             });
@@ -197,6 +198,7 @@ export default function EventPage({
             base_hotel_price: 0,
             is_prioritized: false,
             skip_flight: false,
+            skip_flight_markup: null,
             is_deleted: "",
             tags: "",
           });
@@ -1434,6 +1436,37 @@ export default function EventPage({
                 </Label>
               </div>
             </div>
+
+            {event.skip_flight && (
+              <div className="space-y-2">
+                <Label htmlFor="skip_flight_markup">
+                  Skip-Flight Markup (USD per ticket)
+                </Label>
+                <Input
+                  id="skip_flight_markup"
+                  name="skip_flight_markup"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={event.skip_flight_markup ?? ""}
+                  placeholder="e.g., 100"
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setEvent((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            skip_flight_markup: v === "" ? null : Number(v),
+                          }
+                        : prev
+                    );
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Added per ticket when customer chooses to skip the flight.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="tags">Tag</Label>
