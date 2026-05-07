@@ -152,7 +152,16 @@ export function OfflineFlightsTable() {
                     {new Date(flight.outbound_arrival_time).toLocaleString()}
                   </TableCell>
                   <TableCell>${flight.price.toFixed(2)}</TableCell>
-                  <TableCell>{flight.initial_quantity}</TableCell>
+                  <TableCell>
+                    {(() => {
+                      const avail = flight.initial_quantity - flight.consumed_quantity;
+                      return (
+                        <span className={avail > 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                          {avail}/{flight.initial_quantity}
+                        </span>
+                      );
+                    })()}
+                  </TableCell>
                   <TableCell>
                     <Badge
                       variant={flight.is_deleted ? "destructive" : "outline"}

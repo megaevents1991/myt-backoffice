@@ -114,11 +114,16 @@ export default async function OfflineHotelDetailsPage({
             <div className="px-6">
               <HotelDetailItem label="Check-in" value={hotel.check_in} />
               <HotelDetailItem label="Check-out" value={hotel.check_out} />
-              <HotelDetailItem label="Total Rooms" value={hotel.num_rooms} />
-              <HotelDetailItem label="Consumed Rooms" value={hotel.consumed_rooms} />
               <HotelDetailItem
-                label="Available Rooms"
-                value={hotel.num_rooms - hotel.consumed_rooms}
+                label="Inventory"
+                value={(() => {
+                  const avail = hotel.num_rooms - hotel.consumed_rooms;
+                  return (
+                    <span className={avail > 0 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+                      {avail} available / {hotel.num_rooms} total · {hotel.consumed_rooms} reserved
+                    </span>
+                  );
+                })()}
               />
               <HotelDetailItem
                 label="Last Cancellation Date"

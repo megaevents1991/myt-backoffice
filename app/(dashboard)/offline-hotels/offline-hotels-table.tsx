@@ -124,7 +124,14 @@ export function OfflineHotelsTable() {
                   <TableCell>{hotel.room_type}</TableCell>
                   <TableCell>${Number(hotel.price).toFixed(2)}</TableCell>
                   <TableCell>
-                    {hotel.num_rooms - hotel.consumed_rooms}/{hotel.num_rooms}
+                    {(() => {
+                      const avail = hotel.num_rooms - hotel.consumed_rooms;
+                      return (
+                        <span className={avail > 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                          {avail}/{hotel.num_rooms}
+                        </span>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     <Badge variant={hotel.is_deleted ? "destructive" : "outline"}>

@@ -124,12 +124,15 @@ export default async function OfflineFlightDetailsPage({
                 value={`$${Number(flight.price).toFixed(2)}`}
               />
               <FlightDetailItem
-                label="Initial Quantity"
-                value={flight.initial_quantity}
-              />
-              <FlightDetailItem
-                label="Consumed Quantity"
-                value={flight.consumed_quantity}
+                label="Inventory"
+                value={(() => {
+                  const avail = flight.initial_quantity - flight.consumed_quantity;
+                  return (
+                    <span className={avail > 0 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+                      {avail} available / {flight.initial_quantity} total · {flight.consumed_quantity} reserved
+                    </span>
+                  );
+                })()}
               />
               <FlightDetailItem
                 label="Total Duration (Round Trip)"
