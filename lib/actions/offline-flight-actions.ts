@@ -48,12 +48,41 @@ export async function updateOfflineFlight(
   id: number,
   flight: Partial<Omit<OfflineFlight, "id" | "consumed_quantity">>
 ) {
+  // Detect newly linked events so we can update their default dates + price
+  const { data: current } = await flightsTable()
+    .select("event_ids")
+    .eq("id", id)
+    .single();
+  const oldEventIds: number[] = current?.event_ids ?? [];
+  const newEventIds: number[] = flight.event_ids ?? oldEventIds;
+  const addedEventIds = newEventIds.filter((eid) => !oldEventIds.includes(eid));
+
   const { data, error } = await flightsTable()
     .update(flight)
     .eq("id", id)
     .select();
 
   if (error) throw error;
+
+  if (addedEventIds.length > 0) {
+    const updated = data[0] as OfflineFlight;
+    const defDepart = updated.outbound_departure_time.slice(0, 10);
+    const defReturn = updated.inbound_arrival_time.slice(0, 10);
+    const baseFlightPrice = Number(updated.price);
+    await Promise.all(
+      addedEventIds.map((eventId) =>
+        supabase.from("events").update({
+          def_date_depart: defDepart,
+          def_date_return: defReturn,
+          base_flight_price: baseFlightPrice,
+        }).eq("id", eventId)
+      )
+    );
+    for (const eventId of addedEventIds) {
+      revalidatePath(`/(dashboard)/events/${eventId}`);
+    }
+  }
+
   revalidatePath("/(dashboard)/offline-flights");
   revalidatePath(`/(dashboard)/offline-flights/${id}/edit`);
   revalidatePath(`/(dashboard)/offline-flights/${id}`);

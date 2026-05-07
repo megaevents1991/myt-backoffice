@@ -1079,10 +1079,11 @@ export default function EventPage({
   const availableFlights = allFlights.filter(
     (f) =>
       !f.is_deleted &&
+      f.initial_quantity > 0 &&
       !linkedFlights.some((l) => l.id === f.id) &&
       (f.outbound_arrival_airport === (event?.location?.city_iata ?? "") ||
         !event?.location?.city_iata) &&
-      // event date must fall strictly between the flight window (exclusive of depart/return)
+      // departure must be at least 1 day before event, arrival at least 1 day after
       (!event?.date || (
         f.outbound_departure_time.slice(0, 10) < event.date &&
         f.inbound_arrival_time.slice(0, 10) > event.date
@@ -2322,11 +2323,22 @@ export default function EventPage({
                               const updated = await addEventToHotel(hotel.id, event.id);
                               setLinkedHotels((prev) => [...prev, updated]);
                               setAllHotels((prev) => prev.filter((h) => h.id !== hotel.id));
-                              // Update event base hotel price to match the linked hotel
                               const newHotelPrice = Number(hotel.price);
-                              await updateEvent(event.id, { base_hotel_price: newHotelPrice });
-                              setEvent((prev) => prev ? { ...prev, base_hotel_price: newHotelPrice } : prev);
-                              toast({ title: "Hotel linked", description: `${hotel.hotel_name} linked. Base hotel price $${newHotelPrice}.` });
+                              // Flight wins over hotel for def dates — only set hotel dates if no flight linked yet
+                              const hasFlight = linkedFlights.length > 0;
+                              const eventUpdate: Partial<Event> = { base_hotel_price: newHotelPrice };
+                              if (!hasFlight) {
+                                eventUpdate.def_date_depart = hotel.check_in;
+                                eventUpdate.def_date_return = hotel.check_out;
+                              }
+                              await updateEvent(event.id, eventUpdate);
+                              setEvent((prev) => prev ? { ...prev, ...eventUpdate } : prev);
+                              toast({
+                                title: "Hotel linked",
+                                description: hasFlight
+                                  ? `${hotel.hotel_name} linked. Base hotel price $${newHotelPrice}.`
+                                  : `${hotel.hotel_name} linked. Dates ${hotel.check_in} → ${hotel.check_out}, base hotel price $${newHotelPrice}.`,
+                              });
                             } catch (err) {
                               toast({ variant: "destructive", title: "Error", description: (err as Error)?.message });
                             }
