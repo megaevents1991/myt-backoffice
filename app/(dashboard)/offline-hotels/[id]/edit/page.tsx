@@ -368,7 +368,21 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
             <FormField control={form.control} name="meal_plan" render={({ field }) => (
               <FormItem>
                 <FormLabel>Meal Plan (optional)</FormLabel>
-                <FormControl><Input placeholder="e.g., Breakfast included" {...field} /></FormControl>
+                <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select meal plan…" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="Room Only">Room Only</SelectItem>
+                    <SelectItem value="Bed & Breakfast">Bed &amp; Breakfast</SelectItem>
+                    <SelectItem value="Half Board">Half Board</SelectItem>
+                    <SelectItem value="Full Board">Full Board</SelectItem>
+                    <SelectItem value="All Inclusive">All Inclusive</SelectItem>
+                  </SelectContent>
+                </Select>
                 <FormMessage />
               </FormItem>
             )} />
