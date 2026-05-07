@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase-server";
 import type { OfflineFlight } from "../../types/offline-flight.types";
 import type { Event } from "../../types/app.types";
 import { revalidatePath } from "next/cache";
+import { airportsInSameCity } from "@/lib/airport-cities";
 
 // The `flights` table is not in db.schema.sql so Supabase's generated types don't
 // include it — all .from("flights") calls are cast to bypass the `never` inference.
@@ -111,6 +112,27 @@ export async function getFlightsByEventId(eventId: number): Promise<OfflineFligh
   return (data ?? []) as OfflineFlight[];
 }
 
+export async function removeEventFromFlight(flightId: number, eventId: number): Promise<OfflineFlight> {
+  const { data: current, error: fetchError } = await flightsTable()
+    .select("event_ids")
+    .eq("id", flightId)
+    .single();
+  if (fetchError) throw fetchError;
+
+  const existing = (current.event_ids as number[]) ?? [];
+  if (!existing.includes(eventId)) return getOfflineFlight(flightId);
+
+  const { data, error } = await flightsTable()
+    .update({ event_ids: existing.filter((id) => id !== eventId) })
+    .eq("id", flightId)
+    .select();
+
+  if (error) throw error;
+  revalidatePath("/(dashboard)/offline-flights");
+  revalidatePath(`/(dashboard)/events/${eventId}`);
+  return data[0] as OfflineFlight;
+}
+
 export async function addEventToFlight(flightId: number, eventId: number): Promise<OfflineFlight> {
   const { data: current, error: fetchError } = await flightsTable()
     .select("event_ids")
@@ -140,11 +162,12 @@ export async function getRelevantEventsForFlight(
   departureDate: string,
   returnDate: string
 ): Promise<Pick<Event, "id" | "name" | "date">[]> {
+  const cityCodes = airportsInSameCity(destinationIata);
   const { data, error } = await supabase
     .from("events")
     .select("id, name, date")
     .is("is_deleted", null)
-    .filter("location->>city_iata", "eq", destinationIata)
+    .in("location->>city_iata", cityCodes)
     .gt("date", departureDate)
     .lt("date", returnDate)
     .order("date", { ascending: true });

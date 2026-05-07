@@ -25,6 +25,7 @@ import {
   updateEvent,
   createEvent,
 } from "@/lib/actions/event-actions";
+import { airportsMatch } from "@/lib/airport-cities";
 import { ColorPicker } from "@/components/color-picker";
 import { ImageFilePicker } from "@/components/image-file-picker";
 import { v4 as uuidv4 } from "uuid";
@@ -42,6 +43,7 @@ import {
   getFlightsByEventId,
   getOfflineFlights,
   addEventToFlight,
+  removeEventFromFlight,
   createOfflineFlight,
 } from "@/lib/actions/offline-flight-actions";
 import type { OfflineFlight } from "@/types/offline-flight.types";
@@ -50,6 +52,7 @@ import {
   getHotelsByEventId,
   getOfflineHotels,
   addEventToHotel,
+  removeEventFromHotel,
   createOfflineHotel,
 } from "@/lib/actions/offline-hotel-actions";
 import type { OfflineHotel } from "@/types/offline-hotel.types";
@@ -1081,8 +1084,7 @@ export default function EventPage({
       !f.is_deleted &&
       f.initial_quantity > 0 &&
       !linkedFlights.some((l) => l.id === f.id) &&
-      (f.outbound_arrival_airport === (event?.location?.city_iata ?? "") ||
-        !event?.location?.city_iata) &&
+      airportsMatch(f.outbound_arrival_airport, event?.location?.city_iata) &&
       // departure must be at least 1 day before event, arrival at least 1 day after
       (!event?.date || (
         f.outbound_departure_time.slice(0, 10) < event.date &&
@@ -2019,11 +2021,32 @@ export default function EventPage({
                           ${flight.price} · {flight.initial_quantity - flight.consumed_quantity} seats left
                         </span>
                       </div>
-                      <Button variant="ghost" size="sm" type="button" asChild>
-                        <a href={`/offline-flights/${flight.id}/edit`} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" type="button" asChild>
+                          <a href={`/offline-flights/${flight.id}/edit`} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          title="Unlink flight"
+                          onClick={async () => {
+                            if (!confirm(`Unlink ${flight.metadata_name} (${flight.airline_code}) from this event?`)) return;
+                            try {
+                              await removeEventFromFlight(flight.id, event.id);
+                              setLinkedFlights((prev) => prev.filter((f) => f.id !== flight.id));
+                              setAllFlights((prev) => [...prev, flight]);
+                              toast({ title: "Flight unlinked", description: `${flight.metadata_name} no longer linked.` });
+                            } catch (err) {
+                              toast({ variant: "destructive", title: "Error", description: (err as Error)?.message });
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2221,11 +2244,32 @@ export default function EventPage({
                           ${Number(hotel.price).toFixed(0)} · {hotel.num_rooms - hotel.consumed_rooms}/{hotel.num_rooms} rooms left
                         </span>
                       </div>
-                      <Button variant="ghost" size="sm" type="button" asChild>
-                        <a href={`/offline-hotels/${hotel.id}/edit`} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" type="button" asChild>
+                          <a href={`/offline-hotels/${hotel.id}/edit`} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          title="Unlink hotel"
+                          onClick={async () => {
+                            if (!confirm(`Unlink ${hotel.hotel_name} from this event?`)) return;
+                            try {
+                              await removeEventFromHotel(hotel.id, event.id);
+                              setLinkedHotels((prev) => prev.filter((h) => h.id !== hotel.id));
+                              setAllHotels((prev) => [...prev, hotel]);
+                              toast({ title: "Hotel unlinked", description: `${hotel.hotel_name} no longer linked.` });
+                            } catch (err) {
+                              toast({ variant: "destructive", title: "Error", description: (err as Error)?.message });
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>

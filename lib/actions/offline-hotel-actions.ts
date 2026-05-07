@@ -170,6 +170,27 @@ export async function getHotelsByFlightId(flightId: number): Promise<OfflineHote
   return (data ?? []) as OfflineHotel[];
 }
 
+export async function removeEventFromHotel(hotelId: number, eventId: number): Promise<OfflineHotel> {
+  const { data: current, error: fetchError } = await hotelsTable()
+    .select("event_ids")
+    .eq("id", hotelId)
+    .single();
+  if (fetchError) throw fetchError;
+
+  const existing = (current.event_ids as number[]) ?? [];
+  if (!existing.includes(eventId)) return getOfflineHotel(hotelId);
+
+  const { data, error } = await hotelsTable()
+    .update({ event_ids: existing.filter((id) => id !== eventId) })
+    .eq("id", hotelId)
+    .select();
+
+  if (error) throw error;
+  revalidatePath("/(dashboard)/offline-hotels");
+  revalidatePath(`/(dashboard)/events/${eventId}`);
+  return data[0] as OfflineHotel;
+}
+
 export async function addEventToHotel(hotelId: number, eventId: number): Promise<OfflineHotel> {
   const { data: current, error: fetchError } = await hotelsTable()
     .select("event_ids")
