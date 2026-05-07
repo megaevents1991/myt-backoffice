@@ -25,15 +25,43 @@ export async function createReservation(reservation: Omit<Reservation, "id" | "c
   return data[0] as Reservation
 }
 
+// Statuses that release the offline inventory the reservation consumed.
+const RELEASED_STATUSES = new Set(["Cancelled", "Lost"]);
+
 export async function updateReservation(id: number, reservation: Partial<Reservation>) {
+  // Detect transition into a released status so we can return inventory
+  let toRelease: Reservation | null = null;
+  if (reservation.status && RELEASED_STATUSES.has(reservation.status)) {
+    const { data: current } = await supabase
+      .from("reservations")
+      .select("*")
+      .eq("id", id)
+      .single();
+    const prev = current as Reservation | null;
+    if (prev && !RELEASED_STATUSES.has(prev.status)) toRelease = prev;
+  }
+
   const { data, error } = await supabase.from("reservations").update(reservation).eq("id", id).select()
 
   if (error) throw error
+  if (toRelease) await releaseOfflineInventory(toRelease);
   return data[0] as Reservation
 }
 
 export async function updateReservationsStatus(ids: number[], status: string) {
   if (!ids || ids.length === 0) return [] as Reservation[];
+
+  let toRelease: Reservation[] = [];
+  if (RELEASED_STATUSES.has(status)) {
+    const { data: current } = await supabase
+      .from("reservations")
+      .select("*")
+      .in("id", ids);
+    toRelease = ((current ?? []) as Reservation[]).filter(
+      (r) => !RELEASED_STATUSES.has(r.status)
+    );
+  }
+
   const { data, error } = await supabase
     .from("reservations")
     .update({ status })
@@ -41,6 +69,10 @@ export async function updateReservationsStatus(ids: number[], status: string) {
     .select();
 
   if (error) throw error;
+
+  for (const r of toRelease) {
+    await releaseOfflineInventory(r);
+  }
   return data as Reservation[];
 }
 
@@ -53,7 +85,7 @@ export async function cancelReservation(id: number): Promise<Reservation> {
   if (fetchError) throw fetchError;
 
   const reservation = current as Reservation;
-  if (reservation.status === "Cancelled") return reservation;
+  if (RELEASED_STATUSES.has(reservation.status)) return reservation;
 
   const { data, error } = await supabase
     .from("reservations")
