@@ -1,4 +1,5 @@
 import { getOfflineFlight } from "@/lib/actions/offline-flight-actions";
+import { getReservationsForFlight } from "@/lib/actions/reservation-actions";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { LogoImage } from "@/components/logo-image";
+import { ReservationsForInventory } from "@/components/reservations-for-inventory";
 
 interface OfflineFlightDetailsPageProps {
   params: Promise<{
@@ -70,6 +72,8 @@ export default async function OfflineFlightDetailsPage({
   if (!flight) {
     notFound();
   }
+
+  const reservations = await getReservationsForFlight(flightIdAsNumber);
 
   return (
     <div className="container mx-auto py-10 max-w-4xl">
@@ -278,6 +282,8 @@ export default async function OfflineFlightDetailsPage({
           </dl>
         </div>
       </div>
+
+      <ReservationsForInventory reservations={reservations} />
     </div>
   );
 }

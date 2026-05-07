@@ -1,10 +1,12 @@
 import { getOfflineHotel } from "@/lib/actions/offline-hotel-actions";
+import { getReservationsForHotel } from "@/lib/actions/reservation-actions";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { ReservationsForInventory } from "@/components/reservations-for-inventory";
 
 interface OfflineHotelDetailsPageProps {
   params: Promise<{
@@ -52,6 +54,8 @@ export default async function OfflineHotelDetailsPage({
   if (!hotel) {
     notFound();
   }
+
+  const reservations = await getReservationsForHotel(hotelIdAsNumber);
 
   return (
     <div className="container mx-auto py-10 max-w-4xl">
@@ -166,6 +170,8 @@ export default async function OfflineHotelDetailsPage({
           </dl>
         </div>
       </div>
+
+      <ReservationsForInventory reservations={reservations} />
     </div>
   );
 }

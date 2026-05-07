@@ -128,3 +128,41 @@ async function releaseOfflineInventory(reservation: Reservation) {
   }
 }
 
+export type InventoryReservation = Pick<
+  Reservation,
+  | "id"
+  | "created_at"
+  | "main_contact_first_name"
+  | "main_contact_last_name"
+  | "main_contact_email"
+  | "main_contact_phone_number"
+  | "status"
+  | "more_pax_info"
+  | "offline_flight_id"
+  | "offline_hotel_id"
+  | "offline_hotel_ids"
+>;
+
+const INVENTORY_RESERVATION_FIELDS =
+  "id, created_at, main_contact_first_name, main_contact_last_name, main_contact_email, main_contact_phone_number, status, more_pax_info, offline_flight_id, offline_hotel_id, offline_hotel_ids";
+
+export async function getReservationsForFlight(flightId: number): Promise<InventoryReservation[]> {
+  const { data, error } = await supabase
+    .from("reservations")
+    .select(INVENTORY_RESERVATION_FIELDS)
+    .eq("offline_flight_id", flightId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown as InventoryReservation[];
+}
+
+export async function getReservationsForHotel(hotelId: number): Promise<InventoryReservation[]> {
+  const { data, error } = await supabase
+    .from("reservations")
+    .select(INVENTORY_RESERVATION_FIELDS)
+    .or(`offline_hotel_id.eq.${hotelId},offline_hotel_ids.cs.{${hotelId}}`)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown as InventoryReservation[];
+}
+
