@@ -119,8 +119,8 @@ export function OfflineFlightsTable() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {flights.length > 0 ? (
-              flights.map((flight) => (
+            {flights.filter((f) => f.initial_quantity > 0).length > 0 ? (
+              flights.filter((f) => f.initial_quantity > 0).map((flight) => (
                 <TableRow
                   key={flight.id} // flight.id is now number
                   data-state={selectedRows.has(flight.id) && "selected"}

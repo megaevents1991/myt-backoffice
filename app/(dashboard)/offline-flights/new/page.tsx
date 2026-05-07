@@ -156,7 +156,7 @@ const offlineFlightFormSchema = z.object({
   initial_quantity: z.coerce
     .number()
     .int()
-    .positive({ message: "Initial quantity must be a positive integer." }),
+    .min(0, { message: "Initial quantity must be 0 or more." }),
   price: z.coerce
     .number()
     .positive({ message: "Price must be a positive number." }),
