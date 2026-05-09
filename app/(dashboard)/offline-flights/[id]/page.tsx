@@ -1,4 +1,5 @@
 import { getOfflineFlight } from "@/lib/actions/offline-flight-actions";
+import { getReservationsForFlight } from "@/lib/actions/reservation-actions";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { LogoImage } from "@/components/logo-image";
+import { ReservationsForInventory } from "@/components/reservations-for-inventory";
 
 interface OfflineFlightDetailsPageProps {
   params: Promise<{
@@ -71,6 +73,8 @@ export default async function OfflineFlightDetailsPage({
     notFound();
   }
 
+  const reservations = await getReservationsForFlight(flightIdAsNumber);
+
   return (
     <div className="container mx-auto py-10 max-w-4xl">
       <div className="mb-6 flex justify-start">
@@ -124,12 +128,15 @@ export default async function OfflineFlightDetailsPage({
                 value={`$${Number(flight.price).toFixed(2)}`}
               />
               <FlightDetailItem
-                label="Initial Quantity"
-                value={flight.initial_quantity}
-              />
-              <FlightDetailItem
-                label="Consumed Quantity"
-                value={flight.consumed_quantity}
+                label="Inventory"
+                value={(() => {
+                  const avail = flight.initial_quantity - flight.consumed_quantity;
+                  return (
+                    <span className={avail > 0 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+                      {avail} available / {flight.initial_quantity} total · {flight.consumed_quantity} reserved
+                    </span>
+                  );
+                })()}
               />
               <FlightDetailItem
                 label="Total Duration (Round Trip)"
@@ -275,6 +282,8 @@ export default async function OfflineFlightDetailsPage({
           </dl>
         </div>
       </div>
+
+      <ReservationsForInventory reservations={reservations} />
     </div>
   );
 }

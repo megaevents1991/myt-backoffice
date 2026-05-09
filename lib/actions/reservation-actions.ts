@@ -25,15 +25,43 @@ export async function createReservation(reservation: Omit<Reservation, "id" | "c
   return data[0] as Reservation
 }
 
+// Statuses that release the offline inventory the reservation consumed.
+const RELEASED_STATUSES = new Set(["Cancelled", "Lost"]);
+
 export async function updateReservation(id: number, reservation: Partial<Reservation>) {
+  // Detect transition into a released status so we can return inventory
+  let toRelease: Reservation | null = null;
+  if (reservation.status && RELEASED_STATUSES.has(reservation.status)) {
+    const { data: current } = await supabase
+      .from("reservations")
+      .select("*")
+      .eq("id", id)
+      .single();
+    const prev = current as Reservation | null;
+    if (prev && !RELEASED_STATUSES.has(prev.status)) toRelease = prev;
+  }
+
   const { data, error } = await supabase.from("reservations").update(reservation).eq("id", id).select()
 
   if (error) throw error
+  if (toRelease) await releaseOfflineInventory(toRelease);
   return data[0] as Reservation
 }
 
 export async function updateReservationsStatus(ids: number[], status: string) {
   if (!ids || ids.length === 0) return [] as Reservation[];
+
+  let toRelease: Reservation[] = [];
+  if (RELEASED_STATUSES.has(status)) {
+    const { data: current } = await supabase
+      .from("reservations")
+      .select("*")
+      .in("id", ids);
+    toRelease = ((current ?? []) as Reservation[]).filter(
+      (r) => !RELEASED_STATUSES.has(r.status)
+    );
+  }
+
   const { data, error } = await supabase
     .from("reservations")
     .update({ status })
@@ -41,6 +69,10 @@ export async function updateReservationsStatus(ids: number[], status: string) {
     .select();
 
   if (error) throw error;
+
+  for (const r of toRelease) {
+    await releaseOfflineInventory(r);
+  }
   return data as Reservation[];
 }
 
@@ -53,7 +85,7 @@ export async function cancelReservation(id: number): Promise<Reservation> {
   if (fetchError) throw fetchError;
 
   const reservation = current as Reservation;
-  if (reservation.status === "Cancelled") return reservation;
+  if (RELEASED_STATUSES.has(reservation.status)) return reservation;
 
   const { data, error } = await supabase
     .from("reservations")
@@ -126,5 +158,43 @@ async function releaseOfflineInventory(reservation: Reservation) {
     console.error("Failed to release offline inventory on cancel:", e);
     throw e;
   }
+}
+
+export type InventoryReservation = Pick<
+  Reservation,
+  | "id"
+  | "created_at"
+  | "main_contact_first_name"
+  | "main_contact_last_name"
+  | "main_contact_email"
+  | "main_contact_phone_number"
+  | "status"
+  | "more_pax_info"
+  | "offline_flight_id"
+  | "offline_hotel_id"
+  | "offline_hotel_ids"
+>;
+
+const INVENTORY_RESERVATION_FIELDS =
+  "id, created_at, main_contact_first_name, main_contact_last_name, main_contact_email, main_contact_phone_number, status, more_pax_info, offline_flight_id, offline_hotel_id, offline_hotel_ids";
+
+export async function getReservationsForFlight(flightId: number): Promise<InventoryReservation[]> {
+  const { data, error } = await supabase
+    .from("reservations")
+    .select(INVENTORY_RESERVATION_FIELDS)
+    .eq("offline_flight_id", flightId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown as InventoryReservation[];
+}
+
+export async function getReservationsForHotel(hotelId: number): Promise<InventoryReservation[]> {
+  const { data, error } = await supabase
+    .from("reservations")
+    .select(INVENTORY_RESERVATION_FIELDS)
+    .or(`offline_hotel_id.eq.${hotelId},offline_hotel_ids.cs.{${hotelId}}`)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown as InventoryReservation[];
 }
 

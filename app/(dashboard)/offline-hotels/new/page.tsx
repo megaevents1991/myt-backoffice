@@ -48,7 +48,13 @@ import type { OfflineHotel } from "@/types/offline-hotel.types";
 
 const offlineHotelFormSchema = z.object({
   hotel_name: z.string().min(1, "Hotel name is required."),
-  city: z.string().min(1, "City is required."),
+  city: z
+    .string()
+    .min(2, "City must be at least 2 characters.")
+    .regex(
+      /^[\p{L}][\p{L}\s\-'.,]+$/u,
+      "City must contain letters only (no digits)."
+    ),
   hid: z.coerce.number().int().positive().optional().or(z.literal("")),
   check_in: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD."),
   check_out: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD."),
@@ -331,7 +337,21 @@ export default function NewOfflineHotelPage() {
             <FormField control={form.control} name="meal_plan" render={({ field }) => (
               <FormItem>
                 <FormLabel>Meal Plan (optional)</FormLabel>
-                <FormControl><Input placeholder="e.g., Breakfast included" {...field} /></FormControl>
+                <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select meal plan…" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="Room Only">Room Only</SelectItem>
+                    <SelectItem value="Bed & Breakfast">Bed &amp; Breakfast</SelectItem>
+                    <SelectItem value="Half Board">Half Board</SelectItem>
+                    <SelectItem value="Full Board">Full Board</SelectItem>
+                    <SelectItem value="All Inclusive">All Inclusive</SelectItem>
+                  </SelectContent>
+                </Select>
                 <FormMessage />
               </FormItem>
             )} />

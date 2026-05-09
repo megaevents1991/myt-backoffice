@@ -87,12 +87,44 @@ export async function updateOfflineHotel(
   id: number,
   hotel: Partial<Omit<OfflineHotel, "id" | "consumed_rooms" | "created_at">>
 ): Promise<OfflineHotel> {
+  // Detect newly linked events to propagate dates + base hotel price
+  const { data: current } = await hotelsTable()
+    .select("event_ids")
+    .eq("id", id)
+    .single();
+  const oldEventIds: number[] = current?.event_ids ?? [];
+  const newEventIds: number[] = hotel.event_ids ?? oldEventIds;
+  const addedEventIds = newEventIds.filter((eid) => !oldEventIds.includes(eid));
+
   const { data, error } = await hotelsTable()
     .update(hotel)
     .eq("id", id)
     .select();
 
   if (error) throw error;
+
+  if (addedEventIds.length > 0) {
+    const updated = data[0] as OfflineHotel;
+    const baseHotelPrice = Number(updated.price);
+    await Promise.all(
+      addedEventIds.map(async (eventId) => {
+        // Flight wins over hotel for def dates — only set hotel dates if event has no flight linked
+        const { data: flightsForEvent } = await flightsTable()
+          .select("id")
+          .contains("event_ids", [eventId])
+          .eq("is_deleted", false)
+          .limit(1);
+        const hasFlight = (flightsForEvent ?? []).length > 0;
+        const eventUpdate: Record<string, unknown> = { base_hotel_price: baseHotelPrice };
+        if (!hasFlight) {
+          eventUpdate.def_date_depart = updated.check_in;
+          eventUpdate.def_date_return = updated.check_out;
+        }
+        await supabase.from("events").update(eventUpdate).eq("id", eventId);
+      })
+    );
+  }
+
   revalidatePath("/(dashboard)/offline-hotels");
   revalidatePath(`/(dashboard)/offline-hotels/${id}/edit`);
   revalidatePath(`/(dashboard)/offline-hotels/${id}`);
@@ -136,6 +168,27 @@ export async function getHotelsByFlightId(flightId: number): Promise<OfflineHote
 
   if (error) throw error;
   return (data ?? []) as OfflineHotel[];
+}
+
+export async function removeEventFromHotel(hotelId: number, eventId: number): Promise<OfflineHotel> {
+  const { data: current, error: fetchError } = await hotelsTable()
+    .select("event_ids")
+    .eq("id", hotelId)
+    .single();
+  if (fetchError) throw fetchError;
+
+  const existing = (current.event_ids as number[]) ?? [];
+  if (!existing.includes(eventId)) return getOfflineHotel(hotelId);
+
+  const { data, error } = await hotelsTable()
+    .update({ event_ids: existing.filter((id) => id !== eventId) })
+    .eq("id", hotelId)
+    .select();
+
+  if (error) throw error;
+  revalidatePath("/(dashboard)/offline-hotels");
+  revalidatePath(`/(dashboard)/events/${eventId}`);
+  return data[0] as OfflineHotel;
 }
 
 export async function addEventToHotel(hotelId: number, eventId: number): Promise<OfflineHotel> {

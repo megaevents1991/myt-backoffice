@@ -25,6 +25,7 @@ import {
   updateEvent,
   createEvent,
 } from "@/lib/actions/event-actions";
+import { airportsMatch } from "@/lib/airport-cities";
 import { ColorPicker } from "@/components/color-picker";
 import { ImageFilePicker } from "@/components/image-file-picker";
 import { v4 as uuidv4 } from "uuid";
@@ -42,6 +43,7 @@ import {
   getFlightsByEventId,
   getOfflineFlights,
   addEventToFlight,
+  removeEventFromFlight,
   createOfflineFlight,
 } from "@/lib/actions/offline-flight-actions";
 import type { OfflineFlight } from "@/types/offline-flight.types";
@@ -50,6 +52,7 @@ import {
   getHotelsByEventId,
   getOfflineHotels,
   addEventToHotel,
+  removeEventFromHotel,
   createOfflineHotel,
 } from "@/lib/actions/offline-hotel-actions";
 import type { OfflineHotel } from "@/types/offline-hotel.types";
@@ -164,6 +167,7 @@ export default function EventPage({
               base_hotel_price: 0,
               is_prioritized: false,
               skip_flight: false,
+              skip_flight_markup: null,
               is_deleted: "",
               tags: "",
             });
@@ -194,6 +198,7 @@ export default function EventPage({
             base_hotel_price: 0,
             is_prioritized: false,
             skip_flight: false,
+            skip_flight_markup: null,
             is_deleted: "",
             tags: "",
           });
@@ -1079,10 +1084,10 @@ export default function EventPage({
   const availableFlights = allFlights.filter(
     (f) =>
       !f.is_deleted &&
+      f.initial_quantity > 0 &&
       !linkedFlights.some((l) => l.id === f.id) &&
-      (f.outbound_arrival_airport === (event?.location?.city_iata ?? "") ||
-        !event?.location?.city_iata) &&
-      // event date must fall strictly between the flight window (exclusive of depart/return)
+      airportsMatch(f.outbound_arrival_airport, event?.location?.city_iata) &&
+      // departure must be at least 1 day before event, arrival at least 1 day after
       (!event?.date || (
         f.outbound_departure_time.slice(0, 10) < event.date &&
         f.inbound_arrival_time.slice(0, 10) > event.date
@@ -1431,6 +1436,37 @@ export default function EventPage({
                 </Label>
               </div>
             </div>
+
+            {event.skip_flight && (
+              <div className="space-y-2">
+                <Label htmlFor="skip_flight_markup">
+                  Skip-Flight Markup (USD per ticket)
+                </Label>
+                <Input
+                  id="skip_flight_markup"
+                  name="skip_flight_markup"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={event.skip_flight_markup ?? ""}
+                  placeholder="e.g., 100"
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setEvent((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            skip_flight_markup: v === "" ? null : Number(v),
+                          }
+                        : prev
+                    );
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Added per ticket when customer chooses to skip the flight.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="tags">Tag</Label>
@@ -2018,11 +2054,32 @@ export default function EventPage({
                           ${flight.price} · {flight.initial_quantity - flight.consumed_quantity} seats left
                         </span>
                       </div>
-                      <Button variant="ghost" size="sm" type="button" asChild>
-                        <a href={`/offline-flights/${flight.id}/edit`} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" type="button" asChild>
+                          <a href={`/offline-flights/${flight.id}/edit`} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          title="Unlink flight"
+                          onClick={async () => {
+                            if (!confirm(`Unlink ${flight.metadata_name} (${flight.airline_code}) from this event?`)) return;
+                            try {
+                              await removeEventFromFlight(flight.id, event.id);
+                              setLinkedFlights((prev) => prev.filter((f) => f.id !== flight.id));
+                              setAllFlights((prev) => [...prev, flight]);
+                              toast({ title: "Flight unlinked", description: `${flight.metadata_name} no longer linked.` });
+                            } catch (err) {
+                              toast({ variant: "destructive", title: "Error", description: (err as Error)?.message });
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2220,11 +2277,32 @@ export default function EventPage({
                           ${Number(hotel.price).toFixed(0)} · {hotel.num_rooms - hotel.consumed_rooms}/{hotel.num_rooms} rooms left
                         </span>
                       </div>
-                      <Button variant="ghost" size="sm" type="button" asChild>
-                        <a href={`/offline-hotels/${hotel.id}/edit`} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" type="button" asChild>
+                          <a href={`/offline-hotels/${hotel.id}/edit`} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          title="Unlink hotel"
+                          onClick={async () => {
+                            if (!confirm(`Unlink ${hotel.hotel_name} from this event?`)) return;
+                            try {
+                              await removeEventFromHotel(hotel.id, event.id);
+                              setLinkedHotels((prev) => prev.filter((h) => h.id !== hotel.id));
+                              setAllHotels((prev) => [...prev, hotel]);
+                              toast({ title: "Hotel unlinked", description: `${hotel.hotel_name} no longer linked.` });
+                            } catch (err) {
+                              toast({ variant: "destructive", title: "Error", description: (err as Error)?.message });
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2322,11 +2400,22 @@ export default function EventPage({
                               const updated = await addEventToHotel(hotel.id, event.id);
                               setLinkedHotels((prev) => [...prev, updated]);
                               setAllHotels((prev) => prev.filter((h) => h.id !== hotel.id));
-                              // Update event base hotel price to match the linked hotel
                               const newHotelPrice = Number(hotel.price);
-                              await updateEvent(event.id, { base_hotel_price: newHotelPrice });
-                              setEvent((prev) => prev ? { ...prev, base_hotel_price: newHotelPrice } : prev);
-                              toast({ title: "Hotel linked", description: `${hotel.hotel_name} linked. Base hotel price $${newHotelPrice}.` });
+                              // Flight wins over hotel for def dates — only set hotel dates if no flight linked yet
+                              const hasFlight = linkedFlights.length > 0;
+                              const eventUpdate: Partial<Event> = { base_hotel_price: newHotelPrice };
+                              if (!hasFlight) {
+                                eventUpdate.def_date_depart = hotel.check_in;
+                                eventUpdate.def_date_return = hotel.check_out;
+                              }
+                              await updateEvent(event.id, eventUpdate);
+                              setEvent((prev) => prev ? { ...prev, ...eventUpdate } : prev);
+                              toast({
+                                title: "Hotel linked",
+                                description: hasFlight
+                                  ? `${hotel.hotel_name} linked. Base hotel price $${newHotelPrice}.`
+                                  : `${hotel.hotel_name} linked. Dates ${hotel.check_in} → ${hotel.check_out}, base hotel price $${newHotelPrice}.`,
+                              });
                             } catch (err) {
                               toast({ variant: "destructive", title: "Error", description: (err as Error)?.message });
                             }
