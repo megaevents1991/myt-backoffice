@@ -31,7 +31,7 @@ export async function getOfflineFlight(id: number) {
 }
 
 export async function createOfflineFlight(
-  flight: Omit<OfflineFlight, "id" | "consumed_quantity" | "is_deleted">
+  flight: Omit<OfflineFlight, "id" | "consumed_quantity" | "is_deleted">,
 ) {
   const { data, error } = await flightsTable()
     .insert({ ...flight, consumed_quantity: 0, is_deleted: false })
@@ -47,14 +47,14 @@ export async function createOfflineFlight(
 
 export async function updateOfflineFlight(
   id: number,
-  flight: Partial<Omit<OfflineFlight, "id" | "consumed_quantity">>
+  flight: Partial<Omit<OfflineFlight, "id" | "consumed_quantity">>,
 ) {
-  // Detect newly linked events so we can update their default dates + price
   const { data: current } = await flightsTable()
-    .select("event_ids")
+    .select("event_ids, price")
     .eq("id", id)
     .single();
   const oldEventIds: number[] = current?.event_ids ?? [];
+  const oldPrice = Number(current?.price ?? 0);
   const newEventIds: number[] = flight.event_ids ?? oldEventIds;
   const addedEventIds = newEventIds.filter((eid) => !oldEventIds.includes(eid));
 
@@ -65,21 +65,35 @@ export async function updateOfflineFlight(
 
   if (error) throw error;
 
-  if (addedEventIds.length > 0) {
-    const updated = data[0] as OfflineFlight;
-    const defDepart = updated.outbound_departure_time.slice(0, 10);
-    const defReturn = updated.inbound_arrival_time.slice(0, 10);
-    const baseFlightPrice = Number(updated.price);
+  const updated = data[0] as OfflineFlight;
+  const defDepart = updated.outbound_departure_time.slice(0, 10);
+  const defReturn = updated.inbound_arrival_time.slice(0, 10);
+  const baseFlightPrice = Math.round(Number(updated.price));
+  const priceChanged = baseFlightPrice !== Math.round(oldPrice);
+
+  // Push price to newly added events; also push to existing events if price changed
+  const eventsNeedingPriceUpdate = new Set<number>(addedEventIds);
+  if (priceChanged) {
+    for (const eid of newEventIds) eventsNeedingPriceUpdate.add(eid);
+  }
+
+  if (eventsNeedingPriceUpdate.size > 0) {
     await Promise.all(
-      addedEventIds.map((eventId) =>
-        supabase.from("events").update({
-          def_date_depart: defDepart,
-          def_date_return: defReturn,
-          base_flight_price: baseFlightPrice,
-        }).eq("id", eventId)
-      )
+      Array.from(eventsNeedingPriceUpdate).map(async (eventId) => {
+        const isNewlyAdded = addedEventIds.includes(eventId);
+        const eventUpdate: Record<string, unknown> = { base_flight_price: baseFlightPrice };
+        if (isNewlyAdded) {
+          eventUpdate.def_date_depart = defDepart;
+          eventUpdate.def_date_return = defReturn;
+        }
+        const { error: evErr } = await (supabase as any)
+          .from("events")
+          .update(eventUpdate)
+          .eq("id", eventId);
+        if (evErr) throw evErr;
+      }),
     );
-    for (const eventId of addedEventIds) {
+    for (const eventId of eventsNeedingPriceUpdate) {
       revalidatePath(`/(dashboard)/events/${eventId}`);
     }
   }
@@ -101,7 +115,9 @@ export async function softDeleteOfflineFlight(id: number) {
   return data[0] as OfflineFlight;
 }
 
-export async function getFlightsByEventId(eventId: number): Promise<OfflineFlight[]> {
+export async function getFlightsByEventId(
+  eventId: number,
+): Promise<OfflineFlight[]> {
   const { data, error } = await flightsTable()
     .select("*")
     .contains("event_ids", [eventId])
@@ -112,7 +128,10 @@ export async function getFlightsByEventId(eventId: number): Promise<OfflineFligh
   return (data ?? []) as OfflineFlight[];
 }
 
-export async function removeEventFromFlight(flightId: number, eventId: number): Promise<OfflineFlight> {
+export async function removeEventFromFlight(
+  flightId: number,
+  eventId: number,
+): Promise<OfflineFlight> {
   const { data: current, error: fetchError } = await flightsTable()
     .select("event_ids")
     .eq("id", flightId)
@@ -133,7 +152,10 @@ export async function removeEventFromFlight(flightId: number, eventId: number): 
   return data[0] as OfflineFlight;
 }
 
-export async function addEventToFlight(flightId: number, eventId: number): Promise<OfflineFlight> {
+export async function addEventToFlight(
+  flightId: number,
+  eventId: number,
+): Promise<OfflineFlight> {
   const { data: current, error: fetchError } = await flightsTable()
     .select("event_ids")
     .eq("id", flightId)
@@ -160,7 +182,7 @@ export async function addEventToFlight(flightId: number, eventId: number): Promi
 export async function getRelevantEventsForFlight(
   destinationIata: string,
   departureDate: string,
-  returnDate: string
+  returnDate: string,
 ): Promise<Pick<Event, "id" | "name" | "date">[]> {
   const cityCodes = airportsInSameCity(destinationIata);
   const { data, error } = await supabase
