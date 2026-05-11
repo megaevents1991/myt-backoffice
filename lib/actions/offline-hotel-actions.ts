@@ -5,6 +5,7 @@ import type { OfflineHotel } from "../../types/offline-hotel.types";
 import type { Event } from "../../types/app.types";
 import type { OfflineFlight } from "../../types/offline-flight.types";
 import { revalidatePath } from "next/cache";
+import { airportsForCityName } from "@/lib/airport-cities";
 
 // offline_hotels is not in Supabase generated types — cast to bypass never inference
 const hotelsTable = () => (supabase as any).from("offline_hotels");
@@ -87,12 +88,12 @@ export async function updateOfflineHotel(
   id: number,
   hotel: Partial<Omit<OfflineHotel, "id" | "consumed_rooms" | "created_at">>
 ): Promise<OfflineHotel> {
-  // Detect newly linked events to propagate dates + base hotel price
   const { data: current } = await hotelsTable()
-    .select("event_ids")
+    .select("event_ids, price")
     .eq("id", id)
     .single();
   const oldEventIds: number[] = current?.event_ids ?? [];
+  const oldPrice = Number(current?.price ?? 0);
   const newEventIds: number[] = hotel.event_ids ?? oldEventIds;
   const addedEventIds = newEventIds.filter((eid) => !oldEventIds.includes(eid));
 
@@ -103,24 +104,40 @@ export async function updateOfflineHotel(
 
   if (error) throw error;
 
-  if (addedEventIds.length > 0) {
-    const updated = data[0] as OfflineHotel;
-    const baseHotelPrice = Number(updated.price);
+  const updated = data[0] as OfflineHotel;
+  const baseHotelPrice = Math.round(Number(updated.price));
+  const priceChanged = baseHotelPrice !== Math.round(oldPrice);
+
+  // Push price to all newly added events; also push to existing events if price changed
+  const eventsNeedingPriceUpdate = new Set<number>(addedEventIds);
+  if (priceChanged) {
+    for (const eid of newEventIds) eventsNeedingPriceUpdate.add(eid);
+  }
+
+  if (eventsNeedingPriceUpdate.size > 0) {
     await Promise.all(
-      addedEventIds.map(async (eventId) => {
-        // Flight wins over hotel for def dates — only set hotel dates if event has no flight linked
-        const { data: flightsForEvent } = await flightsTable()
-          .select("id")
-          .contains("event_ids", [eventId])
-          .eq("is_deleted", false)
-          .limit(1);
-        const hasFlight = (flightsForEvent ?? []).length > 0;
+      Array.from(eventsNeedingPriceUpdate).map(async (eventId) => {
+        const isNewlyAdded = addedEventIds.includes(eventId);
+        // Flight wins over hotel for def dates — only set hotel dates on newly-linked events without a flight
+        let hasFlight = true;
+        if (isNewlyAdded) {
+          const { data: flightsForEvent } = await flightsTable()
+            .select("id")
+            .contains("event_ids", [eventId])
+            .eq("is_deleted", false)
+            .limit(1);
+          hasFlight = (flightsForEvent ?? []).length > 0;
+        }
         const eventUpdate: Record<string, unknown> = { base_hotel_price: baseHotelPrice };
-        if (!hasFlight) {
+        if (isNewlyAdded && !hasFlight) {
           eventUpdate.def_date_depart = updated.check_in;
           eventUpdate.def_date_return = updated.check_out;
         }
-        await supabase.from("events").update(eventUpdate).eq("id", eventId);
+        const { error: evErr } = await (supabase as any)
+          .from("events")
+          .update(eventUpdate)
+          .eq("id", eventId);
+        if (evErr) throw evErr;
       })
     );
   }
@@ -236,17 +253,23 @@ export async function addFlightToHotel(hotelId: number, flightId: number): Promi
 
 // Returns events whose date falls within the hotel stay (city filter removed — location names are in Hebrew)
 export async function getRelevantEventsForHotel(
-  _city: string,
+  city: string,
   checkIn: string,
   checkOut: string
 ): Promise<Pick<Event, "id" | "name" | "date">[]> {
-  const { data, error } = await supabase
+  const cityCodes = airportsForCityName(city);
+  let query = supabase
     .from("events")
     .select("id, name, date")
     .is("is_deleted", null)
     .gte("date", checkIn)
-    .lte("date", checkOut)
-    .order("date", { ascending: true });
+    .lte("date", checkOut);
+
+  if (cityCodes && cityCodes.length > 0) {
+    query = query.in("location->>city_iata", cityCodes);
+  }
+
+  const { data, error } = await query.order("date", { ascending: true });
 
   if (error) throw error;
   return (data ?? []) as Pick<Event, "id" | "name" | "date">[];

@@ -104,25 +104,28 @@ export async function cancelReservation(id: number): Promise<Reservation> {
 
 async function releaseOfflineInventory(reservation: Reservation) {
   try {
+    const offlineFlightId = reservation.offline_flight_id ?? null;
     const flightInfo = reservation.flight_order_info as
-      | { offlineId?: number; numOfTravelers?: number }
+      | { numOfTravelers?: number }
       | undefined;
-    if (flightInfo?.offlineId) {
-      const { data: flightRow } = await supabase
+    const numOfTravelers = flightInfo?.numOfTravelers || 0;
+    if (offlineFlightId && numOfTravelers > 0) {
+      const { data: flightRow } = await (supabase as any)
         .from("flights")
         .select("consumed_quantity")
-        .eq("id", flightInfo.offlineId)
+        .eq("id", offlineFlightId)
         .single();
       if (flightRow) {
-        await supabase
+        const { error: flErr } = await (supabase as any)
           .from("flights")
           .update({
             consumed_quantity: Math.max(
               0,
-              (flightRow.consumed_quantity || 0) - (flightInfo.numOfTravelers || 0)
+              (flightRow.consumed_quantity || 0) - numOfTravelers
             ),
           })
-          .eq("id", flightInfo.offlineId);
+          .eq("id", offlineFlightId);
+        if (flErr) throw flErr;
       }
     }
 

@@ -2179,7 +2179,7 @@ export default function EventPage({
                               // Update event default dates + base flight price to match the linked flight
                               const newDepart = flight.outbound_departure_time.slice(0, 10);
                               const newReturn = flight.inbound_arrival_time.slice(0, 10);
-                              const newFlightPrice = Number(flight.price);
+                              const newFlightPrice = Math.round(Number(flight.price));
                               await updateEvent(event.id, {
                                 def_date_depart: newDepart,
                                 def_date_return: newReturn,
@@ -2400,7 +2400,7 @@ export default function EventPage({
                               const updated = await addEventToHotel(hotel.id, event.id);
                               setLinkedHotels((prev) => [...prev, updated]);
                               setAllHotels((prev) => prev.filter((h) => h.id !== hotel.id));
-                              const newHotelPrice = Number(hotel.price);
+                              const newHotelPrice = Math.round(Number(hotel.price));
                               // Flight wins over hotel for def dates — only set hotel dates if no flight linked yet
                               const hasFlight = linkedFlights.length > 0;
                               const eventUpdate: Partial<Event> = { base_hotel_price: newHotelPrice };

@@ -337,14 +337,17 @@ export default function NewOfflineHotelPage() {
             <FormField control={form.control} name="meal_plan" render={({ field }) => (
               <FormItem>
                 <FormLabel>Meal Plan (optional)</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                <Select
+                  onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}
+                  value={field.value ? field.value : "__none__"}
+                >
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select meal plan…" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     <SelectItem value="Room Only">Room Only</SelectItem>
                     <SelectItem value="Bed & Breakfast">Bed &amp; Breakfast</SelectItem>
                     <SelectItem value="Half Board">Half Board</SelectItem>
