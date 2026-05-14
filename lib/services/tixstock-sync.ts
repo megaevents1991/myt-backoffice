@@ -5,9 +5,7 @@ import {
   TixStockEventDB,
 } from "@/types/tixstock.types";
 
-const TIXSTOCK_API_URL =
-  process.env.NEXT_SECRET_TIXSTOCK_API_URL ||
-  "https://sandbox-pf.tixstock.com/v1";
+const TIXSTOCK_API_URL = process.env.NEXT_SECRET_TIXSTOCK_API_URL;
 const TIXSTOCK_TOKEN = process.env.NEXT_SECRET_TIXSTOCK_TOKEN;
 
 export interface TixStockSyncResult {

@@ -204,6 +204,7 @@ export default function P1EventDetailsPage() {
         base_flight_price: 0,
         base_hotel_price: 0,
         is_prioritized: false,
+        event_additional_markup: null,
         is_deleted: "",
         tags: event.category,
       };

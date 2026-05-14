@@ -268,6 +268,7 @@ export default function EventDetailsPage() {
       base_flight_price: 0, // Would need to be set manually
       base_hotel_price: 0, // Would need to be set manually
       is_prioritized: event.is_popular || false,
+      event_additional_markup: null,
       is_deleted: "",
       tags: "",
       type: "sports_event_dynamic"

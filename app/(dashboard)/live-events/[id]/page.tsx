@@ -280,6 +280,7 @@ export default function LiveEventDetailsPage() {
         base_flight_price: 0,
         base_hotel_price: 0,
         is_prioritized: false,
+        event_additional_markup: null,
         is_deleted: "",
         tags: ""
       };

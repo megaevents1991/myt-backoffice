@@ -118,7 +118,8 @@ export default function EventPage({
             ) as Omit<Event, "id">;
 
             // Apply smart date calculation if we have an event date
-            let finalData = { ...prePopulatedData };
+            const finalData = { ...prePopulatedData };
+            finalData.event_additional_markup ??= null;
             if (prePopulatedData.date) {
               const smartDates = calculateSmartDates(prePopulatedData.date);
               finalData.def_date_depart = smartDates.departure;
@@ -168,6 +169,7 @@ export default function EventPage({
               is_prioritized: false,
               skip_flight: false,
               skip_flight_markup: null,
+              event_additional_markup: null,
               is_deleted: "",
               tags: "",
             });
@@ -199,6 +201,7 @@ export default function EventPage({
             is_prioritized: false,
             skip_flight: false,
             skip_flight_markup: null,
+            event_additional_markup: null,
             is_deleted: "",
             tags: "",
           });
@@ -1467,6 +1470,37 @@ export default function EventPage({
                 </p>
               </div>
             )}
+
+            <div className="space-y-2">
+              <Label htmlFor="event_additional_markup">
+                Additional Event Markup (USD)
+              </Label>
+              <Input
+                id="event_additional_markup"
+                name="event_additional_markup"
+                type="number"
+                min={-32768}
+                max={32767}
+                step={1}
+                value={event.event_additional_markup ?? ""}
+                placeholder="Leave empty for none"
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setEvent((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          event_additional_markup:
+                            value === "" ? null : Number(value),
+                        }
+                      : prev
+                  );
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional per-event markup. Leave empty to store null.
+              </p>
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="tags">Tag</Label>
