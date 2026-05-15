@@ -5,7 +5,7 @@ const Amadeus = require("amadeus");
 const amadeus = new Amadeus({
   clientId: process.env.NEXT_SECRET_AMADEUS_CLIENT_ID as string,
   clientSecret: process.env.NEXT_SECRET_AMADEUS_CLIENT_SECRET as string,
-  hostname: 'production',
+  hostname: "production",
 });
 
 interface FlightSearchParams {
@@ -18,13 +18,168 @@ interface FlightSearchParams {
   currencyCode?: string;
 }
 
+const USA_AIRPORT_CODES = new Set([
+  "ATL",
+  "LAX",
+  "ORD",
+  "DFW",
+  "DEN",
+  "JFK",
+  "SFO",
+  "SEA",
+  "LAS",
+  "MCO",
+  "EWR",
+  "CLT",
+  "PHX",
+  "IAH",
+  "MIA",
+  "BOS",
+  "MSP",
+  "DTW",
+  "FLL",
+  "PHL",
+  "LGA",
+  "BWI",
+  "SLC",
+  "DCA",
+  "SAN",
+  "MDW",
+  "HNL",
+  "PDX",
+  "DAL",
+  "STL",
+  "HOU",
+  "MCI",
+  "OAK",
+  "SMF",
+  "MSY",
+  "RDU",
+  "SJC",
+  "AUS",
+  "BNA",
+  "IND",
+  "JAX",
+  "CMH",
+  "RSW",
+  "PIT",
+  "MEM",
+  "SAT",
+  "OMA",
+  "BUF",
+  "CLE",
+  "BDL",
+  "ORF",
+  "RIC",
+  "TPA",
+  "PBI",
+  "ABQ",
+  "OGG",
+  "KOA",
+  "LIH",
+  "ITO",
+  "GRR",
+  "MKE",
+  "TUL",
+  "OKC",
+  "BOI",
+  "FAT",
+  "SNA",
+  "BUR",
+  "ONT",
+  "LGB",
+  "SJU",
+  "PWM",
+  "ALB",
+  "SYR",
+  "ROC",
+  "BTV",
+  "MHT",
+  "PVD",
+  "BGR",
+  "GSP",
+  "CHS",
+  "SAV",
+  "PNS",
+  "MOB",
+  "HSV",
+  "BHM",
+  "MGM",
+  "DSM",
+  "MSN",
+  "FSD",
+  "RAP",
+  "GFK",
+  "BIS",
+  "BTR",
+  "SHV",
+  "LIT",
+  "XNA",
+  "TYS",
+  "CHA",
+  "GSO",
+  "AVL",
+  "MYR",
+  "CAE",
+  "AGS",
+  "VPS",
+  "TLH",
+  "GNV",
+  "DAB",
+  "MLB",
+  "SRQ",
+  "PIE",
+  "ECP",
+  "CID",
+  "DBQ",
+  "MLI",
+  "PIA",
+  "BMI",
+  "SPI",
+  "EVV",
+  "SBN",
+  "FWA",
+  "TOL",
+  "CAK",
+  "YNG",
+  "ERI",
+  "AVP",
+  "ABE",
+  "MDT",
+  "IPT",
+  "ELM",
+  "BGM",
+  "ITH",
+  "SWF",
+  "HPN",
+  "ISP",
+  "ACY",
+  "TTN",
+  "PHF",
+  "ILM",
+  "FAY",
+  "OAJ",
+  "IAD",
+]);
+
+function isUSADestination(iataCode: string): boolean {
+  return USA_AIRPORT_CODES.has(iataCode.toUpperCase());
+}
+
 function getStopsCount(offer: any): number {
-  const itineraries = Array.isArray(offer?.itineraries) ? offer.itineraries : [];
-  const maxStopsAcrossItineraries = itineraries.reduce((maxStops: number, itinerary: any) => {
-    const segments = Array.isArray(itinerary?.segments) ? itinerary.segments : [];
-    const stops = Math.max(0, segments.length - 1);
-    return Math.max(maxStops, stops);
-  }, 0);
+  const itineraries = Array.isArray(offer?.itineraries)
+    ? offer.itineraries
+    : [];
+  const maxStopsAcrossItineraries = itineraries.reduce(
+    (maxStops: number, itinerary: any) => {
+      const segments = Array.isArray(itinerary?.segments)
+        ? itinerary.segments
+        : [];
+      const stops = Math.max(0, segments.length - 1);
+      return Math.max(maxStops, stops);
+    },
+    0,
+  );
   return maxStopsAcrossItineraries;
 }
 
@@ -58,7 +213,7 @@ export async function POST(request: NextRequest) {
     if (!originLocationCode || !destinationLocationCode || !departureDate) {
       return NextResponse.json(
         { error: "Missing required parameters" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -82,8 +237,11 @@ export async function POST(request: NextRequest) {
       nonStop: Boolean(nonStop),
     };
 
-    const primaryResponse = await amadeus.shopping.flightOffersSearch.get(primaryParams);
-    let offers: any[] = Array.isArray(primaryResponse?.data) ? primaryResponse.data : [];
+    const primaryResponse =
+      await amadeus.shopping.flightOffersSearch.get(primaryParams);
+    let offers: any[] = Array.isArray(primaryResponse?.data)
+      ? primaryResponse.data
+      : [];
 
     // 2) Fallback search: if nonStop was requested and none returned,
     //    retry allowing connections, then filter to at most 1 connection (<= 1 stop)
@@ -96,9 +254,15 @@ export async function POST(request: NextRequest) {
         max: 50,
       };
 
-      const fallbackResponse = await amadeus.shopping.flightOffersSearch.get(fallbackParams);
-      const fallbackOffers: any[] = Array.isArray(fallbackResponse?.data) ? fallbackResponse.data : [];
-      offers = fallbackOffers.filter((offer: any) => getStopsCount(offer) <= 1);
+      const fallbackResponse =
+        await amadeus.shopping.flightOffersSearch.get(fallbackParams);
+      const fallbackOffers: any[] = Array.isArray(fallbackResponse?.data)
+        ? fallbackResponse.data
+        : [];
+      const maxStopsAllowed = isUSADestination(destinationLocationCode) ? 2 : 1;
+      offers = fallbackOffers.filter(
+        (offer: any) => getStopsCount(offer) <= maxStopsAllowed,
+      );
     }
 
     const cheapestPrice = pickTargetPrice(offers);
@@ -113,7 +277,7 @@ export async function POST(request: NextRequest) {
       usedFallback,
       selection: {
         nonStopRequested: Boolean(nonStop),
-        maxConnections: usedFallback ? 1 : (Boolean(nonStop) ? 0 : undefined),
+        maxConnections: usedFallback ? 1 : Boolean(nonStop) ? 0 : undefined,
         rule: "third-cheapest-if-possible-else-most-expensive",
       },
       // Optionally include some flight data for debugging
@@ -121,7 +285,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error("Flight search error:", error);
-    
+
     // Handle Amadeus-specific errors
     let errorMessage = "Failed to search flights";
     if (error.response?.data?.errors) {
@@ -135,7 +299,7 @@ export async function POST(request: NextRequest) {
         error: "Failed to search flights",
         message: errorMessage,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
