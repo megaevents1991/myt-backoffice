@@ -54,7 +54,7 @@ export function FileUploadZone({
   };
 
   // Upload a file to the server
-  const uploadFileToServer = async (file: File): Promise<boolean> => {
+  const uploadFileToServer = async (file: File): Promise<{ success: boolean; error?: string }> => {
     const formData = new FormData();
     formData.append("bucket", bucket);
     formData.append("path", path);
@@ -70,13 +70,13 @@ export function FileUploadZone({
       if (!response.ok) {
         const errorData = await response.json();
         console.error("Server upload error:", errorData);
-        return false;
+        return { success: false, error: errorData?.error ?? "Unknown error" };
       }
 
-      return true;
+      return { success: true };
     } catch (error) {
       console.error("Upload error:", error);
-      return false;
+      return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
     }
   };
 
@@ -86,23 +86,18 @@ export function FileUploadZone({
     setIsUploading(true);
     setProgress(0);
     let successCount = 0;
-    let errorCount = 0;
+    const errors: { name: string; message: string }[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      try {
-        const success = await uploadFileToServer(file);
-        if (success) {
-          successCount++;
-        } else {
-          errorCount++;
-        }
-        // Update progress
-        setProgress(Math.round(((i + 1) / files.length) * 100));
-      } catch (error) {
-        console.error(`Error uploading file ${file.name}:`, error);
-        errorCount++;
+      const result = await uploadFileToServer(file);
+      if (result.success) {
+        successCount++;
+      } else {
+        errors.push({ name: file.name, message: result.error ?? "Unknown error" });
       }
+      // Update progress
+      setProgress(Math.round(((i + 1) / files.length) * 100));
     }
 
     setIsUploading(false);
@@ -113,18 +108,22 @@ export function FileUploadZone({
         title: "Upload complete",
         description: `Successfully uploaded ${successCount} file${
           successCount !== 1 ? "s" : ""
-        }${errorCount > 0 ? `, ${errorCount} failed` : ""}.`,
+        }${errors.length > 0 ? `, ${errors.length} failed` : ""}.`,
       });
 
       // Refresh the file list
       onUploadComplete();
-    } else if (errorCount > 0) {
+    }
+
+    if (errors.length > 0) {
+      const description =
+        errors.length === 1
+          ? `${errors[0].name}: ${errors[0].message}`
+          : errors.map((e) => `${e.name}: ${e.message}`).join("\n");
       toast({
         variant: "destructive",
-        title: "Upload failed",
-        description: `Failed to upload ${errorCount} file${
-          errorCount !== 1 ? "s" : ""
-        }.`,
+        title: `Upload failed (${errors.length} file${errors.length !== 1 ? "s" : ""})`,
+        description,
       });
     }
   };
