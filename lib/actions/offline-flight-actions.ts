@@ -112,6 +112,19 @@ export async function softDeleteOfflineFlight(id: number) {
 
   if (error) throw error;
   revalidatePath("/(dashboard)/offline-flights");
+  revalidatePath(`/(dashboard)/offline-flights/${id}`);
+  return data[0] as OfflineFlight;
+}
+
+export async function restoreOfflineFlight(id: number) {
+  const { data, error } = await flightsTable()
+    .update({ is_deleted: false })
+    .eq("id", id)
+    .select();
+
+  if (error) throw error;
+  revalidatePath("/(dashboard)/offline-flights");
+  revalidatePath(`/(dashboard)/offline-flights/${id}`);
   return data[0] as OfflineFlight;
 }
 
