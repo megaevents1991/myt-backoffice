@@ -12,17 +12,6 @@ import type { Reservation } from "@/types/reservation.types";
 import { getReservations, updateReservation, updateReservationsStatus } from "@/lib/actions/reservation-actions";
 import { useToast } from "@/hooks/use-toast";
 
-function MegaBadge() {
-  return (
-    <span
-      className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold text-white shadow-sm"
-      style={{ background: "linear-gradient(90deg, #d4af37 0%, #c026d3 100%)" }}
-    >
-      Mega
-    </span>
-  );
-}
-
 function isOfflineReservation(r: Reservation) {
   return r.offline_flight_id != null || r.offline_hotel_id != null;
 }
@@ -244,25 +233,6 @@ export function ReservationsTable() {
       },
     },
     {
-      id: "mega",
-      header: "Mega",
-      cell: ({ row }) =>
-        isOfflineReservation(row.original) ? <MegaBadge /> : <span className="text-muted-foreground">-</span>,
-    },
-    {
-      id: "profit",
-      header: "Profit",
-      cell: ({ row }) => {
-        const r = row.original;
-        if (!isOfflineReservation(r)) return <span className="text-muted-foreground">-</span>;
-        const cost =
-          Number(r.offline_flight_cost ?? 0) + Number(r.offline_hotel_cost ?? 0);
-        const profit = Number(r.user_shown_price ?? 0) - cost;
-        const color = profit >= 0 ? "text-emerald-600" : "text-red-600";
-        return <div className={`font-medium ${color}`}>${profit.toFixed(2)}</div>;
-      },
-    },
-    {
       accessorKey: "created_at",
       header: ({ column }) => {
         return (
@@ -415,9 +385,10 @@ export function ReservationsTable() {
     return <div>Loading reservations...</div>;
   }
 
-  const visibleReservations = offlineOnly
-    ? reservations.filter(isOfflineReservation)
-    : reservations;
+  // Lost reservations are never shown in the table.
+  const visibleReservations = reservations
+    .filter((r) => (r.status || "").toLowerCase() !== "lost")
+    .filter((r) => (offlineOnly ? isOfflineReservation(r) : true));
 
   return (
     <DataTable
@@ -434,6 +405,7 @@ export function ReservationsTable() {
       searchPlaceholder="Search by name, phone, email, or acc no..."
       defaultPageSize={50}
   pageSizeOptions={[10, 25, 50, 100]}
+      dense
       enableRowSelection
       onRowSelectionChange={(selection) => setRowSelection(selection)}
       bulkActions={

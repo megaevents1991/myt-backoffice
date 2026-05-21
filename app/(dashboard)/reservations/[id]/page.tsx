@@ -366,7 +366,8 @@ export default function ReservationDetailsPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {'airline' in reservation.flight_order_info && (
+            {reservation.flight_order_info &&
+            "airline" in reservation.flight_order_info ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -539,6 +540,11 @@ export default function ReservationDetailsPage({
                     </p>
                   </div>
                 </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <p className="text-lg font-medium">No Flight Included</p>
+                <p className="text-sm mt-2">This reservation does not include a flight.</p>
               </div>
             )}
           </CardContent>
