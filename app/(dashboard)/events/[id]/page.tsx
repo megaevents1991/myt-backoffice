@@ -2210,9 +2210,11 @@ export default function EventPage({
                               const updated = await addEventToFlight(flight.id, event.id);
                               setLinkedFlights((prev) => [...prev, updated]);
                               setAllFlights((prev) => prev.filter((f) => f.id !== flight.id));
-                              // Update event default dates + base flight price to match the linked flight
+                              // Update event default dates + base flight price to match the linked flight.
+                              // Return date = takeoff of the return leg (inbound_departure_time),
+                              // NOT the landing-back-in-Israel time (inbound_arrival_time).
                               const newDepart = flight.outbound_departure_time.slice(0, 10);
-                              const newReturn = flight.inbound_arrival_time.slice(0, 10);
+                              const newReturn = flight.inbound_departure_time.slice(0, 10);
                               const newFlightPrice = Math.round(Number(flight.price));
                               await updateEvent(event.id, {
                                 def_date_depart: newDepart,
