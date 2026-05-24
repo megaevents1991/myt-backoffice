@@ -251,7 +251,7 @@ export async function addFlightToHotel(hotelId: number, flightId: number): Promi
   return data[0] as OfflineHotel;
 }
 
-// Returns events whose date falls within the hotel stay (city filter removed — location names are in Hebrew)
+// Returns events whose date falls strictly between check-in and check-out (excludes same-day arrival/departure)
 export async function getRelevantEventsForHotel(
   city: string,
   checkIn: string,
@@ -262,8 +262,8 @@ export async function getRelevantEventsForHotel(
     .from("events")
     .select("id, name, date")
     .is("is_deleted", null)
-    .gte("date", checkIn)
-    .lte("date", checkOut);
+    .gt("date", checkIn)
+    .lt("date", checkOut);
 
   if (cityCodes && cityCodes.length > 0) {
     query = query.in("location->>city_iata", cityCodes);
