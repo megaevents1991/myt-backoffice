@@ -385,10 +385,9 @@ export function ReservationsTable() {
     return <div>Loading reservations...</div>;
   }
 
-  // Lost reservations are never shown in the table.
-  const visibleReservations = reservations
-    .filter((r) => (r.status || "").toLowerCase() !== "lost")
-    .filter((r) => (offlineOnly ? isOfflineReservation(r) : true));
+  const visibleReservations = offlineOnly
+    ? reservations.filter(isOfflineReservation)
+    : reservations;
 
   return (
     <DataTable
