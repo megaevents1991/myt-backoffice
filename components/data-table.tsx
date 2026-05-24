@@ -52,6 +52,8 @@ interface DataTableProps<TData, TValue> {
   rightActions?: React.ReactNode;
   pageSizeOptions?: number[];
   getRowClassName?: (row: Row<TData>, index: number, sorting: SortingState) => string | undefined;
+  /** Tighter cell padding so wide tables fit without horizontal scroll. */
+  dense?: boolean;
 }
 
 export function DataTable<TData, TValue>({
@@ -69,6 +71,7 @@ export function DataTable<TData, TValue>({
   rightActions,
   pageSizeOptions = [10, 25, 50, 100],
   getRowClassName,
+  dense = false,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -229,7 +232,10 @@ export function DataTable<TData, TValue>({
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
                   return (
-                    <TableHead key={header.id}>
+                    <TableHead
+                      key={header.id}
+                      className={dense ? "h-10 px-2" : undefined}
+                    >
                       {header.isPlaceholder
                         ? null
                         : flexRender(
@@ -251,7 +257,10 @@ export function DataTable<TData, TValue>({
                   className={getRowClassName?.(row, index, sorting)}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
+                    <TableCell
+                      key={cell.id}
+                      className={dense ? "p-2" : undefined}
+                    >
                       {flexRender(
                         cell.column.columnDef.cell,
                         cell.getContext()

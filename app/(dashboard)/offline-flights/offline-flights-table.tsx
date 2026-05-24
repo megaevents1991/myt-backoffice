@@ -18,8 +18,9 @@ import { OfflineFlight } from "@/types/offline-flight.types";
 import {
   getOfflineFlights,
   softDeleteOfflineFlight,
+  restoreOfflineFlight,
 } from "@/lib/actions/offline-flight-actions";
-import { Edit, Trash2, Eye } from "lucide-react";
+import { Edit, Trash2, Eye, RotateCcw } from "lucide-react";
 
 export function OfflineFlightsTable() {
   const [flights, setFlights] = useState<OfflineFlight[]>([]);
@@ -80,6 +81,22 @@ export function OfflineFlightsTable() {
       } catch (error) {
         console.error("Failed to delete flight:", error);
         toast.error("Failed to delete flight.");
+      }
+    });
+  };
+
+  const handleRestore = async (id: number) => {
+    if (!confirm("Restore this flight to active status?")) return;
+    startTransition(async () => {
+      try {
+        await restoreOfflineFlight(id);
+        setFlights((prevFlights) =>
+          prevFlights.map((f) => (f.id === id ? { ...f, is_deleted: false } : f))
+        );
+        toast.success("Flight restored successfully.");
+      } catch (error) {
+        console.error("Failed to restore flight:", error);
+        toast.error("Failed to restore flight.");
       }
     });
   };
@@ -189,21 +206,31 @@ export function OfflineFlightsTable() {
                           <span className="sr-only">Edit Flight</span>
                         </Button>
                       </Link>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Delete Flight"
-                        onClick={() => handleDelete(flight.id)}
-                        disabled={isPending || Boolean(flight.is_deleted)}
-                        className={
-                          flight.is_deleted
-                            ? "text-muted-foreground cursor-not-allowed"
-                            : "text-red-600 hover:text-red-700"
-                        }
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">Delete Flight</span>
-                      </Button>
+                      {flight.is_deleted ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Restore Flight"
+                          onClick={() => handleRestore(flight.id)}
+                          disabled={isPending}
+                          className="text-green-600 hover:text-green-700"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                          <span className="sr-only">Restore Flight</span>
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Delete Flight"
+                          onClick={() => handleDelete(flight.id)}
+                          disabled={isPending}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Delete Flight</span>
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
