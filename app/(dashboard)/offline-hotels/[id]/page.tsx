@@ -1,5 +1,5 @@
 import { getOfflineHotel } from "@/lib/actions/offline-hotel-actions";
-import { getReservationsForHotel } from "@/lib/actions/reservation-actions";
+import { getReservationsForHotel, reconcileHotelInventory } from "@/lib/actions/reservation-actions";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -49,11 +49,15 @@ export default async function OfflineHotelDetailsPage({
     notFound();
   }
 
-  const hotel = await getOfflineHotel(hotelIdAsNumber);
+  let hotel = await getOfflineHotel(hotelIdAsNumber);
 
   if (!hotel) {
     notFound();
   }
+
+  // Self-heal stored consumed_rooms from active reservations before render
+  await reconcileHotelInventory(hotelIdAsNumber);
+  hotel = await getOfflineHotel(hotelIdAsNumber);
 
   const reservations = await getReservationsForHotel(hotelIdAsNumber);
 

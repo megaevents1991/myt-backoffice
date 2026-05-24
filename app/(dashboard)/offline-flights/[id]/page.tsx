@@ -1,5 +1,5 @@
 import { getOfflineFlight } from "@/lib/actions/offline-flight-actions";
-import { getReservationsForFlight } from "@/lib/actions/reservation-actions";
+import { getReservationsForFlight, reconcileFlightInventory } from "@/lib/actions/reservation-actions";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -67,11 +67,15 @@ export default async function OfflineFlightDetailsPage({
     notFound();
   }
 
-  const flight = await getOfflineFlight(flightIdAsNumber);
+  let flight = await getOfflineFlight(flightIdAsNumber);
 
   if (!flight) {
     notFound();
   }
+
+  // Self-heal stored consumed_quantity from active reservations before render
+  await reconcileFlightInventory(flightIdAsNumber);
+  flight = await getOfflineFlight(flightIdAsNumber);
 
   const reservations = await getReservationsForFlight(flightIdAsNumber);
 
