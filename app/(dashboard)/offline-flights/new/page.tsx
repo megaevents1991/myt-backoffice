@@ -370,19 +370,19 @@ export default function NewOfflineFlightPage() {
     if (
       !iataCodePattern.test(destinationIata) ||
       !departureTime ||
-      !returnTime
+      !inboundDepartureTime
     ) {
       setRelevantEvents([]);
       return;
     }
 
     const departureDate = departureTime.slice(0, 10);
-    const returnDate = returnTime.slice(0, 10);
+    const returnDepartureDate = inboundDepartureTime.slice(0, 10);
 
     let cancelled = false;
     setIsLoadingEvents(true);
 
-    getRelevantEventsForFlight(destinationIata, departureDate, returnDate)
+    getRelevantEventsForFlight(destinationIata, departureDate, returnDepartureDate)
       .then((events) => {
         if (!cancelled) setRelevantEvents(events as { id: number; name: string; date: string }[]);
       })
@@ -394,7 +394,7 @@ export default function NewOfflineFlightPage() {
     return () => {
       cancelled = true;
     };
-  }, [destinationIata, departureTime, returnTime]);
+  }, [destinationIata, departureTime, inboundDepartureTime]);
 
   const validateAirlineCode = async () => {
     const airlineCode = form.getValues("airline_code");

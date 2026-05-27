@@ -181,11 +181,16 @@ export type InventoryReservation = Pick<
 const INVENTORY_RESERVATION_FIELDS =
   "id, created_at, main_contact_first_name, main_contact_last_name, main_contact_email, main_contact_phone_number, status, more_pax_info, offline_flight_id, offline_hotel_id, offline_hotel_ids";
 
+// Lost/Cancelled reservations no longer hold inventory and are hidden from
+// the inventory detail pages.
+const ACTIVE_RESERVATION_STATUSES_FILTER = "Cancelled,Lost";
+
 export async function getReservationsForFlight(flightId: number): Promise<InventoryReservation[]> {
   const { data, error } = await supabase
     .from("reservations")
     .select(INVENTORY_RESERVATION_FIELDS)
     .eq("offline_flight_id", flightId)
+    .not("status", "in", `(${ACTIVE_RESERVATION_STATUSES_FILTER})`)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as unknown as InventoryReservation[];
@@ -196,8 +201,80 @@ export async function getReservationsForHotel(hotelId: number): Promise<Inventor
     .from("reservations")
     .select(INVENTORY_RESERVATION_FIELDS)
     .or(`offline_hotel_id.eq.${hotelId},offline_hotel_ids.cs.{${hotelId}}`)
+    .not("status", "in", `(${ACTIVE_RESERVATION_STATUSES_FILTER})`)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as unknown as InventoryReservation[];
+}
+
+// Recomputes consumed_quantity for an offline flight from active reservations.
+// Each reservation counts its `flight_order_info.numOfTravelers` (default 1).
+// Idempotent — safe to run on every page view.
+export async function reconcileFlightInventory(flightId: number): Promise<number> {
+  const { data: rows, error } = await supabase
+    .from("reservations")
+    .select("flight_order_info, status")
+    .eq("offline_flight_id", flightId)
+    .not("status", "in", `(${ACTIVE_RESERVATION_STATUSES_FILTER})`);
+  if (error) throw error;
+
+  let consumed = 0;
+  for (const r of (rows ?? []) as { flight_order_info: { numOfTravelers?: number } | null }[]) {
+    const n = r?.flight_order_info?.numOfTravelers;
+    consumed += typeof n === "number" && n > 0 ? n : 0;
+  }
+
+  const { data: current } = await (supabase as any)
+    .from("flights")
+    .select("consumed_quantity")
+    .eq("id", flightId)
+    .single();
+  if (current && current.consumed_quantity !== consumed) {
+    const { error: upErr } = await (supabase as any)
+      .from("flights")
+      .update({ consumed_quantity: consumed })
+      .eq("id", flightId);
+    if (upErr) throw upErr;
+  }
+  return consumed;
+}
+
+// Recomputes consumed_rooms for an offline hotel from active reservations.
+// Each occurrence of the hotel id in `offline_hotel_ids` (or `offline_hotel_id`
+// fallback) counts as one room.
+export async function reconcileHotelInventory(hotelId: number): Promise<number> {
+  const { data: rows, error } = await supabase
+    .from("reservations")
+    .select("offline_hotel_id, offline_hotel_ids, status")
+    .or(`offline_hotel_id.eq.${hotelId},offline_hotel_ids.cs.{${hotelId}}`)
+    .not("status", "in", `(${ACTIVE_RESERVATION_STATUSES_FILTER})`);
+  if (error) throw error;
+
+  let consumed = 0;
+  for (const r of (rows ?? []) as {
+    offline_hotel_id: number | null;
+    offline_hotel_ids: number[] | null;
+  }[]) {
+    const ids = r.offline_hotel_ids && r.offline_hotel_ids.length > 0
+      ? r.offline_hotel_ids
+      : r.offline_hotel_id != null
+      ? [r.offline_hotel_id]
+      : [];
+    consumed += ids.filter((id) => id === hotelId).length;
+  }
+
+  const { data: current } = await (supabase as any)
+    .from("offline_hotels")
+    .select("consumed_rooms")
+    .eq("id", hotelId)
+    .single();
+  if (current && current.consumed_rooms !== consumed) {
+    const { error: upErr } = await (supabase as any)
+      .from("offline_hotels")
+      .update({ consumed_rooms: consumed })
+      .eq("id", hotelId);
+    if (upErr) throw upErr;
+  }
+  return consumed;
 }
 

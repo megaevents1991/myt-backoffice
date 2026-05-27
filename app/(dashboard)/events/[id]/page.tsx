@@ -1090,10 +1090,10 @@ export default function EventPage({
       f.initial_quantity > 0 &&
       !linkedFlights.some((l) => l.id === f.id) &&
       airportsMatch(f.outbound_arrival_airport, event?.location?.city_iata) &&
-      // departure must be at least 1 day before event, arrival at least 1 day after
+      // event must fall strictly between outbound departure and return-leg takeoff
       (!event?.date || (
         f.outbound_departure_time.slice(0, 10) < event.date &&
-        f.inbound_arrival_time.slice(0, 10) > event.date
+        f.inbound_departure_time.slice(0, 10) > event.date
       ))
   );
 
