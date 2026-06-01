@@ -647,7 +647,8 @@ export default function ReservationDetailsPage({
                   <div>
                     <p className="text-sm font-medium">Meal</p>
                     <p className="text-lg">
-                      {reservation.hotel_order_info?.meal_data?.has_breakfast
+                      {reservation.hotel_order_info?.rate?.meal_data
+                        ?.has_breakfast
                         ? "Includes Breakfast"
                         : "No Meal Included"}
                     </p>

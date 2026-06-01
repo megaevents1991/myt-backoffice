@@ -50,6 +50,23 @@ export async function GET(req: Request) {
   }
   console.log("Cron job started!");
 
+  // Fail loud if SMTP is unreachable BEFORE looping partners, so a creds/host
+  // problem surfaces in the response instead of silently emailing no one.
+  try {
+    await transporter.verify();
+  } catch (verifyError) {
+    console.error("SMTP verify failed — aborting, no mail sent:", verifyError);
+    return Response.json(
+      { ok: false, stage: "smtp_verify", error: String(verifyError) },
+      { status: 502 },
+    );
+  }
+
+  // Per-partner outcomes — returned in the response AND mailed to ops so a
+  // partial/total failure can never pass unnoticed again.
+  const sent: { partner: string; email: string }[] = [];
+  const failed: { partner: string; email: string; error: string }[] = [];
+
   try {
     const now = new Date();
     const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -124,19 +141,79 @@ export async function GET(req: Request) {
         continue;
       }
 
-      await sendMonthlyReportEmail({
+      const result = await sendMonthlyReportEmail({
         partnerName: partnerData?.name_hebrew,
         commission: partnerData?.commission,
         email: partnerData.email,
         reservations: partnerReservations as Reservation[],
         supplier_number: partnerData?.supplier_number,
       } as PartnerData);
+
+      if (result.ok) {
+        sent.push({ partner: partnerData?.name_hebrew, email: partnerData.email });
+      } else {
+        failed.push({
+          partner: partnerData?.name_hebrew,
+          email: partnerData.email,
+          error: result.error ?? "unknown",
+        });
+      }
     }
   } catch (error) {
     console.error("Error generating monthly reports:", error);
+    await sendOpsSummary(sent, failed, String(error)).catch(() => {});
+    return Response.json(
+      { ok: false, stage: "loop", error: String(error), sent, failed },
+      { status: 500 },
+    );
   }
 
-  return new Response("Cron job executed");
+  // Always tell ops what happened — counts + the exact partners that failed.
+  await sendOpsSummary(sent, failed).catch(() => {});
+
+  console.log(`Cron done. sent=${sent.length} failed=${failed.length}`);
+  return Response.json({
+    ok: failed.length === 0,
+    sentCount: sent.length,
+    failedCount: failed.length,
+    sent,
+    failed,
+  });
+}
+
+// Emails alon/office a run summary so a silent failure (no mail to anyone, or
+// a few partners erroring) is always visible the morning of the 1st.
+async function sendOpsSummary(
+  sent: { partner: string; email: string }[],
+  failed: { partner: string; email: string; error: string }[],
+  fatalError?: string,
+) {
+  const rows = (
+    list: { partner: string; email: string; error?: string }[],
+  ) =>
+    list
+      .map(
+        (r) =>
+          `<tr><td>${r.partner}</td><td>${r.email}</td><td>${r.error ?? "—"}</td></tr>`,
+      )
+      .join("") || `<tr><td colspan="3">none</td></tr>`;
+
+  const html = `
+    <h2>Partner Monthly Report — run summary</h2>
+    ${fatalError ? `<p style="color:#c00"><b>FATAL:</b> ${fatalError}</p>` : ""}
+    <p>Sent: <b>${sent.length}</b> &nbsp; Failed: <b>${failed.length}</b></p>
+    <h3>Sent</h3>
+    <table border="1" cellpadding="6"><tr><th>Partner</th><th>Email</th><th></th></tr>${rows(sent)}</table>
+    <h3>Failed</h3>
+    <table border="1" cellpadding="6"><tr><th>Partner</th><th>Email</th><th>Error</th></tr>${rows(failed)}</table>
+  `;
+
+  await transporter.sendMail({
+    from: "alon@mega-events.co.il",
+    to: "alon@megatr.co.il, office@megatr.co.il",
+    subject: `Partner Monthly Report — sent ${sent.length}, failed ${failed.length}${fatalError ? " (FATAL)" : ""}`,
+    html,
+  });
 }
 
 const generateEmailHtml = ({
@@ -594,7 +671,6 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
   });
 
   try {
-    await transporter.verify();
     await transporter.sendMail({
       from: "alon@mega-events.co.il",
       to: partnerData.email,
@@ -608,8 +684,9 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
       html: emailHtmlToOrly,
     });
     console.log(`Email sent to ${partnerData.partnerName} - ${month} ${year}`);
+    return { ok: true as const };
   } catch (error) {
-    console.error("Error: ", error);
+    console.error(`Error sending to ${partnerData.partnerName}: `, error);
+    return { ok: false as const, error: String(error) };
   }
-  return true;
 }
