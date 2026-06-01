@@ -74,12 +74,17 @@ export type FlightSegment = {
 };
 
 export type OrderHotel = {
-  rate: string;
+  // Full WorldOTA rate object saved by the main app. Meal info lives here,
+  // NOT at the top level (kept in sync with main app lib/app.types.ts).
+  rate: {
+    meal_data: { value: string; has_breakfast: boolean };
+    meal: string;
+    room_name?: string;
+    [key: string]: unknown;
+  };
   address: string;
   name: string;
   id: string;
-  meal_data: { value: string; has_breakfast: boolean };
-  meal: string;
   price: string;
   guests: { adults: number; children: JSON[] }[];
   checkin: string;

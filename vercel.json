@@ -46,6 +46,10 @@
       "memory": 1024,
       "maxDuration": 60
     },
+    "app/api/cron/partnerMonthlyReport/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
     "app/api/cron/nightlyTixstockSync/route.ts": {
       "memory": 1024,
       "maxDuration": 800
