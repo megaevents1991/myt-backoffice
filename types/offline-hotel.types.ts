@@ -12,6 +12,8 @@ export interface OfflineHotel {
   meal_plan: string | null;
   notes: string | null;
   last_cancellation_date: string | null; // DATE "YYYY-MM-DD" — earliest free-cancel deadline across rooms
+  guest_rating: number | null;       // manual guest score (0–10); null = inherit from linked hotels.hid
+  guest_review_count: number | null; // manual review count; null = inherit
   event_ids: number[];
   flight_ids: number[];
   is_deleted: boolean | null;

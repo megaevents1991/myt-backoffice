@@ -71,6 +71,8 @@ const offlineHotelFormSchema = z.object({
   meal_plan: z.string().optional(),
   notes: z.string().optional(),
   last_cancellation_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD.").optional().or(z.literal("")),
+  guest_rating: z.coerce.number().min(0).max(10).optional().or(z.literal("")),
+  guest_review_count: z.coerce.number().int().min(0).optional().or(z.literal("")),
   event_ids: z.array(z.number().int()).default([]),
   flight_ids: z.array(z.number().int()).default([]),
 }).refine(
@@ -132,6 +134,8 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
           meal_plan: hotel.meal_plan ?? "",
           notes: hotel.notes ?? "",
           last_cancellation_date: hotel.last_cancellation_date ?? "",
+          guest_rating: (hotel.guest_rating ?? "") as any,
+          guest_review_count: (hotel.guest_review_count ?? "") as any,
           event_ids: hotel.event_ids ?? [],
           flight_ids: hotel.flight_ids ?? [],
         });
@@ -197,6 +201,8 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
           meal_plan: values.meal_plan || null,
           notes: values.notes || null,
           last_cancellation_date: values.last_cancellation_date || null,
+          guest_rating: values.guest_rating === "" ? null : Number(values.guest_rating),
+          guest_review_count: values.guest_review_count === "" ? null : Number(values.guest_review_count),
         } as Partial<Omit<OfflineHotel, "id" | "consumed_rooms" | "created_at">>);
         toast.success("Hotel updated successfully!");
         router.push("/offline-hotels");
@@ -400,6 +406,22 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
                 <FormLabel>Last Cancellation Date (optional)</FormLabel>
                 <FormControl><Input type="date" {...field} /></FormControl>
                 <FormDescription>Free cancellation deadline shown to customers. Leave blank if not applicable.</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="guest_rating" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Guest Rating 0–10 (optional)</FormLabel>
+                <FormControl><Input type="number" step="0.1" min="0" max="10" placeholder="e.g., 8.5" {...field} /></FormControl>
+                <FormDescription>Leave blank to inherit from the linked WorldOTA hotel (hid).</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="guest_review_count" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Review Count (optional)</FormLabel>
+                <FormControl><Input type="number" step="1" min="0" placeholder="e.g., 1240" {...field} /></FormControl>
+                <FormDescription>Shown next to the guest rating. Leave blank to inherit.</FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
