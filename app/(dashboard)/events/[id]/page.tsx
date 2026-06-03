@@ -57,6 +57,7 @@ import {
 } from "@/lib/actions/offline-hotel-actions";
 import type { OfflineHotel } from "@/types/offline-hotel.types";
 import { InlineHotelForm, type StagedHotelData } from "@/components/inline-hotel-form";
+import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
 
 const TX_TICKET_COLOR = "rgb(5, 32, 60)";
 
@@ -2084,7 +2085,7 @@ export default function EventPage({
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {flight.outbound_departure_airport} → {flight.outbound_arrival_airport} ·{" "}
-                          {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_arrival_time.slice(0, 10)} ·{" "}
+                          {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_departure_time.slice(0, 10)} ·{" "}
                           ${flight.price} · {flight.initial_quantity - flight.consumed_quantity} seats left
                         </span>
                       </div>
@@ -2134,7 +2135,7 @@ export default function EventPage({
                       </span>
                       <span className="text-xs text-muted-foreground">
                         {flight.outbound_departure_airport} → {flight.outbound_arrival_airport} ·{" "}
-                        {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_arrival_time.slice(0, 10)} ·{" "}
+                        {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_departure_time.slice(0, 10)} ·{" "}
                         ${flight.price}
                       </span>
                     </div>
@@ -2197,7 +2198,7 @@ export default function EventPage({
                           </span>
                           <span className="text-xs text-muted-foreground">
                             {flight.outbound_departure_airport} → {flight.outbound_arrival_airport} ·{" "}
-                            {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_arrival_time.slice(0, 10)} ·{" "}
+                            {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_departure_time.slice(0, 10)} ·{" "}
                             ${flight.price}
                           </span>
                         </div>
@@ -2436,7 +2437,11 @@ export default function EventPage({
                               const updated = await addEventToHotel(hotel.id, event.id);
                               setLinkedHotels((prev) => [...prev, updated]);
                               setAllHotels((prev) => prev.filter((h) => h.id !== hotel.id));
-                              const newHotelPrice = Math.round(Number(hotel.price));
+                              // offline `price` is the TOTAL per room; base_hotel_price is
+                              // per-person in the main app → divide by room headcount (Double 2, Triple 3, ...)
+                              const newHotelPrice = Math.round(
+                                Number(hotel.price) / getOfflineRoomCapacity(hotel.room_type)
+                              );
                               // Flight wins over hotel for def dates — only set hotel dates if no flight linked yet
                               const hasFlight = linkedFlights.length > 0;
                               const eventUpdate: Partial<Event> = {};
