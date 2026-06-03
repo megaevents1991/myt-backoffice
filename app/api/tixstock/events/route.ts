@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
         .from("tixstock_events")
         .select("*", { count: "exact" })
         .not("event_status", "in", '("Cancelled","Deleted")')
+        .gte("show_date", new Date().toISOString())
         .order("show_date", { ascending: true })
         .range(from, from + PAGE_SIZE - 1);
 
