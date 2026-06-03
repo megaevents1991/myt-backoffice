@@ -67,7 +67,9 @@ export async function updateOfflineFlight(
 
   const updated = data[0] as OfflineFlight;
   const defDepart = updated.outbound_departure_time.slice(0, 10);
-  const defReturn = updated.inbound_arrival_time.slice(0, 10);
+  // Return date = takeoff of the return leg (inbound_departure_time),
+  // NOT the landing-back-in-Israel time (inbound_arrival_time).
+  const defReturn = updated.inbound_departure_time.slice(0, 10);
   const baseFlightPrice = Math.round(Number(updated.price));
   const priceChanged = baseFlightPrice !== Math.round(oldPrice);
 

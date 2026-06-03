@@ -57,6 +57,7 @@ import {
 } from "@/lib/actions/offline-hotel-actions";
 import type { OfflineHotel } from "@/types/offline-hotel.types";
 import { InlineHotelForm, type StagedHotelData } from "@/components/inline-hotel-form";
+import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
 
 const TX_TICKET_COLOR = "rgb(5, 32, 60)";
 
@@ -2084,7 +2085,7 @@ export default function EventPage({
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {flight.outbound_departure_airport} → {flight.outbound_arrival_airport} ·{" "}
-                          {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_arrival_time.slice(0, 10)} ·{" "}
+                          {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_departure_time.slice(0, 10)} ·{" "}
                           ${flight.price} · {flight.initial_quantity - flight.consumed_quantity} seats left
                         </span>
                       </div>
@@ -2134,7 +2135,7 @@ export default function EventPage({
                       </span>
                       <span className="text-xs text-muted-foreground">
                         {flight.outbound_departure_airport} → {flight.outbound_arrival_airport} ·{" "}
-                        {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_arrival_time.slice(0, 10)} ·{" "}
+                        {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_departure_time.slice(0, 10)} ·{" "}
                         ${flight.price}
                       </span>
                     </div>
@@ -2197,7 +2198,7 @@ export default function EventPage({
                           </span>
                           <span className="text-xs text-muted-foreground">
                             {flight.outbound_departure_airport} → {flight.outbound_arrival_airport} ·{" "}
-                            {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_arrival_time.slice(0, 10)} ·{" "}
+                            {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_departure_time.slice(0, 10)} ·{" "}
                             ${flight.price}
                           </span>
                         </div>
@@ -2436,22 +2437,51 @@ export default function EventPage({
                               const updated = await addEventToHotel(hotel.id, event.id);
                               setLinkedHotels((prev) => [...prev, updated]);
                               setAllHotels((prev) => prev.filter((h) => h.id !== hotel.id));
-                              const newHotelPrice = Math.round(Number(hotel.price));
+                              // offline `price` is the TOTAL per room; base_hotel_price is
+                              // per-person in the main app → divide by room headcount (Double 2, Triple 3, ...)
+                              const newHotelPrice = Math.round(
+                                Number(hotel.price) / getOfflineRoomCapacity(hotel.room_type)
+                              );
                               // Flight wins over hotel for def dates — only set hotel dates if no flight linked yet
                               const hasFlight = linkedFlights.length > 0;
-                              const eventUpdate: Partial<Event> = { base_hotel_price: newHotelPrice };
+                              const eventUpdate: Partial<Event> = {};
+                              let priceUpdated = true;
                               if (!hasFlight) {
+                                // We own the event dates → set them from the hotel; price always matches.
                                 eventUpdate.def_date_depart = hotel.check_in;
                                 eventUpdate.def_date_return = hotel.check_out;
+                                eventUpdate.base_hotel_price = newHotelPrice;
+                              } else {
+                                // Dates owned by the flight. Only push the price if the hotel stay
+                                // matches the event's default dates — otherwise the hotel won't show
+                                // in the customer flow and the price would be a lie.
+                                const datesMatch =
+                                  (event.def_date_depart ?? "").slice(0, 10) === hotel.check_in &&
+                                  (event.def_date_return ?? "").slice(0, 10) === hotel.check_out;
+                                if (datesMatch) {
+                                  eventUpdate.base_hotel_price = newHotelPrice;
+                                } else {
+                                  priceUpdated = false;
+                                }
                               }
-                              await updateEvent(event.id, eventUpdate);
-                              setEvent((prev) => prev ? { ...prev, ...eventUpdate } : prev);
-                              toast({
-                                title: "Hotel linked",
-                                description: hasFlight
-                                  ? `${hotel.hotel_name} linked. Base hotel price $${newHotelPrice}.`
-                                  : `${hotel.hotel_name} linked. Dates ${hotel.check_in} → ${hotel.check_out}, base hotel price $${newHotelPrice}.`,
-                              });
+                              if (Object.keys(eventUpdate).length > 0) {
+                                await updateEvent(event.id, eventUpdate);
+                                setEvent((prev) => prev ? { ...prev, ...eventUpdate } : prev);
+                              }
+                              toast(
+                                priceUpdated
+                                  ? {
+                                      title: "Hotel linked",
+                                      description: hasFlight
+                                        ? `${hotel.hotel_name} linked. Base hotel price $${newHotelPrice}.`
+                                        : `${hotel.hotel_name} linked. Dates ${hotel.check_in} → ${hotel.check_out}, base hotel price $${newHotelPrice}.`,
+                                    }
+                                  : {
+                                      variant: "destructive",
+                                      title: "Hotel linked — price NOT updated",
+                                      description: `Hotel stay ${hotel.check_in} → ${hotel.check_out} doesn't match event dates ${(event.def_date_depart ?? "").slice(0, 10)} → ${(event.def_date_return ?? "").slice(0, 10)}. base_hotel_price left unchanged so the hotel still shows in the customer flow.`,
+                                    }
+                              );
                             } catch (err) {
                               toast({ variant: "destructive", title: "Error", description: (err as Error)?.message });
                             }
