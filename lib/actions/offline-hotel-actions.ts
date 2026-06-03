@@ -6,6 +6,7 @@ import type { Event } from "../../types/app.types";
 import type { OfflineFlight } from "../../types/offline-flight.types";
 import { revalidatePath } from "next/cache";
 import { airportsForCityName } from "@/lib/airport-cities";
+import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
 
 // offline_hotels is not in Supabase generated types — cast to bypass never inference
 const hotelsTable = () => (supabase as any).from("offline_hotels");
@@ -89,11 +90,12 @@ export async function updateOfflineHotel(
   hotel: Partial<Omit<OfflineHotel, "id" | "consumed_rooms" | "created_at">>
 ): Promise<OfflineHotel> {
   const { data: current } = await hotelsTable()
-    .select("event_ids, price")
+    .select("event_ids, price, room_type")
     .eq("id", id)
     .single();
   const oldEventIds: number[] = current?.event_ids ?? [];
   const oldPrice = Number(current?.price ?? 0);
+  const oldRoomType = current?.room_type as string | undefined;
   const newEventIds: number[] = hotel.event_ids ?? oldEventIds;
   const addedEventIds = newEventIds.filter((eid) => !oldEventIds.includes(eid));
 
@@ -105,8 +107,17 @@ export async function updateOfflineHotel(
   if (error) throw error;
 
   const updated = data[0] as OfflineHotel;
-  const baseHotelPrice = Math.round(Number(updated.price));
-  const priceChanged = baseHotelPrice !== Math.round(oldPrice);
+  // offline `price` is the TOTAL per room; base_hotel_price is consumed
+  // per-person by the main app, so divide by the room's headcount capacity
+  // (Double -> 2, Triple -> 3, ...). Without this the whole room price is
+  // charged per traveler (e.g. a $940 double showed as $940/person, not $470).
+  const baseHotelPrice = Math.round(
+    Number(updated.price) / getOfflineRoomCapacity(updated.room_type)
+  );
+  const oldBaseHotelPrice = Math.round(
+    oldPrice / getOfflineRoomCapacity(oldRoomType)
+  );
+  const priceChanged = baseHotelPrice !== oldBaseHotelPrice;
 
   // Push price to all newly added events; also push to existing events if price changed
   const eventsNeedingPriceUpdate = new Set<number>(addedEventIds);
@@ -128,11 +139,29 @@ export async function updateOfflineHotel(
             .limit(1);
           hasFlight = (flightsForEvent ?? []).length > 0;
         }
-        const eventUpdate: Record<string, unknown> = { base_hotel_price: baseHotelPrice };
+
+        const eventUpdate: Record<string, unknown> = {};
         if (isNewlyAdded && !hasFlight) {
+          // We own the event dates → set them from the hotel; price always matches.
           eventUpdate.def_date_depart = updated.check_in;
           eventUpdate.def_date_return = updated.check_out;
+          eventUpdate.base_hotel_price = baseHotelPrice;
+        } else {
+          // Dates owned by a flight (or pre-existing event). Only push the price
+          // if the hotel stay matches the event's default dates — otherwise the
+          // hotel won't show in the customer flow and the price would be a lie.
+          const { data: ev } = await (supabase as any)
+            .from("events")
+            .select("def_date_depart, def_date_return")
+            .eq("id", eventId)
+            .single();
+          const datesMatch =
+            (ev?.def_date_depart ?? "").slice(0, 10) === updated.check_in &&
+            (ev?.def_date_return ?? "").slice(0, 10) === updated.check_out;
+          if (datesMatch) eventUpdate.base_hotel_price = baseHotelPrice;
         }
+
+        if (Object.keys(eventUpdate).length === 0) return; // nothing to push (date mismatch)
         const { error: evErr } = await (supabase as any)
           .from("events")
           .update(eventUpdate)
