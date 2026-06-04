@@ -1,12 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const Amadeus = require("amadeus");
-
-const amadeus = new Amadeus({
-  clientId: process.env.NEXT_SECRET_AMADEUS_CLIENT_ID as string,
-  clientSecret: process.env.NEXT_SECRET_AMADEUS_CLIENT_SECRET as string,
-  hostname: "production",
-});
+import { amadeus } from "../amadeusClient";
 
 interface FlightSearchParams {
   originLocationCode: string;
