@@ -3,8 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const COMPETITOR_API_BASE_URL =
-  process.env.NEXT_SECRET_COMPETITOR_PRICING_URL || "http://localhost:8080";
+const COMPETITOR_API_BASE_URL = process.env.NEXT_SECRET_COMPETITOR_PRICING_URL;
 const REQUEST_TIMEOUT_MS = 90_000;
 
 type Provider = "liveevents" | "issta";
