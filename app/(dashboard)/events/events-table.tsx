@@ -12,9 +12,12 @@ import {
   Loader2,
   MoreHorizontal,
   Search,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table";
+import { searchFlightPrices } from "@/lib/actions/flight-actions";
+import { searchHotelPrices } from "@/lib/actions/hotel-actions";
 import type { Event } from "@/types/app.types";
 import {
   getEvents,
@@ -881,57 +884,72 @@ export function EventsTable() {
         );
       },
       cell: ({ row }) => {
-        const [editing, setEditing] = useState(false);
-        const [inputValue, setInputValue] = useState("");
-
+        const [calculating, setCalculating] = useState(false);
+        const event = row.original;
         const price = Number.parseFloat(row.getValue("usual_price"));
 
-        const startEditing = () => {
-          setInputValue(isNaN(price) ? "0" : String(price));
-          setEditing(true);
-        };
+        const autoCalculatePrice = async () => {
+          const { def_date_depart, def_date_return, date, location, tickets_and_rates, skip_flight } = event;
 
-        const commitEdit = async () => {
-          setEditing(false);
-          const newPrice = Number.parseFloat(inputValue);
-          if (isNaN(newPrice) || newPrice === price) return;
-          setEvents((prev) =>
-            prev.map((e) => e.id === row.original.id ? { ...e, usual_price: newPrice } : e)
-          );
+          const smartDates = calculateSmartDates(date);
+          const checkin = def_date_depart?.split("T")[0] || smartDates.startDate;
+          const checkout = def_date_return?.split("T")[0] || smartDates.endDate;
+
+          const cityIata = location?.city_iata;
+          const lat = location?.latitude;
+          const lon = location?.longitude;
+
+          const ticketPrices = (tickets_and_rates ?? []).filter(t => t.available !== false).map(t => t.price).filter(p => p > 0);
+          const minTicket = ticketPrices.length ? Math.min(...ticketPrices) : 0;
+
+          setCalculating(true);
           try {
-            await updateEvent(row.original.id, { usual_price: newPrice });
+            const [flightResult, hotelResult] = await Promise.all([
+              skip_flight || !cityIata
+                ? Promise.resolve(null)
+                : searchFlightPrices({ originLocationCode: "TLV", destinationLocationCode: cityIata, departureDate: checkin, returnDate: checkout, adults: 1, currencyCode: "USD" }),
+              lat && lon
+                ? searchHotelPrices({ lat, lon, checkin, checkout })
+                : Promise.resolve(null),
+            ]);
+
+            const newFlightPrice = skip_flight
+              ? event.base_flight_price
+              : (flightResult?.cheapestPrice ? Math.round(flightResult.cheapestPrice) : event.base_flight_price);
+            const newHotelPrice = hotelResult?.cheapestPrice ? Math.round(hotelResult.cheapestPrice) : event.base_hotel_price;
+            const newUsualPrice = newFlightPrice + newHotelPrice + minTicket + 175;
+
+            setEvents(prev => prev.map(e =>
+              e.id === event.id ? { ...e, usual_price: newUsualPrice, base_flight_price: newFlightPrice, base_hotel_price: newHotelPrice } : e
+            ));
+            await updateEvent(event.id, { usual_price: newUsualPrice, base_flight_price: newFlightPrice, base_hotel_price: newHotelPrice });
+
+            const parts = skip_flight
+              ? `hotel $${newHotelPrice} + ticket $${minTicket} + $175 margin`
+              : `flight $${newFlightPrice} + hotel $${newHotelPrice} + ticket $${minTicket} + $175 margin`;
+            toast({ title: `Usual price set to $${newUsualPrice}`, description: parts });
           } catch {
-            setEvents((prev) =>
-              prev.map((e) => e.id === row.original.id ? { ...e, usual_price: price } : e)
-            );
-            toast({ variant: "destructive", title: "Error", description: "Failed to update usual price." });
+            toast({ variant: "destructive", title: "Error", description: "Failed to calculate price." });
+          } finally {
+            setCalculating(false);
           }
         };
 
-        if (editing) {
-          return (
-            <input
-              type="number"
-              className="h-8 w-24 rounded border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              value={inputValue}
-              autoFocus
-              onChange={(e) => setInputValue(e.target.value)}
-              onBlur={commitEdit}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitEdit();
-                if (e.key === "Escape") setEditing(false);
-              }}
-            />
-          );
-        }
-
         return (
-          <div
-            className="cursor-pointer rounded px-1 py-0.5 hover:bg-muted"
-            title="Click to edit"
-            onClick={startEditing}
-          >
-            ${isNaN(price) ? "0.00" : price.toFixed(2)}
+          <div className="flex items-center gap-1">
+            <span>${isNaN(price) ? "0.00" : price.toFixed(2)}</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0"
+              title="Auto-calculate: flight + hotel + cheapest ticket + $175"
+              disabled={calculating}
+              onClick={autoCalculatePrice}
+            >
+              {calculating
+                ? <Loader2 className="h-3 w-3 animate-spin" />
+                : <RefreshCw className="h-3 w-3" />}
+            </Button>
           </div>
         );
       },
