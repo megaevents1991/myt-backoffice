@@ -336,8 +336,8 @@ function renderLiveEventsDescription(data: LiveEventsPricingPayload) {
           <div className="mt-2 space-y-1">
             {data.ticket.options.map((opt, i) => (
               <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-foreground">{opt.name || "—"}</span>
-                <span className="shrink-0 text-muted-foreground">{opt.price || "—"}</span>
+                <span className="text-foreground">{opt.name || "-"}</span>
+                <span className="shrink-0 text-muted-foreground">{opt.price || "-"}</span>
               </div>
             ))}
           </div>
@@ -442,6 +442,15 @@ export function EventsTable() {
   const [pricingEvent, setPricingEvent] = useState<Event | null>(null);
   const [pricingLoadingProvider, setPricingLoadingProvider] =
     useState<CompetitorProvider | null>(null);
+  const [dateMismatchDialog, setDateMismatchDialog] = useState<{
+    provider: CompetitorProvider;
+    eventId: number;
+    priceUSD: number;
+    rawPrice: number;
+    isoCurrency: "USD" | "EUR" | "GBP" | "ILS";
+    eventDate: string;
+    foundDate: string;
+  } | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -763,95 +772,186 @@ export function EventsTable() {
         className: "sm:max-w-[560px]",
       });
 
-      // Persist comp_pricing if the result is confirmed (status === "OK")
+      // Persist comp_pricing based on the result status
       const resultData = result.data && typeof result.data === "object"
         ? result.data as Record<string, unknown>
         : null;
       const resultStatus = typeof resultData?.status === "string" ? resultData.status : null;
 
-      if (resultStatus === "OK" && resultData) {
-        // Map currency symbols → ISO codes (API returns "€", "$", "£", "₪")
-        const normalizeCurrency = (raw: string | null | undefined): "USD" | "EUR" | "GBP" | "ILS" => {
-          switch (raw) {
-            case "€": return "EUR";
-            case "£": return "GBP";
-            case "₪": return "ILS";
-            default:  return "USD";
-          }
-        };
+      // Shared helper: convert symbol currency to ISO
+      const normalizeCurrency = (raw: string | null | undefined): "USD" | "EUR" | "GBP" | "ILS" => {
+        switch (raw) {
+          case "€": return "EUR";
+          case "£": return "GBP";
+          case "₪": return "ILS";
+          default:  return "USD";
+        }
+      };
 
+      // Shared helper: convert price to USD
+      const toUSD = async (amount: number, iso: "USD" | "EUR" | "GBP" | "ILS"): Promise<number> => {
+        if (iso === "USD") return amount;
         try {
-          let rawPrice: number | null = null;
-          let isoCurrency: "USD" | "EUR" | "GBP" | "ILS" = "USD";
+          await exchangeRateClientService.updateAllExchangeRates();
+          return await exchangeRateClientService.convertToUSD(amount, iso);
+        } catch {
+          return amount;
+        }
+      };
 
-          if (provider === "liveevents") {
-            const price = resultData.price as { amount?: number | null; currency?: string | null } | undefined;
-            rawPrice = typeof price?.amount === "number" ? price.amount : null;
-            isoCurrency = normalizeCurrency(price?.currency);
-          } else if (provider === "issta") {
-            const perPerson = resultData.finalPricePerPerson as { amount?: number | null; currency?: string | null } | undefined;
-            const base = resultData.basePrice as { amount?: number | null; currency?: string | null } | undefined;
-            const priceObj = perPerson ?? base;
-            rawPrice = typeof priceObj?.amount === "number" ? priceObj.amount : null;
-            isoCurrency = normalizeCurrency(priceObj?.currency);
-          }
+      // Shared helper: save comp + recalc usual price
+      const persistComp = async (
+        compPricing: NonNullable<Event["comp_pricing"]>
+      ) => {
+        const ticketPrices = (currentEvent.tickets_and_rates ?? [])
+          .filter(t => t.available !== false)
+          .map(t => t.price)
+          .filter(p => p > 0);
+        const minTicket = ticketPrices.length ? Math.min(...ticketPrices) : 0;
+        const additionalMarkup = currentEvent.event_additional_markup ?? 0;
+        const newUsualPrice =
+          currentEvent.base_flight_price +
+          currentEvent.base_hotel_price +
+          minTicket + 175 + additionalMarkup;
 
+        setEvents(prev => prev.map(e => e.id === currentEvent.id
+          ? { ...e, comp_pricing: compPricing, usual_price: newUsualPrice }
+          : e
+        ));
+        await updateEvent(currentEvent.id, { comp_pricing: compPricing, usual_price: newUsualPrice });
+        return newUsualPrice;
+      };
+
+      if (!resultData) {
+        // Nothing actionable
+      } else if (resultStatus === "OK") {
+        // --- CONFIRMED MATCH ---
+        // Check ISSTA date mismatch: status is OK but distanceDays > 0
+        const isstaMatch = resultData.match as { distanceDays?: number; foundDateRange?: string } | undefined;
+        const isIsstaMismatch = provider === "issta" && typeof isstaMatch?.distanceDays === "number" && isstaMatch.distanceDays > 0;
+
+        if (isIsstaMismatch) {
+          // Extract price for the dialog
+          const perPerson = resultData.finalPricePerPerson as { amount?: number | null; currency?: string | null } | undefined;
+          const base = resultData.basePrice as { amount?: number | null; currency?: string | null } | undefined;
+          const priceObj = perPerson ?? base;
+          const rawPrice = typeof priceObj?.amount === "number" ? priceObj.amount : null;
+          const iso = normalizeCurrency(priceObj?.currency);
           if (rawPrice !== null) {
-            let priceUSD = rawPrice;
-            if (isoCurrency !== "USD") {
-              try {
-                await exchangeRateClientService.updateAllExchangeRates();
-                priceUSD = await exchangeRateClientService.convertToUSD(rawPrice, isoCurrency);
-              } catch {
-                // keep rawPrice as-is if conversion fails
-              }
-            }
-
-            const compPricing = {
-              price: Math.round(priceUSD),
-              name: COMPETITOR_PROVIDER_LABELS[provider],
-              date: normalizeDateInput(currentEvent.date),
-            };
-
-            // Calculate usual price from stored event data (no new API calls)
-            const ticketPrices = (currentEvent.tickets_and_rates ?? [])
-              .filter(t => t.available !== false)
-              .map(t => t.price)
-              .filter(p => p > 0);
-            const minTicket = ticketPrices.length ? Math.min(...ticketPrices) : 0;
-            const additionalMarkup = currentEvent.event_additional_markup ?? 0;
-            const newUsualPrice =
-              currentEvent.base_flight_price +
-              currentEvent.base_hotel_price +
-              minTicket +
-              175 +
-              additionalMarkup;
-
-            setEvents((prev) =>
-              prev.map((e) => e.id === currentEvent.id
-                ? { ...e, comp_pricing: compPricing, usual_price: newUsualPrice }
-                : e)
-            );
-            await updateEvent(currentEvent.id, { comp_pricing: compPricing, usual_price: newUsualPrice });
-
-            const priceParts = [
-              `flight $${currentEvent.base_flight_price}`,
-              `hotel $${currentEvent.base_hotel_price}`,
-              `ticket $${minTicket}`,
-              `$175 margin`,
-              ...(additionalMarkup ? [`+$${additionalMarkup} markup`] : []),
-            ].join(" + ");
-            toast({
-              title: "Competitor price saved",
-              description: `${compPricing.name}: ${rawPrice}${isoCurrency !== "USD" ? ` ${isoCurrency} → ` : " "}$${compPricing.price} · Our price updated to $${newUsualPrice} (${priceParts})`,
+            const priceUSD = Math.round(await toUSD(rawPrice, iso));
+            setDateMismatchDialog({
+              provider,
+              eventId: currentEvent.id,
+              priceUSD,
+              rawPrice,
+              isoCurrency: iso,
+              eventDate: normalizeDateInput(currentEvent.date),
+              foundDate: isstaMatch?.foundDateRange ?? "",
             });
           }
-        } catch (err) {
-          toast({
-            variant: "destructive",
-            title: "Failed to save competitor price",
-            description: err instanceof Error ? err.message : "Unknown error.",
+        } else {
+          // Clean OK match - but first verify dates for LiveEvents
+          try {
+            let rawPrice: number | null = null;
+            let iso: "USD" | "EUR" | "GBP" | "ILS" = "USD";
+            let returnedStart: string | null = null;
+            let returnedEnd: string | null = null;
+
+            if (provider === "liveevents") {
+              const p = resultData.price as { amount?: number | null; currency?: string | null } | undefined;
+              rawPrice = typeof p?.amount === "number" ? p.amount : null;
+              iso = normalizeCurrency(p?.currency);
+              const retDates = resultData.dates as { start?: string | null; end?: string | null } | undefined;
+              returnedStart = retDates?.start ?? null;
+              returnedEnd = retDates?.end ?? null;
+            } else {
+              const perPerson = resultData.finalPricePerPerson as { amount?: number | null; currency?: string | null } | undefined;
+              const base = resultData.basePrice as { amount?: number | null; currency?: string | null } | undefined;
+              const priceObj = perPerson ?? base;
+              rawPrice = typeof priceObj?.amount === "number" ? priceObj.amount : null;
+              iso = normalizeCurrency(priceObj?.currency);
+            }
+
+            if (rawPrice !== null) {
+              // For LiveEvents: verify returned dates match what we sent
+              const isLiveDateMismatch = provider === "liveevents" && (
+                (returnedStart && returnedStart !== travelDates.startDate) ||
+                (returnedEnd && returnedEnd !== travelDates.endDate)
+              );
+
+              if (isLiveDateMismatch) {
+                const priceUSD = Math.round(await toUSD(rawPrice, iso));
+                const foundDate = [returnedStart, returnedEnd].filter(Boolean).join(" → ");
+                setDateMismatchDialog({
+                  provider,
+                  eventId: currentEvent.id,
+                  priceUSD,
+                  rawPrice,
+                  isoCurrency: iso,
+                  eventDate: `${travelDates.startDate} → ${travelDates.endDate}`,
+                  foundDate,
+                });
+              } else {
+                const priceUSD = Math.round(await toUSD(rawPrice, iso));
+                const compPricing: NonNullable<Event["comp_pricing"]> = {
+                  price: priceUSD,
+                  name: COMPETITOR_PROVIDER_LABELS[provider],
+                  date: normalizeDateInput(currentEvent.date),
+                  status: "ok",
+                };
+                const newUsualPrice = await persistComp(compPricing);
+                const ticketPricesForToast = (currentEvent.tickets_and_rates ?? []).filter(t => t.available !== false).map(t => t.price).filter(p => p > 0);
+                const minTicketForToast = ticketPricesForToast.length ? Math.min(...ticketPricesForToast) : 0;
+                const priceParts = [
+                  `flight $${currentEvent.base_flight_price}`,
+                  `hotel $${currentEvent.base_hotel_price}`,
+                  `ticket $${minTicketForToast}`,
+                  `$175 margin`,
+                  ...(currentEvent.event_additional_markup ? [`+$${currentEvent.event_additional_markup} markup`] : []),
+                ].join(" + ");
+                toast({
+                  title: "Competitor price saved",
+                  description: `${COMPETITOR_PROVIDER_LABELS[provider]}: ${rawPrice}${iso !== "USD" ? ` ${iso} → ` : " "}$${priceUSD} · Our price $${newUsualPrice} (${priceParts})`,
+                });
+              }
+            }
+          } catch (err) {
+            toast({ variant: "destructive", title: "Failed to save competitor price", description: err instanceof Error ? err.message : "Unknown error." });
+          }
+        }
+
+      } else if (resultStatus === "DATE_NOT_PRESENT" || resultStatus === "DATE_QUOTE_ONLY") {
+        // --- LIVEEVENTS DATE MISMATCH ---
+        const nearest = resultData.nearestAvailable as { price?: { amount?: number | null; currency?: string | null }; matchedDate?: string; date?: string } | undefined;
+        const rawPrice = typeof nearest?.price?.amount === "number" ? nearest.price.amount : null;
+        const iso = normalizeCurrency(nearest?.price?.currency);
+        if (rawPrice !== null) {
+          const priceUSD = Math.round(await toUSD(rawPrice, iso));
+          setDateMismatchDialog({
+            provider,
+            eventId: currentEvent.id,
+            priceUSD,
+            rawPrice,
+            isoCurrency: iso,
+            eventDate: normalizeDateInput(currentEvent.date),
+            foundDate: nearest?.matchedDate ?? nearest?.date ?? "",
           });
+        }
+
+      } else if (resultStatus && !["ERROR"].includes(resultStatus)) {
+        // --- NO RESULT (CITY_NOT_FOUND, NO_MATCH, NO_PACKAGE, NO_CTA, etc.) ---
+        try {
+          const compPricing: NonNullable<Event["comp_pricing"]> = {
+            price: 0,
+            name: COMPETITOR_PROVIDER_LABELS[provider],
+            date: normalizeDateInput(currentEvent.date),
+            status: "no_result",
+          };
+          setEvents(prev => prev.map(e => e.id === currentEvent.id ? { ...e, comp_pricing: compPricing } : e));
+          await updateEvent(currentEvent.id, { comp_pricing: compPricing });
+          toast({ title: "Competitor: no result", description: `${COMPETITOR_PROVIDER_LABELS[provider]} has no package for this event (${resultStatus}).` });
+        } catch {
+          // silent
         }
       }
     } catch (error) {
@@ -1022,13 +1122,38 @@ export function EventsTable() {
         const [calculating, setCalculating] = useState(false);
         const event = row.original;
         const price = Number.parseFloat(row.getValue("usual_price"));
-        const compPrice = event.comp_pricing?.price ?? null;
+        const comp = event.comp_pricing ?? null;
+        const compPrice = comp?.price ?? null;
 
-        const priceColor = compPrice !== null && !isNaN(price)
-          ? price <= compPrice
-            ? "text-green-500"
-            : "text-red-500"
-          : "";
+        let priceColor = "";
+        if (comp) {
+          if (comp.status === "no_result") {
+            priceColor = "text-blue-400";
+          } else if (comp.status === "date_mismatch" && comp.colorOverride) {
+            priceColor = comp.colorOverride === "green" ? "text-green-500"
+              : comp.colorOverride === "yellow" ? "text-yellow-500"
+              : comp.colorOverride === "blue" ? "text-blue-400"
+              : "text-red-500";
+          } else if (compPrice !== null && !isNaN(price)) {
+            priceColor = price < compPrice ? "text-green-500"
+              : price - compPrice <= 100 ? "text-yellow-500"
+              : "text-red-500";
+          }
+        }
+
+        const tooltipLines: string[] = [];
+        if (comp) {
+          if (comp.status === "no_result") {
+            tooltipLines.push(`${comp.name} has no package for this event`);
+          } else if (comp.status === "date_mismatch") {
+            tooltipLines.push(`${comp.name}: $${comp.price} (date mismatch)`);
+            if (comp.foundDate) tooltipLines.push(`Found: ${comp.foundDate} · Queried: ${comp.date}`);
+          } else {
+            tooltipLines.push(`${comp.name}: $${comp.price}`);
+          }
+          tooltipLines.push(`Checked: ${comp.date}`);
+        }
+        const tooltipText = tooltipLines.join("\n") || undefined;
 
         const handleClick = async () => {
           setCalculating(true);
@@ -1045,7 +1170,7 @@ export function EventsTable() {
           <div className="flex items-center gap-1">
             <span
               className={priceColor}
-              title={compPrice !== null ? `Comp price: $${compPrice} (${event.comp_pricing?.name})` : undefined}
+              title={tooltipText}
             >
               ${isNaN(price) ? "0.00" : price.toFixed(2)}
             </span>
@@ -1350,6 +1475,92 @@ export function EventsTable() {
               ISSTA
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Date mismatch dialog */}
+      <Dialog open={!!dateMismatchDialog} onOpenChange={(open) => { if (!open) setDateMismatchDialog(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Date mismatch - choose a label</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                {dateMismatchDialog && (
+                  <>
+                    <p>
+                      We queried <strong>{dateMismatchDialog.eventDate}</strong> but{" "}
+                      {COMPETITOR_PROVIDER_LABELS[dateMismatchDialog.provider]} returned a result for{" "}
+                      <strong>{dateMismatchDialog.foundDate || "a different date"}</strong>.
+                    </p>
+                    <p>
+                      Price:{" "}
+                      <strong>
+                        {dateMismatchDialog.rawPrice}
+                        {dateMismatchDialog.isoCurrency !== "USD"
+                          ? ` ${dateMismatchDialog.isoCurrency} → $${dateMismatchDialog.priceUSD}`
+                          : ` ($${dateMismatchDialog.priceUSD})`}
+                      </strong>
+                    </p>
+                    <p className="font-medium text-destructive">
+                      Dates do not match - the competitor result may be for a different event or package.
+                    </p>
+                    <p>How do you want to flag this event?</p>
+                  </>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            {(["green", "yellow", "red", "blue"] as const).map((color) => (
+              <Button
+                key={color}
+                type="button"
+                variant="outline"
+                className={
+                  color === "green" ? "border-green-500 text-green-600 hover:bg-green-50 dark:hover:bg-green-950" :
+                  color === "yellow" ? "border-yellow-500 text-yellow-600 hover:bg-yellow-50 dark:hover:bg-yellow-950" :
+                  color === "blue" ? "border-blue-400 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950" :
+                  "border-red-500 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                }
+                onClick={async () => {
+                  if (!dateMismatchDialog) return;
+                  const d = dateMismatchDialog;
+                  setDateMismatchDialog(null);
+                  try {
+                    const compPricing: NonNullable<Event["comp_pricing"]> = {
+                      price: d.priceUSD,
+                      name: COMPETITOR_PROVIDER_LABELS[d.provider],
+                      date: d.eventDate,
+                      foundDate: d.foundDate,
+                      status: "date_mismatch",
+                      colorOverride: color,
+                    };
+                    const ev = events.find(e => e.id === d.eventId)!;
+                    const ticketPrices = (ev?.tickets_and_rates ?? [])
+                      .filter(t => t.available !== false).map(t => t.price).filter(p => p > 0);
+                    const minTicket = ticketPrices.length ? Math.min(...ticketPrices) : 0;
+                    const additionalMarkup = ev.event_additional_markup ?? 0;
+                    const newUsualPrice = ev.base_flight_price + ev.base_hotel_price + minTicket + 175 + additionalMarkup;
+                    setEvents(prev => prev.map(e => e.id === d.eventId ? { ...e, comp_pricing: compPricing, usual_price: newUsualPrice } : e));
+                    await updateEvent(d.eventId, { comp_pricing: compPricing, usual_price: newUsualPrice });
+                    toast({ title: "Competitor price saved (date mismatch)", description: `Marked ${color} · comp $${d.priceUSD} (found: ${d.foundDate || "unknown date"}) · our price $${newUsualPrice}` });
+                  } catch (err) {
+                    toast({ variant: "destructive", title: "Failed to save", description: err instanceof Error ? err.message : "Unknown error." });
+                  }
+                }}
+              >
+                {color === "green" ? "🟢 Cheaper"
+                  : color === "yellow" ? "🟡 Approximate"
+                  : color === "blue" ? "🔵 No exact match"
+                  : "🔴 More expensive"}
+              </Button>
+            ))}
+          </div>
+          <div className="pt-1">
+            <Button type="button" variant="ghost" className="w-full" onClick={() => setDateMismatchDialog(null)}>
+              Discard - don't save
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
