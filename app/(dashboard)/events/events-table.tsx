@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table";
 import { searchFlightPrices } from "@/lib/actions/flight-actions";
 import { searchHotelPrices } from "@/lib/actions/hotel-actions";
+import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
 import type { Event } from "@/types/app.types";
 import {
   getEvents,
@@ -719,6 +720,75 @@ export function EventsTable() {
         duration: COMPETITOR_TOAST_DURATION,
         className: "sm:max-w-[560px]",
       });
+
+      // Persist comp_pricing if the result is confirmed (status === "OK")
+      const resultData = result.data && typeof result.data === "object"
+        ? result.data as Record<string, unknown>
+        : null;
+      const resultStatus = typeof resultData?.status === "string" ? resultData.status : null;
+
+      if (resultStatus === "OK" && resultData) {
+        // Map currency symbols → ISO codes (API returns "€", "$", "£", "₪")
+        const normalizeCurrency = (raw: string | null | undefined): "USD" | "EUR" | "GBP" | "ILS" => {
+          switch (raw) {
+            case "€": return "EUR";
+            case "£": return "GBP";
+            case "₪": return "ILS";
+            default:  return "USD";
+          }
+        };
+
+        try {
+          let rawPrice: number | null = null;
+          let isoCurrency: "USD" | "EUR" | "GBP" | "ILS" = "USD";
+
+          if (provider === "liveevents") {
+            const price = resultData.price as { amount?: number | null; currency?: string | null } | undefined;
+            rawPrice = typeof price?.amount === "number" ? price.amount : null;
+            isoCurrency = normalizeCurrency(price?.currency);
+          } else if (provider === "issta") {
+            const perPerson = resultData.finalPricePerPerson as { amount?: number | null; currency?: string | null } | undefined;
+            const base = resultData.basePrice as { amount?: number | null; currency?: string | null } | undefined;
+            const priceObj = perPerson ?? base;
+            rawPrice = typeof priceObj?.amount === "number" ? priceObj.amount : null;
+            isoCurrency = normalizeCurrency(priceObj?.currency);
+          }
+
+          if (rawPrice !== null) {
+            let priceUSD = rawPrice;
+            if (isoCurrency !== "USD") {
+              try {
+                await exchangeRateClientService.updateAllExchangeRates();
+                priceUSD = await exchangeRateClientService.convertToUSD(rawPrice, isoCurrency);
+              } catch {
+                // keep rawPrice as-is if conversion fails
+              }
+            }
+
+            const compPricing = {
+              price: Math.round(priceUSD),
+              name: COMPETITOR_PROVIDER_LABELS[provider],
+              date: normalizeDateInput(currentEvent.date),
+            };
+
+            setEvents((prev) =>
+              prev.map((e) => e.id === currentEvent.id ? { ...e, comp_pricing: compPricing } : e)
+            );
+            await updateEvent(currentEvent.id, { comp_pricing: compPricing });
+
+            toast({
+              title: "Competitor price saved",
+              description: `${compPricing.name}: ${rawPrice}${isoCurrency !== "USD" ? ` ${isoCurrency} → ` : " "}$${compPricing.price} saved for event #${currentEvent.id}`,
+            });
+          }
+        } catch (err) {
+          toast({
+            variant: "destructive",
+            title: "Failed to save competitor price",
+            description: err instanceof Error ? err.message : "Unknown error.",
+          });
+        }
+      }
     } catch (error) {
       toastHandle.update({
         title: `${providerLabel} pricing failed`,

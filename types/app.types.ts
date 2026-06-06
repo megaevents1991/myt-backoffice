@@ -40,6 +40,11 @@ export type Event = {
   tx_excluded_sections?: string[];
   // Extra event-level markup (USD) added to this event.
   event_additional_markup?: number | null;
+  comp_pricing?: {
+    price: number;
+    name: string;
+    date: string;
+  } | null;
 };
 
 export type Flight = {
