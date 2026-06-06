@@ -37,7 +37,10 @@ class MultiCurrencyExchangeRateService {
     },
   };
 
-  private readonly FLOATRATES_URL = "https://www.floatrates.com/daily/usd.json";
+  private readonly JSDELIVR_BASE =
+    "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies";
+  private readonly CLOUDFLARE_BASE =
+    "https://latest.currency-api.pages.dev/v1/currencies";
   // Conservative bounds to reject outliers (currency -> USD per unit)
   private readonly RATE_LIMITS: Record<
     SupportedCurrency,
@@ -77,45 +80,47 @@ class MultiCurrencyExchangeRateService {
     return rate >= bounds.min && rate <= bounds.max;
   }
 
-  private async fetchFromFloatRates(
+  private async fetchCurrencyRate(
     currency: SupportedCurrency,
   ): Promise<number | null> {
-    try {
-      console.log(`🔄 Fetching ${currency}/USD from FloatRates`);
-      const response = await this.fetchWithTimeout(this.FLOATRATES_URL);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
+    const base = currency.toLowerCase();
+    const urls = [
+      `${this.JSDELIVR_BASE}/${base}.json`,
+      `${this.CLOUDFLARE_BASE}/${base}.json`,
+    ];
 
-      const data = await response.json();
-      const currencyKey = currency.toLowerCase();
-      const entry = data?.[currencyKey];
-      if (
-        !entry ||
-        typeof entry.inverseRate !== "number" ||
-        !Number.isFinite(entry.inverseRate)
-      ) {
-        throw new Error(
-          `Invalid exchange rate data structure from FloatRates for ${currency}`,
+    for (const url of urls) {
+      try {
+        console.log(`🔄 Fetching ${currency}/USD from ${url}`);
+        const response = await this.fetchWithTimeout(url);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const rawRate = data?.[base]?.["usd"];
+        if (typeof rawRate !== "number" || !Number.isFinite(rawRate)) {
+          throw new Error(`Missing or invalid "usd" field in "${base}" entry`);
+        }
+        const rounded = Math.ceil(rawRate * 100) / 100; // Round to 2 decimals
+        if (!this.isValidRate(currency, rounded)) {
+          throw new Error(
+            `Out-of-range rate for ${currency}: ${rounded} (limits ${this.RATE_LIMITS[currency].min}-${this.RATE_LIMITS[currency].max})`,
+          );
+        }
+        console.log(`✅ ${currency}/USD rate fetched: ${rounded}`);
+        return rounded;
+      } catch (error) {
+        console.warn(
+          `⚠️ Currency API (${url}) ${currency}/USD failed: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
         );
       }
-      const rounded = Math.ceil(entry.inverseRate * 100) / 100; // Round to 2 decimals
-      if (!this.isValidRate(currency, rounded)) {
-        throw new Error(
-          `Out-of-range rate from FloatRates for ${currency}: ${rounded}`,
-        );
-      }
-      console.log(
-        `✅ ${currency}/USD rate fetched from FloatRates: ${rounded}`,
-      );
-      return rounded;
-    } catch (error) {
-      console.error(
-        `❌ FloatRates fetch failed for ${currency}:`,
-        error instanceof Error ? error.message : "Unknown error",
-      );
-      return null;
     }
+
+    console.error(`❌ All endpoints failed for ${currency}/USD`);
+    return null;
   }
 
   // Coalesce concurrent updates per currency
@@ -135,7 +140,7 @@ class MultiCurrencyExchangeRateService {
   ): Promise<void> {
     return this.scheduleCurrencyUpdate(currency, async () => {
       try {
-        const rate = await this.fetchFromFloatRates(currency);
+        const rate = await this.fetchCurrencyRate(currency);
 
         if (rate !== null) {
           this.exchangeRates[currency] = {
@@ -144,12 +149,12 @@ class MultiCurrencyExchangeRateService {
             source: "api",
           };
           console.log(
-            `💱 ${currency}/USD rate updated: ${rate} (from FloatRates)`,
+            `💱 ${currency}/USD rate updated: ${rate} (from currency API)`,
           );
         } else {
           const current = this.exchangeRates[currency];
           console.warn(
-            `⚠️ FloatRates failed for ${currency}. Maintaining previous rate: ${current.rate} (last updated: ${current.lastUpdated.toISOString()})`,
+            `⚠️ Currency API failed for ${currency}. Maintaining previous rate: ${current.rate} (last updated: ${current.lastUpdated.toISOString()})`,
           );
           // Keep existing rate; do not overwrite timestamp to preserve staleness tracking
         }
