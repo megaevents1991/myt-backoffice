@@ -451,6 +451,8 @@ export function EventsTable() {
     eventDate: string;
     foundDate: string;
   } | null>(null);
+  const [mismatchQueue, setMismatchQueue] = useState<NonNullable<typeof dateMismatchDialog>[]>([]);
+  const [bulkCompPricingLoading, setBulkCompPricingLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -709,6 +711,201 @@ export function EventsTable() {
     setPricingDialogOpen(true);
   };
 
+  // Shared comp pricing helpers - used by both single and bulk flows
+  const normalizeCurrency = (raw: string | null | undefined): "USD" | "EUR" | "GBP" | "ILS" => {
+    switch (raw) {
+      case "€": return "EUR";
+      case "£": return "GBP";
+      case "₪": return "ILS";
+      default:  return "USD";
+    }
+  };
+
+  const toUSD = async (amount: number, iso: "USD" | "EUR" | "GBP" | "ILS"): Promise<number> => {
+    if (iso === "USD") return amount;
+    try {
+      await exchangeRateClientService.updateAllExchangeRates();
+      return await exchangeRateClientService.convertToUSD(amount, iso);
+    } catch {
+      return amount;
+    }
+  };
+
+  const persistComp = async (
+    currentEvent: Event,
+    compPricing: NonNullable<Event["comp_pricing"]>
+  ) => {
+    const ticketPrices = (currentEvent.tickets_and_rates ?? [])
+      .filter(t => t.available !== false)
+      .map(t => t.price)
+      .filter(p => p > 0);
+    const minTicket = ticketPrices.length ? Math.min(...ticketPrices) : 0;
+    const additionalMarkup = currentEvent.event_additional_markup ?? 0;
+    const newUsualPrice =
+      currentEvent.base_flight_price +
+      currentEvent.base_hotel_price +
+      minTicket + 175 + additionalMarkup;
+    setEvents(prev => prev.map(e => e.id === currentEvent.id
+      ? { ...e, comp_pricing: compPricing, usual_price: newUsualPrice }
+      : e
+    ));
+    await updateEvent(currentEvent.id, { comp_pricing: compPricing, usual_price: newUsualPrice });
+    return newUsualPrice;
+  };
+
+  // Pop next mismatch from queue (used by dialog close + color button handlers)
+  const popMismatchQueue = () => {
+    setMismatchQueue(prev => {
+      if (prev.length === 0) return prev;
+      const [next, ...remaining] = prev;
+      setTimeout(() => setDateMismatchDialog(next), 150);
+      return remaining;
+    });
+  };
+
+  const handleBulkCompetitorPricing = async (provider: CompetitorProvider) => {
+    if (selectedIds.length === 0) return;
+    const providerLabel = COMPETITOR_PROVIDER_LABELS[provider];
+    const eventsToProcess = events.filter(e => selectedIds.includes(e.id));
+    const total = eventsToProcess.length;
+
+    setBulkCompPricingLoading(true);
+    const progressToast = toast({
+      title: `${providerLabel}: checking ${total} event${total > 1 ? "s" : ""}`,
+      description: "Starting - processing in groups of 3...",
+      duration: COMPETITOR_TOAST_DURATION,
+    });
+
+    const pendingMismatches: NonNullable<typeof dateMismatchDialog>[] = [];
+    let completed = 0;
+    let autoSaved = 0;
+    let noResult = 0;
+    let failed = 0;
+
+    // Split into chunks of 3
+    const chunks: Event[][] = [];
+    for (let i = 0; i < eventsToProcess.length; i += 3) {
+      chunks.push(eventsToProcess.slice(i, i + 3));
+    }
+
+    for (const chunk of chunks) {
+      await Promise.all(chunk.map(async (currentEvent) => {
+        try {
+          const travelDates = getCompetitorTravelDates(currentEvent);
+          const response = await fetch("/api/competitor-pricing", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              provider,
+              eventName: getCompetitorEventName(currentEvent),
+              eventLocation: getCompetitorEventLocation(currentEvent),
+              eventDate: normalizeDateInput(currentEvent.date),
+              ...(provider === "liveevents" ? { travelDates } : {}),
+            }),
+          });
+
+          if (!response.ok) { failed++; return; }
+
+          const result = await response.json() as CompetitorPricingResponse;
+          const resultData = result.data && typeof result.data === "object"
+            ? result.data as Record<string, unknown> : null;
+          const resultStatus = typeof resultData?.status === "string" ? resultData.status : null;
+
+          if (!resultData) { failed++; return; }
+
+          if (resultStatus === "OK") {
+            const isstaMatch = resultData.match as { distanceDays?: number; foundDateRange?: string } | undefined;
+            const isIsstaMismatch = provider === "issta" && typeof isstaMatch?.distanceDays === "number" && isstaMatch.distanceDays > 0;
+
+            if (isIsstaMismatch) {
+              const perPerson = resultData.finalPricePerPerson as { amount?: number | null; currency?: string | null } | undefined;
+              const base = resultData.basePrice as { amount?: number | null; currency?: string | null } | undefined;
+              const priceObj = perPerson ?? base;
+              const rawPrice = typeof priceObj?.amount === "number" ? priceObj.amount : null;
+              const iso = normalizeCurrency(priceObj?.currency);
+              if (rawPrice !== null) {
+                const priceUSD = Math.round(await toUSD(rawPrice, iso));
+                pendingMismatches.push({ provider, eventId: currentEvent.id, priceUSD, rawPrice, isoCurrency: iso, eventDate: normalizeDateInput(currentEvent.date), foundDate: isstaMatch?.foundDateRange ?? "" });
+              } else { failed++; }
+            } else {
+              let rawPrice: number | null = null;
+              let iso: "USD" | "EUR" | "GBP" | "ILS" = "USD";
+              let returnedStart: string | null = null;
+              let returnedEnd: string | null = null;
+
+              if (provider === "liveevents") {
+                const p = resultData.price as { amount?: number | null; currency?: string | null } | undefined;
+                rawPrice = typeof p?.amount === "number" ? p.amount : null;
+                iso = normalizeCurrency(p?.currency);
+                const retDates = resultData.dates as { start?: string | null; end?: string | null } | undefined;
+                returnedStart = retDates?.start ?? null;
+                returnedEnd = retDates?.end ?? null;
+              } else {
+                const perPerson = resultData.finalPricePerPerson as { amount?: number | null; currency?: string | null } | undefined;
+                const base = resultData.basePrice as { amount?: number | null; currency?: string | null } | undefined;
+                const priceObj = perPerson ?? base;
+                rawPrice = typeof priceObj?.amount === "number" ? priceObj.amount : null;
+                iso = normalizeCurrency(priceObj?.currency);
+              }
+
+              if (rawPrice !== null) {
+                const isLiveDateMismatch = provider === "liveevents" && (
+                  (returnedStart && returnedStart !== travelDates.startDate) ||
+                  (returnedEnd && returnedEnd !== travelDates.endDate)
+                );
+                if (isLiveDateMismatch) {
+                  const priceUSD = Math.round(await toUSD(rawPrice, iso));
+                  pendingMismatches.push({ provider, eventId: currentEvent.id, priceUSD, rawPrice, isoCurrency: iso, eventDate: `${travelDates.startDate} → ${travelDates.endDate}`, foundDate: [returnedStart, returnedEnd].filter(Boolean).join(" → ") });
+                } else {
+                  const priceUSD = Math.round(await toUSD(rawPrice, iso));
+                  await persistComp(currentEvent, { price: priceUSD, name: providerLabel, date: normalizeDateInput(currentEvent.date), status: "ok" });
+                  autoSaved++;
+                }
+              } else { failed++; }
+            }
+          } else if (resultStatus === "DATE_NOT_PRESENT" || resultStatus === "DATE_QUOTE_ONLY") {
+            const nearest = resultData.nearestAvailable as { price?: { amount?: number | null; currency?: string | null }; matchedDate?: string; date?: string } | undefined;
+            const rawPrice = typeof nearest?.price?.amount === "number" ? nearest.price.amount : null;
+            const iso = normalizeCurrency(nearest?.price?.currency);
+            if (rawPrice !== null) {
+              const priceUSD = Math.round(await toUSD(rawPrice, iso));
+              pendingMismatches.push({ provider, eventId: currentEvent.id, priceUSD, rawPrice, isoCurrency: iso, eventDate: normalizeDateInput(currentEvent.date), foundDate: nearest?.matchedDate ?? nearest?.date ?? "" });
+            } else { noResult++; }
+          } else if (resultStatus && resultStatus !== "ERROR") {
+            await updateEvent(currentEvent.id, { comp_pricing: { price: 0, name: providerLabel, date: normalizeDateInput(currentEvent.date), status: "no_result" } });
+            setEvents(prev => prev.map(e => e.id === currentEvent.id ? { ...e, comp_pricing: { price: 0, name: providerLabel, date: normalizeDateInput(currentEvent.date), status: "no_result" } } : e));
+            noResult++;
+          } else {
+            failed++;
+          }
+        } catch {
+          failed++;
+        } finally {
+          completed++;
+          progressToast.update({
+            title: `${providerLabel}: ${completed}/${total} checked`,
+            description: `✓ ${autoSaved} saved · ⚠ ${pendingMismatches.length} need review · ✗ ${failed} failed`,
+          });
+        }
+      }));
+    }
+
+    setBulkCompPricingLoading(false);
+    setRowSelection({});
+
+    progressToast.update({
+      title: `${providerLabel} bulk check complete`,
+      description: `${autoSaved} auto-saved · ${noResult} no result · ${pendingMismatches.length} need review · ${failed} failed`,
+      duration: 8000,
+    });
+
+    if (pendingMismatches.length > 0) {
+      const [first, ...rest] = pendingMismatches;
+      setMismatchQueue(rest);
+      setTimeout(() => setDateMismatchDialog(first), 300);
+    }
+  };
+
   const handleCompetitorPricingCheck = async (provider: CompetitorProvider) => {
     if (!pricingEvent) return;
 
@@ -717,6 +914,10 @@ export function EventsTable() {
     const eventName = getCompetitorEventName(currentEvent);
     const eventLocation = getCompetitorEventLocation(currentEvent);
     const travelDates = getCompetitorTravelDates(currentEvent);
+
+    // Closure-local persistComp wrapper for single-event flow
+    const persistCompSingle = (compPricing: NonNullable<Event["comp_pricing"]>) =>
+      persistComp(currentEvent, compPricing);
 
     setPricingLoadingProvider(provider);
 
@@ -779,48 +980,15 @@ export function EventsTable() {
       const resultStatus = typeof resultData?.status === "string" ? resultData.status : null;
 
       // Shared helper: convert symbol currency to ISO
-      const normalizeCurrency = (raw: string | null | undefined): "USD" | "EUR" | "GBP" | "ILS" => {
-        switch (raw) {
-          case "€": return "EUR";
-          case "£": return "GBP";
-          case "₪": return "ILS";
-          default:  return "USD";
-        }
-      };
+      const normalizeCurrencyLocal = normalizeCurrency;
 
       // Shared helper: convert price to USD
-      const toUSD = async (amount: number, iso: "USD" | "EUR" | "GBP" | "ILS"): Promise<number> => {
-        if (iso === "USD") return amount;
-        try {
-          await exchangeRateClientService.updateAllExchangeRates();
-          return await exchangeRateClientService.convertToUSD(amount, iso);
-        } catch {
-          return amount;
-        }
-      };
+      const toUSDLocal = toUSD;
 
       // Shared helper: save comp + recalc usual price
-      const persistComp = async (
+      const persistCompLocal = async (
         compPricing: NonNullable<Event["comp_pricing"]>
-      ) => {
-        const ticketPrices = (currentEvent.tickets_and_rates ?? [])
-          .filter(t => t.available !== false)
-          .map(t => t.price)
-          .filter(p => p > 0);
-        const minTicket = ticketPrices.length ? Math.min(...ticketPrices) : 0;
-        const additionalMarkup = currentEvent.event_additional_markup ?? 0;
-        const newUsualPrice =
-          currentEvent.base_flight_price +
-          currentEvent.base_hotel_price +
-          minTicket + 175 + additionalMarkup;
-
-        setEvents(prev => prev.map(e => e.id === currentEvent.id
-          ? { ...e, comp_pricing: compPricing, usual_price: newUsualPrice }
-          : e
-        ));
-        await updateEvent(currentEvent.id, { comp_pricing: compPricing, usual_price: newUsualPrice });
-        return newUsualPrice;
-      };
+      ) => persistCompSingle(compPricing);
 
       if (!resultData) {
         // Nothing actionable
@@ -836,9 +1004,9 @@ export function EventsTable() {
           const base = resultData.basePrice as { amount?: number | null; currency?: string | null } | undefined;
           const priceObj = perPerson ?? base;
           const rawPrice = typeof priceObj?.amount === "number" ? priceObj.amount : null;
-          const iso = normalizeCurrency(priceObj?.currency);
+          const iso = normalizeCurrencyLocal(priceObj?.currency);
           if (rawPrice !== null) {
-            const priceUSD = Math.round(await toUSD(rawPrice, iso));
+            const priceUSD = Math.round(await toUSDLocal(rawPrice, iso));
             setDateMismatchDialog({
               provider,
               eventId: currentEvent.id,
@@ -860,7 +1028,7 @@ export function EventsTable() {
             if (provider === "liveevents") {
               const p = resultData.price as { amount?: number | null; currency?: string | null } | undefined;
               rawPrice = typeof p?.amount === "number" ? p.amount : null;
-              iso = normalizeCurrency(p?.currency);
+              iso = normalizeCurrencyLocal(p?.currency);
               const retDates = resultData.dates as { start?: string | null; end?: string | null } | undefined;
               returnedStart = retDates?.start ?? null;
               returnedEnd = retDates?.end ?? null;
@@ -869,7 +1037,7 @@ export function EventsTable() {
               const base = resultData.basePrice as { amount?: number | null; currency?: string | null } | undefined;
               const priceObj = perPerson ?? base;
               rawPrice = typeof priceObj?.amount === "number" ? priceObj.amount : null;
-              iso = normalizeCurrency(priceObj?.currency);
+              iso = normalizeCurrencyLocal(priceObj?.currency);
             }
 
             if (rawPrice !== null) {
@@ -880,7 +1048,7 @@ export function EventsTable() {
               );
 
               if (isLiveDateMismatch) {
-                const priceUSD = Math.round(await toUSD(rawPrice, iso));
+                const priceUSD = Math.round(await toUSDLocal(rawPrice, iso));
                 const foundDate = [returnedStart, returnedEnd].filter(Boolean).join(" → ");
                 setDateMismatchDialog({
                   provider,
@@ -892,14 +1060,14 @@ export function EventsTable() {
                   foundDate,
                 });
               } else {
-                const priceUSD = Math.round(await toUSD(rawPrice, iso));
+                const priceUSD = Math.round(await toUSDLocal(rawPrice, iso));
                 const compPricing: NonNullable<Event["comp_pricing"]> = {
                   price: priceUSD,
                   name: COMPETITOR_PROVIDER_LABELS[provider],
                   date: normalizeDateInput(currentEvent.date),
                   status: "ok",
                 };
-                const newUsualPrice = await persistComp(compPricing);
+                const newUsualPrice = await persistCompLocal(compPricing);
                 const ticketPricesForToast = (currentEvent.tickets_and_rates ?? []).filter(t => t.available !== false).map(t => t.price).filter(p => p > 0);
                 const minTicketForToast = ticketPricesForToast.length ? Math.min(...ticketPricesForToast) : 0;
                 const priceParts = [
@@ -924,9 +1092,9 @@ export function EventsTable() {
         // --- LIVEEVENTS DATE MISMATCH ---
         const nearest = resultData.nearestAvailable as { price?: { amount?: number | null; currency?: string | null }; matchedDate?: string; date?: string } | undefined;
         const rawPrice = typeof nearest?.price?.amount === "number" ? nearest.price.amount : null;
-        const iso = normalizeCurrency(nearest?.price?.currency);
+        const iso = normalizeCurrencyLocal(nearest?.price?.currency);
         if (rawPrice !== null) {
-          const priceUSD = Math.round(await toUSD(rawPrice, iso));
+          const priceUSD = Math.round(await toUSDLocal(rawPrice, iso));
           setDateMismatchDialog({
             provider,
             eventId: currentEvent.id,
@@ -1479,10 +1647,22 @@ export function EventsTable() {
       </Dialog>
 
       {/* Date mismatch dialog */}
-      <Dialog open={!!dateMismatchDialog} onOpenChange={(open) => { if (!open) setDateMismatchDialog(null); }}>
+      <Dialog open={!!dateMismatchDialog} onOpenChange={(open) => {
+        if (!open) {
+          setDateMismatchDialog(null);
+          popMismatchQueue();
+        }
+      }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Date mismatch - choose a label</DialogTitle>
+            <DialogTitle>
+              Date mismatch - choose a label
+              {mismatchQueue.length > 0 && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  ({mismatchQueue.length} more after this)
+                </span>
+              )}
+            </DialogTitle>
             <DialogDescription asChild>
               <div className="space-y-2 text-sm">
                 {dateMismatchDialog && (
@@ -1526,6 +1706,7 @@ export function EventsTable() {
                   if (!dateMismatchDialog) return;
                   const d = dateMismatchDialog;
                   setDateMismatchDialog(null);
+                  popMismatchQueue();
                   try {
                     const compPricing: NonNullable<Event["comp_pricing"]> = {
                       price: d.priceUSD,
@@ -1557,8 +1738,12 @@ export function EventsTable() {
             ))}
           </div>
           <div className="pt-1">
-            <Button type="button" variant="ghost" className="w-full" onClick={() => setDateMismatchDialog(null)}>
+            <Button type="button" variant="ghost" className="w-full" onClick={() => {
+              setDateMismatchDialog(null);
+              popMismatchQueue();
+            }}>
               Discard - don't save
+              {mismatchQueue.length > 0 && ` (${mismatchQueue.length} more remaining)`}
             </Button>
           </div>
         </DialogContent>
@@ -1683,6 +1868,24 @@ export function EventsTable() {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleBulkUpdate({ skip_flight: false })}>
                   No (full package)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={bulkLoading || bulkCompPricingLoading}>
+                  {bulkCompPricingLoading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Search className="mr-1 h-3 w-3" />}
+                  Check Pricing
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>Check competitor pricing</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => handleBulkCompetitorPricing("liveevents")} disabled={bulkCompPricingLoading}>
+                  LiveEvents
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleBulkCompetitorPricing("issta")} disabled={bulkCompPricingLoading}>
+                  ISSTA
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
