@@ -746,10 +746,12 @@ export function EventsTable() {
         return (
           <Button
             variant="ghost"
+            size="sm"
+            className="px-0"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
             ID
-            <ArrowUpDown className="ml-2 h-4 w-4" />
+            <ArrowUpDown className="ml-1 h-3 w-3" />
           </Button>
         );
       },
@@ -783,10 +785,6 @@ export function EventsTable() {
           </div>
         );
       },
-    },
-    {
-      accessorKey: "name_english",
-      header: "English Name",
     },
     {
       accessorKey: "type",
@@ -873,16 +871,69 @@ export function EventsTable() {
         return (
           <Button
             variant="ghost"
+            size="sm"
+            className="px-0"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
             Usual Price
-            <ArrowUpDown className="ml-2 h-4 w-4" />
+            <ArrowUpDown className="ml-1 h-3 w-3" />
           </Button>
         );
       },
       cell: ({ row }) => {
+        const [editing, setEditing] = useState(false);
+        const [inputValue, setInputValue] = useState("");
+
         const price = Number.parseFloat(row.getValue("usual_price"));
-        return <div>${price.toFixed(2)}</div>;
+
+        const startEditing = () => {
+          setInputValue(isNaN(price) ? "0" : String(price));
+          setEditing(true);
+        };
+
+        const commitEdit = async () => {
+          setEditing(false);
+          const newPrice = Number.parseFloat(inputValue);
+          if (isNaN(newPrice) || newPrice === price) return;
+          setEvents((prev) =>
+            prev.map((e) => e.id === row.original.id ? { ...e, usual_price: newPrice } : e)
+          );
+          try {
+            await updateEvent(row.original.id, { usual_price: newPrice });
+          } catch {
+            setEvents((prev) =>
+              prev.map((e) => e.id === row.original.id ? { ...e, usual_price: price } : e)
+            );
+            toast({ variant: "destructive", title: "Error", description: "Failed to update usual price." });
+          }
+        };
+
+        if (editing) {
+          return (
+            <input
+              type="number"
+              className="h-8 w-24 rounded border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              value={inputValue}
+              autoFocus
+              onChange={(e) => setInputValue(e.target.value)}
+              onBlur={commitEdit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitEdit();
+                if (e.key === "Escape") setEditing(false);
+              }}
+            />
+          );
+        }
+
+        return (
+          <div
+            className="cursor-pointer rounded px-1 py-0.5 hover:bg-muted"
+            title="Click to edit"
+            onClick={startEditing}
+          >
+            ${isNaN(price) ? "0.00" : price.toFixed(2)}
+          </div>
+        );
       },
     },
     {
@@ -891,10 +942,12 @@ export function EventsTable() {
         return (
           <Button
             variant="ghost"
+            size="sm"
+            className="px-0"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
             Tags
-            <ArrowUpDown className="ml-2 h-4 w-4" />
+            <ArrowUpDown className="ml-1 h-3 w-3" />
           </Button>
         );
       },
@@ -941,10 +994,12 @@ export function EventsTable() {
       header: ({ column }) => (
         <Button
           variant="ghost"
+          size="sm"
+          className="px-0"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
           Skip Flight
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          <ArrowUpDown className="ml-1 h-3 w-3" />
         </Button>
       ),
       cell: ({ row }) => {
@@ -982,10 +1037,12 @@ export function EventsTable() {
         return (
           <Button
             variant="ghost"
+            size="sm"
+            className="px-0"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
             Prioritized
-            <ArrowUpDown className="ml-2 h-4 w-4" />
+            <ArrowUpDown className="ml-1 h-3 w-3" />
           </Button>
         );
       },
