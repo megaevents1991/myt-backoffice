@@ -1673,7 +1673,7 @@ export function EventsTable() {
                       <strong>{dateMismatchDialog.foundDate || "a different date"}</strong>.
                     </p>
                     <p>
-                      Price:{" "}
+                      Competitor price:{" "}
                       <strong>
                         {dateMismatchDialog.rawPrice}
                         {dateMismatchDialog.isoCurrency !== "USD"
@@ -1681,6 +1681,25 @@ export function EventsTable() {
                           : ` ($${dateMismatchDialog.priceUSD})`}
                       </strong>
                     </p>
+                    {(() => {
+                      const ev = events.find(e => e.id === dateMismatchDialog.eventId);
+                      if (!ev) return null;
+                      const ticketPrices = (ev.tickets_and_rates ?? [])
+                        .filter(t => t.available !== false).map(t => t.price).filter(p => p > 0);
+                      const minTicket = ticketPrices.length ? Math.min(...ticketPrices) : 0;
+                      const additionalMarkup = ev.event_additional_markup ?? 0;
+                      const ourPrice = ev.base_flight_price + ev.base_hotel_price + minTicket + 175 + additionalMarkup;
+                      return (
+                        <p>
+                          Our price:{" "}
+                          <strong>${ourPrice}</strong>
+                          <span className="ml-1 text-muted-foreground">
+                            (flight ${ev.base_flight_price} + hotel ${ev.base_hotel_price} + ticket ${minTicket} + $175
+                            {additionalMarkup ? ` + $${additionalMarkup} markup` : ""})
+                          </span>
+                        </p>
+                      );
+                    })()}
                     <p className="font-medium text-destructive">
                       Dates do not match - the competitor result may be for a different event or package.
                     </p>
