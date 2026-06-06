@@ -580,6 +580,48 @@ export function EventsTable() {
     }
   };
 
+  const handleAutoCalculatePrice = async (eventId: number) => {
+    const event = events.find((e) => e.id === eventId);
+    if (!event) return;
+
+    const { def_date_depart, def_date_return, date, location, tickets_and_rates, skip_flight } = event;
+    const smartDates = calculateSmartDates(date);
+    const checkin = def_date_depart?.split("T")[0] || smartDates.startDate;
+    const checkout = def_date_return?.split("T")[0] || smartDates.endDate;
+    const cityIata = location?.city_iata;
+    const lat = location?.latitude;
+    const lon = location?.longitude;
+    const ticketPrices = (tickets_and_rates ?? []).filter(t => t.available !== false).map(t => t.price).filter(p => p > 0);
+    const minTicket = ticketPrices.length ? Math.min(...ticketPrices) : 0;
+
+    const [flightResult, hotelResult] = await Promise.all([
+      skip_flight || !cityIata
+        ? Promise.resolve(null)
+        : searchFlightPrices({ originLocationCode: "TLV", destinationLocationCode: cityIata, departureDate: checkin, returnDate: checkout, adults: 1, currencyCode: "USD" }),
+      lat && lon
+        ? searchHotelPrices({ lat, lon, checkin, checkout })
+        : Promise.resolve(null),
+    ]);
+
+    const newFlightPrice = skip_flight
+      ? event.base_flight_price
+      : (flightResult?.cheapestPrice ? Math.round(flightResult.cheapestPrice) : event.base_flight_price);
+    const newHotelPrice = hotelResult?.cheapestPrice ? Math.round(hotelResult.cheapestPrice) : event.base_hotel_price;
+    const newUsualPrice = newFlightPrice + newHotelPrice + minTicket + 175;
+
+    setEvents(prev => prev.map(e =>
+      e.id === eventId ? { ...e, usual_price: newUsualPrice, base_flight_price: newFlightPrice, base_hotel_price: newHotelPrice } : e
+    ));
+    await updateEvent(eventId, { usual_price: newUsualPrice, base_flight_price: newFlightPrice, base_hotel_price: newHotelPrice });
+
+    const parts = skip_flight
+      ? `hotel $${newHotelPrice} + ticket $${minTicket} + $175 margin`
+      : `flight $${newFlightPrice} + hotel $${newHotelPrice} + ticket $${minTicket} + $175 margin`;
+    toast({ title: `Usual price set to $${newUsualPrice}`, description: parts });
+
+    return newUsualPrice;
+  };
+
   const filteredEvents = events.filter((event) => {
     if (!showDeleted && event.is_deleted) return false;
     if (hideSold && event.tags?.includes("Sold")) return false;
@@ -780,6 +822,13 @@ export function EventsTable() {
               title: "Competitor price saved",
               description: `${compPricing.name}: ${rawPrice}${isoCurrency !== "USD" ? ` ${isoCurrency} → ` : " "}$${compPricing.price} saved for event #${currentEvent.id}`,
             });
+
+            // Trigger usual price recalculation and compare with comp price
+            try {
+              await handleAutoCalculatePrice(currentEvent.id);
+            } catch {
+              // non-blocking — usual price refresh failure shouldn't interrupt comp flow
+            }
           }
         } catch (err) {
           toast({
@@ -957,47 +1006,18 @@ export function EventsTable() {
         const [calculating, setCalculating] = useState(false);
         const event = row.original;
         const price = Number.parseFloat(row.getValue("usual_price"));
+        const compPrice = event.comp_pricing?.price ?? null;
 
-        const autoCalculatePrice = async () => {
-          const { def_date_depart, def_date_return, date, location, tickets_and_rates, skip_flight } = event;
+        const priceColor = compPrice !== null && !isNaN(price)
+          ? price <= compPrice
+            ? "text-green-500"
+            : "text-red-500"
+          : "";
 
-          const smartDates = calculateSmartDates(date);
-          const checkin = def_date_depart?.split("T")[0] || smartDates.startDate;
-          const checkout = def_date_return?.split("T")[0] || smartDates.endDate;
-
-          const cityIata = location?.city_iata;
-          const lat = location?.latitude;
-          const lon = location?.longitude;
-
-          const ticketPrices = (tickets_and_rates ?? []).filter(t => t.available !== false).map(t => t.price).filter(p => p > 0);
-          const minTicket = ticketPrices.length ? Math.min(...ticketPrices) : 0;
-
+        const handleClick = async () => {
           setCalculating(true);
           try {
-            const [flightResult, hotelResult] = await Promise.all([
-              skip_flight || !cityIata
-                ? Promise.resolve(null)
-                : searchFlightPrices({ originLocationCode: "TLV", destinationLocationCode: cityIata, departureDate: checkin, returnDate: checkout, adults: 1, currencyCode: "USD" }),
-              lat && lon
-                ? searchHotelPrices({ lat, lon, checkin, checkout })
-                : Promise.resolve(null),
-            ]);
-
-            const newFlightPrice = skip_flight
-              ? event.base_flight_price
-              : (flightResult?.cheapestPrice ? Math.round(flightResult.cheapestPrice) : event.base_flight_price);
-            const newHotelPrice = hotelResult?.cheapestPrice ? Math.round(hotelResult.cheapestPrice) : event.base_hotel_price;
-            const newUsualPrice = newFlightPrice + newHotelPrice + minTicket + 175;
-
-            setEvents(prev => prev.map(e =>
-              e.id === event.id ? { ...e, usual_price: newUsualPrice, base_flight_price: newFlightPrice, base_hotel_price: newHotelPrice } : e
-            ));
-            await updateEvent(event.id, { usual_price: newUsualPrice, base_flight_price: newFlightPrice, base_hotel_price: newHotelPrice });
-
-            const parts = skip_flight
-              ? `hotel $${newHotelPrice} + ticket $${minTicket} + $175 margin`
-              : `flight $${newFlightPrice} + hotel $${newHotelPrice} + ticket $${minTicket} + $175 margin`;
-            toast({ title: `Usual price set to $${newUsualPrice}`, description: parts });
+            await handleAutoCalculatePrice(event.id);
           } catch {
             toast({ variant: "destructive", title: "Error", description: "Failed to calculate price." });
           } finally {
@@ -1007,14 +1027,19 @@ export function EventsTable() {
 
         return (
           <div className="flex items-center gap-1">
-            <span>${isNaN(price) ? "0.00" : price.toFixed(2)}</span>
+            <span
+              className={priceColor}
+              title={compPrice !== null ? `Comp price: $${compPrice} (${event.comp_pricing?.name})` : undefined}
+            >
+              ${isNaN(price) ? "0.00" : price.toFixed(2)}
+            </span>
             <Button
               variant="ghost"
               size="icon"
               className="h-6 w-6 shrink-0"
               title="Auto-calculate: flight + hotel + cheapest ticket + $175"
               disabled={calculating}
-              onClick={autoCalculatePrice}
+              onClick={handleClick}
             >
               {calculating
                 ? <Loader2 className="h-3 w-3 animate-spin" />
