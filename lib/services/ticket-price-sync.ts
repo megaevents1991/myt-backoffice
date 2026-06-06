@@ -7,7 +7,7 @@ import { CURRENCIES } from "@/types/live-events.types";
 interface ExchangeRateData {
   rate: number;
   lastUpdated: Date;
-  source: "primary" | "secondary";
+  source: "api" | "fallback";
 }
 
 type SupportedCurrency = "EUR" | "ILS" | "GBP";
@@ -21,40 +21,33 @@ interface ExchangeRates {
 class MultiCurrencyExchangeRateService {
   private exchangeRates: ExchangeRates = {
     EUR: {
-      rate: 1.1,
+      rate: 1.15,
       lastUpdated: new Date(0), // epoch — force refresh on first use
-      source: "primary",
+      source: "fallback",
     },
     ILS: {
-      rate: 0.31,
+      rate: 0.34,
       lastUpdated: new Date(0),
-      source: "primary",
+      source: "fallback",
     },
     GBP: {
-      rate: 1.25,
+      rate: 1.33,
       lastUpdated: new Date(0),
-      source: "primary",
+      source: "fallback",
     },
   };
 
-  private readonly API_BASE_URL = "https://api.twelvedata.com/exchange_rate";
-  private readonly API_KEY = "43c9bbfbf1cb4a1990c01a1a6d9ddf2f";
-  // Secondary provider (used only when primary has failed for >= 24 hours)
   private readonly FLOATRATES_URL = "https://www.floatrates.com/daily/usd.json";
   // Conservative bounds to reject outliers (currency -> USD per unit)
   private readonly RATE_LIMITS: Record<
     SupportedCurrency,
     { min: number; max: number }
   > = {
-    EUR: { min: 1, max: 1.4 }, // EUR/USD
-    GBP: { min: 1.1, max: 1.6 }, // GBP/USD
-    ILS: { min: 0.25, max: 0.35 }, // ILS/USD
+    EUR: { min: 0.9, max: 1.4 }, // EUR/USD
+    GBP: { min: 1.0, max: 1.6 }, // GBP/USD
+    ILS: { min: 0.25, max: 0.5 }, // ILS/USD
   };
-  private readonly MAX_RETRIES = 4;
-  private readonly BASE_RETRY_DELAY_MS = 800; // exponential backoff base
   private readonly API_TIMEOUT_MS = 10000;
-
-  private readonly SECONDARY_PROVIDER_AFTER_MS = 24 * 60 * 60 * 1000; // 24 hours
 
   private readonly STALE_AFTER_MS = 60 * 60 * 1000; // 1 hour
   private readonly HARD_STALE_AFTER_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -84,85 +77,11 @@ class MultiCurrencyExchangeRateService {
     return rate >= bounds.min && rate <= bounds.max;
   }
 
-  private async fetchCurrencyRate(
-    currency: SupportedCurrency,
-  ): Promise<number | null> {
-    for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
-      const backoff = Math.round(
-        this.BASE_RETRY_DELAY_MS *
-          Math.pow(2, attempt - 1) *
-          (0.75 + Math.random() * 0.5),
-      );
-      try {
-        console.log(
-          `🔄 Fetching ${currency}/USD rate - attempt ${attempt}/${this.MAX_RETRIES}`,
-        );
-
-        const url = `${this.API_BASE_URL}?symbol=${currency}/USD&apikey=${this.API_KEY}`;
-        const response = await this.fetchWithTimeout(url);
-
-        if (!response.ok) {
-          // Handle 429 rate limit with Retry-After
-          if (response.status === 429) {
-            const retryAfterHeader = response.headers.get("retry-after");
-            const retryAfterSec = retryAfterHeader
-              ? Number(retryAfterHeader)
-              : NaN;
-            const waitMs =
-              Number.isFinite(retryAfterSec) && retryAfterSec > 0
-                ? retryAfterSec * 1000
-                : backoff;
-            console.warn(
-              `⏳ Rate limited for ${currency}. Waiting ${waitMs}ms before retry`,
-            );
-            if (attempt < this.MAX_RETRIES)
-              await new Promise((r) => setTimeout(r, waitMs));
-            continue;
-          }
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        const raw = data?.rate;
-        const parsed =
-          typeof raw === "number"
-            ? raw
-            : typeof raw === "string"
-              ? parseFloat(raw)
-              : NaN;
-        if (Number.isFinite(parsed)) {
-          const rate = Math.ceil(parsed * 100) / 100; // Round to 2 decimals
-          if (!this.isValidRate(currency, rate)) {
-            throw new Error(
-              `Out-of-range rate for ${currency}: ${rate} (limits ${this.RATE_LIMITS[currency].min}-${this.RATE_LIMITS[currency].max})`,
-            );
-          }
-          console.log(`✅ ${currency}/USD rate fetched: ${rate}`);
-          return rate;
-        }
-        throw new Error(`Invalid exchange rate data structure for ${currency}`);
-      } catch (error) {
-        console.warn(
-          `⚠️ ${currency}/USD rate fetch attempt ${attempt} failed:`,
-          error instanceof Error ? error.message : "Unknown error",
-        );
-        if (attempt < this.MAX_RETRIES) {
-          await new Promise((resolve) => setTimeout(resolve, backoff));
-        }
-      }
-    }
-    console.error(
-      `🚫 All attempts failed for ${currency}/USD with primary provider`,
-    );
-    return null;
-  }
-
-  // Secondary provider: FloatRates (used only when primary has failed for >= 24 hours)
   private async fetchFromFloatRates(
     currency: SupportedCurrency,
   ): Promise<number | null> {
     try {
-      console.log(`🔄 [Secondary] Fetching ${currency}/USD from FloatRates`);
+      console.log(`🔄 Fetching ${currency}/USD from FloatRates`);
       const response = await this.fetchWithTimeout(this.FLOATRATES_URL);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -187,12 +106,12 @@ class MultiCurrencyExchangeRateService {
         );
       }
       console.log(
-        `✅ [Secondary] ${currency}/USD rate fetched from FloatRates: ${rounded}`,
+        `✅ ${currency}/USD rate fetched from FloatRates: ${rounded}`,
       );
       return rounded;
     } catch (error) {
       console.error(
-        `❌ [Secondary] FloatRates fetch failed for ${currency}:`,
+        `❌ FloatRates fetch failed for ${currency}:`,
         error instanceof Error ? error.message : "Unknown error",
       );
       return null;
@@ -216,52 +135,29 @@ class MultiCurrencyExchangeRateService {
   ): Promise<void> {
     return this.scheduleCurrencyUpdate(currency, async () => {
       try {
-        const rate = await this.fetchCurrencyRate(currency);
+        const rate = await this.fetchFromFloatRates(currency);
 
         if (rate !== null) {
           this.exchangeRates[currency] = {
             rate,
             lastUpdated: new Date(),
-            source: "primary",
+            source: "api",
           };
           console.log(
-            `💱 ${currency}/USD rate updated: ${rate} (from primary API)`,
+            `💱 ${currency}/USD rate updated: ${rate} (from FloatRates)`,
           );
         } else {
-          // Primary provider failed. Use cached rate if fresh enough, otherwise try secondary.
           const current = this.exchangeRates[currency];
-          const ageMs = Date.now() - current.lastUpdated.getTime();
-          if (ageMs >= this.SECONDARY_PROVIDER_AFTER_MS) {
-            console.warn(
-              `⚠️ ${currency}/USD rate stale for ${Math.round(ageMs / 3600000)}h. Trying secondary provider (FloatRates).`,
-            );
-            const secondaryRate = await this.fetchFromFloatRates(currency);
-            if (secondaryRate !== null) {
-              this.exchangeRates[currency] = {
-                rate: secondaryRate,
-                lastUpdated: new Date(),
-                source: "secondary",
-              };
-              console.log(
-                `💱 ${currency}/USD rate updated via secondary provider (FloatRates): ${secondaryRate}`,
-              );
-            } else {
-              console.warn(
-                `⚠️ Secondary provider also failed for ${currency}. Maintaining previous rate: ${current.rate} (from ${current.source}, last updated: ${current.lastUpdated.toISOString()})`,
-              );
-              // Keep existing rate; do not overwrite timestamp to preserve staleness tracking
-            }
-          } else {
-            console.warn(
-              `⚠️ Primary provider failed for ${currency}, but cached rate is still fresh (${Math.round(ageMs / 3600000)}h old). Keeping cached rate: ${current.rate} (from ${current.source}).`,
-            );
-          }
+          console.warn(
+            `⚠️ FloatRates failed for ${currency}. Maintaining previous rate: ${current.rate} (last updated: ${current.lastUpdated.toISOString()})`,
+          );
+          // Keep existing rate; do not overwrite timestamp to preserve staleness tracking
         }
       } catch (error) {
         console.error(`❌ Error updating ${currency}/USD rate:`, error);
         const current = this.exchangeRates[currency];
         console.warn(
-          `⚠️ Keeping previous ${currency}/USD rate after error: ${current.rate} (from ${current.source}, last updated: ${current.lastUpdated.toISOString()})`,
+          `⚠️ Keeping previous ${currency}/USD rate after error: ${current.rate} (last updated: ${current.lastUpdated.toISOString()})`,
         );
       }
     });
