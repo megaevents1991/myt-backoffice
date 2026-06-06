@@ -813,22 +813,38 @@ export function EventsTable() {
               date: normalizeDateInput(currentEvent.date),
             };
 
-            setEvents((prev) =>
-              prev.map((e) => e.id === currentEvent.id ? { ...e, comp_pricing: compPricing } : e)
-            );
-            await updateEvent(currentEvent.id, { comp_pricing: compPricing });
+            // Calculate usual price from stored event data (no new API calls)
+            const ticketPrices = (currentEvent.tickets_and_rates ?? [])
+              .filter(t => t.available !== false)
+              .map(t => t.price)
+              .filter(p => p > 0);
+            const minTicket = ticketPrices.length ? Math.min(...ticketPrices) : 0;
+            const additionalMarkup = currentEvent.event_additional_markup ?? 0;
+            const newUsualPrice =
+              currentEvent.base_flight_price +
+              currentEvent.base_hotel_price +
+              minTicket +
+              175 +
+              additionalMarkup;
 
+            setEvents((prev) =>
+              prev.map((e) => e.id === currentEvent.id
+                ? { ...e, comp_pricing: compPricing, usual_price: newUsualPrice }
+                : e)
+            );
+            await updateEvent(currentEvent.id, { comp_pricing: compPricing, usual_price: newUsualPrice });
+
+            const priceParts = [
+              `flight $${currentEvent.base_flight_price}`,
+              `hotel $${currentEvent.base_hotel_price}`,
+              `ticket $${minTicket}`,
+              `$175 margin`,
+              ...(additionalMarkup ? [`+$${additionalMarkup} markup`] : []),
+            ].join(" + ");
             toast({
               title: "Competitor price saved",
-              description: `${compPricing.name}: ${rawPrice}${isoCurrency !== "USD" ? ` ${isoCurrency} → ` : " "}$${compPricing.price} saved for event #${currentEvent.id}`,
+              description: `${compPricing.name}: ${rawPrice}${isoCurrency !== "USD" ? ` ${isoCurrency} → ` : " "}$${compPricing.price} · Our price updated to $${newUsualPrice} (${priceParts})`,
             });
-
-            // Trigger usual price recalculation and compare with comp price
-            try {
-              await handleAutoCalculatePrice(currentEvent.id);
-            } catch {
-              // non-blocking — usual price refresh failure shouldn't interrupt comp flow
-            }
           }
         } catch (err) {
           toast({
