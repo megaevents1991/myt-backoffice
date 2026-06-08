@@ -7,6 +7,8 @@ import type { OfflineFlight } from "../../types/offline-flight.types";
 import { revalidatePath } from "next/cache";
 import { airportsForCityName } from "@/lib/airport-cities";
 import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
+import { replaceOfflineHotelRooms } from "./offline-hotel-room-actions";
+import type { NewOfflineHotelRoom } from "../../types/offline-hotel.types";
 
 // offline_hotels is not in Supabase generated types — cast to bypass never inference
 const hotelsTable = () => (supabase as any).from("offline_hotels");
@@ -71,23 +73,31 @@ export async function getOfflineHotel(id: number): Promise<OfflineHotel> {
 }
 
 export async function createOfflineHotel(
-  hotel: Omit<OfflineHotel, "id" | "consumed_rooms" | "is_deleted" | "created_at">
+  hotel: Omit<OfflineHotel, "id" | "consumed_rooms" | "is_deleted" | "created_at">,
+  rooms?: NewOfflineHotelRoom[]
 ): Promise<OfflineHotel> {
   const { data, error } = await hotelsTable()
     .insert({ ...hotel, consumed_rooms: 0, is_deleted: false })
     .select();
 
   if (error) throw error;
+  const created = data[0] as OfflineHotel;
+
+  if (rooms && rooms.length > 0) {
+    await replaceOfflineHotelRooms(created.id, rooms); // also recomputes mirror + price push
+  }
+
   revalidatePath("/(dashboard)/offline-hotels");
   for (const id of hotel.event_ids ?? []) {
     revalidatePath(`/(dashboard)/events/${id}`);
   }
-  return data[0] as OfflineHotel;
+  return created;
 }
 
 export async function updateOfflineHotel(
   id: number,
-  hotel: Partial<Omit<OfflineHotel, "id" | "consumed_rooms" | "created_at">>
+  hotel: Partial<Omit<OfflineHotel, "id" | "consumed_rooms" | "created_at">>,
+  rooms?: NewOfflineHotelRoom[]
 ): Promise<OfflineHotel> {
   const { data: current } = await hotelsTable()
     .select("event_ids, price, room_type")
@@ -180,6 +190,11 @@ export async function updateOfflineHotel(
   for (const flightId of hotel.flight_ids ?? []) {
     revalidatePath(`/(dashboard)/offline-flights/${flightId}`);
   }
+
+  if (rooms) {
+    await replaceOfflineHotelRooms(id, rooms); // recomputes mirror + cheapest-available price push
+  }
+
   return data[0] as OfflineHotel;
 }
 

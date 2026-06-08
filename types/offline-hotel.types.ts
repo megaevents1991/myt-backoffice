@@ -19,3 +19,29 @@ export interface OfflineHotel {
   is_deleted: boolean | null;
   created_at: string;
 }
+
+export interface OfflineHotelRoom {
+  id: number;
+  hotel_id: number;
+  room_type: string;
+  price: number;
+  meal_plan: string | null;
+  last_cancellation_date: string | null; // DATE "YYYY-MM-DD"
+  supplier: string | null;
+  is_booked: boolean;
+  order_no: string | null;
+  acc_no: string | null;
+  reservation_id: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+// Shape sent from the form to create/replace a hotel's rooms.
+// No id/hotel_id/is_booked/created_at — server owns those.
+export type NewOfflineHotelRoom = {
+  room_type: string;
+  price: number;
+  meal_plan: string | null;
+  last_cancellation_date: string | null;
+  supplier: string | null;
+};

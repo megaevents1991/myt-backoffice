@@ -52,6 +52,8 @@ import {
   type HotelSearchResult,
 } from "@/lib/actions/offline-hotel-actions";
 import type { OfflineHotel } from "@/types/offline-hotel.types";
+import { RoomsEditor, type RoomDraft } from "@/components/offline-hotels/rooms-editor";
+import { getOfflineHotelRooms } from "@/lib/actions/offline-hotel-room-actions";
 
 const offlineHotelFormSchema = z.object({
   hotel_name: z.string().min(1, "Hotel name is required."),
@@ -104,6 +106,7 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
   const [isSearchingHotels, setIsSearchingHotels] = useState(false);
   const [linkedHotel, setLinkedHotel] = useState<HotelSearchResult | null>(null);
   const [hotelSearchOpen, setHotelSearchOpen] = useState(false);
+  const [rooms, setRooms] = useState<RoomDraft[]>([]);
 
   const form = useForm<HotelFormData>({
     resolver: zodResolver(offlineHotelFormSchema),
@@ -142,6 +145,17 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
         if (hotel.hid) {
           setLinkedHotel({ hid: hotel.hid, name: hotel.hotel_name, star_rating: 0, address: hotel.city });
         }
+        getOfflineHotelRooms(parsedId)
+          .then((existing) =>
+            setRooms(existing.map((r) => ({
+              room_type: r.room_type,
+              price: Number(r.price),
+              meal_plan: r.meal_plan,
+              last_cancellation_date: r.last_cancellation_date,
+              supplier: r.supplier,
+            })))
+          )
+          .catch(console.error);
       })
       .catch(() => {
         toast.error("Failed to load hotel data.");
@@ -195,15 +209,20 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
     if (hotelId === null) { toast.error("Hotel ID missing."); return; }
     startTransition(async () => {
       try {
-        await updateOfflineHotel(hotelId, {
-          ...values,
-          hid: values.hid ? Number(values.hid) : null,
-          meal_plan: values.meal_plan || null,
-          notes: values.notes || null,
-          last_cancellation_date: values.last_cancellation_date || null,
-          guest_rating: values.guest_rating === "" ? null : Number(values.guest_rating),
-          guest_review_count: values.guest_review_count === "" ? null : Number(values.guest_review_count),
-        } as Partial<Omit<OfflineHotel, "id" | "consumed_rooms" | "created_at">>);
+        await updateOfflineHotel(
+          hotelId,
+          {
+            ...values,
+            num_rooms: rooms.length || values.num_rooms,
+            hid: values.hid ? Number(values.hid) : null,
+            meal_plan: values.meal_plan || null,
+            notes: values.notes || null,
+            last_cancellation_date: values.last_cancellation_date || null,
+            guest_rating: values.guest_rating === "" ? null : Number(values.guest_rating),
+            guest_review_count: values.guest_review_count === "" ? null : Number(values.guest_review_count),
+          } as Partial<Omit<OfflineHotel, "id" | "consumed_rooms" | "created_at">>,
+          rooms.length > 0 ? rooms : undefined
+        );
         toast.success("Hotel updated successfully!");
         router.push("/offline-hotels");
         router.refresh();
@@ -433,6 +452,9 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
               </FormItem>
             )} />
           </div>
+
+          <h2 className="text-xl font-semibold border-b pb-2">Rooms</h2>
+          <RoomsEditor rooms={rooms} onChange={setRooms} />
 
           <h2 className="text-xl font-semibold border-b pb-2">Link to Events (optional)</h2>
           <FormField control={form.control} name="event_ids" render={({ field }) => (
