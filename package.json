@@ -57,6 +57,7 @@
     "next": "^15.5.9",
     "next-themes": "latest",
     "nodemailer": "^6.10.1",
+    "onnxruntime-web": "^1.21.0",
     "playwright-core": "^1.52.0",
     "react": "^19.2.3",
     "react-day-picker": "^9.8.0",
