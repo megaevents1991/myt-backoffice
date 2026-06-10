@@ -1,9 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git -C \"C:/Users/doraz/OneDrive/Desktop/Work/MegaEvent/MYT_Gilad/MYT-backoffice-app\" remote -v)",
-      "Bash(git -C \"C:/Users/doraz/OneDrive/Desktop/Work/MegaEvent/MYT_Gilad/MYT-backoffice-app\" branch -a)",
-      "Bash(git -C \"C:/Users/doraz/OneDrive/Desktop/Work/MegaEvent/MYT_Gilad/MYT-backoffice-app\" log --oneline -5)"
+      "Bash(git remote -v)",
+      "Bash(git branch -a)",
+      "Bash(git log --oneline -5)"
     ]
   }
 }
