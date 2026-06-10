@@ -185,6 +185,19 @@ const INVENTORY_RESERVATION_FIELDS =
 // the inventory detail pages.
 const ACTIVE_RESERVATION_STATUSES_FILTER = "Cancelled,Lost";
 
+// Belt-and-suspenders: the SQL `not.in` filter is case-sensitive and exact, so
+// a stored status like "lost" or "Lost " would slip past it. Re-filter in JS
+// against RELEASED_STATUSES, normalized, so released reservations never show in
+// an inventory view or passenger manifest.
+const RELEASED_STATUSES_LOWER = new Set(
+  Array.from(RELEASED_STATUSES, (s) => s.toLowerCase())
+);
+function dropReleased(rows: InventoryReservation[]): InventoryReservation[] {
+  return rows.filter(
+    (r) => !RELEASED_STATUSES_LOWER.has((r.status ?? "").trim().toLowerCase())
+  );
+}
+
 export async function getReservationsForFlight(flightId: number): Promise<InventoryReservation[]> {
   const { data, error } = await supabase
     .from("reservations")
@@ -193,7 +206,7 @@ export async function getReservationsForFlight(flightId: number): Promise<Invent
     .not("status", "in", `(${ACTIVE_RESERVATION_STATUSES_FILTER})`)
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as unknown as InventoryReservation[];
+  return dropReleased((data ?? []) as unknown as InventoryReservation[]);
 }
 
 export async function getReservationsForHotel(hotelId: number): Promise<InventoryReservation[]> {
@@ -204,7 +217,7 @@ export async function getReservationsForHotel(hotelId: number): Promise<Inventor
     .not("status", "in", `(${ACTIVE_RESERVATION_STATUSES_FILTER})`)
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as unknown as InventoryReservation[];
+  return dropReleased((data ?? []) as unknown as InventoryReservation[]);
 }
 
 // Recomputes consumed_quantity for an offline flight from active reservations.

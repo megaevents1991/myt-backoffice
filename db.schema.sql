@@ -314,6 +314,28 @@ CREATE INDEX IF NOT EXISTS idx_tixstock_events_name_search ON tixstock_events US
 
 -- Update trigger for tixstock_events
 CREATE TRIGGER tixstock_events_updated_at 
-    BEFORE UPDATE ON tixstock_events 
-    FOR EACH ROW 
+    BEFORE UPDATE ON tixstock_events
+    FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- ─────────────────────────────────────────────────────────────
+-- offline_hotel_rooms — per-room detail for offline_hotels batches
+-- (created 2026-06-08; see db/migrations/2026-06-08-offline-hotel-rooms.sql)
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS offline_hotel_rooms (
+  id                     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  hotel_id               BIGINT NOT NULL REFERENCES offline_hotels(id) ON DELETE CASCADE,
+  room_type              TEXT NOT NULL,
+  price                  NUMERIC NOT NULL,
+  meal_plan              TEXT,
+  last_cancellation_date DATE,
+  supplier               TEXT,
+  is_booked              BOOLEAN NOT NULL DEFAULT false,
+  order_no               TEXT,
+  acc_no                 TEXT,
+  reservation_id         BIGINT,
+  notes                  TEXT,
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_offline_hotel_rooms_hotel_id ON offline_hotel_rooms(hotel_id);
+CREATE INDEX IF NOT EXISTS idx_offline_hotel_rooms_is_booked ON offline_hotel_rooms(is_booked);
