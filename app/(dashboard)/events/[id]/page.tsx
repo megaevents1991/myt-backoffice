@@ -28,6 +28,7 @@ import {
 import { airportsMatch } from "@/lib/airport-cities";
 import { ColorPicker } from "@/components/color-picker";
 import { ImageFilePicker } from "@/components/image-file-picker";
+import { ArtBlobPicker } from "@/components/art-blob-picker";
 import { v4 as uuidv4 } from "uuid";
 import { 
   searchFlightPrices, 
@@ -1675,6 +1676,25 @@ export default function EventPage({
                   : "map_images"
               }
               folder="maps"
+            />
+
+            <ArtBlobPicker
+              imageUrl={event.art_image_url}
+              colorIndex={event.art_color_index}
+              shapeIndex={event.art_shape_index}
+              onImage={(url) =>
+                setEvent((prev) => (prev ? { ...prev, art_image_url: url } : prev))
+              }
+              onColor={(i) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, art_color_index: i } : prev
+                )
+              }
+              onShape={(i) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, art_shape_index: i } : prev
+                )
+              }
             />
           </CardContent>
         </Card>
