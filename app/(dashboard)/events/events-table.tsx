@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
@@ -450,10 +450,12 @@ export function EventsTable() {
     isoCurrency: "USD" | "EUR" | "GBP" | "ILS";
     eventDate: string;
     foundDate: string;
+    result?: CompetitorPricingResponse;
   } | null>(null);
   const [mismatchQueue, setMismatchQueue] = useState<NonNullable<typeof dateMismatchDialog>[]>([]);
   const [bulkCompPricingLoading, setBulkCompPricingLoading] = useState(false);
   const { toast } = useToast();
+  const bulkDetailToastRef = useRef<ReturnType<typeof toast> | null>(null);
 
   useEffect(() => {
     async function fetchEvents() {
@@ -756,9 +758,31 @@ export function EventsTable() {
   // Pop next mismatch from queue (used by dialog close + color button handlers)
   const popMismatchQueue = () => {
     setMismatchQueue(prev => {
-      if (prev.length === 0) return prev;
+      if (prev.length === 0) {
+        // No more mismatches — dismiss the persistent detail toast
+        setTimeout(() => {
+          bulkDetailToastRef.current?.dismiss();
+          bulkDetailToastRef.current = null;
+        }, 150);
+        return prev;
+      }
       const [next, ...remaining] = prev;
-      setTimeout(() => setDateMismatchDialog(next), 150);
+      setTimeout(() => {
+        setDateMismatchDialog(next);
+        if (next.result) {
+          const nextEv = events.find(e => e.id === next.eventId);
+          const eventName = `${COMPETITOR_PROVIDER_LABELS[next.result.provider]} · ${nextEv ? getCompetitorEventName(nextEv) : `Event ${next.eventId}`}`;
+          const content = {
+            title: eventName,
+            description: renderCompetitorPricingDescription(next.result),
+            duration: COMPETITOR_TOAST_DURATION,
+            className: "sm:max-w-[560px]",
+          };
+          if (bulkDetailToastRef.current) {
+            bulkDetailToastRef.current.update(content);
+          }
+        }
+      }, 150);
       return remaining;
     });
   };
@@ -825,7 +849,7 @@ export function EventsTable() {
               const iso = normalizeCurrency(priceObj?.currency);
               if (rawPrice !== null) {
                 const priceUSD = Math.round(await toUSD(rawPrice, iso));
-                pendingMismatches.push({ provider, eventId: currentEvent.id, priceUSD, rawPrice, isoCurrency: iso, eventDate: normalizeDateInput(currentEvent.date), foundDate: isstaMatch?.foundDateRange ?? "" });
+                pendingMismatches.push({ provider, eventId: currentEvent.id, priceUSD, rawPrice, isoCurrency: iso, eventDate: normalizeDateInput(currentEvent.date), foundDate: isstaMatch?.foundDateRange ?? "", result });
               } else { failed++; }
             } else {
               let rawPrice: number | null = null;
@@ -855,7 +879,7 @@ export function EventsTable() {
                 );
                 if (isLiveDateMismatch) {
                   const priceUSD = Math.round(await toUSD(rawPrice, iso));
-                  pendingMismatches.push({ provider, eventId: currentEvent.id, priceUSD, rawPrice, isoCurrency: iso, eventDate: `${travelDates.startDate} → ${travelDates.endDate}`, foundDate: [returnedStart, returnedEnd].filter(Boolean).join(" → ") });
+                  pendingMismatches.push({ provider, eventId: currentEvent.id, priceUSD, rawPrice, isoCurrency: iso, eventDate: `${travelDates.startDate} → ${travelDates.endDate}`, foundDate: [returnedStart, returnedEnd].filter(Boolean).join(" → "), result });
                 } else {
                   const priceUSD = Math.round(await toUSD(rawPrice, iso));
                   await persistComp(currentEvent, { price: priceUSD, name: providerLabel, date: normalizeDateInput(currentEvent.date), status: "ok" });
@@ -869,8 +893,14 @@ export function EventsTable() {
             const iso = normalizeCurrency(nearest?.price?.currency);
             if (rawPrice !== null) {
               const priceUSD = Math.round(await toUSD(rawPrice, iso));
-              pendingMismatches.push({ provider, eventId: currentEvent.id, priceUSD, rawPrice, isoCurrency: iso, eventDate: normalizeDateInput(currentEvent.date), foundDate: nearest?.matchedDate ?? nearest?.date ?? "" });
-            } else { noResult++; }
+              pendingMismatches.push({ provider, eventId: currentEvent.id, priceUSD, rawPrice, isoCurrency: iso, eventDate: normalizeDateInput(currentEvent.date), foundDate: nearest?.matchedDate ?? nearest?.date ?? "", result });
+            } else {
+              // No usable price — treat as no result (blue)
+              const noResultComp = { price: 0, name: providerLabel, date: normalizeDateInput(currentEvent.date), status: "no_result" as const };
+              await updateEvent(currentEvent.id, { comp_pricing: noResultComp });
+              setEvents(prev => prev.map(e => e.id === currentEvent.id ? { ...e, comp_pricing: noResultComp } : e));
+              noResult++;
+            }
           } else if (resultStatus && resultStatus !== "ERROR") {
             await updateEvent(currentEvent.id, { comp_pricing: { price: 0, name: providerLabel, date: normalizeDateInput(currentEvent.date), status: "no_result" } });
             setEvents(prev => prev.map(e => e.id === currentEvent.id ? { ...e, comp_pricing: { price: 0, name: providerLabel, date: normalizeDateInput(currentEvent.date), status: "no_result" } } : e));
@@ -902,7 +932,19 @@ export function EventsTable() {
     if (pendingMismatches.length > 0) {
       const [first, ...rest] = pendingMismatches;
       setMismatchQueue(rest);
-      setTimeout(() => setDateMismatchDialog(first), 300);
+      setTimeout(() => {
+        setDateMismatchDialog(first);
+        if (first.result) {
+          const ev = events.find(e => e.id === first.eventId);
+          const eventName = `${COMPETITOR_PROVIDER_LABELS[first.result.provider]} · ${ev ? getCompetitorEventName(ev) : `Event ${first.eventId}`}`;
+          bulkDetailToastRef.current = toast({
+            title: eventName,
+            description: renderCompetitorPricingDescription(first.result),
+            duration: COMPETITOR_TOAST_DURATION,
+            className: "sm:max-w-[560px]",
+          });
+        }
+      }, 300);
     }
   };
 
@@ -1104,6 +1146,21 @@ export function EventsTable() {
             eventDate: normalizeDateInput(currentEvent.date),
             foundDate: nearest?.matchedDate ?? nearest?.date ?? "",
           });
+        } else {
+          // No usable price from nearestAvailable — treat as no result (blue)
+          try {
+            const compPricing: NonNullable<Event["comp_pricing"]> = {
+              price: 0,
+              name: COMPETITOR_PROVIDER_LABELS[provider],
+              date: normalizeDateInput(currentEvent.date),
+              status: "no_result",
+            };
+            setEvents(prev => prev.map(e => e.id === currentEvent.id ? { ...e, comp_pricing: compPricing } : e));
+            await updateEvent(currentEvent.id, { comp_pricing: compPricing });
+            toast({ title: "Competitor: no result", description: `${COMPETITOR_PROVIDER_LABELS[provider]} has no package for this event (${resultStatus}).` });
+          } catch {
+            // silent
+          }
         }
 
       } else if (resultStatus && !["ERROR"].includes(resultStatus)) {
