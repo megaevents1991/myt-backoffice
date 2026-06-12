@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { removeBackground } from "@imgly/background-removal";
-import { Loader2, Wand2 } from "lucide-react";
+import { Images, Loader2, Wand2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { getPublicUrl } from "@/lib/actions/storage-actions";
+import { getFiles, getPublicUrl } from "@/lib/actions/storage-actions";
 
 // Mirror of the main app's EventArt palette + blob shapes so the preview here
 // matches what customers see (myt-main: lib/eventArt.ts + components/ui/EventArt.tsx).
@@ -77,8 +77,47 @@ export function ArtBlobPicker({
 }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [galleryLoading, setGalleryLoading] = useState(false);
+  const [gallery, setGallery] = useState<{ name: string; url: string }[] | null>(
+    null
+  );
   const ci = colorIndex ?? 0;
   const si = shapeIndex ?? 0;
+
+  // Reuse a cut-out already in art_blobs (artists with multiple events).
+  const toggleGallery = async () => {
+    const open = !galleryOpen;
+    setGalleryOpen(open);
+    if (!open || gallery) return;
+    try {
+      setGalleryLoading(true);
+      const files = await getFiles("art_blobs", "");
+      const base = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/art_blobs`;
+      setGallery(
+        files
+          .filter((f) => /\.(png|webp|jpe?g)$/i.test(f.name))
+          .sort(
+            (a, b) =>
+              new Date(b.created_at ?? 0).getTime() -
+              new Date(a.created_at ?? 0).getTime()
+          )
+          .map((f) => ({
+            name: f.name,
+            url: `${base}/${encodeURIComponent(f.name)}`,
+          }))
+      );
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't load existing cut-outs",
+        description: String(e?.message || e),
+      });
+      setGalleryOpen(false);
+    } finally {
+      setGalleryLoading(false);
+    }
+  };
 
   const handleFile = async (file: File) => {
     try {
@@ -104,6 +143,7 @@ export function ArtBlobPicker({
 
       const url = await getPublicUrl("art_blobs", json.path);
       onImage(url);
+      setGallery(null); // stale — refetch next time the gallery opens
       toast({ title: "Background removed", description: "Cut-out uploaded." });
     } catch (e: any) {
       toast({
@@ -163,7 +203,52 @@ export function ArtBlobPicker({
             />
           </label>
         </Button>
+        <Button
+          variant="outline"
+          type="button"
+          onClick={toggleGallery}
+          disabled={galleryLoading}
+        >
+          {galleryLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Images className="h-4 w-4" />
+          )}
+          <span className="ml-2">Choose existing</span>
+        </Button>
       </div>
+
+      {/* Existing cut-outs gallery (reuse across an artist's events) */}
+      {galleryOpen && gallery ? (
+        gallery.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No cut-outs in art_blobs yet.
+          </p>
+        ) : (
+          <div className="grid max-h-64 grid-cols-4 gap-2 overflow-y-auto rounded-lg border p-2 sm:grid-cols-6">
+            {gallery.map((f) => (
+              <button
+                key={f.name}
+                type="button"
+                title={f.name}
+                onClick={() => onImage(f.url)}
+                className={`relative aspect-square overflow-hidden rounded border-2 ${
+                  imageUrl === f.url ? "border-foreground" : "border-transparent"
+                }`}
+                style={{ background: BG }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={f.url}
+                  alt={f.name}
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-contain"
+                />
+              </button>
+            ))}
+          </div>
+        )
+      ) : null}
       <p className="text-xs text-muted-foreground">
         Upload a photo — the background is removed automatically, then the artist
         sits on the neon blob. Leave empty to show the full card image instead.
