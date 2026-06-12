@@ -84,7 +84,11 @@ export function ArtBlobPicker({
     try {
       setBusy(true);
       // Strip the background (runs in the browser via WASM).
-      const blob = await removeBackground(file);
+      // Full-precision isnet: slower first run, noticeably cleaner alpha edges.
+      const blob = await removeBackground(file, {
+        model: "isnet",
+        output: { format: "image/png", quality: 1 },
+      });
       const base = file.name.replace(/\.[^.]+$/, "");
       const out = new File([blob], `${base}-cutout-${Date.now()}.png`, {
         type: "image/png",
