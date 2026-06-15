@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Always-on rules (auto-loaded)
+
+Tech standards:
+@.claude/rules/standards/typescript.md
+@.claude/rules/standards/react.md
+@.claude/rules/standards/nextjs.md
+@.claude/rules/standards/supabase.md
+
+MYT domain rules:
+@.claude/rules/pricing.md
+@.claude/rules/data-model.md
+@.claude/rules/cross-project.md
+@.claude/rules/conventions.md
+
 > **⚠ IMPORTANT: This project is part of a two-project platform.**
 > The sibling project `../myt-main` is the customer-facing booking app that reads the data this backoffice manages.
 > See `../CLAUDE.md` for the full system architecture and shared database schema.
