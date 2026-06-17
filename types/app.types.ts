@@ -40,6 +40,17 @@ export type Event = {
   tx_excluded_sections?: string[];
   // Extra event-level markup (USD) added to this event.
   event_additional_markup?: number | null;
+  comp_pricing?: {
+    price: number;
+    name: string;
+    date: string;
+    /** Date found by the comp scraper (may differ from event date on date-mismatch) */
+    foundDate?: string;
+    /** 'ok' = confirmed match, 'no_result' = comp doesn't have it, 'date_mismatch' = user-resolved mismatch */
+    status?: "ok" | "no_result" | "date_mismatch";
+    /** User-chosen color override for date_mismatch results */
+    colorOverride?: "green" | "yellow" | "red" | "blue";
+  } | null;
 };
 
 export type Flight = {

@@ -45,6 +45,7 @@ import { cn } from "@/lib/utils";
 
 import { createOfflineHotel, getRelevantEventsForHotel, getRelevantFlightsForHotel, searchWorldOTAHotels, type HotelSearchResult } from "@/lib/actions/offline-hotel-actions";
 import type { OfflineHotel } from "@/types/offline-hotel.types";
+import { RoomsEditor, type RoomDraft } from "@/components/offline-hotels/rooms-editor";
 
 const offlineHotelFormSchema = z.object({
   hotel_name: z.string().min(1, "Hotel name is required."),
@@ -89,6 +90,7 @@ export default function NewOfflineHotelPage() {
   const [isSearchingHotels, setIsSearchingHotels] = useState(false);
   const [linkedHotel, setLinkedHotel] = useState<HotelSearchResult | null>(null);
   const [hotelSearchOpen, setHotelSearchOpen] = useState(false);
+  const [rooms, setRooms] = useState<RoomDraft[]>([]);
 
   const form = useForm<HotelFormData>({
     resolver: zodResolver(offlineHotelFormSchema),
@@ -175,7 +177,10 @@ export default function NewOfflineHotelPage() {
           guest_rating: values.guest_rating === "" ? null : Number(values.guest_rating),
           guest_review_count: values.guest_review_count === "" ? null : Number(values.guest_review_count),
         };
-        await createOfflineHotel(hotelData);
+        await createOfflineHotel(
+          { ...hotelData, num_rooms: rooms.length || values.num_rooms },
+          rooms.length > 0 ? rooms : undefined
+        );
         toast.success("Offline hotel created successfully!");
         router.push("/offline-hotels");
         router.refresh();
@@ -396,6 +401,9 @@ export default function NewOfflineHotelPage() {
               </FormItem>
             )} />
           </div>
+
+          <h2 className="text-xl font-semibold border-b pb-2">Rooms</h2>
+          <RoomsEditor rooms={rooms} onChange={setRooms} />
 
           <h2 className="text-xl font-semibold border-b pb-2">Link to Events (optional)</h2>
           <FormField control={form.control} name="event_ids" render={({ field }) => (

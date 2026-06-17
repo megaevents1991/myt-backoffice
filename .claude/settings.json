@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git remote -v)",
+      "Bash(git branch -a)",
+      "Bash(git log --oneline -5)"
+    ]
+  }
+}

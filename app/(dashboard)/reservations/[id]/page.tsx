@@ -20,6 +20,8 @@ import {
   getOfflineHotelsByIds,
   type ReservationOfflineRoom,
 } from "@/lib/actions/offline-hotel-actions";
+import { getRoomsByReservationId } from "@/lib/actions/offline-hotel-room-actions";
+import type { OfflineHotelRoom } from "@/types/offline-hotel.types";
 import { hasHotelInfo, normalizeReservationEventOrderInfo } from "@/lib/utils";
 
 // Visible marker for reservations whose flight/hotel came from our own
@@ -54,6 +56,8 @@ export default function ReservationDetailsPage({
   const [offlineRoomCounts, setOfflineRoomCounts] = useState<Map<number, number>>(
     new Map()
   );
+  // Specific child rooms (offline_hotel_rooms) manually linked to this reservation.
+  const [linkedChildRooms, setLinkedChildRooms] = useState<OfflineHotelRoom[]>([]);
 
   useEffect(() => {
     async function fetchReservation() {
@@ -83,6 +87,14 @@ export default function ReservationDetailsPage({
         : reservation.offline_hotel_id != null
         ? [reservation.offline_hotel_id]
         : [];
+    // Per-room child rows linked to this reservation (manual link, phase 1).
+    getRoomsByReservationId(reservation.id)
+      .then(setLinkedChildRooms)
+      .catch((err) => {
+        console.error("Failed to load linked child rooms:", err);
+        setLinkedChildRooms([]);
+      });
+
     if (ids.length === 0) {
       setOfflineRooms([]);
       setOfflineRoomCounts(new Map());
@@ -683,6 +695,48 @@ export default function ReservationDetailsPage({
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            )}
+            {linkedChildRooms.length > 0 && (
+              <div className="pt-4 border-t">
+                <p className="text-sm font-medium mb-2">Assigned room details</p>
+                <div className="space-y-2">
+                  {linkedChildRooms.map((room) => (
+                    <div
+                      key={room.id}
+                      className="rounded-md border p-3 text-sm grid grid-cols-2 md:grid-cols-4 gap-2"
+                    >
+                      <div>
+                        <span className="text-xs text-muted-foreground block">Room</span>
+                        #{room.id} · {room.room_type}
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted-foreground block">Price / room</span>
+                        ${Number(room.price).toFixed(2)}
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted-foreground block">Meal</span>
+                        {room.meal_plan ?? "—"}
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted-foreground block">Cancel by</span>
+                        {room.last_cancellation_date ?? "—"}
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted-foreground block">Supplier</span>
+                        {room.supplier ?? "—"}
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted-foreground block">Order No</span>
+                        {room.order_no ?? "—"}
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted-foreground block">Acc No</span>
+                        {room.acc_no ?? "—"}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

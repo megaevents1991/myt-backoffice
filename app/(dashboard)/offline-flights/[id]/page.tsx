@@ -8,6 +8,7 @@ import { ArrowLeft } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { LogoImage } from "@/components/logo-image";
 import { ReservationsForInventory } from "@/components/reservations-for-inventory";
+import { FlightPassengerManifest } from "@/components/offline-flights/flight-passenger-manifest";
 
 interface OfflineFlightDetailsPageProps {
   params: Promise<{
@@ -288,6 +289,8 @@ export default async function OfflineFlightDetailsPage({
       </div>
 
       <ReservationsForInventory reservations={reservations} />
+
+      <FlightPassengerManifest reservations={reservations} />
     </div>
   );
 }

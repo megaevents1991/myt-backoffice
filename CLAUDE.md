@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > **⚠ IMPORTANT: This project is part of a two-project platform.**
-> The sibling project `../myt---main` is the customer-facing booking app that reads the data this backoffice manages.
+> The sibling project `../myt-main` is the customer-facing booking app that reads the data this backoffice manages.
 > See `../CLAUDE.md` for the full system architecture and shared database schema.
 > **Any change to events, types, database tables, or price logic may require changes in the main app too.**
 
@@ -37,6 +37,7 @@ No test suite exists. TypeScript and ESLint errors are intentionally ignored dur
 Cookie-based, **not** Supabase SSR sessions. Middleware (`middleware.ts`) checks for a `session` cookie. Login validates against `NEXT_SECRET_ADMIN_EMAIL` / `NEXT_SECRET_ADMIN_PASSWORD` env vars, then calls Supabase `signInWithPassword` and stores the session JSON in an httpOnly cookie.
 
 Two Supabase clients:
+
 - `lib/supabase-server.ts` — uses `NEXT_SECRET_SUPABASE_SERVICE_ROLE_KEY` (server-side, bypasses RLS)
 - `lib/supabase-client.ts` — uses `NEXT_PUBLIC_SUPABASE_ANON_KEY` (client-side)
 
@@ -44,13 +45,13 @@ Two Supabase clients:
 
 Multiple event source tables in Supabase:
 
-| Table | Source | Prefix |
-|---|---|---|
+| Table                                              | Source          | Prefix  |
+| -------------------------------------------------- | --------------- | ------- |
 | `xs2e_events` / `xs2e_tournaments` / `xs2e_sports` | Sports data API | `xs2e_` |
-| `live_events` | LIVE API | — |
-| `p1_events` | P1 Tickets XML | — |
-| `tixstock_events` | TixStock API | — |
-| `locations` | Manual | — |
+| `live_events`                                      | LIVE API        | —       |
+| `p1_events`                                        | P1 Tickets XML  | —       |
+| `tixstock_events`                                  | TixStock API    | —       |
+| `locations`                                        | Manual          | —       |
 
 Core `Event` type (from Supabase `events` table, not the external sources above) has `type: EventType` which is one of: `sports_event`, `music_event`, `sports_event_dynamic`, `sports_live_event_dynamic`, `music_live_event_dynamic`, `tx_event`.
 
@@ -59,6 +60,7 @@ Ticket prices (from sports events) are stored in **cents** — divide by 100. Us
 ### Cron Jobs (Vercel)
 
 Defined in `vercel.json`. All routes secured with `?key=monthlyAlonSecret`:
+
 - `dailyEventsSync` — sports events daily
 - `monthlyTournamentsSync` — sports tournaments monthly
 - `dailyLiveEventsSync` — live events twice daily
@@ -69,6 +71,7 @@ Defined in `vercel.json`. All routes secured with `?key=monthlyAlonSecret`:
 ### Environment Variables
 
 Required in `.env.local`:
+
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `NEXT_SECRET_SUPABASE_SERVICE_ROLE_KEY`
@@ -128,37 +131,45 @@ Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, 
 ## Connection to Main App (`../myt---main`)
 
 ### How They're Connected
+
 Both projects share the **same Supabase database**. This backoffice syncs external providers, manages events, and writes to the DB. The main app reads that data and displays it to customers. This backoffice also calls the main app's API for hotel searches and cache invalidation.
 
 ### API Calls This Project Makes to Main App
+
 Via `NEXT_SECRET_HOTEL_SERVICE_URL` (currently `https://myt-kohl.vercel.app`):
+
 1. `GET /api/hotels` — Proxied hotel search (in `app/api/hotels/search/route.ts`)
 2. `GET /api/revalidate` — Triggers ISR cache refresh after event changes (in `app/api/revalidate/route.ts`)
 
 ### Shared Database Tables
-| Table | This App | Main App |
-|-------|----------|----------|
-| `events` | Creates, updates, soft-deletes | Reads (displays to customers) |
-| `reservations` | Reads (dashboard, reports) | Creates (on customer booking) |
-| `partners` | Creates, manages | Reads (affiliate auth) |
-| `hotels` | Reads | Writes (search cache) |
-| `flights` | Manages (offline inventory) | Reads |
+
+| Table          | This App                       | Main App                      |
+| -------------- | ------------------------------ | ----------------------------- |
+| `events`       | Creates, updates, soft-deletes | Reads (displays to customers) |
+| `reservations` | Reads (dashboard, reports)     | Creates (on customer booking) |
+| `partners`     | Creates, manages               | Reads (affiliate auth)        |
+| `hotels`       | Reads                          | Writes (search cache)         |
+| `flights`      | Manages (offline inventory)    | Reads                         |
 
 ### Shared Types — Keep In Sync!
+
 Types in `types/app.types.ts` are duplicated in `../myt---main/lib/app.types.ts`. These types MUST match:
 `Event`, `EventType`, `Flight`, `FlightSegment`, `Order`, `OrderHotel`, `OrderTicket`, `FlightSearchOptions`, `TimeRange`, `AffiliateTracking`, `VipConfig`, `EventTicket`
 
 **Known intentional differences:**
+
 - This project's `EventType` has extra value `sports_live_event_dynamic`
 - This project's `Flight` uses simplified airline metadata
 - This project has additional types not in main: `LiveEvent`, `P1Event`, `TixStockEvent`, `SportsEvent`, `OfflineFlight`, `OfflineHotel`, `Location`, `Reservation`, `Partner`
 
 ### Price Logic Chain (Spans Both Projects)
+
 1. **This backoffice** sets: `base_flight_price`, `base_hotel_price`, and ticket prices on events (currency markups in `lib/services/ticket-price-sync.ts`: USD +$40, EUR +€40, GBP +£35, ILS +₪150)
 2. **Main app** calculates final customer price: `base_flight_price + base_hotel_price + min_ticket_price + 175 USD markup`
 3. Changing price/markup logic here directly affects what customers see and pay in the main app
 
 ### What to Check in Main App After Changes Here
+
 - **Added/removed event fields?** → Check `../myt---main/lib/app.types.ts` and event rendering components
 - **Changed price calculation?** → Check `../myt---main/lib/events/price.ts` and `lib/price.utils.tsx`
 - **Modified event types?** → Check `../myt---main/lib/app.types.ts` `EventType` and ticket vendor logic
