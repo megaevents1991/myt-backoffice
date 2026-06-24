@@ -18,7 +18,7 @@ const TABLE = "categories";
 const REVALIDATE = ["/templates", "/templates/categories"];
 
 export async function getCategories(): Promise<Category[]> {
-  return listRows<Category>(TABLE);
+  return listRows<Category>(TABLE, "display_order");
 }
 
 export async function getCategory(id: number): Promise<Category> {

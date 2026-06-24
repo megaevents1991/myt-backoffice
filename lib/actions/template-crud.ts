@@ -13,11 +13,16 @@ const tbl = (table: string) => (supabase as any).from(table);
 
 const TEMPLATE_BUCKET = "templates";
 
-export async function listRows<T>(table: string): Promise<T[]> {
+// `orderBy` must be a real column on `table` (artists/football_teams have no
+// display_order — pass "id" or another existing column there).
+export async function listRows<T>(
+  table: string,
+  orderBy = "id"
+): Promise<T[]> {
   const { data, error } = await tbl(table)
     .select("*")
     .eq("is_deleted", false)
-    .order("display_order", { ascending: true });
+    .order(orderBy, { ascending: true });
   if (error) throw error;
   return (data ?? []) as T[];
 }

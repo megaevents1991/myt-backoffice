@@ -27,12 +27,18 @@ import {
   uploadCategoryImage,
 } from "@/lib/actions/category-actions";
 
-const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const autoSlug = (...parts: (string | undefined)[]): string => {
+  for (const p of parts) {
+    const s = (p || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    if (s) return s;
+  }
+  return "category-" + Math.random().toString(36).slice(2, 8);
+};
 
 const categoryFormSchema = z.object({
   name: z.string().min(1, "Name is required."),
   name_english: z.string().optional(),
-  slug: z.string().min(1, "Slug is required.").regex(slugRegex, "Lowercase, numbers, dashes only."),
+  slug: z.string().optional(),
   subtitle: z.string().optional(),
   tag: z.string().optional(),
   sport: z.string().optional(),
@@ -88,7 +94,7 @@ export default function NewCategoryPage() {
     startTransition(async () => {
       try {
         await createCategory({
-          slug: values.slug,
+          slug: values.slug?.trim() || autoSlug(values.name_english, values.name),
           name: values.name,
           name_english: values.name_english || null,
           image_url: imageUrl || null,
@@ -131,9 +137,9 @@ export default function NewCategoryPage() {
             )} />
             <FormField control={form.control} name="slug" render={({ field }) => (
               <FormItem>
-                <FormLabel>Slug</FormLabel>
-                <FormControl><Input placeholder="champions-league" {...field} /></FormControl>
-                <FormDescription>URL: /category/&lt;slug&gt;</FormDescription>
+                <FormLabel>Slug (optional)</FormLabel>
+                <FormControl><Input placeholder="auto from name (e.g. champions-league)" {...field} /></FormControl>
+                <FormDescription>Leave blank to auto-generate. URL: /category/&lt;slug&gt;</FormDescription>
                 <FormMessage />
               </FormItem>
             )} />

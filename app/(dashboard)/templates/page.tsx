@@ -14,9 +14,9 @@ const TEMPLATE_TYPES: {
     description: "Category cards & category pages (e.g. Champions League, F1).",
     enabled: true,
   },
-  { segment: "artists", title: "Artists", description: "Artist pages.", enabled: false },
-  { segment: "football", title: "Football Teams", description: "Team pages.", enabled: false },
-  { segment: "blog", title: "Blog", description: "Blog posts.", enabled: false },
+  { segment: "artists", title: "Artists", description: "Artist pages.", enabled: true },
+  { segment: "football", title: "Football Teams", description: "Team pages.", enabled: true },
+  { segment: "blog", title: "Blog", description: "Blog posts.", enabled: true },
 ];
 
 export default function TemplatesHubPage() {
