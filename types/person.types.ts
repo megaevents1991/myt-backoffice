@@ -17,6 +17,11 @@ export interface Person {
   meta_description: string | null;
   meta_tags: string | null;
   featured_order: number | null;
+  // Page enrichments (doc 19b/20/21/24) — read by myt-main artist/team pages.
+  hero_video_url: string | null;
+  banners: { image_url?: string; link_url?: string; title?: string }[] | null;
+  gallery: string[] | null;
+  videos: { url?: string; label?: string }[] | null;
   is_active: boolean;
   is_deleted: boolean;
   created_at: string;

@@ -40,6 +40,26 @@ const autoSlug = (...parts: (string | undefined)[]): string => {
   return "item-" + Math.random().toString(36).slice(2, 8);
 };
 
+// --- page-enrichment textareas (one item per line) <-> jsonb ----------------
+const lines = (s?: string) =>
+  (s ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+const parseVideos = (s?: string) =>
+  lines(s).map((l) => {
+    const [url, label] = l.split("|").map((x) => x.trim());
+    return { url, label: label || undefined };
+  });
+const parseBanners = (s?: string) =>
+  lines(s).map((l) => {
+    const [image_url, link_url, title] = l.split("|").map((x) => x.trim());
+    return { image_url, link_url: link_url || undefined, title: title || undefined };
+  });
+const galleryText = (g?: string[] | null) => (g ?? []).join("\n");
+const videosText = (v?: { url?: string; label?: string }[] | null) =>
+  (v ?? []).map((x) => [x.url, x.label].filter(Boolean).join(" | ")).join("\n");
+const bannersText = (
+  b?: { image_url?: string; link_url?: string; title?: string }[] | null
+) => (b ?? []).map((x) => [x.image_url, x.link_url, x.title].filter(Boolean).join(" | ")).join("\n");
+
 const schema = z.object({
   name: z.string().min(1, "Name is required."),
   name_english: z.string().optional(),
@@ -50,6 +70,10 @@ const schema = z.object({
   meta_description: z.string().optional(),
   meta_tags: z.string().optional(),
   featured_order: z.string().optional(), // "" = not featured
+  hero_video_url: z.string().optional(),
+  banners: z.string().optional(),
+  gallery: z.string().optional(),
+  videos: z.string().optional(),
   is_active: z.boolean().default(true),
 });
 type FormData = z.infer<typeof schema>;
@@ -91,6 +115,10 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
       meta_tags: initial?.meta_tags ?? "",
       featured_order:
         initial?.featured_order != null ? String(initial.featured_order) : "",
+      hero_video_url: initial?.hero_video_url ?? "",
+      banners: bannersText(initial?.banners),
+      gallery: galleryText(initial?.gallery),
+      videos: videosText(initial?.videos),
       is_active: initial?.is_active ?? true,
     },
   });
@@ -128,6 +156,10 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           meta_tags: values.meta_tags || null,
           featured_order:
             values.featured_order === "" ? null : Number(values.featured_order),
+          hero_video_url: values.hero_video_url || null,
+          banners: parseBanners(values.banners),
+          gallery: lines(values.gallery),
+          videos: parseVideos(values.videos),
           is_active: values.is_active,
         };
         if (initial) await a.update(initial.id, payload);
@@ -201,6 +233,43 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           {imageUrl && (
             <Image src={imageUrl} alt="preview" width={240} height={160} className="mt-2 h-40 w-60 rounded-lg object-cover" />
           )}
+        </div>
+
+        {/* Page extras — artist/team page enrichments (doc 19b/20/21/24) */}
+        <div className="space-y-4 rounded-lg border p-4">
+          <p className="text-sm font-semibold">Page extras (artist / team page)</p>
+          <FormField control={form.control} name="hero_video_url" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Hero video (YouTube URL)</FormLabel>
+              <FormControl><Input placeholder="https://youtu.be/…" {...field} /></FormControl>
+              <FormDescription>Loops inside the hero circle instead of the image.</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="banners" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Banners</FormLabel>
+              <FormControl><Textarea rows={3} placeholder="image_url | link_url | title" {...field} /></FormControl>
+              <FormDescription>One per line: <code>image_url | link_url | title</code> (link &amp; title optional).</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="gallery" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Gallery images</FormLabel>
+              <FormControl><Textarea rows={4} placeholder="https://…/photo.jpg" {...field} /></FormControl>
+              <FormDescription>One image URL per line (upload via Hero image above to get a URL).</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="videos" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Performance videos</FormLabel>
+              <FormControl><Textarea rows={3} placeholder="https://youtu.be/… | label" {...field} /></FormControl>
+              <FormDescription>One per line: <code>youtube_url | label</code> (label optional).</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )} />
         </div>
 
         <FormField control={form.control} name="is_active" render={({ field }) => (
