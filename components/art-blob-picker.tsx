@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { ImageFilePicker } from "@/components/image-file-picker";
 import { getPublicUrl } from "@/lib/actions/storage-actions";
+import { uploadToBucket } from "@/lib/upload-helper";
 
 // Mirror of the main app's EventArt palette + blob shapes so the preview here
 // matches what customers see (myt-main: lib/eventArt.ts + components/ui/EventArt.tsx).
@@ -96,15 +97,9 @@ export function ArtBlobPicker({
         type: "image/png",
       });
 
-      const fd = new FormData();
-      fd.append("bucket", "art_blobs");
-      fd.append("path", "");
-      fd.append("file", out);
-      const res = await fetch("/api/storage/upload", { method: "POST", body: fd });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Upload failed");
+      const storedPath = await uploadToBucket("art_blobs", "", out);
 
-      const url = await getPublicUrl("art_blobs", json.path);
+      const url = await getPublicUrl("art_blobs", storedPath);
       onImage(url);
       toast({ title: "Background removed", description: "Cut-out uploaded." });
     } catch (e: any) {
