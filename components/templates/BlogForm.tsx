@@ -24,6 +24,7 @@ import {
 
 import type { BlogPost } from "@/types/blog.types";
 import { richDocToText, textToRichDoc } from "@/lib/richtext";
+import { ArtBlobPicker } from "@/components/art-blob-picker";
 import { createBlogPost, updateBlogPost, uploadBlogImage } from "@/lib/actions/blog-actions";
 
 const autoSlug = (...parts: (string | undefined)[]): string => {
@@ -57,6 +58,9 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
   const [isPending, startTransition] = useTransition();
   const [imageUrl, setImageUrl] = useState(initial?.image_url ?? "");
   const [uploading, setUploading] = useState(false);
+  const [artImageUrl, setArtImageUrl] = useState(initial?.art_image_url ?? "");
+  const [artColorIndex, setArtColorIndex] = useState(initial?.art_color_index ?? 0);
+  const [artShapeIndex, setArtShapeIndex] = useState(initial?.art_shape_index ?? 0);
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -103,6 +107,9 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
           image_url: imageUrl || null,
           image_width: initial?.image_width ?? null,
           image_height: initial?.image_height ?? null,
+          art_image_url: artImageUrl || null,
+          art_color_index: artImageUrl ? artColorIndex : null,
+          art_shape_index: artImageUrl ? artShapeIndex : null,
           main_content: values.main_content ? textToRichDoc(values.main_content) : null,
           seo_title_tag: values.seo_title_tag || null,
           meta_description: values.meta_description || null,
@@ -166,6 +173,18 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
           {imageUrl && (
             <Image src={imageUrl} alt="preview" width={240} height={135} className="mt-2 h-[135px] w-60 rounded-lg object-cover" />
           )}
+        </div>
+
+        <div className="rounded-lg border p-4">
+          <ArtBlobPicker
+            label="Post art — cut-out + blob (optional)"
+            imageUrl={artImageUrl}
+            colorIndex={artColorIndex}
+            shapeIndex={artShapeIndex}
+            onImage={setArtImageUrl}
+            onColor={setArtColorIndex}
+            onShape={setArtShapeIndex}
+          />
         </div>
 
         <FormField control={form.control} name="is_active" render={({ field }) => (

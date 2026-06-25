@@ -8,6 +8,11 @@ export interface TemplateBase {
   name: string;
   name_english: string | null;
   image_url: string | null;
+  // Blob card-art (optional). When art_image_url is set the site shows the
+  // cut-out over a neon blob; otherwise it falls back to image_url.
+  art_image_url: string | null;
+  art_color_index: number | null;
+  art_shape_index: number | null;
   display_order: number;
   is_active: boolean;
   is_deleted: boolean;

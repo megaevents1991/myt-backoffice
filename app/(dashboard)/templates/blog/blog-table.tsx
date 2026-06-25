@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "react-hot-toast";
-import { Edit, Trash2 } from "lucide-react";
+import { Edit, Trash2, Search } from "lucide-react";
 import type { BlogPost } from "@/types/blog.types";
 import { getBlogPosts, softDeleteBlogPost } from "@/lib/actions/blog-actions";
 
@@ -22,6 +23,17 @@ export function BlogTable() {
   const [rows, setRows] = useState<BlogPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
+  const [query, setQuery] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) =>
+      [r.title, r.name, r.by_who, r.slug]
+        .filter(Boolean)
+        .some((v) => v!.toLowerCase().includes(q))
+    );
+  }, [rows, query]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -47,7 +59,17 @@ export function BlogTable() {
   if (isLoading) return <div>Loading…</div>;
 
   return (
-    <div className="rounded-md border">
+    <div className="space-y-3">
+      <div className="relative max-w-sm">
+        <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search title, author, or slug…"
+          className="pl-8"
+        />
+      </div>
+      <div className="rounded-md border">
       <Table>
         <TableHeader>
           <TableRow>
@@ -60,8 +82,8 @@ export function BlogTable() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.length > 0 ? (
-            rows.map((r) => (
+          {filtered.length > 0 ? (
+            filtered.map((r) => (
               <TableRow key={r.id}>
                 <TableCell>
                   {r.image_url ? (
@@ -91,10 +113,11 @@ export function BlogTable() {
               </TableRow>
             ))
           ) : (
-            <TableRow><TableCell colSpan={6} className="h-24 text-center">Nothing yet.</TableCell></TableRow>
+            <TableRow><TableCell colSpan={6} className="h-24 text-center">{query ? "No matches." : "Nothing yet."}</TableCell></TableRow>
           )}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }

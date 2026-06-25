@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { CategoriesTable } from "./categories-table";
+import { RevalidateButton } from "@/components/templates/RevalidateButton";
 
 export default async function CategoriesPage() {
   return (
@@ -12,9 +13,12 @@ export default async function CategoriesPage() {
           </Link>
           <h1 className="text-3xl font-bold">Categories</h1>
         </div>
-        <Button asChild>
-          <Link href="/templates/categories/new">Add New Category</Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <RevalidateButton />
+          <Button asChild>
+            <Link href="/templates/categories/new">Add New Category</Link>
+          </Button>
+        </div>
       </div>
       <CategoriesTable />
     </div>

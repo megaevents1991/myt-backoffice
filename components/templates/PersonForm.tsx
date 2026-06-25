@@ -24,6 +24,7 @@ import {
 
 import type { Person, PersonKind } from "@/types/person.types";
 import { richDocToText, textToRichDoc } from "@/lib/richtext";
+import { ArtBlobPicker } from "@/components/art-blob-picker";
 import * as artist from "@/lib/actions/artist-actions";
 import * as football from "@/lib/actions/football-actions";
 
@@ -101,6 +102,9 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
   const [isPending, startTransition] = useTransition();
   const [imageUrl, setImageUrl] = useState(initial?.image_url ?? "");
   const [uploading, setUploading] = useState(false);
+  const [artImageUrl, setArtImageUrl] = useState(initial?.art_image_url ?? "");
+  const [artColorIndex, setArtColorIndex] = useState(initial?.art_color_index ?? 0);
+  const [artShapeIndex, setArtShapeIndex] = useState(initial?.art_shape_index ?? 0);
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -150,6 +154,9 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           image_url: imageUrl || null,
           image_width: initial?.image_width ?? null,
           image_height: initial?.image_height ?? null,
+          art_image_url: artImageUrl || null,
+          art_color_index: artImageUrl ? artColorIndex : null,
+          art_shape_index: artImageUrl ? artShapeIndex : null,
           bio: values.bio ? textToRichDoc(values.bio) : null,
           seo_title: values.seo_title || null,
           meta_description: values.meta_description || null,
@@ -233,6 +240,18 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           {imageUrl && (
             <Image src={imageUrl} alt="preview" width={240} height={160} className="mt-2 h-40 w-60 rounded-lg object-cover" />
           )}
+        </div>
+
+        <div className="rounded-lg border p-4">
+          <ArtBlobPicker
+            label="Card art — cut-out + blob (optional)"
+            imageUrl={artImageUrl}
+            colorIndex={artColorIndex}
+            shapeIndex={artShapeIndex}
+            onImage={setArtImageUrl}
+            onColor={setArtColorIndex}
+            onShape={setArtShapeIndex}
+          />
         </div>
 
         {/* Page extras — artist/team page enrichments (doc 19b/20/21/24) */}

@@ -64,6 +64,7 @@ export function ArtBlobPicker({
   imageUrl,
   colorIndex,
   shapeIndex,
+  label = "Card art — cut-out + blob",
   onImage,
   onColor,
   onShape,
@@ -71,6 +72,7 @@ export function ArtBlobPicker({
   imageUrl?: string | null;
   colorIndex?: number | null;
   shapeIndex?: number | null;
+  label?: string;
   onImage: (url: string) => void;
   onColor: (i: number) => void;
   onShape: (i: number) => void;
@@ -118,7 +120,7 @@ export function ArtBlobPicker({
 
   return (
     <div className="space-y-3">
-      <Label>Card art — cut-out + blob</Label>
+      <Label>{label}</Label>
 
       {/* Live preview (what the customer sees) */}
       <div

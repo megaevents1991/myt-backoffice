@@ -12,6 +12,10 @@ export interface Person {
   image_url: string | null;
   image_width: number | null;
   image_height: number | null;
+  // Blob card-art (optional); falls back to image_url when art_image_url is null.
+  art_image_url: string | null;
+  art_color_index: number | null;
+  art_shape_index: number | null;
   bio: unknown; // Contentful-compatible rich-text document
   seo_title: string | null;
   meta_description: string | null;

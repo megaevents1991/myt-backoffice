@@ -26,6 +26,7 @@ import {
   createCategory,
   uploadCategoryImage,
 } from "@/lib/actions/category-actions";
+import { ArtBlobPicker } from "@/components/art-blob-picker";
 
 const autoSlug = (...parts: (string | undefined)[]): string => {
   for (const p of parts) {
@@ -58,6 +59,9 @@ export default function NewCategoryPage() {
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [membersRaw, setMembersRaw] = useState("");
+  const [artImageUrl, setArtImageUrl] = useState("");
+  const [artColorIndex, setArtColorIndex] = useState(0);
+  const [artShapeIndex, setArtShapeIndex] = useState(0);
 
   const form = useForm<CategoryFormData>({
     resolver: zodResolver(categoryFormSchema),
@@ -98,6 +102,9 @@ export default function NewCategoryPage() {
           name: values.name,
           name_english: values.name_english || null,
           image_url: imageUrl || null,
+          art_image_url: artImageUrl || null,
+          art_color_index: artImageUrl ? artColorIndex : null,
+          art_shape_index: artImageUrl ? artShapeIndex : null,
           display_order: values.display_order,
           is_active: values.is_active,
           subtitle: values.subtitle || null,
@@ -189,6 +196,18 @@ export default function NewCategoryPage() {
             {imageUrl && (
               <Image src={imageUrl} alt="Banner preview" width={320} height={160} className="mt-2 h-40 w-80 rounded-lg object-cover" />
             )}
+          </div>
+
+          <div className="rounded-lg border p-4">
+            <ArtBlobPicker
+              label="Card art — cut-out + blob (optional)"
+              imageUrl={artImageUrl}
+              colorIndex={artColorIndex}
+              shapeIndex={artShapeIndex}
+              onImage={setArtImageUrl}
+              onColor={setArtColorIndex}
+              onShape={setArtShapeIndex}
+            />
           </div>
 
           <div className="space-y-2">
