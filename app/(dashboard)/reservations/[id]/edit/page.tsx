@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { StickySaveBar } from "@/components/sticky-save-bar";
 
 export default function EditReservationPage({
   params,
@@ -48,12 +49,15 @@ export default function EditReservationPage({
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [reservationToSave, setReservationToSave] =
     useState<Reservation | null>(null);
+  // baseline snapshot of the loaded reservation, for dirty detection + discard
+  const initialReservationRef = useRef<string | null>(null);
 
   useEffect(() => {
     async function fetchReservation() {
       try {
         const data = await getReservation(Number.parseInt(resolvedParams.id));
         setReservation(data);
+        initialReservationRef.current = JSON.stringify(data);
 
         const events = normalizeReservationEventOrderInfo(data.event_order_info);
         const singleEvent = events.length === 1 ? events[0] : null;
@@ -128,8 +132,8 @@ export default function EditReservationPage({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!reservation) return;
 
     setReservationToSave(reservation);
@@ -153,7 +157,7 @@ export default function EditReservationPage({
         title: "Success",
         description: "Reservation has been updated successfully.",
       });
-      router.push(`/reservations/${reservationToSave.id}`);
+      router.push("/reservations");
     } catch (error) {
       console.error("Error updating reservation:", error);
       toast({
@@ -165,6 +169,11 @@ export default function EditReservationPage({
       setSaving(false);
     }
   };
+
+  const isDirty =
+    initialReservationRef.current !== null &&
+    !!reservation &&
+    JSON.stringify(reservation) !== initialReservationRef.current;
 
   if (loading) {
     return <div>Loading reservation details...</div>;
@@ -179,7 +188,7 @@ export default function EditReservationPage({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-28">
       <div className="flex items-center">
         <Button variant="ghost" onClick={() => router.back()}>
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -440,6 +449,18 @@ export default function EditReservationPage({
           </DialogContent>
         </Dialog>
       )}
+
+      <StickySaveBar
+        isDirty={isDirty}
+        isSaving={saving}
+        onSave={() => handleSubmit()}
+        onDiscard={() => {
+          if (initialReservationRef.current) {
+            setReservation(JSON.parse(initialReservationRef.current));
+          }
+        }}
+        saveLabel="Save Changes"
+      />
     </div>
   );
 }

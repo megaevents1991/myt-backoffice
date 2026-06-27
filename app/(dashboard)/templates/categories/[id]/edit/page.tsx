@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState, useTransition } from "react";
+import { use, useEffect, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -28,6 +28,7 @@ import {
   uploadCategoryImage,
 } from "@/lib/actions/category-actions";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
+import { StickySaveBar } from "@/components/sticky-save-bar";
 
 const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -64,6 +65,8 @@ export default function EditCategoryPage({
   const [artImageUrl, setArtImageUrl] = useState("");
   const [artColorIndex, setArtColorIndex] = useState(0);
   const [artShapeIndex, setArtShapeIndex] = useState(0);
+  // baseline of non-RHF state (image, art, members) as loaded
+  const initialExtrasRef = useRef<string>("");
 
   const form = useForm<CategoryFormData>({
     resolver: zodResolver(categoryFormSchema),
@@ -99,11 +102,37 @@ export default function EditCategoryPage({
         setArtColorIndex(c.art_color_index ?? 0);
         setArtShapeIndex(c.art_shape_index ?? 0);
         setMembersRaw((c.member_ids ?? []).join(", "));
+        initialExtrasRef.current = JSON.stringify({
+          imageUrl: c.image_url ?? "",
+          artImageUrl: c.art_image_url ?? "",
+          artColorIndex: c.art_color_index ?? 0,
+          artShapeIndex: c.art_shape_index ?? 0,
+          membersRaw: (c.member_ids ?? []).join(", "),
+        });
       })
       .catch(() => toast.error("Could not load category."))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId]);
+
+  const isDirty =
+    form.formState.isDirty ||
+    JSON.stringify({
+      imageUrl,
+      artImageUrl,
+      artColorIndex,
+      artShapeIndex,
+      membersRaw,
+    }) !== initialExtrasRef.current;
+
+  const resetExtras = () => {
+    const e = JSON.parse(initialExtrasRef.current || "{}");
+    setImageUrl(e.imageUrl ?? "");
+    setArtImageUrl(e.artImageUrl ?? "");
+    setArtColorIndex(e.artColorIndex ?? 0);
+    setArtShapeIndex(e.artShapeIndex ?? 0);
+    setMembersRaw(e.membersRaw ?? "");
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -152,7 +181,7 @@ export default function EditCategoryPage({
   if (loading) return <div className="container mx-auto py-10">Loading…</div>;
 
   return (
-    <div className="container mx-auto py-10 max-w-3xl">
+    <div className="container mx-auto py-10 pb-28 max-w-3xl">
       <h1 className="text-3xl font-bold mb-6">Edit Category</h1>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -261,6 +290,18 @@ export default function EditCategoryPage({
           </Button>
         </form>
       </Form>
+
+      <StickySaveBar
+        isDirty={isDirty}
+        isSaving={isPending}
+        onSave={form.handleSubmit(onSubmit)}
+        onDiscard={() => {
+          form.reset();
+          resetExtras();
+        }}
+        saveLabel="Save Changes"
+        disabled={uploading}
+      />
     </div>
   );
 }

@@ -59,6 +59,8 @@ import {
 import type { OfflineHotel } from "@/types/offline-hotel.types";
 import { InlineHotelForm, type StagedHotelData } from "@/components/inline-hotel-form";
 import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
+import { StickySaveBar } from "@/components/sticky-save-bar";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 const TX_TICKET_COLOR = "rgb(5, 32, 60)";
 
@@ -74,6 +76,7 @@ export default function EventPage({
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [searchingFlights, setSearchingFlights] = useState(false);
   const [searchingHotels, setSearchingHotels] = useState(false);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -105,6 +108,8 @@ export default function EventPage({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [excludeSectionsMode, setExcludeSectionsMode] = useState(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  // baseline snapshot of the loaded event, for dirty detection + discard
+  const initialEventRef = useRef<string | null>(null);
   const isNewEvent = unwrappedParams.id === "new";
 
   useEffect(() => {
@@ -719,6 +724,21 @@ export default function EventPage({
     });
   }, [event]);
 
+  // Capture the baseline once the event has loaded and any automatic
+  // normalization (tx ticket colors) has settled — so we don't flag dirty
+  // for changes the user didn't make.
+  useEffect(() => {
+    if (loading || !event) return;
+    if (initialEventRef.current !== null) return;
+    if (
+      event.type === "tx_event" &&
+      event.tickets_and_rates.some((t) => t.colorOnTheMap !== TX_TICKET_COLOR)
+    ) {
+      return;
+    }
+    initialEventRef.current = JSON.stringify(event);
+  }, [loading, event]);
+
   useEffect(() => {
     if (isNewEvent || !event?.id) return;
     const id = event.id;
@@ -956,8 +976,8 @@ export default function EventPage({
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!event) return;
 
     // Validate required fields for new events
@@ -985,14 +1005,13 @@ export default function EventPage({
       }
     }
 
-    // Show confirmation dialog with appropriate message
-    const confirmed = window.confirm(
-      isNewEvent
-        ? "Are you sure you want to create this event?"
-        : "Are you sure you want to save changes to this event?"
-    );
-    if (!confirmed) return;
+    // Open the custom confirmation dialog (replaces native window.confirm)
+    setShowSaveConfirm(true);
+  };
 
+  const performSave = async () => {
+    if (!event) return;
+    setShowSaveConfirm(false);
     setSaving(true);
     try {
       if (isNewEvent) {
@@ -1078,6 +1097,13 @@ export default function EventPage({
     };
   };
 
+  const isDirty =
+    (initialEventRef.current !== null &&
+      !!event &&
+      JSON.stringify(event) !== initialEventRef.current) ||
+    stagedFlights.length > 0 ||
+    stagedHotels.length > 0;
+
   if (loading) {
     return <div>Loading event details...</div>;
   }
@@ -1124,7 +1150,7 @@ export default function EventPage({
     });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-28">
       <div className="flex items-center">
         <Button variant="ghost" onClick={() => router.back()}>
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -2732,6 +2758,34 @@ export default function EventPage({
           </Button>
         </div>
       </form>
+
+      <StickySaveBar
+        isDirty={isDirty}
+        isSaving={saving}
+        onSave={() => handleSubmit()}
+        onDiscard={() => {
+          if (initialEventRef.current) {
+            setEvent(JSON.parse(initialEventRef.current));
+          }
+          setStagedFlights([]);
+          setStagedHotels([]);
+          setSelectedLocationId("");
+        }}
+        saveLabel={isNewEvent ? "Create Event" : "Save Event"}
+      />
+
+      <ConfirmDialog
+        open={showSaveConfirm}
+        onOpenChange={setShowSaveConfirm}
+        title={isNewEvent ? "Create this event?" : "Save changes?"}
+        description={
+          isNewEvent
+            ? "This will create the event and any staged flights/hotels."
+            : "This will save your changes to this event."
+        }
+        confirmLabel={isNewEvent ? "Create Event" : "Save Changes"}
+        onConfirm={performSave}
+      />
     </div>
   );
 }

@@ -27,6 +27,7 @@ import {
   uploadCategoryImage,
 } from "@/lib/actions/category-actions";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
+import { StickySaveBar } from "@/components/sticky-save-bar";
 
 const autoSlug = (...parts: (string | undefined)[]): string => {
   for (const p of parts) {
@@ -78,6 +79,23 @@ export default function NewCategoryPage() {
     },
   });
 
+  // non-RHF state (image, art, members) needs its own dirty tracking
+  const isDirty =
+    form.formState.isDirty ||
+    !!imageUrl ||
+    !!artImageUrl ||
+    artColorIndex !== 0 ||
+    artShapeIndex !== 0 ||
+    membersRaw.trim() !== "";
+
+  const resetExtras = () => {
+    setImageUrl("");
+    setArtImageUrl("");
+    setArtColorIndex(0);
+    setArtShapeIndex(0);
+    setMembersRaw("");
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -123,7 +141,7 @@ export default function NewCategoryPage() {
   }
 
   return (
-    <div className="container mx-auto py-10 max-w-3xl">
+    <div className="container mx-auto py-10 pb-28 max-w-3xl">
       <h1 className="text-3xl font-bold mb-6">Add New Category</h1>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -234,6 +252,19 @@ export default function NewCategoryPage() {
           </Button>
         </form>
       </Form>
+
+      <StickySaveBar
+        isDirty={isDirty}
+        isSaving={isPending}
+        onSave={form.handleSubmit(onSubmit)}
+        onDiscard={() => {
+          form.reset();
+          resetExtras();
+        }}
+        saveLabel="Create Category"
+        savingLabel="Creating..."
+        disabled={uploading}
+      />
     </div>
   );
 }

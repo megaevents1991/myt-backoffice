@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import type { Partner } from "@/types/partner.types";
 import {
   getPartner,
@@ -33,6 +34,7 @@ export default function PartnerPage({
   const [partner, setPartner] = useState<Partner | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const isNewPartner = unwrappedParams.code === "new";
 
   useEffect(() => {
@@ -91,15 +93,15 @@ export default function PartnerPage({
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!partner) return;
+    setShowSaveConfirm(true);
+  };
 
-    const confirmed = window.confirm(
-      "Are you sure you want to save changes to this partner?"
-    );
-    if (!confirmed) return;
-
+  const performSave = async () => {
+    if (!partner) return;
+    setShowSaveConfirm(false);
     setSaving(true);
     try {
       if (isNewPartner) {
@@ -245,6 +247,19 @@ export default function PartnerPage({
           </Button>
         </div>
       </form>
+
+      <ConfirmDialog
+        open={showSaveConfirm}
+        onOpenChange={setShowSaveConfirm}
+        title={isNewPartner ? "Create this partner?" : "Save changes?"}
+        description={
+          isNewPartner
+            ? "This will create the partner."
+            : "This will save your changes to this partner."
+        }
+        confirmLabel={isNewPartner ? "Create Partner" : "Save Changes"}
+        onConfirm={performSave}
+      />
     </div>
   );
 }

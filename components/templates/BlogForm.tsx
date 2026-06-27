@@ -25,6 +25,7 @@ import {
 import type { BlogPost } from "@/types/blog.types";
 import { richDocToText, textToRichDoc } from "@/lib/richtext";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
+import { StickySaveBar } from "@/components/sticky-save-bar";
 import { createBlogPost, updateBlogPost, uploadBlogImage } from "@/lib/actions/blog-actions";
 
 const autoSlug = (...parts: (string | undefined)[]): string => {
@@ -79,6 +80,25 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
     },
   });
 
+  // non-RHF state (image + art) needs its own dirty tracking
+  const initialExtras = JSON.stringify({
+    imageUrl: initial?.image_url ?? "",
+    artImageUrl: initial?.art_image_url ?? "",
+    artColorIndex: initial?.art_color_index ?? 0,
+    artShapeIndex: initial?.art_shape_index ?? 0,
+  });
+  const isDirty =
+    form.formState.isDirty ||
+    JSON.stringify({ imageUrl, artImageUrl, artColorIndex, artShapeIndex }) !==
+      initialExtras;
+
+  const resetExtras = () => {
+    setImageUrl(initial?.image_url ?? "");
+    setArtImageUrl(initial?.art_image_url ?? "");
+    setArtColorIndex(initial?.art_color_index ?? 0);
+    setArtShapeIndex(initial?.art_shape_index ?? 0);
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -130,7 +150,7 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pb-24">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField control={form.control} name="title" render={({ field }) => (
             <FormItem><FormLabel>Title</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
@@ -198,6 +218,17 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
           {isPending ? "Saving..." : "Save"}
         </Button>
       </form>
+
+      <StickySaveBar
+        isDirty={isDirty}
+        isSaving={isPending}
+        onSave={form.handleSubmit(onSubmit)}
+        onDiscard={() => {
+          form.reset();
+          resetExtras();
+        }}
+        disabled={uploading}
+      />
     </Form>
   );
 }
