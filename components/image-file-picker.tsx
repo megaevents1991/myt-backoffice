@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { FileUploadZone } from "@/components/file-upload-zone";
 import { getFiles, getPublicUrl } from "@/lib/actions/storage-actions";
+import { StorageImageBrowser } from "@/components/storage-image-browser";
 import {
   FolderOpen,
   Upload,
@@ -35,6 +36,7 @@ interface ImageFilePickerProps {
   label: string;
   bucketName?: string;
   folder?: string;
+  allBuckets?: boolean;
 }
 
 export function ImageFilePicker({
@@ -43,6 +45,7 @@ export function ImageFilePicker({
   label,
   bucketName = "card-images",
   folder = "",
+  allBuckets = false,
 }: ImageFilePickerProps) {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
@@ -162,6 +165,21 @@ export function ImageFilePicker({
         >
           <ExternalLink className="h-4 w-4" />
         </Button>
+        {allBuckets ? (
+          <StorageImageBrowser
+            multiple={false}
+            uploadBucket={bucketName}
+            uploadFolder={folder}
+            onConfirm={(urls) => {
+              if (urls[0]) onChange(urls[0]);
+            }}
+            trigger={
+              <Button variant="outline" size="icon" type="button">
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            }
+          />
+        ) : (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" size="icon" type="button">
@@ -315,6 +333,7 @@ export function ImageFilePicker({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        )}
       </div>
       {value && (
         <div className="mt-2">

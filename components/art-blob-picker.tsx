@@ -139,6 +139,7 @@ export function ArtBlobPicker({
         onChange={onImage}
         label="Cut-out image"
         bucketName="art_blobs"
+        allBuckets
       />
       <Button asChild variant="outline" disabled={busy} type="button">
         <label className="cursor-pointer">
