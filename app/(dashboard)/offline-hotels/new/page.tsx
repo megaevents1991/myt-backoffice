@@ -46,6 +46,7 @@ import { cn } from "@/lib/utils";
 import { createOfflineHotel, getRelevantEventsForHotel, getRelevantFlightsForHotel, searchWorldOTAHotels, type HotelSearchResult } from "@/lib/actions/offline-hotel-actions";
 import type { OfflineHotel } from "@/types/offline-hotel.types";
 import { RoomsEditor, type RoomDraft } from "@/components/offline-hotels/rooms-editor";
+import { StickySaveBar } from "@/components/sticky-save-bar";
 
 const offlineHotelFormSchema = z.object({
   hotel_name: z.string().min(1, "Hotel name is required."),
@@ -112,6 +113,8 @@ export default function NewOfflineHotelPage() {
       flight_ids: [],
     },
   });
+
+  const isDirty = form.formState.isDirty || rooms.length > 0;
 
   const city = form.watch("city");
   const checkIn = form.watch("check_in");
@@ -191,7 +194,7 @@ export default function NewOfflineHotelPage() {
   }
 
   return (
-    <div className="container mx-auto py-10 max-w-3xl">
+    <div className="container mx-auto py-10 pb-28 max-w-3xl">
       <h1 className="text-3xl font-bold mb-6">Add New Offline Hotel</h1>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
@@ -496,6 +499,18 @@ export default function NewOfflineHotelPage() {
           </Button>
         </form>
       </Form>
+
+      <StickySaveBar
+        isDirty={isDirty}
+        isSaving={isPending}
+        onSave={form.handleSubmit(onSubmit)}
+        onDiscard={() => {
+          form.reset();
+          setRooms([]);
+        }}
+        saveLabel="Create Hotel"
+        savingLabel="Creating..."
+      />
     </div>
   );
 }

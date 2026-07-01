@@ -4,6 +4,7 @@ import type React from "react";
 import { useState, useRef } from "react";
 import { Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { uploadToBucket } from "@/lib/upload-helper";
 
 interface FileUploadZoneProps {
   bucket: string;
@@ -53,26 +54,11 @@ export function FileUploadZone({
     }
   };
 
-  // Upload a file to the server
+  // Upload a file directly to Supabase Storage (signed URL — no 4.5 MB
+  // Vercel function body limit, so large images no longer fail at the edge).
   const uploadFileToServer = async (file: File): Promise<{ success: boolean; error?: string }> => {
-    const formData = new FormData();
-    formData.append("bucket", bucket);
-    formData.append("path", path);
-    formData.append("file", file);
-
     try {
-      const response = await fetch("/api/storage/upload", {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Server upload error:", errorData);
-        return { success: false, error: errorData?.error ?? "Unknown error" };
-      }
-
+      await uploadToBucket(bucket, path, file);
       return { success: true };
     } catch (error) {
       console.error("Upload error:", error);

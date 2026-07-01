@@ -26,6 +26,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+import { StickySaveBar } from "@/components/sticky-save-bar";
 import {
   createOfflineFlight,
   getRelevantEventsForFlight,
@@ -309,6 +310,8 @@ export default function NewOfflineFlightPage() {
     },
   });
 
+  const isDirty = form.formState.isDirty;
+
   // Watch airline_code field to reset validation when it changes
   const airlineCodeValue = form.watch("airline_code");
   const destinationIata = form.watch("outbound_arrival_airport");
@@ -475,7 +478,7 @@ export default function NewOfflineFlightPage() {
 
   return (
     <TooltipProvider>
-      <div className="container mx-auto py-10 max-w-3xl">
+      <div className="container mx-auto py-10 pb-28 max-w-3xl">
         <h1 className="text-3xl font-bold mb-6">Add New Offline Flight</h1>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
@@ -987,6 +990,17 @@ export default function NewOfflineFlightPage() {
             </Tooltip>
           </form>
         </Form>
+
+        <StickySaveBar
+          isDirty={isDirty}
+          isSaving={isPending}
+          onSave={form.handleSubmit(onSubmit)}
+          onDiscard={() => form.reset()}
+          saveLabel="Create Flight"
+          savingLabel="Creating..."
+          disabled={!isValidated}
+          disabledReason="Please validate the airline code first"
+        />
       </div>
     </TooltipProvider>
   );

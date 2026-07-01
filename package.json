@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
+    "@imgly/background-removal": "^1.7.0",
     "@radix-ui/react-accordion": "^1.2.2",
     "@radix-ui/react-alert-dialog": "^1.1.4",
     "@radix-ui/react-aspect-ratio": "^1.1.1",
@@ -56,6 +57,7 @@
     "next": "^15.5.9",
     "next-themes": "latest",
     "nodemailer": "^6.10.1",
+    "onnxruntime-web": "^1.21.0",
     "playwright-core": "^1.52.0",
     "react": "^19.2.3",
     "react-day-picker": "^9.8.0",

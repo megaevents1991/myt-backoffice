@@ -18,6 +18,7 @@ import {
   Ticket,
   Map,
   Hotel,
+  LayoutTemplate,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -44,6 +45,8 @@ const navItems: NavItem[] = [
   { name: "Live Events (LiveTickets)", href: "/live-events", icon: Ticket },
   { name: "P1 Events (P1 Tickets)", href: "/p1-events", icon: Trophy },
   { name: "TixStock Events", href: "/tixstock-events", icon: Ticket },
+  { type: "divider" },
+  { name: "Templates (תבניות)", href: "/templates", icon: LayoutTemplate },
   { type: "divider" },
   { name: "Storage", href: "/storage", icon: Database },
   { name: "Locations", href: "/locations", icon: MapPin },

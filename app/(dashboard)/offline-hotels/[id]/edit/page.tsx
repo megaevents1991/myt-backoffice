@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
-import { useState, useTransition, useEffect, use } from "react";
+import { useState, useTransition, useEffect, useRef, use } from "react";
 import { toast } from "react-hot-toast";
 import Link from "next/link";
 import { ArrowLeft, Check, ChevronsUpDown } from "lucide-react";
@@ -54,6 +54,7 @@ import {
 import type { OfflineHotel } from "@/types/offline-hotel.types";
 import { RoomsEditor, type RoomDraft } from "@/components/offline-hotels/rooms-editor";
 import { getOfflineHotelRooms } from "@/lib/actions/offline-hotel-room-actions";
+import { StickySaveBar } from "@/components/sticky-save-bar";
 
 const offlineHotelFormSchema = z.object({
   hotel_name: z.string().min(1, "Hotel name is required."),
@@ -107,10 +108,16 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
   const [linkedHotel, setLinkedHotel] = useState<HotelSearchResult | null>(null);
   const [hotelSearchOpen, setHotelSearchOpen] = useState(false);
   const [rooms, setRooms] = useState<RoomDraft[]>([]);
+  // baseline of rooms as loaded, so we can detect room edits + discard them
+  const initialRoomsRef = useRef<string>("[]");
 
   const form = useForm<HotelFormData>({
     resolver: zodResolver(offlineHotelFormSchema),
   });
+
+  const isDirty =
+    form.formState.isDirty ||
+    JSON.stringify(rooms) !== initialRoomsRef.current;
 
   useEffect(() => {
     if (!hotelIdParam) return;
@@ -146,15 +153,17 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
           setLinkedHotel({ hid: hotel.hid, name: hotel.hotel_name, star_rating: 0, address: hotel.city });
         }
         getOfflineHotelRooms(parsedId)
-          .then((existing) =>
-            setRooms(existing.map((r) => ({
+          .then((existing) => {
+            const mapped = existing.map((r) => ({
               room_type: r.room_type,
               price: Number(r.price),
               meal_plan: r.meal_plan,
               last_cancellation_date: r.last_cancellation_date,
               supplier: r.supplier,
-            })))
-          )
+            }));
+            initialRoomsRef.current = JSON.stringify(mapped);
+            setRooms(mapped);
+          })
           .catch(console.error);
       })
       .catch(() => {
@@ -236,7 +245,7 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
   if (hotelId === null) return <div className="container mx-auto py-10">Invalid Hotel ID.</div>;
 
   return (
-    <div className="container mx-auto py-10 max-w-3xl">
+    <div className="container mx-auto py-10 pb-28 max-w-3xl">
       <div className="mb-6 flex justify-start">
         <Button variant="outline" asChild>
           <Link href="/offline-hotels">
@@ -543,6 +552,18 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
           </Button>
         </form>
       </Form>
+
+      <StickySaveBar
+        isDirty={isDirty}
+        isSaving={isPending}
+        onSave={form.handleSubmit(onSubmit)}
+        onDiscard={() => {
+          form.reset();
+          setRooms(JSON.parse(initialRoomsRef.current));
+        }}
+        saveLabel="Update Hotel"
+        savingLabel="Updating..."
+      />
     </div>
   );
 }

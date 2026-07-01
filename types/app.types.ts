@@ -24,6 +24,12 @@ export type Event = {
   map_image_url: string;
   description: string;
   card_image_url: string;
+  // Card "blob" art (synced with main app). art_image_url = transparent cut-out
+  // PNG (background removed on upload). art_color_index (0-5) + art_shape_index
+  // (0-5) pick the neon blob colour + shape. Omitted = derived from event id.
+  art_image_url?: string | null;
+  art_color_index?: number | null;
+  art_shape_index?: number | null;
   tickets_and_rates: EventTicket[];
   def_date_depart: string;
   def_date_return: string;

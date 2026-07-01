@@ -3,8 +3,8 @@ import { supabase } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 
-// 0.5 MB file size limit
-const MAX_FILE_SIZE = 0.5 * 1024 * 1024;
+// 4 MB file size limit (transparent cut-out PNGs run larger than JPEGs).
+const MAX_FILE_SIZE = 4 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
   try {

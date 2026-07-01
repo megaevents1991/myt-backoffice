@@ -2,6 +2,27 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **🚧 TODO — Contentful → Supabase CMS migration (in progress).**
+> This backoffice now owns the CMS under **Templates** (תבניות): per-type
+> Supabase tables (`categories`, `artists`, `football_teams`, `blog_posts`)
+> sharing a CRUD factory (`lib/actions/template-crud.ts`). The main app reads
+> these tables (with a temporary Contentful fallback). **Phase 3, pending:**
+> once the fallback is removed in main, Contentful is fully retired.
+
+## Always-on rules (auto-loaded)
+
+Tech standards:
+@.claude/rules/standards/typescript.md
+@.claude/rules/standards/react.md
+@.claude/rules/standards/nextjs.md
+@.claude/rules/standards/supabase.md
+
+MYT domain rules:
+@.claude/rules/pricing.md
+@.claude/rules/data-model.md
+@.claude/rules/cross-project.md
+@.claude/rules/conventions.md
+
 > **⚠ IMPORTANT: This project is part of a two-project platform.**
 > The sibling project `../myt-main` is the customer-facing booking app that reads the data this backoffice manages.
 > See `../CLAUDE.md` for the full system architecture and shared database schema.
