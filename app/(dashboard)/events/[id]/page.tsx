@@ -1114,20 +1114,16 @@ export default function EventPage({
     }
     setEvent({
       id: 0,
+      // `...current` carries the shared config forward INCLUDING location + map_image_url —
+      // a team's home games share the venue, so the location you set/selected persists and
+      // you don't re-pick it each step. Only the per-event identity below is swapped.
+      // (If a venue genuinely differs, edit the Location fields on that step.)
       ...current,
       name: identity.name,
       name_english: identity.name_english,
       date: identity.date,
       def_date_depart: identity.def_date_depart,
       def_date_return: identity.def_date_return,
-      location: {
-        ...identity.location,
-        // IATA isn't in TixStock — carry the admin's entry forward (same city for
-        // a team's home games). country_code likewise falls back to what's set.
-        city_iata: current.location.city_iata || identity.location.city_iata,
-        country_code: current.location.country_code || identity.location.country_code,
-      },
-      map_image_url: identity.map_image_url,
       tickets_and_rates: tickets,
     });
     setBatchIndex(index);
@@ -1362,10 +1358,11 @@ export default function EventPage({
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
               Review this event, then <strong>Save &amp; Next</strong> creates it and loads the next.
-              The shared config you set carries over; each event&apos;s <strong>name, date, venue</strong>
-              {" "}and <strong>live ticket prices</strong> are swapped in automatically. Add ticket
-              {" "}<strong>categories</strong> from the Source Tickets list — carried categories are
-              {" "}re-priced live for each event. Use <strong>Skip</strong> to not create one.
+              Everything you set carries over (incl. <strong>location/venue</strong> — home games
+              share it); only the <strong>name &amp; date</strong> swap per event, and ticket
+              {" "}<strong>categories</strong> are re-priced live from each event&apos;s own listings.
+              {" "}Add categories from the Source Tickets list. If a venue differs, just edit the
+              {" "}Location fields on that step. Use <strong>Skip</strong> to not create one.
             </p>
             <ol className="mt-2 list-decimal pl-5 text-xs text-muted-foreground">
               {batchEvents.map((ev, i) => (
