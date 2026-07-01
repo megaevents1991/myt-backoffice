@@ -40,7 +40,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { getTixStockEvents, getTixStockTickets, triggerTixStockSync } from "@/lib/actions/tixstock-actions";
 import { TixStockEventDB, TixStockListing } from "@/types/tixstock.types";
-import { Event } from "@/types/app.types";
+import { Checkbox } from "@/components/ui/checkbox";
+import { tixstockToEvent } from "./batch/tixstock-to-event";
 
 // Helper component for filter and sort controls
 const FilterSortControls = ({
@@ -169,6 +170,23 @@ export function TixStockEventsContent() {
   const [selectedPerformer, setSelectedPerformer] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<TixStockEventDB | null>(null);
 
+  // Batch multi-select state (scoped to the performer-filtered events list)
+  const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
+
+  // Stash the selected events and open the shared create form (real /events/new in
+  // batch mode). One Save there creates one event per selected TixStock event.
+  const openBatchCreate = () => {
+    if (selectedEvents.length === 0) return;
+    try {
+      window.localStorage.setItem("tx_batch_create", JSON.stringify(selectedEvents));
+    } catch (error) {
+      console.error("Failed to stash batch events:", error);
+      toast({ variant: "destructive", title: "Error", description: "Could not start batch create." });
+      return;
+    }
+    window.open("/events/new?batch=1", "_blank");
+  };
+
   // Filter & Sort states
   const [categoryFilter, setCategoryFilter] = useState("");
   const [categoryPage, setCategoryPage] = useState(1);
@@ -284,73 +302,10 @@ export function TixStockEventsContent() {
     return <Music className="h-4 w-4" />;
   };
 
-  // Helper function to calculate smart departure and return dates
-  const calculateSmartDates = (eventDate: string) => {
-    const event = new Date(eventDate);
-
-    // Calculate departure date (2 days before, but avoid Friday/Saturday)
-    const departure = new Date(event);
-    departure.setDate(event.getDate() - 2);
-
-    const departureDay = departure.getDay();
-    if (departureDay === 5) {
-      departure.setDate(departure.getDate() - 1); // Move to Thursday
-    } else if (departureDay === 6) {
-      departure.setDate(departure.getDate() - 2); // Move to Thursday
-    }
-
-    // Calculate return date (1 day after, but if Saturday move to Sunday)
-    const returnDate = new Date(event);
-    returnDate.setDate(event.getDate() + 1);
-
-    if (returnDate.getDay() === 6) {
-      returnDate.setDate(returnDate.getDate() + 1); // Move to Sunday
-    }
-
-    return {
-      departure: departure.toISOString().split("T")[0],
-      return: returnDate.toISOString().split("T")[0],
-    };
-  };
-
   const handleCreateEventFromTixStock = async (event: TixStockEventDB) => {
     try {
-      // Use the map URL directly
-      const mapImageUrl = event.venue_map_url || "";
-
-      const locationData: { latitude: number; longitude: number; name: string; city_iata: string; country_code?: string } = {
-        latitude: event.venue_data?.latitude || 0,
-        longitude: event.venue_data?.longitude || 0,
-        name: event.venue_name || "Unknown Venue",
-        city_iata: "",
-        country_code: undefined,
-      };
-
-      const eventData: Omit<Event, "id"> = {
-        name: event.event_name,
-        name_english: event.event_name,
-        type: "tx_event", 
-        date: new Date(event.show_date).toISOString().split("T")[0],
-        location: locationData,
-        map_image_url: mapImageUrl,
-        description: `${event.event_name} at ${event.venue_name}`,
-        card_image_url: "",
-        tickets_and_rates: [],
-        def_date_depart: "",
-        def_date_return: "",
-        usual_price: 0,
-        base_flight_price: 0,
-        base_hotel_price: 0,
-        is_prioritized: false,
-        event_additional_markup: null,
-        is_deleted: "",
-        tags: "",
-      };
-
-      // Apply smart date calculation
-      const smartDates = calculateSmartDates(eventData.date);
-      eventData.def_date_depart = smartDates.departure;
-      eventData.def_date_return = smartDates.return;
+      // Shared mapping (name/date/venue/coords/map + smart dates) — same as batch-create.
+      const eventData = tixstockToEvent(event);
 
       // Encode the event data and navigate to create event page
       const encodedData = encodeURIComponent(JSON.stringify(eventData));
@@ -426,6 +381,22 @@ export function TixStockEventsContent() {
     const start = (eventPage - 1) * eventPageSize;
     return filteredEvents.slice(start, start + eventPageSize);
   }, [filteredEvents, eventPage]);
+
+  // A batch is always one performer's events — reset selection when the performer changes.
+  useEffect(() => setSelectedEventIds(new Set()), [selectedPerformer]);
+
+  const toggleSelected = (id: string) =>
+    setSelectedEventIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const selectedEvents = useMemo(
+    () => filteredEvents.filter((e) => selectedEventIds.has(e.event_id)),
+    [filteredEvents, selectedEventIds]
+  );
 
   const filteredTickets = useMemo(() => {
     let filtered = tickets.filter(t => {
@@ -644,11 +615,21 @@ export function TixStockEventsContent() {
                 ) : paginatedEvents.length > 0 ? (
                   paginatedEvents.map((event) => (
                     <div key={event.event_id} className="relative group">
-                      <Card 
+                      <div
+                        className="absolute left-2 top-2 z-10"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Checkbox
+                          checked={selectedEventIds.has(event.event_id)}
+                          onCheckedChange={() => toggleSelected(event.event_id)}
+                          aria-label={`Select ${event.event_name}`}
+                        />
+                      </div>
+                      <Card
                         className={`cursor-pointer transition-colors ${selectedEvent?.event_id === event.event_id ? 'bg-accent border-primary' : 'hover:bg-accent/50'}`}
                         onClick={() => setSelectedEvent(event)}
                       >
-                        <CardContent className="p-4">
+                        <CardContent className="p-4 pl-9">
                           <div className="flex flex-col gap-2">
                             <div className="flex items-start justify-between">
                               <h3 className="font-semibold text-sm">{event.event_name}</h3>
@@ -705,12 +686,27 @@ export function TixStockEventsContent() {
                 )}
               </div>
 
+              {selectedEventIds.size > 0 && (
+                <div className="sticky bottom-0 z-20 mt-3 flex items-center justify-between rounded-md border bg-background p-3 shadow">
+                  <span className="text-sm font-medium">{selectedEventIds.size} selected</span>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setSelectedEventIds(new Set())}>
+                      Clear
+                    </Button>
+                    <Button size="sm" onClick={openBatchCreate}>
+                      Create {selectedEventIds.size} events
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               <PaginationControls
                 currentPage={eventPage}
                 totalItems={filteredEvents.length}
                 pageSize={eventPageSize}
                 onPageChange={setEventPage}
               />
+
             </CardContent>
           </Card>
         </div>

@@ -38,7 +38,8 @@ import { getLocations } from "@/lib/actions/location-actions";
 import type { Location } from "@/types/location.types";
 import { searchHotelPrices } from "@/lib/actions/hotel-actions";
 import { getTixStockTickets } from "@/lib/actions/tixstock-actions";
-import type { TixStockListing } from "@/types/tixstock.types";
+import type { TixStockListing, TixStockEventDB } from "@/types/tixstock.types";
+import { tixstockToEvent } from "../../tixstock-events/batch/tixstock-to-event";
 import { exchangeRateClientService, type SupportedCurrency } from "@/lib/services/exchange-rate-client";
 import {
   getFlightsByEventId,
@@ -107,14 +108,46 @@ export default function EventPage({
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [excludeSectionsMode, setExcludeSectionsMode] = useState(false);
+
+  // Batch-create mode: a stepwise wizard over the selected TixStock events.
+  // Configure/review each on the real form; Save & Next creates it and loads the next.
+  const [batchEvents, setBatchEvents] = useState<TixStockEventDB[]>([]);
+  const [batchIndex, setBatchIndex] = useState(0);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   // baseline snapshot of the loaded event, for dirty detection + discard
   const initialEventRef = useRef<string | null>(null);
   const isNewEvent = unwrappedParams.id === "new";
+  const isBatchCreate = isNewEvent && searchParams.get("batch") === "1";
 
   useEffect(() => {
     async function fetchEvent() {
       if (isNewEvent) {
+        // Batch-create: the TixStock page stashed the selected events in localStorage.
+        // Pre-fill the shared form from a representative event; Save creates them all.
+        if (searchParams.get("batch") === "1") {
+          try {
+            const raw =
+              typeof window !== "undefined"
+                ? window.localStorage.getItem("tx_batch_create")
+                : null;
+            const list = raw ? (JSON.parse(raw) as TixStockEventDB[]) : [];
+            setBatchEvents(list);
+            const rep = list[0];
+            if (rep) {
+              setEvent({ id: 0, ...tixstockToEvent(rep) });
+              setLoading(false);
+              return;
+            }
+          } catch (error) {
+            console.error("Failed to load batch events:", error);
+            toast({
+              variant: "destructive",
+              title: "Batch load failed",
+              description: "Could not read the selected events. Start again from TixStock.",
+            });
+          }
+        }
+
         // Check if there's pre-populated data from sports events
         const dataParam = searchParams.get("data");
 
@@ -260,7 +293,10 @@ export default function EventPage({
 
   const tixStockEventId =
     event?.type === "tx_event"
-      ? txEventIdFromQuery ?? event.tickets_and_rates.find((t) => !!t.eid)?.eid ?? null
+      ? txEventIdFromQuery ??
+        (isBatchCreate ? batchEvents[batchIndex]?.event_id ?? null : null) ??
+        event.tickets_and_rates.find((t) => !!t.eid)?.eid ??
+        null
       : null;
 
   const mapSourceUrl =
@@ -1005,8 +1041,140 @@ export default function EventPage({
       }
     }
 
+    // Batch wizard: no confirm dialog — the per-event review IS the confirmation.
+    if (isBatchCreate) {
+      await handleBatchStepSave();
+      return;
+    }
+
     // Open the custom confirmation dialog (replaces native window.confirm)
     setShowSaveConfirm(true);
+  };
+
+  // Batch: re-price one shared category from a specific event's live source listings.
+  const repriceCategoryForEvent = async (
+    category: string,
+    source: TixStockListing[],
+    fallback: number
+  ): Promise<number> => {
+    const eligible = source.filter((t) => {
+      const c = (t.seat_details?.category || "").toLowerCase().trim();
+      const qty = t.number_of_tickets_for_sale?.quantity_available || 0;
+      return c === category.toLowerCase().trim() && qty >= 2;
+    });
+    if (eligible.length === 0) return fallback;
+    const cheapest = eligible.reduce((min, t) =>
+      getTicketAmount(t) < getTicketAmount(min) ? t : min
+    );
+    const raw = getTicketAmount(cheapest);
+    const currency = (
+      cheapest.proceed_price?.currency ||
+      cheapest.face_value?.currency ||
+      "GBP"
+    ).toUpperCase();
+    try {
+      if (currency === "GBP") return Math.round(await exchangeRateClientService.convertToUSD(raw + 35, "GBP"));
+      if (currency === "EUR") return Math.round(await exchangeRateClientService.convertToUSD(raw + 40, "EUR"));
+      if (currency === "ILS") return Math.round(await exchangeRateClientService.convertToUSD(raw + 150, "ILS"));
+      return Math.round(raw + 40);
+    } catch (err) {
+      console.error("Batch reprice conversion failed:", err);
+      return Math.round(raw);
+    }
+  };
+
+  const batchFinish = () => {
+    if (typeof window !== "undefined") window.localStorage.removeItem("tx_batch_create");
+    router.push("/events");
+  };
+
+  // Batch wizard: carry the current (shared) form into event #index, swapping the
+  // per-event identity (name/date/venue/map) and re-pricing the ticket categories
+  // from that event's own live TixStock listings. Admin then reviews before saving.
+  const loadBatchEvent = async (index: number) => {
+    if (!event) return;
+    const ev = batchEvents[index];
+    if (!ev) return;
+    const identity = tixstockToEvent(ev);
+    const { id: _carriedId, ...current } = event;
+    let tickets: EventTicket[] = [];
+    if (current.tickets_and_rates.length > 0) {
+      await exchangeRateClientService.updateAllExchangeRates();
+      const source = await getTixStockTickets(ev.event_id).catch(() => [] as TixStockListing[]);
+      tickets = await Promise.all(
+        current.tickets_and_rates.map(async (ft) => ({
+          ...ft,
+          id: uuidv4(),
+          price: await repriceCategoryForEvent(ft.category, source, ft.price),
+          eid: ev.event_id,
+          vendor: "TixStock",
+          colorOnTheMap: TX_TICKET_COLOR,
+        }))
+      );
+    }
+    setEvent({
+      id: 0,
+      ...current,
+      name: identity.name,
+      name_english: identity.name_english,
+      date: identity.date,
+      def_date_depart: identity.def_date_depart,
+      def_date_return: identity.def_date_return,
+      location: {
+        ...identity.location,
+        // IATA isn't in TixStock — carry the admin's entry forward (same city for
+        // a team's home games). country_code likewise falls back to what's set.
+        city_iata: current.location.city_iata || identity.location.city_iata,
+        country_code: current.location.country_code || identity.location.country_code,
+      },
+      map_image_url: identity.map_image_url,
+      tickets_and_rates: tickets,
+    });
+    setBatchIndex(index);
+    // reset per-step preview UI
+    setSelectedSection(null);
+    setSelectedCategory(null);
+    setExcludeSectionsMode(false);
+  };
+
+  // Batch wizard: save the currently-reviewed event, then load the next (or finish).
+  const handleBatchStepSave = async () => {
+    if (!event || batchEvents.length === 0) return;
+    setSaving(true);
+    try {
+      const { id: _savedId, ...current } = event; // tickets already carry this event's eid + live price
+      await createEvent(current);
+      const next = batchIndex + 1;
+      if (next >= batchEvents.length) {
+        toast({ title: "Success", description: `Created all ${batchEvents.length} events.` });
+        batchFinish();
+        return;
+      }
+      await loadBatchEvent(next);
+      toast({ title: "Saved", description: `Now reviewing event ${next + 1} of ${batchEvents.length}.` });
+    } catch (error) {
+      console.error("Batch step save failed:", error);
+      toast({ variant: "destructive", title: "Error", description: "Failed to create this event." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Batch wizard: skip the current event (don't create it) and move to the next.
+  const handleBatchSkip = async () => {
+    const next = batchIndex + 1;
+    if (next >= batchEvents.length) {
+      toast({ title: "Done", description: "No more events to review." });
+      batchFinish();
+      return;
+    }
+    setSaving(true);
+    try {
+      await loadBatchEvent(next);
+      toast({ title: "Skipped", description: `Now reviewing event ${next + 1} of ${batchEvents.length}.` });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const performSave = async () => {
@@ -1187,6 +1355,37 @@ export default function EventPage({
       )}
 
       <form onSubmit={handleSubmit} className="space-y-8">
+        {isBatchCreate && (
+          <div className="rounded-md border border-blue-300 bg-blue-50 p-4 dark:bg-blue-950/30">
+            <p className="font-semibold text-blue-900 dark:text-blue-200">
+              Batch mode — reviewing event {batchIndex + 1} of {batchEvents.length}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Review this event, then <strong>Save &amp; Next</strong> creates it and loads the next.
+              The shared config you set carries over; each event&apos;s <strong>name, date, venue</strong>
+              {" "}and <strong>live ticket prices</strong> are swapped in automatically. Add ticket
+              {" "}<strong>categories</strong> from the Source Tickets list — carried categories are
+              {" "}re-priced live for each event. Use <strong>Skip</strong> to not create one.
+            </p>
+            <ol className="mt-2 list-decimal pl-5 text-xs text-muted-foreground">
+              {batchEvents.map((ev, i) => (
+                <li
+                  key={ev.event_id}
+                  className={
+                    i === batchIndex
+                      ? "font-semibold text-blue-900 dark:text-blue-200"
+                      : i < batchIndex
+                        ? "line-through opacity-60"
+                        : ""
+                  }
+                >
+                  {ev.event_name} — {new Date(ev.show_date).toLocaleDateString()}
+                  {i < batchIndex ? " (done)" : i === batchIndex ? " (now)" : ""}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Basic Information</CardTitle>
@@ -2753,8 +2952,19 @@ export default function EventPage({
           <Button variant="outline" type="button" onClick={() => router.back()}>
             Cancel
           </Button>
+          {isBatchCreate && batchIndex + 1 < batchEvents.length && (
+            <Button variant="outline" type="button" disabled={saving} onClick={handleBatchSkip}>
+              Skip this event
+            </Button>
+          )}
           <Button type="submit" disabled={saving}>
-            {saving ? "Saving..." : "Save Event"}
+            {saving
+              ? "Saving..."
+              : isBatchCreate
+                ? batchIndex + 1 >= batchEvents.length
+                  ? `Save & Finish (${batchIndex + 1}/${batchEvents.length})`
+                  : `Save & Next (${batchIndex + 1}/${batchEvents.length})`
+                : "Save Event"}
           </Button>
         </div>
       </form>
@@ -2771,7 +2981,15 @@ export default function EventPage({
           setStagedHotels([]);
           setSelectedLocationId("");
         }}
-        saveLabel={isNewEvent ? "Create Event" : "Save Event"}
+        saveLabel={
+          isBatchCreate
+            ? batchIndex + 1 >= batchEvents.length
+              ? "Save & Finish"
+              : "Save & Next"
+            : isNewEvent
+              ? "Create Event"
+              : "Save Event"
+        }
       />
 
       <ConfirmDialog
