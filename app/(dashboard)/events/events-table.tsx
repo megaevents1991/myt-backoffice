@@ -26,6 +26,7 @@ import {
   duplicateEvent,
   updateEvent,
   bulkUpdateEvents,
+  bulkSoftDeleteEvents,
 } from "@/lib/actions/event-actions";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -665,6 +666,39 @@ export function EventsTable() {
       toast({ title: "Updated", description: `${selectedIds.length} event(s) updated.` });
     } catch {
       toast({ variant: "destructive", title: "Error", description: "Bulk update failed." });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (
+      !window.confirm(
+        `Delete ${selectedIds.length} event(s)? They will be soft-deleted (marked as deleted, recoverable).`
+      )
+    )
+      return;
+    setBulkLoading(true);
+    try {
+      await bulkSoftDeleteEvents(selectedIds);
+      const today = new Date();
+      const formattedDate = `${(today.getMonth() + 1)
+        .toString()
+        .padStart(2, "0")}-${today
+        .getDate()
+        .toString()
+        .padStart(2, "0")}-${today.getFullYear()}`;
+      setEvents((prev) =>
+        prev.map((e) =>
+          selectedIds.includes(e.id) ? { ...e, is_deleted: formattedDate } : e
+        )
+      );
+      setRowSelection({});
+      toast({ title: "Deleted", description: `${selectedIds.length} event(s) marked as deleted.` });
+    } catch (error) {
+      console.error("Bulk delete failed:", error);
+      toast({ variant: "destructive", title: "Error", description: "Bulk delete failed." });
     } finally {
       setBulkLoading(false);
     }
@@ -1965,6 +1999,19 @@ export function EventsTable() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={bulkLoading}
+              onClick={handleBulkDelete}
+            >
+              {bulkLoading ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1 h-3 w-3" />
+              )}
+              Delete
+            </Button>
           </div>
         }
         getRowClassName={(row, index, sorting) => {
