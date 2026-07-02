@@ -64,6 +64,8 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
   const [artShapeIndex, setArtShapeIndex] = useState(initial?.art_shape_index ?? 0);
   const [artImageScale, setArtImageScale] = useState(initial?.art_image_scale ?? 1);
   const [artBgScale, setArtBgScale] = useState(initial?.art_bg_scale ?? 1);
+  const [artImageOffsetX, setArtImageOffsetX] = useState(initial?.art_image_offset_x ?? 0);
+  const [artImageOffsetY, setArtImageOffsetY] = useState(initial?.art_image_offset_y ?? 0);
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -90,6 +92,8 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
     artShapeIndex: initial?.art_shape_index ?? 0,
     artImageScale: initial?.art_image_scale ?? 1,
     artBgScale: initial?.art_bg_scale ?? 1,
+    artImageOffsetX: initial?.art_image_offset_x ?? 0,
+    artImageOffsetY: initial?.art_image_offset_y ?? 0,
   });
   const isDirty =
     form.formState.isDirty ||
@@ -100,6 +104,8 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
       artShapeIndex,
       artImageScale,
       artBgScale,
+      artImageOffsetX,
+      artImageOffsetY,
     }) !== initialExtras;
 
   const resetExtras = () => {
@@ -109,6 +115,8 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
     setArtShapeIndex(initial?.art_shape_index ?? 0);
     setArtImageScale(initial?.art_image_scale ?? 1);
     setArtBgScale(initial?.art_bg_scale ?? 1);
+    setArtImageOffsetX(initial?.art_image_offset_x ?? 0);
+    setArtImageOffsetY(initial?.art_image_offset_y ?? 0);
   };
 
   function onSubmit(values: FormData) {
@@ -128,6 +136,8 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
           art_shape_index: artImageUrl ? artShapeIndex : null,
           art_image_scale: artImageUrl ? artImageScale : null,
           art_bg_scale: artImageUrl ? artBgScale : null,
+          art_image_offset_x: artImageUrl ? artImageOffsetX : null,
+          art_image_offset_y: artImageUrl ? artImageOffsetY : null,
           main_content: values.main_content ? textToRichDoc(values.main_content) : null,
           seo_title_tag: values.seo_title_tag || null,
           meta_description: values.meta_description || null,
@@ -198,11 +208,15 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
             shapeIndex={artShapeIndex}
             imageScale={artImageScale}
             bgScale={artBgScale}
+            imageOffsetX={artImageOffsetX}
+            imageOffsetY={artImageOffsetY}
             onImage={setArtImageUrl}
             onColor={setArtColorIndex}
             onShape={setArtShapeIndex}
             onImageScale={setArtImageScale}
             onBgScale={setArtBgScale}
+            onImageOffsetX={setArtImageOffsetX}
+            onImageOffsetY={setArtImageOffsetY}
           />
         </div>
 

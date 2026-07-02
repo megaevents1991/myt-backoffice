@@ -1900,6 +1900,8 @@ export default function EventPage({
               shapeIndex={event.art_shape_index}
               imageScale={event.art_image_scale}
               bgScale={event.art_bg_scale}
+              imageOffsetX={event.art_image_offset_x}
+              imageOffsetY={event.art_image_offset_y}
               onImage={(url) =>
                 setEvent((prev) => (prev ? { ...prev, art_image_url: url } : prev))
               }
@@ -1920,6 +1922,16 @@ export default function EventPage({
               }
               onBgScale={(s) =>
                 setEvent((prev) => (prev ? { ...prev, art_bg_scale: s } : prev))
+              }
+              onImageOffsetX={(v) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, art_image_offset_x: v } : prev
+                )
+              }
+              onImageOffsetY={(v) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, art_image_offset_y: v } : prev
+                )
               }
             />
           </CardContent>

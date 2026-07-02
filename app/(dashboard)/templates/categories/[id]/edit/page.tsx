@@ -63,6 +63,8 @@ export default function EditCategoryPage({
   const [artShapeIndex, setArtShapeIndex] = useState(0);
   const [artImageScale, setArtImageScale] = useState(1);
   const [artBgScale, setArtBgScale] = useState(1);
+  const [artImageOffsetX, setArtImageOffsetX] = useState(0);
+  const [artImageOffsetY, setArtImageOffsetY] = useState(0);
   // baseline of non-RHF state (image, art, members) as loaded
   const initialExtrasRef = useRef<string>("");
 
@@ -101,6 +103,8 @@ export default function EditCategoryPage({
         setArtShapeIndex(c.art_shape_index ?? 0);
         setArtImageScale(c.art_image_scale ?? 1);
         setArtBgScale(c.art_bg_scale ?? 1);
+        setArtImageOffsetX(c.art_image_offset_x ?? 0);
+        setArtImageOffsetY(c.art_image_offset_y ?? 0);
         setMembersRaw((c.member_ids ?? []).join(", "));
         initialExtrasRef.current = JSON.stringify({
           imageUrl: c.image_url ?? "",
@@ -109,6 +113,8 @@ export default function EditCategoryPage({
           artShapeIndex: c.art_shape_index ?? 0,
           artImageScale: c.art_image_scale ?? 1,
           artBgScale: c.art_bg_scale ?? 1,
+          artImageOffsetX: c.art_image_offset_x ?? 0,
+          artImageOffsetY: c.art_image_offset_y ?? 0,
           membersRaw: (c.member_ids ?? []).join(", "),
         });
       })
@@ -126,6 +132,8 @@ export default function EditCategoryPage({
       artShapeIndex,
       artImageScale,
       artBgScale,
+      artImageOffsetX,
+      artImageOffsetY,
       membersRaw,
     }) !== initialExtrasRef.current;
 
@@ -137,6 +145,8 @@ export default function EditCategoryPage({
     setArtShapeIndex(e.artShapeIndex ?? 0);
     setArtImageScale(e.artImageScale ?? 1);
     setArtBgScale(e.artBgScale ?? 1);
+    setArtImageOffsetX(e.artImageOffsetX ?? 0);
+    setArtImageOffsetY(e.artImageOffsetY ?? 0);
     setMembersRaw(e.membersRaw ?? "");
   };
 
@@ -153,6 +163,8 @@ export default function EditCategoryPage({
           art_shape_index: artImageUrl ? artShapeIndex : null,
           art_image_scale: artImageUrl ? artImageScale : null,
           art_bg_scale: artImageUrl ? artBgScale : null,
+          art_image_offset_x: artImageUrl ? artImageOffsetX : null,
+          art_image_offset_y: artImageUrl ? artImageOffsetY : null,
           display_order: values.display_order,
           is_active: values.is_active,
           subtitle: values.subtitle || null,
@@ -253,11 +265,15 @@ export default function EditCategoryPage({
               shapeIndex={artShapeIndex}
               imageScale={artImageScale}
               bgScale={artBgScale}
+              imageOffsetX={artImageOffsetX}
+              imageOffsetY={artImageOffsetY}
               onImage={setArtImageUrl}
               onColor={setArtColorIndex}
               onShape={setArtShapeIndex}
               onImageScale={setArtImageScale}
               onBgScale={setArtBgScale}
+              onImageOffsetX={setArtImageOffsetX}
+              onImageOffsetY={setArtImageOffsetY}
             />
           </div>
 

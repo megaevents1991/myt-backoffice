@@ -105,6 +105,8 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
   const [artShapeIndex, setArtShapeIndex] = useState(initial?.art_shape_index ?? 0);
   const [artImageScale, setArtImageScale] = useState(initial?.art_image_scale ?? 1);
   const [artBgScale, setArtBgScale] = useState(initial?.art_bg_scale ?? 1);
+  const [artImageOffsetX, setArtImageOffsetX] = useState(initial?.art_image_offset_x ?? 0);
+  const [artImageOffsetY, setArtImageOffsetY] = useState(initial?.art_image_offset_y ?? 0);
   const [gallery, setGallery] = useState<string[]>(initial?.gallery ?? []);
 
   const form = useForm<FormData>({
@@ -135,6 +137,8 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
     artShapeIndex: initial?.art_shape_index ?? 0,
     artImageScale: initial?.art_image_scale ?? 1,
     artBgScale: initial?.art_bg_scale ?? 1,
+    artImageOffsetX: initial?.art_image_offset_x ?? 0,
+    artImageOffsetY: initial?.art_image_offset_y ?? 0,
     gallery: initial?.gallery ?? [],
   });
   const isDirty =
@@ -146,6 +150,8 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
       artShapeIndex,
       artImageScale,
       artBgScale,
+      artImageOffsetX,
+      artImageOffsetY,
       gallery,
     }) !== initialExtras;
 
@@ -156,6 +162,8 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
     setArtShapeIndex(initial?.art_shape_index ?? 0);
     setArtImageScale(initial?.art_image_scale ?? 1);
     setArtBgScale(initial?.art_bg_scale ?? 1);
+    setArtImageOffsetX(initial?.art_image_offset_x ?? 0);
+    setArtImageOffsetY(initial?.art_image_offset_y ?? 0);
     setGallery(initial?.gallery ?? []);
   };
 
@@ -175,6 +183,8 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           art_shape_index: artImageUrl ? artShapeIndex : null,
           art_image_scale: artImageUrl ? artImageScale : null,
           art_bg_scale: artImageUrl ? artBgScale : null,
+          art_image_offset_x: artImageUrl ? artImageOffsetX : null,
+          art_image_offset_y: artImageUrl ? artImageOffsetY : null,
           bio: values.bio ? textToRichDoc(values.bio) : null,
           seo_title: values.seo_title || null,
           meta_description: values.meta_description || null,
@@ -265,11 +275,15 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
             shapeIndex={artShapeIndex}
             imageScale={artImageScale}
             bgScale={artBgScale}
+            imageOffsetX={artImageOffsetX}
+            imageOffsetY={artImageOffsetY}
             onImage={setArtImageUrl}
             onColor={setArtColorIndex}
             onShape={setArtShapeIndex}
             onImageScale={setArtImageScale}
             onBgScale={setArtBgScale}
+            onImageOffsetX={setArtImageOffsetX}
+            onImageOffsetY={setArtImageOffsetY}
           />
         </div>
 

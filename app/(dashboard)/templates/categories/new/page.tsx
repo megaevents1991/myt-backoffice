@@ -62,6 +62,8 @@ export default function NewCategoryPage() {
   const [artShapeIndex, setArtShapeIndex] = useState(0);
   const [artImageScale, setArtImageScale] = useState(1);
   const [artBgScale, setArtBgScale] = useState(1);
+  const [artImageOffsetX, setArtImageOffsetX] = useState(0);
+  const [artImageOffsetY, setArtImageOffsetY] = useState(0);
 
   const form = useForm<CategoryFormData>({
     resolver: zodResolver(categoryFormSchema),
@@ -87,6 +89,8 @@ export default function NewCategoryPage() {
     artShapeIndex !== 0 ||
     artImageScale !== 1 ||
     artBgScale !== 1 ||
+    artImageOffsetX !== 0 ||
+    artImageOffsetY !== 0 ||
     membersRaw.trim() !== "";
 
   const resetExtras = () => {
@@ -96,6 +100,8 @@ export default function NewCategoryPage() {
     setArtShapeIndex(0);
     setArtImageScale(1);
     setArtBgScale(1);
+    setArtImageOffsetX(0);
+    setArtImageOffsetY(0);
     setMembersRaw("");
   };
 
@@ -112,6 +118,8 @@ export default function NewCategoryPage() {
           art_shape_index: artImageUrl ? artShapeIndex : null,
           art_image_scale: artImageUrl ? artImageScale : null,
           art_bg_scale: artImageUrl ? artBgScale : null,
+          art_image_offset_x: artImageUrl ? artImageOffsetX : null,
+          art_image_offset_y: artImageUrl ? artImageOffsetY : null,
           display_order: values.display_order,
           is_active: values.is_active,
           subtitle: values.subtitle || null,
@@ -211,11 +219,15 @@ export default function NewCategoryPage() {
               shapeIndex={artShapeIndex}
               imageScale={artImageScale}
               bgScale={artBgScale}
+              imageOffsetX={artImageOffsetX}
+              imageOffsetY={artImageOffsetY}
               onImage={setArtImageUrl}
               onColor={setArtColorIndex}
               onShape={setArtShapeIndex}
               onImageScale={setArtImageScale}
               onBgScale={setArtBgScale}
+              onImageOffsetX={setArtImageOffsetX}
+              onImageOffsetY={setArtImageOffsetY}
             />
           </div>
 
