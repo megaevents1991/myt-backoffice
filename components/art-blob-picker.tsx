@@ -85,12 +85,16 @@ export function ArtBlobPicker({
   shapeIndex,
   imageScale,
   bgScale,
+  imageOffsetX,
+  imageOffsetY,
   label = "Card art — cut-out + blob",
   onImage,
   onColor,
   onShape,
   onImageScale,
   onBgScale,
+  onImageOffsetX,
+  onImageOffsetY,
 }: {
   imageUrl?: string | null;
   colorIndex?: number | null;
@@ -99,12 +103,17 @@ export function ArtBlobPicker({
   imageScale?: number | null;
   /** Background (blob/photo) zoom, 1 = 100%. */
   bgScale?: number | null;
+  /** Cut-out position, % of frame (0 = default). X+ = right, Y+ = down. */
+  imageOffsetX?: number | null;
+  imageOffsetY?: number | null;
   label?: string;
   onImage: (url: string) => void;
   onColor: (i: number) => void;
   onShape: (i: number) => void;
   onImageScale?: (s: number) => void;
   onBgScale?: (s: number) => void;
+  onImageOffsetX?: (v: number) => void;
+  onImageOffsetY?: (v: number) => void;
 }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
@@ -112,6 +121,8 @@ export function ArtBlobPicker({
   const si = shapeIndex ?? 0;
   const imgScale = imageScale ?? 1;
   const backScale = bgScale ?? 1;
+  const offX = imageOffsetX ?? 0;
+  const offY = imageOffsetY ?? 0;
 
   const handleFile = async (file: File) => {
     try {
@@ -153,12 +164,14 @@ export function ArtBlobPicker({
         style={{ background: BG }}
       >
         {si >= SHAPES.length ? (
+          // object-contain: the whole photo stays visible while zooming — no
+          // corner ever cropped until the user zooms past the frame on purpose.
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={BACKGROUNDS[(si - SHAPES.length) % BACKGROUNDS.length].src}
             alt=""
             aria-hidden="true"
-            className="absolute inset-0 h-full w-full object-cover"
+            className="absolute inset-0 h-full w-full object-contain"
             style={{ transform: `scale(${backScale})`, transformOrigin: "center" }}
           />
         ) : (
@@ -171,7 +184,7 @@ export function ArtBlobPicker({
             alt="Card art preview"
             className="absolute inset-0 h-full w-full object-contain object-bottom"
             style={{
-              transform: `scale(${imgScale})`,
+              transform: `translate(${offX}%, ${offY}%) scale(${imgScale})`,
               transformOrigin: "bottom center",
             }}
           />
@@ -275,8 +288,8 @@ export function ArtBlobPicker({
         </div>
       </div>
 
-      {/* Zoom sliders (only when the parent persists the values) */}
-      {(onImageScale || onBgScale) && (
+      {/* Zoom + position sliders (only when the parent persists the values) */}
+      {(onImageScale || onBgScale || onImageOffsetX || onImageOffsetY) && (
         <div className="flex max-w-72 flex-col gap-3">
           {onImageScale && (
             <div>
@@ -293,6 +306,42 @@ export function ArtBlobPicker({
                 step={5}
                 value={[Math.round(imgScale * 100)]}
                 onValueChange={([v]) => onImageScale(v / 100)}
+              />
+            </div>
+          )}
+          {onImageOffsetX && (
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Cut-out position ↔</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {Math.round(offX)}%
+                </span>
+              </div>
+              <Slider
+                className="mt-1"
+                min={-50}
+                max={50}
+                step={1}
+                value={[Math.round(offX)]}
+                onValueChange={([v]) => onImageOffsetX(v)}
+              />
+            </div>
+          )}
+          {onImageOffsetY && (
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Cut-out position ↕</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {Math.round(offY)}%
+                </span>
+              </div>
+              <Slider
+                className="mt-1"
+                min={-50}
+                max={50}
+                step={1}
+                value={[Math.round(offY)]}
+                onValueChange={([v]) => onImageOffsetY(v)}
               />
             </div>
           )}

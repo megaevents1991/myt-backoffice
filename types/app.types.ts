@@ -33,6 +33,9 @@ export type Event = {
   // Zoom (1 = 100%): cut-out scale + background (blob/photo) scale.
   art_image_scale?: number | null;
   art_bg_scale?: number | null;
+  // Cut-out position, % of frame (null/0 = default bottom-center). X+ = right, Y+ = down.
+  art_image_offset_x?: number | null;
+  art_image_offset_y?: number | null;
   tickets_and_rates: EventTicket[];
   def_date_depart: string;
   def_date_return: string;

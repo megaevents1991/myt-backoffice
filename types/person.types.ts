@@ -19,6 +19,9 @@ export interface Person {
   // Zoom (1 = 100%): cut-out scale + background (blob/photo) scale.
   art_image_scale: number | null;
   art_bg_scale: number | null;
+  // Cut-out position, % of frame (null/0 = default bottom-center). X+ = right, Y+ = down.
+  art_image_offset_x: number | null;
+  art_image_offset_y: number | null;
   bio: unknown; // Contentful-compatible rich-text document
   seo_title: string | null;
   meta_description: string | null;
