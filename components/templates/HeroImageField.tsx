@@ -63,6 +63,7 @@ export function HeroImageField({
         onChange={onChange}
         label={label}
         bucketName={TEMPLATE_BUCKET}
+        allBuckets
       />
       <Input
         type="file"
