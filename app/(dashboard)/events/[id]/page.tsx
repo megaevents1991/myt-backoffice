@@ -1898,6 +1898,8 @@ export default function EventPage({
               imageUrl={event.art_image_url}
               colorIndex={event.art_color_index}
               shapeIndex={event.art_shape_index}
+              imageScale={event.art_image_scale}
+              bgScale={event.art_bg_scale}
               onImage={(url) =>
                 setEvent((prev) => (prev ? { ...prev, art_image_url: url } : prev))
               }
@@ -1910,6 +1912,14 @@ export default function EventPage({
                 setEvent((prev) =>
                   prev ? { ...prev, art_shape_index: i } : prev
                 )
+              }
+              onImageScale={(s) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, art_image_scale: s } : prev
+                )
+              }
+              onBgScale={(s) =>
+                setEvent((prev) => (prev ? { ...prev, art_bg_scale: s } : prev))
               }
             />
           </CardContent>

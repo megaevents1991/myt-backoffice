@@ -5,7 +5,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { toast } from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
@@ -22,12 +21,9 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
-import {
-  getCategory,
-  updateCategory,
-  uploadCategoryImage,
-} from "@/lib/actions/category-actions";
+import { getCategory, updateCategory } from "@/lib/actions/category-actions";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
+import { HeroImageField } from "@/components/templates/HeroImageField";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 
 const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -65,6 +61,8 @@ export default function EditCategoryPage({
   const [artImageUrl, setArtImageUrl] = useState("");
   const [artColorIndex, setArtColorIndex] = useState(0);
   const [artShapeIndex, setArtShapeIndex] = useState(0);
+  const [artImageScale, setArtImageScale] = useState(1);
+  const [artBgScale, setArtBgScale] = useState(1);
   // baseline of non-RHF state (image, art, members) as loaded
   const initialExtrasRef = useRef<string>("");
 
@@ -101,12 +99,16 @@ export default function EditCategoryPage({
         setArtImageUrl(c.art_image_url ?? "");
         setArtColorIndex(c.art_color_index ?? 0);
         setArtShapeIndex(c.art_shape_index ?? 0);
+        setArtImageScale(c.art_image_scale ?? 1);
+        setArtBgScale(c.art_bg_scale ?? 1);
         setMembersRaw((c.member_ids ?? []).join(", "));
         initialExtrasRef.current = JSON.stringify({
           imageUrl: c.image_url ?? "",
           artImageUrl: c.art_image_url ?? "",
           artColorIndex: c.art_color_index ?? 0,
           artShapeIndex: c.art_shape_index ?? 0,
+          artImageScale: c.art_image_scale ?? 1,
+          artBgScale: c.art_bg_scale ?? 1,
           membersRaw: (c.member_ids ?? []).join(", "),
         });
       })
@@ -122,6 +124,8 @@ export default function EditCategoryPage({
       artImageUrl,
       artColorIndex,
       artShapeIndex,
+      artImageScale,
+      artBgScale,
       membersRaw,
     }) !== initialExtrasRef.current;
 
@@ -131,23 +135,9 @@ export default function EditCategoryPage({
     setArtImageUrl(e.artImageUrl ?? "");
     setArtColorIndex(e.artColorIndex ?? 0);
     setArtShapeIndex(e.artShapeIndex ?? 0);
+    setArtImageScale(e.artImageScale ?? 1);
+    setArtBgScale(e.artBgScale ?? 1);
     setMembersRaw(e.membersRaw ?? "");
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      setImageUrl(await uploadCategoryImage(fd));
-      toast.success("Image uploaded.");
-    } catch (err) {
-      toast.error((err as Error)?.message || "Image upload failed.");
-    } finally {
-      setUploading(false);
-    }
   };
 
   async function onSubmit(values: CategoryFormData) {
@@ -161,6 +151,8 @@ export default function EditCategoryPage({
           art_image_url: artImageUrl || null,
           art_color_index: artImageUrl ? artColorIndex : null,
           art_shape_index: artImageUrl ? artShapeIndex : null,
+          art_image_scale: artImageUrl ? artImageScale : null,
+          art_bg_scale: artImageUrl ? artBgScale : null,
           display_order: values.display_order,
           is_active: values.is_active,
           subtitle: values.subtitle || null,
@@ -246,14 +238,12 @@ export default function EditCategoryPage({
             )} />
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Banner image</label>
-            <Input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} />
-            {uploading && <p className="text-sm text-muted-foreground">Uploading…</p>}
-            {imageUrl && (
-              <Image src={imageUrl} alt="Banner preview" width={320} height={160} className="mt-2 h-40 w-80 rounded-lg object-cover" />
-            )}
-          </div>
+          <HeroImageField
+            label="Banner image"
+            value={imageUrl}
+            onChange={setImageUrl}
+            onUploadingChange={setUploading}
+          />
 
           <div className="rounded-lg border p-4">
             <ArtBlobPicker
@@ -261,9 +251,13 @@ export default function EditCategoryPage({
               imageUrl={artImageUrl}
               colorIndex={artColorIndex}
               shapeIndex={artShapeIndex}
+              imageScale={artImageScale}
+              bgScale={artBgScale}
               onImage={setArtImageUrl}
               onColor={setArtColorIndex}
               onShape={setArtShapeIndex}
+              onImageScale={setArtImageScale}
+              onBgScale={setArtBgScale}
             />
           </div>
 

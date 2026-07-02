@@ -5,7 +5,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import Image from "next/image";
 import { toast } from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +24,7 @@ import {
 import type { Person, PersonKind } from "@/types/person.types";
 import { richDocToText, textToRichDoc } from "@/lib/richtext";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
+import { HeroImageField } from "@/components/templates/HeroImageField";
 import { GalleryField } from "@/components/templates/gallery-field";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import * as artist from "@/lib/actions/artist-actions";
@@ -84,14 +84,12 @@ const api = (kind: PersonKind) =>
     ? {
         create: artist.createArtist,
         update: artist.updateArtist,
-        upload: artist.uploadArtistImage,
         base: "/templates/artists",
         label: "Artist",
       }
     : {
         create: football.createFootballTeam,
         update: football.updateFootballTeam,
-        upload: football.uploadFootballImage,
         base: "/templates/football",
         label: "Team",
       };
@@ -105,6 +103,8 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
   const [artImageUrl, setArtImageUrl] = useState(initial?.art_image_url ?? "");
   const [artColorIndex, setArtColorIndex] = useState(initial?.art_color_index ?? 0);
   const [artShapeIndex, setArtShapeIndex] = useState(initial?.art_shape_index ?? 0);
+  const [artImageScale, setArtImageScale] = useState(initial?.art_image_scale ?? 1);
+  const [artBgScale, setArtBgScale] = useState(initial?.art_bg_scale ?? 1);
   const [gallery, setGallery] = useState<string[]>(initial?.gallery ?? []);
 
   const form = useForm<FormData>({
@@ -133,35 +133,30 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
     artImageUrl: initial?.art_image_url ?? "",
     artColorIndex: initial?.art_color_index ?? 0,
     artShapeIndex: initial?.art_shape_index ?? 0,
+    artImageScale: initial?.art_image_scale ?? 1,
+    artBgScale: initial?.art_bg_scale ?? 1,
     gallery: initial?.gallery ?? [],
   });
   const isDirty =
     form.formState.isDirty ||
-    JSON.stringify({ imageUrl, artImageUrl, artColorIndex, artShapeIndex, gallery }) !==
-      initialExtras;
+    JSON.stringify({
+      imageUrl,
+      artImageUrl,
+      artColorIndex,
+      artShapeIndex,
+      artImageScale,
+      artBgScale,
+      gallery,
+    }) !== initialExtras;
 
   const resetExtras = () => {
     setImageUrl(initial?.image_url ?? "");
     setArtImageUrl(initial?.art_image_url ?? "");
     setArtColorIndex(initial?.art_color_index ?? 0);
     setArtShapeIndex(initial?.art_shape_index ?? 0);
+    setArtImageScale(initial?.art_image_scale ?? 1);
+    setArtBgScale(initial?.art_bg_scale ?? 1);
     setGallery(initial?.gallery ?? []);
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      setImageUrl(await a.upload(fd));
-      toast.success("Image uploaded.");
-    } catch (err) {
-      toast.error((err as Error)?.message || "Image upload failed.");
-    } finally {
-      setUploading(false);
-    }
   };
 
   function onSubmit(values: FormData) {
@@ -178,6 +173,8 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           art_image_url: artImageUrl || null,
           art_color_index: artImageUrl ? artColorIndex : null,
           art_shape_index: artImageUrl ? artShapeIndex : null,
+          art_image_scale: artImageUrl ? artImageScale : null,
+          art_bg_scale: artImageUrl ? artBgScale : null,
           bio: values.bio ? textToRichDoc(values.bio) : null,
           seo_title: values.seo_title || null,
           meta_description: values.meta_description || null,
@@ -254,14 +251,11 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           )} />
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Hero image</label>
-          <Input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} />
-          {uploading && <p className="text-sm text-muted-foreground">Uploading…</p>}
-          {imageUrl && (
-            <Image src={imageUrl} alt="preview" width={240} height={160} className="mt-2 h-40 w-60 rounded-lg object-cover" />
-          )}
-        </div>
+        <HeroImageField
+          value={imageUrl}
+          onChange={setImageUrl}
+          onUploadingChange={setUploading}
+        />
 
         <div className="rounded-lg border p-4">
           <ArtBlobPicker
@@ -269,9 +263,13 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
             imageUrl={artImageUrl}
             colorIndex={artColorIndex}
             shapeIndex={artShapeIndex}
+            imageScale={artImageScale}
+            bgScale={artBgScale}
             onImage={setArtImageUrl}
             onColor={setArtColorIndex}
             onShape={setArtShapeIndex}
+            onImageScale={setArtImageScale}
+            onBgScale={setArtBgScale}
           />
         </div>
 

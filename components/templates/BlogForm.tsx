@@ -5,7 +5,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import Image from "next/image";
 import { toast } from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
@@ -25,8 +24,9 @@ import {
 import type { BlogPost } from "@/types/blog.types";
 import { richDocToText, textToRichDoc } from "@/lib/richtext";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
+import { HeroImageField } from "@/components/templates/HeroImageField";
 import { StickySaveBar } from "@/components/sticky-save-bar";
-import { createBlogPost, updateBlogPost, uploadBlogImage } from "@/lib/actions/blog-actions";
+import { createBlogPost, updateBlogPost } from "@/lib/actions/blog-actions";
 
 const autoSlug = (...parts: (string | undefined)[]): string => {
   for (const p of parts) {
@@ -62,6 +62,8 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
   const [artImageUrl, setArtImageUrl] = useState(initial?.art_image_url ?? "");
   const [artColorIndex, setArtColorIndex] = useState(initial?.art_color_index ?? 0);
   const [artShapeIndex, setArtShapeIndex] = useState(initial?.art_shape_index ?? 0);
+  const [artImageScale, setArtImageScale] = useState(initial?.art_image_scale ?? 1);
+  const [artBgScale, setArtBgScale] = useState(initial?.art_bg_scale ?? 1);
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -86,33 +88,27 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
     artImageUrl: initial?.art_image_url ?? "",
     artColorIndex: initial?.art_color_index ?? 0,
     artShapeIndex: initial?.art_shape_index ?? 0,
+    artImageScale: initial?.art_image_scale ?? 1,
+    artBgScale: initial?.art_bg_scale ?? 1,
   });
   const isDirty =
     form.formState.isDirty ||
-    JSON.stringify({ imageUrl, artImageUrl, artColorIndex, artShapeIndex }) !==
-      initialExtras;
+    JSON.stringify({
+      imageUrl,
+      artImageUrl,
+      artColorIndex,
+      artShapeIndex,
+      artImageScale,
+      artBgScale,
+    }) !== initialExtras;
 
   const resetExtras = () => {
     setImageUrl(initial?.image_url ?? "");
     setArtImageUrl(initial?.art_image_url ?? "");
     setArtColorIndex(initial?.art_color_index ?? 0);
     setArtShapeIndex(initial?.art_shape_index ?? 0);
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      setImageUrl(await uploadBlogImage(fd));
-      toast.success("Image uploaded.");
-    } catch (err) {
-      toast.error((err as Error)?.message || "Image upload failed.");
-    } finally {
-      setUploading(false);
-    }
+    setArtImageScale(initial?.art_image_scale ?? 1);
+    setArtBgScale(initial?.art_bg_scale ?? 1);
   };
 
   function onSubmit(values: FormData) {
@@ -130,6 +126,8 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
           art_image_url: artImageUrl || null,
           art_color_index: artImageUrl ? artColorIndex : null,
           art_shape_index: artImageUrl ? artShapeIndex : null,
+          art_image_scale: artImageUrl ? artImageScale : null,
+          art_bg_scale: artImageUrl ? artBgScale : null,
           main_content: values.main_content ? textToRichDoc(values.main_content) : null,
           seo_title_tag: values.seo_title_tag || null,
           meta_description: values.meta_description || null,
@@ -186,14 +184,11 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
           )} />
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Hero image</label>
-          <Input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} />
-          {uploading && <p className="text-sm text-muted-foreground">Uploading…</p>}
-          {imageUrl && (
-            <Image src={imageUrl} alt="preview" width={240} height={135} className="mt-2 h-[135px] w-60 rounded-lg object-cover" />
-          )}
-        </div>
+        <HeroImageField
+          value={imageUrl}
+          onChange={setImageUrl}
+          onUploadingChange={setUploading}
+        />
 
         <div className="rounded-lg border p-4">
           <ArtBlobPicker
@@ -201,9 +196,13 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
             imageUrl={artImageUrl}
             colorIndex={artColorIndex}
             shapeIndex={artShapeIndex}
+            imageScale={artImageScale}
+            bgScale={artBgScale}
             onImage={setArtImageUrl}
             onColor={setArtColorIndex}
             onShape={setArtShapeIndex}
+            onImageScale={setArtImageScale}
+            onBgScale={setArtBgScale}
           />
         </div>
 

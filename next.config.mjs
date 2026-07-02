@@ -22,6 +22,15 @@ const nextConfig = {
     parallelServerBuildTraces: true,
     parallelServerCompiles: true,
   },
+  webpack: (config) => {
+    // .playwright-mcp holds browser-session logs; watching it causes an
+    // endless dev rebuild loop (log write -> rebuild -> new log line).
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: ['**/node_modules/**', '**/.git/**', '**/.next/**', '**/.playwright-mcp/**'],
+    };
+    return config;
+  },
 }
 
 mergeConfig(nextConfig, userConfig)

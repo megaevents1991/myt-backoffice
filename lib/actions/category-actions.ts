@@ -6,7 +6,6 @@ import {
   createRow,
   updateRow,
   softDeleteRow,
-  uploadTemplateImage,
 } from "./template-crud";
 import type {
   Category,
@@ -40,8 +39,4 @@ export async function updateCategory(
 
 export async function softDeleteCategory(id: number): Promise<Category> {
   return softDeleteRow<Category>(TABLE, id, REVALIDATE);
-}
-
-export async function uploadCategoryImage(formData: FormData): Promise<string> {
-  return uploadTemplateImage(formData);
 }
