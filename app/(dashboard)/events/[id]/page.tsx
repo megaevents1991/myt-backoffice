@@ -1876,12 +1876,9 @@ export default function EventPage({
                   prev ? { ...prev, card_image_url: url } : prev
                 )
               }
-              bucketName={
-                process.env.NODE_ENV === "development"
-                  ? "card_images"
-                  : "card_images"
-              }
+              bucketName="card_images"
               folder=""
+              allBuckets
             />
 
             <ImageFilePicker
@@ -1892,12 +1889,9 @@ export default function EventPage({
                   prev ? { ...prev, map_image_url: url } : prev
                 )
               }
-              bucketName={
-                process.env.NODE_ENV === "development"
-                  ? "map_images"
-                  : "map_images"
-              }
+              bucketName="map_images"
               folder="maps"
+              allBuckets
             />
 
             <ArtBlobPicker

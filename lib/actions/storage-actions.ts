@@ -151,3 +151,75 @@ export async function uploadImageFromUrl(
     return null;
   }
 }
+
+export type StorageImage = {
+  bucket: string;
+  path: string;
+  name: string;
+  url: string;
+  size: number | null;
+  updatedAt: string | null;
+};
+
+const IMAGE_EXT_RE = /\.(jpg|jpeg|png|gif|webp|svg)$/i;
+
+// List image files in one PUBLIC bucket, recursing into virtual folders (cap depth ~2).
+// Only public buckets are browsed on purpose: the picked URL is persisted verbatim
+// (gallery / card_image_url / map_image_url / art_image_url, all read by the main app
+// as plain URLs), so it must be a permanent public URL — never an expiring signed URL.
+// A failed listing logs and returns [] so one bad bucket never fails the sweep.
+async function listImagesInBucket(
+  bucket: string,
+  prefix = "",
+  depth = 0,
+): Promise<StorageImage[]> {
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .list(prefix, { limit: 1000, sortBy: { column: "name", order: "asc" } });
+
+  if (error) {
+    console.error(JSON.stringify(error));
+    return [];
+  }
+
+  const out: StorageImage[] = [];
+  for (const item of data ?? []) {
+    if (item.name === ".folder") continue;
+    const path = prefix ? `${prefix}/${item.name}` : item.name;
+
+    // Supabase Storage returns folders as rows with a null `id`/`metadata`.
+    const isFolder = item.id === null;
+    if (isFolder) {
+      if (depth < 2) {
+        out.push(...(await listImagesInBucket(bucket, path, depth + 1)));
+      }
+      continue;
+    }
+
+    if (!IMAGE_EXT_RE.test(item.name)) continue;
+
+    out.push({
+      bucket,
+      path,
+      name: item.name,
+      url: supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl,
+      size: item.metadata?.size ?? null,
+      updatedAt: item.updated_at ?? null,
+    });
+  }
+  return out;
+}
+
+// Enumerate image files across every PUBLIC bucket, in parallel, merged flat.
+// Private buckets are skipped — their signed URLs expire and would rot once persisted.
+export async function listAllBucketImages(): Promise<StorageImage[]> {
+  const { data: buckets, error } = await supabase.storage.listBuckets();
+  if (error) {
+    console.error(JSON.stringify(error));
+    return [];
+  }
+  const perBucket = await Promise.all(
+    (buckets ?? []).filter((b) => b.public).map((b) => listImagesInBucket(b.name)),
+  );
+  return perBucket.flat();
+}

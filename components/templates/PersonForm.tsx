@@ -25,6 +25,7 @@ import type { Person, PersonKind } from "@/types/person.types";
 import { richDocToText, textToRichDoc } from "@/lib/richtext";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
 import { HeroImageField } from "@/components/templates/HeroImageField";
+import { GalleryField } from "@/components/templates/gallery-field";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import * as artist from "@/lib/actions/artist-actions";
 import * as football from "@/lib/actions/football-actions";
@@ -55,7 +56,6 @@ const parseBanners = (s?: string) =>
     const [image_url, link_url, title] = l.split("|").map((x) => x.trim());
     return { image_url, link_url: link_url || undefined, title: title || undefined };
   });
-const galleryText = (g?: string[] | null) => (g ?? []).join("\n");
 const videosText = (v?: { url?: string; label?: string }[] | null) =>
   (v ?? []).map((x) => [x.url, x.label].filter(Boolean).join(" | ")).join("\n");
 const bannersText = (
@@ -74,7 +74,6 @@ const schema = z.object({
   featured_order: z.string().optional(), // "" = not featured
   hero_video_url: z.string().optional(),
   banners: z.string().optional(),
-  gallery: z.string().optional(),
   videos: z.string().optional(),
   is_active: z.boolean().default(true),
 });
@@ -106,6 +105,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
   const [artShapeIndex, setArtShapeIndex] = useState(initial?.art_shape_index ?? 0);
   const [artImageScale, setArtImageScale] = useState(initial?.art_image_scale ?? 1);
   const [artBgScale, setArtBgScale] = useState(initial?.art_bg_scale ?? 1);
+  const [gallery, setGallery] = useState<string[]>(initial?.gallery ?? []);
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -122,7 +122,6 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
         initial?.featured_order != null ? String(initial.featured_order) : "",
       hero_video_url: initial?.hero_video_url ?? "",
       banners: bannersText(initial?.banners),
-      gallery: galleryText(initial?.gallery),
       videos: videosText(initial?.videos),
       is_active: initial?.is_active ?? true,
     },
@@ -136,6 +135,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
     artShapeIndex: initial?.art_shape_index ?? 0,
     artImageScale: initial?.art_image_scale ?? 1,
     artBgScale: initial?.art_bg_scale ?? 1,
+    gallery: initial?.gallery ?? [],
   });
   const isDirty =
     form.formState.isDirty ||
@@ -146,6 +146,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
       artShapeIndex,
       artImageScale,
       artBgScale,
+      gallery,
     }) !== initialExtras;
 
   const resetExtras = () => {
@@ -155,6 +156,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
     setArtShapeIndex(initial?.art_shape_index ?? 0);
     setArtImageScale(initial?.art_image_scale ?? 1);
     setArtBgScale(initial?.art_bg_scale ?? 1);
+    setGallery(initial?.gallery ?? []);
   };
 
   function onSubmit(values: FormData) {
@@ -181,7 +183,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
             values.featured_order === "" ? null : Number(values.featured_order),
           hero_video_url: values.hero_video_url || null,
           banners: parseBanners(values.banners),
-          gallery: lines(values.gallery),
+          gallery,
           videos: parseVideos(values.videos),
           is_active: values.is_active,
         };
@@ -290,14 +292,13 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
               <FormMessage />
             </FormItem>
           )} />
-          <FormField control={form.control} name="gallery" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Gallery images</FormLabel>
-              <FormControl><Textarea rows={4} placeholder="https://…/photo.jpg" {...field} /></FormControl>
-              <FormDescription>One image URL per line (upload via Hero image above to get a URL).</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )} />
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Gallery images</label>
+            <GalleryField value={gallery} onChange={setGallery} />
+            <p className="text-xs text-muted-foreground">
+              Pick multiple from any storage bucket, or paste an external URL.
+            </p>
+          </div>
           <FormField control={form.control} name="videos" render={({ field }) => (
             <FormItem>
               <FormLabel>Performance videos</FormLabel>
