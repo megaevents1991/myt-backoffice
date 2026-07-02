@@ -6,6 +6,7 @@ import { Loader2, Wand2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { ImageFilePicker } from "@/components/image-file-picker";
 import { getPublicUrl } from "@/lib/actions/storage-actions";
@@ -36,9 +37,25 @@ const SHAPES = [
   ...BASE_SHAPES.map((s) => ({ ...s, mirror: false })),
   ...BASE_SHAPES.map((s) => ({ ...s, mirror: true })),
 ];
+// Photo backgrounds — shape indices 6-8 (after the 6 blobs). Additive: the same
+// cut-out sits on a photo instead of a neon blob. Files duplicated in
+// myt-main public/art-backgrounds (same convention as the blob constants).
+const BACKGROUNDS = [
+  { src: "/art-backgrounds/cars.jpg", label: "Cars" },
+  { src: "/art-backgrounds/tennis.jpg", label: "Tennis" },
+  { src: "/art-backgrounds/football.jpg", label: "Football" },
+];
 const BG = "#0A1A14"; // deep-forest-black, matches surface-inverse
 
-const Blob = ({ shape, color }: { shape: number; color: string }) => {
+const Blob = ({
+  shape,
+  color,
+  scale = 1,
+}: {
+  shape: number;
+  color: string;
+  scale?: number;
+}) => {
   const s = SHAPES[shape % SHAPES.length];
   return (
     <svg
@@ -46,6 +63,7 @@ const Blob = ({ shape, color }: { shape: number; color: string }) => {
       viewBox={`0 0 ${s.w} ${s.h}`}
       preserveAspectRatio="xMidYMid slice"
       aria-hidden="true"
+      style={{ transform: `scale(${scale})`, transformOrigin: "center" }}
     >
       <path
         d={s.d}
@@ -65,23 +83,35 @@ export function ArtBlobPicker({
   imageUrl,
   colorIndex,
   shapeIndex,
+  imageScale,
+  bgScale,
   label = "Card art — cut-out + blob",
   onImage,
   onColor,
   onShape,
+  onImageScale,
+  onBgScale,
 }: {
   imageUrl?: string | null;
   colorIndex?: number | null;
   shapeIndex?: number | null;
+  /** Cut-out zoom, 1 = 100%. */
+  imageScale?: number | null;
+  /** Background (blob/photo) zoom, 1 = 100%. */
+  bgScale?: number | null;
   label?: string;
   onImage: (url: string) => void;
   onColor: (i: number) => void;
   onShape: (i: number) => void;
+  onImageScale?: (s: number) => void;
+  onBgScale?: (s: number) => void;
 }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const ci = colorIndex ?? 0;
   const si = shapeIndex ?? 0;
+  const imgScale = imageScale ?? 1;
+  const backScale = bgScale ?? 1;
 
   const handleFile = async (file: File) => {
     try {
@@ -122,13 +152,28 @@ export function ArtBlobPicker({
         className="relative h-44 w-72 overflow-hidden rounded-xl border"
         style={{ background: BG }}
       >
-        <Blob shape={si} color={COLORS[ci]} />
+        {si >= SHAPES.length ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={BACKGROUNDS[(si - SHAPES.length) % BACKGROUNDS.length].src}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full object-cover"
+            style={{ transform: `scale(${backScale})`, transformOrigin: "center" }}
+          />
+        ) : (
+          <Blob shape={si} color={COLORS[ci]} scale={backScale} />
+        )}
         {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imageUrl}
             alt="Card art preview"
             className="absolute inset-0 h-full w-full object-contain object-bottom"
+            style={{
+              transform: `scale(${imgScale})`,
+              transformOrigin: "bottom center",
+            }}
           />
         ) : null}
       </div>
@@ -167,26 +212,28 @@ export function ArtBlobPicker({
 
       {/* Colour + shape pickers */}
       <div className="flex flex-wrap gap-6">
-        <div>
-          <Label className="text-xs">Blob colour</Label>
-          <div className="mt-1 flex gap-1.5">
-            {COLORS.map((c, i) => (
-              <button
-                key={c}
-                type="button"
-                aria-label={`Colour ${i + 1}`}
-                onClick={() => onColor(i)}
-                className={`h-7 w-7 rounded-full border-2 ${
-                  ci === i ? "border-foreground" : "border-transparent"
-                }`}
-                style={{ background: c }}
-              />
-            ))}
+        {si < SHAPES.length && (
+          <div>
+            <Label className="text-xs">Blob colour</Label>
+            <div className="mt-1 flex gap-1.5">
+              {COLORS.map((c, i) => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-label={`Colour ${i + 1}`}
+                  onClick={() => onColor(i)}
+                  className={`h-7 w-7 rounded-full border-2 ${
+                    ci === i ? "border-foreground" : "border-transparent"
+                  }`}
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         <div>
-          <Label className="text-xs">Blob shape</Label>
-          <div className="mt-1 flex gap-1.5">
+          <Label className="text-xs">Background — blob / photo</Label>
+          <div className="mt-1 flex flex-wrap gap-1.5">
             {SHAPES.map((_, i) => (
               <button
                 key={i}
@@ -201,9 +248,73 @@ export function ArtBlobPicker({
                 <Blob shape={i} color={COLORS[ci]} />
               </button>
             ))}
+            {BACKGROUNDS.map((b, i) => {
+              const idx = SHAPES.length + i;
+              return (
+                <button
+                  key={b.src}
+                  type="button"
+                  aria-label={`${b.label} background`}
+                  title={b.label}
+                  onClick={() => onShape(idx)}
+                  className={`relative h-7 w-11 overflow-hidden rounded border-2 ${
+                    si === idx ? "border-foreground" : "border-muted"
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={b.src}
+                    alt={b.label}
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
+
+      {/* Zoom sliders (only when the parent persists the values) */}
+      {(onImageScale || onBgScale) && (
+        <div className="flex max-w-72 flex-col gap-3">
+          {onImageScale && (
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Cut-out zoom</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {Math.round(imgScale * 100)}%
+                </span>
+              </div>
+              <Slider
+                className="mt-1"
+                min={50}
+                max={200}
+                step={5}
+                value={[Math.round(imgScale * 100)]}
+                onValueChange={([v]) => onImageScale(v / 100)}
+              />
+            </div>
+          )}
+          {onBgScale && (
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Background zoom</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {Math.round(backScale * 100)}%
+                </span>
+              </div>
+              <Slider
+                className="mt-1"
+                min={50}
+                max={200}
+                step={5}
+                value={[Math.round(backScale * 100)]}
+                onValueChange={([v]) => onBgScale(v / 100)}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

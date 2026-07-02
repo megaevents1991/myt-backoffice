@@ -13,6 +13,9 @@ export interface BlogPost {
   art_image_url: string | null;
   art_color_index: number | null;
   art_shape_index: number | null;
+  // Zoom (1 = 100%): cut-out scale + background (blob/photo) scale.
+  art_image_scale: number | null;
+  art_bg_scale: number | null;
   main_content: unknown; // Contentful-compatible rich-text document
   seo_title_tag: string | null;
   meta_description: string | null;
