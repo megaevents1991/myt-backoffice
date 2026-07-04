@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { syncTixStockEvents } from '@/lib/services/tixstock-sync';
+import { guardAdminRoute } from '@/lib/auth/guards';
 
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
   try {
     const result = await syncTixStockEvents();
     return NextResponse.json({

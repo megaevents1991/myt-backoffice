@@ -1,38 +1,34 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { createSessionValue, SESSION_COOKIE, SESSION_MAX_AGE } from "@/lib/auth/session";
 
 export async function POST(request: Request) {
   try {
     const { email, password } = await request.json();
-    
+
     // Check for admin login
     if (
       email === process.env.NEXT_SECRET_ADMIN_EMAIL &&
       password === process.env.NEXT_SECRET_ADMIN_PASSWORD
     ) {
-      // Create a new response with the user data
       const response = NextResponse.json({
         success: true,
         user: { id: "admin", email, role: "admin" },
       });
-      
-      // Set the session cookie
-      response.cookies.set("session", "admin-session", {
+
+      // Set a signed, tamper-proof session cookie (not a guessable constant).
+      response.cookies.set(SESSION_COOKIE, await createSessionValue(), {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        maxAge: 60 * 60 * 24 * 7, // 1 week
+        sameSite: "lax",
+        maxAge: SESSION_MAX_AGE,
         path: "/",
       });
-      
-      console.log("Login successful, cookie set");
+
       return response;
     }
-    
+
     // For non-admin users, reject login
-    return NextResponse.json(
-      { error: "Invalid credentials" },
-      { status: 401 }
-    );
+    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   } catch (error) {
     console.error("Login error:", error);
     return NextResponse.json(

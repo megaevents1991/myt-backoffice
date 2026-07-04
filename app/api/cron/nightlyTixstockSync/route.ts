@@ -2,24 +2,18 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { syncTixStockEvents } from "@/lib/services/tixstock-sync";
+import { guardCronRoute } from "@/lib/auth/guards";
 
 /**
  * Cron job to sync TixStock events nightly (at 02:00 every day)
- * Security: Uses a secret key to prevent unauthorized access
+ * Security: Vercel CRON_SECRET (Authorization: Bearer) with legacy ?key fallback
  */
 export const maxDuration = 800;
 
 export async function GET(request: NextRequest) {
+  const denied = await guardCronRoute(request);
+  if (denied) return denied;
   try {
-    const { searchParams } = new URL(request.url);
-    const key = searchParams.get("key");
-
-    // Security check - prevent unauthorized access
-    if (!key || key !== process.env.NEXT_SECRET_CRON_SECRET_KEY) {
-      console.error("❌ Unauthorized cron job access attempt");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     console.log("🌙 Nightly TixStock sync cron job started");
 
     const syncResult = await syncTixStockEvents();

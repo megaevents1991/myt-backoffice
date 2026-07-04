@@ -9,8 +9,10 @@ Non-negotiables for routes, dashboard pages, crons, middleware. Next 15.
 
 ## API & cron routes
 - Named method exports; return `NextResponse.json(...)` with explicit status. Validate early → `400`.
-- **Cron routes are secured by a query key** (`?key=...`, e.g. `monthlyAlonSecret`) — every
-  cron/admin-trigger route MUST check it before doing work, and reject otherwise.
+- **Cron routes MUST call `guardCronRoute(request)`** (`@/lib/auth/guards`) as the first line —
+  it accepts Vercel's `Authorization: Bearer $CRON_SECRET` header (legacy `?key` fallback) and
+  returns 401 otherwise. **Admin-triggered** routes/actions MUST call `guardAdminRoute()` /
+  `requireAdmin()` instead. Never hardcode a secret literal.
 - Cron schedule + path live in `vercel.json` — keep route and `vercel.json` entry in lockstep.
 - Wrap every provider/external call (XS2Event, P1, TixStock, exchange rate) in `try/catch`;
   log before a `500`. Long syncs export `export const maxDuration = ...`.

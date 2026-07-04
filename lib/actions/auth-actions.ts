@@ -17,16 +17,12 @@ export async function signIn(formData: FormData) {
   const password = formData.get("password") as string
 
   // Check if the email matches the admin email
-  console.log(email, password);
-  
   if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
     return {
       error: "Invalid credentials",
       success: false,
     }
   }
-
-  console.log('sent to supabase');
 
   // Authenticate with Supabase
   const { data, error } = await supabase.auth.signInWithPassword({

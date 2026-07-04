@@ -1,9 +1,11 @@
 "use server"
 
+import { requireAdmin } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server"
 import type { Partner } from "@/types/partner.types"
 
 export async function getPartners() {
+  await requireAdmin();
   const { data, error } = await supabase.from("partners").select("*").order("created_at", { ascending: false })
 
   if (error) throw error
@@ -11,6 +13,7 @@ export async function getPartners() {
 }
 
 export async function getPartner(trackingCode: string) {
+  await requireAdmin();
   const { data, error } = await supabase.from("partners").select("*").eq("partner_tracking_code", trackingCode).single()
 
   if (error) throw error
@@ -18,6 +21,7 @@ export async function getPartner(trackingCode: string) {
 }
 
 export async function createPartner(partner: Omit<Partner, "created_at">) {
+  await requireAdmin();
   const { data, error } = await supabase.from("partners").insert(partner).select()
 
   if (error) throw error
@@ -25,6 +29,7 @@ export async function createPartner(partner: Omit<Partner, "created_at">) {
 }
 
 export async function updatePartner(trackingCode: string, partner: Partial<Partner>) {
+  await requireAdmin();
   const { data, error } = await supabase
     .from("partners")
     .update(partner)
@@ -36,6 +41,7 @@ export async function updatePartner(trackingCode: string, partner: Partial<Partn
 }
 
 export async function deletePartner(trackingCode: string) {
+  await requireAdmin();
   const { error } = await supabase.from("partners").delete().eq("partner_tracking_code", trackingCode)
 
   if (error) throw error
@@ -43,6 +49,7 @@ export async function deletePartner(trackingCode: string) {
 }
 
 export async function bulkDeletePartners(trackingCodes: string[]) {
+  await requireAdmin();
   const { error } = await supabase.from("partners").delete().in("partner_tracking_code", trackingCodes)
 
   if (error) throw error
@@ -50,6 +57,7 @@ export async function bulkDeletePartners(trackingCodes: string[]) {
 }
 
 export async function duplicatePartner(trackingCode: string) {
+  await requireAdmin();
   // First get the partner to duplicate
   const { data: partnerToDuplicate, error: fetchError } = await supabase
     .from("partners")
@@ -78,6 +86,7 @@ export async function duplicatePartner(trackingCode: string) {
 }
 
 export async function bulkDuplicatePartners(trackingCodes: string[]) {
+  await requireAdmin();
   const duplicatedPartners: Partner[] = []
 
   // We need to duplicate each partner one by one

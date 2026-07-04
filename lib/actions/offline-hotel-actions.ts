@@ -1,5 +1,6 @@
 "use server";
 
+import { requireAdmin } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import type { OfflineHotel } from "../../types/offline-hotel.types";
 import type { Event } from "../../types/app.types";
@@ -22,6 +23,7 @@ export type HotelSearchResult = {
 };
 
 export async function searchWorldOTAHotels(query: string): Promise<HotelSearchResult[]> {
+  await requireAdmin();
   if (!query || query.trim().length < 2) return [];
   const { data, error } = await supabase
     .from("hotels")
@@ -34,6 +36,7 @@ export async function searchWorldOTAHotels(query: string): Promise<HotelSearchRe
 }
 
 export async function getOfflineHotels(): Promise<OfflineHotel[]> {
+  await requireAdmin();
   const { data, error } = await hotelsTable()
     .select("*")
     .order("check_in", { ascending: true });
@@ -53,6 +56,7 @@ export type ReservationOfflineRoom = {
 };
 
 export async function getOfflineHotelsByIds(ids: number[]): Promise<ReservationOfflineRoom[]> {
+  await requireAdmin();
   if (!ids.length) return [];
   const unique = Array.from(new Set(ids));
   const { data, error } = await hotelsTable()
@@ -63,6 +67,7 @@ export async function getOfflineHotelsByIds(ids: number[]): Promise<ReservationO
 }
 
 export async function getOfflineHotel(id: number): Promise<OfflineHotel> {
+  await requireAdmin();
   const { data, error } = await hotelsTable()
     .select("*")
     .eq("id", id)
@@ -76,6 +81,7 @@ export async function createOfflineHotel(
   hotel: Omit<OfflineHotel, "id" | "consumed_rooms" | "is_deleted" | "created_at">,
   rooms?: NewOfflineHotelRoom[]
 ): Promise<OfflineHotel> {
+  await requireAdmin();
   const { data, error } = await hotelsTable()
     .insert({ ...hotel, consumed_rooms: 0, is_deleted: false })
     .select();
@@ -99,6 +105,7 @@ export async function updateOfflineHotel(
   hotel: Partial<Omit<OfflineHotel, "id" | "consumed_rooms" | "created_at">>,
   rooms?: NewOfflineHotelRoom[]
 ): Promise<OfflineHotel> {
+  await requireAdmin();
   const { data: current } = await hotelsTable()
     .select("event_ids, price, room_type")
     .eq("id", id)
@@ -199,6 +206,7 @@ export async function updateOfflineHotel(
 }
 
 export async function softDeleteOfflineHotel(id: number): Promise<OfflineHotel> {
+  await requireAdmin();
   const { data, error } = await hotelsTable()
     .update({ is_deleted: true })
     .eq("id", id)
@@ -210,6 +218,7 @@ export async function softDeleteOfflineHotel(id: number): Promise<OfflineHotel> 
 }
 
 export async function getHotelsByEventId(eventId: number): Promise<OfflineHotel[]> {
+  await requireAdmin();
   const { data, error } = await hotelsTable()
     .select("*")
     .contains("event_ids", [eventId])
@@ -221,6 +230,7 @@ export async function getHotelsByEventId(eventId: number): Promise<OfflineHotel[
 }
 
 export async function getHotelsByFlightId(flightId: number): Promise<OfflineHotel[]> {
+  await requireAdmin();
   const { data, error } = await hotelsTable()
     .select("*")
     .contains("flight_ids", [flightId])
@@ -232,6 +242,7 @@ export async function getHotelsByFlightId(flightId: number): Promise<OfflineHote
 }
 
 export async function removeEventFromHotel(hotelId: number, eventId: number): Promise<OfflineHotel> {
+  await requireAdmin();
   const { data: current, error: fetchError } = await hotelsTable()
     .select("event_ids")
     .eq("id", hotelId)
@@ -253,6 +264,7 @@ export async function removeEventFromHotel(hotelId: number, eventId: number): Pr
 }
 
 export async function addEventToHotel(hotelId: number, eventId: number): Promise<OfflineHotel> {
+  await requireAdmin();
   const { data: current, error: fetchError } = await hotelsTable()
     .select("event_ids")
     .eq("id", hotelId)
@@ -275,6 +287,7 @@ export async function addEventToHotel(hotelId: number, eventId: number): Promise
 }
 
 export async function addFlightToHotel(hotelId: number, flightId: number): Promise<OfflineHotel> {
+  await requireAdmin();
   const { data: current, error: fetchError } = await hotelsTable()
     .select("flight_ids")
     .eq("id", hotelId)
@@ -301,6 +314,7 @@ export async function getRelevantEventsForHotel(
   checkIn: string,
   checkOut: string
 ): Promise<Pick<Event, "id" | "name" | "date">[]> {
+  await requireAdmin();
   const cityCodes = airportsForCityName(city);
   let query = supabase
     .from("events")
@@ -325,6 +339,7 @@ export async function getRelevantFlightsForHotel(
   checkIn: string,
   checkOut: string
 ): Promise<Pick<OfflineFlight, "id" | "airline_code" | "metadata_name" | "outbound_departure_airport" | "outbound_arrival_airport" | "outbound_departure_time" | "inbound_arrival_time" | "price">[]> {
+  await requireAdmin();
   const { data, error } = await flightsTable()
     .select("id, airline_code, metadata_name, outbound_departure_airport, outbound_arrival_airport, outbound_departure_time, inbound_arrival_time, price")
     .eq("is_deleted", false)

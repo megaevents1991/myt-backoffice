@@ -3,9 +3,12 @@ import {
   getOfflineFlights,
   createOfflineFlight,
 } from "@/lib/actions/offline-flight-actions";
+import { guardAdminRoute } from "@/lib/auth/guards";
 import type { OfflineFlight } from "@/types/offline-flight.types"; // Correct import
 
 export async function GET() {
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
   try {
     const flights = await getOfflineFlights();
     return NextResponse.json(flights);
@@ -17,6 +20,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
   try {
     const body = await request.json();
     // Add validation here if necessary, e.g., using Zod,

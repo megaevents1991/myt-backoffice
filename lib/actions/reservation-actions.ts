@@ -1,10 +1,12 @@
 "use server"
 
+import { requireAdmin } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server"
 import type { Reservation } from "@/types/reservation.types"
 import { revalidatePath } from "next/cache"
 
 export async function getReservations() {
+  await requireAdmin();
   const { data, error } = await supabase.from("reservations").select("*").order("created_at", { ascending: false })
 
   if (error) throw error
@@ -12,6 +14,7 @@ export async function getReservations() {
 }
 
 export async function getReservation(id: number) {
+  await requireAdmin();
   const { data, error } = await supabase.from("reservations").select("*").eq("id", id).single()
 
   if (error) throw error
@@ -19,6 +22,7 @@ export async function getReservation(id: number) {
 }
 
 export async function createReservation(reservation: Omit<Reservation, "id" | "created_at">) {
+  await requireAdmin();
   const { data, error } = await supabase.from("reservations").insert(reservation).select()
 
   if (error) throw error
@@ -29,6 +33,7 @@ export async function createReservation(reservation: Omit<Reservation, "id" | "c
 const RELEASED_STATUSES = new Set(["Cancelled", "Lost"]);
 
 export async function updateReservation(id: number, reservation: Partial<Reservation>) {
+  await requireAdmin();
   // Detect transition into a released status so we can return inventory
   let toRelease: Reservation | null = null;
   if (reservation.status && RELEASED_STATUSES.has(reservation.status)) {
@@ -49,6 +54,7 @@ export async function updateReservation(id: number, reservation: Partial<Reserva
 }
 
 export async function updateReservationsStatus(ids: number[], status: string) {
+  await requireAdmin();
   if (!ids || ids.length === 0) return [] as Reservation[];
 
   let toRelease: Reservation[] = [];
@@ -77,6 +83,7 @@ export async function updateReservationsStatus(ids: number[], status: string) {
 }
 
 export async function cancelReservation(id: number): Promise<Reservation> {
+  await requireAdmin();
   const { data: current, error: fetchError } = await supabase
     .from("reservations")
     .select("*")
@@ -199,6 +206,7 @@ function dropReleased(rows: InventoryReservation[]): InventoryReservation[] {
 }
 
 export async function getReservationsForFlight(flightId: number): Promise<InventoryReservation[]> {
+  await requireAdmin();
   const { data, error } = await supabase
     .from("reservations")
     .select(INVENTORY_RESERVATION_FIELDS)
@@ -210,6 +218,7 @@ export async function getReservationsForFlight(flightId: number): Promise<Invent
 }
 
 export async function getReservationsForHotel(hotelId: number): Promise<InventoryReservation[]> {
+  await requireAdmin();
   const { data, error } = await supabase
     .from("reservations")
     .select(INVENTORY_RESERVATION_FIELDS)
@@ -224,6 +233,7 @@ export async function getReservationsForHotel(hotelId: number): Promise<Inventor
 // Each reservation counts its `flight_order_info.numOfTravelers` (default 1).
 // Idempotent — safe to run on every page view.
 export async function reconcileFlightInventory(flightId: number): Promise<number> {
+  await requireAdmin();
   const { data: rows, error } = await supabase
     .from("reservations")
     .select("flight_order_info, status")
@@ -256,6 +266,7 @@ export async function reconcileFlightInventory(flightId: number): Promise<number
 // Each occurrence of the hotel id in `offline_hotel_ids` (or `offline_hotel_id`
 // fallback) counts as one room.
 export async function reconcileHotelInventory(hotelId: number): Promise<number> {
+  await requireAdmin();
   const { data: rows, error } = await supabase
     .from("reservations")
     .select("offline_hotel_id, offline_hotel_ids, status")

@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 import { supabase } from "@/lib/supabase-server";
 import nodemailer from "nodemailer";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
+import { guardCronRoute } from "@/lib/auth/guards";
 
 interface Reservation {
   main_contact_first_name: string;
@@ -40,13 +41,13 @@ const transporter = nodemailer.createTransport({
 });
 
 export async function GET(req: Request) {
-  const url = new URL(req.url);
+  const denied = await guardCronRoute(req);
+  if (denied) return denied;
   if (
-    url.searchParams.get("key") !== `monthlyAlonSecret` ||
     !process.env.NEXT_SECRET_EMAIL_SERVER_USER ||
     !process.env.NEXT_SECRET_EMAIL_SERVER_PASSWORD
   ) {
-    return new Response("Unauthorized", { status: 401 });
+    return new Response("Email server not configured", { status: 500 });
   }
   console.log("Cron job started!");
 

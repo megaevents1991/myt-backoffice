@@ -1,26 +1,26 @@
 import { NextResponse } from "next/server";
+import { SESSION_COOKIE, verifySessionValue } from "@/lib/auth/session";
 
 export async function GET(request: Request) {
   try {
-    // Get the session cookie from the request
     const cookieHeader = request.headers.get("cookie") || "";
     const sessionCookie = cookieHeader
-      .split(';')
-      .find(c => c.trim().startsWith('session='))
-      ?.split('=')[1];
-    
-    console.log("Session cookie:", sessionCookie);
-    
-    if (sessionCookie === "admin-session") {
+      .split(";")
+      .find((c) => c.trim().startsWith(`${SESSION_COOKIE}=`))
+      ?.split("=")
+      .slice(1)
+      .join("=");
+
+    if (await verifySessionValue(sessionCookie)) {
       return NextResponse.json({
         user: {
           id: "admin",
           email: process.env.NEXT_SECRET_ADMIN_EMAIL,
           role: "admin",
-        }
+        },
       });
     }
-    
+
     // No valid session found
     return NextResponse.json({ user: null });
   } catch (error) {

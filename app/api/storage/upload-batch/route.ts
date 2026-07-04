@@ -1,23 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
+import { guardAdminRoute } from "@/lib/auth/guards";
+
+// Reject path traversal / absolute paths so an upload can't escape its folder.
+function isSafeSegment(s: string): boolean {
+  return !s.includes("..") && !s.startsWith("/") && !s.includes("\\");
+}
 
 export async function POST(request: NextRequest) {
   try {
-    // Check for session cookie to ensure user is authenticated
-    const session = (await cookies()).get("session");
-    if (!session) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
+    // Validate the signed admin session (was a forgeable cookie-presence check).
+    const denied = await guardAdminRoute();
+    if (denied) return denied;
 
     const formData = await request.formData();
     const bucket = formData.get("bucket") as string;
     const path = formData.get("path") as string || "";
-    
+
     // Process multiple files
     const files: File[] = [];
     for (const [key, value] of formData.entries()) {
@@ -29,6 +29,17 @@ export async function POST(request: NextRequest) {
     if (!bucket || files.length === 0) {
       return NextResponse.json(
         { error: "Missing required parameters" },
+        { status: 400 }
+      );
+    }
+
+    if (
+      !isSafeSegment(bucket) ||
+      !isSafeSegment(path) ||
+      files.some((f) => !isSafeSegment(f.name))
+    ) {
+      return NextResponse.json(
+        { error: "Invalid bucket or path" },
         { status: 400 }
       );
     }

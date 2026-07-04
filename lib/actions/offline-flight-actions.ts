@@ -1,5 +1,6 @@
 "use server";
 
+import { requireAdmin } from "@/lib/auth/guards";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 import { supabase } from "@/lib/supabase-server";
 import type { OfflineFlight } from "../../types/offline-flight.types";
@@ -12,6 +13,7 @@ import { airportsInSameCity } from "@/lib/airport-cities";
 const flightsTable = () => (supabase as any).from("flights");
 
 export async function getOfflineFlights() {
+  await requireAdmin();
   const { data, error } = await flightsTable()
     .select("*")
     .order("outbound_departure_time", { ascending: true });
@@ -21,6 +23,7 @@ export async function getOfflineFlights() {
 }
 
 export async function getOfflineFlight(id: number) {
+  await requireAdmin();
   const { data, error } = await flightsTable()
     .select("*")
     .eq("id", id)
@@ -33,6 +36,7 @@ export async function getOfflineFlight(id: number) {
 export async function createOfflineFlight(
   flight: Omit<OfflineFlight, "id" | "consumed_quantity" | "is_deleted">,
 ) {
+  await requireAdmin();
   const { data, error } = await flightsTable()
     .insert({ ...flight, consumed_quantity: 0, is_deleted: false })
     .select();
@@ -49,6 +53,7 @@ export async function updateOfflineFlight(
   id: number,
   flight: Partial<Omit<OfflineFlight, "id" | "consumed_quantity">>,
 ) {
+  await requireAdmin();
   const { data: current } = await flightsTable()
     .select("event_ids, price")
     .eq("id", id)
@@ -107,6 +112,7 @@ export async function updateOfflineFlight(
 }
 
 export async function softDeleteOfflineFlight(id: number) {
+  await requireAdmin();
   const { data, error } = await flightsTable()
     .update({ is_deleted: true })
     .eq("id", id)
@@ -119,6 +125,7 @@ export async function softDeleteOfflineFlight(id: number) {
 }
 
 export async function restoreOfflineFlight(id: number) {
+  await requireAdmin();
   const { data, error } = await flightsTable()
     .update({ is_deleted: false })
     .eq("id", id)
@@ -133,6 +140,7 @@ export async function restoreOfflineFlight(id: number) {
 export async function getFlightsByEventId(
   eventId: number,
 ): Promise<OfflineFlight[]> {
+  await requireAdmin();
   const { data, error } = await flightsTable()
     .select("*")
     .contains("event_ids", [eventId])
@@ -147,6 +155,7 @@ export async function removeEventFromFlight(
   flightId: number,
   eventId: number,
 ): Promise<OfflineFlight> {
+  await requireAdmin();
   const { data: current, error: fetchError } = await flightsTable()
     .select("event_ids")
     .eq("id", flightId)
@@ -171,6 +180,7 @@ export async function addEventToFlight(
   flightId: number,
   eventId: number,
 ): Promise<OfflineFlight> {
+  await requireAdmin();
   const { data: current, error: fetchError } = await flightsTable()
     .select("event_ids")
     .eq("id", flightId)
@@ -199,6 +209,7 @@ export async function getRelevantEventsForFlight(
   departureDate: string,
   returnDate: string,
 ): Promise<Pick<Event, "id" | "name" | "date">[]> {
+  await requireAdmin();
   const cityCodes = airportsInSameCity(destinationIata);
   const { data, error } = await supabase
     .from("events")

@@ -1,10 +1,12 @@
 "use server";
 
+import { requireAdmin } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
 
 // Get all buckets
 export async function getBuckets() {
+  await requireAdmin();
   const { data, error } = await supabase.storage.listBuckets();
 
   if (error) throw error;
@@ -13,6 +15,7 @@ export async function getBuckets() {
 
 // Create a new bucket
 export async function createBucket(name: string, isPublic = false) {
+  await requireAdmin();
   const { data, error } = await supabase.storage.createBucket(name, {
     public: isPublic,
   });
@@ -24,6 +27,7 @@ export async function createBucket(name: string, isPublic = false) {
 
 // Delete a bucket
 export async function deleteBucket(name: string) {
+  await requireAdmin();
   const { error } = await supabase.storage.deleteBucket(name);
 
   if (error) throw error;
@@ -33,6 +37,7 @@ export async function deleteBucket(name: string) {
 
 // Get files in a bucket
 export async function getFiles(bucket: string, path = "") {
+  await requireAdmin();
   const { data, error } = await supabase.storage.from(bucket).list(path, {
     limit: 1000,
     sortBy: { column: "name", order: "asc" },
@@ -44,6 +49,7 @@ export async function getFiles(bucket: string, path = "") {
 
 // Delete a file
 export async function deleteFile(bucket: string, path: string) {
+  await requireAdmin();
   const { error } = await supabase.storage.from(bucket).remove([path]);
 
   if (error) throw error;
@@ -53,6 +59,7 @@ export async function deleteFile(bucket: string, path: string) {
 
 // Get public URL for a file
 export async function getPublicUrl(bucket: string, path: string) {
+  await requireAdmin();
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
   return data.publicUrl;
 }
@@ -63,6 +70,7 @@ export async function createSignedUrl(
   path: string,
   expiresIn = 60,
 ) {
+  await requireAdmin();
   const { data, error } = await supabase.storage
     .from(bucket)
     .createSignedUrl(path, expiresIn);
@@ -73,6 +81,7 @@ export async function createSignedUrl(
 
 // Create a folder (by uploading an empty file with a special name)
 export async function createFolder(bucket: string, path: string) {
+  await requireAdmin();
   // In Supabase Storage, folders are virtual and created when files are uploaded
   // We'll create an empty file with a .folder extension to simulate a folder
   const folderPath = path.endsWith("/") ? `${path}.folder` : `${path}/.folder`;
@@ -90,6 +99,7 @@ export async function createFolder(bucket: string, path: string) {
 
 // Generate a signed upload URL for client-side uploads
 export async function getUploadUrl(bucket: string, path: string) {
+  await requireAdmin();
   const { data, error } = await supabase.storage
     .from(bucket)
     .createSignedUploadUrl(path);
@@ -100,6 +110,7 @@ export async function getUploadUrl(bucket: string, path: string) {
 
 // Server-side file upload (for small files)
 export async function uploadFile(formData: FormData) {
+  await requireAdmin();
   const bucket = formData.get("bucket") as string;
   const path = formData.get("path") as string;
   const file = formData.get("file") as File;
@@ -125,6 +136,7 @@ export async function uploadImageFromUrl(
   bucket: string,
   fileName: string,
 ) {
+  await requireAdmin();
   try {
     const response = await fetch(imageUrl);
     if (!response.ok)
@@ -213,6 +225,7 @@ async function listImagesInBucket(
 // Enumerate image files across every PUBLIC bucket, in parallel, merged flat.
 // Private buckets are skipped — their signed URLs expire and would rot once persisted.
 export async function listAllBucketImages(): Promise<StorageImage[]> {
+  await requireAdmin();
   const { data: buckets, error } = await supabase.storage.listBuckets();
   if (error) {
     console.error(JSON.stringify(error));

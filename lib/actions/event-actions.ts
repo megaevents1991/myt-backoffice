@@ -1,9 +1,11 @@
 "use server"
 
+import { requireAdmin } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server"
 import type { Event } from "@/types/app.types"
 
 export async function getEvents() {
+  await requireAdmin();
   const { data, error } = await supabase.from("events").select("*").order("date", { ascending: true })
 
   if (error) throw error
@@ -11,6 +13,7 @@ export async function getEvents() {
 }
 
 export async function getEvent(id: number) {
+  await requireAdmin();
   const { data, error } = await supabase.from("events").select("*").eq("id", id).single()
 
   if (error) throw error
@@ -18,6 +21,7 @@ export async function getEvent(id: number) {
 }
 
 export async function createEvent(event: Omit<Event, "id">) {
+  await requireAdmin();
   // Ensure is_deleted is null for new events
   const eventData = {
     ...event,
@@ -31,6 +35,7 @@ export async function createEvent(event: Omit<Event, "id">) {
 }
 
 export async function updateEvent(id: number, event: Partial<Event>) {
+  await requireAdmin();
   const { data, error } = await supabase.from("events").update(event).eq("id", id).select()
 
   if (error) throw error
@@ -38,6 +43,7 @@ export async function updateEvent(id: number, event: Partial<Event>) {
 }
 
 export async function softDeleteEvent(id: number) {
+  await requireAdmin();
   const today = new Date()
   const formattedDate = `${(today.getMonth() + 1).toString().padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}-${today.getFullYear()}`
 
@@ -48,6 +54,7 @@ export async function softDeleteEvent(id: number) {
 }
 
 export async function bulkSoftDeleteEvents(ids: number[]) {
+  await requireAdmin();
   const today = new Date()
   const formattedDate = `${(today.getMonth() + 1).toString().padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}-${today.getFullYear()}`
 
@@ -58,6 +65,7 @@ export async function bulkSoftDeleteEvents(ids: number[]) {
 }
 
 export async function duplicateEvent(id: number) {
+  await requireAdmin();
   // First get the event to duplicate
   const { data: eventToDuplicate, error: fetchError } = await supabase.from("events").select("*").eq("id", id).single()
 
@@ -80,6 +88,7 @@ export async function duplicateEvent(id: number) {
 }
 
 export async function bulkUpdateEvents(ids: number[], update: Partial<Event>) {
+  await requireAdmin();
   const { data, error } = await supabase.from("events").update(update).in("id", ids).select()
 
   if (error) throw error
@@ -87,6 +96,7 @@ export async function bulkUpdateEvents(ids: number[], update: Partial<Event>) {
 }
 
 export async function bulkDuplicateEvents(ids: number[]) {
+  await requireAdmin();
   const duplicatedEvents: Event[] = []
 
   // We need to duplicate each event one by one
@@ -99,6 +109,7 @@ export async function bulkDuplicateEvents(ids: number[]) {
 }
 
 export async function getActiveEvents() {
+  await requireAdmin();
   const { data, error } = await supabase
     .from("events")
     .select("*")
@@ -110,6 +121,7 @@ export async function getActiveEvents() {
 }
 
 export async function syncEventPrices(id: number) {
+  await requireAdmin();
   const { ticketPriceSyncService } = await import("@/lib/services/ticket-price-sync")
   return await ticketPriceSyncService.syncSingleEvent(id)
 }

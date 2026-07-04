@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase-server";
+import { guardAdminRoute } from "@/lib/auth/guards";
 
 function startEndFromRange(range?: string) {
   const now = new Date();
@@ -33,6 +34,8 @@ function toDateKey(d: Date) {
 }
 
 export async function GET(req: NextRequest) {
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
   try {
     const { searchParams } = new URL(req.url);
   const range = searchParams.get("range") || undefined;

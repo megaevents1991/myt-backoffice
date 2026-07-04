@@ -1,7 +1,8 @@
 "use server";
 
+import { requireAdmin } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
-import type { 
+import type {
   Location, 
   CreateLocationData, 
   UpdateLocationData, 
@@ -27,6 +28,7 @@ function calculateDistance(
 }
 
 export async function getLocations(): Promise<Location[]> {
+  await requireAdmin();
   const { data, error } = await supabase
     .from("locations")
     .select("*")
@@ -41,6 +43,7 @@ export async function getLocations(): Promise<Location[]> {
 }
 
 export async function getLocationById(id: number): Promise<Location | null> {
+  await requireAdmin();
   const { data, error } = await supabase
     .from("locations")
     .select("*")
@@ -59,6 +62,7 @@ export async function getLocationById(id: number): Promise<Location | null> {
 }
 
 export async function createLocation(locationData: CreateLocationData): Promise<Location> {
+  await requireAdmin();
   const { data, error } = await supabase
     .from("locations")
     .insert([locationData])
@@ -77,6 +81,7 @@ export async function updateLocation(
   id: number, 
   locationData: UpdateLocationData
 ): Promise<Location> {
+  await requireAdmin();
   const { data, error } = await supabase
     .from("locations")
     .update(locationData)
@@ -93,6 +98,7 @@ export async function updateLocation(
 }
 
 export async function deleteLocation(id: number): Promise<void> {
+  await requireAdmin();
   const { error } = await supabase
     .from("locations")
     .delete()
@@ -108,8 +114,9 @@ export async function findNearestLocation(
   latitude: number, 
   longitude: number
 ): Promise<LocationWithDistance | null> {
+  await requireAdmin();
   const locations = await getLocations();
-  
+
   if (locations.length === 0) {
     return null;
   }
@@ -130,8 +137,9 @@ export async function getLocationsWithinRadius(
   longitude: number, 
   radiusKm: number = 100
 ): Promise<LocationWithDistance[]> {
+  await requireAdmin();
   const locations = await getLocations();
-  
+
   // Calculate distances and filter by radius
   const locationsWithDistance = locations
     .map(location => ({
