@@ -25,6 +25,7 @@ import {
   updateEvent,
   createEvent,
 } from "@/lib/actions/event-actions";
+import { EventMarkupFields } from "@/components/event-markup-fields";
 import { airportsMatch } from "@/lib/airport-cities";
 import { ColorPicker } from "@/components/color-picker";
 import { ImageFilePicker } from "@/components/image-file-picker";
@@ -1725,6 +1726,13 @@ export default function EventPage({
                 Optional per-event markup. Leave empty to store null.
               </p>
             </div>
+
+            <EventMarkupFields
+              values={event}
+              onChange={(field, value) =>
+                setEvent((prev) => (prev ? { ...prev, [field]: value } : prev))
+              }
+            />
 
             <div className="space-y-2">
               <Label htmlFor="tags">Tag</Label>

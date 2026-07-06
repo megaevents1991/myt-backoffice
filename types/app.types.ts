@@ -52,6 +52,15 @@ export type Event = {
   tx_excluded_sections?: string[];
   // Extra event-level markup (USD) added to this event.
   event_additional_markup?: number | null;
+  // Per-event component markups (USD). When ANY of the three markup_* fields
+  // is set the main app uses composed pricing: markup_ticket always charged;
+  // markup_flight/markup_hotel only when that component is included;
+  // skip_flight_markup/skip_hotel_markup only when it's skipped.
+  // All null → legacy pricing (global 175 + env hotel-skip fee), unchanged.
+  markup_ticket?: number | null;
+  markup_flight?: number | null;
+  markup_hotel?: number | null;
+  skip_hotel_markup?: number | null;
   comp_pricing?: {
     price: number;
     name: string;
