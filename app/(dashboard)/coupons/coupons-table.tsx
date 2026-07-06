@@ -17,6 +17,7 @@ import {
   toggleCouponActive,
   deleteCoupon,
   getCouponEventOptions,
+  getCouponPartnerOptions,
   type CouponInput,
 } from "@/lib/actions/coupon-actions";
 import { useToast } from "@/hooks/use-toast";
@@ -46,6 +47,11 @@ import {
 } from "@/components/ui/alert-dialog";
 
 type EventOption = { id: number; name: string; date: string };
+type PartnerOption = {
+  partner_tracking_code: string;
+  name_hebrew: string | null;
+  type: string | null;
+};
 
 const emptyForm: CouponInput = {
   code: "",
@@ -54,12 +60,14 @@ const emptyForm: CouponInput = {
   event_id: null,
   valid_until: null,
   max_uses: null,
+  partner_tracking_code: null,
   is_active: true,
 };
 
 export function CouponsTable() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [events, setEvents] = useState<EventOption[]>([]);
+  const [partners, setPartners] = useState<PartnerOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Coupon | null>(null);
@@ -71,12 +79,14 @@ export function CouponsTable() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [couponData, eventData] = await Promise.all([
+        const [couponData, eventData, partnerData] = await Promise.all([
           getCoupons(),
           getCouponEventOptions(),
+          getCouponPartnerOptions(),
         ]);
         setCoupons(couponData);
         setEvents(eventData);
+        setPartners(partnerData);
       } catch (error) {
         console.error("Error fetching coupons:", error);
         toast({
@@ -115,6 +125,7 @@ export function CouponsTable() {
       event_id: coupon.event_id,
       valid_until: coupon.valid_until?.slice(0, 10) ?? null,
       max_uses: coupon.max_uses,
+      partner_tracking_code: coupon.partner_tracking_code ?? null,
       is_active: coupon.is_active,
     });
     setDialogOpen(true);
@@ -263,6 +274,29 @@ export function CouponsTable() {
         }`,
     },
     {
+      accessorKey: "times_paid",
+      header: "Paid",
+      cell: ({ row }) => (
+        <span className="font-semibold text-green-600">
+          {row.original.times_paid ?? 0}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "partner_tracking_code",
+      header: "Affiliate",
+      cell: ({ row }) => {
+        const code = row.original.partner_tracking_code;
+        if (!code) return <span className="text-muted-foreground">—</span>;
+        const partner = partners.find((p) => p.partner_tracking_code === code);
+        return (
+          <span className="max-w-[180px] truncate inline-block">
+            {partner?.name_hebrew || code}
+          </span>
+        );
+      },
+    },
+    {
       accessorKey: "is_active",
       header: "Active",
       cell: ({ row }) => (
@@ -402,6 +436,40 @@ export function CouponsTable() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Attribute to affiliate</Label>
+              <Select
+                value={form.partner_tracking_code ?? "none"}
+                onValueChange={(v) =>
+                  setForm({
+                    ...form,
+                    partner_tracking_code: v === "none" ? null : v,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="none">No affiliate</SelectItem>
+                  {partners.map((p) => (
+                    <SelectItem
+                      key={p.partner_tracking_code}
+                      value={p.partner_tracking_code}
+                    >
+                      {p.name_hebrew
+                        ? `${p.name_hebrew} (${p.partner_tracking_code})`
+                        : p.partner_tracking_code}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Orders redeeming this coupon are credited to the partner —
+                unless the order already has its own affiliate.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

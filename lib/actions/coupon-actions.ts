@@ -10,6 +10,8 @@ export type CouponInput = {
   event_id: number | null
   valid_until: string | null
   max_uses: number | null
+  /** Partner credited for orders redeeming this coupon (when order has no affiliate). */
+  partner_tracking_code: string | null
   is_active: boolean
 }
 
@@ -79,4 +81,19 @@ export async function getCouponEventOptions() {
 
   if (error) throw error
   return (data ?? []) as { id: number; name: string; date: string }[]
+}
+
+/** Light partner list for the "attribute to affiliate" dropdown. */
+export async function getCouponPartnerOptions() {
+  const { data, error } = await supabase
+    .from("partners")
+    .select("partner_tracking_code, name_hebrew, type")
+    .order("partner_tracking_code", { ascending: true })
+
+  if (error) throw error
+  return (data ?? []) as {
+    partner_tracking_code: string
+    name_hebrew: string | null
+    type: string | null
+  }[]
 }

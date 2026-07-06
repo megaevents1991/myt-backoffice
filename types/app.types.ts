@@ -196,6 +196,13 @@ export type Coupon = {
   /** null = unlimited. */
   max_uses: number | null;
   times_used: number;
+  /** Redemptions whose reservation reached status 'Paid' (DB trigger). */
+  times_paid: number;
+  /**
+   * Partner (affiliate) this coupon is attributed to. Orders redeeming the
+   * coupon credit this partner only when they have no affiliate of their own.
+   */
+  partner_tracking_code: string | null;
   is_active: boolean;
   created_at: string;
 };
