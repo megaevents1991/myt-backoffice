@@ -1693,6 +1693,38 @@ export default function EventPage({
                 <p className="text-xs text-muted-foreground">
                   Added per ticket when customer chooses to skip the flight.
                 </p>
+
+                <div className="space-y-2 pt-2">
+                  <Label htmlFor="ticket_only_markup">
+                    Ticket-Only Markup (USD per ticket)
+                  </Label>
+                  <Input
+                    id="ticket_only_markup"
+                    name="ticket_only_markup"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={event.ticket_only_markup ?? ""}
+                    placeholder="Empty = normal flow"
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setEvent((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              ticket_only_markup: v === "" ? null : Number(v),
+                            }
+                          : prev
+                      );
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    When the customer skips BOTH flight and hotel, the price is
+                    exactly ticket cost + this amount — no site markup, no
+                    additions, nothing else. Only affects the ticket-only case;
+                    every other combination is unchanged. Can be 0.
+                  </p>
+                </div>
               </div>
             )}
 
