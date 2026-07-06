@@ -19,6 +19,7 @@ import {
   Map,
   Hotel,
   LayoutTemplate,
+  Percent,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -37,6 +38,7 @@ const navItems: NavItem[] = [
   { type: "divider" },
   { name: "Events", href: "/events", icon: CalendarDays },
   { name: "Partners", href: "/partners", icon: Users },
+  { name: "Coupons", href: "/coupons", icon: Percent },
   { name: "Reservations", href: "/reservations", icon: ClipboardList },
   { type: "divider" },
   { name: "Offline Flights (Mega)", href: "/offline-flights", icon: Plane },
