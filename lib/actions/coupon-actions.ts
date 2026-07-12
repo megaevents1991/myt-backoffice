@@ -83,12 +83,16 @@ export async function getCouponEventOptions() {
   return (data ?? []) as { id: number; name: string; date: string }[]
 }
 
-/** Light partner list for the "attribute to affiliate" dropdown. */
+/** Light partner list for the "attribute to affiliate" dropdown.
+ *  Excludes the auto-created per-customer partners (name "החזר ללקוח ניתן
+ *  להתעלם") — ~1235 of the 1312 rows — so only real agents/influencers/affiliate
+ *  codes appear. Code-only affiliates (null name, e.g. "mega") are kept. */
 export async function getCouponPartnerOptions() {
   const { data, error } = await supabase
     .from("partners")
     .select("partner_tracking_code, name_hebrew, type")
-    .order("partner_tracking_code", { ascending: true })
+    .or("name_hebrew.is.null,name_hebrew.not.ilike.*ניתן להתעלם*")
+    .order("name_hebrew", { ascending: true, nullsFirst: false })
 
   if (error) throw error
   return (data ?? []) as {
