@@ -147,6 +147,22 @@ NEXT_SECRET_P1_TICKETS_FEED_URL=
 
 Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, `locations`, `p1_events`, `live_events`, `sports_events`, `offline_flights`, `tixstock_events`. Managed via Supabase (PostgreSQL).
 
+### Migrations (Supabase CLI)
+
+**This repo owns the schema.** The main app never runs migrations. Schema changes go through versioned migration files in `supabase/migrations/` — never ad-hoc SQL in the dashboard without capturing it.
+
+Workflow for any schema change:
+
+1. `npm run db:new <name>` — creates `supabase/migrations/<timestamp>_<name>.sql`; write the SQL there.
+   (Or prototype in the dashboard, then capture the drift: `npm run db:diff <name>` — requires Docker running.)
+2. Commit the migration file with the feature PR.
+3. Apply: `npm run db:push` locally, **or** GitHub → Actions → "Apply DB Migrations" → Run workflow.
+4. Regenerate DB types: `npm run db:types` (writes `types/database.types.ts`).
+
+One-time setup per machine: `npx supabase login`, then `npx supabase link --project-ref fandqafngybfdyslofmr` (asks for the DB password).
+
+CI (`.github/workflows/db-migrate.yml`) needs repo secrets `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD`. Currently manual-trigger only; auto-apply on merge is commented out in the workflow.
+
 ---
 
 ## Connection to Main App (`../myt---main`)

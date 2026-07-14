@@ -1,0 +1,30 @@
+name: Apply DB Migrations
+
+# Manual trigger for now (one click in GitHub → Actions → Apply DB Migrations → Run workflow).
+# Once trusted, uncomment the push trigger to auto-apply on merge to master.
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [master]
+  #   paths:
+  #     - "supabase/migrations/**"
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: fandqafngybfdyslofmr
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Push migrations
+        run: supabase db push --include-all
