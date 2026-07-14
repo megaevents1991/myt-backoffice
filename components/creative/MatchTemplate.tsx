@@ -31,7 +31,17 @@ const AQUA = "#45E2FF";
 const VIOLET = "#BBA1FF";
 const GOLD = "#FACC15";
 
-const BLOB_SHAPES: { d: string; w: number; h: number }[] = [
+// Full brand neon palette (same order as the site's EVENT_ART_COLORS).
+export const BLOB_HEX = [
+  "#5BFF95", // mint
+  "#45E2FF", // aqua
+  "#BBA1FF", // violet
+  "#FF4F61", // coral
+  "#FACC15", // gold
+  "#FF9D4D", // orange
+] as const;
+
+export const BLOB_SHAPES: { d: string; w: number; h: number }[] = [
   {
     d: "M376.567 312.293L311.733 247.245L360.413 239.179C395.964 233.277 409.983 189.739 384.522 164.305L331.689 111.226L370.84 104.771C398.3 100.259 409.156 66.545 389.487 46.8578L338.009 -4.75832C316.883 -25.942 286.807 -35.6261 257.394 -30.7155L185.469 -18.8338C158.009 -14.3216 147.154 19.3922 166.822 39.0795L194.851 67.1655L120.973 79.4455C85.4226 85.3477 71.4037 128.886 96.8645 154.319L133.914 191.587L46.4259 206.105C1.962 213.474 -15.5866 267.975 16.2236 299.904L99.5124 383.449C133.647 417.724 182.326 433.398 230.047 425.48L346.435 406.228C390.829 398.722 408.377 344.222 376.567 312.293Z",
     w: 400,
@@ -51,6 +61,15 @@ const BLOB_SHAPES: { d: string; w: number; h: number }[] = [
 
 const TAGLINE = "טיסות · מלון · כרטיסים — חבילה אחת";
 
+// The site's category photo backgrounds (same assets og.tsx uses, served from
+// prod so satori can fetch them from anywhere).
+export const PHOTO_BG = {
+  football: "https://www.mega-events.co.il/art-backgrounds/football.jpg",
+  tennis: "https://www.mega-events.co.il/art-backgrounds/tennis.jpg",
+  cars: "https://www.mega-events.co.il/art-backgrounds/cars.jpg",
+} as const;
+export type CardBgKind = "blob" | keyof typeof PHOTO_BG;
+
 export type CreativeInput = {
   // "match" = two blob cards + VS; "artist" = single centered blob card.
   kind: "match" | "artist";
@@ -62,16 +81,36 @@ export type CreativeInput = {
   timeText: string | null;   // "21:00" or null → omitted
   locationText: string;      // "Santiago Bernabéu, Madrid"
   priceText: string;         // "החל מ-€499" / "כרטיסים החל מ-€99"
+  // Design-base mode: render the full branded canvas (glows, wordmark, names,
+  // date/price) but WITHOUT blob cards and subject images — a background the
+  // designer drops a not-yet-cut photo onto.
+  bare?: boolean;
+  // Card background: brand blob (default for artists) or a category photo
+  // (default "football" for matches). Designer-overridable.
+  bgKind?: CardBgKind;
+  // Blob color/shape overrides (brand palette index 0-5 / shape 0-2).
+  // null/undefined = the template's defaults per card.
+  colorIndex?: number | null;
+  shapeIndex?: number | null;
 };
 
 export function buildPriceText(mode: "package" | "ticket", price: number, currency: string): string {
   return mode === "ticket" ? `כרטיסים החל מ-${currency}${price}` : `חבילות החל מ-${currency}${price}`;
 }
 
-// One site-style card: dark rounded card, brand blob covering it, image on top.
+// One site-style card: dark rounded card, brand blob (or a category photo)
+// covering it, image on top.
 function BlobCard({
-  img, color, shapeIndex, w, h, radius,
-}: { img: string; color: string; shapeIndex: number; w: number; h: number; radius: number }) {
+  img, color, shapeIndex, w, h, radius, photoUrl,
+}: {
+  img: string;
+  color: string;
+  shapeIndex: number;
+  w: number;
+  h: number;
+  radius: number;
+  photoUrl?: string | null;
+}) {
   const shape = BLOB_SHAPES[shapeIndex % BLOB_SHAPES.length];
   const cover = Math.max(w / shape.w, h / shape.h) * 1.05;
   const bw = Math.round(shape.w * cover);
@@ -91,20 +130,31 @@ function BlobCard({
         boxShadow: "0 24px 70px rgba(0,0,0,0.55)",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          position: "absolute",
-          top: (h - bh) / 2,
-          left: (w - bw) / 2,
-          width: bw,
-          height: bh,
-        }}
-      >
-        <svg width={bw} height={bh} viewBox={`0 0 ${shape.w} ${shape.h}`}>
-          <path d={shape.d} fill={color} />
-        </svg>
-      </div>
+      {photoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={photoUrl}
+          width={w}
+          height={h}
+          alt=""
+          style={{ position: "absolute", top: 0, left: 0, width: w, height: h, objectFit: "cover" }}
+        />
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            position: "absolute",
+            top: (h - bh) / 2,
+            left: (w - bw) / 2,
+            width: bw,
+            height: bh,
+          }}
+        >
+          <svg width={bw} height={bh} viewBox={`0 0 ${shape.w} ${shape.h}`}>
+            <path d={shape.d} fill={color} />
+          </svg>
+        </div>
+      )}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={img}
@@ -119,7 +169,8 @@ function BlobCard({
 
 export function MatchTemplate({
   kind, homeLogoUrl, awayLogoUrl, homeName, awayName,
-  dateText, timeText, locationText, priceText,
+  dateText, timeText, locationText, priceText, bare,
+  bgKind, colorIndex, shapeIndex,
   width, height, bgUrl,
 }: CreativeInput & { width: number; height: number; bgUrl: string }) {
   const isSquare = height > 700;
@@ -127,6 +178,24 @@ export function MatchTemplate({
 
   const cardW = kind === "artist" ? (isSquare ? 520 : 330) : isSquare ? 380 : 250;
   const cardH = kind === "artist" ? (isSquare ? 560 : 380) : isSquare ? 440 : 300;
+  // Wide stadium panel (photo-bg match mode): one panel, both logos inside.
+  const panelW = width - 2 * (isSquare ? 56 : 48);
+  const panelH = isSquare ? 560 : 340;
+  const panelLogo = isSquare ? 290 : 185;
+
+  // Card background: explicit choice wins; default = football photo for
+  // matches, brand blob for artists.
+  const effectiveBg: CardBgKind = bgKind ?? (kind === "match" ? "football" : "blob");
+  const photoUrl = effectiveBg !== "blob" ? PHOTO_BG[effectiveBg] : null;
+  // Color/shape overrides; away card gets the next palette entry so the two
+  // sides never come out identical.
+  const homeColor = colorIndex != null ? BLOB_HEX[colorIndex % BLOB_HEX.length] : MINT;
+  const awayColor =
+    colorIndex != null ? BLOB_HEX[(colorIndex + 1) % BLOB_HEX.length] : AQUA;
+  const artistColor = colorIndex != null ? BLOB_HEX[colorIndex % BLOB_HEX.length] : VIOLET;
+  const homeShape = shapeIndex != null ? shapeIndex % BLOB_SHAPES.length : 0;
+  const awayShape = shapeIndex != null ? (shapeIndex + 1) % BLOB_SHAPES.length : 1;
+  const artistShape = shapeIndex != null ? shapeIndex % BLOB_SHAPES.length : 2;
 
   return (
     <div
@@ -178,15 +247,68 @@ export function MatchTemplate({
       {/* main */}
       {kind === "artist" ? (
         <div style={{ display: "flex", flex: 1, flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <BlobCard img={homeLogoUrl} color={VIOLET} shapeIndex={2} w={cardW} h={cardH} radius={44} />
+          {bare ? (
+            <div style={{ display: "flex", width: cardW, height: cardH }} />
+          ) : (
+            <BlobCard img={homeLogoUrl} color={artistColor} shapeIndex={artistShape} w={cardW} h={cardH} radius={isSquare ? 76 : 54} photoUrl={photoUrl} />
+          )}
           <div style={{ display: "flex", fontSize: isSquare ? 58 : 38, fontWeight: 700, marginTop: isSquare ? 24 : 12, textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}>
             {bidiVisual(homeName)}
+          </div>
+        </div>
+      ) : photoUrl && !bare ? (
+        /* photo background: ONE wide stadium panel holding both logos + VS */
+        <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", padding: `0 ${isSquare ? 56 : 48}px` }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              width: panelW,
+              height: panelH,
+              borderRadius: isSquare ? 56 : 40,
+              overflow: "hidden",
+              position: "relative",
+              backgroundColor: "#0D0C1E",
+              boxShadow: "0 24px 70px rgba(0,0,0,0.55)",
+              padding: `0 ${isSquare ? 56 : 44}px`,
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={photoUrl}
+              width={panelW}
+              height={panelH}
+              alt=""
+              style={{ position: "absolute", top: 0, left: 0, width: panelW, height: panelH, objectFit: "cover" }}
+            />
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={awayLogoUrl ?? ""} alt="" style={{ width: panelLogo, height: panelLogo, objectFit: "contain" }} />
+              <div style={{ display: "flex", fontSize: isSquare ? 38 : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 10px rgba(0,0,0,0.9)" }}>
+                {bidiVisual(awayName ?? "")}
+              </div>
+            </div>
+            <div style={{ display: "flex", fontSize: isSquare ? 108 : 66, fontWeight: 700, color: INK, textShadow: `0 0 40px ${MINT}99, 0 4px 14px rgba(0,0,0,0.9)`, position: "relative" }}>
+              VS
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={homeLogoUrl} alt="" style={{ width: panelLogo, height: panelLogo, objectFit: "contain" }} />
+              <div style={{ display: "flex", fontSize: isSquare ? 38 : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 10px rgba(0,0,0,0.9)" }}>
+                {bidiVisual(homeName)}
+              </div>
+            </div>
           </div>
         </div>
       ) : (
         <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "space-between", padding: `0 ${isSquare ? 64 : 56}px` }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: cardW }}>
-            <BlobCard img={awayLogoUrl ?? ""} color={AQUA} shapeIndex={1} w={cardW} h={cardH} radius={36} />
+            {bare ? (
+              <div style={{ display: "flex", width: cardW, height: cardH }} />
+            ) : (
+              <BlobCard img={awayLogoUrl ?? ""} color={awayColor} shapeIndex={awayShape} w={cardW} h={cardH} radius={36} />
+            )}
             <div style={{ display: "flex", fontSize: isSquare ? 38 : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 8px rgba(0,0,0,0.7)" }}>
               {bidiVisual(awayName ?? "")}
             </div>
@@ -197,7 +319,11 @@ export function MatchTemplate({
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: cardW }}>
-            <BlobCard img={homeLogoUrl} color={MINT} shapeIndex={0} w={cardW} h={cardH} radius={36} />
+            {bare ? (
+              <div style={{ display: "flex", width: cardW, height: cardH }} />
+            ) : (
+              <BlobCard img={homeLogoUrl} color={homeColor} shapeIndex={homeShape} w={cardW} h={cardH} radius={36} />
+            )}
             <div style={{ display: "flex", fontSize: isSquare ? 38 : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 8px rgba(0,0,0,0.7)" }}>
               {bidiVisual(homeName)}
             </div>

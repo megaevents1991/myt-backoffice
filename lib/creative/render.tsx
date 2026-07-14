@@ -1,6 +1,11 @@
 import { ImageResponse } from "next/og";
 import { supabase } from "@/lib/supabase-server";
-import { MatchTemplate, type CreativeInput } from "@/components/creative/MatchTemplate";
+import {
+  MatchTemplate,
+  BLOB_HEX,
+  BLOB_SHAPES,
+  type CreativeInput,
+} from "@/components/creative/MatchTemplate";
 
 export const SIZES = {
   square: { width: 1080, height: 1080 },
@@ -31,6 +36,43 @@ async function loadBrandFont(): Promise<ArrayBuffer> {
 export function getBackgroundUrl(): string {
   const { data } = supabase.storage.from("creatives").getPublicUrl(ASSETS.bg);
   return data.publicUrl;
+}
+
+// Standalone brand blob on a transparent canvas — a design asset for events
+// that don't have a cut-out image yet. Deterministic color/shape from `seed`
+// (same hash the site uses for card art), no font needed.
+export async function renderBlobPng(
+  seed: number,
+  size: CreativeSize,
+): Promise<ArrayBuffer> {
+  const { width, height } = SIZES[size];
+  let h = 0;
+  for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const color = BLOB_HEX[h % BLOB_HEX.length];
+  const shape = BLOB_SHAPES[(h >> 3) % BLOB_SHAPES.length];
+  const scale = Math.min(width / shape.w, height / shape.h) * 0.85;
+  const bw = Math.round(shape.w * scale);
+  const bh = Math.round(shape.h * scale);
+  const image = new ImageResponse(
+    (
+      <div
+        style={{
+          width,
+          height,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "transparent",
+        }}
+      >
+        <svg width={bw} height={bh} viewBox={`0 0 ${shape.w} ${shape.h}`}>
+          <path d={shape.d} fill={color} />
+        </svg>
+      </div>
+    ),
+    { width, height },
+  );
+  return image.arrayBuffer();
 }
 
 export async function renderCreativePng(

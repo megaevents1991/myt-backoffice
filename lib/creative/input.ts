@@ -1,5 +1,9 @@
 import { supabase } from "@/lib/supabase-server";
-import { buildPriceText, type CreativeInput } from "@/components/creative/MatchTemplate";
+import {
+  buildPriceText,
+  type CardBgKind,
+  type CreativeInput,
+} from "@/components/creative/MatchTemplate";
 
 type BaseParams = {
   dateText: string;
@@ -8,6 +12,12 @@ type BaseParams = {
   price: number;
   currency: string;
   mode: "package" | "ticket";
+  // Design-base render: no blob cards, no subject images (see MatchTemplate).
+  bare?: boolean;
+  // Card design overrides (see MatchTemplate): background kind + blob color/shape.
+  bgKind?: CardBgKind;
+  colorIndex?: number | null;
+  shapeIndex?: number | null;
 };
 
 export type CreativeParams =
@@ -38,10 +48,14 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
     timeText: params.timeText,
     locationText: params.locationText,
     priceText,
+    bare: params.bare ?? false,
+    bgKind: params.bgKind,
+    colorIndex: params.colorIndex ?? null,
+    shapeIndex: params.shapeIndex ?? null,
   };
 
   if (params.kind === "artist") {
-    if (!params.imageUrl || !params.artistName) {
+    if (!params.artistName || (!params.imageUrl && !params.bare)) {
       throw new Error("Artist creative requires imageUrl and artistName");
     }
     return {
@@ -67,7 +81,7 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
   if (!home || !away) throw new Error("Team not found");
   const homeImg = teamImage(home);
   const awayImg = teamImage(away);
-  if (!homeImg || !awayImg) {
+  if ((!homeImg || !awayImg) && !params.bare) {
     throw new Error(
       `No image (logo/art/photo) for: ${[!homeImg && home.name, !awayImg && away.name].filter(Boolean).join(", ")}`,
     );
@@ -75,8 +89,8 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
 
   return {
     kind: "match",
-    homeLogoUrl: homeImg,
-    awayLogoUrl: awayImg,
+    homeLogoUrl: homeImg ?? "",
+    awayLogoUrl: awayImg ?? "",
     homeName: home.name,
     awayName: away.name,
     ...base,
