@@ -2,8 +2,7 @@
 /**
  * PreToolUse hook for Bash(git commit:*).
  * Blocks (exit 2) when:
- *   (a) current branch is main/master  -> force a feature branch
- *   (b) commit message carries an AI co-author / "Generated with Claude" line
+ *   - commit message carries an AI co-author / "Generated with Claude" line
  * Fails open: any parse/exec error -> allow.
  */
 const { execFileSync } = require("child_process");
@@ -34,21 +33,8 @@ function main() {
     process.exit(2);
   }
 
-  let branch = "";
-  try {
-    branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
-      encoding: "utf8",
-    }).trim();
-  } catch {
-    process.exit(0);
-  }
-  if (branch === "main" || branch === "master") {
-    console.error(
-      `Blocked: on '${branch}'. Create a feature branch first ` +
-        "(e.g. `git switch -c fix/...`). Never commit to main/master."
-    );
-    process.exit(2);
-  }
+  // Branch guard removed 2026-07-14 at Dor's request (backoffice repo only):
+  // direct commits to master allowed here. AI-attribution check above stays.
   process.exit(0);
 }
 main();
