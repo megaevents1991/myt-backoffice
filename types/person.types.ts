@@ -22,6 +22,8 @@ export interface Person {
   // Cut-out position, % of frame (null/0 = default bottom-center). X+ = right, Y+ = down.
   art_image_offset_x: number | null;
   art_image_offset_y: number | null;
+  // Club logo for the creative generator — transparent PNG only.
+  logo_url: string | null;
   bio: unknown; // Contentful-compatible rich-text document
   seo_title: string | null;
   meta_description: string | null;

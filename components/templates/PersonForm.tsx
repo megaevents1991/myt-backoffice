@@ -9,6 +9,7 @@ import { toast } from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -101,6 +102,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
   const [imageUrl, setImageUrl] = useState(initial?.image_url ?? "");
   const [uploading, setUploading] = useState(false);
   const [artImageUrl, setArtImageUrl] = useState(initial?.art_image_url ?? "");
+  const [logoUrl, setLogoUrl] = useState(initial?.logo_url ?? "");
   const [artColorIndex, setArtColorIndex] = useState(initial?.art_color_index ?? 0);
   const [artShapeIndex, setArtShapeIndex] = useState(initial?.art_shape_index ?? 0);
   const [artImageScale, setArtImageScale] = useState(initial?.art_image_scale ?? 1);
@@ -133,6 +135,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
   const initialExtras = JSON.stringify({
     imageUrl: initial?.image_url ?? "",
     artImageUrl: initial?.art_image_url ?? "",
+    logoUrl: initial?.logo_url ?? "",
     artColorIndex: initial?.art_color_index ?? 0,
     artShapeIndex: initial?.art_shape_index ?? 0,
     artImageScale: initial?.art_image_scale ?? 1,
@@ -146,6 +149,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
     JSON.stringify({
       imageUrl,
       artImageUrl,
+      logoUrl,
       artColorIndex,
       artShapeIndex,
       artImageScale,
@@ -155,9 +159,13 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
       gallery,
     }) !== initialExtras;
 
+  // Logo must be a .png — satori (creative generator) cannot render SVG logos.
+  const logoInvalid = !!logoUrl && !logoUrl.toLowerCase().endsWith(".png");
+
   const resetExtras = () => {
     setImageUrl(initial?.image_url ?? "");
     setArtImageUrl(initial?.art_image_url ?? "");
+    setLogoUrl(initial?.logo_url ?? "");
     setArtColorIndex(initial?.art_color_index ?? 0);
     setArtShapeIndex(initial?.art_shape_index ?? 0);
     setArtImageScale(initial?.art_image_scale ?? 1);
@@ -185,6 +193,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           art_bg_scale: artImageUrl ? artBgScale : null,
           art_image_offset_x: artImageUrl ? artImageOffsetX : null,
           art_image_offset_y: artImageUrl ? artImageOffsetY : null,
+          logo_url: logoUrl || null,
           bio: values.bio ? textToRichDoc(values.bio) : null,
           seo_title: values.seo_title || null,
           meta_description: values.meta_description || null,
@@ -287,6 +296,21 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           />
         </div>
 
+        {kind === "football_teams" && (
+          <div className="space-y-2">
+            <Label htmlFor="logo_url">Logo URL (transparent PNG — creative generator)</Label>
+            <Input
+              id="logo_url"
+              value={logoUrl}
+              onChange={(e) => setLogoUrl(e.target.value)}
+              placeholder="https://.../creatives/logos/real-madrid.png"
+            />
+            {logoInvalid && (
+              <p className="text-sm text-destructive mt-1">Must be a .png (satori cannot render SVG logos)</p>
+            )}
+          </div>
+        )}
+
         {/* Page extras — artist/team page enrichments (doc 19b/20/21/24) */}
         <div className="space-y-4 rounded-lg border p-4">
           <p className="text-sm font-semibold">Page extras (artist / team page)</p>
@@ -330,7 +354,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           </FormItem>
         )} />
 
-        <Button type="submit" disabled={isPending || uploading}>
+        <Button type="submit" disabled={isPending || uploading || logoInvalid}>
           {isPending ? "Saving..." : "Save"}
         </Button>
       </form>
@@ -343,7 +367,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           form.reset();
           resetExtras();
         }}
-        disabled={uploading}
+        disabled={uploading || logoInvalid}
       />
     </Form>
   );

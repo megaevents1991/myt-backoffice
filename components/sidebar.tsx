@@ -20,6 +20,7 @@ import {
   Hotel,
   LayoutTemplate,
   Percent,
+  Image as ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -49,6 +50,7 @@ const navItems: NavItem[] = [
   { name: "TixStock Events", href: "/tixstock-events", icon: Ticket },
   { type: "divider" },
   { name: "Templates (תבניות)", href: "/templates", icon: LayoutTemplate },
+  { name: "Creative Generator", href: "/creative-generator", icon: ImageIcon },
   { type: "divider" },
   { name: "Storage", href: "/storage", icon: Database },
   { name: "Locations", href: "/locations", icon: MapPin },
