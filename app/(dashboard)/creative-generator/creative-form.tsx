@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,7 @@ import {
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
-import { ChevronsUpDown, Download } from "lucide-react";
+import { ChevronsUpDown, Download, Loader2 } from "lucide-react";
 import {
   generateCreative,
   getCreativeDefaults,
@@ -106,10 +106,19 @@ export function CreativeForm({
   const [blobColor, setBlobColor] = useState<string>("");
   const [blobShape, setBlobShape] = useState<string>("");
   // Designer sizing (rendered into the PNG): zoom in %, offsets in % of card.
+  // Live values track the slider thumb; committed values (set on release)
+  // drive the server-rendered preview so we don't re-render per tick.
   const [imgZoom, setImgZoom] = useState(100);
   const [imgX, setImgX] = useState(0);
   const [imgY, setImgY] = useState(0);
   const [bgZoom, setBgZoom] = useState(100);
+  const [sizing, setSizing] = useState({ imgZoom: 100, imgX: 0, imgY: 0, bgZoom: 100 });
+  const commitSizing = (patch: Partial<typeof sizing>) =>
+    setSizing((s) => ({ ...s, ...patch }));
+  const resetSizing = () => {
+    setImgZoom(100); setImgX(0); setImgY(0); setBgZoom(100);
+    setSizing({ imgZoom: 100, imgX: 0, imgY: 0, bgZoom: 100 });
+  };
   const [busy, setBusy] = useState(false);
   const [loadingDefaults, setLoadingDefaults] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -173,12 +182,39 @@ export function CreativeForm({
     if (cardBg) q.set("bg", cardBg);
     if (blobColor) q.set("color", blobColor);
     if (blobShape) q.set("shape", blobShape);
-    if (imgZoom !== 100) q.set("iscale", String(imgZoom / 100));
-    if (imgX !== 0) q.set("ix", String(imgX));
-    if (imgY !== 0) q.set("iy", String(imgY));
-    if (bgZoom !== 100) q.set("bgscale", String(bgZoom / 100));
+    if (sizing.imgZoom !== 100) q.set("iscale", String(sizing.imgZoom / 100));
+    if (sizing.imgX !== 0) q.set("ix", String(sizing.imgX));
+    if (sizing.imgY !== 0) q.set("iy", String(sizing.imgY));
+    if (sizing.bgZoom !== 100) q.set("bgscale", String(sizing.bgZoom / 100));
     return `/api/creative?${q.toString()}`;
-  }, [ready, kind, homeRef, awayRef, artistImg, artistName, dateText, price, currency, mode, time, locationText, cardBg, blobColor, blobShape, imgZoom, imgX, imgY, bgZoom]);
+  }, [ready, kind, homeRef, awayRef, artistImg, artistName, dateText, price, currency, mode, time, locationText, cardBg, blobColor, blobShape, sizing]);
+
+  // Preview double-buffer: keep showing the last rendered image and swap only
+  // when the next server render has fully loaded — no blank flashes.
+  const [displayedUrl, setDisplayedUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  useEffect(() => {
+    if (!previewUrl) {
+      setDisplayedUrl(null);
+      setPreviewLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setPreviewLoading(true);
+    const img = new window.Image();
+    img.onload = () => {
+      if (cancelled) return;
+      setDisplayedUrl(previewUrl);
+      setPreviewLoading(false);
+    };
+    img.onerror = () => {
+      if (!cancelled) setPreviewLoading(false);
+    };
+    img.src = previewUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [previewUrl]);
 
   // Design-base download: full branded canvas WITHOUT blob/subject image —
   // works even when the event has no cut-out image yet (that's the point).
@@ -479,80 +515,6 @@ export function CreativeForm({
           </div>
         </div>
 
-        <div className="border rounded-md p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <Label>גודל ומיקום (נשמר בתמונה הסופית)</Label>
-            {(imgZoom !== 100 || imgX !== 0 || imgY !== 0 || bgZoom !== 100) && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => { setImgZoom(100); setImgX(0); setImgY(0); setBgZoom(100); }}
-              >
-                איפוס
-              </Button>
-            )}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-            <div>
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">זום תמונה</Label>
-                <span className="text-xs tabular-nums text-muted-foreground">{imgZoom}%</span>
-              </div>
-              <Slider
-                className="mt-1"
-                min={50}
-                max={200}
-                step={5}
-                value={[imgZoom]}
-                onValueChange={([v]) => setImgZoom(v)}
-              />
-            </div>
-            <div>
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">זום רקע</Label>
-                <span className="text-xs tabular-nums text-muted-foreground">{bgZoom}%</span>
-              </div>
-              <Slider
-                className="mt-1"
-                min={50}
-                max={200}
-                step={5}
-                value={[bgZoom]}
-                onValueChange={([v]) => setBgZoom(v)}
-              />
-            </div>
-            <div>
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">מיקום תמונה ↔</Label>
-                <span className="text-xs tabular-nums text-muted-foreground">{imgX}%</span>
-              </div>
-              <Slider
-                className="mt-1"
-                min={-50}
-                max={50}
-                step={1}
-                value={[imgX]}
-                onValueChange={([v]) => setImgX(v)}
-              />
-            </div>
-            <div>
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">מיקום תמונה ↕</Label>
-                <span className="text-xs tabular-nums text-muted-foreground">{imgY}%</span>
-              </div>
-              <Slider
-                className="mt-1"
-                min={-50}
-                max={50}
-                step={1}
-                value={[imgY]}
-                onValueChange={([v]) => setImgY(v)}
-              />
-            </div>
-          </div>
-        </div>
-
         <Button onClick={onGenerate} disabled={!ready || busy || loadingDefaults} className="w-full">
           {busy ? "Generating…" : "צור תמונה"}
         </Button>
@@ -572,16 +534,105 @@ export function CreativeForm({
         )}
       </div>
 
-      <div>
-        <Label>Preview (1080×1080)</Label>
-        {previewUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={previewUrl} alt="Creative preview" className="w-full max-w-[540px] border rounded-md mt-2" />
-        ) : (
-          <div className="w-full max-w-[540px] aspect-square border rounded-md mt-2 flex items-center justify-center text-muted-foreground">
-            בחר אירוע — או מלא ידנית
+      <div className="space-y-4">
+        <div>
+          <Label>Preview (1080×1080)</Label>
+          {displayedUrl || previewLoading ? (
+            <div className="relative w-full max-w-[540px] mt-2">
+              {displayedUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={displayedUrl} alt="Creative preview" className="w-full border rounded-md" />
+              ) : (
+                <div className="w-full aspect-square border rounded-md" />
+              )}
+              {previewLoading && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-md bg-background/40">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="w-full max-w-[540px] aspect-square border rounded-md mt-2 flex items-center justify-center text-muted-foreground">
+              בחר אירוע — או מלא ידנית
+            </div>
+          )}
+        </div>
+
+        <div className="border rounded-md p-4 space-y-3 max-w-[540px]">
+          <div className="flex items-center justify-between">
+            <Label>גודל ומיקום (נשמר בתמונה הסופית)</Label>
+            {(imgZoom !== 100 || imgX !== 0 || imgY !== 0 || bgZoom !== 100) && (
+              <Button type="button" variant="ghost" size="sm" onClick={resetSizing}>
+                איפוס
+              </Button>
+            )}
           </div>
-        )}
+          <p className="text-xs text-muted-foreground">
+            גרור חופשי — התצוגה מתעדכנת כשמשחררים את הסליידר.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">זום תמונה</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">{imgZoom}%</span>
+              </div>
+              <Slider
+                className="mt-1"
+                min={50}
+                max={200}
+                step={5}
+                value={[imgZoom]}
+                onValueChange={([v]) => setImgZoom(v)}
+                onValueCommit={([v]) => commitSizing({ imgZoom: v })}
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">זום רקע</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">{bgZoom}%</span>
+              </div>
+              <Slider
+                className="mt-1"
+                min={50}
+                max={200}
+                step={5}
+                value={[bgZoom]}
+                onValueChange={([v]) => setBgZoom(v)}
+                onValueCommit={([v]) => commitSizing({ bgZoom: v })}
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">מיקום תמונה ↔</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">{imgX}%</span>
+              </div>
+              <Slider
+                className="mt-1"
+                min={-50}
+                max={50}
+                step={1}
+                value={[imgX]}
+                onValueChange={([v]) => setImgX(v)}
+                onValueCommit={([v]) => commitSizing({ imgX: v })}
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">מיקום תמונה ↕</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">{imgY}%</span>
+              </div>
+              <Slider
+                className="mt-1"
+                min={-50}
+                max={50}
+                step={1}
+                value={[imgY]}
+                onValueChange={([v]) => setImgY(v)}
+                onValueCommit={([v]) => commitSizing({ imgY: v })}
+              />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
