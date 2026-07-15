@@ -18,10 +18,26 @@ type BaseParams = {
   bgKind?: CardBgKind;
   colorIndex?: number | null;
   shapeIndex?: number | null;
+  // Designer sizing (see MatchTemplate): image/bg zoom + image offsets.
+  imgScale?: number | null;
+  imgOffsetX?: number | null;
+  imgOffsetY?: number | null;
+  bgScale?: number | null;
 };
 
+// A match side comes from one of two stores: "team:<id>" = football_teams
+// (full CMS template rows), "logo:<id>" = football_logos (lightweight logo
+// library). A bare numeric string is legacy shorthand for a team.
+export type SubjectRef = { source: "team" | "logo"; id: number };
+
+export function parseSubjectRef(ref: string): SubjectRef | null {
+  const m = /^(?:(team|logo):)?(\d+)$/.exec(ref.trim());
+  if (!m) return null;
+  return { source: (m[1] as "team" | "logo") ?? "team", id: Number(m[2]) };
+}
+
 export type CreativeParams =
-  | (BaseParams & { kind: "match"; homeId: number; awayId: number })
+  | (BaseParams & { kind: "match"; homeRef: string; awayRef: string })
   | (BaseParams & { kind: "artist"; imageUrl: string; artistName: string });
 
 type FootballTeamRow = {
@@ -30,6 +46,13 @@ type FootballTeamRow = {
   logo_url: string | null;
   art_image_url: string | null;
   image_url: string | null;
+};
+
+type FootballLogoRow = {
+  id: number;
+  name_english: string;
+  name_hebrew: string | null;
+  logo_url: string;
 };
 
 // Best team visual available: dedicated logo → blob cut-out → photo.
@@ -52,6 +75,10 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
     bgKind: params.bgKind,
     colorIndex: params.colorIndex ?? null,
     shapeIndex: params.shapeIndex ?? null,
+    imgScale: params.imgScale ?? null,
+    imgOffsetX: params.imgOffsetX ?? null,
+    imgOffsetY: params.imgOffsetY ?? null,
+    bgScale: params.bgScale ?? null,
   };
 
   if (params.kind === "artist") {
@@ -66,31 +93,59 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
     };
   }
 
-  const { data, error } = await supabase
-    .from("football_teams")
-    .select("id,name,logo_url,art_image_url,image_url")
-    .in("id", [params.homeId, params.awayId]);
+  const homeRef = parseSubjectRef(params.homeRef);
+  const awayRef = parseSubjectRef(params.awayRef);
+  if (!homeRef || !awayRef) throw new Error("Bad team/logo reference");
 
-  if (error) {
-    console.error(JSON.stringify(error));
+  const refs = [homeRef, awayRef];
+  const teamIds = refs.filter((r) => r.source === "team").map((r) => r.id);
+  const logoIds = refs.filter((r) => r.source === "logo").map((r) => r.id);
+
+  const [teamsRes, logosRes] = await Promise.all([
+    teamIds.length
+      ? supabase
+          .from("football_teams")
+          .select("id,name,logo_url,art_image_url,image_url")
+          .in("id", teamIds)
+      : Promise.resolve({ data: [], error: null }),
+    logoIds.length
+      ? // football_logos isn't in the generated DB types yet — cast like template-crud.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from("football_logos")
+          .select("id,name_english,name_hebrew,logo_url")
+          .in("id", logoIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (teamsRes.error || logosRes.error) {
+    console.error(JSON.stringify(teamsRes.error ?? logosRes.error));
     throw new Error("Failed to load teams");
   }
-  const teams = (data || []) as FootballTeamRow[];
-  const home = teams.find((t) => t.id === params.homeId);
-  const away = teams.find((t) => t.id === params.awayId);
-  if (!home || !away) throw new Error("Team not found");
-  const homeImg = teamImage(home);
-  const awayImg = teamImage(away);
-  if ((!homeImg || !awayImg) && !params.bare) {
+  const teams = (teamsRes.data || []) as FootballTeamRow[];
+  const logoRows = (logosRes.data || []) as FootballLogoRow[];
+
+  const resolve = (ref: SubjectRef): { name: string; img: string | null } => {
+    if (ref.source === "logo") {
+      const l = logoRows.find((r) => r.id === ref.id);
+      if (!l) throw new Error("Logo not found");
+      return { name: l.name_hebrew ?? l.name_english, img: l.logo_url };
+    }
+    const t = teams.find((r) => r.id === ref.id);
+    if (!t) throw new Error("Team not found");
+    return { name: t.name, img: teamImage(t) };
+  };
+  const home = resolve(homeRef);
+  const away = resolve(awayRef);
+  if ((!home.img || !away.img) && !params.bare) {
     throw new Error(
-      `No image (logo/art/photo) for: ${[!homeImg && home.name, !awayImg && away.name].filter(Boolean).join(", ")}`,
+      `No image (logo/art/photo) for: ${[!home.img && home.name, !away.img && away.name].filter(Boolean).join(", ")}`,
     );
   }
 
   return {
     kind: "match",
-    homeLogoUrl: homeImg ?? "",
-    awayLogoUrl: awayImg ?? "",
+    homeLogoUrl: home.img ?? "",
+    awayLogoUrl: away.img ?? "",
     homeName: home.name,
     awayName: away.name,
     ...base,

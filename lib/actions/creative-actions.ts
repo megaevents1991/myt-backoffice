@@ -45,7 +45,7 @@ export async function generateCreative(
   const slug =
     params.kind === "artist"
       ? `${slugify(input.homeName) || "artist"}-${dateSlug}`
-      : `${slugify(input.homeName) || `team-${params.homeId}`}-vs-${slugify(input.awayName ?? "") || `team-${params.awayId}`}-${dateSlug}`;
+      : `${slugify(input.homeName) || params.homeRef.replace(":", "-")}-vs-${slugify(input.awayName ?? "") || params.awayRef.replace(":", "-")}-${dateSlug}`;
 
   const urls: Record<CreativeSize, string> = { square: "", banner: "" };
   for (const size of Object.keys(SIZES) as CreativeSize[]) {
@@ -92,8 +92,9 @@ export type CreativeDefaults = {
   locationText: string;
   price: number | null; // final customer package price (main-app formula)
   currency: string;
-  homeTeamId: number | null;
-  awayTeamId: number | null;
+  // "team:<id>" (football_teams) or "logo:<id>" (football_logos) — see input.ts.
+  homeRef: string | null;
+  awayRef: string | null;
   artistName: string | null;
   artistImageUrl: string | null;
   warnings: string[];
@@ -108,14 +109,17 @@ type PersonRow = {
   image_url: string | null;
 };
 
+// PersonRow + where it came from, so a match maps back to a subject ref.
+type SubjectRow = PersonRow & { ref: string };
+
 const norm = (s: string) => s.toLowerCase().replace(/['"’.]/g, "").trim();
 
 // Match one side of "ברצלונה - ריאל מדריד" against a person/team row by
 // Hebrew or English name (exact or containment, both directions).
-function matchPerson(part: string, rows: PersonRow[]): PersonRow | null {
+function matchPerson<R extends PersonRow>(part: string, rows: R[]): R | null {
   const p = norm(part);
   if (!p) return null;
-  let best: PersonRow | null = null;
+  let best: R | null = null;
   for (const r of rows) {
     for (const candidate of [r.name, r.name_english ?? ""]) {
       const c = norm(candidate);
@@ -208,40 +212,70 @@ export async function getCreativeDefaults(eventId: number): Promise<CreativeDefa
       locationText,
       price,
       currency: "$",
-      homeTeamId: null,
-      awayTeamId: null,
+      homeRef: null,
+      awayRef: null,
       artistName,
       artistImageUrl,
       warnings,
     };
   }
 
-  // Match creative: split "home - away" and match against football_teams.
-  const { data: teamRows, error: tErr } = await supabase
-    .from("football_teams")
-    .select("id,name,name_english,logo_url,art_image_url,image_url")
-    .eq("is_deleted", false);
-  if (tErr) console.error(JSON.stringify(tErr));
-  const teams = (teamRows || []) as PersonRow[];
+  // Match creative: split "home - away" and match against the logo library
+  // first (the curated source), then football_teams. Exact-name matches win
+  // over containment regardless of source (see matchPerson).
+  const [teamsRes, logosRes] = await Promise.all([
+    supabase
+      .from("football_teams")
+      .select("id,name,name_english,logo_url,art_image_url,image_url")
+      .eq("is_deleted", false),
+    // football_logos isn't in the generated DB types yet — cast like template-crud.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("football_logos")
+      .select("id,name_english,name_hebrew,logo_url"),
+  ]);
+  if (teamsRes.error) console.error(JSON.stringify(teamsRes.error));
+  if (logosRes.error) console.error(JSON.stringify(logosRes.error));
 
-  let homeTeamId: number | null = null;
-  let awayTeamId: number | null = null;
+  const logoSubjects: SubjectRow[] = (
+    (logosRes.data || []) as {
+      id: number;
+      name_english: string;
+      name_hebrew: string | null;
+      logo_url: string;
+    }[]
+  ).map((l) => ({
+    id: l.id,
+    name: l.name_hebrew ?? l.name_english,
+    name_english: l.name_english,
+    logo_url: l.logo_url,
+    art_image_url: null,
+    image_url: null,
+    ref: `logo:${l.id}`,
+  }));
+  const teamSubjects: SubjectRow[] = ((teamsRes.data || []) as PersonRow[]).map(
+    (t) => ({ ...t, ref: `team:${t.id}` }),
+  );
+  const subjects = [...logoSubjects, ...teamSubjects];
+
+  let homeRef: string | null = null;
+  let awayRef: string | null = null;
   // Try both names; first one that splits into exactly two parts wins.
   for (const source of [event.name, event.name_english]) {
     if (!source) continue;
     const parts = source.split(/\s+[-–—]\s+|\s+vs\.?\s+/i).map((p) => p.trim());
     if (parts.length !== 2) continue;
-    const home = matchPerson(parts[0], teams);
-    const away = matchPerson(parts[1], teams);
-    if (home && away && home.id !== away.id) {
-      homeTeamId = home.id;
-      awayTeamId = away.id;
+    const home = matchPerson(parts[0], subjects);
+    const away = matchPerson(parts[1], subjects);
+    if (home && away && home.ref !== away.ref) {
+      homeRef = home.ref;
+      awayRef = away.ref;
       if (!teamImage(home)) warnings.push(`לקבוצה ${home.name} אין תמונה`);
       if (!teamImage(away)) warnings.push(`לקבוצה ${away.name} אין תמונה`);
       break;
     }
   }
-  if (homeTeamId === null || awayTeamId === null) {
+  if (homeRef === null || awayRef === null) {
     warnings.push("לא זוהו שתי קבוצות משם האירוע — בחר ידנית");
   }
 
@@ -252,8 +286,8 @@ export async function getCreativeDefaults(eventId: number): Promise<CreativeDefa
     locationText,
     price,
     currency: "$",
-    homeTeamId,
-    awayTeamId,
+    homeRef,
+    awayRef,
     artistName: null,
     artistImageUrl: null,
     warnings,

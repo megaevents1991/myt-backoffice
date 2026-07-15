@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Slider } from "@/components/ui/slider";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -21,7 +22,61 @@ import {
 } from "@/lib/actions/creative-actions";
 
 type Option = { id: number; name: string };
+// ref = "team:<id>" (football_teams) or "logo:<id>" (football_logos library).
+// searchText carries both Hebrew + English names so the combobox finds either.
+type SubjectOption = { ref: string; label: string; searchText: string };
 type EventOption = { id: number; name: string; dateText: string; location: string };
+
+function SubjectCombobox({
+  value, onChange, subjects, placeholder,
+}: {
+  value: string;
+  onChange: (ref: string) => void;
+  subjects: SubjectOption[];
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = subjects.find((s) => s.ref === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal"
+        >
+          {selected?.label ?? placeholder}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="חפש קבוצה (עברית או אנגלית)..." />
+          <CommandList>
+            <CommandEmpty>לא נמצאו קבוצות</CommandEmpty>
+            <CommandGroup>
+              {subjects.map((s) => (
+                <CommandItem
+                  key={s.ref}
+                  /* ref prefix keeps values unique — same team can exist in
+                     both the logo library and football_teams. */
+                  value={`${s.ref}|${s.searchText}`}
+                  onSelect={() => {
+                    setOpen(false);
+                    onChange(s.ref);
+                  }}
+                >
+                  {s.label}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 // "14.09.2026" → "2026-09-14" (for <input type="date">)
 const ddmmyyyyToIso = (t: string) => {
@@ -30,13 +85,13 @@ const ddmmyyyyToIso = (t: string) => {
 };
 
 export function CreativeForm({
-  teams, locations, events,
-}: { teams: Option[]; locations: Option[]; events: EventOption[] }) {
+  subjects, locations, events,
+}: { subjects: SubjectOption[]; locations: Option[]; events: EventOption[] }) {
   const [kind, setKind] = useState<"match" | "artist">("match");
   const [eventId, setEventId] = useState<string>("");
   const [eventOpen, setEventOpen] = useState(false);
-  const [homeId, setHomeId] = useState<string>("");
-  const [awayId, setAwayId] = useState<string>("");
+  const [homeRef, setHomeRef] = useState<string>("");
+  const [awayRef, setAwayRef] = useState<string>("");
   const [artistName, setArtistName] = useState("");
   const [artistImg, setArtistImg] = useState("");
   const [date, setDate] = useState("");        // yyyy-mm-dd from <input type="date">
@@ -50,6 +105,11 @@ export function CreativeForm({
   const [cardBg, setCardBg] = useState<string>("");
   const [blobColor, setBlobColor] = useState<string>("");
   const [blobShape, setBlobShape] = useState<string>("");
+  // Designer sizing (rendered into the PNG): zoom in %, offsets in % of card.
+  const [imgZoom, setImgZoom] = useState(100);
+  const [imgX, setImgX] = useState(0);
+  const [imgY, setImgY] = useState(0);
+  const [bgZoom, setBgZoom] = useState(100);
   const [busy, setBusy] = useState(false);
   const [loadingDefaults, setLoadingDefaults] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -72,8 +132,8 @@ export function CreativeForm({
       setPrice(d.price != null ? String(d.price) : "");
       setCurrency(d.currency);
       setMode("package");
-      setHomeId(d.homeTeamId != null ? String(d.homeTeamId) : "");
-      setAwayId(d.awayTeamId != null ? String(d.awayTeamId) : "");
+      setHomeRef(d.homeRef ?? "");
+      setAwayRef(d.awayRef ?? "");
       setArtistName(d.artistName ?? "");
       setArtistImg(d.artistImageUrl ?? "");
       setWarnings(d.warnings);
@@ -92,7 +152,7 @@ export function CreativeForm({
 
   const subjectReady =
     kind === "match"
-      ? homeId && awayId && homeId !== awayId
+      ? homeRef && awayRef && homeRef !== awayRef
       : artistName.trim() && artistImg.trim();
   const ready = subjectReady && dateText && Number(price) > 0;
 
@@ -102,8 +162,8 @@ export function CreativeForm({
       kind, date: dateText, price, cur: currency, mode, size: "square",
     });
     if (kind === "match") {
-      q.set("home", homeId);
-      q.set("away", awayId);
+      q.set("home", homeRef);
+      q.set("away", awayRef);
     } else {
       q.set("img", artistImg);
       q.set("name", artistName);
@@ -113,28 +173,32 @@ export function CreativeForm({
     if (cardBg) q.set("bg", cardBg);
     if (blobColor) q.set("color", blobColor);
     if (blobShape) q.set("shape", blobShape);
+    if (imgZoom !== 100) q.set("iscale", String(imgZoom / 100));
+    if (imgX !== 0) q.set("ix", String(imgX));
+    if (imgY !== 0) q.set("iy", String(imgY));
+    if (bgZoom !== 100) q.set("bgscale", String(bgZoom / 100));
     return `/api/creative?${q.toString()}`;
-  }, [ready, kind, homeId, awayId, artistImg, artistName, dateText, price, currency, mode, time, locationText, cardBg, blobColor, blobShape]);
+  }, [ready, kind, homeRef, awayRef, artistImg, artistName, dateText, price, currency, mode, time, locationText, cardBg, blobColor, blobShape, imgZoom, imgX, imgY, bgZoom]);
 
   // Design-base download: full branded canvas WITHOUT blob/subject image —
   // works even when the event has no cut-out image yet (that's the point).
   const bareUrl = useMemo(() => {
     const subjectOk =
-      kind === "match" ? homeId && awayId && homeId !== awayId : artistName.trim();
+      kind === "match" ? homeRef && awayRef && homeRef !== awayRef : artistName.trim();
     if (!subjectOk || !dateText || !(Number(price) > 0)) return null;
     const q = new URLSearchParams({
       kind, date: dateText, price, cur: currency, mode, size: "square", bare: "1",
     });
     if (kind === "match") {
-      q.set("home", homeId);
-      q.set("away", awayId);
+      q.set("home", homeRef);
+      q.set("away", awayRef);
     } else {
       q.set("name", artistName);
     }
     if (time) q.set("time", time);
     if (locationText) q.set("loc", locationText);
     return `/api/creative?${q.toString()}`;
-  }, [kind, homeId, awayId, artistName, dateText, price, currency, mode, time, locationText]);
+  }, [kind, homeRef, awayRef, artistName, dateText, price, currency, mode, time, locationText]);
 
   const onGenerate = async () => {
     if (!ready) return;
@@ -151,11 +215,15 @@ export function CreativeForm({
         bgKind: (cardBg || undefined) as "blob" | "football" | "tennis" | "cars" | undefined,
         colorIndex: blobColor ? Number(blobColor) : null,
         shapeIndex: blobShape ? Number(blobShape) : null,
+        imgScale: imgZoom !== 100 ? imgZoom / 100 : null,
+        imgOffsetX: imgX !== 0 ? imgX : null,
+        imgOffsetY: imgY !== 0 ? imgY : null,
+        bgScale: bgZoom !== 100 ? bgZoom / 100 : null,
         attachEventId: eventId && attach ? Number(eventId) : null,
       };
       const res = await generateCreative(
         kind === "match"
-          ? { kind: "match", homeId: Number(homeId), awayId: Number(awayId), ...base }
+          ? { kind: "match", homeRef, awayRef, ...base }
           : { kind: "artist", imageUrl: artistImg, artistName, ...base },
       );
       setResult(res);
@@ -273,25 +341,21 @@ export function CreativeForm({
           <>
             <div>
               <Label>Home team</Label>
-              <Select value={homeId} onValueChange={setHomeId}>
-                <SelectTrigger><SelectValue placeholder="Select home team" /></SelectTrigger>
-                <SelectContent>
-                  {teams.map((t) => (
-                    <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SubjectCombobox
+                value={homeRef}
+                onChange={setHomeRef}
+                subjects={subjects}
+                placeholder="Select home team"
+              />
             </div>
             <div>
               <Label>Away team</Label>
-              <Select value={awayId} onValueChange={setAwayId}>
-                <SelectTrigger><SelectValue placeholder="Select away team" /></SelectTrigger>
-                <SelectContent>
-                  {teams.map((t) => (
-                    <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SubjectCombobox
+                value={awayRef}
+                onChange={setAwayRef}
+                subjects={subjects}
+                placeholder="Select away team"
+              />
             </div>
           </>
         ) : (
@@ -412,6 +476,80 @@ export function CreativeForm({
                 <SelectItem value="2">צורה 3</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+        </div>
+
+        <div className="border rounded-md p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <Label>גודל ומיקום (נשמר בתמונה הסופית)</Label>
+            {(imgZoom !== 100 || imgX !== 0 || imgY !== 0 || bgZoom !== 100) && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => { setImgZoom(100); setImgX(0); setImgY(0); setBgZoom(100); }}
+              >
+                איפוס
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">זום תמונה</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">{imgZoom}%</span>
+              </div>
+              <Slider
+                className="mt-1"
+                min={50}
+                max={200}
+                step={5}
+                value={[imgZoom]}
+                onValueChange={([v]) => setImgZoom(v)}
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">זום רקע</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">{bgZoom}%</span>
+              </div>
+              <Slider
+                className="mt-1"
+                min={50}
+                max={200}
+                step={5}
+                value={[bgZoom]}
+                onValueChange={([v]) => setBgZoom(v)}
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">מיקום תמונה ↔</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">{imgX}%</span>
+              </div>
+              <Slider
+                className="mt-1"
+                min={-50}
+                max={50}
+                step={1}
+                value={[imgX]}
+                onValueChange={([v]) => setImgX(v)}
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">מיקום תמונה ↕</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">{imgY}%</span>
+              </div>
+              <Slider
+                className="mt-1"
+                min={-50}
+                max={50}
+                step={1}
+                value={[imgY]}
+                onValueChange={([v]) => setImgY(v)}
+              />
+            </div>
           </div>
         </div>
 

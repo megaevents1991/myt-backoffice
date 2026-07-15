@@ -92,6 +92,13 @@ export type CreativeInput = {
   // null/undefined = the template's defaults per card.
   colorIndex?: number | null;
   shapeIndex?: number | null;
+  // Designer sizing controls, all neutral by default. Scales are 0.5–2 (1 =
+  // 100%); offsets are % of the card the image sits in (X+ = right, Y+ = down).
+  // Match mode applies the same transform to both sides.
+  imgScale?: number | null;
+  imgOffsetX?: number | null;
+  imgOffsetY?: number | null;
+  bgScale?: number | null;
 };
 
 export function buildPriceText(mode: "package" | "ticket", price: number, currency: string): string {
@@ -102,6 +109,7 @@ export function buildPriceText(mode: "package" | "ticket", price: number, curren
 // covering it, image on top.
 function BlobCard({
   img, color, shapeIndex, w, h, radius, photoUrl,
+  imgScale = 1, imgOffsetX = 0, imgOffsetY = 0, bgScale = 1,
 }: {
   img: string;
   color: string;
@@ -110,11 +118,23 @@ function BlobCard({
   h: number;
   radius: number;
   photoUrl?: string | null;
+  imgScale?: number;
+  imgOffsetX?: number;
+  imgOffsetY?: number;
+  bgScale?: number;
 }) {
   const shape = BLOB_SHAPES[shapeIndex % BLOB_SHAPES.length];
-  const cover = Math.max(w / shape.w, h / shape.h) * 1.05;
+  // bgScale folds into the cover factor so blob stays centered while zooming.
+  const cover = Math.max(w / shape.w, h / shape.h) * 1.05 * bgScale;
   const bw = Math.round(shape.w * cover);
   const bh = Math.round(shape.h * cover);
+  // Subject image: scaled dimensions + px offsets (satori-safe, no transform).
+  const iw = Math.round((w - 24) * imgScale);
+  const ih = Math.round((h - 40) * imgScale);
+  const ox = Math.round((imgOffsetX / 100) * w);
+  const oy = Math.round((imgOffsetY / 100) * h);
+  const pw = Math.round(w * bgScale);
+  const ph = Math.round(h * bgScale);
   return (
     <div
       style={{
@@ -134,10 +154,10 @@ function BlobCard({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={photoUrl}
-          width={w}
-          height={h}
+          width={pw}
+          height={ph}
           alt=""
-          style={{ position: "absolute", top: 0, left: 0, width: w, height: h, objectFit: "cover" }}
+          style={{ position: "absolute", top: (h - ph) / 2, left: (w - pw) / 2, width: pw, height: ph, objectFit: "cover" }}
         />
       ) : (
         <div
@@ -158,10 +178,10 @@ function BlobCard({
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={img}
-        width={w - 24}
-        height={h - 40}
+        width={iw}
+        height={ih}
         alt=""
-        style={{ width: w - 24, height: h - 40, objectFit: "contain", position: "relative" }}
+        style={{ width: iw, height: ih, objectFit: "contain", position: "relative", left: ox, top: oy }}
       />
     </div>
   );
@@ -171,10 +191,23 @@ export function MatchTemplate({
   kind, homeLogoUrl, awayLogoUrl, homeName, awayName,
   dateText, timeText, locationText, priceText, bare,
   bgKind, colorIndex, shapeIndex,
+  imgScale, imgOffsetX, imgOffsetY, bgScale,
   width, height, bgUrl,
 }: CreativeInput & { width: number; height: number; bgUrl: string }) {
   const isSquare = height > 700;
   void bgUrl; // brand gradient canvas replaced the static background asset
+
+  // Designer sizing controls — neutral unless overridden.
+  const iScale = imgScale ?? 1;
+  const iOffX = imgOffsetX ?? 0;
+  const iOffY = imgOffsetY ?? 0;
+  const bScale = bgScale ?? 1;
+  const sizing = {
+    imgScale: iScale,
+    imgOffsetX: iOffX,
+    imgOffsetY: iOffY,
+    bgScale: bScale,
+  };
 
   const cardW = kind === "artist" ? (isSquare ? 520 : 330) : isSquare ? 380 : 250;
   const cardH = kind === "artist" ? (isSquare ? 560 : 380) : isSquare ? 440 : 300;
@@ -250,7 +283,7 @@ export function MatchTemplate({
           {bare ? (
             <div style={{ display: "flex", width: cardW, height: cardH }} />
           ) : (
-            <BlobCard img={homeLogoUrl} color={artistColor} shapeIndex={artistShape} w={cardW} h={cardH} radius={isSquare ? 76 : 54} photoUrl={photoUrl} />
+            <BlobCard img={homeLogoUrl} color={artistColor} shapeIndex={artistShape} w={cardW} h={cardH} radius={isSquare ? 76 : 54} photoUrl={photoUrl} {...sizing} />
           )}
           <div style={{ display: "flex", fontSize: isSquare ? 58 : 38, fontWeight: 700, marginTop: isSquare ? 24 : 12, textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}>
             {bidiVisual(homeName)}
@@ -277,14 +310,21 @@ export function MatchTemplate({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={photoUrl}
-              width={panelW}
-              height={panelH}
+              width={Math.round(panelW * bScale)}
+              height={Math.round(panelH * bScale)}
               alt=""
-              style={{ position: "absolute", top: 0, left: 0, width: panelW, height: panelH, objectFit: "cover" }}
+              style={{
+                position: "absolute",
+                top: Math.round((panelH - panelH * bScale) / 2),
+                left: Math.round((panelW - panelW * bScale) / 2),
+                width: Math.round(panelW * bScale),
+                height: Math.round(panelH * bScale),
+                objectFit: "cover",
+              }}
             />
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={awayLogoUrl ?? ""} alt="" style={{ width: panelLogo, height: panelLogo, objectFit: "contain" }} />
+              <img src={awayLogoUrl ?? ""} alt="" style={{ width: Math.round(panelLogo * iScale), height: Math.round(panelLogo * iScale), objectFit: "contain", position: "relative", left: Math.round((iOffX / 100) * panelLogo), top: Math.round((iOffY / 100) * panelLogo) }} />
               <div style={{ display: "flex", fontSize: isSquare ? 38 : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 10px rgba(0,0,0,0.9)" }}>
                 {bidiVisual(awayName ?? "")}
               </div>
@@ -294,7 +334,7 @@ export function MatchTemplate({
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={homeLogoUrl} alt="" style={{ width: panelLogo, height: panelLogo, objectFit: "contain" }} />
+              <img src={homeLogoUrl} alt="" style={{ width: Math.round(panelLogo * iScale), height: Math.round(panelLogo * iScale), objectFit: "contain", position: "relative", left: Math.round((iOffX / 100) * panelLogo), top: Math.round((iOffY / 100) * panelLogo) }} />
               <div style={{ display: "flex", fontSize: isSquare ? 38 : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 10px rgba(0,0,0,0.9)" }}>
                 {bidiVisual(homeName)}
               </div>
@@ -307,7 +347,7 @@ export function MatchTemplate({
             {bare ? (
               <div style={{ display: "flex", width: cardW, height: cardH }} />
             ) : (
-              <BlobCard img={awayLogoUrl ?? ""} color={awayColor} shapeIndex={awayShape} w={cardW} h={cardH} radius={36} />
+              <BlobCard img={awayLogoUrl ?? ""} color={awayColor} shapeIndex={awayShape} w={cardW} h={cardH} radius={36} {...sizing} />
             )}
             <div style={{ display: "flex", fontSize: isSquare ? 38 : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 8px rgba(0,0,0,0.7)" }}>
               {bidiVisual(awayName ?? "")}
@@ -322,7 +362,7 @@ export function MatchTemplate({
             {bare ? (
               <div style={{ display: "flex", width: cardW, height: cardH }} />
             ) : (
-              <BlobCard img={homeLogoUrl} color={homeColor} shapeIndex={homeShape} w={cardW} h={cardH} radius={36} />
+              <BlobCard img={homeLogoUrl} color={homeColor} shapeIndex={homeShape} w={cardW} h={cardH} radius={36} {...sizing} />
             )}
             <div style={{ display: "flex", fontSize: isSquare ? 38 : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 8px rgba(0,0,0,0.7)" }}>
               {bidiVisual(homeName)}

@@ -5,7 +5,11 @@ import {
   SIZES,
   type CreativeSize,
 } from "@/lib/creative/render";
-import { buildCreativeInput, type CreativeParams } from "@/lib/creative/input";
+import {
+  buildCreativeInput,
+  parseSubjectRef,
+  type CreativeParams,
+} from "@/lib/creative/input";
 
 // middleware.ts skips /api/* — auth enforced here via the session cookie.
 export async function GET(req: NextRequest) {
@@ -53,6 +57,13 @@ export async function GET(req: NextRequest) {
       : undefined;
   const colorParam = q.get("color");
   const shapeParam = q.get("shape");
+  // Designer sizing: iscale/bgscale = 0.5–2 zoom, ix/iy = −50..50 (% offset).
+  const numParam = (name: string): number | null => {
+    const v = q.get(name);
+    if (v === null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
   const base = {
     dateText,
     timeText: q.get("time") || null,
@@ -64,6 +75,10 @@ export async function GET(req: NextRequest) {
     bgKind,
     colorIndex: colorParam !== null && colorParam !== "" ? Number(colorParam) : null,
     shapeIndex: shapeParam !== null && shapeParam !== "" ? Number(shapeParam) : null,
+    imgScale: numParam("iscale"),
+    imgOffsetX: numParam("ix"),
+    imgOffsetY: numParam("iy"),
+    bgScale: numParam("bgscale"),
   } as const;
 
   let params: CreativeParams;
@@ -78,15 +93,22 @@ export async function GET(req: NextRequest) {
     }
     params = { kind: "artist", imageUrl, artistName, ...base };
   } else {
-    const homeId = Number(q.get("home"));
-    const awayId = Number(q.get("away"));
-    if (!homeId || !awayId || !dateText || !price || !(size in SIZES)) {
+    // home/away: "team:<id>", "logo:<id>", or a bare id (legacy = team).
+    const homeRef = q.get("home") ?? "";
+    const awayRef = q.get("away") ?? "";
+    if (
+      !parseSubjectRef(homeRef) ||
+      !parseSubjectRef(awayRef) ||
+      !dateText ||
+      !price ||
+      !(size in SIZES)
+    ) {
       return NextResponse.json(
-        { error: "Match creative requires: home, away, date, price; optional: time, loc, cur, mode, size" },
+        { error: "Match creative requires: home, away (team:<id> or logo:<id>), date, price; optional: time, loc, cur, mode, size" },
         { status: 400 },
       );
     }
-    params = { kind: "match", homeId, awayId, ...base };
+    params = { kind: "match", homeRef, awayRef, ...base };
   }
 
   try {
