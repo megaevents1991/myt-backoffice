@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { guardAdminRoute } from "@/lib/auth/guards";
 
 export async function GET(request: NextRequest) {
+  // Triggered from the dashboard (RevalidateButton / events page) — require an
+  // authenticated admin so it can't be spammed to cause a cache stampede.
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
   try {
     // Get the domains and secret from environment variables
     const hotelServiceUrl = process.env.NEXT_SECRET_HOTEL_SERVICE_URL;

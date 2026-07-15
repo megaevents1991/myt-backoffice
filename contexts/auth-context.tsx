@@ -3,12 +3,9 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
+import type { SessionUser } from "@/types/auth.types";
 
-type User = {
-  id: string;
-  email: string;
-  role: string;
-};
+type User = SessionUser;
 
 type AuthContextType = {
   user: User | null;
@@ -34,8 +31,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        console.log("Checking session...");
-
         // Add cache busting to prevent stale responses
         const timestamp = new Date().getTime();
         const response = await fetch(`/api/auth/session?t=${timestamp}`, {
@@ -48,15 +43,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (response.ok) {
           const data = await response.json();
-          console.log("Session data:", data);
           if (data.user) {
             setUser(data.user);
           }
-        } else {
-          console.log("Session check failed:", await response.text());
         }
-      } catch (error) {
-        console.error("Failed to fetch session:", error);
+      } catch {
+        // ignore — session check failure just leaves user null
       } finally {
         setIsLoading(false);
       }
@@ -67,8 +59,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      console.log("Attempting login with:", email);
-
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -76,15 +66,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         credentials: "include",
       });
 
-      console.log("Login response status:", response.status);
-
       if (!response.ok) {
-        console.error("Login failed:", await response.text());
         return false;
       }
 
       const data = await response.json();
-      console.log("Login response data:", data);
 
       if (data.user) {
         setUser(data.user);
@@ -92,8 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       return false;
-    } catch (error) {
-      console.error("Login error:", error);
+    } catch {
       return false;
     }
   };

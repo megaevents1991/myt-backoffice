@@ -2,26 +2,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { syncTournaments } from '@/lib/services/sports-events-sync';
+import { guardCronRoute } from '@/lib/auth/guards';
 
 /**
  * Cron job to sync tournaments data monthly (every 1st of the month)
  * This endpoint should be called by Vercel cron job
- * Security: Uses a secret key to prevent unauthorized access
+ * Security: Vercel CRON_SECRET (Authorization: Bearer) with legacy ?key fallback
  */
 export async function GET(request: NextRequest) {
+  const denied = await guardCronRoute(request);
+  if (denied) return denied;
   try {
-    const { searchParams } = new URL(request.url);
-    const key = searchParams.get('key');
-
-    // Security check - prevent unauthorized access
-    if (!key || key !== process.env.NEXT_SECRET_CRON_SECRET_KEY) {
-      console.error('❌ Unauthorized cron job access attempt');
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     console.log('🗓️ Monthly tournaments sync cron job started');
 
     // Use the shared sync service directly

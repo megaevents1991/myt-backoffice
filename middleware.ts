@@ -1,45 +1,53 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { SESSION_COOKIE, verifySessionValue } from "@/lib/auth/session";
+
+const PARTNER_ROLES = ["agent", "affiliate"];
 
 export async function middleware(req: NextRequest) {
-  // Get session cookie
-  const session = req.cookies.get("session");
-  
-  // Debug log info
-  console.log(`[Middleware] Path: ${req.nextUrl.pathname}`);
-  console.log(`[Middleware] Session: ${session ? session.value : "missing"}`);
-  
-  // Skip static files, API routes and images in middleware
   const pathname = req.nextUrl.pathname;
+
+  // Skip static files, API routes and images. API routes and server actions
+  // enforce their own auth via guards.
   if (
-    pathname.startsWith('/_next/') || 
-    pathname.includes('.') ||
-    pathname.startsWith('/api/')
+    pathname.startsWith("/_next/") ||
+    pathname.includes(".") ||
+    pathname.startsWith("/api/")
   ) {
-    console.log("[Middleware] Skipping middleware for static file or API");
     return NextResponse.next();
   }
-  
-  // Check if the request is for an auth page
+
+  const session = await verifySessionValue(req.cookies.get(SESSION_COOKIE)?.value);
   const isAuthPage = pathname.startsWith("/auth");
-  
-  // If user is signed in and trying to access auth page, redirect to dashboard
+  const home = session && PARTNER_ROLES.includes(session.role) ? "/portal" : "/dashboard";
+
+  // Signed-in user hitting an auth page → send to their home.
   if (session && isAuthPage) {
-    console.log("[Middleware] Redirecting authenticated user to dashboard");
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+    return NextResponse.redirect(new URL(home, req.url));
   }
-  
-  // If user is not signed in and trying to access protected page, redirect to login
+
+  // Unauthenticated user hitting a protected page → login.
   if (!session && !isAuthPage && pathname !== "/") {
-    console.log("[Middleware] Redirecting unauthenticated user to login");
     return NextResponse.redirect(new URL("/auth/login", req.url));
   }
-  
-  console.log("[Middleware] Proceeding normally");
+
+  if (session) {
+    const isPortal = pathname === "/portal" || pathname.startsWith("/portal/");
+    const isUsersAdmin = pathname === "/users" || pathname.startsWith("/users/");
+
+    // Partner roles may ONLY use /portal (staff may also enter /portal to debug).
+    if (PARTNER_ROLES.includes(session.role) && !isPortal && pathname !== "/") {
+      return NextResponse.redirect(new URL("/portal", req.url));
+    }
+    // /users is for superadmin/admin only.
+    if (isUsersAdmin && session.role !== "admin" && session.role !== "superadmin") {
+      return NextResponse.redirect(new URL(home, req.url));
+    }
+  }
+
   return NextResponse.next();
 }
 
-// Use a simple matcher pattern
 export const config = {
-  matcher: '/((?!api|_next/static|_next/image|favicon.ico).*)',
+  matcher: "/((?!api|_next/static|_next/image|favicon.ico).*)",
 };

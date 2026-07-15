@@ -9,6 +9,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > these tables (with a temporary Contentful fallback). **Phase 3, pending:**
 > once the fallback is removed in main, Contentful is fully retired.
 
+> **🔒 TODO — SECURITY HARDENING (deferred, do carefully later).**
+> Branch `fix/security-hardening` added signed admin session (`lib/auth/`), cron/route
+> guards, storage path checks, and guarded the exchange-rate + reservations-series
+> routes. **Still open — fix carefully later:**
+> - **User management.** Admins share ONE hardcoded env credential
+>   (`NEXT_SECRET_ADMIN_EMAIL`/`_PASSWORD`, checked in `lib/actions/auth-actions.ts`);
+>   no per-person accounts, roles, or audit. Two overlapping session systems
+>   (`lib/auth/session.ts` HMAC vs `auth-actions.ts` Supabase-session cookie) — consolidate.
+>   Plan: unify on Supabase Auth + roles table. See Claude memory `auth-user-management-todo`.
+> - **Mass-assignment.** Several actions spread whole client objects into price/commission
+>   columns (`event-actions.ts`, `offline-flight-actions.ts`, `partner-actions.ts`) — map
+>   columns explicitly + validate prices/commission are positive finite (pattern:
+>   `offline-hotel-room-actions.ts` `replaceOfflineHotelRooms`).
+> - **Unauth resource-abuse proxies** (`validate-airline` headless Chromium, `flights/search`
+>   Amadeus prod, `*/tickets`, `competitor-pricing`) — add auth or shared-secret + rate limit.
+> - **Secret in URL** on `hotels/search` — move to a header + rotate (cross-project with main).
+
 ## Always-on rules (auto-loaded)
 
 Tech standards:
@@ -80,7 +97,10 @@ Ticket prices (from sports events) are stored in **cents** — divide by 100. Us
 
 ### Cron Jobs (Vercel)
 
-Defined in `vercel.json`. All routes secured with `?key=monthlyAlonSecret`:
+Defined in `vercel.json`. All cron routes are secured via `guardCronRoute()`
+(`lib/auth/guards.ts`), which accepts Vercel's `Authorization: Bearer $CRON_SECRET`
+header (set `CRON_SECRET` in Vercel) with a legacy `?key=$NEXT_SECRET_CRON_SECRET_KEY`
+fallback for manual triggers:
 
 - `dailyEventsSync` — sports events daily
 - `monthlyTournamentsSync` — sports tournaments monthly

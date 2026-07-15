@@ -21,6 +21,7 @@ import {
   LayoutTemplate,
   Percent,
   Image as ImageIcon,
+  ScrollText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -41,6 +42,8 @@ const navItems: NavItem[] = [
   { name: "Partners", href: "/partners", icon: Users },
   { name: "Coupons", href: "/coupons", icon: Percent },
   { name: "Reservations", href: "/reservations", icon: ClipboardList },
+  { name: "Users", href: "/users", icon: Users },
+  { name: "Audit Log", href: "/audit-log", icon: ScrollText },
   { type: "divider" },
   { name: "Offline Flights (Mega)", href: "/offline-flights", icon: Plane },
   { name: "Offline Hotels (Mega)", href: "/offline-hotels", icon: Hotel },
@@ -58,8 +61,16 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+
+  // Admin-only entries (e.g. Users) are hidden for everyone else.
+  const visibleItems = navItems.filter(
+    (item) =>
+      !("href" in item && item.href === "/users") ||
+      user?.role === "admin" ||
+      user?.role === "superadmin"
+  );
 
   return (
     <>
@@ -86,7 +97,7 @@ export function Sidebar() {
             <h2 className="text-xl font-bold">Backoffice</h2>
           </div>
           <nav className="flex-1 p-4">
-            {navItems.map((item, index) => {
+            {visibleItems.map((item, index) => {
               // Handle dividers
               if ("type" in item && item.type === "divider") {
                 return (

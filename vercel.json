@@ -1,36 +1,40 @@
 {
   "crons": [
     {
-      "path": "/api/cron/partnerMonthlyReport?key=monthlyAlonSecret",
+      "path": "/api/cron/partnerMonthlyReport",
       "schedule": "0 0 1 * *"
     },
     {
-      "path": "/api/cron/monthlyTournamentsSync?key=monthlyAlonSecret",
+      "path": "/api/cron/monthlyTournamentsSync",
       "schedule": "0 0 1 * *"
     },
     {
-      "path": "/api/cron/dailyEventsSync?key=monthlyAlonSecret",
+      "path": "/api/cron/dailyEventsSync",
       "schedule": "1 0 * * *"
     },
     {
-      "path": "/api/cron/dailyLiveEventsSync?key=monthlyAlonSecret",
+      "path": "/api/cron/dailyLiveEventsSync",
       "schedule": "0 0,12 * * *"
     },
     {
-      "path": "/api/cron/ticketPriceSync?key=monthlyAlonSecret",
+      "path": "/api/cron/ticketPriceSync",
       "schedule": "0 */2 * * *"
     },
     {
-      "path": "/api/cron/nightlyTixstockSync?key=monthlyAlonSecret",
+      "path": "/api/cron/nightlyTixstockSync",
       "schedule": "0 2 * * *"
     },
     {
-      "path": "/api/cron/nightlyTixstockPriceSync?key=monthlyAlonSecret",
+      "path": "/api/cron/nightlyTixstockPriceSync",
       "schedule": "0 3 * * *"
     }
   ],
   "functions": {
     "app/api/validate-airline/route.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    },
+    "app/api/quotes/[id]/pdf/route.ts": {
       "memory": 1024,
       "maxDuration": 30
     },
