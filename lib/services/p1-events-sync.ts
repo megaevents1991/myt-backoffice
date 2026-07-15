@@ -1,5 +1,6 @@
 // lib/services/p1-events-sync.ts
-"use server"
+// Server-only sync service — called by cron/API routes. Deliberately NOT a
+// Server Action ("use server" removed): exports must not be client-dispatchable.
 
 import { supabase } from '@/lib/supabase-server';
 import { P1Event, P1Ticket, P1EventDB } from '@/types/p1-events.types';

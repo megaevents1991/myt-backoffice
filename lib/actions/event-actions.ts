@@ -1,11 +1,12 @@
 "use server"
 
-import { requireAdmin } from "@/lib/auth/guards";
+import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server"
 import type { Event } from "@/types/app.types"
+import { logAudit, diffChanges, fetchBefore } from "@/lib/audit"
 
 export async function getEvents() {
-  await requireAdmin();
+  await requireStaff();
   const { data, error } = await supabase.from("events").select("*").order("date", { ascending: true })
 
   if (error) throw error
@@ -13,7 +14,7 @@ export async function getEvents() {
 }
 
 export async function getEvent(id: number) {
-  await requireAdmin();
+  await requireStaff();
   const { data, error } = await supabase.from("events").select("*").eq("id", id).single()
 
   if (error) throw error
@@ -21,7 +22,7 @@ export async function getEvent(id: number) {
 }
 
 export async function createEvent(event: Omit<Event, "id">) {
-  await requireAdmin();
+  await requireStaff();
   // Ensure is_deleted is null for new events
   const eventData = {
     ...event,
@@ -31,41 +32,58 @@ export async function createEvent(event: Omit<Event, "id">) {
   const { data, error } = await supabase.from("events").insert(eventData).select()
 
   if (error) throw error
-  return data[0] as Event
+  const created = data[0] as Event
+  await logAudit({ action: "create", entityType: "event", entityId: created.id, changes: eventData })
+  return created
 }
 
 export async function updateEvent(id: number, event: Partial<Event>) {
-  await requireAdmin();
+  await requireStaff();
+  const before = await fetchBefore("events", "id", id, event)
   const { data, error } = await supabase.from("events").update(event).eq("id", id).select()
 
   if (error) throw error
+  await logAudit({ action: "update", entityType: "event", entityId: id, changes: diffChanges(before, event) })
   return data[0] as Event
 }
 
 export async function softDeleteEvent(id: number) {
-  await requireAdmin();
+  await requireStaff();
   const today = new Date()
   const formattedDate = `${(today.getMonth() + 1).toString().padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}-${today.getFullYear()}`
 
   const { data, error } = await supabase.from("events").update({ is_deleted: formattedDate }).eq("id", id).select()
 
   if (error) throw error
+  await logAudit({
+    action: "delete",
+    entityType: "event",
+    entityId: id,
+    changes: { is_deleted: formattedDate },
+  })
   return data[0] as Event
 }
 
 export async function bulkSoftDeleteEvents(ids: number[]) {
-  await requireAdmin();
+  await requireStaff();
   const today = new Date()
   const formattedDate = `${(today.getMonth() + 1).toString().padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}-${today.getFullYear()}`
 
   const { data, error } = await supabase.from("events").update({ is_deleted: formattedDate }).in("id", ids).select()
 
   if (error) throw error
+  await logAudit({
+    action: "delete",
+    entityType: "event",
+    entityId: null,
+    changes: { is_deleted: formattedDate },
+    metadata: { ids, count: ids.length },
+  })
   return data as Event[]
 }
 
-export async function duplicateEvent(id: number) {
-  await requireAdmin();
+export async function duplicateEvent(id: number, opts?: { skipAudit?: boolean }) {
+  await requireStaff();
   // First get the event to duplicate
   const { data: eventToDuplicate, error: fetchError } = await supabase.from("events").select("*").eq("id", id).single()
 
@@ -84,32 +102,54 @@ export async function duplicateEvent(id: number) {
   const { data: newEventData, error: insertError } = await supabase.from("events").insert(newEvent).select()
 
   if (insertError) throw insertError
-  return newEventData[0] as Event
+  const created = newEventData[0] as Event
+  if (!opts?.skipAudit) {
+    await logAudit({
+      action: "create",
+      entityType: "event",
+      entityId: created.id,
+      metadata: { duplicated_from: id },
+    })
+  }
+  return created
 }
 
 export async function bulkUpdateEvents(ids: number[], update: Partial<Event>) {
-  await requireAdmin();
+  await requireStaff();
   const { data, error } = await supabase.from("events").update(update).in("id", ids).select()
 
   if (error) throw error
+  await logAudit({
+    action: "update",
+    entityType: "event",
+    entityId: null,
+    changes: update,
+    metadata: { ids, count: ids.length },
+  })
   return data as Event[]
 }
 
 export async function bulkDuplicateEvents(ids: number[]) {
-  await requireAdmin();
+  await requireStaff();
   const duplicatedEvents: Event[] = []
 
   // We need to duplicate each event one by one
   for (const id of ids) {
-    const duplicatedEvent = await duplicateEvent(id)
+    const duplicatedEvent = await duplicateEvent(id, { skipAudit: true })
     duplicatedEvents.push(duplicatedEvent)
   }
 
+  await logAudit({
+    action: "create",
+    entityType: "event",
+    entityId: null,
+    metadata: { ids, count: ids.length },
+  })
   return duplicatedEvents
 }
 
 export async function getActiveEvents() {
-  await requireAdmin();
+  await requireStaff();
   const { data, error } = await supabase
     .from("events")
     .select("*")
@@ -121,8 +161,10 @@ export async function getActiveEvents() {
 }
 
 export async function syncEventPrices(id: number) {
-  await requireAdmin();
+  await requireStaff();
   const { ticketPriceSyncService } = await import("@/lib/services/ticket-price-sync")
-  return await ticketPriceSyncService.syncSingleEvent(id)
+  const result = await ticketPriceSyncService.syncSingleEvent(id)
+  await logAudit({ action: "sync_triggered", entityType: "event", entityId: id })
+  return result
 }
 

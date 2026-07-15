@@ -1,42 +1,63 @@
 /**
  * Authorization guards for the backoffice.
  *
- * The whole dashboard is a single-admin surface with no public/multi-tenant
- * callers, and it runs on the RLS-bypassing service-role Supabase client — so
- * every server action and every mutating/data API route must confirm the caller
- * holds a valid admin session (or, for cron, the Vercel CRON_SECRET) before
- * touching the database.
+ * Role-based access control: superadmin, admin, editor, agent, affiliate. Every server action
+ * and mutating/data API route must call a role guard (requireRole, requireStaff,
+ * requireAdmin, requirePartner) as the first line — they confirm the caller holds
+ * the required role before the RLS-bypassing service-role Supabase client touches
+ * the database. For cron routes, use guardCronRoute(request) instead.
  */
 
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE, verifySessionValue } from "./session";
+import { SESSION_COOKIE, verifySessionValue, type SessionPayload } from "./session";
+import { STAFF_ROLES, type Role } from "@/types/auth.types";
 
-/** True if the request carries a valid signed admin session cookie. */
-export async function isAdmin(): Promise<boolean> {
+/** Verified session payload from the request cookie, or null. */
+export async function getSession(): Promise<SessionPayload | null> {
   const cookie = (await cookies()).get(SESSION_COOKIE);
   return verifySessionValue(cookie?.value);
 }
 
-/**
- * Guard for server actions ("use server"). Throws if the caller is not an
- * authenticated admin — call it as the first line of every mutating/data action.
- */
-export async function requireAdmin(): Promise<void> {
-  if (!(await isAdmin())) {
+/** Server-action guard: caller must hold one of the given roles. Returns the actor. */
+export async function requireRole(...roles: Role[]): Promise<SessionPayload> {
+  const session = await getSession();
+  if (!session || !roles.includes(session.role)) {
     throw new Error("Unauthorized");
   }
+  return session;
+}
+
+/** superadmin, admin or editor — the default guard for all dashboard mutations. */
+export async function requireStaff(): Promise<SessionPayload> {
+  return requireRole("superadmin", "admin", "editor");
+}
+
+/** superadmin or admin — user management. Per-target hierarchy enforced in user-actions. */
+export async function requireAdmin(): Promise<SessionPayload> {
+  return requireRole("superadmin", "admin");
+}
+
+/** superadmin only — managing admin-level accounts. */
+export async function requireSuperadmin(): Promise<SessionPayload> {
+  return requireRole("superadmin");
+}
+
+/** agent or affiliate with a linked partner code — portal actions. */
+export async function requirePartner(): Promise<SessionPayload & { partner_code: string }> {
+  const session = await requireRole("agent", "affiliate");
+  if (!session.partner_code) throw new Error("Unauthorized");
+  return session as SessionPayload & { partner_code: string };
 }
 
 /**
- * Guard for API route handlers. Returns a 401 NextResponse to return early, or
- * null when the caller is an authenticated admin.
- *
+ * Guard for API route handlers used by dashboard staff.
  *   const denied = await guardAdminRoute();
  *   if (denied) return denied;
  */
 export async function guardAdminRoute(): Promise<NextResponse | null> {
-  if (await isAdmin()) return null;
+  const session = await getSession();
+  if (session && STAFF_ROLES.includes(session.role)) return null;
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 

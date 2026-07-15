@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionValue } from "@/lib/auth/session";
 
+const PARTNER_ROLES = ["agent", "affiliate"];
+
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
-  // Skip static files, API routes and images in middleware. API routes and
-  // server actions enforce their own auth via requireAdmin()/guardAdminRoute().
+  // Skip static files, API routes and images. API routes and server actions
+  // enforce their own auth via guards.
   if (
     pathname.startsWith("/_next/") ||
     pathname.includes(".") ||
@@ -15,26 +17,37 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Validate the SIGNED session token, not merely the cookie's presence — a
-  // forged/expired/junk value no longer passes.
-  const session = req.cookies.get(SESSION_COOKIE);
-  const isAuthed = await verifySessionValue(session?.value);
+  const session = await verifySessionValue(req.cookies.get(SESSION_COOKIE)?.value);
   const isAuthPage = pathname.startsWith("/auth");
+  const home = session && PARTNER_ROLES.includes(session.role) ? "/portal" : "/dashboard";
 
-  // Signed-in user hitting an auth page → send to dashboard.
-  if (isAuthed && isAuthPage) {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+  // Signed-in user hitting an auth page → send to their home.
+  if (session && isAuthPage) {
+    return NextResponse.redirect(new URL(home, req.url));
   }
 
-  // Unauthenticated user hitting a protected page → send to login.
-  if (!isAuthed && !isAuthPage && pathname !== "/") {
+  // Unauthenticated user hitting a protected page → login.
+  if (!session && !isAuthPage && pathname !== "/") {
     return NextResponse.redirect(new URL("/auth/login", req.url));
+  }
+
+  if (session) {
+    const isPortal = pathname === "/portal" || pathname.startsWith("/portal/");
+    const isUsersAdmin = pathname === "/users" || pathname.startsWith("/users/");
+
+    // Partner roles may ONLY use /portal (staff may also enter /portal to debug).
+    if (PARTNER_ROLES.includes(session.role) && !isPortal && pathname !== "/") {
+      return NextResponse.redirect(new URL("/portal", req.url));
+    }
+    // /users is for superadmin/admin only.
+    if (isUsersAdmin && session.role !== "admin" && session.role !== "superadmin") {
+      return NextResponse.redirect(new URL(home, req.url));
+    }
   }
 
   return NextResponse.next();
 }
 
-// Use a simple matcher pattern
 export const config = {
-  matcher: '/((?!api|_next/static|_next/image|favicon.ico).*)',
+  matcher: "/((?!api|_next/static|_next/image|favicon.ico).*)",
 };

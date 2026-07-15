@@ -1,13 +1,14 @@
 "use server";
 
-import { requireAdmin } from "@/lib/auth/guards";
+import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import type {
-  Location, 
-  CreateLocationData, 
-  UpdateLocationData, 
-  LocationWithDistance 
+  Location,
+  CreateLocationData,
+  UpdateLocationData,
+  LocationWithDistance
 } from "@/types/location.types";
+import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 
 // Calculate distance between two points using Haversine formula
 function calculateDistance(
@@ -28,7 +29,7 @@ function calculateDistance(
 }
 
 export async function getLocations(): Promise<Location[]> {
-  await requireAdmin();
+  await requireStaff();
   const { data, error } = await supabase
     .from("locations")
     .select("*")
@@ -43,7 +44,7 @@ export async function getLocations(): Promise<Location[]> {
 }
 
 export async function getLocationById(id: number): Promise<Location | null> {
-  await requireAdmin();
+  await requireStaff();
   const { data, error } = await supabase
     .from("locations")
     .select("*")
@@ -62,7 +63,7 @@ export async function getLocationById(id: number): Promise<Location | null> {
 }
 
 export async function createLocation(locationData: CreateLocationData): Promise<Location> {
-  await requireAdmin();
+  await requireStaff();
   const { data, error } = await supabase
     .from("locations")
     .insert([locationData])
@@ -74,14 +75,24 @@ export async function createLocation(locationData: CreateLocationData): Promise<
     throw new Error(`Failed to create location: ${error.message}`);
   }
 
-  return data;
+  const created = data as Location;
+  await logAudit({
+    action: "create",
+    entityType: "location",
+    entityId: created.id,
+    changes: { ...locationData },
+  });
+
+  return created;
 }
 
 export async function updateLocation(
-  id: number, 
+  id: number,
   locationData: UpdateLocationData
 ): Promise<Location> {
-  await requireAdmin();
+  await requireStaff();
+  const payload = { ...locationData };
+  const auditBefore = await fetchBefore("locations", "id", id, payload);
   const { data, error } = await supabase
     .from("locations")
     .update(locationData)
@@ -94,11 +105,18 @@ export async function updateLocation(
     throw new Error(`Failed to update location: ${error.message}`);
   }
 
+  await logAudit({
+    action: "update",
+    entityType: "location",
+    entityId: id,
+    changes: diffChanges(auditBefore, payload),
+  });
+
   return data;
 }
 
 export async function deleteLocation(id: number): Promise<void> {
-  await requireAdmin();
+  await requireStaff();
   const { error } = await supabase
     .from("locations")
     .delete()
@@ -108,13 +126,15 @@ export async function deleteLocation(id: number): Promise<void> {
     console.error("Error deleting location:", error);
     throw new Error(`Failed to delete location: ${error.message}`);
   }
+
+  await logAudit({ action: "delete", entityType: "location", entityId: id });
 }
 
 export async function findNearestLocation(
   latitude: number, 
   longitude: number
 ): Promise<LocationWithDistance | null> {
-  await requireAdmin();
+  await requireStaff();
   const locations = await getLocations();
 
   if (locations.length === 0) {
@@ -137,7 +157,7 @@ export async function getLocationsWithinRadius(
   longitude: number, 
   radiusKm: number = 100
 ): Promise<LocationWithDistance[]> {
-  await requireAdmin();
+  await requireStaff();
   const locations = await getLocations();
 
   // Calculate distances and filter by radius

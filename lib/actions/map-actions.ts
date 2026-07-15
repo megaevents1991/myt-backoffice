@@ -1,11 +1,11 @@
 "use server";
 
-import { requireAdmin } from "@/lib/auth/guards";
+import { requireStaff } from "@/lib/auth/guards";
 import fs from 'fs';
 import path from 'path';
 
 export async function getDynamicMaps() {
-  await requireAdmin();
+  await requireStaff();
   const publicDir = path.join(process.cwd(), 'public');
   let maps: { name: string; path: string }[] = [];
 

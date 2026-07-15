@@ -1,11 +1,11 @@
 "use server"
 
-import { requireAdmin } from "@/lib/auth/guards";
+import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server"
 import { getReservationEventOrderInfoPrimaryName } from "@/lib/utils"
 
 export async function getDashboardCounts() {
-  await requireAdmin();
+  await requireStaff();
   try {
     let eventsCount = 0;
     let agentsCount = 0;
@@ -85,7 +85,7 @@ export async function getDashboardCounts() {
 }
 
 export async function getDashboardStats() {
-  await requireAdmin();
+  await requireStaff();
   try {
     type ReservationRow = { created_at?: string; more_pax_info: { first_name?: string; last_name?: string }[] | null; status?: string; event_order_info?: any | null; aff_partner_tracking_code?: string | null }
     const { data: paidReservations, error: paidError } = await supabase

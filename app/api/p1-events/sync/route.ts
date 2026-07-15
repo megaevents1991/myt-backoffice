@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { syncP1Events } from '@/lib/services/p1-events-sync';
 import { guardAdminRoute } from '@/lib/auth/guards';
+import { logAudit } from '@/lib/audit';
 
 /**
  * Sync API endpoint to cache P1 events data from XML feeds to Supabase.
@@ -15,6 +16,7 @@ export async function POST(request: NextRequest) {
   try {
     // Use the shared sync service
     const results = await syncP1Events();
+    await logAudit({ action: "sync_triggered", entityType: "p1" });
 
     return NextResponse.json({
       success: true,

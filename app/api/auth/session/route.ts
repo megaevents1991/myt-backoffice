@@ -11,23 +11,20 @@ export async function GET(request: Request) {
       .slice(1)
       .join("=");
 
-    if (await verifySessionValue(sessionCookie)) {
+    const payload = await verifySessionValue(sessionCookie);
+    if (payload) {
       return NextResponse.json({
         user: {
-          id: "admin",
-          email: process.env.NEXT_SECRET_ADMIN_EMAIL,
-          role: "admin",
+          id: payload.sub,
+          email: payload.email,
+          role: payload.role,
+          partner_code: payload.partner_code,
         },
       });
     }
-
-    // No valid session found
     return NextResponse.json({ user: null });
   } catch (error) {
     console.error("Session check error:", error);
-    return NextResponse.json(
-      { error: "Failed to check session" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to check session" }, { status: 500 });
   }
 }

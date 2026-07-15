@@ -1,9 +1,10 @@
 /**
- * Signed admin-session token.
+ * Signed session token carrying user identity.
  *
- * The dashboard cookie used to be the constant string `"admin-session"` — anyone
- * could set it and become admin. Now the cookie is `base64url(payload).hmac`,
- * signed with HMAC-SHA256 so it cannot be forged without the server signing key.
+ * The dashboard cookie is `base64url(payload).hmac`, signed with HMAC-SHA256
+ * so it cannot be forged without the server signing key. Unlike the old hardcoded
+ * `"admin-session"` cookie, this carries real user identity (sub, email, role, partner_code).
+ * Old cookies fail the `sub` check → forced re-login (intended).
  *
  * Signing key: `NEXT_SECRET_SESSION_SECRET` if set, else the existing
  * `NEXT_SECRET_ADMIN_PASSWORD` (always present — the login check requires it), so
@@ -17,7 +18,15 @@ export const SESSION_COOKIE = "session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 1 week
 export const SESSION_MAX_AGE = MAX_AGE_SECONDS;
 
-type SessionPayload = { role: "admin"; exp: number };
+import type { Role } from "@/types/auth.types";
+
+export type SessionPayload = {
+  sub: string;          // auth.users uuid
+  email: string;
+  role: Role;
+  partner_code: string | null; // partners.partner_tracking_code for agent/affiliate
+  exp: number;          // ms epoch
+};
 
 function signingKey(): string {
   const key =
@@ -65,10 +74,18 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** Build a fresh signed session cookie value for a successful admin login. */
-export async function createSessionValue(): Promise<string> {
+/** Build a fresh signed session cookie value for a successful login. */
+export async function createSessionValue(user: {
+  sub: string;
+  email: string;
+  role: Role;
+  partner_code?: string | null;
+}): Promise<string> {
   const payload: SessionPayload = {
-    role: "admin",
+    sub: user.sub,
+    email: user.email,
+    role: user.role,
+    partner_code: user.partner_code ?? null,
     exp: Date.now() + MAX_AGE_SECONDS * 1000,
   };
   const body = toBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
@@ -76,31 +93,34 @@ export async function createSessionValue(): Promise<string> {
   return `${body}.${sig}`;
 }
 
-/** True only for a well-formed, correctly-signed, unexpired admin session. */
-export async function verifySessionValue(value?: string | null): Promise<boolean> {
-  if (!value) return false;
+/** The verified payload for a well-formed, correctly-signed, unexpired session; else null. */
+export async function verifySessionValue(
+  value?: string | null
+): Promise<SessionPayload | null> {
+  if (!value) return null;
   const dot = value.indexOf(".");
-  if (dot <= 0) return false;
+  if (dot <= 0) return null;
   const body = value.slice(0, dot);
   const sig = value.slice(dot + 1);
-  if (!body || !sig) return false;
+  if (!body || !sig) return null;
 
   let expected: string;
   try {
     expected = await hmac(body);
   } catch {
-    return false;
+    return null;
   }
-  if (!timingSafeEqual(sig, expected)) return false;
+  if (!timingSafeEqual(sig, expected)) return null;
 
   try {
     const payload = JSON.parse(
       new TextDecoder().decode(fromBase64Url(body))
     ) as SessionPayload;
-    if (payload.role !== "admin") return false;
-    if (typeof payload.exp !== "number" || Date.now() > payload.exp) return false;
-    return true;
+    if (typeof payload.sub !== "string" || !payload.sub) return null;
+    if (!["superadmin", "admin", "editor", "agent", "affiliate"].includes(payload.role)) return null;
+    if (typeof payload.exp !== "number" || Date.now() > payload.exp) return null;
+    return payload;
   } catch {
-    return false;
+    return null;
   }
 }

@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { syncLiveEvents } from '@/lib/services/live-events-sync';
 import { guardAdminRoute } from '@/lib/auth/guards';
+import { logAudit } from '@/lib/audit';
 
 /**
  * Sync API endpoint to cache LIVE events data from the LIVE API to Supabase.
@@ -19,6 +20,7 @@ export async function POST(request: NextRequest) {
 
     // Use the shared sync service
     const results = await syncLiveEvents();
+    await logAudit({ action: "sync_triggered", entityType: "live" });
 
     return NextResponse.json({
       success: true,

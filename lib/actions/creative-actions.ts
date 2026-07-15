@@ -4,7 +4,10 @@ import { supabase } from "@/lib/supabase-server";
 import { renderCreativePng, SIZES, type CreativeSize } from "@/lib/creative/render";
 import { buildCreativeInput, teamImage, type CreativeParams } from "@/lib/creative/input";
 import { updateEvent } from "./event-actions";
-import type { Event, EventTicket } from "@/types/app.types";
+import type { Event } from "@/types/app.types";
+import { requireStaff } from "@/lib/auth/guards";
+import { logAudit } from "@/lib/audit";
+import { computePackagePrice } from "@/lib/package-price";
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -35,6 +38,7 @@ async function revalidateMain(): Promise<void> {
 export async function generateCreative(
   params: CreativeParams & { attachEventId?: number | null },
 ): Promise<{ squareUrl: string; bannerUrl: string }> {
+  await requireStaff();
   const input = await buildCreativeInput(params);
   // Hebrew names slugify to "" — fall back to ids/date so files never collide.
   const dateSlug = params.dateText.replace(/\./g, "-");
@@ -66,6 +70,13 @@ export async function generateCreative(
     }
     await revalidateMain();
   }
+
+  await logAudit({
+    action: "create",
+    entityType: "creative",
+    entityId: params.attachEventId ?? null,
+    metadata: { kind: params.kind, sizes: Object.keys(SIZES) },
+  });
 
   return { squareUrl: urls.square, bannerUrl: urls.banner };
 }
@@ -116,40 +127,8 @@ function matchPerson(part: string, rows: PersonRow[]): PersonRow | null {
   return best;
 }
 
-// Replicates main-app computePackagePrice: flight + hotel + min available
-// ticket + markups (composed per-component when any markup_* set, else the
-// global 175) + event_additional_markup. See myt-main lib/events/price.ts.
-function computePackagePrice(event: {
-  tickets_and_rates: EventTicket[] | null;
-  base_flight_price: number | null;
-  base_hotel_price: number | null;
-  event_additional_markup?: number | null;
-  markup_ticket?: number | null;
-  markup_flight?: number | null;
-  markup_hotel?: number | null;
-}): number | null {
-  const available = (event.tickets_and_rates || []).filter(
-    (t) => t?.available !== false,
-  );
-  if (available.length === 0) return null;
-  const minTicket = Math.min(...available.map((t) => t.price));
-  const composed =
-    event.markup_ticket != null ||
-    event.markup_flight != null ||
-    event.markup_hotel != null;
-  const markup = composed
-    ? (event.markup_ticket ?? 0) + (event.markup_flight ?? 0) + (event.markup_hotel ?? 0)
-    : 175;
-  return Math.round(
-    (event.base_flight_price ?? 0) +
-      (event.base_hotel_price ?? 0) +
-      minTicket +
-      markup +
-      (event.event_additional_markup ?? 0),
-  );
-}
-
 export async function getCreativeDefaults(eventId: number): Promise<CreativeDefaults> {
+  await requireStaff();
   const { data, error } = await supabase
     .from("events")
     .select(
