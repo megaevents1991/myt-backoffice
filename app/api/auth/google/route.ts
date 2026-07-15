@@ -21,7 +21,16 @@ export async function GET(request: Request) {
     }
   );
 
-  const origin = new URL(request.url).origin;
+  // Determine the public origin deterministically. In serverless,
+  // new URL(request.url).origin can resolve to an internal host, which makes
+  // Supabase reject the redirect_to and fall back to its (dev) Site URL.
+  // Prefer an explicit env, then the proxy's forwarded host.
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
+  const origin =
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+    (forwardedHost ? `${forwardedProto}://${forwardedHost}` : new URL(request.url).origin);
+
   const { data, error } = await supabaseAuth.auth.signInWithOAuth({
     provider: "google",
     options: { redirectTo: `${origin}/api/auth/callback` },
