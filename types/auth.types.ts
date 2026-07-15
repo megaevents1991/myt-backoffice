@@ -21,6 +21,8 @@ export interface UserProfile {
   partner_tracking_code: string | null;
   logo_url: string | null;
   phone: string | null;
+  /** Storage path in the private `user-contracts` bucket (not a public URL). */
+  contract_url: string | null;
   is_active: boolean;
   created_at: string;
   created_by: string | null;

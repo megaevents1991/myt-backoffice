@@ -2,12 +2,37 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { PlusCircle, MoreHorizontal, Pencil, KeyRound } from "lucide-react";
+import {
+  PlusCircle,
+  MoreHorizontal,
+  Pencil,
+  KeyRound,
+  ChevronsUpDown,
+  Check,
+  FileText,
+  Trash2,
+} from "lucide-react";
+import { isValidPhoneNumber } from "react-phone-number-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { PasswordInput } from "@/components/ui/password-input";
+import { PhoneInput } from "@/components/phone-input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Table,
   TableBody,
@@ -41,6 +66,9 @@ import {
   createUser,
   updateUser,
   resetUserPassword,
+  uploadUserContract,
+  getContractDownloadUrl,
+  removeUserContract,
 } from "@/lib/actions/user-actions";
 import {
   ROLES,
@@ -77,6 +105,67 @@ function roleBadgeVariant(role: Role) {
   return "outline" as const;
 }
 
+function partnerLabel(p: Partner) {
+  return p.name_hebrew
+    ? `${p.name_hebrew} (${p.partner_tracking_code})`
+    : p.partner_tracking_code;
+}
+
+function PartnerCombobox({
+  value,
+  onChange,
+  partners,
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  partners: Partner[];
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = partners.find((p) => p.partner_tracking_code === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal"
+        >
+          {selected ? partnerLabel(selected) : "Select a partner"}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="חפש לפי שם או קוד..." />
+          <CommandList>
+            <CommandEmpty>No partner found</CommandEmpty>
+            <CommandGroup>
+              {partners.map((p) => (
+                <CommandItem
+                  key={p.partner_tracking_code}
+                  value={`${p.partner_tracking_code} ${p.name_hebrew ?? ""}`}
+                  onSelect={() => {
+                    setOpen(false);
+                    onChange(p.partner_tracking_code);
+                  }}
+                >
+                  <Check
+                    className={`mr-2 h-4 w-4 ${
+                      value === p.partner_tracking_code ? "opacity-100" : "opacity-0"
+                    }`}
+                  />
+                  {partnerLabel(p)}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function UsersClient({
   users,
   partners,
@@ -100,6 +189,7 @@ export function UsersClient({
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<UserProfile | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [contractFile, setContractFile] = useState<File | null>(null);
 
   const [resetOpen, setResetOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState<UserProfile | null>(null);
@@ -110,11 +200,13 @@ export function UsersClient({
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm);
+    setContractFile(null);
     setFormOpen(true);
   };
 
   const openEdit = (user: UserProfile) => {
     setEditing(user);
+    setContractFile(null);
     setForm({
       email: user.email,
       password: "",
@@ -154,35 +246,70 @@ export function UsersClient({
       }
     }
 
+    if (form.phone && !isValidPhoneNumber(form.phone)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid phone number",
+        description: "Check the country and number — or leave the field empty.",
+      });
+      return;
+    }
+
     // Only partner roles carry a partner link — never persist a stale code.
     const partnerCode = PARTNER_ROLES.includes(form.role)
       ? form.partner_tracking_code || null
       : null;
 
     startTransition(async () => {
-      const result = editing
-        ? await updateUser(editing.id, {
-            display_name: form.display_name || null,
-            role: form.role,
-            partner_tracking_code: partnerCode,
-            phone: form.phone || null,
-          })
-        : await createUser({
-            email,
-            password: form.password,
-            display_name: form.display_name,
-            role: form.role,
-            partner_tracking_code: partnerCode,
-            phone: form.phone || null,
-          });
+      let targetId: string | null;
+      let saveError: string | null = null;
+      if (editing) {
+        const result = await updateUser(editing.id, {
+          display_name: form.display_name || null,
+          role: form.role,
+          partner_tracking_code: partnerCode,
+          phone: form.phone || null,
+        });
+        targetId = editing.id;
+        if (!result.ok) saveError = result.error;
+      } else {
+        const result = await createUser({
+          email,
+          password: form.password,
+          display_name: form.display_name,
+          role: form.role,
+          partner_tracking_code: partnerCode,
+          phone: form.phone || null,
+        });
+        targetId = result.ok ? result.id : null;
+        if (!result.ok) saveError = result.error;
+      }
 
-      if (!result.ok) {
+      if (saveError) {
         toast({
           variant: "destructive",
           title: "Error",
-          description: result.error,
+          description: saveError,
         });
         return;
+      }
+
+      // Contract uploads AFTER the profile save — the user exists either way,
+      // so a failed upload only warns instead of failing the whole create.
+      if (contractFile && targetId && PARTNER_ROLES.includes(form.role)) {
+        const fd = new FormData();
+        fd.set("file", contractFile);
+        const upload = await uploadUserContract(targetId, fd);
+        if (!upload.ok) {
+          toast({
+            variant: "destructive",
+            title: editing ? "Saved, but contract upload failed" : "User created, but contract upload failed",
+            description: `${upload.error} — open Edit and attach it again.`,
+          });
+          setFormOpen(false);
+          router.refresh();
+          return;
+        }
       }
 
       toast({
@@ -190,6 +317,31 @@ export function UsersClient({
         description: editing ? `${form.email} saved.` : `${email} can now sign in.`,
       });
       setFormOpen(false);
+      router.refresh();
+    });
+  };
+
+  const handleDownloadContract = (user: UserProfile) => {
+    startTransition(async () => {
+      const result = await getContractDownloadUrl(user.id);
+      if (!result.ok) {
+        toast({ variant: "destructive", title: "Error", description: result.error });
+        return;
+      }
+      window.open(result.url, "_blank", "noopener,noreferrer");
+    });
+  };
+
+  const handleRemoveContract = () => {
+    if (!editing) return;
+    startTransition(async () => {
+      const result = await removeUserContract(editing.id);
+      if (!result.ok) {
+        toast({ variant: "destructive", title: "Error", description: result.error });
+        return;
+      }
+      setEditing({ ...editing, contract_url: null });
+      toast({ title: "Contract removed", description: editing.email });
       router.refresh();
     });
   };
@@ -310,6 +462,12 @@ export function UsersClient({
                             <KeyRound className="h-4 w-4 mr-2" />
                             <span>Reset password</span>
                           </DropdownMenuItem>
+                          {user.contract_url && (
+                            <DropdownMenuItem onClick={() => handleDownloadContract(user)}>
+                              <FileText className="h-4 w-4 mr-2" />
+                              <span>Download contract</span>
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     )}
@@ -344,9 +502,8 @@ export function UsersClient({
             {!editing && (
               <div className="space-y-1.5">
                 <Label htmlFor="user-password">Temporary password</Label>
-                <Input
+                <PasswordInput
                   id="user-password"
-                  type="password"
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   placeholder="8+ characters"
@@ -395,37 +552,64 @@ export function UsersClient({
             {needsPartner && (
               <div className="space-y-1.5">
                 <Label>Partner</Label>
-                <Select
-                  value={form.partner_tracking_code || undefined}
-                  onValueChange={(v) => setForm({ ...form, partner_tracking_code: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a partner" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    {partners.map((p) => (
-                      <SelectItem
-                        key={p.partner_tracking_code}
-                        value={p.partner_tracking_code}
-                      >
-                        {p.name_hebrew
-                          ? `${p.name_hebrew} (${p.partner_tracking_code})`
-                          : p.partner_tracking_code}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <PartnerCombobox
+                  value={form.partner_tracking_code}
+                  onChange={(code) =>
+                    setForm({ ...form, partner_tracking_code: code })
+                  }
+                  partners={partners}
+                />
               </div>
             )}
 
             <div className="space-y-1.5">
               <Label htmlFor="user-phone">Phone</Label>
-              <Input
+              <PhoneInput
                 id="user-phone"
                 value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                onChange={(phone) => setForm({ ...form, phone })}
               />
             </div>
+
+            {needsPartner && (
+              <div className="space-y-1.5">
+                <Label htmlFor="user-contract">Contract (PDF/DOC/image, max 10MB)</Label>
+                {editing?.contract_url && !contractFile && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <button
+                      type="button"
+                      className="underline underline-offset-2 hover:text-primary"
+                      onClick={() => handleDownloadContract(editing)}
+                    >
+                      Contract on file — download
+                    </button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-destructive hover:text-destructive"
+                      onClick={handleRemoveContract}
+                      disabled={isPending}
+                      aria-label="Remove contract"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+                <Input
+                  id="user-contract"
+                  type="file"
+                  accept=".pdf,.doc,.docx,image/png,image/jpeg"
+                  onChange={(e) => setContractFile(e.target.files?.[0] ?? null)}
+                />
+                {editing?.contract_url && contractFile && (
+                  <p className="text-xs text-muted-foreground">
+                    New file replaces the current contract on save.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -448,9 +632,8 @@ export function UsersClient({
 
           <div className="space-y-1.5">
             <Label htmlFor="reset-password">New password</Label>
-            <Input
+            <PasswordInput
               id="reset-password"
-              type="password"
               value={resetPassword}
               onChange={(e) => setResetPassword(e.target.value)}
               placeholder="8+ characters"

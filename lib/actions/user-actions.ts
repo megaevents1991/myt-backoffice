@@ -7,9 +7,21 @@ import { ADMIN_ROLES, PARTNER_ROLES } from "@/types/auth.types";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 
 type Result = { ok: true } | { ok: false; error: string };
+type CreateResult = { ok: true; id: string } | { ok: false; error: string };
 
 const PROFILE_COLUMNS =
-  "id,email,display_name,role,partner_tracking_code,logo_url,phone,is_active,created_at,created_by";
+  "id,email,display_name,role,partner_tracking_code,logo_url,phone,contract_url,is_active,created_at,created_by";
+
+const CONTRACTS_BUCKET = "user-contracts";
+const CONTRACT_MAX_BYTES = 10 * 1024 * 1024; // 10MB
+const CONTRACT_TYPES: Record<string, string> = {
+  "application/pdf": "pdf",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    "docx",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+};
 
 /**
  * Hierarchy: superadmin manages everyone; admin manages only non-admin roles.
@@ -53,7 +65,7 @@ export async function createUser(input: {
   role: Role;
   partner_tracking_code?: string | null;
   phone?: string | null;
-}): Promise<Result> {
+}): Promise<CreateResult> {
   const actor = await requireAdmin();
   if (ADMIN_ROLES.includes(input.role) && actor.role !== "superadmin") {
     return { ok: false, error: "Only a superadmin can create admin users" };
@@ -106,7 +118,7 @@ export async function createUser(input: {
       display_name: input.display_name || null,
     },
   });
-  return { ok: true };
+  return { ok: true, id: created.user.id };
 }
 
 export async function updateUser(
@@ -186,5 +198,127 @@ export async function resetUserPassword(id: string, newPassword: string): Promis
     return { ok: false, error: error.message };
   }
   await logAudit({ action: "password_reset", entityType: "user", entityId: id });
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Contract attachment (agent/affiliate). One file per user, PRIVATE bucket —
+// contract_url stores the storage PATH; access only via short signed URLs.
+// ---------------------------------------------------------------------------
+
+async function getContractPath(id: string): Promise<string | null> {
+  const { data, error } = await (supabase as any)
+    .from("user_profiles")
+    .select("contract_url")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) {
+    console.error("getContractPath:", JSON.stringify(error));
+    return null;
+  }
+  return (data?.contract_url as string) ?? null;
+}
+
+export async function uploadUserContract(
+  id: string,
+  formData: FormData
+): Promise<Result> {
+  const actor = await requireAdmin();
+  const targetRole = await getTargetRole(id);
+  if (!targetRole) return { ok: false, error: "User not found" };
+  if (!canManage(actor.role, targetRole)) {
+    return { ok: false, error: "Only a superadmin can modify admin users" };
+  }
+
+  const file = formData.get("file") as File | null;
+  if (!file || file.size === 0) return { ok: false, error: "Contract file is required" };
+  if (file.size > CONTRACT_MAX_BYTES) return { ok: false, error: "File too large (max 10MB)" };
+  const ext = CONTRACT_TYPES[file.type];
+  if (!ext) return { ok: false, error: "Only PDF, DOC, DOCX, PNG or JPG files are allowed" };
+
+  const previous = await getContractPath(id);
+  const path = `${id}/contract-${Date.now()}.${ext}`;
+  const buffer = await file.arrayBuffer();
+  const { error: uploadError } = await supabase.storage
+    .from(CONTRACTS_BUCKET)
+    .upload(path, buffer, { contentType: file.type, upsert: false });
+  if (uploadError) {
+    console.error("uploadUserContract storage:", JSON.stringify(uploadError));
+    return { ok: false, error: "Contract upload failed" };
+  }
+
+  const { error } = await (supabase as any)
+    .from("user_profiles")
+    .update({ contract_url: path })
+    .eq("id", id);
+  if (error) {
+    console.error("uploadUserContract profile:", JSON.stringify(error));
+    // Roll the orphan file back so the bucket doesn't collect strays.
+    await supabase.storage.from(CONTRACTS_BUCKET).remove([path]);
+    return { ok: false, error: "Saving contract reference failed" };
+  }
+
+  // Replaced an older contract — best-effort cleanup, the row is source of truth.
+  if (previous && previous !== path) {
+    const { error: rmError } = await supabase.storage
+      .from(CONTRACTS_BUCKET)
+      .remove([previous]);
+    if (rmError) console.error("uploadUserContract cleanup:", JSON.stringify(rmError));
+  }
+
+  await logAudit({
+    action: "user_updated",
+    entityType: "user",
+    entityId: id,
+    changes: { contract_url: path },
+  });
+  return { ok: true };
+}
+
+export async function getContractDownloadUrl(
+  id: string
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  await requireAdmin();
+  const path = await getContractPath(id);
+  if (!path) return { ok: false, error: "No contract on file" };
+  const { data, error } = await supabase.storage
+    .from(CONTRACTS_BUCKET)
+    .createSignedUrl(path, 60);
+  if (error || !data?.signedUrl) {
+    console.error("getContractDownloadUrl:", JSON.stringify(error));
+    return { ok: false, error: "Could not create download link" };
+  }
+  return { ok: true, url: data.signedUrl };
+}
+
+export async function removeUserContract(id: string): Promise<Result> {
+  const actor = await requireAdmin();
+  const targetRole = await getTargetRole(id);
+  if (!targetRole) return { ok: false, error: "User not found" };
+  if (!canManage(actor.role, targetRole)) {
+    return { ok: false, error: "Only a superadmin can modify admin users" };
+  }
+  const path = await getContractPath(id);
+  if (!path) return { ok: true };
+
+  const { error } = await (supabase as any)
+    .from("user_profiles")
+    .update({ contract_url: null })
+    .eq("id", id);
+  if (error) {
+    console.error("removeUserContract:", JSON.stringify(error));
+    return { ok: false, error: "Removing contract failed" };
+  }
+  const { error: rmError } = await supabase.storage
+    .from(CONTRACTS_BUCKET)
+    .remove([path]);
+  if (rmError) console.error("removeUserContract storage:", JSON.stringify(rmError));
+
+  await logAudit({
+    action: "user_updated",
+    entityType: "user",
+    entityId: id,
+    changes: { contract_url: null },
+  });
   return { ok: true };
 }
