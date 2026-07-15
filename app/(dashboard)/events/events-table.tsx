@@ -66,6 +66,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 
 const COMMON_TAGS = ["Sold", "Hot", "Selling Fast", "Limited Availability", "New"];
 const COMPETITOR_TOAST_DURATION = 2_147_483_647;
@@ -439,6 +445,8 @@ export function EventsTable() {
   const [showTicketOnly, setShowTicketOnly] = useState(false);
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkMarkupOpen, setBulkMarkupOpen] = useState(false);
+  const [bulkMarkupInput, setBulkMarkupInput] = useState("");
   const [pricingDialogOpen, setPricingDialogOpen] = useState(false);
   const [pricingEvent, setPricingEvent] = useState<Event | null>(null);
   const [pricingLoadingProvider, setPricingLoadingProvider] =
@@ -669,6 +677,27 @@ export function EventsTable() {
     } finally {
       setBulkLoading(false);
     }
+  };
+
+  const handleBulkTicketMarkup = async () => {
+    const value = Number(bulkMarkupInput);
+    if (bulkMarkupInput.trim() === "" || !Number.isFinite(value) || value < 0) {
+      toast({
+        variant: "destructive",
+        title: "Invalid value",
+        description: "Enter a non-negative number (USD per ticket).",
+      });
+      return;
+    }
+    setBulkMarkupOpen(false);
+    await handleBulkUpdate({ ticket_only_markup: value });
+    setBulkMarkupInput("");
+  };
+
+  const handleBulkTicketMarkupClear = async () => {
+    setBulkMarkupOpen(false);
+    setBulkMarkupInput("");
+    await handleBulkUpdate({ ticket_only_markup: null });
   };
 
   const handleBulkDelete = async () => {
@@ -1981,6 +2010,53 @@ export function EventsTable() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Popover open={bulkMarkupOpen} onOpenChange={setBulkMarkupOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" disabled={bulkLoading}>
+                  Ticket Markup
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 space-y-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    Ticket-Only Markup (USD per ticket)
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Applied to all {selectedIds.length} selected event(s). When
+                    the customer skips both flight and hotel, they pay ticket
+                    cost + this value. Clear = normal flow.
+                  </p>
+                </div>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  placeholder="e.g. 25"
+                  value={bulkMarkupInput}
+                  onChange={(e) => setBulkMarkupInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleBulkTicketMarkup();
+                  }}
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleBulkTicketMarkup}
+                    disabled={bulkLoading}
+                  >
+                    Apply
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleBulkTicketMarkupClear}
+                    disabled={bulkLoading}
+                  >
+                    Clear markup
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" disabled={bulkLoading || bulkCompPricingLoading}>
