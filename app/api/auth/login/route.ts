@@ -4,11 +4,7 @@ import {
   SESSION_COOKIE,
   SESSION_MAX_AGE,
 } from "@/lib/auth/session";
-import {
-  verifyPassword,
-  getProfile,
-  getProfileByEmail,
-} from "@/lib/auth/supabase-auth";
+import { verifyPassword, getProfile } from "@/lib/auth/supabase-auth";
 import type { UserProfile } from "@/types/auth.types";
 import { logAudit, requestIp } from "@/lib/audit";
 
@@ -76,43 +72,6 @@ export async function POST(request: Request) {
         metadata: { reason: "invalid_credentials" },
       });
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-    }
-
-    // TODO(remove-after-bootstrap): legacy env-credential fallback so the
-    // dashboard stays accessible until the first admin users exist in prod.
-    if (
-      process.env.NEXT_SECRET_ADMIN_EMAIL &&
-      email === process.env.NEXT_SECRET_ADMIN_EMAIL &&
-      password === process.env.NEXT_SECRET_ADMIN_PASSWORD
-    ) {
-      const profile = await getProfileByEmail(email);
-      if (profile) {
-        if (profile.is_active) return respondWithSession(profile, request);
-        await logAudit({
-          action: "login_failed",
-          actor: { email },
-          ip: requestIp(request),
-          metadata: { reason: "invalid_credentials" },
-        });
-        return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-      }
-      // No profile row yet (pre-migration): mint a superadmin session with a
-      // placeholder sub so the dashboard keeps working (legacy creds = Dor).
-      return respondWithSession(
-        {
-          id: "00000000-0000-0000-0000-000000000000",
-          email,
-          display_name: "Legacy Admin",
-          role: "superadmin",
-          partner_tracking_code: null,
-          logo_url: null,
-          phone: null,
-          is_active: true,
-          created_at: new Date().toISOString(),
-          created_by: null,
-        },
-        request
-      );
     }
 
     await logAudit({
