@@ -28,6 +28,18 @@ import {
   bulkUpdateEvents,
   bulkSoftDeleteEvents,
 } from "@/lib/actions/event-actions";
+import {
+  listCategories,
+  listTags,
+  bulkAssignCategories,
+  bulkAssignTags,
+} from "@/lib/actions/event-taxonomy-actions";
+import { flattenWithPath } from "@/lib/taxonomy-tree";
+import {
+  EventTaxonomySelect,
+  type TaxonomyOption,
+} from "@/components/taxonomy/event-taxonomy-select";
+import type { AssignMode } from "@/types/taxonomy.types";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -465,6 +477,66 @@ export function EventsTable() {
   const [bulkCompPricingLoading, setBulkCompPricingLoading] = useState(false);
   const { toast } = useToast();
   const bulkDetailToastRef = useRef<ReturnType<typeof toast> | null>(null);
+
+  // Bulk taxonomy assignment (categories + feed tags) over the selected rows.
+  const [catOptions, setCatOptions] = useState<TaxonomyOption[]>([]);
+  const [tagOptions, setTagOptions] = useState<TaxonomyOption[]>([]);
+  const [bulkCatOpen, setBulkCatOpen] = useState(false);
+  const [bulkTagOpen, setBulkTagOpen] = useState(false);
+  const [bulkCatIds, setBulkCatIds] = useState<number[]>([]);
+  const [bulkTagIds, setBulkTagIds] = useState<number[]>([]);
+  const [bulkCatMode, setBulkCatMode] = useState<AssignMode>("add");
+  const [bulkTagMode, setBulkTagMode] = useState<AssignMode>("add");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [cats, tags] = await Promise.all([listCategories(), listTags()]);
+        setCatOptions(flattenWithPath(cats).map((c) => ({ id: c.id, label: c.path })));
+        setTagOptions(tags.map((t) => ({ id: t.id, label: t.name })));
+      } catch (e) {
+        console.error("Failed to load taxonomy pools:", e);
+      }
+    })();
+  }, []);
+
+  const handleBulkAssignCategories = async () => {
+    if (selectedIds.length === 0 || bulkCatIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      await bulkAssignCategories(selectedIds, bulkCatIds, bulkCatMode);
+      toast({
+        title: "Categories assigned",
+        description: `${selectedIds.length} event(s) (${bulkCatMode}).`,
+      });
+      setBulkCatOpen(false);
+      setBulkCatIds([]);
+    } catch (e) {
+      console.error("Bulk assign categories failed:", e);
+      toast({ variant: "destructive", title: "Error", description: "Bulk assign failed." });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkAssignTags = async () => {
+    if (selectedIds.length === 0 || bulkTagIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      await bulkAssignTags(selectedIds, bulkTagIds, bulkTagMode);
+      toast({
+        title: "Tags assigned",
+        description: `${selectedIds.length} event(s) (${bulkTagMode}).`,
+      });
+      setBulkTagOpen(false);
+      setBulkTagIds([]);
+    } catch (e) {
+      console.error("Bulk assign tags failed:", e);
+      toast({ variant: "destructive", title: "Error", description: "Bulk assign failed." });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
 
   useEffect(() => {
     async function fetchEvents() {
@@ -2075,6 +2147,92 @@ export function EventsTable() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Popover open={bulkCatOpen} onOpenChange={setBulkCatOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" disabled={bulkLoading}>
+                  Categories
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-80 space-y-3">
+                <p className="text-sm font-medium">
+                  Assign categories to {selectedIds.length} event(s)
+                </p>
+                <EventTaxonomySelect
+                  kind="category"
+                  options={catOptions}
+                  value={bulkCatIds}
+                  onChange={setBulkCatIds}
+                  onOptionCreated={(o) => setCatOptions((p) => [...p, o])}
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant={bulkCatMode === "add" ? "default" : "outline"}
+                    onClick={() => setBulkCatMode("add")}
+                  >
+                    Add
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={bulkCatMode === "replace" ? "default" : "outline"}
+                    onClick={() => setBulkCatMode("replace")}
+                  >
+                    Replace
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="ml-auto"
+                    onClick={handleBulkAssignCategories}
+                    disabled={bulkLoading || bulkCatIds.length === 0}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Popover open={bulkTagOpen} onOpenChange={setBulkTagOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" disabled={bulkLoading}>
+                  Tags (feed)
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-80 space-y-3">
+                <p className="text-sm font-medium">
+                  Assign tags to {selectedIds.length} event(s)
+                </p>
+                <EventTaxonomySelect
+                  kind="tag"
+                  options={tagOptions}
+                  value={bulkTagIds}
+                  onChange={setBulkTagIds}
+                  onOptionCreated={(o) => setTagOptions((p) => [...p, o])}
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant={bulkTagMode === "add" ? "default" : "outline"}
+                    onClick={() => setBulkTagMode("add")}
+                  >
+                    Add
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={bulkTagMode === "replace" ? "default" : "outline"}
+                    onClick={() => setBulkTagMode("replace")}
+                  >
+                    Replace
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="ml-auto"
+                    onClick={handleBulkAssignTags}
+                    disabled={bulkLoading || bulkTagIds.length === 0}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
             <Button
               variant="destructive"
               size="sm"

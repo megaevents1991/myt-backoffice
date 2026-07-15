@@ -25,6 +25,8 @@ import {
   ScrollText,
   Handshake,
   UserCog,
+  FolderTree,
+  Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -75,6 +77,8 @@ const navGroups: NavGroup[] = [
     label: "Content",
     items: [
       { name: "Templates (תבניות)", href: "/templates", icon: LayoutTemplate },
+      { name: "Categories (קטגוריות)", href: "/event-taxonomy", icon: FolderTree },
+      { name: "Tags (תגיות)", href: "/event-tags", icon: Tag },
       {
         name: "Creative Generator",
         href: "/creative-generator",

@@ -207,11 +207,22 @@ Via `NEXT_SECRET_HOTEL_SERVICE_URL` (currently `https://myt-kohl.vercel.app`):
 | `partners`     | Creates, manages               | Reads (affiliate auth)        |
 | `hotels`       | Reads                          | Writes (search cache)         |
 | `flights`      | Manages (offline inventory)    | Reads                         |
+| `event_categories`      | Creates/manages (category tree) | Reads (builds category pages) |
+| `event_category_links`  | Writes (event↔category)         | Reads                         |
+| `event_tags`            | Creates/manages (feed tags)     | Reads (feed targeting)        |
+| `event_tag_links`       | Writes (event↔tag)              | Reads                         |
 
 ### Shared Types — Keep In Sync!
 
 Types in `types/app.types.ts` are duplicated in `../myt---main/lib/app.types.ts`. These types MUST match:
 `Event`, `EventType`, `Flight`, `FlightSegment`, `Order`, `OrderHotel`, `OrderTicket`, `FlightSearchOptions`, `TimeRange`, `AffiliateTracking`, `VipConfig`, `EventTicket`
+
+**Event taxonomy (new, 2026-07-15):** `types/taxonomy.types.ts` (`EventCategory`,
+`EventCategoryNode`, `EventTag`) + the pure tree helpers in `lib/taxonomy-tree.ts`
+(`buildTree`, `flattenWithPath`, `descendantIds`) are mirrored to main as
+`lib/taxonomy.types.ts` + `lib/taxonomy-tree.ts`. Backoffice writes the four
+`event_categor*` / `event_tag*` tables; main reads them to build category pages
+and target the product feed. Keep both copies in sync.
 
 **Known intentional differences:**
 

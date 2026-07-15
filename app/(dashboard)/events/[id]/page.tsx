@@ -63,6 +63,16 @@ import { InlineHotelForm, type StagedHotelData } from "@/components/inline-hotel
 import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EventTaxonomySelect, type TaxonomyOption } from "@/components/taxonomy/event-taxonomy-select";
+import {
+  listCategories,
+  listTags,
+  getEventCategoryIds,
+  getEventTagIds,
+  setEventCategories,
+  setEventTags,
+} from "@/lib/actions/event-taxonomy-actions";
+import { flattenWithPath } from "@/lib/taxonomy-tree";
 
 const TX_TICKET_COLOR = "rgb(5, 32, 60)";
 
@@ -119,6 +129,45 @@ export default function EventPage({
   const initialEventRef = useRef<string | null>(null);
   const isNewEvent = unwrappedParams.id === "new";
   const isBatchCreate = isNewEvent && searchParams.get("batch") === "1";
+
+  // Taxonomy: category tree + curated tags. Options are the managed pools; the
+  // selected ids are persisted to the junction tables on save.
+  const [catOptions, setCatOptions] = useState<TaxonomyOption[]>([]);
+  const [tagOptions, setTagOptions] = useState<TaxonomyOption[]>([]);
+  const [selectedCatIds, setSelectedCatIds] = useState<number[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+
+  // Load the category/tag pools once (both new + edit flows).
+  useEffect(() => {
+    (async () => {
+      try {
+        const [cats, tags] = await Promise.all([listCategories(), listTags()]);
+        setCatOptions(flattenWithPath(cats).map((c) => ({ id: c.id, label: c.path })));
+        setTagOptions(tags.map((t) => ({ id: t.id, label: t.name })));
+      } catch (e) {
+        console.error("Failed to load taxonomy pools:", e);
+      }
+    })();
+  }, []);
+
+  // Load this event's current category/tag selections (edit flow only).
+  useEffect(() => {
+    if (isNewEvent) return;
+    const eid = Number(unwrappedParams.id);
+    if (!Number.isFinite(eid)) return;
+    (async () => {
+      try {
+        const [catIds, tagIds] = await Promise.all([
+          getEventCategoryIds(eid),
+          getEventTagIds(eid),
+        ]);
+        setSelectedCatIds(catIds);
+        setSelectedTagIds(tagIds);
+      } catch (e) {
+        console.error("Failed to load event taxonomy:", e);
+      }
+    })();
+  }, [isNewEvent, unwrappedParams.id]);
 
   useEffect(() => {
     async function fetchEvent() {
@@ -1193,6 +1242,10 @@ export default function EventPage({
           ),
         ]);
 
+        // Persist category/tag links now that the new event id exists.
+        await setEventCategories(createdEvent.id, selectedCatIds);
+        await setEventTags(createdEvent.id, selectedTagIds);
+
         const extras = [];
         if (stagedFlights.length > 0) extras.push(`${stagedFlights.length} flight(s)`);
         if (stagedHotels.length > 0) extras.push(`${stagedHotels.length} hotel(s)`);
@@ -1206,6 +1259,8 @@ export default function EventPage({
       } else {
         // For existing events, use updateEvent
         await updateEvent(event.id, event);
+        await setEventCategories(event.id, selectedCatIds);
+        await setEventTags(event.id, selectedTagIds);
         toast({
           title: "Success",
           description: "Event has been saved successfully.",
@@ -1792,6 +1847,28 @@ export default function EventPage({
                 <option value="VIPevent">VIP Event</option>
                 <option value="VIPavailable">VIP Available</option>
               </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Categories</Label>
+              <EventTaxonomySelect
+                kind="category"
+                options={catOptions}
+                value={selectedCatIds}
+                onChange={setSelectedCatIds}
+                onOptionCreated={(o) => setCatOptions((p) => [...p, o])}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Tags (feed / promo)</Label>
+              <EventTaxonomySelect
+                kind="tag"
+                options={tagOptions}
+                value={selectedTagIds}
+                onChange={setSelectedTagIds}
+                onOptionCreated={(o) => setTagOptions((p) => [...p, o])}
+              />
             </div>
           </CardContent>
         </Card>
