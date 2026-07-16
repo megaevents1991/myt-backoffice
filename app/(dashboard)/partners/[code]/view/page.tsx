@@ -1,10 +1,8 @@
-"use client";
-
 import Link from "next/link";
-import { useState, useEffect, use } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Edit } from "lucide-react";
+import { notFound } from "next/navigation";
+import { ArrowLeft, Edit, Ticket, Wallet, DollarSign, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -12,59 +10,106 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
-import type { Partner } from "@/types/partner.types";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { getPartner } from "@/lib/actions/partner-actions";
+import { getPartnerPerformance } from "@/lib/actions/partner-performance-actions";
+import { PAID_STATUS } from "@/lib/partner-commission";
+import { PARTNER_TYPE_LABELS, isCustomerRefundPartner } from "@/types/partner.types";
+import { PerformanceChart } from "./performance-chart";
 
-export default function ViewPartnerPage({
+const usd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
+export default async function ViewPartnerPage({
   params,
 }: {
   params: Promise<{ code: string }>;
 }) {
-  const router = useRouter();
-  const { toast } = useToast();
-  const param = use(params);
-  const [partner, setPartner] = useState<Partner | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { code } = await params;
 
-  useEffect(() => {
-    async function fetchPartner() {
-      try {
-        const data = await getPartner(param.code);
-        setPartner(data);
-      } catch (error) {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Failed to load partner details. Please try again.",
-        });
-      } finally {
-        setLoading(false);
-      }
-    }
+  // Let auth/DB errors reach the error boundary — only a missing row is a 404.
+  const partner = await getPartner(code).catch((error: unknown) => {
+    if (isRowNotFound(error)) return null;
+    throw error;
+  });
+  if (!partner) notFound();
 
-    fetchPartner();
-  }, [param.code, toast]);
+  const performance = await getPartnerPerformance(code);
 
-  if (loading) {
-    return <div>Loading partner details...</div>;
-  }
-
-  if (!partner) {
-    return <div>Partner not found</div>;
-  }
+  const type = isCustomerRefundPartner(partner)
+    ? "customer_refund"
+    : partner.type === "agent"
+      ? "agent"
+      : "affiliate";
+  const stats = [
+    {
+      label: "Commission earned",
+      value: usd.format(performance.commissionUsd),
+      hint: `${performance.paidTickets} tickets × ${usd.format(performance.commissionPerTicket)}`,
+      icon: Wallet,
+    },
+    {
+      label: "This month",
+      value: usd.format(performance.currentMonthCommissionUsd),
+      hint: "Billed by the monthly report",
+      icon: DollarSign,
+    },
+    {
+      label: "Paid reservations",
+      value: performance.paidReservations,
+      hint: `${performance.totalReservations} total`,
+      icon: ClipboardList,
+    },
+    {
+      label: "Total sales",
+      value: usd.format(performance.totalSalesUsd),
+      hint: `${performance.paidTickets} tickets`,
+      icon: Ticket,
+    },
+  ];
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center">
-          <Button variant="ghost" onClick={() => router.back()}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-          <h1 className="text-3xl font-bold tracking-tight ml-4">
-            Partner: {partner.email}
-          </h1>
+        <div className="flex items-center gap-4">
+          <Link href="/partners">
+            <Button variant="ghost">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">
+              {partner.name_hebrew || partner.email}
+            </h1>
+            <div className="mt-1 flex items-center gap-2">
+              <Badge
+                variant={
+                  type === "agent"
+                    ? "default"
+                    : type === "customer_refund"
+                      ? "outline"
+                      : "secondary"
+                }
+              >
+                {PARTNER_TYPE_LABELS[type]}
+              </Badge>
+              {!partner.is_active && <Badge variant="outline">Inactive</Badge>}
+              <span className="font-mono text-sm text-muted-foreground">
+                {partner.partner_tracking_code}
+              </span>
+            </div>
+          </div>
         </div>
         <Link href={`/partners/${partner.partner_tracking_code}`}>
           <Button>
@@ -74,48 +119,141 @@ export default function ViewPartnerPage({
         </Link>
       </div>
 
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {stats.map((stat) => {
+          const Icon = stat.icon;
+          return (
+            <Card key={stat.label}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{stat.label}</CardTitle>
+                <Icon className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stat.value}</div>
+                <p className="text-xs text-muted-foreground">{stat.hint}</p>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Commission by month</CardTitle>
+            <CardDescription>Paid reservations only, in USD.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PerformanceChart data={performance.monthly} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Details</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <Detail label="Email" value={partner.email} />
+            <Detail
+              label="Commission per ticket"
+              value={usd.format(partner.commission)}
+            />
+            <Detail label="User discount" value={usd.format(partner.user_discount)} />
+            <Detail
+              label="Supplier number"
+              value={partner.supplier_number?.toString() ?? "—"}
+            />
+            <Detail
+              label="Coupons"
+              value={`${performance.activeCoupons} active · ${performance.couponUses} uses`}
+            />
+            <Detail
+              label="Created"
+              value={new Date(partner.created_at).toLocaleDateString()}
+            />
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader>
-          <CardTitle>Partner Information</CardTitle>
+          <CardTitle>Reservations</CardTitle>
           <CardDescription>
-            Details about this affiliate partner
+            Attributed to {partner.partner_tracking_code}. Only paid reservations earn
+            commission.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <p className="text-sm font-medium">Tracking Code</p>
-            <p className="text-lg font-mono">{partner.partner_tracking_code}</p>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium">Email</p>
-            <p className="text-lg">{partner.email}</p>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium">Hebrew Name</p>
-            <p className="text-lg">{partner.name_hebrew}</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm font-medium">Commission</p>
-              <p className="text-lg">${partner.commission.toFixed(2)}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium">User Discount</p>
-              <p className="text-lg">${partner.user_discount.toFixed(2)}</p>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium">Created At</p>
-            <p className="text-lg">
-              {new Date(partner.created_at).toLocaleString()}
+        <CardContent>
+          {performance.reservations.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No reservations attributed to this partner yet.
             </p>
-          </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Event</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Tickets</TableHead>
+                  <TableHead className="text-right">Sales</TableHead>
+                  <TableHead className="text-right">Commission</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {performance.reservations.map((reservation) => (
+                  <TableRow key={reservation.id}>
+                    <TableCell>
+                      {new Date(reservation.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>{reservation.customer_name}</TableCell>
+                    <TableCell className="max-w-[16rem] truncate">
+                      {reservation.event_title}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          reservation.status === PAID_STATUS ? "default" : "secondary"
+                        }
+                      >
+                        {reservation.status || "—"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">{reservation.tickets}</TableCell>
+                    <TableCell className="text-right">
+                      {usd.format(reservation.sales_usd)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {reservation.commission_usd > 0
+                        ? usd.format(reservation.commission_usd)
+                        : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+/** PostgREST raises PGRST116 when `.single()` matches no row. */
+function isRowNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: string }).code === "PGRST116"
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-muted-foreground">{label}</p>
+      <p className="font-medium">{value}</p>
     </div>
   );
 }

@@ -6,7 +6,6 @@ import {
   ClipboardList,
   CheckCircle2,
   DollarSign,
-  Percent,
   Wallet,
   Ticket,
   TicketPercent,
@@ -32,10 +31,12 @@ export default async function PortalDashboardPage() {
     { label: "סה\"כ הזמנות", value: stats.totalReservations, icon: ClipboardList },
     { label: "הזמנות ששולמו", value: stats.paidReservations, icon: CheckCircle2 },
     { label: "סה\"כ מכירות ($)", value: usd.format(stats.totalSalesUsd), icon: DollarSign },
+    { label: "כרטיסים ששולמו", value: stats.paidTickets, icon: Ticket },
     {
-      label: "אחוז עמלה",
-      value: stats.commissionPercent != null ? `${stats.commissionPercent}%` : "—",
-      icon: Percent,
+      label: "עמלה לכרטיס",
+      value:
+        stats.commissionPerTicket != null ? usd.format(stats.commissionPerTicket) : "—",
+      icon: DollarSign,
     },
     {
       label: "עמלה משוערת ($)",

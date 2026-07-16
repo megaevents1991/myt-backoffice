@@ -77,7 +77,7 @@ import {
   type Role,
   type UserProfile,
 } from "@/types/auth.types";
-import type { Partner } from "@/types/partner.types";
+import type { PartnerListItem } from "@/lib/actions/partner-actions";
 import { useAuth } from "@/contexts/auth-context";
 
 type FormState = {
@@ -105,7 +105,7 @@ function roleBadgeVariant(role: Role) {
   return "outline" as const;
 }
 
-function partnerLabel(p: Partner) {
+function partnerLabel(p: PartnerListItem) {
   return p.name_hebrew
     ? `${p.name_hebrew} (${p.partner_tracking_code})`
     : p.partner_tracking_code;
@@ -118,7 +118,7 @@ function PartnerCombobox({
 }: {
   value: string;
   onChange: (code: string) => void;
-  partners: Partner[];
+  partners: PartnerListItem[];
 }) {
   const [open, setOpen] = useState(false);
   const selected = partners.find((p) => p.partner_tracking_code === value);
@@ -171,7 +171,7 @@ export function UsersClient({
   partners,
 }: {
   users: UserProfile[];
-  partners: Partner[];
+  partners: PartnerListItem[];
 }) {
   const router = useRouter();
   const { toast } = useToast();

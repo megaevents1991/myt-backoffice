@@ -4,6 +4,11 @@ import { supabase } from "@/lib/supabase-server";
 import nodemailer from "nodemailer";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { guardCronRoute } from "@/lib/auth/guards";
+import {
+  PAID_STATUS,
+  countReservationTickets,
+  countTickets,
+} from "@/lib/partner-commission";
 
 interface Reservation {
   main_contact_first_name: string;
@@ -89,7 +94,7 @@ export async function GET(req: Request) {
     const { data: reservations, error } = (await supabase
       .from("reservations")
       .select("*")
-      .eq("status", "Paid")
+      .eq("status", PAID_STATUS)
       .not("aff_partner_tracking_code", "is", null) // Exclude null tracking codes
       .neq("aff_partner_tracking_code", "") // Also exclude empty string tracking codes
       .gte("created_at", firstDayOfMonth.toISOString()) // Greater than or equal to first day of month
@@ -125,7 +130,7 @@ export async function GET(req: Request) {
 
       const { data: partnerData, error: partnerError } = (await supabase
         .from("partners")
-        .select("*")
+        .select("name_hebrew,email,commission,supplier_number,is_active")
         .eq("partner_tracking_code", trackingCode)
         .single()) as { data: any | null; error: any };
       if (partnerError) {
@@ -139,6 +144,10 @@ export async function GET(req: Request) {
         console.log(
           `skipping ${trackingCode}, as this is workaround for purchased user`,
         );
+        continue;
+      }
+      if (!partnerData.is_active) {
+        console.log(`skipping ${trackingCode}, partner is inactive`);
         continue;
       }
 
@@ -386,10 +395,7 @@ const generateEmailHtml = ({
                       .map((e) => e.location_name)
                       .filter(Boolean)
                       .join(" | ") || "Unknown";
-                  const tickets = events.reduce(
-                    (s, e) => s + (Number(e.number_of_ticket) || 0),
-                    0,
-                  );
+                  const tickets = countReservationTickets(reservation);
 
                   return `
                 <tr>
@@ -585,10 +591,7 @@ const generateEmailHtml = ({
                       .map((e) => e.location_name)
                       .filter(Boolean)
                       .join(" | ") || "Unknown";
-                  const tickets = events.reduce(
-                    (s, e) => s + (Number(e.number_of_ticket) || 0),
-                    0,
-                  );
+                  const tickets = countReservationTickets(reservation);
 
                   return `
                 <tr>
@@ -639,16 +642,7 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
   const year = previousMonth.getFullYear().toString();
 
   const totalReservations = partnerData.reservations.length;
-  const totalTickets = partnerData.reservations.reduce((sum, reservation) => {
-    const events = normalizeReservationEventOrderInfo(
-      reservation.event_order_info,
-    );
-    const tickets = events.reduce(
-      (s, e) => s + (Number(e.number_of_ticket) || 0),
-      0,
-    );
-    return sum + tickets;
-  }, 0);
+  const totalTickets = countTickets(partnerData.reservations);
 
   const emailHtmlForPartner = generateEmailHtml({
     partnerName: partnerData.partnerName,

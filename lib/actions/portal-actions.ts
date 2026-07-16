@@ -2,6 +2,12 @@
 
 import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
+import {
+  commissionForTickets,
+  countTickets,
+  isPaid,
+} from "@/lib/partner-commission";
+import type { ReservationEventOrderInfo } from "@/types/reservation.types";
 
 export interface PortalProfile {
   name_hebrew: string | null;
@@ -16,7 +22,9 @@ export interface PortalStats {
   totalReservations: number;
   paidReservations: number;
   totalSalesUsd: number;
-  commissionPercent: number | null;
+  /** Flat USD per ticket — see lib/partner-commission.ts. */
+  commissionPerTicket: number | null;
+  paidTickets: number;
   estimatedCommissionUsd: number;
   activeCoupons: number;
   couponUses: number;
@@ -79,7 +87,8 @@ export async function getPortalStats(): Promise<PortalStats> {
     totalReservations: 0,
     paidReservations: 0,
     totalSalesUsd: 0,
-    commissionPercent: null,
+    commissionPerTicket: null,
+    paidTickets: 0,
     estimatedCommissionUsd: 0,
     activeCoupons: 0,
     couponUses: 0,
@@ -88,7 +97,7 @@ export async function getPortalStats(): Promise<PortalStats> {
   const [resResult, couponResult, partnerResult] = await Promise.all([
     (supabase as any)
       .from("reservations")
-      .select("id,status,user_shown_price")
+      .select("id,status,user_shown_price,event_order_info")
       .eq("aff_partner_tracking_code", session.partner_code),
     (supabase as any)
       .from("coupons")
@@ -113,25 +122,26 @@ export async function getPortalStats(): Promise<PortalStats> {
     id: number;
     status: string;
     user_shown_price: number | null;
+    event_order_info: ReservationEventOrderInfo | null;
   }[];
   const coupons = (couponResult.data ?? []) as {
     id: number;
     is_active: boolean;
     times_used: number | null;
   }[];
-  const commissionPercent = partnerResult.data?.commission ?? null;
+  const commissionPerTicket = partnerResult.data?.commission ?? null;
 
-  const paid = reservations.filter((r) => (r.status ?? "").toLowerCase() === "paid");
+  const paid = reservations.filter(isPaid);
   const totalSalesUsd = paid.reduce((sum, r) => sum + (r.user_shown_price ?? 0), 0);
+  const paidTickets = countTickets(paid);
 
   return {
     totalReservations: reservations.length,
     paidReservations: paid.length,
     totalSalesUsd,
-    commissionPercent,
-    estimatedCommissionUsd: commissionPercent
-      ? Math.round(totalSalesUsd * (commissionPercent / 100))
-      : 0,
+    commissionPerTicket,
+    paidTickets,
+    estimatedCommissionUsd: commissionForTickets(paidTickets, commissionPerTicket),
     activeCoupons: coupons.filter((c) => c.is_active).length,
     couponUses: coupons.reduce((sum, c) => sum + (c.times_used ?? 0), 0),
   };
