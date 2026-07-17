@@ -292,11 +292,30 @@ export async function generateCampaignForEvent(
   const hash = campaignInputHash(event);
   if (event.campaign_input_hash === hash) return { status: "current" };
 
+  // Records the hash even on skip — otherwise an event whose derivation
+  // fails (unmatched teams, no artist image) gets re-evaluated on EVERY
+  // cron run forever, permanently occupying batch slots and starving newer
+  // events further down the date-ordered scan from ever being reached.
+  // Existing campaign_image_url/banner (if any, from a prior successful
+  // run) are left untouched — a newly-failing derivation shouldn't blank
+  // out a previously good creative.
+  const markChecked = async (): Promise<void> => {
+    const { error } = await supabase
+      .from("events")
+      .update({ campaign_input_hash: hash } as never)
+      .eq("id", event.id);
+    if (error) {
+      console.error("campaign hash checkpoint failed:", JSON.stringify(error));
+    }
+  };
+
   const defaults = await deriveCreativeDefaults(event.id);
   if (defaults.warnings.length > 0) {
+    await markChecked();
     return { status: "skipped", reason: defaults.warnings.join("; ") };
   }
   if (defaults.price === null) {
+    await markChecked();
     return { status: "skipped", reason: "no computable price" };
   }
 
