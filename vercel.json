@@ -31,6 +31,10 @@
     {
       "path": "/api/cron/weeklyFeedHealth",
       "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/cron/nightlyCampaignCreatives",
+      "schedule": "30 3 * * *"
     }
   ],
   "functions": {
@@ -61,6 +65,10 @@
     "app/api/cron/nightlyTixstockSync/route.ts": {
       "memory": 1024,
       "maxDuration": 800
+    },
+    "app/api/cron/nightlyCampaignCreatives/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
     },
     "app/api/cron/nightlyTixstockPriceSync/route.ts": {
       "memory": 1024,

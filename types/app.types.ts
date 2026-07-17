@@ -66,6 +66,12 @@ export type Event = {
   // ticket_cost + this value (no other markup at all). Every other path is
   // unchanged. Empty/null = no override.
   ticket_only_markup?: number | null;
+  // Auto-generated campaign creative for the Meta product feed (nightly cron;
+  // square = feed image_link, banner = additional_image_link). Synced to main.
+  campaign_image_url?: string | null;
+  campaign_banner_url?: string | null;
+  campaign_input_hash?: string | null;
+  campaign_generated_at?: string | null;
   comp_pricing?: {
     price: number;
     name: string;
