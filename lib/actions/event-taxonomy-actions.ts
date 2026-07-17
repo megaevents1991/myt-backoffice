@@ -19,6 +19,70 @@ async function uniqueSlug(table: string, base: string): Promise<string> {
   return `${base}-${Date.now()}`;
 }
 
+/**
+ * Case-insensitive same-name lookup. Creates are IDEMPOTENT: a double-tap /
+ * double-submit returns the existing row instead of inserting a twin (names
+ * have no unique constraint — Hebrew-only names all slug to "item-N", so the
+ * slug uniqueness never blocks duplicates).
+ */
+async function findByName(
+  table: string,
+  name: string,
+  parentId?: number | null
+): Promise<{ id: number } | null> {
+  let q = tbl(table)
+    .select("*")
+    .ilike("name", name.trim().replace(/[%_]/g, "\\$&"))
+    .eq("is_deleted", false);
+  if (parentId !== undefined) {
+    q = parentId === null ? q.is("parent_id", null) : q.eq("parent_id", parentId);
+  }
+  const { data, error } = await q.limit(1).maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+/**
+ * Every new taxonomy category also gets a HIDDEN card in the Templates CMS
+ * `categories` table (is_active=false), pre-linked to its /c/ page on main —
+ * the team edits the card and enables it when ready. Best-effort: a card
+ * failure must never fail the taxonomy create.
+ */
+async function createHiddenTemplateCard(cat: EventCategory): Promise<void> {
+  try {
+    // Canonical /c/ path = ancestor slugs + own slug (walk parent chain).
+    const { data: all, error } = await tbl("event_categories")
+      .select("id,parent_id,slug")
+      .eq("is_deleted", false);
+    if (error) throw error;
+    const byId = new Map<number, { parent_id: number | null; slug: string }>(
+      (all ?? []).map((r: any) => [r.id, { parent_id: r.parent_id, slug: r.slug }])
+    );
+    const path: string[] = [cat.slug];
+    const seen = new Set<number>([cat.id]);
+    let cur = cat.parent_id;
+    while (cur != null && byId.has(cur) && !seen.has(cur)) {
+      seen.add(cur);
+      path.unshift(byId.get(cur)!.slug);
+      cur = byId.get(cur)!.parent_id;
+    }
+
+    const cardSlug = await uniqueSlug("categories", cat.slug);
+    const { error: insErr } = await tbl("categories").insert({
+      slug: cardSlug,
+      name: cat.name,
+      name_english: cat.name_english ?? null,
+      image_url: cat.image_url ?? null,
+      link_url: `/c/${path.join("/")}`,
+      is_active: false, // hidden until the team finishes the card and enables it
+      is_deleted: false,
+    });
+    if (insErr) throw insErr;
+  } catch (e) {
+    console.error("createHiddenTemplateCard failed (taxonomy create kept):", e);
+  }
+}
+
 // Reject a parent that is self or a descendant (cycle guard).
 async function assertNoCycle(id: number, parentId: number | null): Promise<void> {
   if (parentId == null) return;
@@ -61,6 +125,10 @@ export async function createCategory(input: {
 }): Promise<EventCategory> {
   await requireStaff();
   if (!input.name?.trim()) throw new Error("Category name is required.");
+  // Idempotent: same name under the same parent returns the existing node.
+  const existing = await findByName("event_categories", input.name, input.parent_id ?? null);
+  if (existing) return existing as EventCategory;
+
   const slug = await uniqueSlug("event_categories", slugify(input.name_english || input.name));
   const { data, error } = await tbl("event_categories")
     .insert({
@@ -76,6 +144,7 @@ export async function createCategory(input: {
     .select()
     .single();
   if (error) throw error;
+  await createHiddenTemplateCard(data as EventCategory);
   return data as EventCategory;
 }
 
@@ -149,7 +218,18 @@ export async function createTag(input: {
 }): Promise<EventTag> {
   await requireStaff();
   if (!input.name?.trim()) throw new Error("Tag name is required.");
-  const slug = await uniqueSlug("event_tags", slugify(input.name_english || input.name));
+  // Idempotent: an existing tag with the same name is returned, not duplicated
+  // (checked FIRST so re-adding an old Hebrew-only tag doesn't demand English).
+  const existing = await findByName("event_tags", input.name);
+  if (existing) return existing as EventTag;
+  // Feed labels are slug-keyed — a Hebrew-only tag slugs to a meaningless
+  // "item-N", so a REAL latin English name is mandatory at create time
+  // (slugify falls back to "item" on non-latin input, so test letters directly).
+  if (!input.name_english?.trim() || !/[a-z]/i.test(input.name_english)) {
+    throw new Error("English name is required — it becomes the feed slug.");
+  }
+
+  const slug = await uniqueSlug("event_tags", slugify(input.name_english));
   const { data, error } = await tbl("event_tags")
     .insert({
       name: input.name.trim(),
@@ -261,6 +341,32 @@ export async function bulkAssignCategories(
     ignoreDuplicates: true,
   });
   if (error) throw error;
+}
+
+/**
+ * Full event→taxonomy link maps for the events table (taxonomy column +
+ * filters). One round trip per link table; both tables are small.
+ */
+export async function getTaxonomyLinkMaps(): Promise<{
+  cats: Record<number, number[]>;
+  tags: Record<number, number[]>;
+}> {
+  await requireStaff();
+  const [catRes, tagRes] = await Promise.all([
+    tbl("event_category_links").select("event_id,category_id"),
+    tbl("event_tag_links").select("event_id,tag_id"),
+  ]);
+  if (catRes.error) throw catRes.error;
+  if (tagRes.error) throw tagRes.error;
+  const cats: Record<number, number[]> = {};
+  (catRes.data ?? []).forEach((r: any) => {
+    (cats[r.event_id] ??= []).push(r.category_id);
+  });
+  const tags: Record<number, number[]> = {};
+  (tagRes.data ?? []).forEach((r: any) => {
+    (tags[r.event_id] ??= []).push(r.tag_id);
+  });
+  return { cats, tags };
 }
 
 /* ---------- counts (managers show how many events each node/tag collects) ---------- */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,19 +31,35 @@ export function TagsManager({
   const { toast } = useToast();
   const [tags, setTags] = useState<EventTag[]>(initial);
   const [name, setName] = useState("");
+  const [nameEnglish, setNameEnglish] = useState("");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<EventTag | null>(null);
   const [editForm, setEditForm] = useState({ name: "", name_english: "", is_active: true });
   const [savingEdit, setSavingEdit] = useState(false);
+  // Synchronous re-entry guards — the state flags update async, so a
+  // double-tap / Enter+click fires the handler twice before the re-render.
+  const addingRef = useRef(false);
+  const savingEditRef = useRef(false);
 
   const refresh = async () => setTags(await listTags());
 
   const add = async () => {
-    if (!name.trim() || adding) return;
+    if (!name.trim() || addingRef.current) return;
+    // Feed labels are slug-keyed — force a real latin English name up front.
+    if (!/[a-z]/i.test(nameEnglish)) {
+      toast({
+        variant: "destructive",
+        title: "English name required",
+        description: "It becomes the feed slug (e.g. premier-league).",
+      });
+      return;
+    }
+    addingRef.current = true;
     setAdding(true);
     try {
-      await createTag({ name });
+      await createTag({ name, name_english: nameEnglish.trim() });
       setName("");
+      setNameEnglish("");
       await refresh();
       toast({ title: "Added" });
     } catch (e) {
@@ -53,6 +69,7 @@ export function TagsManager({
         description: e instanceof Error ? e.message : "Failed",
       });
     } finally {
+      addingRef.current = false;
       setAdding(false);
     }
   };
@@ -63,11 +80,12 @@ export function TagsManager({
   };
 
   const saveEdit = async () => {
-    if (!editing || savingEdit) return;
+    if (!editing || savingEditRef.current) return;
     if (!editForm.name.trim()) {
       toast({ variant: "destructive", title: "Name required" });
       return;
     }
+    savingEditRef.current = true;
     setSavingEdit(true);
     try {
       await updateTag(editing.id, {
@@ -85,6 +103,7 @@ export function TagsManager({
         description: e instanceof Error ? e.message : "Failed",
       });
     } finally {
+      savingEditRef.current = false;
       setSavingEdit(false);
     }
   };
@@ -110,7 +129,13 @@ export function TagsManager({
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="New tag name"
+          placeholder="New tag name (Hebrew)"
+          onKeyDown={(e) => e.key === "Enter" && add()}
+        />
+        <Input
+          value={nameEnglish}
+          onChange={(e) => setNameEnglish(e.target.value)}
+          placeholder="English name (→ feed slug)"
           onKeyDown={(e) => e.key === "Enter" && add()}
         />
         <Button onClick={add} disabled={adding}>

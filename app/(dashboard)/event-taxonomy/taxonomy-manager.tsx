@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,13 @@ import {
   softDeleteCategory,
 } from "@/lib/actions/event-taxonomy-actions";
 import { buildTree, descendantIds } from "@/lib/taxonomy-tree";
+import { uploadToBucket } from "@/lib/upload-helper";
+import { supabase } from "@/lib/supabase-client";
 import type { EventCategory, EventCategoryNode } from "@/types/taxonomy.types";
+
+// Category hero/card images live with the event card images (public bucket).
+const IMAGE_BUCKET = "card_images";
+const IMAGE_FOLDER = "event-categories";
 
 // Hoisted (not defined during render) so React reconciles rows instead of
 // remounting the whole tree on every state change.
@@ -106,6 +112,39 @@ export function TaxonomyManager({
   const [cats, setCats] = useState<EventCategory[]>(initial);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Synchronous re-entry guard — `saving` STATE updates async, so a
+  // double-tap fires save() twice before the re-render (duplicate categories).
+  const savingRef = useRef(false);
+  const [uploading, setUploading] = useState(false);
+
+  // Direct-to-storage upload (signed URL — bypasses the 4.5MB function limit),
+  // then drop the public URL into the form like a manually pasted one.
+  const uploadImage = async (file: File) => {
+    setUploading(true);
+    try {
+      // Unique, storage-safe name — Hebrew filenames and same-named re-uploads
+      // must not collide or produce awkward object keys.
+      const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const path = await uploadToBucket(
+        IMAGE_BUCKET,
+        IMAGE_FOLDER,
+        new File([file], safeName, { type: file.type })
+      );
+      const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(path);
+      setForm((f) => ({ ...f, image_url: data.publicUrl }));
+      toast({ title: "Image uploaded" });
+    } catch (e) {
+      console.error("Category image upload failed:", e);
+      toast({
+        variant: "destructive",
+        title: "Upload failed",
+        description: e instanceof Error ? e.message : "Try again or paste a URL.",
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
   const [editing, setEditing] = useState<EventCategory | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
 
@@ -136,12 +175,13 @@ export function TaxonomyManager({
   };
 
   const save = async () => {
-    if (saving) return;
+    if (savingRef.current) return;
     if (!form.name.trim()) {
       toast({ variant: "destructive", title: "Name required" });
       return;
     }
     const parent_id = form.parent_id ? Number(form.parent_id) : null;
+    savingRef.current = true;
     setSaving(true);
     try {
       if (editing) {
@@ -171,6 +211,7 @@ export function TaxonomyManager({
         description: e instanceof Error ? e.message : "Failed",
       });
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -284,12 +325,42 @@ export function TaxonomyManager({
               </select>
             </div>
             <div>
-              <Label>Image URL (category page hero/card)</Label>
-              <Input
-                value={form.image_url}
-                onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
-                placeholder="https://..."
-              />
+              <Label>Image (category page hero/card)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={form.image_url}
+                  onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
+                  placeholder="https://... or upload →"
+                />
+                <input
+                  id="category-image-file"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) uploadImage(file);
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={uploading}
+                  onClick={() => document.getElementById("category-image-file")?.click()}
+                >
+                  {uploading ? "Uploading..." : "Upload"}
+                </Button>
+              </div>
+              {form.image_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={form.image_url}
+                  alt="Category preview"
+                  className="mt-2 h-20 rounded-md border object-cover"
+                />
+              )}
             </div>
             <div>
               <Label>Description</Label>

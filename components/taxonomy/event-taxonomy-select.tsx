@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Check, Plus, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -39,8 +39,13 @@ export function EventTaxonomySelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  // Synchronous re-entry guard — the `creating` STATE updates async, so a
+  // double-tap fires handleCreate twice before the re-render (duplicate rows).
+  const creatingRef = useRef(false);
   // Parent for an inline-created category (Shopify-style). "" = root.
   const [createParentId, setCreateParentId] = useState("");
+  // English name for an inline-created tag — required (it becomes the feed slug).
+  const [createEnglish, setCreateEnglish] = useState("");
 
   const sorted = [...options].sort((a, b) => a.label.localeCompare(b.label));
   const selected = options.filter((o) => value.includes(o.id));
@@ -53,14 +58,23 @@ export function EventTaxonomySelect({
   );
 
   const handleCreate = async () => {
-    if (!q || creating) return;
+    if (!q || creatingRef.current) return;
+    if (kind === "tag" && !/[a-z]/i.test(createEnglish)) {
+      toast({
+        variant: "destructive",
+        title: "English name required",
+        description: "Fill the English name below — it becomes the feed slug.",
+      });
+      return;
+    }
+    creatingRef.current = true;
     setCreating(true);
     try {
       const parentId = createParentId ? Number(createParentId) : null;
       const created =
         kind === "category"
           ? await createCategory({ name: q, parent_id: parentId })
-          : await createTag({ name: q });
+          : await createTag({ name: q, name_english: createEnglish.trim() });
       const parentLabel = parentId
         ? options.find((o) => o.id === parentId)?.label
         : null;
@@ -68,10 +82,13 @@ export function EventTaxonomySelect({
         id: created.id,
         label: parentLabel ? `${parentLabel} › ${created.name}` : created.name,
       };
-      onOptionCreated?.(opt);
-      onChange([...value, created.id]);
+      // Idempotent server create can return an existing row — don't double-add.
+      if (!options.some((o) => o.id === created.id)) onOptionCreated?.(opt);
+      if (!value.includes(created.id)) onChange([...value, created.id]);
       setQuery("");
       setCreateParentId("");
+      setCreateEnglish("");
+      toast({ title: `${kind === "category" ? "Category" : "Tag"} "${created.name}" added` });
     } catch (e) {
       console.error(`Inline ${kind} create failed:`, e);
       toast({
@@ -80,6 +97,7 @@ export function EventTaxonomySelect({
         description: e instanceof Error ? e.message : "Please try again.",
       });
     } finally {
+      creatingRef.current = false;
       setCreating(false);
     }
   };
@@ -143,6 +161,19 @@ export function EventTaxonomySelect({
                 )}
               </CommandGroup>
             </CommandList>
+            {kind === "tag" && q && !exists && (
+              <div className="border-t p-2 space-y-1">
+                <p className="text-xs text-muted-foreground">
+                  English name for “{q}” (required — feed slug)
+                </p>
+                <input
+                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                  placeholder="e.g. premier-league"
+                  value={createEnglish}
+                  onChange={(e) => setCreateEnglish(e.target.value)}
+                />
+              </div>
+            )}
             {kind === "category" && q && !exists && (
               <div className="border-t p-2 space-y-1">
                 <p className="text-xs text-muted-foreground">Parent for “{q}”</p>

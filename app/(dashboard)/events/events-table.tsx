@@ -33,8 +33,10 @@ import {
   listTags,
   bulkAssignCategories,
   bulkAssignTags,
+  getTaxonomyLinkMaps,
 } from "@/lib/actions/event-taxonomy-actions";
-import { flattenWithPath } from "@/lib/taxonomy-tree";
+import { buildTree, descendantIds, flattenWithPath } from "@/lib/taxonomy-tree";
+import type { EventCategory } from "@/types/taxonomy.types";
 import {
   EventTaxonomySelect,
   type TaxonomyOption,
@@ -487,18 +489,45 @@ export function EventsTable() {
   const [bulkTagIds, setBulkTagIds] = useState<number[]>([]);
   const [bulkCatMode, setBulkCatMode] = useState<AssignMode>("add");
   const [bulkTagMode, setBulkTagMode] = useState<AssignMode>("add");
+  // Raw categories (for descendant-aware filtering) + per-event link maps
+  // (taxonomy column + filters). "" = no filter.
+  const [rawCats, setRawCats] = useState<EventCategory[]>([]);
+  const [catsByEvent, setCatsByEvent] = useState<Record<number, number[]>>({});
+  const [tagsByEvent, setTagsByEvent] = useState<Record<number, number[]>>({});
+  const [filterCatId, setFilterCatId] = useState("");
+  const [filterTagId, setFilterTagId] = useState("");
+
+  const refreshTaxonomyLinks = async () => {
+    try {
+      const maps = await getTaxonomyLinkMaps();
+      setCatsByEvent(maps.cats);
+      setTagsByEvent(maps.tags);
+    } catch (e) {
+      console.error("Failed to load taxonomy link maps:", e);
+    }
+  };
 
   useEffect(() => {
     (async () => {
       try {
         const [cats, tags] = await Promise.all([listCategories(), listTags()]);
+        setRawCats(cats);
         setCatOptions(flattenWithPath(cats).map((c) => ({ id: c.id, label: c.path })));
         setTagOptions(tags.map((t) => ({ id: t.id, label: t.name })));
       } catch (e) {
         console.error("Failed to load taxonomy pools:", e);
       }
+      await refreshTaxonomyLinks();
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Category filter matches the node AND its whole subtree (Shopify-style).
+  const filterCatIdSet = (() => {
+    if (!filterCatId) return null;
+    const id = Number(filterCatId);
+    return new Set([id, ...descendantIds(buildTree(rawCats), id)]);
+  })();
 
   const handleBulkAssignCategories = async () => {
     if (selectedIds.length === 0 || bulkCatIds.length === 0) return;
@@ -511,6 +540,7 @@ export function EventsTable() {
       });
       setBulkCatOpen(false);
       setBulkCatIds([]);
+      await refreshTaxonomyLinks();
     } catch (e) {
       console.error("Bulk assign categories failed:", e);
       toast({ variant: "destructive", title: "Error", description: "Bulk assign failed." });
@@ -530,6 +560,7 @@ export function EventsTable() {
       });
       setBulkTagOpen(false);
       setBulkTagIds([]);
+      await refreshTaxonomyLinks();
     } catch (e) {
       console.error("Bulk assign tags failed:", e);
       toast({ variant: "destructive", title: "Error", description: "Bulk assign failed." });
@@ -726,6 +757,14 @@ export function EventsTable() {
       if (eventDate < today) return false;
     }
     if (showTicketOnly && !event.skip_flight) return false;
+    if (filterCatIdSet) {
+      const ids = catsByEvent[event.id] ?? [];
+      if (!ids.some((id) => filterCatIdSet.has(id))) return false;
+    }
+    if (filterTagId) {
+      const ids = tagsByEvent[event.id] ?? [];
+      if (!ids.includes(Number(filterTagId))) return false;
+    }
     return true;
   });
 
@@ -1604,6 +1643,48 @@ export function EventsTable() {
       },
     },
     {
+      id: "taxonomy",
+      header: "Categories / Feed tags",
+      cell: ({ row }) => {
+        const catIds = catsByEvent[row.original.id] ?? [];
+        const tagIds = tagsByEvent[row.original.id] ?? [];
+        // Leaf label only ("כדורגל › ליגה אנגלית" → "ליגה אנגלית") — keep the cell narrow.
+        const catLabels = catIds
+          .map((id) => catOptions.find((o) => o.id === id)?.label.split(" › ").pop())
+          .filter(Boolean) as string[];
+        const tagLabels = tagIds
+          .map((id) => tagOptions.find((o) => o.id === id)?.label)
+          .filter(Boolean) as string[];
+        if (!catLabels.length && !tagLabels.length) {
+          return <span className="text-xs italic text-muted-foreground">—</span>;
+        }
+        const shown = [
+          ...catLabels.slice(0, 2).map((l) => ({ l, kind: "cat" as const })),
+          ...tagLabels.slice(0, 2).map((l) => ({ l, kind: "tag" as const })),
+        ];
+        const extra = catLabels.length + tagLabels.length - shown.length;
+        return (
+          <div
+            className="flex max-w-[180px] flex-wrap gap-1"
+            title={[...catLabels, ...tagLabels].join(", ")}
+          >
+            {shown.map(({ l, kind }, i) => (
+              <Badge
+                key={`${kind}-${i}`}
+                variant={kind === "cat" ? "secondary" : "outline"}
+                className="text-[10px]"
+              >
+                {l}
+              </Badge>
+            ))}
+            {extra > 0 && (
+              <span className="text-[10px] text-muted-foreground">+{extra}</span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
       accessorKey: "skip_flight",
       header: ({ column }) => (
         <Button
@@ -2016,6 +2097,34 @@ export function EventsTable() {
             Show ticket only events
           </label>
         </div>
+
+        {/* Taxonomy filters — category matches its whole subtree */}
+        <select
+          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+          value={filterCatId}
+          onChange={(e) => setFilterCatId(e.target.value)}
+          aria-label="Filter by category"
+        >
+          <option value="">All categories</option>
+          {catOptions.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+          value={filterTagId}
+          onChange={(e) => setFilterTagId(e.target.value)}
+          aria-label="Filter by feed tag"
+        >
+          <option value="">All feed tags</option>
+          {tagOptions.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <DataTable
