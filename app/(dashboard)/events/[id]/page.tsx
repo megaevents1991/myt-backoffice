@@ -136,6 +136,18 @@ export default function EventPage({
   const [tagOptions, setTagOptions] = useState<TaxonomyOption[]>([]);
   const [selectedCatIds, setSelectedCatIds] = useState<number[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  // Baseline of the loaded links (dirty detection + Discard). New events start [].
+  const initialCatIdsRef = useRef<number[]>([]);
+  const initialTagIdsRef = useRef<number[]>([]);
+  // If the links failed to load we must NOT save [] over the event's real links.
+  const [taxonomyLoadFailed, setTaxonomyLoadFailed] = useState(false);
+
+  const idsEqual = (a: number[], b: number[]) =>
+    a.length === b.length &&
+    [...a].sort((x, y) => x - y).join(",") === [...b].sort((x, y) => x - y).join(",");
+  const taxonomyDirty =
+    !idsEqual(selectedCatIds, initialCatIdsRef.current) ||
+    !idsEqual(selectedTagIds, initialTagIdsRef.current);
 
   // Load the category/tag pools once (both new + edit flows).
   useEffect(() => {
@@ -163,11 +175,48 @@ export default function EventPage({
         ]);
         setSelectedCatIds(catIds);
         setSelectedTagIds(tagIds);
+        initialCatIdsRef.current = catIds;
+        initialTagIdsRef.current = tagIds;
+        setTaxonomyLoadFailed(false);
       } catch (e) {
         console.error("Failed to load event taxonomy:", e);
+        setTaxonomyLoadFailed(true);
+        toast({
+          variant: "destructive",
+          title: "Categories/tags failed to load",
+          description: "Editing them is disabled for this event — reload the page to retry.",
+        });
       }
     })();
   }, [isNewEvent, unwrappedParams.id]);
+
+  // Persist links; isolated so a taxonomy failure never masks a successful event
+  // save (masking caused duplicate events on retry). isNewRow = freshly-inserted
+  // event (incl. every batch step): write whenever anything is selected, and do
+  // NOT move the baseline (batch reuses the same selections for the next step).
+  const persistTaxonomy = async (eventId: number, isNewRow: boolean) => {
+    if (taxonomyLoadFailed) return; // no baseline — writing would wipe real links
+    if (isNewRow) {
+      if (!selectedCatIds.length && !selectedTagIds.length) return;
+    } else if (!taxonomyDirty) {
+      return; // unchanged — skip the delete+insert round trip
+    }
+    try {
+      await setEventCategories(eventId, selectedCatIds);
+      await setEventTags(eventId, selectedTagIds);
+      if (!isNewRow) {
+        initialCatIdsRef.current = selectedCatIds;
+        initialTagIdsRef.current = selectedTagIds;
+      }
+    } catch (e) {
+      console.error("Event saved but taxonomy links failed:", e);
+      toast({
+        variant: "destructive",
+        title: "Event saved, but categories/tags failed",
+        description: "Open the event again and re-save its categories/tags.",
+      });
+    }
+  };
 
   useEffect(() => {
     async function fetchEvent() {
@@ -1189,7 +1238,10 @@ export default function EventPage({
     setSaving(true);
     try {
       const { id: _savedId, ...current } = event; // tickets already carry this event's eid + live price
-      await createEvent(current);
+      const createdBatchEvent = await createEvent(current);
+      // Selected categories/tags apply to EVERY batch step (like the shared
+      // location) — persist them for each created event.
+      await persistTaxonomy(createdBatchEvent.id, true);
       const next = batchIndex + 1;
       if (next >= batchEvents.length) {
         toast({ title: "Success", description: `Created all ${batchEvents.length} events.` });
@@ -1242,9 +1294,9 @@ export default function EventPage({
           ),
         ]);
 
-        // Persist category/tag links now that the new event id exists.
-        await setEventCategories(createdEvent.id, selectedCatIds);
-        await setEventTags(createdEvent.id, selectedTagIds);
+        // Persist category/tag links now that the new event id exists
+        // (isolated — a link failure never masks the successful create).
+        await persistTaxonomy(createdEvent.id, true);
 
         const extras = [];
         if (stagedFlights.length > 0) extras.push(`${stagedFlights.length} flight(s)`);
@@ -1259,8 +1311,9 @@ export default function EventPage({
       } else {
         // For existing events, use updateEvent
         await updateEvent(event.id, event);
-        await setEventCategories(event.id, selectedCatIds);
-        await setEventTags(event.id, selectedTagIds);
+        // Links: only when actually changed, never on a failed baseline load
+        // (isolated — a link failure never reports the event save as failed).
+        await persistTaxonomy(event.id, false);
         toast({
           title: "Success",
           description: "Event has been saved successfully.",
@@ -1322,7 +1375,8 @@ export default function EventPage({
       !!event &&
       JSON.stringify(event) !== initialEventRef.current) ||
     stagedFlights.length > 0 ||
-    stagedHotels.length > 0;
+    stagedHotels.length > 0 ||
+    taxonomyDirty;
 
   if (loading) {
     return <div>Loading event details...</div>;
@@ -1849,27 +1903,35 @@ export default function EventPage({
               </select>
             </div>
 
-            <div className="space-y-2">
-              <Label>Categories</Label>
-              <EventTaxonomySelect
-                kind="category"
-                options={catOptions}
-                value={selectedCatIds}
-                onChange={setSelectedCatIds}
-                onOptionCreated={(o) => setCatOptions((p) => [...p, o])}
-              />
-            </div>
+            {taxonomyLoadFailed ? (
+              <p className="text-sm text-destructive">
+                Categories/tags failed to load — reload the page to edit them.
+              </p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Categories</Label>
+                  <EventTaxonomySelect
+                    kind="category"
+                    options={catOptions}
+                    value={selectedCatIds}
+                    onChange={setSelectedCatIds}
+                    onOptionCreated={(o) => setCatOptions((p) => [...p, o])}
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label>Tags (feed / promo)</Label>
-              <EventTaxonomySelect
-                kind="tag"
-                options={tagOptions}
-                value={selectedTagIds}
-                onChange={setSelectedTagIds}
-                onOptionCreated={(o) => setTagOptions((p) => [...p, o])}
-              />
-            </div>
+                <div className="space-y-2">
+                  <Label>Tags (feed / promo)</Label>
+                  <EventTaxonomySelect
+                    kind="tag"
+                    options={tagOptions}
+                    value={selectedTagIds}
+                    onChange={setSelectedTagIds}
+                    onOptionCreated={(o) => setTagOptions((p) => [...p, o])}
+                  />
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -3110,6 +3172,9 @@ export default function EventPage({
           setStagedFlights([]);
           setStagedHotels([]);
           setSelectedLocationId("");
+          // Revert taxonomy edits to the loaded baseline too.
+          setSelectedCatIds(initialCatIdsRef.current);
+          setSelectedTagIds(initialTagIdsRef.current);
         }}
         saveLabel={
           isBatchCreate

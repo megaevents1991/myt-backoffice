@@ -13,9 +13,14 @@ import {
 } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import { createCategory, createTag } from "@/lib/actions/event-taxonomy-actions";
 
 export type TaxonomyOption = { id: number; label: string };
+
+// Category labels are full paths ("כדורגל › ליגה אנגלית") — compare the leaf
+// segment too, so typing an existing leaf name doesn't offer a duplicate create.
+const leafOf = (label: string) => label.split(" › ").pop()?.trim().toLowerCase() ?? "";
 
 export function EventTaxonomySelect({
   kind,
@@ -30,27 +35,50 @@ export function EventTaxonomySelect({
   onChange: (ids: number[]) => void;
   onOptionCreated?: (opt: TaxonomyOption) => void;
 }) {
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  // Parent for an inline-created category (Shopify-style). "" = root.
+  const [createParentId, setCreateParentId] = useState("");
 
+  const sorted = [...options].sort((a, b) => a.label.localeCompare(b.label));
   const selected = options.filter((o) => value.includes(o.id));
   const toggle = (id: number) =>
     onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
 
   const q = query.trim();
-  const exists = options.some((o) => o.label.toLowerCase() === q.toLowerCase());
+  const exists = options.some(
+    (o) => o.label.toLowerCase() === q.toLowerCase() || leafOf(o.label) === q.toLowerCase()
+  );
 
   const handleCreate = async () => {
     if (!q || creating) return;
     setCreating(true);
     try {
+      const parentId = createParentId ? Number(createParentId) : null;
       const created =
-        kind === "category" ? await createCategory({ name: q }) : await createTag({ name: q });
-      const opt: TaxonomyOption = { id: created.id, label: created.name };
+        kind === "category"
+          ? await createCategory({ name: q, parent_id: parentId })
+          : await createTag({ name: q });
+      const parentLabel = parentId
+        ? options.find((o) => o.id === parentId)?.label
+        : null;
+      const opt: TaxonomyOption = {
+        id: created.id,
+        label: parentLabel ? `${parentLabel} › ${created.name}` : created.name,
+      };
       onOptionCreated?.(opt);
       onChange([...value, created.id]);
       setQuery("");
+      setCreateParentId("");
+    } catch (e) {
+      console.error(`Inline ${kind} create failed:`, e);
+      toast({
+        variant: "destructive",
+        title: `Failed to create ${kind}`,
+        description: e instanceof Error ? e.message : "Please try again.",
+      });
     } finally {
       setCreating(false);
     }
@@ -100,7 +128,7 @@ export function EventTaxonomySelect({
                 )}
               </CommandEmpty>
               <CommandGroup>
-                {options.map((o) => (
+                {sorted.map((o) => (
                   <CommandItem key={o.id} value={o.label} onSelect={() => toggle(o.id)}>
                     <Check
                       className={`mr-2 h-4 w-4 ${value.includes(o.id) ? "opacity-100" : "opacity-0"}`}
@@ -109,12 +137,29 @@ export function EventTaxonomySelect({
                   </CommandItem>
                 ))}
                 {q && !exists && (
-                  <CommandItem value={`__create_${q}`} onSelect={handleCreate}>
+                  <CommandItem value={`__create_${q}`} onSelect={handleCreate} disabled={creating}>
                     <Plus className="mr-2 h-4 w-4" /> Create “{q}”
                   </CommandItem>
                 )}
               </CommandGroup>
             </CommandList>
+            {kind === "category" && q && !exists && (
+              <div className="border-t p-2 space-y-1">
+                <p className="text-xs text-muted-foreground">Parent for “{q}”</p>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                  value={createParentId}
+                  onChange={(e) => setCreateParentId(e.target.value)}
+                >
+                  <option value="">— Root —</option>
+                  {sorted.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </Command>
         </PopoverContent>
       </Popover>

@@ -30,9 +30,12 @@ async function assertNoCycle(id: number, parentId: number | null): Promise<void>
   const byId = new Map<number, number | null>(
     (data ?? []).map((r: any) => [r.id, r.parent_id])
   );
+  // visited set: terminate even if the DB already holds a corrupt cycle.
+  const seen = new Set<number>();
   let cur: number | null = parentId;
-  while (cur != null) {
+  while (cur != null && !seen.has(cur)) {
     if (cur === id) throw new Error("Cannot move a category under its own descendant.");
+    seen.add(cur);
     cur = byId.get(cur) ?? null;
   }
 }
@@ -95,6 +98,16 @@ export async function updateCategory(
   if (patch.description !== undefined) row.description = patch.description;
   if (patch.display_order !== undefined) row.display_order = patch.display_order;
   if (patch.is_active !== undefined) row.is_active = patch.is_active;
+  // Hebrew-only names fall back to a meaningless "item-N" slug; once an English
+  // name arrives, upgrade the slug so Phase 2 main-app URLs (/c/[...slug]) are real.
+  if (patch.name_english) {
+    const { data: existing, error: exErr } = await tbl("event_categories")
+      .select("slug").eq("id", id).single();
+    if (exErr) throw exErr;
+    if (/^item(-\d+)?$/.test(existing.slug)) {
+      row.slug = await uniqueSlug("event_categories", slugify(patch.name_english));
+    }
+  }
   const { error } = await tbl("event_categories").update(row).eq("id", id);
   if (error) throw error;
 }
@@ -109,6 +122,9 @@ export async function softDeleteCategory(id: number): Promise<void> {
     .limit(1);
   if (kErr) throw kErr;
   if (kids && kids.length) throw new Error("Move or delete child categories first.");
+  // Remove event links first — otherwise ghost links resurface in Phase 2 reads.
+  const { error: linkErr } = await tbl("event_category_links").delete().eq("category_id", id);
+  if (linkErr) throw linkErr;
   const { error } = await tbl("event_categories")
     .update({ is_deleted: true, is_active: false, updated_at: new Date().toISOString() })
     .eq("id", id);
@@ -157,12 +173,25 @@ export async function updateTag(
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.name_english !== undefined) row.name_english = patch.name_english;
   if (patch.is_active !== undefined) row.is_active = patch.is_active;
+  // Same slug upgrade as categories: replace the "item-N" fallback once an
+  // English name exists (Phase 2 feed/tag URLs are slug-keyed).
+  if (patch.name_english) {
+    const { data: existing, error: exErr } = await tbl("event_tags")
+      .select("slug").eq("id", id).single();
+    if (exErr) throw exErr;
+    if (/^item(-\d+)?$/.test(existing.slug)) {
+      row.slug = await uniqueSlug("event_tags", slugify(patch.name_english));
+    }
+  }
   const { error } = await tbl("event_tags").update(row).eq("id", id);
   if (error) throw error;
 }
 
 export async function softDeleteTag(id: number): Promise<void> {
   await requireStaff();
+  // Remove event links first — otherwise ghost links resurface in Phase 2 reads.
+  const { error: linkErr } = await tbl("event_tag_links").delete().eq("tag_id", id);
+  if (linkErr) throw linkErr;
   const { error } = await tbl("event_tags")
     .update({ is_deleted: true, is_active: false, updated_at: new Date().toISOString() })
     .eq("id", id);
@@ -232,6 +261,30 @@ export async function bulkAssignCategories(
     ignoreDuplicates: true,
   });
   if (error) throw error;
+}
+
+/* ---------- counts (managers show how many events each node/tag collects) ---------- */
+
+export async function getCategoryEventCounts(): Promise<Record<number, number>> {
+  await requireStaff();
+  const { data, error } = await tbl("event_category_links").select("category_id");
+  if (error) throw error;
+  const counts: Record<number, number> = {};
+  (data ?? []).forEach((r: any) => {
+    counts[r.category_id] = (counts[r.category_id] ?? 0) + 1;
+  });
+  return counts;
+}
+
+export async function getTagEventCounts(): Promise<Record<number, number>> {
+  await requireStaff();
+  const { data, error } = await tbl("event_tag_links").select("tag_id");
+  if (error) throw error;
+  const counts: Record<number, number> = {};
+  (data ?? []).forEach((r: any) => {
+    counts[r.tag_id] = (counts[r.tag_id] ?? 0) + 1;
+  });
+  return counts;
 }
 
 export async function bulkAssignTags(

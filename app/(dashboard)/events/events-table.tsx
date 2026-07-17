@@ -2147,7 +2147,18 @@ export function EventsTable() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Popover open={bulkCatOpen} onOpenChange={setBulkCatOpen}>
+            <Popover
+              open={bulkCatOpen}
+              onOpenChange={(o) => {
+                setBulkCatOpen(o);
+                // Fresh state per open: unapplied picks + a sticky Replace mode
+                // must not ride into the next bulk action.
+                if (o) {
+                  setBulkCatIds([]);
+                  setBulkCatMode("add");
+                }
+              }}
+            >
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" disabled={bulkLoading}>
                   Categories
@@ -2190,7 +2201,16 @@ export function EventsTable() {
                 </div>
               </PopoverContent>
             </Popover>
-            <Popover open={bulkTagOpen} onOpenChange={setBulkTagOpen}>
+            <Popover
+              open={bulkTagOpen}
+              onOpenChange={(o) => {
+                setBulkTagOpen(o);
+                if (o) {
+                  setBulkTagIds([]);
+                  setBulkTagMode("add");
+                }
+              }}
+            >
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" disabled={bulkLoading}>
                   Tags (feed)
