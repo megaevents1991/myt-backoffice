@@ -2149,7 +2149,12 @@ export default function EventPage({
                       {excludeSectionsMode ? "✕ Exit Exclude Mode" : "Exclude Sections"}
                     </Button>
                     {excludeSectionsMode && (
-                      <span className="text-xs text-muted-foreground">Click sections on the map to exclude/include them</span>
+                      <span className="text-xs text-muted-foreground">
+                        Click sections on the map to exclude/include them. Note: some venues repeat
+                        the same section letter on several sides of the map — TixStock tickets only
+                        carry ring+letter, so excluding one wedge excludes ALL wedges with that
+                        letter (the mirrored highlight is the real ticket filter).
+                      </span>
                     )}
                   </div>
 
