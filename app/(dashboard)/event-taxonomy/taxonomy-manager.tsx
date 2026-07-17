@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -60,6 +61,9 @@ function CategoryRow({
             <span className="text-muted-foreground"> · {node.name_english}</span>
           ) : null}
           <span className="text-xs text-muted-foreground"> ({counts[node.id] ?? 0} events)</span>
+          {!node.is_active && (
+            <span className="text-xs font-semibold text-amber-600"> · hidden</span>
+          )}
         </span>
         <Button size="sm" variant="ghost" onClick={() => onMove(node, -1)} aria-label="Move up">
           <ArrowUp className="h-3 w-3" />
@@ -99,6 +103,7 @@ const EMPTY_FORM = {
   parent_id: "" as string,
   image_url: "",
   description: "",
+  is_active: false,
 };
 
 export function TaxonomyManager({
@@ -170,6 +175,7 @@ export function TaxonomyManager({
       parent_id: c.parent_id != null ? String(c.parent_id) : "",
       image_url: c.image_url ?? "",
       description: c.description ?? "",
+      is_active: c.is_active,
     });
     setOpen(true);
   };
@@ -191,6 +197,7 @@ export function TaxonomyManager({
           parent_id,
           image_url: form.image_url || null,
           description: form.description || null,
+          is_active: form.is_active,
         });
       } else {
         await createCategory({
@@ -370,6 +377,25 @@ export function TaxonomyManager({
                 rows={3}
               />
             </div>
+            {editing ? (
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={form.is_active}
+                  onCheckedChange={(v) => setForm((f) => ({ ...f, is_active: v }))}
+                />
+                <Label>
+                  Live on site
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    Off = the /c/ page 404s and stays out of the sitemap
+                  </span>
+                </Label>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                New categories are created <b>hidden</b> — finish them, then flip “Live on
+                site” in Edit (and enable the matching Templates card) when ready.
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button onClick={save} disabled={saving}>

@@ -138,7 +138,10 @@ export async function createCategory(input: {
       image_url: input.image_url ?? null,
       description: input.description ?? null,
       slug,
-      is_active: true,
+      // Hidden by default — the /c/ page and sitemap entry appear only after
+      // the team finishes the category and enables it (same flow as the
+      // auto-created hidden Templates card).
+      is_active: false,
       is_deleted: false,
     })
     .select()
