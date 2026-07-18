@@ -1,12 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const Amadeus = require("amadeus");
-
-const amadeus = new Amadeus({
-  clientId: process.env.NEXT_SECRET_AMADEUS_CLIENT_ID as string,
-  clientSecret: process.env.NEXT_SECRET_AMADEUS_CLIENT_SECRET as string,
-  hostname: "production",
-});
+import { amadeus } from "../amadeusClient";
 
 interface FlightSearchParams {
   originLocationCode: string;
@@ -231,14 +224,20 @@ export async function POST(request: NextRequest) {
       baseSearchParams.returnDate = returnDate;
     }
 
+    // Amadeus per-request client reference (ama-Client-Ref) — required by the
+    // production-certification checklist so Amadeus can trace each call.
+    const clientRef = `MYT-BO-${originLocationCode}${destinationLocationCode}-${Math.floor(Date.now() / 1000)}`;
+
     // 1) Primary search: use requested nonStop behavior
     const primaryParams = {
       ...baseSearchParams,
       nonStop: Boolean(nonStop),
     };
 
-    const primaryResponse =
-      await amadeus.shopping.flightOffersSearch.get(primaryParams);
+    const primaryResponse = await amadeus.shopping.flightOffersSearch.get(
+      primaryParams,
+      clientRef,
+    );
     let offers: any[] = Array.isArray(primaryResponse?.data)
       ? primaryResponse.data
       : [];
@@ -254,8 +253,10 @@ export async function POST(request: NextRequest) {
         max: 50,
       };
 
-      const fallbackResponse =
-        await amadeus.shopping.flightOffersSearch.get(fallbackParams);
+      const fallbackResponse = await amadeus.shopping.flightOffersSearch.get(
+        fallbackParams,
+        clientRef,
+      );
       const fallbackOffers: any[] = Array.isArray(fallbackResponse?.data)
         ? fallbackResponse.data
         : [];
