@@ -2,6 +2,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { syncSportsEventsData } from '@/lib/services/sports-events-sync';
+import { guardAdminRoute } from '@/lib/auth/guards';
+import { logAudit } from '@/lib/audit';
 
 /**
  * Sync API endpoint to cache master data from XS2Event to Supabase
@@ -15,6 +17,8 @@ import { syncSportsEventsData } from '@/lib/services/sports-events-sync';
  * POST /api/sports-events/sync?type=events
  */
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);
     const syncType = searchParams.get('type');
@@ -24,6 +28,7 @@ export async function POST(request: NextRequest) {
 
     // Use the shared sync service
     const results = await syncSportsEventsData(typesToSync);
+    await logAudit({ action: "sync_triggered", entityType: "sports", metadata: { types: typesToSync } });
 
     return NextResponse.json({
       success: true,

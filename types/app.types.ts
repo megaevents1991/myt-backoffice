@@ -24,6 +24,18 @@ export type Event = {
   map_image_url: string;
   description: string;
   card_image_url: string;
+  // Card "blob" art (synced with main app). art_image_url = transparent cut-out
+  // PNG (background removed on upload). art_color_index (0-5) + art_shape_index
+  // (0-5) pick the neon blob colour + shape. Omitted = derived from event id.
+  art_image_url?: string | null;
+  art_color_index?: number | null;
+  art_shape_index?: number | null;
+  // Zoom (1 = 100%): cut-out scale + background (blob/photo) scale.
+  art_image_scale?: number | null;
+  art_bg_scale?: number | null;
+  // Cut-out position, % of frame (null/0 = default bottom-center). X+ = right, Y+ = down.
+  art_image_offset_x?: number | null;
+  art_image_offset_y?: number | null;
   tickets_and_rates: EventTicket[];
   def_date_depart: string;
   def_date_return: string;
@@ -40,6 +52,26 @@ export type Event = {
   tx_excluded_sections?: string[];
   // Extra event-level markup (USD) added to this event.
   event_additional_markup?: number | null;
+  // Per-event component markups (USD). When ANY of the three markup_* fields
+  // is set the main app uses composed pricing: markup_ticket always charged;
+  // markup_flight/markup_hotel only when that component is included;
+  // skip_flight_markup/skip_hotel_markup only when it's skipped.
+  // All null → legacy pricing (global 175 + env hotel-skip fee), unchanged.
+  markup_ticket?: number | null;
+  markup_flight?: number | null;
+  markup_hotel?: number | null;
+  skip_hotel_markup?: number | null;
+  // Ticket-only override (USD per ticket). Set when skip-flight is allowed;
+  // when the customer skips BOTH flight and hotel the main app charges exactly
+  // ticket_cost + this value (no other markup at all). Every other path is
+  // unchanged. Empty/null = no override.
+  ticket_only_markup?: number | null;
+  // Auto-generated campaign creative for the Meta product feed (nightly cron;
+  // square = feed image_link, banner = additional_image_link). Synced to main.
+  campaign_image_url?: string | null;
+  campaign_banner_url?: string | null;
+  campaign_input_hash?: string | null;
+  campaign_generated_at?: string | null;
   comp_pricing?: {
     price: number;
     name: string;
@@ -149,6 +181,36 @@ export type AffiliateTracking = {
     | "CONFIRMED";
   data: object;
   timestamp: string;
+};
+
+/**
+ * Customer-facing discount code (shared `coupons` table — this app writes,
+ * myt-main validates + applies). Does NOT stack with the affiliate discount:
+ * the bigger single discount wins.
+ */
+export type Coupon = {
+  id: number;
+  /** Stored UPPERCASE; matched case-insensitively. */
+  code: string;
+  /** 'percent' = % off package total; 'fixed' = USD off package total. */
+  discount_type: "percent" | "fixed";
+  discount_value: number;
+  /** null = valid on every event. */
+  event_id: number | null;
+  /** ISO date; null = never expires. */
+  valid_until: string | null;
+  /** null = unlimited. */
+  max_uses: number | null;
+  times_used: number;
+  /** Redemptions whose reservation reached status 'Paid' (DB trigger). */
+  times_paid: number;
+  /**
+   * Partner (affiliate) this coupon is attributed to. Orders redeeming the
+   * coupon credit this partner only when they have no affiliate of their own.
+   */
+  partner_tracking_code: string | null;
+  is_active: boolean;
+  created_at: string;
 };
 
 export type SortOptions = "price_asc" | "rating";

@@ -1,5 +1,6 @@
 // lib/services/live-events-sync.ts
-"use server"
+// Server-only sync service — called by cron/API routes. Deliberately NOT a
+// Server Action ("use server" removed): exports must not be client-dispatchable.
 
 import { supabase } from '@/lib/supabase-server';
 import { LiveEvent, LiveCategory, LivePerformer, LiveVenue, CategoryClassification, RawLiveCategory, RawLivePerformer, RawLiveCity } from '@/types/live-events.types';

@@ -4,6 +4,7 @@ import {
   updateOfflineFlight,
   softDeleteOfflineFlight,
 } from "@/lib/actions/offline-flight-actions";
+import { guardAdminRoute } from "@/lib/auth/guards";
 import type { OfflineFlight } from "@/types/offline-flight.types"; // Correct import
 
 interface Params {
@@ -11,6 +12,8 @@ interface Params {
 }
 
 export async function GET(request: Request, { params }: { params: Params }) {
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
   try {
     const { id } = params;
     if (!id) {
@@ -29,6 +32,8 @@ export async function GET(request: Request, { params }: { params: Params }) {
 }
 
 export async function PUT(request: Request, { params }: { params: Params }) {
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
   try {
     const { id } = params;
     if (!id) {
@@ -57,6 +62,8 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
 }
 
 export async function DELETE(request: Request, { params }: { params: Params }) {
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
   try {
     const { id } = params;
     if (!id) {

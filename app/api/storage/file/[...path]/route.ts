@@ -1,20 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase-server";
+import { guardAdminRoute } from "@/lib/auth/guards";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
+    // Only an authenticated admin may download via the service-role client —
+    // was fully open, exposing any bucket (including private ones).
+    const denied = await guardAdminRoute();
+    if (denied) return denied;
+
     const { path } = await params;
     const bucket = path[0];
     const filePath = path.slice(1).join('/');
-    
+
     if (!bucket || !filePath) {
       return NextResponse.json(
         { error: "Missing bucket or file path" },
         { status: 400 }
       );
+    }
+
+    if (filePath.includes("..")) {
+      return NextResponse.json({ error: "Invalid path" }, { status: 400 });
     }
 
     // Get the file from Supabase storage

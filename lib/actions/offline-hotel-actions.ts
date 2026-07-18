@@ -1,5 +1,6 @@
 "use server";
 
+import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import type { OfflineHotel } from "../../types/offline-hotel.types";
 import type { Event } from "../../types/app.types";
@@ -9,6 +10,7 @@ import { airportsForCityName } from "@/lib/airport-cities";
 import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
 import { replaceOfflineHotelRooms } from "./offline-hotel-room-actions";
 import type { NewOfflineHotelRoom } from "../../types/offline-hotel.types";
+import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 
 // offline_hotels is not in Supabase generated types — cast to bypass never inference
 const hotelsTable = () => (supabase as any).from("offline_hotels");
@@ -22,6 +24,7 @@ export type HotelSearchResult = {
 };
 
 export async function searchWorldOTAHotels(query: string): Promise<HotelSearchResult[]> {
+  await requireStaff();
   if (!query || query.trim().length < 2) return [];
   const { data, error } = await supabase
     .from("hotels")
@@ -34,6 +37,7 @@ export async function searchWorldOTAHotels(query: string): Promise<HotelSearchRe
 }
 
 export async function getOfflineHotels(): Promise<OfflineHotel[]> {
+  await requireStaff();
   const { data, error } = await hotelsTable()
     .select("*")
     .order("check_in", { ascending: true });
@@ -53,6 +57,7 @@ export type ReservationOfflineRoom = {
 };
 
 export async function getOfflineHotelsByIds(ids: number[]): Promise<ReservationOfflineRoom[]> {
+  await requireStaff();
   if (!ids.length) return [];
   const unique = Array.from(new Set(ids));
   const { data, error } = await hotelsTable()
@@ -63,6 +68,7 @@ export async function getOfflineHotelsByIds(ids: number[]): Promise<ReservationO
 }
 
 export async function getOfflineHotel(id: number): Promise<OfflineHotel> {
+  await requireStaff();
   const { data, error } = await hotelsTable()
     .select("*")
     .eq("id", id)
@@ -76,12 +82,19 @@ export async function createOfflineHotel(
   hotel: Omit<OfflineHotel, "id" | "consumed_rooms" | "is_deleted" | "created_at">,
   rooms?: NewOfflineHotelRoom[]
 ): Promise<OfflineHotel> {
+  await requireStaff();
   const { data, error } = await hotelsTable()
     .insert({ ...hotel, consumed_rooms: 0, is_deleted: false })
     .select();
 
   if (error) throw error;
   const created = data[0] as OfflineHotel;
+  await logAudit({
+    action: "create",
+    entityType: "offline_hotel",
+    entityId: created.id,
+    changes: hotel,
+  });
 
   if (rooms && rooms.length > 0) {
     await replaceOfflineHotelRooms(created.id, rooms); // also recomputes mirror + price push
@@ -99,6 +112,8 @@ export async function updateOfflineHotel(
   hotel: Partial<Omit<OfflineHotel, "id" | "consumed_rooms" | "created_at">>,
   rooms?: NewOfflineHotelRoom[]
 ): Promise<OfflineHotel> {
+  await requireStaff();
+  const auditBefore = await fetchBefore("offline_hotels", "id", id, hotel);
   const { data: current } = await hotelsTable()
     .select("event_ids, price, room_type")
     .eq("id", id)
@@ -115,6 +130,12 @@ export async function updateOfflineHotel(
     .select();
 
   if (error) throw error;
+  await logAudit({
+    action: "update",
+    entityType: "offline_hotel",
+    entityId: id,
+    changes: diffChanges(auditBefore, hotel),
+  });
 
   const updated = data[0] as OfflineHotel;
   // offline `price` is the TOTAL per room; base_hotel_price is consumed
@@ -199,17 +220,20 @@ export async function updateOfflineHotel(
 }
 
 export async function softDeleteOfflineHotel(id: number): Promise<OfflineHotel> {
+  await requireStaff();
   const { data, error } = await hotelsTable()
     .update({ is_deleted: true })
     .eq("id", id)
     .select();
 
   if (error) throw error;
+  await logAudit({ action: "delete", entityType: "offline_hotel", entityId: id });
   revalidatePath("/(dashboard)/offline-hotels");
   return data[0] as OfflineHotel;
 }
 
 export async function getHotelsByEventId(eventId: number): Promise<OfflineHotel[]> {
+  await requireStaff();
   const { data, error } = await hotelsTable()
     .select("*")
     .contains("event_ids", [eventId])
@@ -221,6 +245,7 @@ export async function getHotelsByEventId(eventId: number): Promise<OfflineHotel[
 }
 
 export async function getHotelsByFlightId(flightId: number): Promise<OfflineHotel[]> {
+  await requireStaff();
   const { data, error } = await hotelsTable()
     .select("*")
     .contains("flight_ids", [flightId])
@@ -232,6 +257,7 @@ export async function getHotelsByFlightId(flightId: number): Promise<OfflineHote
 }
 
 export async function removeEventFromHotel(hotelId: number, eventId: number): Promise<OfflineHotel> {
+  await requireStaff();
   const { data: current, error: fetchError } = await hotelsTable()
     .select("event_ids")
     .eq("id", hotelId)
@@ -247,12 +273,19 @@ export async function removeEventFromHotel(hotelId: number, eventId: number): Pr
     .select();
 
   if (error) throw error;
+  await logAudit({
+    action: "update",
+    entityType: "offline_hotel",
+    entityId: hotelId,
+    metadata: { event_id: eventId },
+  });
   revalidatePath("/(dashboard)/offline-hotels");
   revalidatePath(`/(dashboard)/events/${eventId}`);
   return data[0] as OfflineHotel;
 }
 
 export async function addEventToHotel(hotelId: number, eventId: number): Promise<OfflineHotel> {
+  await requireStaff();
   const { data: current, error: fetchError } = await hotelsTable()
     .select("event_ids")
     .eq("id", hotelId)
@@ -269,12 +302,19 @@ export async function addEventToHotel(hotelId: number, eventId: number): Promise
     .select();
 
   if (error) throw error;
+  await logAudit({
+    action: "update",
+    entityType: "offline_hotel",
+    entityId: hotelId,
+    metadata: { event_id: eventId },
+  });
   revalidatePath("/(dashboard)/offline-hotels");
   revalidatePath(`/(dashboard)/events/${eventId}`);
   return data[0] as OfflineHotel;
 }
 
 export async function addFlightToHotel(hotelId: number, flightId: number): Promise<OfflineHotel> {
+  await requireStaff();
   const { data: current, error: fetchError } = await hotelsTable()
     .select("flight_ids")
     .eq("id", hotelId)
@@ -291,6 +331,12 @@ export async function addFlightToHotel(hotelId: number, flightId: number): Promi
     .select();
 
   if (error) throw error;
+  await logAudit({
+    action: "update",
+    entityType: "offline_hotel",
+    entityId: hotelId,
+    metadata: { flight_id: flightId },
+  });
   revalidatePath("/(dashboard)/offline-hotels");
   return data[0] as OfflineHotel;
 }
@@ -301,6 +347,7 @@ export async function getRelevantEventsForHotel(
   checkIn: string,
   checkOut: string
 ): Promise<Pick<Event, "id" | "name" | "date">[]> {
+  await requireStaff();
   const cityCodes = airportsForCityName(city);
   let query = supabase
     .from("events")
@@ -325,6 +372,7 @@ export async function getRelevantFlightsForHotel(
   checkIn: string,
   checkOut: string
 ): Promise<Pick<OfflineFlight, "id" | "airline_code" | "metadata_name" | "outbound_departure_airport" | "outbound_arrival_airport" | "outbound_departure_time" | "inbound_arrival_time" | "price">[]> {
+  await requireStaff();
   const { data, error } = await flightsTable()
     .select("id, airline_code, metadata_name, outbound_departure_airport, outbound_arrival_airport, outbound_departure_time, inbound_arrival_time, price")
     .eq("is_deleted", false)

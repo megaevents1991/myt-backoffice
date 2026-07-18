@@ -1,4 +1,5 @@
-"use server"
+// Server-only sync service — called by cron/API routes. Deliberately NOT a
+// Server Action ("use server" removed): exports must not be client-dispatchable.
 
 import { supabase } from '@/lib/supabase-server';
 //import { cleanupPastEvents } from '@/lib/actions/sports-events-actions';

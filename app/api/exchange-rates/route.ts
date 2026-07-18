@@ -1,8 +1,15 @@
 // app/api/exchange-rates/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { multiCurrencyExchangeRateService } from '@/lib/services/ticket-price-sync';
+import { guardAdminRoute } from '@/lib/auth/guards';
 
+// This HTTP route is only ever called by authenticated dashboard components
+// (relative fetch → admin cookie). The cron/sync engine invokes the service
+// in-process, not via this route, so guarding here breaks nothing but closes an
+// unauthenticated exchange-rate write that feeds both apps' price chain.
 export async function GET(request: NextRequest) {
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
   try {
     const searchParams = request.nextUrl.searchParams;
     const action = searchParams.get('action');
@@ -57,6 +64,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
   try {
     const body = await request.json();
     const { action, currency, amount, fromCurrency } = body;

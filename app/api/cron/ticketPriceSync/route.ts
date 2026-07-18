@@ -2,23 +2,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ticketPriceSyncService } from '@/lib/services/ticket-price-sync';
+import { guardCronRoute } from '@/lib/auth/guards';
 
 export const maxDuration = 300; // Maximum duration in seconds for the cron job
 
 export async function GET(request: NextRequest) {
+  const denied = await guardCronRoute(request);
+  if (denied) return denied;
   try {
-    const { searchParams } = new URL(request.url);
-    const key = searchParams.get('key');
-
-    // Security check - prevent unauthorized access
-    if (!key || key !== process.env.NEXT_SECRET_CRON_SECRET_KEY) {
-      console.error('❌ Unauthorized ticket price sync cron job access attempt');
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     console.log('🎫 Ticket price sync cron job started');
 
     // Run the ticket price synchronization
@@ -94,17 +85,9 @@ export async function GET(request: NextRequest) {
  * Optional POST endpoint for manual triggering (development/testing)
  */
 export async function POST(request: NextRequest) {
+  const denied = await guardCronRoute(request);
+  if (denied) return denied;
   try {
-    const body = await request.json();
-    
-    // Simple authentication for manual triggers
-    if (!body.key || body.key !== process.env.NEXT_SECRET_CRON_SECRET_KEY) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     console.log('🔧 Manual ticket price sync triggered');
 
     const syncResult = await ticketPriceSyncService.syncAllTicketPrices();

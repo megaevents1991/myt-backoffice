@@ -22,6 +22,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
+import { StickySaveBar } from "@/components/sticky-save-bar";
 import {
   getOfflineFlight,
   updateOfflineFlight,
@@ -274,6 +275,8 @@ export default function EditOfflineFlightPage({
     }),
   });
 
+  const isDirty = form.formState.isDirty;
+
   useEffect(() => {
     if (!flightIdParam) return;
 
@@ -456,7 +459,7 @@ export default function EditOfflineFlightPage({
   }
 
   return (
-    <div className="container mx-auto py-10 max-w-3xl">
+    <div className="container mx-auto py-10 pb-28 max-w-3xl">
       <div className="mb-6 flex justify-start">
         <Button variant="outline" asChild>
           <Link href="/offline-flights">
@@ -925,6 +928,15 @@ export default function EditOfflineFlightPage({
           </Button>
         </form>
       </Form>
+
+      <StickySaveBar
+        isDirty={isDirty}
+        isSaving={isPending}
+        onSave={form.handleSubmit(onSubmit)}
+        onDiscard={() => form.reset()}
+        saveLabel="Update Flight"
+        savingLabel="Updating..."
+      />
     </div>
   );
 }

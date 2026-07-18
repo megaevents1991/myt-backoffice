@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -18,6 +19,8 @@ export default function LoginPage() {
   const { user, login } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
+  const urlError = searchParams.get("error");
 
   // Redirect if user is already logged in
   useEffect(() => {
@@ -75,6 +78,14 @@ export default function LoginPage() {
           <CardTitle className="text-2xl font-bold">Login</CardTitle>
         </CardHeader>
         <CardContent>
+          {urlError === "no-account" && (
+            <p className="text-sm text-destructive">
+              No account for this Google email — contact an admin.
+            </p>
+          )}
+          {urlError === "oauth" && (
+            <p className="text-sm text-destructive">Google sign-in failed. Try again.</p>
+          )}
           {error && (
             <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md border border-red-200">
               {error}
@@ -95,9 +106,8 @@ export default function LoginPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -115,8 +125,32 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">or</span>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => (window.location.href = "/api/auth/google")}
+          >
+            Continue with Google
+          </Button>
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

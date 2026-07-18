@@ -25,9 +25,11 @@ import {
   updateEvent,
   createEvent,
 } from "@/lib/actions/event-actions";
+import { EventMarkupFields } from "@/components/event-markup-fields";
 import { airportsMatch } from "@/lib/airport-cities";
 import { ColorPicker } from "@/components/color-picker";
 import { ImageFilePicker } from "@/components/image-file-picker";
+import { ArtBlobPicker } from "@/components/art-blob-picker";
 import { v4 as uuidv4 } from "uuid";
 import { 
   searchFlightPrices, 
@@ -37,7 +39,8 @@ import { getLocations } from "@/lib/actions/location-actions";
 import type { Location } from "@/types/location.types";
 import { searchHotelPrices } from "@/lib/actions/hotel-actions";
 import { getTixStockTickets } from "@/lib/actions/tixstock-actions";
-import type { TixStockListing } from "@/types/tixstock.types";
+import type { TixStockListing, TixStockEventDB } from "@/types/tixstock.types";
+import { tixstockToEvent } from "../../tixstock-events/batch/tixstock-to-event";
 import { exchangeRateClientService, type SupportedCurrency } from "@/lib/services/exchange-rate-client";
 import {
   getFlightsByEventId,
@@ -58,6 +61,18 @@ import {
 import type { OfflineHotel } from "@/types/offline-hotel.types";
 import { InlineHotelForm, type StagedHotelData } from "@/components/inline-hotel-form";
 import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
+import { StickySaveBar } from "@/components/sticky-save-bar";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EventTaxonomySelect, type TaxonomyOption } from "@/components/taxonomy/event-taxonomy-select";
+import {
+  listCategories,
+  listTags,
+  getEventCategoryIds,
+  getEventTagIds,
+  setEventCategories,
+  setEventTags,
+} from "@/lib/actions/event-taxonomy-actions";
+import { flattenWithPath } from "@/lib/taxonomy-tree";
 
 const TX_TICKET_COLOR = "rgb(5, 32, 60)";
 
@@ -73,6 +88,7 @@ export default function EventPage({
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [searchingFlights, setSearchingFlights] = useState(false);
   const [searchingHotels, setSearchingHotels] = useState(false);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -103,12 +119,134 @@ export default function EventPage({
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [excludeSectionsMode, setExcludeSectionsMode] = useState(false);
+
+  // Batch-create mode: a stepwise wizard over the selected TixStock events.
+  // Configure/review each on the real form; Save & Next creates it and loads the next.
+  const [batchEvents, setBatchEvents] = useState<TixStockEventDB[]>([]);
+  const [batchIndex, setBatchIndex] = useState(0);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  // baseline snapshot of the loaded event, for dirty detection + discard
+  const initialEventRef = useRef<string | null>(null);
   const isNewEvent = unwrappedParams.id === "new";
+  const isBatchCreate = isNewEvent && searchParams.get("batch") === "1";
+
+  // Taxonomy: category tree + curated tags. Options are the managed pools; the
+  // selected ids are persisted to the junction tables on save.
+  const [catOptions, setCatOptions] = useState<TaxonomyOption[]>([]);
+  const [tagOptions, setTagOptions] = useState<TaxonomyOption[]>([]);
+  const [selectedCatIds, setSelectedCatIds] = useState<number[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  // Baseline of the loaded links (dirty detection + Discard). New events start [].
+  const initialCatIdsRef = useRef<number[]>([]);
+  const initialTagIdsRef = useRef<number[]>([]);
+  // If the links failed to load we must NOT save [] over the event's real links.
+  const [taxonomyLoadFailed, setTaxonomyLoadFailed] = useState(false);
+
+  const idsEqual = (a: number[], b: number[]) =>
+    a.length === b.length &&
+    [...a].sort((x, y) => x - y).join(",") === [...b].sort((x, y) => x - y).join(",");
+  const taxonomyDirty =
+    !idsEqual(selectedCatIds, initialCatIdsRef.current) ||
+    !idsEqual(selectedTagIds, initialTagIdsRef.current);
+
+  // Load the category/tag pools once (both new + edit flows).
+  useEffect(() => {
+    (async () => {
+      try {
+        const [cats, tags] = await Promise.all([listCategories(), listTags()]);
+        setCatOptions(flattenWithPath(cats).map((c) => ({ id: c.id, label: c.path })));
+        setTagOptions(tags.map((t) => ({ id: t.id, label: t.name })));
+      } catch (e) {
+        console.error("Failed to load taxonomy pools:", e);
+      }
+    })();
+  }, []);
+
+  // Load this event's current category/tag selections (edit flow only).
+  useEffect(() => {
+    if (isNewEvent) return;
+    const eid = Number(unwrappedParams.id);
+    if (!Number.isFinite(eid)) return;
+    (async () => {
+      try {
+        const [catIds, tagIds] = await Promise.all([
+          getEventCategoryIds(eid),
+          getEventTagIds(eid),
+        ]);
+        setSelectedCatIds(catIds);
+        setSelectedTagIds(tagIds);
+        initialCatIdsRef.current = catIds;
+        initialTagIdsRef.current = tagIds;
+        setTaxonomyLoadFailed(false);
+      } catch (e) {
+        console.error("Failed to load event taxonomy:", e);
+        setTaxonomyLoadFailed(true);
+        toast({
+          variant: "destructive",
+          title: "Categories/tags failed to load",
+          description: "Editing them is disabled for this event — reload the page to retry.",
+        });
+      }
+    })();
+  }, [isNewEvent, unwrappedParams.id]);
+
+  // Persist links; isolated so a taxonomy failure never masks a successful event
+  // save (masking caused duplicate events on retry). isNewRow = freshly-inserted
+  // event (incl. every batch step): write whenever anything is selected, and do
+  // NOT move the baseline (batch reuses the same selections for the next step).
+  const persistTaxonomy = async (eventId: number, isNewRow: boolean) => {
+    if (taxonomyLoadFailed) return; // no baseline — writing would wipe real links
+    if (isNewRow) {
+      if (!selectedCatIds.length && !selectedTagIds.length) return;
+    } else if (!taxonomyDirty) {
+      return; // unchanged — skip the delete+insert round trip
+    }
+    try {
+      await setEventCategories(eventId, selectedCatIds);
+      await setEventTags(eventId, selectedTagIds);
+      if (!isNewRow) {
+        initialCatIdsRef.current = selectedCatIds;
+        initialTagIdsRef.current = selectedTagIds;
+      }
+    } catch (e) {
+      console.error("Event saved but taxonomy links failed:", e);
+      toast({
+        variant: "destructive",
+        title: "Event saved, but categories/tags failed",
+        description: "Open the event again and re-save its categories/tags.",
+      });
+    }
+  };
 
   useEffect(() => {
     async function fetchEvent() {
       if (isNewEvent) {
+        // Batch-create: the TixStock page stashed the selected events in localStorage.
+        // Pre-fill the shared form from a representative event; Save creates them all.
+        if (searchParams.get("batch") === "1") {
+          try {
+            const raw =
+              typeof window !== "undefined"
+                ? window.localStorage.getItem("tx_batch_create")
+                : null;
+            const list = raw ? (JSON.parse(raw) as TixStockEventDB[]) : [];
+            setBatchEvents(list);
+            const rep = list[0];
+            if (rep) {
+              setEvent({ id: 0, ...tixstockToEvent(rep) });
+              setLoading(false);
+              return;
+            }
+          } catch (error) {
+            console.error("Failed to load batch events:", error);
+            toast({
+              variant: "destructive",
+              title: "Batch load failed",
+              description: "Could not read the selected events. Start again from TixStock.",
+            });
+          }
+        }
+
         // Check if there's pre-populated data from sports events
         const dataParam = searchParams.get("data");
 
@@ -254,7 +392,10 @@ export default function EventPage({
 
   const tixStockEventId =
     event?.type === "tx_event"
-      ? txEventIdFromQuery ?? event.tickets_and_rates.find((t) => !!t.eid)?.eid ?? null
+      ? txEventIdFromQuery ??
+        (isBatchCreate ? batchEvents[batchIndex]?.event_id ?? null : null) ??
+        event.tickets_and_rates.find((t) => !!t.eid)?.eid ??
+        null
       : null;
 
   const mapSourceUrl =
@@ -718,6 +859,21 @@ export default function EventPage({
     });
   }, [event]);
 
+  // Capture the baseline once the event has loaded and any automatic
+  // normalization (tx ticket colors) has settled — so we don't flag dirty
+  // for changes the user didn't make.
+  useEffect(() => {
+    if (loading || !event) return;
+    if (initialEventRef.current !== null) return;
+    if (
+      event.type === "tx_event" &&
+      event.tickets_and_rates.some((t) => t.colorOnTheMap !== TX_TICKET_COLOR)
+    ) {
+      return;
+    }
+    initialEventRef.current = JSON.stringify(event);
+  }, [loading, event]);
+
   useEffect(() => {
     if (isNewEvent || !event?.id) return;
     const id = event.id;
@@ -955,8 +1111,8 @@ export default function EventPage({
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!event) return;
 
     // Validate required fields for new events
@@ -984,14 +1140,144 @@ export default function EventPage({
       }
     }
 
-    // Show confirmation dialog with appropriate message
-    const confirmed = window.confirm(
-      isNewEvent
-        ? "Are you sure you want to create this event?"
-        : "Are you sure you want to save changes to this event?"
-    );
-    if (!confirmed) return;
+    // Batch wizard: no confirm dialog — the per-event review IS the confirmation.
+    if (isBatchCreate) {
+      await handleBatchStepSave();
+      return;
+    }
 
+    // Open the custom confirmation dialog (replaces native window.confirm)
+    setShowSaveConfirm(true);
+  };
+
+  // Batch: re-price one shared category from a specific event's live source listings.
+  const repriceCategoryForEvent = async (
+    category: string,
+    source: TixStockListing[],
+    fallback: number
+  ): Promise<number> => {
+    const eligible = source.filter((t) => {
+      const c = (t.seat_details?.category || "").toLowerCase().trim();
+      const qty = t.number_of_tickets_for_sale?.quantity_available || 0;
+      return c === category.toLowerCase().trim() && qty >= 2;
+    });
+    if (eligible.length === 0) return fallback;
+    const cheapest = eligible.reduce((min, t) =>
+      getTicketAmount(t) < getTicketAmount(min) ? t : min
+    );
+    const raw = getTicketAmount(cheapest);
+    const currency = (
+      cheapest.proceed_price?.currency ||
+      cheapest.face_value?.currency ||
+      "GBP"
+    ).toUpperCase();
+    try {
+      if (currency === "GBP") return Math.round(await exchangeRateClientService.convertToUSD(raw + 35, "GBP"));
+      if (currency === "EUR") return Math.round(await exchangeRateClientService.convertToUSD(raw + 40, "EUR"));
+      if (currency === "ILS") return Math.round(await exchangeRateClientService.convertToUSD(raw + 150, "ILS"));
+      return Math.round(raw + 40);
+    } catch (err) {
+      console.error("Batch reprice conversion failed:", err);
+      return Math.round(raw);
+    }
+  };
+
+  const batchFinish = () => {
+    if (typeof window !== "undefined") window.localStorage.removeItem("tx_batch_create");
+    router.push("/events");
+  };
+
+  // Batch wizard: carry the current (shared) form into event #index, swapping the
+  // per-event identity (name/date/venue/map) and re-pricing the ticket categories
+  // from that event's own live TixStock listings. Admin then reviews before saving.
+  const loadBatchEvent = async (index: number) => {
+    if (!event) return;
+    const ev = batchEvents[index];
+    if (!ev) return;
+    const identity = tixstockToEvent(ev);
+    const { id: _carriedId, ...current } = event;
+    let tickets: EventTicket[] = [];
+    if (current.tickets_and_rates.length > 0) {
+      await exchangeRateClientService.updateAllExchangeRates();
+      const source = await getTixStockTickets(ev.event_id).catch(() => [] as TixStockListing[]);
+      tickets = await Promise.all(
+        current.tickets_and_rates.map(async (ft) => ({
+          ...ft,
+          id: uuidv4(),
+          price: await repriceCategoryForEvent(ft.category, source, ft.price),
+          eid: ev.event_id,
+          vendor: "TixStock",
+          colorOnTheMap: TX_TICKET_COLOR,
+        }))
+      );
+    }
+    setEvent({
+      id: 0,
+      // `...current` carries the shared config forward INCLUDING location + map_image_url —
+      // a team's home games share the venue, so the location you set/selected persists and
+      // you don't re-pick it each step. Only the per-event identity below is swapped.
+      // (If a venue genuinely differs, edit the Location fields on that step.)
+      ...current,
+      name: identity.name,
+      name_english: identity.name_english,
+      date: identity.date,
+      def_date_depart: identity.def_date_depart,
+      def_date_return: identity.def_date_return,
+      tickets_and_rates: tickets,
+    });
+    setBatchIndex(index);
+    // reset per-step preview UI
+    setSelectedSection(null);
+    setSelectedCategory(null);
+    setExcludeSectionsMode(false);
+  };
+
+  // Batch wizard: save the currently-reviewed event, then load the next (or finish).
+  const handleBatchStepSave = async () => {
+    if (!event || batchEvents.length === 0) return;
+    setSaving(true);
+    try {
+      const { id: _savedId, ...current } = event; // tickets already carry this event's eid + live price
+      const createdBatchEvent = await createEvent(current);
+      // Selected categories/tags apply to EVERY batch step (like the shared
+      // location) — persist them for each created event.
+      await persistTaxonomy(createdBatchEvent.id, true);
+      const next = batchIndex + 1;
+      if (next >= batchEvents.length) {
+        toast({ title: "Success", description: `Created all ${batchEvents.length} events.` });
+        batchFinish();
+        return;
+      }
+      await loadBatchEvent(next);
+      toast({ title: "Saved", description: `Now reviewing event ${next + 1} of ${batchEvents.length}.` });
+    } catch (error) {
+      console.error("Batch step save failed:", error);
+      toast({ variant: "destructive", title: "Error", description: "Failed to create this event." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Batch wizard: skip the current event (don't create it) and move to the next.
+  const handleBatchSkip = async () => {
+    const next = batchIndex + 1;
+    if (next >= batchEvents.length) {
+      toast({ title: "Done", description: "No more events to review." });
+      batchFinish();
+      return;
+    }
+    setSaving(true);
+    try {
+      await loadBatchEvent(next);
+      toast({ title: "Skipped", description: `Now reviewing event ${next + 1} of ${batchEvents.length}.` });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const performSave = async () => {
+    if (!event) return;
+    setShowSaveConfirm(false);
     setSaving(true);
     try {
       if (isNewEvent) {
@@ -1008,6 +1294,10 @@ export default function EventPage({
           ),
         ]);
 
+        // Persist category/tag links now that the new event id exists
+        // (isolated — a link failure never masks the successful create).
+        await persistTaxonomy(createdEvent.id, true);
+
         const extras = [];
         if (stagedFlights.length > 0) extras.push(`${stagedFlights.length} flight(s)`);
         if (stagedHotels.length > 0) extras.push(`${stagedHotels.length} hotel(s)`);
@@ -1021,6 +1311,9 @@ export default function EventPage({
       } else {
         // For existing events, use updateEvent
         await updateEvent(event.id, event);
+        // Links: only when actually changed, never on a failed baseline load
+        // (isolated — a link failure never reports the event save as failed).
+        await persistTaxonomy(event.id, false);
         toast({
           title: "Success",
           description: "Event has been saved successfully.",
@@ -1077,6 +1370,14 @@ export default function EventPage({
     };
   };
 
+  const isDirty =
+    (initialEventRef.current !== null &&
+      !!event &&
+      JSON.stringify(event) !== initialEventRef.current) ||
+    stagedFlights.length > 0 ||
+    stagedHotels.length > 0 ||
+    taxonomyDirty;
+
   if (loading) {
     return <div>Loading event details...</div>;
   }
@@ -1123,7 +1424,7 @@ export default function EventPage({
     });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-28">
       <div className="flex items-center">
         <Button variant="ghost" onClick={() => router.back()}>
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -1160,6 +1461,38 @@ export default function EventPage({
       )}
 
       <form onSubmit={handleSubmit} className="space-y-8">
+        {isBatchCreate && (
+          <div className="rounded-md border border-blue-300 bg-blue-50 p-4 dark:bg-blue-950/30">
+            <p className="font-semibold text-blue-900 dark:text-blue-200">
+              Batch mode — reviewing event {batchIndex + 1} of {batchEvents.length}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Review this event, then <strong>Save &amp; Next</strong> creates it and loads the next.
+              Everything you set carries over (incl. <strong>location/venue</strong> — home games
+              share it); only the <strong>name &amp; date</strong> swap per event, and ticket
+              {" "}<strong>categories</strong> are re-priced live from each event&apos;s own listings.
+              {" "}Add categories from the Source Tickets list. If a venue differs, just edit the
+              {" "}Location fields on that step. Use <strong>Skip</strong> to not create one.
+            </p>
+            <ol className="mt-2 list-decimal pl-5 text-xs text-muted-foreground">
+              {batchEvents.map((ev, i) => (
+                <li
+                  key={ev.event_id}
+                  className={
+                    i === batchIndex
+                      ? "font-semibold text-blue-900 dark:text-blue-200"
+                      : i < batchIndex
+                        ? "line-through opacity-60"
+                        : ""
+                  }
+                >
+                  {ev.event_name} — {new Date(ev.show_date).toLocaleDateString()}
+                  {i < batchIndex ? " (done)" : i === batchIndex ? " (now)" : ""}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Basic Information</CardTitle>
@@ -1469,6 +1802,38 @@ export default function EventPage({
                 <p className="text-xs text-muted-foreground">
                   Added per ticket when customer chooses to skip the flight.
                 </p>
+
+                <div className="space-y-2 pt-2">
+                  <Label htmlFor="ticket_only_markup">
+                    Ticket-Only Markup (USD per ticket)
+                  </Label>
+                  <Input
+                    id="ticket_only_markup"
+                    name="ticket_only_markup"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={event.ticket_only_markup ?? ""}
+                    placeholder="Empty = normal flow"
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setEvent((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              ticket_only_markup: v === "" ? null : Number(v),
+                            }
+                          : prev
+                      );
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    When the customer skips BOTH flight and hotel, the price is
+                    exactly ticket cost + this amount — no site markup, no
+                    additions, nothing else. Only affects the ticket-only case;
+                    every other combination is unchanged. Can be 0.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -1503,6 +1868,13 @@ export default function EventPage({
               </p>
             </div>
 
+            <EventMarkupFields
+              values={event}
+              onChange={(field, value) =>
+                setEvent((prev) => (prev ? { ...prev, [field]: value } : prev))
+              }
+            />
+
             <div className="space-y-2">
               <Label htmlFor="tags">Tag</Label>
               <select
@@ -1530,6 +1902,36 @@ export default function EventPage({
                 <option value="VIPavailable">VIP Available</option>
               </select>
             </div>
+
+            {taxonomyLoadFailed ? (
+              <p className="text-sm text-destructive">
+                Categories/tags failed to load — reload the page to edit them.
+              </p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Categories</Label>
+                  <EventTaxonomySelect
+                    kind="category"
+                    options={catOptions}
+                    value={selectedCatIds}
+                    onChange={setSelectedCatIds}
+                    onOptionCreated={(o) => setCatOptions((p) => [...p, o])}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Tags (feed / promo)</Label>
+                  <EventTaxonomySelect
+                    kind="tag"
+                    options={tagOptions}
+                    value={selectedTagIds}
+                    onChange={setSelectedTagIds}
+                    onOptionCreated={(o) => setTagOptions((p) => [...p, o])}
+                  />
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -1653,12 +2055,9 @@ export default function EventPage({
                   prev ? { ...prev, card_image_url: url } : prev
                 )
               }
-              bucketName={
-                process.env.NODE_ENV === "development"
-                  ? "card_images"
-                  : "card_images"
-              }
+              bucketName="card_images"
               folder=""
+              allBuckets
             />
 
             <ImageFilePicker
@@ -1669,12 +2068,50 @@ export default function EventPage({
                   prev ? { ...prev, map_image_url: url } : prev
                 )
               }
-              bucketName={
-                process.env.NODE_ENV === "development"
-                  ? "map_images"
-                  : "map_images"
-              }
+              bucketName="map_images"
               folder="maps"
+              allBuckets
+            />
+
+            <ArtBlobPicker
+              imageUrl={event.art_image_url}
+              colorIndex={event.art_color_index}
+              shapeIndex={event.art_shape_index}
+              imageScale={event.art_image_scale}
+              bgScale={event.art_bg_scale}
+              imageOffsetX={event.art_image_offset_x}
+              imageOffsetY={event.art_image_offset_y}
+              onImage={(url) =>
+                setEvent((prev) => (prev ? { ...prev, art_image_url: url } : prev))
+              }
+              onColor={(i) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, art_color_index: i } : prev
+                )
+              }
+              onShape={(i) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, art_shape_index: i } : prev
+                )
+              }
+              onImageScale={(s) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, art_image_scale: s } : prev
+                )
+              }
+              onBgScale={(s) =>
+                setEvent((prev) => (prev ? { ...prev, art_bg_scale: s } : prev))
+              }
+              onImageOffsetX={(v) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, art_image_offset_x: v } : prev
+                )
+              }
+              onImageOffsetY={(v) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, art_image_offset_y: v } : prev
+                )
+              }
             />
           </CardContent>
         </Card>
@@ -1712,7 +2149,12 @@ export default function EventPage({
                       {excludeSectionsMode ? "✕ Exit Exclude Mode" : "Exclude Sections"}
                     </Button>
                     {excludeSectionsMode && (
-                      <span className="text-xs text-muted-foreground">Click sections on the map to exclude/include them</span>
+                      <span className="text-xs text-muted-foreground">
+                        Click sections on the map to exclude/include them. Note: some venues repeat
+                        the same section letter on several sides of the map — TixStock tickets only
+                        carry ring+letter, so excluding one wedge excludes ALL wedges with that
+                        letter (the mirrored highlight is the real ticket filter).
+                      </span>
                     )}
                   </div>
 
@@ -2707,11 +3149,61 @@ export default function EventPage({
           <Button variant="outline" type="button" onClick={() => router.back()}>
             Cancel
           </Button>
+          {isBatchCreate && batchIndex + 1 < batchEvents.length && (
+            <Button variant="outline" type="button" disabled={saving} onClick={handleBatchSkip}>
+              Skip this event
+            </Button>
+          )}
           <Button type="submit" disabled={saving}>
-            {saving ? "Saving..." : "Save Event"}
+            {saving
+              ? "Saving..."
+              : isBatchCreate
+                ? batchIndex + 1 >= batchEvents.length
+                  ? `Save & Finish (${batchIndex + 1}/${batchEvents.length})`
+                  : `Save & Next (${batchIndex + 1}/${batchEvents.length})`
+                : "Save Event"}
           </Button>
         </div>
       </form>
+
+      <StickySaveBar
+        isDirty={isDirty}
+        isSaving={saving}
+        onSave={() => handleSubmit()}
+        onDiscard={() => {
+          if (initialEventRef.current) {
+            setEvent(JSON.parse(initialEventRef.current));
+          }
+          setStagedFlights([]);
+          setStagedHotels([]);
+          setSelectedLocationId("");
+          // Revert taxonomy edits to the loaded baseline too.
+          setSelectedCatIds(initialCatIdsRef.current);
+          setSelectedTagIds(initialTagIdsRef.current);
+        }}
+        saveLabel={
+          isBatchCreate
+            ? batchIndex + 1 >= batchEvents.length
+              ? "Save & Finish"
+              : "Save & Next"
+            : isNewEvent
+              ? "Create Event"
+              : "Save Event"
+        }
+      />
+
+      <ConfirmDialog
+        open={showSaveConfirm}
+        onOpenChange={setShowSaveConfirm}
+        title={isNewEvent ? "Create this event?" : "Save changes?"}
+        description={
+          isNewEvent
+            ? "This will create the event and any staged flights/hotels."
+            : "This will save your changes to this event."
+        }
+        confirmLabel={isNewEvent ? "Create Event" : "Save Changes"}
+        onConfirm={performSave}
+      />
     </div>
   );
 }

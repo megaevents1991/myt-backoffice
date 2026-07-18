@@ -1,33 +1,30 @@
 import { NextResponse } from "next/server";
+import { SESSION_COOKIE, verifySessionValue } from "@/lib/auth/session";
 
 export async function GET(request: Request) {
   try {
-    // Get the session cookie from the request
     const cookieHeader = request.headers.get("cookie") || "";
     const sessionCookie = cookieHeader
-      .split(';')
-      .find(c => c.trim().startsWith('session='))
-      ?.split('=')[1];
-    
-    console.log("Session cookie:", sessionCookie);
-    
-    if (sessionCookie === "admin-session") {
+      .split(";")
+      .find((c) => c.trim().startsWith(`${SESSION_COOKIE}=`))
+      ?.split("=")
+      .slice(1)
+      .join("=");
+
+    const payload = await verifySessionValue(sessionCookie);
+    if (payload) {
       return NextResponse.json({
         user: {
-          id: "admin",
-          email: process.env.NEXT_SECRET_ADMIN_EMAIL,
-          role: "admin",
-        }
+          id: payload.sub,
+          email: payload.email,
+          role: payload.role,
+          partner_code: payload.partner_code,
+        },
       });
     }
-    
-    // No valid session found
     return NextResponse.json({ user: null });
   } catch (error) {
     console.error("Session check error:", error);
-    return NextResponse.json(
-      { error: "Failed to check session" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to check session" }, { status: 500 });
   }
 }

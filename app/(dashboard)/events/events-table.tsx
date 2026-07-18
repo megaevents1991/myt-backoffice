@@ -26,7 +26,22 @@ import {
   duplicateEvent,
   updateEvent,
   bulkUpdateEvents,
+  bulkSoftDeleteEvents,
 } from "@/lib/actions/event-actions";
+import {
+  listCategories,
+  listTags,
+  bulkAssignCategories,
+  bulkAssignTags,
+  getTaxonomyLinkMaps,
+} from "@/lib/actions/event-taxonomy-actions";
+import { buildTree, descendantIds, flattenWithPath } from "@/lib/taxonomy-tree";
+import type { EventCategory } from "@/types/taxonomy.types";
+import {
+  EventTaxonomySelect,
+  type TaxonomyOption,
+} from "@/components/taxonomy/event-taxonomy-select";
+import type { AssignMode } from "@/types/taxonomy.types";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -65,6 +80,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 
 const COMMON_TAGS = ["Sold", "Hot", "Selling Fast", "Limited Availability", "New"];
 const COMPETITOR_TOAST_DURATION = 2_147_483_647;
@@ -438,6 +459,8 @@ export function EventsTable() {
   const [showTicketOnly, setShowTicketOnly] = useState(false);
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkMarkupOpen, setBulkMarkupOpen] = useState(false);
+  const [bulkMarkupInput, setBulkMarkupInput] = useState("");
   const [pricingDialogOpen, setPricingDialogOpen] = useState(false);
   const [pricingEvent, setPricingEvent] = useState<Event | null>(null);
   const [pricingLoadingProvider, setPricingLoadingProvider] =
@@ -456,6 +479,95 @@ export function EventsTable() {
   const [bulkCompPricingLoading, setBulkCompPricingLoading] = useState(false);
   const { toast } = useToast();
   const bulkDetailToastRef = useRef<ReturnType<typeof toast> | null>(null);
+
+  // Bulk taxonomy assignment (categories + feed tags) over the selected rows.
+  const [catOptions, setCatOptions] = useState<TaxonomyOption[]>([]);
+  const [tagOptions, setTagOptions] = useState<TaxonomyOption[]>([]);
+  const [bulkCatOpen, setBulkCatOpen] = useState(false);
+  const [bulkTagOpen, setBulkTagOpen] = useState(false);
+  const [bulkCatIds, setBulkCatIds] = useState<number[]>([]);
+  const [bulkTagIds, setBulkTagIds] = useState<number[]>([]);
+  const [bulkCatMode, setBulkCatMode] = useState<AssignMode>("add");
+  const [bulkTagMode, setBulkTagMode] = useState<AssignMode>("add");
+  // Raw categories (for descendant-aware filtering) + per-event link maps
+  // (taxonomy column + filters). "" = no filter.
+  const [rawCats, setRawCats] = useState<EventCategory[]>([]);
+  const [catsByEvent, setCatsByEvent] = useState<Record<number, number[]>>({});
+  const [tagsByEvent, setTagsByEvent] = useState<Record<number, number[]>>({});
+  const [filterCatId, setFilterCatId] = useState("");
+  const [filterTagId, setFilterTagId] = useState("");
+
+  const refreshTaxonomyLinks = async () => {
+    try {
+      const maps = await getTaxonomyLinkMaps();
+      setCatsByEvent(maps.cats);
+      setTagsByEvent(maps.tags);
+    } catch (e) {
+      console.error("Failed to load taxonomy link maps:", e);
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [cats, tags] = await Promise.all([listCategories(), listTags()]);
+        setRawCats(cats);
+        setCatOptions(flattenWithPath(cats).map((c) => ({ id: c.id, label: c.path })));
+        setTagOptions(tags.map((t) => ({ id: t.id, label: t.name })));
+      } catch (e) {
+        console.error("Failed to load taxonomy pools:", e);
+      }
+      await refreshTaxonomyLinks();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Category filter matches the node AND its whole subtree (Shopify-style).
+  const filterCatIdSet = (() => {
+    if (!filterCatId) return null;
+    const id = Number(filterCatId);
+    return new Set([id, ...descendantIds(buildTree(rawCats), id)]);
+  })();
+
+  const handleBulkAssignCategories = async () => {
+    if (selectedIds.length === 0 || bulkCatIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      await bulkAssignCategories(selectedIds, bulkCatIds, bulkCatMode);
+      toast({
+        title: "Categories assigned",
+        description: `${selectedIds.length} event(s) (${bulkCatMode}).`,
+      });
+      setBulkCatOpen(false);
+      setBulkCatIds([]);
+      await refreshTaxonomyLinks();
+    } catch (e) {
+      console.error("Bulk assign categories failed:", e);
+      toast({ variant: "destructive", title: "Error", description: "Bulk assign failed." });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkAssignTags = async () => {
+    if (selectedIds.length === 0 || bulkTagIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      await bulkAssignTags(selectedIds, bulkTagIds, bulkTagMode);
+      toast({
+        title: "Tags assigned",
+        description: `${selectedIds.length} event(s) (${bulkTagMode}).`,
+      });
+      setBulkTagOpen(false);
+      setBulkTagIds([]);
+      await refreshTaxonomyLinks();
+    } catch (e) {
+      console.error("Bulk assign tags failed:", e);
+      toast({ variant: "destructive", title: "Error", description: "Bulk assign failed." });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
 
   useEffect(() => {
     async function fetchEvents() {
@@ -645,6 +757,14 @@ export function EventsTable() {
       if (eventDate < today) return false;
     }
     if (showTicketOnly && !event.skip_flight) return false;
+    if (filterCatIdSet) {
+      const ids = catsByEvent[event.id] ?? [];
+      if (!ids.some((id) => filterCatIdSet.has(id))) return false;
+    }
+    if (filterTagId) {
+      const ids = tagsByEvent[event.id] ?? [];
+      if (!ids.includes(Number(filterTagId))) return false;
+    }
     return true;
   });
 
@@ -665,6 +785,60 @@ export function EventsTable() {
       toast({ title: "Updated", description: `${selectedIds.length} event(s) updated.` });
     } catch {
       toast({ variant: "destructive", title: "Error", description: "Bulk update failed." });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkTicketMarkup = async () => {
+    const value = Number(bulkMarkupInput);
+    if (bulkMarkupInput.trim() === "" || !Number.isFinite(value) || value < 0) {
+      toast({
+        variant: "destructive",
+        title: "Invalid value",
+        description: "Enter a non-negative number (USD per ticket).",
+      });
+      return;
+    }
+    setBulkMarkupOpen(false);
+    await handleBulkUpdate({ ticket_only_markup: value });
+    setBulkMarkupInput("");
+  };
+
+  const handleBulkTicketMarkupClear = async () => {
+    setBulkMarkupOpen(false);
+    setBulkMarkupInput("");
+    await handleBulkUpdate({ ticket_only_markup: null });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (
+      !window.confirm(
+        `Delete ${selectedIds.length} event(s)? They will be soft-deleted (marked as deleted, recoverable).`
+      )
+    )
+      return;
+    setBulkLoading(true);
+    try {
+      await bulkSoftDeleteEvents(selectedIds);
+      const today = new Date();
+      const formattedDate = `${(today.getMonth() + 1)
+        .toString()
+        .padStart(2, "0")}-${today
+        .getDate()
+        .toString()
+        .padStart(2, "0")}-${today.getFullYear()}`;
+      setEvents((prev) =>
+        prev.map((e) =>
+          selectedIds.includes(e.id) ? { ...e, is_deleted: formattedDate } : e
+        )
+      );
+      setRowSelection({});
+      toast({ title: "Deleted", description: `${selectedIds.length} event(s) marked as deleted.` });
+    } catch (error) {
+      console.error("Bulk delete failed:", error);
+      toast({ variant: "destructive", title: "Error", description: "Bulk delete failed." });
     } finally {
       setBulkLoading(false);
     }
@@ -1469,6 +1643,48 @@ export function EventsTable() {
       },
     },
     {
+      id: "taxonomy",
+      header: "Categories / Feed tags",
+      cell: ({ row }) => {
+        const catIds = catsByEvent[row.original.id] ?? [];
+        const tagIds = tagsByEvent[row.original.id] ?? [];
+        // Leaf label only ("כדורגל › ליגה אנגלית" → "ליגה אנגלית") — keep the cell narrow.
+        const catLabels = catIds
+          .map((id) => catOptions.find((o) => o.id === id)?.label.split(" › ").pop())
+          .filter(Boolean) as string[];
+        const tagLabels = tagIds
+          .map((id) => tagOptions.find((o) => o.id === id)?.label)
+          .filter(Boolean) as string[];
+        if (!catLabels.length && !tagLabels.length) {
+          return <span className="text-xs italic text-muted-foreground">—</span>;
+        }
+        const shown = [
+          ...catLabels.slice(0, 2).map((l) => ({ l, kind: "cat" as const })),
+          ...tagLabels.slice(0, 2).map((l) => ({ l, kind: "tag" as const })),
+        ];
+        const extra = catLabels.length + tagLabels.length - shown.length;
+        return (
+          <div
+            className="flex max-w-[180px] flex-wrap gap-1"
+            title={[...catLabels, ...tagLabels].join(", ")}
+          >
+            {shown.map(({ l, kind }, i) => (
+              <Badge
+                key={`${kind}-${i}`}
+                variant={kind === "cat" ? "secondary" : "outline"}
+                className="text-[10px]"
+              >
+                {l}
+              </Badge>
+            ))}
+            {extra > 0 && (
+              <span className="text-[10px] text-muted-foreground">+{extra}</span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
       accessorKey: "skip_flight",
       header: ({ column }) => (
         <Button
@@ -1881,6 +2097,34 @@ export function EventsTable() {
             Show ticket only events
           </label>
         </div>
+
+        {/* Taxonomy filters — category matches its whole subtree */}
+        <select
+          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+          value={filterCatId}
+          onChange={(e) => setFilterCatId(e.target.value)}
+          aria-label="Filter by category"
+        >
+          <option value="">All categories</option>
+          {catOptions.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+          value={filterTagId}
+          onChange={(e) => setFilterTagId(e.target.value)}
+          aria-label="Filter by feed tag"
+        >
+          <option value="">All feed tags</option>
+          {tagOptions.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <DataTable
@@ -1947,6 +2191,53 @@ export function EventsTable() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Popover open={bulkMarkupOpen} onOpenChange={setBulkMarkupOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" disabled={bulkLoading}>
+                  Ticket Markup
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 space-y-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    Ticket-Only Markup (USD per ticket)
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Applied to all {selectedIds.length} selected event(s). When
+                    the customer skips both flight and hotel, they pay ticket
+                    cost + this value. Clear = normal flow.
+                  </p>
+                </div>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  placeholder="e.g. 25"
+                  value={bulkMarkupInput}
+                  onChange={(e) => setBulkMarkupInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleBulkTicketMarkup();
+                  }}
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleBulkTicketMarkup}
+                    disabled={bulkLoading}
+                  >
+                    Apply
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleBulkTicketMarkupClear}
+                    disabled={bulkLoading}
+                  >
+                    Clear markup
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" disabled={bulkLoading || bulkCompPricingLoading}>
@@ -1965,6 +2256,125 @@ export function EventsTable() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Popover
+              open={bulkCatOpen}
+              onOpenChange={(o) => {
+                setBulkCatOpen(o);
+                // Fresh state per open: unapplied picks + a sticky Replace mode
+                // must not ride into the next bulk action.
+                if (o) {
+                  setBulkCatIds([]);
+                  setBulkCatMode("add");
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" disabled={bulkLoading}>
+                  Categories
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-80 space-y-3">
+                <p className="text-sm font-medium">
+                  Assign categories to {selectedIds.length} event(s)
+                </p>
+                <EventTaxonomySelect
+                  kind="category"
+                  options={catOptions}
+                  value={bulkCatIds}
+                  onChange={setBulkCatIds}
+                  onOptionCreated={(o) => setCatOptions((p) => [...p, o])}
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant={bulkCatMode === "add" ? "default" : "outline"}
+                    onClick={() => setBulkCatMode("add")}
+                  >
+                    Add
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={bulkCatMode === "replace" ? "default" : "outline"}
+                    onClick={() => setBulkCatMode("replace")}
+                  >
+                    Replace
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="ml-auto"
+                    onClick={handleBulkAssignCategories}
+                    disabled={bulkLoading || bulkCatIds.length === 0}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Popover
+              open={bulkTagOpen}
+              onOpenChange={(o) => {
+                setBulkTagOpen(o);
+                if (o) {
+                  setBulkTagIds([]);
+                  setBulkTagMode("add");
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" disabled={bulkLoading}>
+                  Tags (feed)
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-80 space-y-3">
+                <p className="text-sm font-medium">
+                  Assign tags to {selectedIds.length} event(s)
+                </p>
+                <EventTaxonomySelect
+                  kind="tag"
+                  options={tagOptions}
+                  value={bulkTagIds}
+                  onChange={setBulkTagIds}
+                  onOptionCreated={(o) => setTagOptions((p) => [...p, o])}
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant={bulkTagMode === "add" ? "default" : "outline"}
+                    onClick={() => setBulkTagMode("add")}
+                  >
+                    Add
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={bulkTagMode === "replace" ? "default" : "outline"}
+                    onClick={() => setBulkTagMode("replace")}
+                  >
+                    Replace
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="ml-auto"
+                    onClick={handleBulkAssignTags}
+                    disabled={bulkLoading || bulkTagIds.length === 0}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={bulkLoading}
+              onClick={handleBulkDelete}
+            >
+              {bulkLoading ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1 h-3 w-3" />
+              )}
+              Delete
+            </Button>
           </div>
         }
         getRowClassName={(row, index, sorting) => {

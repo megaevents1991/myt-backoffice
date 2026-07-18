@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   CalendarDays,
-  Users,
   ClipboardList,
   Home,
   LogOut,
@@ -16,43 +15,97 @@ import {
   Trophy,
   MapPin,
   Ticket,
-  Map,
+  TicketCheck,
+  Tags,
   Hotel,
+  LayoutTemplate,
+  Percent,
+  Image as ImageIcon,
+  Images,
+  ScrollText,
+  Handshake,
+  UserCog,
+  FolderTree,
+  Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 
-type NavItem =
-  | {
-      name: string;
-      href: string;
-      icon: React.ComponentType<{ className?: string }>;
-    }
-  | { type: "divider" };
+interface NavLink {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
 
-const navItems: NavItem[] = [
-  { name: "Dashboard", href: "/dashboard", icon: Home },
-  { type: "divider" },
-  { name: "Events", href: "/events", icon: CalendarDays },
-  { name: "Partners", href: "/partners", icon: Users },
-  { name: "Reservations", href: "/reservations", icon: ClipboardList },
-  { type: "divider" },
-  { name: "Offline Flights (Mega)", href: "/offline-flights", icon: Plane },
-  { name: "Offline Hotels (Mega)", href: "/offline-hotels", icon: Hotel },
-  { name: "Sports Events (XS2E)", href: "/sports-events", icon: Trophy },
-  { name: "Live Events (LiveTickets)", href: "/live-events", icon: Ticket },
-  { name: "P1 Events (P1 Tickets)", href: "/p1-events", icon: Trophy },
-  { name: "TixStock Events", href: "/tixstock-events", icon: Ticket },
-  { type: "divider" },
-  { name: "Storage", href: "/storage", icon: Database },
-  { name: "Locations", href: "/locations", icon: MapPin },
+interface NavGroup {
+  label?: string;
+  adminOnly?: boolean;
+  items: NavLink[];
+}
+
+const navGroups: NavGroup[] = [
+  {
+    items: [{ name: "Dashboard", href: "/dashboard", icon: Home }],
+  },
+  {
+    label: "Operations",
+    items: [
+      { name: "Events", href: "/events", icon: CalendarDays },
+      { name: "Reservations", href: "/reservations", icon: ClipboardList },
+      { name: "Coupons", href: "/coupons", icon: Percent },
+      { name: "Partners", href: "/partners", icon: Handshake },
+    ],
+  },
+  {
+    label: "Mega Inventory",
+    items: [
+      { name: "Offline Flights", href: "/offline-flights", icon: Plane },
+      { name: "Offline Hotels", href: "/offline-hotels", icon: Hotel },
+    ],
+  },
+  {
+    label: "Provider Feeds",
+    items: [
+      { name: "Sports Events (XS2E)", href: "/sports-events", icon: Trophy },
+      { name: "Live Events (LiveTickets)", href: "/live-events", icon: Ticket },
+      { name: "P1 Events (P1 Tickets)", href: "/p1-events", icon: TicketCheck },
+      { name: "TixStock Events", href: "/tixstock-events", icon: Tags },
+    ],
+  },
+  {
+    label: "Content",
+    items: [
+      { name: "Templates (תבניות)", href: "/templates", icon: LayoutTemplate },
+      { name: "Categories (קטגוריות)", href: "/event-taxonomy", icon: FolderTree },
+      { name: "Tags (תגיות)", href: "/event-tags", icon: Tag },
+      {
+        name: "Creative Generator",
+        href: "/creative-generator",
+        icon: ImageIcon,
+      },
+      { name: "Assets", href: "/assets", icon: Images },
+      { name: "Storage", href: "/storage", icon: Database },
+      { name: "Locations", href: "/locations", icon: MapPin },
+    ],
+  },
+  {
+    label: "Admin",
+    adminOnly: true,
+    items: [
+      { name: "Users", href: "/users", icon: UserCog },
+      { name: "Audit Log", href: "/audit-log", icon: ScrollText },
+    ],
+  },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+
+  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
+  const visibleGroups = navGroups.filter((group) => !group.adminOnly || isAdmin);
 
   return (
     <>
@@ -78,45 +131,54 @@ export function Sidebar() {
           <div className="border-b px-6 py-4">
             <h2 className="text-xl font-bold">Backoffice</h2>
           </div>
-          <nav className="flex-1 p-4">
-            {navItems.map((item, index) => {
-              // Handle dividers
-              if ("type" in item && item.type === "divider") {
-                return (
-                  <div key={`divider-${index}`} className="border-b my-4" />
-                );
-              }
+          <nav className="flex-1 overflow-y-auto p-4">
+            {visibleGroups.map((group, groupIndex) => (
+              <div
+                key={group.label ?? `group-${groupIndex}`}
+                className={cn(groupIndex > 0 && "mt-5")}
+              >
+                {group.label && (
+                  <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+                    {group.label}
+                  </p>
+                )}
+                {group.items.map((item) => {
+                  const isActive =
+                    pathname === item.href ||
+                    pathname.startsWith(`${item.href}/`);
+                  const Icon = item.icon;
 
-              // TypeScript now knows this is a link item
-              const linkItem = item as {
-                name: string;
-                href: string;
-                icon: React.ComponentType<{ className?: string }>;
-              };
-              const isActive =
-                pathname === linkItem.href ||
-                pathname.startsWith(`${linkItem.href}/`);
-              const Icon = linkItem.icon;
-
-              return (
-                <Link
-                  key={linkItem.href}
-                  href={linkItem.href}
-                  onClick={() => setIsOpen(false)} // Close sidebar when clicking a link on mobile
-                  className={cn(
-                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium mb-1",
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  <Icon className="h-5 w-5" />
-                  {linkItem.name}
-                </Link>
-              );
-            })}
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setIsOpen(false)} // Close sidebar when clicking a link on mobile
+                      className={cn(
+                        "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium mb-1",
+                        isActive
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{item.name}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
           <div className="border-t p-4">
+            {user && (
+              <div className="mb-2 px-3">
+                <p className="truncate text-sm font-medium">
+                  {user.display_name || user.email}
+                </p>
+                <p className="text-xs capitalize text-muted-foreground">
+                  {user.role}
+                </p>
+              </div>
+            )}
             <Button
               variant="ghost"
               className="w-full justify-start text-muted-foreground hover:bg-muted hover:text-foreground"

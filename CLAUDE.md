@@ -2,6 +2,44 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **🚧 TODO — Contentful → Supabase CMS migration (in progress).**
+> This backoffice now owns the CMS under **Templates** (תבניות): per-type
+> Supabase tables (`categories`, `artists`, `football_teams`, `blog_posts`)
+> sharing a CRUD factory (`lib/actions/template-crud.ts`). The main app reads
+> these tables (with a temporary Contentful fallback). **Phase 3, pending:**
+> once the fallback is removed in main, Contentful is fully retired.
+
+> **🔒 TODO — SECURITY HARDENING (deferred, do carefully later).**
+> Branch `fix/security-hardening` added signed admin session (`lib/auth/`), cron/route
+> guards, storage path checks, and guarded the exchange-rate + reservations-series
+> routes. **Still open — fix carefully later:**
+> - **User management.** Admins share ONE hardcoded env credential
+>   (`NEXT_SECRET_ADMIN_EMAIL`/`_PASSWORD`, checked in `lib/actions/auth-actions.ts`);
+>   no per-person accounts, roles, or audit. Two overlapping session systems
+>   (`lib/auth/session.ts` HMAC vs `auth-actions.ts` Supabase-session cookie) — consolidate.
+>   Plan: unify on Supabase Auth + roles table. See Claude memory `auth-user-management-todo`.
+> - **Mass-assignment.** Several actions spread whole client objects into price/commission
+>   columns (`event-actions.ts`, `offline-flight-actions.ts`, `partner-actions.ts`) — map
+>   columns explicitly + validate prices/commission are positive finite (pattern:
+>   `offline-hotel-room-actions.ts` `replaceOfflineHotelRooms`).
+> - **Unauth resource-abuse proxies** (`validate-airline` headless Chromium, `flights/search`
+>   Amadeus prod, `*/tickets`, `competitor-pricing`) — add auth or shared-secret + rate limit.
+> - **Secret in URL** on `hotels/search` — move to a header + rotate (cross-project with main).
+
+## Always-on rules (auto-loaded)
+
+Tech standards:
+@.claude/rules/standards/typescript.md
+@.claude/rules/standards/react.md
+@.claude/rules/standards/nextjs.md
+@.claude/rules/standards/supabase.md
+
+MYT domain rules:
+@.claude/rules/pricing.md
+@.claude/rules/data-model.md
+@.claude/rules/cross-project.md
+@.claude/rules/conventions.md
+
 > **⚠ IMPORTANT: This project is part of a two-project platform.**
 > The sibling project `../myt-main` is the customer-facing booking app that reads the data this backoffice manages.
 > See `../CLAUDE.md` for the full system architecture and shared database schema.
@@ -59,7 +97,10 @@ Ticket prices (from sports events) are stored in **cents** — divide by 100. Us
 
 ### Cron Jobs (Vercel)
 
-Defined in `vercel.json`. All routes secured with `?key=monthlyAlonSecret`:
+Defined in `vercel.json`. All cron routes are secured via `guardCronRoute()`
+(`lib/auth/guards.ts`), which accepts Vercel's `Authorization: Bearer $CRON_SECRET`
+header (set `CRON_SECRET` in Vercel) with a legacy `?key=$NEXT_SECRET_CRON_SECRET_KEY`
+fallback for manual triggers:
 
 - `dailyEventsSync` — sports events daily
 - `monthlyTournamentsSync` — sports tournaments monthly
@@ -126,6 +167,22 @@ NEXT_SECRET_P1_TICKETS_FEED_URL=
 
 Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, `locations`, `p1_events`, `live_events`, `sports_events`, `offline_flights`, `tixstock_events`. Managed via Supabase (PostgreSQL).
 
+### Migrations (Supabase CLI)
+
+**This repo owns the schema.** The main app never runs migrations. Schema changes go through versioned migration files in `supabase/migrations/` — never ad-hoc SQL in the dashboard without capturing it.
+
+Workflow for any schema change:
+
+1. `npm run db:new <name>` — creates `supabase/migrations/<timestamp>_<name>.sql`; write the SQL there.
+   (Or prototype in the dashboard, then capture the drift: `npm run db:diff <name>` — requires Docker running.)
+2. Commit the migration file with the feature PR.
+3. Apply: `npm run db:push` locally, **or** GitHub → Actions → "Apply DB Migrations" → Run workflow.
+4. Regenerate DB types: `npm run db:types` (writes `types/database.types.ts`).
+
+One-time setup per machine: `npx supabase login`, then `npx supabase link --project-ref fandqafngybfdyslofmr` (asks for the DB password).
+
+CI (`.github/workflows/db-migrate.yml`) needs repo secrets `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD`. Currently manual-trigger only; auto-apply on merge is commented out in the workflow.
+
 ---
 
 ## Connection to Main App (`../myt---main`)
@@ -150,11 +207,22 @@ Via `NEXT_SECRET_HOTEL_SERVICE_URL` (currently `https://myt-kohl.vercel.app`):
 | `partners`     | Creates, manages               | Reads (affiliate auth)        |
 | `hotels`       | Reads                          | Writes (search cache)         |
 | `flights`      | Manages (offline inventory)    | Reads                         |
+| `event_categories`      | Creates/manages (category tree) | Reads (builds category pages) |
+| `event_category_links`  | Writes (event↔category)         | Reads                         |
+| `event_tags`            | Creates/manages (feed tags)     | Reads (feed targeting)        |
+| `event_tag_links`       | Writes (event↔tag)              | Reads                         |
 
 ### Shared Types — Keep In Sync!
 
 Types in `types/app.types.ts` are duplicated in `../myt---main/lib/app.types.ts`. These types MUST match:
 `Event`, `EventType`, `Flight`, `FlightSegment`, `Order`, `OrderHotel`, `OrderTicket`, `FlightSearchOptions`, `TimeRange`, `AffiliateTracking`, `VipConfig`, `EventTicket`
+
+**Event taxonomy (new, 2026-07-15):** `types/taxonomy.types.ts` (`EventCategory`,
+`EventCategoryNode`, `EventTag`) + the pure tree helpers in `lib/taxonomy-tree.ts`
+(`buildTree`, `flattenWithPath`, `descendantIds`) are mirrored to main as
+`lib/taxonomy.types.ts` + `lib/taxonomy-tree.ts`. Backoffice writes the four
+`event_categor*` / `event_tag*` tables; main reads them to build category pages
+and target the product feed. Keep both copies in sync.
 
 **Known intentional differences:**
 

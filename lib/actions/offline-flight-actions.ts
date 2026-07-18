@@ -1,17 +1,20 @@
 "use server";
 
+import { requireStaff } from "@/lib/auth/guards";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 import { supabase } from "@/lib/supabase-server";
 import type { OfflineFlight } from "../../types/offline-flight.types";
 import type { Event } from "../../types/app.types";
 import { revalidatePath } from "next/cache";
 import { airportsInSameCity } from "@/lib/airport-cities";
+import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 
 // The `flights` table is not in db.schema.sql so Supabase's generated types don't
 // include it — all .from("flights") calls are cast to bypass the `never` inference.
 const flightsTable = () => (supabase as any).from("flights");
 
 export async function getOfflineFlights() {
+  await requireStaff();
   const { data, error } = await flightsTable()
     .select("*")
     .order("outbound_departure_time", { ascending: true });
@@ -21,6 +24,7 @@ export async function getOfflineFlights() {
 }
 
 export async function getOfflineFlight(id: number) {
+  await requireStaff();
   const { data, error } = await flightsTable()
     .select("*")
     .eq("id", id)
@@ -33,22 +37,32 @@ export async function getOfflineFlight(id: number) {
 export async function createOfflineFlight(
   flight: Omit<OfflineFlight, "id" | "consumed_quantity" | "is_deleted">,
 ) {
+  await requireStaff();
   const { data, error } = await flightsTable()
     .insert({ ...flight, consumed_quantity: 0, is_deleted: false })
     .select();
 
   if (error) throw error;
+  const created = data[0] as OfflineFlight;
+  await logAudit({
+    action: "create",
+    entityType: "offline_flight",
+    entityId: created.id,
+    changes: flight,
+  });
   revalidatePath("/(dashboard)/offline-flights");
   for (const id of flight.event_ids ?? []) {
     revalidatePath(`/(dashboard)/events/${id}`);
   }
-  return data[0] as OfflineFlight;
+  return created;
 }
 
 export async function updateOfflineFlight(
   id: number,
   flight: Partial<Omit<OfflineFlight, "id" | "consumed_quantity">>,
 ) {
+  await requireStaff();
+  const auditBefore = await fetchBefore("flights", "id", id, flight);
   const { data: current } = await flightsTable()
     .select("event_ids, price")
     .eq("id", id)
@@ -64,6 +78,12 @@ export async function updateOfflineFlight(
     .select();
 
   if (error) throw error;
+  await logAudit({
+    action: "update",
+    entityType: "offline_flight",
+    entityId: id,
+    changes: diffChanges(auditBefore, flight),
+  });
 
   const updated = data[0] as OfflineFlight;
   const defDepart = updated.outbound_departure_time.slice(0, 10);
@@ -107,24 +127,33 @@ export async function updateOfflineFlight(
 }
 
 export async function softDeleteOfflineFlight(id: number) {
+  await requireStaff();
   const { data, error } = await flightsTable()
     .update({ is_deleted: true })
     .eq("id", id)
     .select();
 
   if (error) throw error;
+  await logAudit({ action: "delete", entityType: "offline_flight", entityId: id });
   revalidatePath("/(dashboard)/offline-flights");
   revalidatePath(`/(dashboard)/offline-flights/${id}`);
   return data[0] as OfflineFlight;
 }
 
 export async function restoreOfflineFlight(id: number) {
+  await requireStaff();
   const { data, error } = await flightsTable()
     .update({ is_deleted: false })
     .eq("id", id)
     .select();
 
   if (error) throw error;
+  await logAudit({
+    action: "update",
+    entityType: "offline_flight",
+    entityId: id,
+    metadata: { restored: true },
+  });
   revalidatePath("/(dashboard)/offline-flights");
   revalidatePath(`/(dashboard)/offline-flights/${id}`);
   return data[0] as OfflineFlight;
@@ -133,6 +162,7 @@ export async function restoreOfflineFlight(id: number) {
 export async function getFlightsByEventId(
   eventId: number,
 ): Promise<OfflineFlight[]> {
+  await requireStaff();
   const { data, error } = await flightsTable()
     .select("*")
     .contains("event_ids", [eventId])
@@ -147,6 +177,7 @@ export async function removeEventFromFlight(
   flightId: number,
   eventId: number,
 ): Promise<OfflineFlight> {
+  await requireStaff();
   const { data: current, error: fetchError } = await flightsTable()
     .select("event_ids")
     .eq("id", flightId)
@@ -162,6 +193,12 @@ export async function removeEventFromFlight(
     .select();
 
   if (error) throw error;
+  await logAudit({
+    action: "update",
+    entityType: "offline_flight",
+    entityId: flightId,
+    metadata: { event_id: eventId },
+  });
   revalidatePath("/(dashboard)/offline-flights");
   revalidatePath(`/(dashboard)/events/${eventId}`);
   return data[0] as OfflineFlight;
@@ -171,6 +208,7 @@ export async function addEventToFlight(
   flightId: number,
   eventId: number,
 ): Promise<OfflineFlight> {
+  await requireStaff();
   const { data: current, error: fetchError } = await flightsTable()
     .select("event_ids")
     .eq("id", flightId)
@@ -189,6 +227,12 @@ export async function addEventToFlight(
     .select();
 
   if (error) throw error;
+  await logAudit({
+    action: "update",
+    entityType: "offline_flight",
+    entityId: flightId,
+    metadata: { event_id: eventId },
+  });
   revalidatePath("/(dashboard)/offline-flights");
   revalidatePath(`/(dashboard)/events/${eventId}`);
   return data[0] as OfflineFlight;
@@ -199,6 +243,7 @@ export async function getRelevantEventsForFlight(
   departureDate: string,
   returnDate: string,
 ): Promise<Pick<Event, "id" | "name" | "date">[]> {
+  await requireStaff();
   const cityCodes = airportsInSameCity(destinationIata);
   const { data, error } = await supabase
     .from("events")

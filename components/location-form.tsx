@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { StickySaveBar } from "@/components/sticky-save-bar";
 import { createLocation, updateLocation } from "@/lib/actions/location-actions";
 import type {
   Location,
@@ -29,16 +30,19 @@ export function LocationForm({ location, onSuccess }: LocationFormProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
+  const initialData = {
     name: location?.name || "",
     latitude: location?.latitude?.toString() || "",
     longitude: location?.longitude?.toString() || "",
     city_iata: location?.city_iata || "",
     country_code: location?.country_code || "",
-  });
+  };
+  const [formData, setFormData] = useState(initialData);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const isDirty = JSON.stringify(formData) !== JSON.stringify(initialData);
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
 
     if (!formData.name.trim()) {
       toast({
@@ -131,7 +135,8 @@ export function LocationForm({ location, onSuccess }: LocationFormProps) {
   };
 
   return (
-    <Card className="max-w-2xl mx-auto">
+    <>
+    <Card className="max-w-2xl mx-auto mb-24">
       <CardHeader>
         <CardTitle>
           {location ? "Edit Location" : "Create New Location"}
@@ -243,5 +248,14 @@ export function LocationForm({ location, onSuccess }: LocationFormProps) {
         </form>
       </CardContent>
     </Card>
+
+    <StickySaveBar
+      isDirty={isDirty}
+      isSaving={isSubmitting}
+      onSave={() => handleSubmit()}
+      onDiscard={() => setFormData(initialData)}
+      saveLabel={location ? "Update Location" : "Create Location"}
+    />
+    </>
   );
 }
