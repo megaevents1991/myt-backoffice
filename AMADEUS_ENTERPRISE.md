@@ -35,7 +35,8 @@ POST key+secret to the token endpoint, get a bearer `access_token` (~30 min). Th
 ### Manual token test
 
 ```bash
-curl -X POST "https://test.api.amadeus.com/v1/security/oauth2/token" \
+# sandbox: https://test.travel.api.amadeus.com | production: https://travel.api.amadeus.com
+curl -X POST "https://travel.api.amadeus.com/v1/security/oauth2/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials&client_id=YOUR_API_KEY&client_secret=YOUR_API_SECRET"
 ```
@@ -43,7 +44,7 @@ curl -X POST "https://test.api.amadeus.com/v1/security/oauth2/token" \
 ### Manual API test
 
 ```bash
-curl "https://test.api.amadeus.com/v2/shopping/flight-offers?originLocationCode=TLV&destinationLocationCode=BCN&departureDate=2026-08-01&returnDate=2026-08-05&adults=1&max=5&currencyCode=USD" \
+curl "https://travel.api.amadeus.com/v2/shopping/flight-offers?originLocationCode=TLV&destinationLocationCode=BCN&departureDate=2026-08-01&returnDate=2026-08-05&adults=1&max=5&currencyCode=USD" \
   -H "Authorization: Bearer ACCESS_TOKEN_FROM_ABOVE"
 ```
 
@@ -55,20 +56,23 @@ Copy `.env.amadeus.example` into `.env.local` and fill values.
 
 | Variable | Meaning |
 |----------|---------|
-| `NEXT_SECRET_AMADEUS_ENV` | `test` or `enterprise` |
-| `NEXT_SECRET_AMADEUS_AUTH_HOST` | OAuth token host |
-| `NEXT_SECRET_AMADEUS_API_HOST` | Flight APIs host |
-| `NEXT_SECRET_AMADEUS_CLIENT_ID` | API Key |
-| `NEXT_SECRET_AMADEUS_CLIENT_SECRET` | API Secret |
-| `NEXT_SECRET_AMADEUS_OFFICE_ID` | optional Office ID |
+| `NEXT_SECRET_AMADEUS_ENV` | `test` (sandbox, test.travel.api.amadeus.com) or `enterprise` (production, travel.api.amadeus.com) |
+| `NEXT_SECRET_AMADEUS_AUTH_HOST` | OAuth token host override (optional — defaults per ENV) |
+| `NEXT_SECRET_AMADEUS_API_HOST` | Flight APIs host override (optional — defaults per ENV) |
+| `NEW_NEXT_SECRET_AMADEUS_CLIENT_ID` | API Key (NEW_ prefix — coexists with legacy self-service pair) |
+| `NEW_NEXT_SECRET_AMADEUS_CLIENT_SECRET` | API Secret |
+
+No Office ID env — the office/PCC is bound to the OAuth credential; sending
+`X-Amadeus-Office-Id` trips error 2668 on this gateway.
 
 ---
 
 ## 4. Going to production
 
-1. Validate on **test** (event flight-price search populates `base_flight_price`).
-2. Submit Amadeus QA / certification (go-live) form.
-3. On approval, Amadeus promotes **"Mega events"** Test → Production.
-4. Set `NEXT_SECRET_AMADEUS_ENV=enterprise` + production host/creds, redeploy.
+**DONE 2026-07-18** — the app was promoted to Production. Live config:
 
-Rollback: flip env back to the working set — no code change.
+- Host (auth + api): `https://travel.api.amadeus.com`
+- `NEXT_SECRET_AMADEUS_ENV=enterprise` (defaults to that host)
+- Production keys from the workspace → `NEW_NEXT_SECRET_AMADEUS_CLIENT_ID` / `NEW_NEXT_SECRET_AMADEUS_CLIENT_SECRET`
+
+Rollback: flip `NEXT_SECRET_AMADEUS_ENV=test` (sandbox host + keys) — no code change.
