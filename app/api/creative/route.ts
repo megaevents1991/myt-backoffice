@@ -43,7 +43,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const kind = q.get("kind") === "artist" ? "artist" : "match";
+  const kindParam = q.get("kind");
+  const kind = kindParam === "artist" || kindParam === "photo" ? kindParam : "match";
   const dateText = q.get("date") ?? "";
   const price = Number(q.get("price"));
   const size = (q.get("size") ?? "square") as CreativeSize;
@@ -92,6 +93,16 @@ export async function GET(req: NextRequest) {
       );
     }
     params = { kind: "artist", imageUrl, artistName, ...base };
+  } else if (kind === "photo") {
+    const imageUrl = q.get("img") ?? "";
+    const eventName = q.get("name") ?? "";
+    if ((!imageUrl && !bare) || !eventName || !dateText || !price || !(size in SIZES)) {
+      return NextResponse.json(
+        { error: "Photo creative requires: img (unless bare=1), name, date, price; optional: time, loc, cur, mode, size" },
+        { status: 400 },
+      );
+    }
+    params = { kind: "photo", imageUrl, eventName, ...base };
   } else {
     // home/away: "team:<id>", "logo:<id>", or a bare id (legacy = team).
     const homeRef = q.get("home") ?? "";

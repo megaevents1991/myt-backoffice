@@ -71,10 +71,12 @@ export const PHOTO_BG = {
 export type CardBgKind = "blob" | keyof typeof PHOTO_BG;
 
 export type CreativeInput = {
-  // "match" = two blob cards + VS; "artist" = single centered blob card.
-  kind: "match" | "artist";
-  homeLogoUrl: string;       // match: home logo; artist: artist image
-  homeName: string;          // match: home name; artist: artist name
+  // "match" = two blob cards + VS; "artist" = single centered blob card;
+  // "photo" = full-bleed cropped panel, for events with no matched team/artist
+  // logo — uses the event's own (regular, non-cutout) photo as the subject.
+  kind: "match" | "artist" | "photo";
+  homeLogoUrl: string;       // match: home logo; artist: artist image; photo: event photo
+  homeName: string;          // match: home name; artist: artist name; photo: event name
   awayLogoUrl?: string;      // match only
   awayName?: string;         // match only
   dateText: string;          // "14.09.2026"
@@ -103,6 +105,15 @@ export type CreativeInput = {
 
 export function buildPriceText(mode: "package" | "ticket", price: number, currency: string): string {
   return mode === "ticket" ? `כרטיסים החל מ-${currency}${price}` : `חבילות החל מ-${currency}${price}`;
+}
+
+// Deterministic string → positive int (same technique as render.tsx's blob
+// seed) — used to pick a stable-per-subject, varied-across-subjects
+// color/shape when the designer hasn't explicitly overridden either.
+function hashSeed(s: string): number {
+  let h = 0;
+  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h;
 }
 
 // One site-style card: dark rounded card, brand blob (or a category photo)
@@ -220,15 +231,30 @@ export function MatchTemplate({
   // matches, brand blob for artists.
   const effectiveBg: CardBgKind = bgKind ?? (kind === "match" ? "football" : "blob");
   const photoUrl = effectiveBg !== "blob" ? PHOTO_BG[effectiveBg] : null;
-  // Color/shape overrides; away card gets the next palette entry so the two
-  // sides never come out identical.
-  const homeColor = colorIndex != null ? BLOB_HEX[colorIndex % BLOB_HEX.length] : MINT;
+  // Color/shape: explicit override wins; otherwise seeded from the subject's
+  // own identity (same hash shape as renderBlobPng) so auto-generated
+  // creatives (cron + "auto" in the manual designer) get real variety instead
+  // of every single one landing on the same fixed mint/aqua/violet + shape.
+  // Stable across re-renders of the SAME event (deterministic on its name +
+  // date), varied ACROSS different events.
+  const seed = hashSeed(
+    kind === "match" ? `${homeName}|${awayName ?? ""}|${dateText}` : `${homeName}|${dateText}`,
+  );
+  const seedColor = seed % BLOB_HEX.length;
+  // Unsigned shift — seed can exceed 2^31-1 (still valid from >>>0 in
+  // hashSeed); a signed `>>` would ToInt32 that negative and produce a
+  // negative shape index (undefined.d crash in BlobCard's <path>).
+  const seedShape = (seed >>> 3) % BLOB_SHAPES.length;
+  // Away card gets the next palette entry/shape so the two sides never come
+  // out identical (matches the explicit-override behavior below).
+  const homeColor = colorIndex != null ? BLOB_HEX[colorIndex % BLOB_HEX.length] : BLOB_HEX[seedColor];
   const awayColor =
-    colorIndex != null ? BLOB_HEX[(colorIndex + 1) % BLOB_HEX.length] : AQUA;
-  const artistColor = colorIndex != null ? BLOB_HEX[colorIndex % BLOB_HEX.length] : VIOLET;
-  const homeShape = shapeIndex != null ? shapeIndex % BLOB_SHAPES.length : 0;
-  const awayShape = shapeIndex != null ? (shapeIndex + 1) % BLOB_SHAPES.length : 1;
-  const artistShape = shapeIndex != null ? shapeIndex % BLOB_SHAPES.length : 2;
+    colorIndex != null ? BLOB_HEX[(colorIndex + 1) % BLOB_HEX.length] : BLOB_HEX[(seedColor + 1) % BLOB_HEX.length];
+  const artistColor = colorIndex != null ? BLOB_HEX[colorIndex % BLOB_HEX.length] : BLOB_HEX[seedColor];
+  const homeShape = shapeIndex != null ? shapeIndex % BLOB_SHAPES.length : seedShape;
+  const awayShape =
+    shapeIndex != null ? (shapeIndex + 1) % BLOB_SHAPES.length : (seedShape + 1) % BLOB_SHAPES.length;
+  const artistShape = shapeIndex != null ? shapeIndex % BLOB_SHAPES.length : seedShape;
 
   return (
     <div
@@ -287,6 +313,59 @@ export function MatchTemplate({
           )}
           <div style={{ display: "flex", fontSize: isSquare ? 58 : 38, fontWeight: 700, marginTop: isSquare ? 24 : 12, textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}>
             {bidiVisual(homeName)}
+          </div>
+        </div>
+      ) : kind === "photo" ? (
+        /* fallback for events with no matched team/artist logo: the event's
+           own regular photo, full-bleed cropped into one wide panel — no
+           transparent cutout required (unlike the blob-card modes above). */
+        <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", padding: `0 ${isSquare ? 56 : 48}px` }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "flex-end",
+              width: panelW,
+              height: panelH,
+              borderRadius: isSquare ? 56 : 40,
+              overflow: "hidden",
+              position: "relative",
+              backgroundColor: "#0D0C1E",
+              boxShadow: "0 24px 70px rgba(0,0,0,0.55)",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={homeLogoUrl}
+              width={Math.round(panelW * bScale)}
+              height={Math.round(panelH * bScale)}
+              alt=""
+              style={{
+                position: "absolute",
+                top: Math.round((panelH - panelH * bScale) / 2),
+                left: Math.round((panelW - panelW * bScale) / 2),
+                width: Math.round(panelW * bScale),
+                height: Math.round(panelH * bScale),
+                objectFit: "cover",
+              }}
+            />
+            {/* dark gradient so the name stays legible over any photo */}
+            <div
+              style={{
+                display: "flex",
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: Math.round(panelH * 0.55),
+                background: "linear-gradient(to top, rgba(7,6,24,0.92), rgba(7,6,24,0))",
+              }}
+            />
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative", padding: isSquare ? "0 40px 40px" : "0 30px 26px" }}>
+              <div style={{ display: "flex", fontSize: isSquare ? 54 : 34, fontWeight: 700, textAlign: "center", textShadow: "0 2px 14px rgba(0,0,0,0.9)" }}>
+                {bidiVisual(homeName)}
+              </div>
+            </div>
           </div>
         </div>
       ) : photoUrl && !bare ? (

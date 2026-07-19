@@ -5,10 +5,13 @@
  * guarded). Server-only — imports the service-role client.
  *
  * Campaign flow: every feed-eligible event gets an auto-generated creative
- * (square → feed image_link, banner → additional_image_link) IF the same
- * auto-derivation the designer uses comes back clean. Any warning = skip;
- * the feed falls back to the event's original card image. Regeneration is
- * hash-driven: date/price/name change → new hash → re-render next run.
+ * (square → feed image_link, banner → additional_image_link). Clean
+ * auto-derivation (matched teams/artist) uses the branded logo composition;
+ * when derivation warns (unmatched names, no artist image), it falls back to
+ * a full-bleed creative using the event's own photo ("photo" kind) — only a
+ * genuinely imageless or priceless event still skips (feed then falls back
+ * to the original card image untouched). Regeneration is hash-driven:
+ * date/price/name change → new hash → re-render next run.
  */
 import { createHash } from "node:crypto";
 import { supabase } from "@/lib/supabase-server";
@@ -33,6 +36,10 @@ export type CreativeDefaults = {
   awayRef: string | null;
   artistName: string | null;
   artistImageUrl: string | null;
+  // Event's own regular photo — the fallback subject for the "photo" creative
+  // kind when no team/artist logo could be matched (see `warnings`).
+  cardImageUrl: string | null;
+  eventName: string;
   warnings: string[];
 };
 
@@ -162,6 +169,8 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
       awayRef: null,
       artistName,
       artistImageUrl,
+      cardImageUrl: event.card_image_url ?? null,
+      eventName: displayName,
       warnings,
     };
   }
@@ -236,6 +245,8 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
     awayRef,
     artistName: null,
     artistImageUrl: null,
+    cardImageUrl: event.card_image_url ?? null,
+    eventName: displayName,
     warnings,
   };
 }
@@ -310,39 +321,51 @@ export async function generateCampaignForEvent(
   };
 
   const defaults = await deriveCreativeDefaults(event.id);
-  if (defaults.warnings.length > 0) {
-    await markChecked();
-    return { status: "skipped", reason: defaults.warnings.join("; ") };
-  }
   if (defaults.price === null) {
     await markChecked();
     return { status: "skipped", reason: "no computable price" };
   }
 
-  const params: CreativeParams =
-    defaults.kind === "artist"
-      ? {
-          kind: "artist",
-          imageUrl: defaults.artistImageUrl ?? "",
-          artistName: defaults.artistName ?? "",
-          dateText: defaults.dateText,
-          timeText: defaults.timeText,
-          locationText: defaults.locationText,
-          price: defaults.price,
-          currency: defaults.currency,
-          mode: "package",
-        }
-      : {
-          kind: "match",
-          homeRef: defaults.homeRef ?? "",
-          awayRef: defaults.awayRef ?? "",
-          dateText: defaults.dateText,
-          timeText: defaults.timeText,
-          locationText: defaults.locationText,
-          price: defaults.price,
-          currency: defaults.currency,
-          mode: "package",
-        };
+  const baseFields = {
+    dateText: defaults.dateText,
+    timeText: defaults.timeText,
+    locationText: defaults.locationText,
+    price: defaults.price,
+    currency: defaults.currency,
+    mode: "package" as const,
+  };
+
+  let params: CreativeParams;
+  if (defaults.warnings.length === 0 && defaults.kind === "artist") {
+    params = {
+      kind: "artist",
+      imageUrl: defaults.artistImageUrl ?? "",
+      artistName: defaults.artistName ?? "",
+      ...baseFields,
+    };
+  } else if (defaults.warnings.length === 0) {
+    params = {
+      kind: "match",
+      homeRef: defaults.homeRef ?? "",
+      awayRef: defaults.awayRef ?? "",
+      ...baseFields,
+    };
+  } else {
+    // No matched team/artist logo (unmatched names, no artist image, etc.) —
+    // fall back to a full-bleed creative using the event's own photo instead
+    // of skipping entirely. Only a genuinely imageless event still skips.
+    const photoUrl = event.card_image_url;
+    if (!photoUrl) {
+      await markChecked();
+      return { status: "skipped", reason: `${defaults.warnings.join("; ")} (no fallback photo either)` };
+    }
+    params = {
+      kind: "photo",
+      imageUrl: photoUrl,
+      eventName: event.name || event.name_english || "",
+      ...baseFields,
+    };
+  }
 
   const input = await buildCreativeInput(params);
   const urls = await renderAndUploadCreative(input, `auto/event-${event.id}`);

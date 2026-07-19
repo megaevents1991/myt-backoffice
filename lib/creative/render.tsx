@@ -49,7 +49,10 @@ export async function renderBlobPng(
   let h = 0;
   for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   const color = BLOB_HEX[h % BLOB_HEX.length];
-  const shape = BLOB_SHAPES[(h >> 3) % BLOB_SHAPES.length];
+  // Unsigned shift — h can exceed 2^31-1 (still a valid uint32 from >>>0
+  // above); a signed `>>` would ToInt32 that into a negative number and
+  // produce a negative array index (undefined.w crash).
+  const shape = BLOB_SHAPES[(h >>> 3) % BLOB_SHAPES.length];
   const scale = Math.min(width / shape.w, height / shape.h) * 0.85;
   const bw = Math.round(shape.w * scale);
   const bh = Math.round(shape.h * scale);

@@ -48,7 +48,9 @@ export async function generateCreative(
   const slug =
     params.kind === "artist"
       ? `${slugify(input.homeName) || "artist"}-${dateSlug}`
-      : `${slugify(input.homeName) || params.homeRef.replace(":", "-")}-vs-${slugify(input.awayName ?? "") || params.awayRef.replace(":", "-")}-${dateSlug}`;
+      : params.kind === "photo"
+        ? `${slugify(input.homeName) || "event"}-${dateSlug}`
+        : `${slugify(input.homeName) || params.homeRef.replace(":", "-")}-vs-${slugify(input.awayName ?? "") || params.awayRef.replace(":", "-")}-${dateSlug}`;
 
   const urls = await renderAndUploadCreative(input, slug);
 

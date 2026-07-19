@@ -38,7 +38,10 @@ export function parseSubjectRef(ref: string): SubjectRef | null {
 
 export type CreativeParams =
   | (BaseParams & { kind: "match"; homeRef: string; awayRef: string })
-  | (BaseParams & { kind: "artist"; imageUrl: string; artistName: string });
+  | (BaseParams & { kind: "artist"; imageUrl: string; artistName: string })
+  // Fallback when no team/artist logo could be matched — full-bleed panel
+  // using the event's own (regular, non-cutout) photo.
+  | (BaseParams & { kind: "photo"; imageUrl: string; eventName: string });
 
 type FootballTeamRow = {
   id: number;
@@ -89,6 +92,18 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
       kind: "artist",
       homeLogoUrl: params.imageUrl,
       homeName: params.artistName,
+      ...base,
+    };
+  }
+
+  if (params.kind === "photo") {
+    if (!params.eventName || (!params.imageUrl && !params.bare)) {
+      throw new Error("Photo creative requires imageUrl and eventName");
+    }
+    return {
+      kind: "photo",
+      homeLogoUrl: params.imageUrl,
+      homeName: params.eventName,
       ...base,
     };
   }

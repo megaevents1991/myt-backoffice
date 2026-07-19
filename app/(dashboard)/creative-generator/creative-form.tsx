@@ -87,13 +87,18 @@ const ddmmyyyyToIso = (t: string) => {
 export function CreativeForm({
   subjects, locations, events,
 }: { subjects: SubjectOption[]; locations: Option[]; events: EventOption[] }) {
-  const [kind, setKind] = useState<"match" | "artist">("match");
+  const [kind, setKind] = useState<"match" | "artist" | "photo">("match");
   const [eventId, setEventId] = useState<string>("");
   const [eventOpen, setEventOpen] = useState(false);
   const [homeRef, setHomeRef] = useState<string>("");
   const [awayRef, setAwayRef] = useState<string>("");
   const [artistName, setArtistName] = useState("");
   const [artistImg, setArtistImg] = useState("");
+  // "photo" kind: fallback for events with no matched team/artist logo — the
+  // event's own (regular, non-cutout) photo, full-bleed. Same fields an
+  // unmatched event would get auto-generated with by the nightly cron.
+  const [photoName, setPhotoName] = useState("");
+  const [photoImg, setPhotoImg] = useState("");
   const [date, setDate] = useState("");        // yyyy-mm-dd from <input type="date">
   const [time, setTime] = useState("");
   const [locationText, setLocationText] = useState("");
@@ -134,7 +139,9 @@ export function CreativeForm({
     setLoadingDefaults(true);
     try {
       const d = await getCreativeDefaults(Number(value));
-      setKind(d.kind);
+      // Same fallback the nightly cron applies: warnings (unmatched
+      // team/artist) → default to the "photo" kind using the event's own image.
+      setKind(d.warnings.length > 0 && d.cardImageUrl ? "photo" : d.kind);
       setDate(ddmmyyyyToIso(d.dateText));
       setTime(d.timeText ?? "");
       setLocationText(d.locationText);
@@ -145,6 +152,8 @@ export function CreativeForm({
       setAwayRef(d.awayRef ?? "");
       setArtistName(d.artistName ?? "");
       setArtistImg(d.artistImageUrl ?? "");
+      setPhotoName(d.eventName);
+      setPhotoImg(d.cardImageUrl ?? "");
       setWarnings(d.warnings);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load event defaults");
@@ -162,7 +171,9 @@ export function CreativeForm({
   const subjectReady =
     kind === "match"
       ? homeRef && awayRef && homeRef !== awayRef
-      : artistName.trim() && artistImg.trim();
+      : kind === "artist"
+        ? artistName.trim() && artistImg.trim()
+        : photoName.trim() && photoImg.trim();
   const ready = subjectReady && dateText && Number(price) > 0;
 
   const previewUrl = useMemo(() => {
@@ -173,9 +184,12 @@ export function CreativeForm({
     if (kind === "match") {
       q.set("home", homeRef);
       q.set("away", awayRef);
-    } else {
+    } else if (kind === "artist") {
       q.set("img", artistImg);
       q.set("name", artistName);
+    } else {
+      q.set("img", photoImg);
+      q.set("name", photoName);
     }
     if (time) q.set("time", time);
     if (locationText) q.set("loc", locationText);
@@ -187,7 +201,7 @@ export function CreativeForm({
     if (sizing.imgY !== 0) q.set("iy", String(sizing.imgY));
     if (sizing.bgZoom !== 100) q.set("bgscale", String(sizing.bgZoom / 100));
     return `/api/creative?${q.toString()}`;
-  }, [ready, kind, homeRef, awayRef, artistImg, artistName, dateText, price, currency, mode, time, locationText, cardBg, blobColor, blobShape, sizing]);
+  }, [ready, kind, homeRef, awayRef, artistImg, artistName, photoImg, photoName, dateText, price, currency, mode, time, locationText, cardBg, blobColor, blobShape, sizing]);
 
   // Preview double-buffer: keep showing the last rendered image and swap only
   // when the next server render has fully loaded — no blank flashes.
@@ -219,6 +233,9 @@ export function CreativeForm({
   // Design-base download: full branded canvas WITHOUT blob/subject image —
   // works even when the event has no cut-out image yet (that's the point).
   const bareUrl = useMemo(() => {
+    // "photo" kind has no blob/cutout to omit — the whole point is the full
+    // photo fills the panel — so the design-base download doesn't apply.
+    if (kind === "photo") return null;
     const subjectOk =
       kind === "match" ? homeRef && awayRef && homeRef !== awayRef : artistName.trim();
     if (!subjectOk || !dateText || !(Number(price) > 0)) return null;
@@ -260,7 +277,9 @@ export function CreativeForm({
       const res = await generateCreative(
         kind === "match"
           ? { kind: "match", homeRef, awayRef, ...base }
-          : { kind: "artist", imageUrl: artistImg, artistName, ...base },
+          : kind === "artist"
+            ? { kind: "artist", imageUrl: artistImg, artistName, ...base }
+            : { kind: "photo", imageUrl: photoImg, eventName: photoName, ...base },
       );
       setResult(res);
     } catch (e) {
@@ -364,11 +383,12 @@ export function CreativeForm({
 
         <div>
           <Label>Type</Label>
-          <Select value={kind} onValueChange={(v) => setKind(v as "match" | "artist")}>
+          <Select value={kind} onValueChange={(v) => setKind(v as "match" | "artist" | "photo")}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="match">Match (2 teams + VS)</SelectItem>
               <SelectItem value="artist">Artist (single image)</SelectItem>
+              <SelectItem value="photo">Regular photo (no matched logo)</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -394,7 +414,7 @@ export function CreativeForm({
               />
             </div>
           </>
-        ) : (
+        ) : kind === "artist" ? (
           <>
             <div>
               <Label htmlFor="cg-artist-name">Artist name</Label>
@@ -413,6 +433,30 @@ export function CreativeForm({
                 onChange={(e) => setArtistImg(e.target.value)}
                 placeholder="https://.../artist.png"
               />
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <Label htmlFor="cg-photo-name">Event name</Label>
+              <Input
+                id="cg-photo-name"
+                value={photoName}
+                onChange={(e) => setPhotoName(e.target.value)}
+                placeholder="שם האירוע"
+              />
+            </div>
+            <div>
+              <Label htmlFor="cg-photo-img">Event photo URL</Label>
+              <Input
+                id="cg-photo-img"
+                value={photoImg}
+                onChange={(e) => setPhotoImg(e.target.value)}
+                placeholder="https://.../event-photo.jpg"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Full-bleed, regular (non-cutout) photo — same fallback the nightly campaign cron uses.
+              </p>
             </div>
           </>
         )}
@@ -472,6 +516,7 @@ export function CreativeForm({
           </div>
         </div>
 
+        {kind !== "photo" && (
         <div className="flex gap-4">
           <div className="flex-1">
             <Label>רקע כרטיס</Label>
@@ -514,6 +559,7 @@ export function CreativeForm({
             </Select>
           </div>
         </div>
+        )}
 
         <Button onClick={onGenerate} disabled={!ready || busy || loadingDefaults} className="w-full">
           {busy ? "Generating…" : "צור תמונה"}
