@@ -13,6 +13,7 @@ export default function ArtistsPage() {
         </div>
         <div className="flex items-center gap-2">
           <RevalidateButton />
+          <Button variant="outline" asChild><Link href="/templates/artists/order">Homepage Order</Link></Button>
           <Button asChild><Link href="/templates/artists/new">Add New Artist</Link></Button>
         </div>
       </div>

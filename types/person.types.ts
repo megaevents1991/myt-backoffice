@@ -29,6 +29,8 @@ export interface Person {
   meta_description: string | null;
   meta_tags: string | null;
   featured_order: number | null;
+  // Homepage section-carousel order (כדורגל / אמנים מובילים) — Templates → Homepage order.
+  display_order: number | null;
   // Page enrichments (doc 19b/20/21/24) — read by myt-main artist/team pages.
   hero_video_url: string | null;
   banners: { image_url?: string; link_url?: string; title?: string }[] | null;
@@ -40,9 +42,10 @@ export interface Person {
   updated_at: string;
 }
 
+// display_order excluded — managed only by the Homepage Order screen.
 export type CreatePersonData = Omit<
   Person,
-  "id" | "is_deleted" | "created_at" | "updated_at"
+  "id" | "display_order" | "is_deleted" | "created_at" | "updated_at"
 >;
 export type UpdatePersonData = Partial<CreatePersonData>;
 

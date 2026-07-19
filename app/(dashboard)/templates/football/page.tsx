@@ -13,6 +13,7 @@ export default function FootballPage() {
         </div>
         <div className="flex items-center gap-2">
           <RevalidateButton />
+          <Button variant="outline" asChild><Link href="/templates/football/order">Homepage Order</Link></Button>
           <Button asChild><Link href="/templates/football/new">Add New Team</Link></Button>
         </div>
       </div>

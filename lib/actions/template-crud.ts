@@ -13,8 +13,7 @@ import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 // Tables aren't in Supabase generated types — cast to bypass never inference.
 const tbl = (table: string) => (supabase as any).from(table);
 
-// `orderBy` must be a real column on `table` (artists/football_teams have no
-// display_order — pass "id" or another existing column there).
+// `orderBy` must be a real column on `table`.
 export async function listRows<T>(
   table: string,
   orderBy = "id"
@@ -79,6 +78,34 @@ export async function updateRow<T>(
     changes: diffChanges(before, row),
   });
   return data[0] as T;
+}
+
+/**
+ * Persist a full manual ordering: row at index i gets display_order = i + 1.
+ * Used by the Templates → Homepage order screens (artists / football_teams).
+ */
+export async function saveRowOrder(
+  table: string,
+  orderedIds: number[],
+  revalidate: string[]
+): Promise<void> {
+  await requireStaff();
+  const stamp = new Date().toISOString();
+  const results = await Promise.all(
+    orderedIds.map((id, i) =>
+      tbl(table)
+        .update({ display_order: i + 1, updated_at: stamp })
+        .eq("id", id)
+    )
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) throw failed.error;
+  revalidate.forEach((p) => revalidatePath(p));
+  await logAudit({
+    action: "update",
+    entityType: table,
+    changes: { display_order: orderedIds },
+  });
 }
 
 export async function softDeleteRow<T>(

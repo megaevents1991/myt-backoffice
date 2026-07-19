@@ -7,6 +7,7 @@ import {
   createRow,
   updateRow,
   softDeleteRow,
+  saveRowOrder,
 } from "./template-crud";
 import type {
   Person,
@@ -36,4 +37,9 @@ export async function updateArtist(id: number, data: UpdatePersonData): Promise<
 export async function softDeleteArtist(id: number): Promise<Person> {
   await requireStaff();
   return softDeleteRow<Person>(TABLE, id, REVALIDATE);
+}
+/** Homepage "אמנים מובילים" carousel order — index in the array = position. */
+export async function saveArtistsOrder(orderedIds: number[]): Promise<void> {
+  await requireStaff();
+  return saveRowOrder(TABLE, orderedIds, REVALIDATE);
 }
