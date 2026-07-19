@@ -94,6 +94,10 @@ export function CreativeForm({
   const [awayRef, setAwayRef] = useState<string>("");
   const [artistName, setArtistName] = useState("");
   const [artistImg, setArtistImg] = useState("");
+  // Real transparent cut-out (blob-card) vs a regular photo (plain circular
+  // avatar, no blob/background — see MatchTemplate). Defaults true so a
+  // manually-pasted cut-out URL keeps today's look unless told otherwise.
+  const [artistIsCutout, setArtistIsCutout] = useState(true);
   // "photo" kind: fallback for events with no matched team/artist logo — the
   // event's own (regular, non-cutout) photo, full-bleed. Same fields an
   // unmatched event would get auto-generated with by the nightly cron.
@@ -152,6 +156,7 @@ export function CreativeForm({
       setAwayRef(d.awayRef ?? "");
       setArtistName(d.artistName ?? "");
       setArtistImg(d.artistImageUrl ?? "");
+      setArtistIsCutout(d.artistIsCutout);
       setPhotoName(d.eventName);
       setPhotoImg(d.cardImageUrl ?? "");
       setWarnings(d.warnings);
@@ -187,6 +192,7 @@ export function CreativeForm({
     } else if (kind === "artist") {
       q.set("img", artistImg);
       q.set("name", artistName);
+      if (!artistIsCutout) q.set("isCutout", "0");
     } else {
       q.set("img", photoImg);
       q.set("name", photoName);
@@ -201,7 +207,7 @@ export function CreativeForm({
     if (sizing.imgY !== 0) q.set("iy", String(sizing.imgY));
     if (sizing.bgZoom !== 100) q.set("bgscale", String(sizing.bgZoom / 100));
     return `/api/creative?${q.toString()}`;
-  }, [ready, kind, homeRef, awayRef, artistImg, artistName, photoImg, photoName, dateText, price, currency, mode, time, locationText, cardBg, blobColor, blobShape, sizing]);
+  }, [ready, kind, homeRef, awayRef, artistImg, artistName, artistIsCutout, photoImg, photoName, dateText, price, currency, mode, time, locationText, cardBg, blobColor, blobShape, sizing]);
 
   // Preview double-buffer: keep showing the last rendered image and swap only
   // when the next server render has fully loaded — no blank flashes.
@@ -278,7 +284,7 @@ export function CreativeForm({
         kind === "match"
           ? { kind: "match", homeRef, awayRef, ...base }
           : kind === "artist"
-            ? { kind: "artist", imageUrl: artistImg, artistName, ...base }
+            ? { kind: "artist", imageUrl: artistImg, artistName, isCutout: artistIsCutout, ...base }
             : { kind: "photo", imageUrl: photoImg, eventName: photoName, ...base },
       );
       setResult(res);
@@ -433,6 +439,16 @@ export function CreativeForm({
                 onChange={(e) => setArtistImg(e.target.value)}
                 placeholder="https://.../artist.png"
               />
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="cg-artist-cutout"
+                checked={artistIsCutout}
+                onCheckedChange={(v) => setArtistIsCutout(v === true)}
+              />
+              <Label htmlFor="cg-artist-cutout">
+                Real cut-out (transparent PNG) — uncheck for a regular photo
+              </Label>
             </div>
           </>
         ) : (

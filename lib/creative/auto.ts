@@ -36,6 +36,10 @@ export type CreativeDefaults = {
   awayRef: string | null;
   artistName: string | null;
   artistImageUrl: string | null;
+  // Whether artistImageUrl is a real transparent cut-out (art_image_url) vs a
+  // regular photo (image_url/card_image_url) — decides blob-card vs plain
+  // circular-avatar rendering (see MatchTemplate). Meaningless when kind !== "artist".
+  artistIsCutout: boolean;
   // Event's own regular photo — the fallback subject for the "photo" creative
   // kind when no team/artist logo could be matched (see `warnings`).
   cardImageUrl: string | null;
@@ -139,7 +143,12 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
 
   if (isMusic) {
     // Artist creative: event cut-out → matched artist image → event card.
-    let artistImageUrl = event.art_image_url ?? null;
+    // Tracks whether the resolved image is a REAL cut-out (art_image_url,
+    // blob-safe) or a regular photo (image_url/card_image_url — plain
+    // circular-avatar rendering, see MatchTemplate) so a "clean" artist match
+    // whose only image is a flat photo doesn't get crammed into a blob.
+    let artistImageUrl: string | null = event.art_image_url ?? null;
+    let artistIsCutout = artistImageUrl != null;
     let artistName = displayName;
     const { data: artistRows, error: aErr } = await supabase
       .from("artists")
@@ -153,9 +162,20 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
     const match = matchPerson(displayName, rows);
     if (match) {
       artistName = match.name;
-      artistImageUrl = artistImageUrl ?? match.art_image_url ?? match.image_url;
+      if (!artistImageUrl) {
+        if (match.art_image_url) {
+          artistImageUrl = match.art_image_url;
+          artistIsCutout = true;
+        } else if (match.image_url) {
+          artistImageUrl = match.image_url;
+          artistIsCutout = false;
+        }
+      }
     }
-    artistImageUrl = artistImageUrl ?? event.card_image_url ?? null;
+    if (!artistImageUrl && event.card_image_url) {
+      artistImageUrl = event.card_image_url;
+      artistIsCutout = false;
+    }
     if (!artistImageUrl) warnings.push("לא נמצאה תמונת אמן — בחר תמונה ידנית");
 
     return {
@@ -169,6 +189,7 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
       awayRef: null,
       artistName,
       artistImageUrl,
+      artistIsCutout,
       cardImageUrl: event.card_image_url ?? null,
       eventName: displayName,
       warnings,
@@ -245,6 +266,7 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
     awayRef,
     artistName: null,
     artistImageUrl: null,
+    artistIsCutout: false,
     cardImageUrl: event.card_image_url ?? null,
     eventName: displayName,
     warnings,
@@ -277,12 +299,18 @@ export async function renderAndUploadCreative(
 /** The row shape the campaign cron works with. */
 export type CampaignEventRow = Event & { campaign_input_hash?: string | null };
 
+// Bump whenever a rendering/template change should force ALL existing
+// creatives to regenerate on the next cron pass, even though their
+// underlying event data hasn't changed. v2: no-cutout avatar treatment +
+// real wordmark logo (2026-07-19).
+const RENDER_VERSION = "v2";
+
 /** Hash of everything printed on the creative — change → regenerate. */
 export function campaignInputHash(event: Event): string {
   const { dateText } = eventDateTexts(event.date);
   const price = computePackagePrice(event);
   return createHash("sha1")
-    .update(`${dateText}|${price ?? "none"}|${event.name}`)
+    .update(`${RENDER_VERSION}|${dateText}|${price ?? "none"}|${event.name}`)
     .digest("hex")
     .slice(0, 12);
 }
@@ -337,10 +365,14 @@ export async function generateCampaignForEvent(
 
   let params: CreativeParams;
   if (defaults.warnings.length === 0 && defaults.kind === "artist") {
+    // isCutout flows through to input.ts/MatchTemplate: even a "clean" match
+    // (artist found, no warnings) renders as a plain circular avatar instead
+    // of a blob card when its only image is a regular photo, not a cut-out.
     params = {
       kind: "artist",
       imageUrl: defaults.artistImageUrl ?? "",
       artistName: defaults.artistName ?? "",
+      isCutout: defaults.artistIsCutout,
       ...baseFields,
     };
   } else if (defaults.warnings.length === 0) {

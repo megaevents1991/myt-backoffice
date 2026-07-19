@@ -38,9 +38,13 @@ export function parseSubjectRef(ref: string): SubjectRef | null {
 
 export type CreativeParams =
   | (BaseParams & { kind: "match"; homeRef: string; awayRef: string })
-  | (BaseParams & { kind: "artist"; imageUrl: string; artistName: string })
-  // Fallback when no team/artist logo could be matched — full-bleed panel
-  // using the event's own (regular, non-cutout) photo.
+  // isCutout: is imageUrl a real transparent cut-out, or a regular photo?
+  // Determines blob-card vs plain circular-avatar rendering (see
+  // MatchTemplate) — default true (assume cut-out) so existing callers keep
+  // today's look until they explicitly say otherwise.
+  | (BaseParams & { kind: "artist"; imageUrl: string; artistName: string; isCutout?: boolean })
+  // Fallback when no team/artist logo could be matched — plain circular
+  // avatar using the event's own (regular, non-cutout) photo.
   | (BaseParams & { kind: "photo"; imageUrl: string; eventName: string });
 
 type FootballTeamRow = {
@@ -92,6 +96,7 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
       kind: "artist",
       homeLogoUrl: params.imageUrl,
       homeName: params.artistName,
+      homeHasCutout: params.isCutout ?? true,
       ...base,
     };
   }
@@ -104,6 +109,7 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
       kind: "photo",
       homeLogoUrl: params.imageUrl,
       homeName: params.eventName,
+      homeHasCutout: false,
       ...base,
     };
   }
@@ -139,15 +145,20 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
   const teams = (teamsRes.data || []) as FootballTeamRow[];
   const logoRows = (logosRes.data || []) as FootballLogoRow[];
 
-  const resolve = (ref: SubjectRef): { name: string; img: string | null } => {
+  // isCutout: logo_url/art_image_url are real transparent cut-outs (the
+  // football_logos library is ENTIRELY dedicated crests, always a cut-out);
+  // image_url is a regular photo fallback — not blob-safe (see MatchTemplate).
+  const resolve = (ref: SubjectRef): { name: string; img: string | null; isCutout: boolean } => {
     if (ref.source === "logo") {
       const l = logoRows.find((r) => r.id === ref.id);
       if (!l) throw new Error("Logo not found");
-      return { name: l.name_hebrew ?? l.name_english, img: l.logo_url };
+      return { name: l.name_hebrew ?? l.name_english, img: l.logo_url, isCutout: true };
     }
     const t = teams.find((r) => r.id === ref.id);
     if (!t) throw new Error("Team not found");
-    return { name: t.name, img: teamImage(t) };
+    if (t.logo_url) return { name: t.name, img: t.logo_url, isCutout: true };
+    if (t.art_image_url) return { name: t.name, img: t.art_image_url, isCutout: true };
+    return { name: t.name, img: t.image_url, isCutout: false };
   };
   const home = resolve(homeRef);
   const away = resolve(awayRef);
@@ -163,6 +174,8 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
     awayLogoUrl: away.img ?? "",
     homeName: home.name,
     awayName: away.name,
+    homeHasCutout: home.isCutout,
+    awayHasCutout: away.isCutout,
     ...base,
   };
 }

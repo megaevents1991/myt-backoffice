@@ -92,7 +92,10 @@ export async function GET(req: NextRequest) {
         { status: 400 },
       );
     }
-    params = { kind: "artist", imageUrl, artistName, ...base };
+    // isCutout: default true (assume a real transparent cut-out) unless the
+    // designer explicitly says it's just a regular photo (isCutout=0).
+    const isCutout = q.get("isCutout") !== "0";
+    params = { kind: "artist", imageUrl, artistName, isCutout, ...base };
   } else if (kind === "photo") {
     const imageUrl = q.get("img") ?? "";
     const eventName = q.get("name") ?? "";
