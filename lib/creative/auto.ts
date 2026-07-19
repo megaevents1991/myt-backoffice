@@ -129,7 +129,12 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
       source &&
       source.split(/\s+[-–—]\s+|\s+vs\.?\s+/i).map((p) => p.trim()).length === 2,
   );
-  let isMusic = event.type.startsWith("music");
+  // A per-event cut-out (art_image_url) is itself strong evidence this is a
+  // single-subject show, regardless of whether an artists-table row exists —
+  // without this, an event with its own uploaded cutout but no matching
+  // artists row (or matching team names) fell through to the team-match
+  // path, failed there too, and its perfectly good cutout went unused.
+  let isMusic = event.type.startsWith("music") || (!!event.art_image_url && !splitsInTwo);
   if (!isMusic && !splitsInTwo) {
     const { data: probe, error: pErr } = await supabase
       .from("artists")
@@ -305,12 +310,22 @@ export type CampaignEventRow = Event & { campaign_input_hash?: string | null };
 // real wordmark logo (2026-07-19).
 const RENDER_VERSION = "v2";
 
-/** Hash of everything printed on the creative — change → regenerate. */
+/**
+ * Hash of everything printed on the creative — change → regenerate. Includes
+ * the event's own image fields (card_image_url, art_image_url): without
+ * this, uploading a missing photo/cutout directly on the event doesn't
+ * change its date/price/name, so a prior skip stayed checkpointed forever
+ * even after the actual blocker was fixed. (Fixing a linked artists/
+ * football_teams row's image instead of the event's own fields still needs
+ * a manual recheck — that data isn't cheap to include here.)
+ */
 export function campaignInputHash(event: Event): string {
   const { dateText } = eventDateTexts(event.date);
   const price = computePackagePrice(event);
   return createHash("sha1")
-    .update(`${RENDER_VERSION}|${dateText}|${price ?? "none"}|${event.name}`)
+    .update(
+      `${RENDER_VERSION}|${dateText}|${price ?? "none"}|${event.name}|${event.card_image_url ?? ""}|${event.art_image_url ?? ""}`,
+    )
     .digest("hex")
     .slice(0, 12);
 }
