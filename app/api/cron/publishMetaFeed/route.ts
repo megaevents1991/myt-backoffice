@@ -21,6 +21,14 @@ import { supabase } from "@/lib/supabase-server";
  * main app's /feeds/meta-catalog.xml route 307-redirects there — so the
  * branded URL stays stable for Meta's registration while delivery bypasses
  * Vercel's forced compression completely.
+ *
+ * Supabase Storage's own CDN (Cloudflare) turned out to ALSO force-Brotli
+ * any response typed as text/XML/JSON — confirmed live the object came
+ * back content-encoding: br even freshly uploaded plain. Uploading with
+ * Content-Type: application/octet-stream (verified live) makes Cloudflare
+ * skip its compression heuristics entirely, since it no longer recognizes
+ * the object as compressible text — the storage PATH still ends in .xml so
+ * Meta's own format sniffing still has that signal to go on.
  */
 export const maxDuration = 60;
 
@@ -54,7 +62,12 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.storage
       .from(STORAGE_BUCKET)
       .upload(STORAGE_PATH, body, {
-        contentType: "application/xml; charset=utf-8",
+        // NOT application/xml — Cloudflare (Supabase Storage's CDN) force-
+        // Brotli-compresses anything it recognizes as text/XML/JSON,
+        // corrupting the feed the same way Vercel did. octet-stream makes
+        // it skip compression entirely (verified live); the .xml path
+        // still gives Meta's own sniffing something to go on.
+        contentType: "application/octet-stream",
         cacheControl: "900",
         upsert: true,
       });
