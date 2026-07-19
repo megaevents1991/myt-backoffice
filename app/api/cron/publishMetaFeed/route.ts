@@ -34,7 +34,11 @@ export const maxDuration = 60;
 
 const SOURCE_URL = "https://www.mega-events.co.il/feeds/meta-catalog.xml";
 const STORAGE_BUCKET = "public_resources";
-const STORAGE_PATH = "feeds/meta-catalog.xml";
+// "-feed" suffix deliberately avoids the plain "feeds/meta-catalog.xml"
+// path — that one got Cloudflare-cache-poisoned during testing (same
+// content → same weak etag → Cloudflare kept serving cached br-compressed
+// headers from before the octet-stream fix, never re-validating).
+const STORAGE_PATH = "feeds/meta-catalog-feed.xml";
 
 export async function GET(request: NextRequest) {
   const denied = await guardCronRoute(request);
