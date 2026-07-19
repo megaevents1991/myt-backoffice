@@ -44,6 +44,13 @@ export type CreativeDefaults = {
   // kind when no team/artist logo could be matched (see `warnings`).
   cardImageUrl: string | null;
   eventName: string;
+  // Single-team spotlight fallback: when only ONE side of a "A - B" match
+  // resolved to a known team/logo (the opponent isn't in the library), this
+  // carries that one team's identity so the campaign flow can build a
+  // single-subject creative instead of discarding a real crest.
+  partialTeamName: string | null;
+  partialTeamImageUrl: string | null;
+  partialTeamIsCutout: boolean;
   warnings: string[];
 };
 
@@ -195,6 +202,9 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
       artistName,
       artistImageUrl,
       artistIsCutout,
+      partialTeamName: null,
+      partialTeamImageUrl: null,
+      partialTeamIsCutout: false,
       cardImageUrl: event.card_image_url ?? null,
       eventName: displayName,
       warnings,
@@ -241,6 +251,12 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
 
   let homeRef: string | null = null;
   let awayRef: string | null = null;
+  // When only ONE side of "A - B" matches a known team/logo (the common case
+  // — the opponent just isn't in our small library), remember it: rather
+  // than discard a perfectly good, real crest, the campaign flow uses it for
+  // a single-team spotlight (see generateCampaignForEvent) instead of
+  // skipping the whole fixture.
+  let partialSubject: SubjectRow | null = null;
   // Try both names; first one that splits into exactly two parts wins.
   for (const source of [event.name, event.name_english]) {
     if (!source) continue;
@@ -254,6 +270,10 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
       if (!teamImage(home)) warnings.push(`לקבוצה ${home.name} אין תמונה`);
       if (!teamImage(away)) warnings.push(`לקבוצה ${away.name} אין תמונה`);
       break;
+    }
+    if (!partialSubject) {
+      const found = (home ?? away) as SubjectRow | null;
+      if (found && teamImage(found)) partialSubject = found;
     }
   }
   if (homeRef === null || awayRef === null) {
@@ -272,6 +292,11 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
     artistName: null,
     artistImageUrl: null,
     artistIsCutout: false,
+    partialTeamName: partialSubject?.name ?? null,
+    partialTeamImageUrl: partialSubject ? teamImage(partialSubject) : null,
+    partialTeamIsCutout: partialSubject
+      ? partialSubject.logo_url != null || partialSubject.art_image_url != null
+      : false,
     cardImageUrl: event.card_image_url ?? null,
     eventName: displayName,
     warnings,
@@ -397,10 +422,24 @@ export async function generateCampaignForEvent(
       awayRef: defaults.awayRef ?? "",
       ...baseFields,
     };
+  } else if (defaults.partialTeamImageUrl) {
+    // Only ONE side of "A - B" matched a known team (the common case — the
+    // opponent just isn't in our small library). Rather than discard a real
+    // crest, spotlight that one team on the football-stadium backdrop (same
+    // look as the site's own team pages) with the FULL original match title
+    // ("Arsenal - Coventry City") so it still reads as this specific fixture.
+    params = {
+      kind: "artist",
+      imageUrl: defaults.partialTeamImageUrl,
+      artistName: event.name || event.name_english || "",
+      isCutout: defaults.partialTeamIsCutout,
+      bgKind: "football",
+      ...baseFields,
+    };
   } else {
-    // No matched team/artist logo (unmatched names, no artist image, etc.) —
-    // fall back to a full-bleed creative using the event's own photo instead
-    // of skipping entirely. Only a genuinely imageless event still skips.
+    // No matched team/artist logo at all (unmatched names, no artist image,
+    // etc.) — fall back to a full-bleed creative using the event's own photo
+    // instead of skipping entirely. Only a genuinely imageless event still skips.
     const photoUrl = event.card_image_url;
     if (!photoUrl) {
       await markChecked();

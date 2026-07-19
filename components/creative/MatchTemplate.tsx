@@ -408,12 +408,17 @@ export function MatchTemplate({
         <div style={{ display: "flex", flex: 1, flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           {bare ? (
             <div style={{ display: "flex", width: cardW, height: cardH }} />
-          ) : homeIsCutout ? (
+          ) : homeIsCutout || photoUrl ? (
+            // A real cut-out always gets the blob/photo-bg card; a regular
+            // photo ALSO gets it when a stock category photo (e.g. football
+            // stadium) was explicitly requested — a contained photo sitting
+            // on a matching realistic photo backdrop reads fine (unlike a
+            // photo crammed onto an abstract colored blob, which doesn't).
             <BlobCard img={homeLogoUrl} color={artistColor} shapeIndex={artistShape} w={cardW} h={cardH} radius={isSquare ? 76 : 54} photoUrl={photoUrl} {...sizing} />
           ) : (
-            /* No real cut-out — plain circular avatar with a color glow, no
-               blob shape, no card/background (matches myt-main's og.tsx
-               fallback for a person with only a regular photo). */
+            /* No real cut-out and no stock photo background — plain circular
+               avatar with a color glow, no blob shape (matches myt-main's
+               og.tsx fallback for a person with only a regular photo). */
             <AvatarCircle img={homeLogoUrl} color={artistColor} size={avatarSize} imgScale={iScale} imgOffsetX={iOffX} imgOffsetY={iOffY} />
           )}
           <div style={{ display: "flex", fontSize: isSquare ? 58 : 38, fontWeight: 700, marginTop: isSquare ? 24 : 12, textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}>
