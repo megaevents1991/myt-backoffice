@@ -65,6 +65,7 @@ export function tixstockToEvent(event: TixStockEventDB): Omit<Event, "id"> {
     base_flight_price: 0,
     base_hotel_price: 0,
     is_prioritized: false,
+    skip_flight: true,
     event_additional_markup: null,
     is_deleted: "",
     tags: "",

@@ -259,6 +259,7 @@ export default function EventPage({
             // Apply smart date calculation if we have an event date
             const finalData = { ...prePopulatedData };
             finalData.event_additional_markup ??= null;
+            finalData.skip_flight ??= true;
             if (prePopulatedData.date) {
               const smartDates = calculateSmartDates(prePopulatedData.date);
               finalData.def_date_depart = smartDates.departure;
@@ -306,7 +307,7 @@ export default function EventPage({
               base_flight_price: 0,
               base_hotel_price: 0,
               is_prioritized: false,
-              skip_flight: false,
+              skip_flight: true,
               skip_flight_markup: null,
               event_additional_markup: null,
               is_deleted: "",
@@ -338,7 +339,7 @@ export default function EventPage({
             base_flight_price: 0,
             base_hotel_price: 0,
             is_prioritized: false,
-            skip_flight: false,
+            skip_flight: true,
             skip_flight_markup: null,
             event_additional_markup: null,
             is_deleted: "",
