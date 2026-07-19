@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/nightlyCampaignCreatives",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/publishMetaFeed",
+      "schedule": "*/15 * * * *"
     }
   ],
   "functions": {
