@@ -1306,21 +1306,32 @@ export default function EventPage({
         toast({
           title: "Success",
           description: extras.length > 0
-            ? `Event created with ${extras.join(" and ")}.`
-            : "Event has been created successfully.",
+            ? `Event created with ${extras.join(" and ")}. You can now link existing flights/hotels.`
+            : "Event created. You can now link existing flights/hotels.",
         });
+
+        // Land on the created event's edit page (instead of the list) so
+        // flights/hotels can be linked immediately. Staged items are now
+        // persisted; reset them and the baseline so the form loads clean
+        // even if the route param change doesn't remount the component.
+        setStagedFlights([]);
+        setStagedHotels([]);
+        initialEventRef.current = null;
+        router.replace(`/events/${createdEvent.id}`);
       } else {
         // For existing events, use updateEvent
         await updateEvent(event.id, event);
         // Links: only when actually changed, never on a failed baseline load
         // (isolated — a link failure never reports the event save as failed).
         await persistTaxonomy(event.id, false);
+        // Stay on the page (no redirect) — re-baseline so the sticky save
+        // bar clears. Taxonomy baselines are moved inside persistTaxonomy.
+        initialEventRef.current = JSON.stringify(event);
         toast({
           title: "Success",
           description: "Event has been saved successfully.",
         });
       }
-      router.push("/events");
     } catch (error) {
       console.error(
         `Error ${isNewEvent ? "creating" : "saving"} event:`,
