@@ -193,7 +193,8 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           art_bg_scale: artImageUrl ? artBgScale : null,
           art_image_offset_x: artImageUrl ? artImageOffsetX : null,
           art_image_offset_y: artImageUrl ? artImageOffsetY : null,
-          logo_url: logoUrl || null,
+          // artists table has no logo_url column (PGRST204 on save) — football only
+          ...(kind === "football_teams" ? { logo_url: logoUrl || null } : {}),
           bio: values.bio ? textToRichDoc(values.bio) : null,
           seo_title: values.seo_title || null,
           meta_description: values.meta_description || null,
