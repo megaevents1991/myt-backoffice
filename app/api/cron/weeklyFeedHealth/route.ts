@@ -8,9 +8,9 @@ import { guardCronRoute } from "@/lib/auth/guards";
  * catalog, so this cron fetches it like Meta would (following the 307 to the
  * storage snapshot) and emails an alert ONLY when something is wrong:
  * non-200, zero items, no XML declaration, or a stale `<!-- generated -->`
- * stamp (publishMetaFeed runs every 30 min — anything hours old means the
- * publish pipeline is broken, like the 2026-07-20→22 freeze where the cron
- * silently republished its own snapshot). No content-type check: the
+ * stamp (publishMetaFeed runs twice a day — anything older than a day means
+ * the publish pipeline is broken, like the 2026-07-20→22 freeze where the
+ * cron silently republished its own snapshot). No content-type check: the
  * snapshot is deliberately served as application/octet-stream so Cloudflare
  * won't Brotli-compress it. Schedule lives in vercel.json (Mondays 06:00 UTC).
  */
@@ -47,13 +47,16 @@ export async function GET(request: NextRequest) {
       if (itemCount === 0) problems.push("Feed contains 0 items");
       if (!body.startsWith("<?xml")) problems.push("Body does not start with an XML declaration");
 
-      const STALE_AFTER_MS = 3 * 60 * 60 * 1000; // publish cron runs every 30 min
+      // Publish cron runs twice a day (06:00 + 15:00 UTC) — Dor's call
+      // 2026-07-22, event data doesn't change enough for more. 26h = one
+      // full missed run plus slack.
+      const STALE_AFTER_MS = 26 * 60 * 60 * 1000;
       const stamp = body.match(/<!-- generated (\S+) -->/)?.[1];
       const stampMs = stamp ? Date.parse(stamp) : NaN;
       if (isNaN(stampMs)) {
         problems.push("No parseable <!-- generated --> stamp — snapshot predates the freshness stamp or publish pipeline is broken");
       } else if (Date.now() - stampMs > STALE_AFTER_MS) {
-        problems.push(`Feed is STALE — generated ${stamp}, publish cron should refresh it every 30 min`);
+        problems.push(`Feed is STALE — generated ${stamp}, publish cron runs 06:00+15:00 UTC and should never be this old`);
       }
     }
   } catch (e) {

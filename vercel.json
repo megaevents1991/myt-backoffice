@@ -38,7 +38,7 @@
     },
     {
       "path": "/api/cron/publishMetaFeed",
-      "schedule": "*/30 * * * *"
+      "schedule": "0 6,15 * * *"
     }
   ],
   "functions": {
