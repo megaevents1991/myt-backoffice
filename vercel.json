@@ -18,7 +18,7 @@
     },
     {
       "path": "/api/cron/ticketPriceSync",
-      "schedule": "0 */2 * * *"
+      "schedule": "0 */4 * * *"
     },
     {
       "path": "/api/cron/nightlyTixstockSync",
@@ -39,6 +39,10 @@
     {
       "path": "/api/cron/publishMetaFeed",
       "schedule": "0 6,15 * * *"
+    },
+    {
+      "path": "/api/cron/purgeAuditLog",
+      "schedule": "30 4 * * *"
     }
   ],
   "functions": {
@@ -63,6 +67,10 @@
       "maxDuration": 60
     },
     "app/api/cron/partnerMonthlyReport/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
+    "app/api/cron/ticketPriceSync/route.ts": {
       "memory": 1024,
       "maxDuration": 300
     },
