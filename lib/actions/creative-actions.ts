@@ -6,6 +6,7 @@ import { SIZES } from "@/lib/creative/render";
 import { updateEvent } from "./event-actions";
 import { requireStaff } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
+import { revalidateMain } from "@/lib/revalidate-main";
 
 // Auth-guarded wrappers for the designer UI. All derivation/render/upload
 // logic lives in lib/creative/auto.ts, shared with the nightly campaign cron.
@@ -16,27 +17,6 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-async function revalidateMain(): Promise<void> {
-  const primary = process.env.NEXT_SECRET_HOTEL_SERVICE_URL;
-  const parallel =
-    process.env.NEXT_SECRET_PARALLEL_HOTEL_SERVICE_URL ||
-    "https://mondial2026.mega-events.co.il";
-  const secret = process.env.NEXT_SECRET_REVALIDATION_SECRET;
-  if (!primary || !secret) return;
-  // Same dual-target fan-out as app/api/revalidate/route.ts; best-effort, never throws.
-  const targets = [...new Set([primary, parallel])];
-  await Promise.allSettled(
-    targets.map(async (baseUrl) => {
-      try {
-        await fetch(
-          `${baseUrl.replace(/\/$/, "")}/api/revalidate?secret=${encodeURIComponent(secret)}`,
-        );
-      } catch (error) {
-        console.error("revalidate failed (non-fatal):", baseUrl, error);
-      }
-    }),
-  );
-}
 
 export async function generateCreative(
   params: CreativeParams & { attachEventId?: number | null },

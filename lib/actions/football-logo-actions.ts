@@ -4,6 +4,7 @@ import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
+import { revalidateMain } from "@/lib/revalidate-main";
 import type {
   FootballLogo,
   UpdateFootballLogoData,
@@ -99,6 +100,7 @@ export async function createFootballLogo(
     changes: { name_english: nameEnglish, name_hebrew: nameHebrewRaw || null },
   });
   REVALIDATE_PATHS.forEach((p) => revalidatePath(p));
+  await revalidateMain(); // site reads the library at render — refresh its ISR too
   return data as FootballLogo;
 }
 
@@ -135,6 +137,7 @@ export async function updateFootballLogo(
     changes: mapped,
   });
   REVALIDATE_PATHS.forEach((p) => revalidatePath(p));
+  await revalidateMain(); // site reads the library at render — refresh its ISR too
   return data as FootballLogo;
 }
 
@@ -173,4 +176,5 @@ export async function deleteFootballLogo(id: number): Promise<void> {
     entityId: id,
   });
   REVALIDATE_PATHS.forEach((p) => revalidatePath(p));
+  await revalidateMain(); // site reads the library at render — refresh its ISR too
 }
