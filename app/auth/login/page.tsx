@@ -36,9 +36,9 @@ function LoginForm() {
 
     try {
       console.log("Submitting login form...");
-      const success = await login(email, password);
+      const result = await login(email, password);
 
-      if (success) {
+      if (result === true) {
         console.log("Login successful, redirecting to dashboard");
         toast({
           title: "Login successful",
@@ -51,11 +51,11 @@ function LoginForm() {
         }, 500);
       } else {
         console.log("Login failed");
-        setError("Invalid email or password");
+        setError(result.error);
         toast({
           variant: "destructive",
           title: "Login failed",
-          description: "Invalid email or password. Please try again.",
+          description: result.error,
         });
       }
     } catch (error) {

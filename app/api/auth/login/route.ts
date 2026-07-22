@@ -60,8 +60,15 @@ export async function POST(request: Request) {
 
     // Supabase Auth path — real users created by an admin.
     const verified = await verifyPassword(email, password);
-    if (verified) {
-      const profile = await getProfile(verified.userId);
+    if (verified.ok) {
+      // The password is correct — a null profile here is either a transient DB
+      // blip or a genuinely missing/inactive account. Retry once before
+      // rejecting so a hiccup doesn't read as "invalid credentials".
+      let profile = await getProfile(verified.userId);
+      if (!profile) {
+        await new Promise((r) => setTimeout(r, 300));
+        profile = await getProfile(verified.userId);
+      }
       if (profile && profile.is_active) {
         return respondWithSession(profile, request);
       }
@@ -69,9 +76,23 @@ export async function POST(request: Request) {
         action: "login_failed",
         actor: { email },
         ip: requestIp(request),
-        metadata: { reason: "invalid_credentials" },
+        metadata: { reason: profile ? "inactive_account" : "no_profile" },
       });
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+    }
+
+    if (verified.reason === "transient") {
+      // Rate limit / auth-server hiccup — the password was NOT judged wrong.
+      await logAudit({
+        action: "login_failed",
+        actor: { email },
+        ip: requestIp(request),
+        metadata: { reason: "rate_limited_or_transient" },
+      });
+      return NextResponse.json(
+        { error: "Too many login attempts right now. Wait a minute and try again." },
+        { status: 429 }
+      );
     }
 
     await logAudit({

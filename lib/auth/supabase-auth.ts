@@ -7,21 +7,41 @@ import { createClient } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase-server";
 import type { UserProfile } from "@/types/auth.types";
 
-/** Verify email+password against Supabase Auth. Returns the auth user id, or null. */
+export type VerifyPasswordResult =
+  | { ok: true; userId: string }
+  /** "invalid" = wrong email/password. "transient" = rate limit (429) or a
+   *  network/5xx failure — the password may well be CORRECT, so callers must
+   *  NOT report it as bad credentials (shared office IP hits Supabase's
+   *  token-endpoint rate limit and users see "invalid password" for no reason). */
+  | { ok: false; reason: "invalid" | "transient" };
+
+/** Verify email+password against Supabase Auth. */
 export async function verifyPassword(
   email: string,
   password: string
-): Promise<{ userId: string } | null> {
+): Promise<VerifyPasswordResult> {
   const anon = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { auth: { persistSession: false, autoRefreshToken: false } }
   );
-  const { data, error } = await anon.auth.signInWithPassword({ email, password });
-  if (error || !data.user) return null;
-  // We never use the Supabase session — sign it out server-side immediately.
-  await anon.auth.signOut().catch(() => {});
-  return { userId: data.user.id };
+  try {
+    const { data, error } = await anon.auth.signInWithPassword({ email, password });
+    if (error) {
+      const status = (error as { status?: number }).status;
+      const transient = status === 429 || (status !== undefined && status >= 500);
+      if (transient) console.error("verifyPassword transient:", status, error.message);
+      return { ok: false, reason: transient ? "transient" : "invalid" };
+    }
+    if (!data.user) return { ok: false, reason: "invalid" };
+    // No signOut round-trip: persistSession is false, the in-memory session
+    // just gets dropped — the extra /logout call only burned rate-limit budget.
+    return { ok: true, userId: data.user.id };
+  } catch (e) {
+    // fetch/network failure — not a credentials verdict.
+    console.error("verifyPassword network failure:", e);
+    return { ok: false, reason: "transient" };
+  }
 }
 
 export async function getProfile(userId: string): Promise<UserProfile | null> {

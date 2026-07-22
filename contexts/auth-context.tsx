@@ -10,14 +10,16 @@ type User = SessionUser;
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  /** true on success; on failure returns the server's error message (or a
+   *  generic one) so the login page can distinguish rate-limit from bad creds. */
+  login: (email: string, password: string) => Promise<true | { error: string }>;
   logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
-  login: async () => false,
+  login: async () => ({ error: "Auth not ready" }),
   logout: async () => {},
 });
 
@@ -29,7 +31,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Check for existing session on client-side
   useEffect(() => {
-    const checkSession = async () => {
+    // One fetch attempt. Returns "retry" ONLY for transient failures (network
+    // throw / 5xx) — a definitive { user: null } answer must NOT be retried.
+    const attempt = async (): Promise<"retry" | User | null> => {
       try {
         // Add cache busting to prevent stale responses
         const timestamp = new Date().getTime();
@@ -40,24 +44,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             "Cache-Control": "no-cache",
           },
         });
-
         if (response.ok) {
           const data = await response.json();
-          if (data.user) {
-            setUser(data.user);
-          }
+          return data.user ?? null;
         }
+        return response.status >= 500 ? "retry" : null;
       } catch {
-        // ignore — session check failure just leaves user null
-      } finally {
-        setIsLoading(false);
+        return "retry";
       }
+    };
+
+    const checkSession = async () => {
+      // A single transient blip here used to strand a logged-in user (user
+      // stays null while the cookie is valid → redirect ping-pong between
+      // /dashboard and /auth/login). Retry once before giving up.
+      let result = await attempt();
+      if (result === "retry") {
+        await new Promise((r) => setTimeout(r, 1500));
+        result = await attempt();
+      }
+      if (result !== "retry" && result) setUser(result);
+      setIsLoading(false);
     };
 
     checkSession();
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (
+    email: string,
+    password: string
+  ): Promise<true | { error: string }> => {
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
@@ -66,20 +82,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         credentials: "include",
       });
 
-      if (!response.ok) {
-        return false;
-      }
+      const data = await response.json().catch(() => ({}));
 
-      const data = await response.json();
-
-      if (data.user) {
+      if (response.ok && data.user) {
         setUser(data.user);
         return true;
       }
 
-      return false;
+      // Pass the server's message through (429 "wait a minute" vs 401 invalid).
+      return { error: data.error || "Invalid email or password" };
     } catch {
-      return false;
+      return { error: "Network error — check your connection and try again" };
     }
   };
 
