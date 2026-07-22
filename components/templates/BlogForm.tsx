@@ -22,11 +22,13 @@ import {
 } from "@/components/ui/form";
 
 import type { BlogPost } from "@/types/blog.types";
-import { richDocToText, textToRichDoc } from "@/lib/richtext";
+import { richDocToHtml, htmlToRichDoc } from "@/lib/richtext";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
 import { HeroImageField } from "@/components/templates/HeroImageField";
+import { RichBodyEditor } from "@/components/templates/RichBodyEditor";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import { createBlogPost, updateBlogPost } from "@/lib/actions/blog-actions";
+import { Label } from "@/components/ui/label";
 
 const autoSlug = (...parts: (string | undefined)[]): string => {
   for (const p of parts) {
@@ -45,7 +47,6 @@ const schema = z.object({
   slug: z.string().optional(),
   preview_text: z.string().optional(),
   by_who: z.string().optional(),
-  main_content: z.string().optional(),
   seo_title_tag: z.string().optional(),
   meta_description: z.string().optional(),
   meta_tags: z.string().optional(),
@@ -66,6 +67,10 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
   const [artBgScale, setArtBgScale] = useState(initial?.art_bg_scale ?? 1);
   const [artImageOffsetX, setArtImageOffsetX] = useState(initial?.art_image_offset_x ?? 0);
   const [artImageOffsetY, setArtImageOffsetY] = useState(initial?.art_image_offset_y ?? 0);
+  // Body lives outside RHF as HTML; converted to/from the Contentful doc at
+  // the load/save boundary so the main app keeps rendering it unchanged.
+  const [bodyHtml, setBodyHtml] = useState(() => richDocToHtml(initial?.main_content));
+  const [pasteHtml, setPasteHtml] = useState("");
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -75,7 +80,6 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
       slug: initial?.slug ?? "",
       preview_text: initial?.preview_text ?? "",
       by_who: initial?.by_who ?? "",
-      main_content: initial?.main_content ? richDocToText(initial.main_content) : "",
       seo_title_tag: initial?.seo_title_tag ?? "",
       meta_description: initial?.meta_description ?? "",
       meta_tags: initial?.meta_tags ?? "",
@@ -94,6 +98,7 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
     artBgScale: initial?.art_bg_scale ?? 1,
     artImageOffsetX: initial?.art_image_offset_x ?? 0,
     artImageOffsetY: initial?.art_image_offset_y ?? 0,
+    bodyHtml: richDocToHtml(initial?.main_content),
   });
   const isDirty =
     form.formState.isDirty ||
@@ -106,6 +111,7 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
       artBgScale,
       artImageOffsetX,
       artImageOffsetY,
+      bodyHtml,
     }) !== initialExtras;
 
   const resetExtras = () => {
@@ -117,6 +123,50 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
     setArtBgScale(initial?.art_bg_scale ?? 1);
     setArtImageOffsetX(initial?.art_image_offset_x ?? 0);
     setArtImageOffsetY(initial?.art_image_offset_y ?? 0);
+    setBodyHtml(richDocToHtml(initial?.main_content));
+  };
+
+  // -- Paste-HTML auto-fill ---------------------------------------------------
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nodeText = (n: any): string =>
+    n?.nodeType === "text"
+      ? n.value ?? ""
+      : (n?.content ?? []).map(nodeText).join("");
+
+  const autoFill = () => {
+    if (!pasteHtml.trim()) return;
+    const hasContent = !!form.getValues("title")?.trim() || !!bodyHtml.trim();
+    if (hasContent && !confirm("Overwrite the current title/body with the pasted HTML?"))
+      return;
+
+    const doc = htmlToRichDoc(pasteHtml);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const blocks: any[] = (doc as any).content ?? [];
+
+    // First <h1> becomes the post title (the page renders the title as the h1
+    // already — keeping it in the body would double it).
+    const h1Index = blocks.findIndex((b) => b.nodeType === "heading-1");
+    if (h1Index !== -1) {
+      const title = nodeText(blocks[h1Index]).trim();
+      if (title) {
+        form.setValue("title", title, { shouldDirty: true });
+        if (!form.getValues("seo_title_tag")?.trim())
+          form.setValue("seo_title_tag", title, { shouldDirty: true });
+      }
+      blocks.splice(h1Index, 1);
+    }
+
+    // First paragraph seeds the preview text (only when empty).
+    if (!form.getValues("preview_text")?.trim()) {
+      const firstP = blocks.find((b) => b.nodeType === "paragraph");
+      const preview = firstP ? nodeText(firstP).trim() : "";
+      if (preview)
+        form.setValue("preview_text", preview.slice(0, 200), { shouldDirty: true });
+    }
+
+    setBodyHtml(richDocToHtml(doc));
+    setPasteHtml("");
+    toast.success("Fields filled from HTML — review and save.");
   };
 
   function onSubmit(values: FormData) {
@@ -138,7 +188,7 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
           art_bg_scale: artImageUrl ? artBgScale : null,
           art_image_offset_x: artImageUrl ? artImageOffsetX : null,
           art_image_offset_y: artImageUrl ? artImageOffsetY : null,
-          main_content: values.main_content ? textToRichDoc(values.main_content) : null,
+          main_content: bodyHtml.trim() ? htmlToRichDoc(bodyHtml) : null,
           seo_title_tag: values.seo_title_tag || null,
           meta_description: values.meta_description || null,
           meta_tags: values.meta_tags || null,
@@ -159,6 +209,29 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pb-24">
+        {/* Paste a full article HTML → auto-fill title/SEO/preview/body */}
+        <div className="space-y-2 rounded-lg border border-dashed p-4">
+          <Label htmlFor="paste_html">Paste article HTML (auto-fill)</Label>
+          <Textarea
+            id="paste_html"
+            dir="ltr"
+            rows={4}
+            className="font-mono text-xs"
+            placeholder="<h1>Title…</h1><p>…</p>"
+            value={pasteHtml}
+            onChange={(e) => setPasteHtml(e.target.value)}
+          />
+          <div className="flex items-center gap-3">
+            <Button type="button" variant="secondary" size="sm" onClick={autoFill} disabled={!pasteHtml.trim()}>
+              Fill fields
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              First &lt;h1&gt; → Title + SEO title, first paragraph → Preview text,
+              the rest → Body. Everything stays editable; nothing is saved yet.
+            </p>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField control={form.control} name="title" render={({ field }) => (
             <FormItem><FormLabel>Title</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
@@ -175,14 +248,14 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
           <FormField control={form.control} name="preview_text" render={({ field }) => (
             <FormItem className="md:col-span-2"><FormLabel>Preview text</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
           )} />
-          <FormField control={form.control} name="main_content" render={({ field }) => (
-            <FormItem className="md:col-span-2">
-              <FormLabel>Body</FormLabel>
-              <FormControl><Textarea rows={10} {...field} /></FormControl>
-              <FormDescription>Plain paragraphs (blank line between).</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )} />
+          <div className="md:col-span-2 space-y-2">
+            <Label>Body</Label>
+            <RichBodyEditor value={bodyHtml} onChange={setBodyHtml} />
+            <p className="text-xs text-muted-foreground">
+              Headings, lists, links, bold/italic are kept and rendered on the
+              site. Switch to the HTML tab to paste/edit raw HTML.
+            </p>
+          </div>
           <FormField control={form.control} name="seo_title_tag" render={({ field }) => (
             <FormItem><FormLabel>SEO title</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
           )} />
