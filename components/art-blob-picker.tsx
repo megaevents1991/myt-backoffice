@@ -77,7 +77,13 @@ const Blob = ({
 /**
  * Card-art editor: upload any photo → background is removed in-browser
  * (@imgly/background-removal) → the transparent cut-out is uploaded to the
- * `art_blobs` bucket and previewed on the chosen neon blob colour + shape.
+ * `templates` bucket and previewed on the chosen neon blob colour + shape.
+ *
+ * IMPORTANT: never upload NEW files into `art_blobs`. The main app treats
+ * that bucket as the frozen legacy padded-cutout set (custom sizing, dial
+ * ignored); everything else gets the uniform crest standard. A new image
+ * landing in art_blobs rendered full-bleed on the site — this broke Inter,
+ * Bayern/Roma, then PSG. Browsing/reusing EXISTING art_blobs cutouts is fine.
  */
 export function ArtBlobPicker({
   imageUrl,
@@ -138,9 +144,9 @@ export function ArtBlobPicker({
         type: "image/png",
       });
 
-      const storedPath = await uploadToBucket("art_blobs", "", out);
+      const storedPath = await uploadToBucket("templates", "", out);
 
-      const url = await getPublicUrl("art_blobs", storedPath);
+      const url = await getPublicUrl("templates", storedPath);
       onImage(url);
       toast({ title: "Background removed", description: "Cut-out uploaded." });
     } catch (e: any) {
@@ -191,12 +197,15 @@ export function ArtBlobPicker({
         ) : null}
       </div>
 
-      {/* URL + browse art_blobs (same storage dialog as the regular image fields) */}
+      {/* URL + browse (same storage dialog as the regular image fields).
+          Default bucket is templates so manual uploads NEVER land in the
+          legacy art_blobs bucket; existing art_blobs cut-outs stay reachable
+          via allBuckets. */}
       <ImageFilePicker
         value={imageUrl ?? ""}
         onChange={onImage}
         label="Cut-out image"
-        bucketName="art_blobs"
+        bucketName="templates"
         allBuckets
       />
       <Button asChild variant="outline" disabled={busy} type="button">

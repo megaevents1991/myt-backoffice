@@ -2,12 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **🚧 TODO — Contentful → Supabase CMS migration (in progress).**
-> This backoffice now owns the CMS under **Templates** (תבניות): per-type
+> **✅ Contentful → Supabase CMS migration COMPLETE (2026-07-22).**
+> This backoffice owns the CMS under **Templates** (תבניות): per-type
 > Supabase tables (`categories`, `artists`, `football_teams`, `blog_posts`)
 > sharing a CRUD factory (`lib/actions/template-crud.ts`). The main app reads
-> these tables (with a temporary Contentful fallback). **Phase 3, pending:**
-> once the fallback is removed in main, Contentful is fully retired.
+> these tables directly — the Contentful fallback and SDK were removed from
+> both repos (Phase 3 done). Contentful is fully retired.
 
 > **🔒 TODO — SECURITY HARDENING (deferred, do carefully later).**
 > Branch `fix/security-hardening` added signed admin session (`lib/auth/`), cron/route

@@ -1,4 +1,3 @@
-import type { EntryFieldTypes } from "contentful";
 
 export type EventType =
   | "sports_event"
@@ -315,74 +314,6 @@ export type EventTicket = {
 
 export type OrderTicket = Omit<EventTicket, "description" | "colorOnTheMap"> & {
   quantity: number;
-};
-
-export type ArtistFields = {
-  contentTypeId: "artistTemplate";
-  fields: {
-    bio: EntryFieldTypes.Object<{
-      content: {
-        content: {
-          value?: string;
-        }[];
-      }[];
-    }>;
-    previewText: string;
-    heroBanner: EntryFieldTypes.Object<{
-      fields?: {
-        file?: {
-          url?: string;
-          details?: {
-            image?: {
-              height?: number;
-              width?: number;
-            };
-          };
-        };
-        description?: string;
-        title?: string;
-      };
-    }>;
-    name: string;
-    nameDBenglish: string;
-    sys: EntryFieldTypes.Object<{
-      id: string;
-    }>;
-  };
-};
-
-export type FootballFields = {
-  contentTypeId: "footballTeamTemplate";
-  fields: {
-    bio: EntryFieldTypes.Object<{
-      content: {
-        content: {
-          value?: string;
-        }[];
-      }[];
-    }>;
-    previewText: string;
-    heroBanner: EntryFieldTypes.Object<{
-      fields?: {
-        file?: {
-          url?: string;
-          details?: {
-            image?: {
-              height?: number;
-              width?: number;
-            };
-          };
-        };
-        description?: string;
-        title?: string;
-      };
-    }>;
-    name: string;
-    nameDBenglish: string;
-    sys: EntryFieldTypes.Object<{
-      id: string;
-    }>;
-  };
 };
 
 export type Log = {
