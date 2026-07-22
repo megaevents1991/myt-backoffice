@@ -9,7 +9,7 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/comp
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/data-table";
 import type { Reservation } from "@/types/reservation.types";
-import { getReservations, updateReservation, updateReservationsStatus } from "@/lib/actions/reservation-actions";
+import { getReservations, getReservationsCount, updateReservation, updateReservationsStatus } from "@/lib/actions/reservation-actions";
 import { useToast } from "@/hooks/use-toast";
 
 function isOfflineReservation(r: Reservation) {
@@ -26,6 +26,17 @@ export function ReservationsTable() {
   const { toast } = useToast();
   const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Refs mirror state for the poll interval, so the effect below can run once
+  // on mount instead of tearing down/re-adding the interval + window listeners
+  // on every data change.
+  const isIdleRef = useRef(false);
+  const rowCountRef = useRef(0);
+  useEffect(() => {
+    isIdleRef.current = isIdle;
+  }, [isIdle]);
+  useEffect(() => {
+    rowCountRef.current = reservations.length;
+  }, [reservations]);
 
   useEffect(() => {
     async function fetchReservations() {
@@ -57,11 +68,13 @@ export function ReservationsTable() {
     }
   }
 
-  // Function to check for new reservations
+  // Function to check for new reservations. Cheap count probe first — the
+  // full table is only re-downloaded when something actually arrived.
   async function checkForNewReservations() {
     try {
-      const data = await getReservations();
-      if (data.length > reservations.length) {
+      const count = await getReservationsCount();
+      if (count > rowCountRef.current) {
+        const data = await getReservations();
         setReservations(data);
         toast({
           variant: "default",
@@ -92,7 +105,7 @@ export function ReservationsTable() {
 
     // Start polling for new reservations
     pollingIntervalRef.current = setInterval(() => {
-      if (isIdle) {
+      if (isIdleRef.current) {
         checkForNewReservations();
       }
     }, 30000); // Check every 30 seconds
@@ -108,7 +121,9 @@ export function ReservationsTable() {
         clearInterval(pollingIntervalRef.current);
       }
     };
-  }, [isIdle, reservations]);
+    // Mount-once: interval + listeners read live values via refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleInlineUpdate(
     id: number,

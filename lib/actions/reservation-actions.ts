@@ -14,6 +14,17 @@ export async function getReservations() {
   return data as Reservation[]
 }
 
+/** Row count only (head request, no payload) — for the new-reservations poll. */
+export async function getReservationsCount() {
+  await requireStaff();
+  const { count, error } = await supabase
+    .from("reservations")
+    .select("id", { count: "exact", head: true })
+
+  if (error) throw error
+  return count ?? 0
+}
+
 export async function getReservation(id: number) {
   await requireStaff();
   const { data, error } = await supabase.from("reservations").select("*").eq("id", id).single()
