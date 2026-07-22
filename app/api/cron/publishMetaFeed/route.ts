@@ -32,7 +32,11 @@ import { supabase } from "@/lib/supabase-server";
  */
 export const maxDuration = 60;
 
-const SOURCE_URL = "https://www.mega-events.co.il/feeds/meta-catalog.xml";
+// `?source=1` = live build. The bare URL 307-redirects to the published
+// snapshot in storage — fetching THAT here would republish our own previous
+// output forever (exactly what silently froze the feed 2026-07-20 → 22).
+// Hence redirect: "error" + the X-Feed-Generated check below.
+const SOURCE_URL = "https://www.mega-events.co.il/feeds/meta-catalog.xml?source=1";
 const STORAGE_BUCKET = "public_resources";
 // "-feed" suffix deliberately avoids the plain "feeds/meta-catalog.xml"
 // path — that one got Cloudflare-cache-poisoned during testing (same
@@ -48,9 +52,15 @@ export async function GET(request: NextRequest) {
     const res = await fetch(SOURCE_URL, {
       headers: { "Accept-Encoding": "identity" },
       cache: "no-store",
+      redirect: "error",
     });
     if (!res.ok) {
       throw new Error(`Source feed returned HTTP ${res.status}`);
+    }
+    if (!res.headers.get("x-feed-generated")) {
+      // Only the live build sets this header — its absence means we're NOT
+      // talking to a fresh serialization (e.g. someone reverted ?source=1).
+      throw new Error("Source response missing X-Feed-Generated — not a live build");
     }
     const contentEncoding = res.headers.get("content-encoding");
     if (contentEncoding) {
