@@ -25,6 +25,7 @@ import {
 import type { Person, PersonKind } from "@/types/person.types";
 import { richDocToText, textToRichDoc } from "@/lib/richtext";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
+import { CrestLibraryUpload } from "@/components/templates/CrestLibraryUpload";
 import { HeroImageField } from "@/components/templates/HeroImageField";
 import { GalleryField } from "@/components/templates/gallery-field";
 import { StickySaveBar } from "@/components/sticky-save-bar";
@@ -296,6 +297,13 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
             onImageOffsetY={setArtImageOffsetY}
           />
         </div>
+
+        {kind === "football_teams" && (
+          <CrestLibraryUpload
+            nameEnglish={form.watch("name_english") ?? ""}
+            nameHebrew={form.watch("name") ?? ""}
+          />
+        )}
 
         {kind === "football_teams" && (
           <div className="space-y-2">
