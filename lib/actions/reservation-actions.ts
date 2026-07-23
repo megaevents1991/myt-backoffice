@@ -142,8 +142,8 @@ export async function cancelReservation(id: number): Promise<Reservation> {
 
   await releaseOfflineInventory(reservation);
 
-  revalidatePath(`/(dashboard)/reservations/${id}`);
-  revalidatePath("/(dashboard)/reservations");
+  revalidatePath(`/reservations/${id}`);
+  revalidatePath("/reservations");
   return data as Reservation;
 }
 

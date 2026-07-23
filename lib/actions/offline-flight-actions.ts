@@ -50,9 +50,9 @@ export async function createOfflineFlight(
     entityId: created.id,
     changes: flight,
   });
-  revalidatePath("/(dashboard)/offline-flights");
+  revalidatePath("/offline-flights");
   for (const id of flight.event_ids ?? []) {
-    revalidatePath(`/(dashboard)/events/${id}`);
+    revalidatePath(`/events/${id}`);
   }
   return created;
 }
@@ -116,13 +116,13 @@ export async function updateOfflineFlight(
       }),
     );
     for (const eventId of eventsNeedingPriceUpdate) {
-      revalidatePath(`/(dashboard)/events/${eventId}`);
+      revalidatePath(`/events/${eventId}`);
     }
   }
 
-  revalidatePath("/(dashboard)/offline-flights");
-  revalidatePath(`/(dashboard)/offline-flights/${id}/edit`);
-  revalidatePath(`/(dashboard)/offline-flights/${id}`);
+  revalidatePath("/offline-flights");
+  revalidatePath(`/offline-flights/${id}/edit`);
+  revalidatePath(`/offline-flights/${id}`);
   return data[0] as OfflineFlight;
 }
 
@@ -135,8 +135,8 @@ export async function softDeleteOfflineFlight(id: number) {
 
   if (error) throw error;
   await logAudit({ action: "delete", entityType: "offline_flight", entityId: id });
-  revalidatePath("/(dashboard)/offline-flights");
-  revalidatePath(`/(dashboard)/offline-flights/${id}`);
+  revalidatePath("/offline-flights");
+  revalidatePath(`/offline-flights/${id}`);
   return data[0] as OfflineFlight;
 }
 
@@ -154,8 +154,8 @@ export async function restoreOfflineFlight(id: number) {
     entityId: id,
     metadata: { restored: true },
   });
-  revalidatePath("/(dashboard)/offline-flights");
-  revalidatePath(`/(dashboard)/offline-flights/${id}`);
+  revalidatePath("/offline-flights");
+  revalidatePath(`/offline-flights/${id}`);
   return data[0] as OfflineFlight;
 }
 
@@ -199,8 +199,8 @@ export async function removeEventFromFlight(
     entityId: flightId,
     metadata: { event_id: eventId },
   });
-  revalidatePath("/(dashboard)/offline-flights");
-  revalidatePath(`/(dashboard)/events/${eventId}`);
+  revalidatePath("/offline-flights");
+  revalidatePath(`/events/${eventId}`);
   return data[0] as OfflineFlight;
 }
 
@@ -233,8 +233,8 @@ export async function addEventToFlight(
     entityId: flightId,
     metadata: { event_id: eventId },
   });
-  revalidatePath("/(dashboard)/offline-flights");
-  revalidatePath(`/(dashboard)/events/${eventId}`);
+  revalidatePath("/offline-flights");
+  revalidatePath(`/events/${eventId}`);
   return data[0] as OfflineFlight;
 }
 

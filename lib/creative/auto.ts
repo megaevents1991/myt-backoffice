@@ -66,6 +66,18 @@ type PersonRow = {
 // PersonRow + where it came from, so a match maps back to a subject ref.
 type SubjectRow = PersonRow & { ref: string };
 
+/**
+ * Optional per-run lookup caches so batch callers (the nightly campaign cron)
+ * don't re-fetch the full artists / football_teams / football_logos tables
+ * for EVERY event (~40 full-table reads per run). Scoped to the caller's
+ * object — no TTL, no cross-request staleness; single-event designer calls
+ * simply omit it and fetch fresh.
+ */
+export type CreativeLookupCaches = {
+  artists?: PersonRow[];
+  subjects?: SubjectRow[];
+};
+
 const norm = (s: string) => s.toLowerCase().replace(/['"’.]/g, "").trim();
 
 // Match one side of "ברצלונה - ריאל מדריד" against a person/team row by
@@ -102,7 +114,10 @@ export function eventDateTexts(dateISO: string): {
 }
 
 /** Auto-derive everything a creative needs from an event (no auth guard). */
-export async function deriveCreativeDefaults(eventId: number): Promise<CreativeDefaults> {
+export async function deriveCreativeDefaults(
+  eventId: number,
+  caches?: CreativeLookupCaches,
+): Promise<CreativeDefaults> {
   const { data, error } = await supabase
     .from("events")
     .select(
@@ -162,15 +177,21 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
     let artistImageUrl: string | null = event.art_image_url ?? null;
     let artistIsCutout = artistImageUrl != null;
     let artistName = displayName;
-    const { data: artistRows, error: aErr } = await supabase
-      .from("artists")
-      .select("id,name,name_english,art_image_url,image_url")
-      .eq("is_deleted", false);
-    if (aErr) console.error(JSON.stringify(aErr));
-    const rows: PersonRow[] = (artistRows || []).map((r) => ({
-      ...(r as Omit<PersonRow, "logo_url">),
-      logo_url: null,
-    }));
+    let rows: PersonRow[];
+    if (caches?.artists) {
+      rows = caches.artists;
+    } else {
+      const { data: artistRows, error: aErr } = await supabase
+        .from("artists")
+        .select("id,name,name_english,art_image_url,image_url")
+        .eq("is_deleted", false);
+      if (aErr) console.error(JSON.stringify(aErr));
+      rows = (artistRows || []).map((r) => ({
+        ...(r as Omit<PersonRow, "logo_url">),
+        logo_url: null,
+      }));
+      if (caches) caches.artists = rows;
+    }
     const match = matchPerson(displayName, rows);
     if (match) {
       artistName = match.name;
@@ -214,40 +235,46 @@ export async function deriveCreativeDefaults(eventId: number): Promise<CreativeD
   // Match creative: split "home - away" and match against the logo library
   // first (the curated source), then football_teams. Exact-name matches win
   // over containment regardless of source (see matchPerson).
-  const [teamsRes, logosRes] = await Promise.all([
-    supabase
-      .from("football_teams")
-      .select("id,name,name_english,logo_url,art_image_url,image_url")
-      .eq("is_deleted", false),
-    // football_logos isn't in the generated DB types yet — cast like template-crud.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
-      .from("football_logos")
-      .select("id,name_english,name_hebrew,logo_url"),
-  ]);
-  if (teamsRes.error) console.error(JSON.stringify(teamsRes.error));
-  if (logosRes.error) console.error(JSON.stringify(logosRes.error));
+  let subjects: SubjectRow[];
+  if (caches?.subjects) {
+    subjects = caches.subjects;
+  } else {
+    const [teamsRes, logosRes] = await Promise.all([
+      supabase
+        .from("football_teams")
+        .select("id,name,name_english,logo_url,art_image_url,image_url")
+        .eq("is_deleted", false),
+      // football_logos isn't in the generated DB types yet — cast like template-crud.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from("football_logos")
+        .select("id,name_english,name_hebrew,logo_url"),
+    ]);
+    if (teamsRes.error) console.error(JSON.stringify(teamsRes.error));
+    if (logosRes.error) console.error(JSON.stringify(logosRes.error));
 
-  const logoSubjects: SubjectRow[] = (
-    (logosRes.data || []) as {
-      id: number;
-      name_english: string;
-      name_hebrew: string | null;
-      logo_url: string;
-    }[]
-  ).map((l) => ({
-    id: l.id,
-    name: l.name_hebrew ?? l.name_english,
-    name_english: l.name_english,
-    logo_url: l.logo_url,
-    art_image_url: null,
-    image_url: null,
-    ref: `logo:${l.id}`,
-  }));
-  const teamSubjects: SubjectRow[] = ((teamsRes.data || []) as PersonRow[]).map(
-    (t) => ({ ...t, ref: `team:${t.id}` }),
-  );
-  const subjects = [...logoSubjects, ...teamSubjects];
+    const logoSubjects: SubjectRow[] = (
+      (logosRes.data || []) as {
+        id: number;
+        name_english: string;
+        name_hebrew: string | null;
+        logo_url: string;
+      }[]
+    ).map((l) => ({
+      id: l.id,
+      name: l.name_hebrew ?? l.name_english,
+      name_english: l.name_english,
+      logo_url: l.logo_url,
+      art_image_url: null,
+      image_url: null,
+      ref: `logo:${l.id}`,
+    }));
+    const teamSubjects: SubjectRow[] = ((teamsRes.data || []) as PersonRow[]).map(
+      (t) => ({ ...t, ref: `team:${t.id}` }),
+    );
+    subjects = [...logoSubjects, ...teamSubjects];
+    if (caches) caches.subjects = subjects;
+  }
 
   let homeRef: string | null = null;
   let awayRef: string | null = null;
@@ -367,6 +394,7 @@ export type CampaignResult =
  */
 export async function generateCampaignForEvent(
   event: CampaignEventRow,
+  caches?: CreativeLookupCaches,
 ): Promise<CampaignResult> {
   const hash = campaignInputHash(event);
   if (event.campaign_input_hash === hash) return { status: "current" };
@@ -388,7 +416,7 @@ export async function generateCampaignForEvent(
     }
   };
 
-  const defaults = await deriveCreativeDefaults(event.id);
+  const defaults = await deriveCreativeDefaults(event.id, caches);
   if (defaults.price === null) {
     await markChecked();
     return { status: "skipped", reason: "no computable price" };

@@ -1,7 +1,7 @@
 
 import { supabase } from '@/lib/supabase-client';
 import { getLiveEvents } from './live-events-actions';
-import { getP1Events } from './p1-events-actions';
+import { getP1Events, getP1Tickets } from './p1-events-actions';
 import { getLiveTickets } from './sports-events-actions';
 import { XS2Event } from '@/types/sports-events.types';
 import { LiveEventDB, CURRENCIES } from '@/types/live-events.types';
@@ -68,9 +68,13 @@ export async function getComparisonEventTickets(event: ComparisonEvent): Promise
         type: 'Paper/E-Ticket' // Generic fallback
       }));
     } else if (event.vendor === 'P1Events') {
-      // Extract from originalData
+      // Extract from originalData — slim list rows don't embed tickets, fetch on demand
       const e = event.originalData as P1EventDB;
-      return (e.tickets || []).map(t => ({
+      const p1Tickets =
+        Array.isArray(e.tickets) && e.tickets.length
+          ? e.tickets
+          : await getP1Tickets(e.event_id);
+      return p1Tickets.map(t => ({
         id: t.id,
         name: t.seatingplan_category_name || t.category,
         description: t.seatingplan_category_description,

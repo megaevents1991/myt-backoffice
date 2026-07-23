@@ -100,9 +100,9 @@ export async function createOfflineHotel(
     await replaceOfflineHotelRooms(created.id, rooms); // also recomputes mirror + price push
   }
 
-  revalidatePath("/(dashboard)/offline-hotels");
+  revalidatePath("/offline-hotels");
   for (const id of hotel.event_ids ?? []) {
-    revalidatePath(`/(dashboard)/events/${id}`);
+    revalidatePath(`/events/${id}`);
   }
   return created;
 }
@@ -202,14 +202,14 @@ export async function updateOfflineHotel(
     );
   }
 
-  revalidatePath("/(dashboard)/offline-hotels");
-  revalidatePath(`/(dashboard)/offline-hotels/${id}/edit`);
-  revalidatePath(`/(dashboard)/offline-hotels/${id}`);
+  revalidatePath("/offline-hotels");
+  revalidatePath(`/offline-hotels/${id}/edit`);
+  revalidatePath(`/offline-hotels/${id}`);
   for (const eventId of hotel.event_ids ?? []) {
-    revalidatePath(`/(dashboard)/events/${eventId}`);
+    revalidatePath(`/events/${eventId}`);
   }
   for (const flightId of hotel.flight_ids ?? []) {
-    revalidatePath(`/(dashboard)/offline-flights/${flightId}`);
+    revalidatePath(`/offline-flights/${flightId}`);
   }
 
   if (rooms) {
@@ -228,7 +228,7 @@ export async function softDeleteOfflineHotel(id: number): Promise<OfflineHotel> 
 
   if (error) throw error;
   await logAudit({ action: "delete", entityType: "offline_hotel", entityId: id });
-  revalidatePath("/(dashboard)/offline-hotels");
+  revalidatePath("/offline-hotels");
   return data[0] as OfflineHotel;
 }
 
@@ -279,8 +279,8 @@ export async function removeEventFromHotel(hotelId: number, eventId: number): Pr
     entityId: hotelId,
     metadata: { event_id: eventId },
   });
-  revalidatePath("/(dashboard)/offline-hotels");
-  revalidatePath(`/(dashboard)/events/${eventId}`);
+  revalidatePath("/offline-hotels");
+  revalidatePath(`/events/${eventId}`);
   return data[0] as OfflineHotel;
 }
 
@@ -308,8 +308,8 @@ export async function addEventToHotel(hotelId: number, eventId: number): Promise
     entityId: hotelId,
     metadata: { event_id: eventId },
   });
-  revalidatePath("/(dashboard)/offline-hotels");
-  revalidatePath(`/(dashboard)/events/${eventId}`);
+  revalidatePath("/offline-hotels");
+  revalidatePath(`/events/${eventId}`);
   return data[0] as OfflineHotel;
 }
 
@@ -337,7 +337,7 @@ export async function addFlightToHotel(hotelId: number, flightId: number): Promi
     entityId: hotelId,
     metadata: { flight_id: flightId },
   });
-  revalidatePath("/(dashboard)/offline-hotels");
+  revalidatePath("/offline-hotels");
   return data[0] as OfflineHotel;
 }
 

@@ -72,7 +72,7 @@ export interface P1EventDB {
   compare_price_ticket_only?: number;
   compare_price_ticket_hotel?: number;
   checkout_link: string;
-  tickets: P1Ticket[]; // Embedded tickets as JSONB
+  tickets?: P1Ticket[]; // Embedded tickets as JSONB — absent on slim list fetches (see /api/p1-events/events?slim=true)
   is_active: boolean;
   last_synced: string;
   created_at?: string;

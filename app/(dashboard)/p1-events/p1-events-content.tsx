@@ -374,12 +374,20 @@ export function P1EventsContent() {
 
   useEffect(() => {
     if (!selectedEvent) return;
-    // Use cached tickets from selected event
+    // Use embedded tickets when present (full row); slim list rows don't carry
+    // them — lazy-load for the selected event only.
     if (Array.isArray(selectedEvent.tickets) && selectedEvent.tickets.length) {
       setTickets(selectedEvent.tickets);
-    } else {
-      setTickets([]);
+      return;
     }
+    setTickets([]);
+    let cancelled = false;
+    getP1Tickets(selectedEvent.event_id).then((loaded) => {
+      if (!cancelled) setTickets(loaded);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedEvent]);
 
   const loadCategoriesAndSyncStatus = async () => {
@@ -457,8 +465,11 @@ export function P1EventsContent() {
       // Update exchange rates first
       await exchangeRateClientService.updateAllExchangeRates();
 
-      // Get tickets for this event
-      const eventTickets = event.tickets || [];
+      // Get tickets for this event — slim list rows don't embed them, fetch on demand
+      const eventTickets =
+        Array.isArray(event.tickets) && event.tickets.length
+          ? event.tickets
+          : await getP1Tickets(event.event_id);
 
       // Filter out tickets with stock < 2 and hospitality tickets
       const availableTickets = eventTickets.filter(

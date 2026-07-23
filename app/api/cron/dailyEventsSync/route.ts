@@ -4,6 +4,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { syncEvents } from '@/lib/services/sports-events-sync';
 import { guardCronRoute } from '@/lib/auth/guards';
 
+// Sync walks up to ~100 provider pages sequentially — the 60s cron-glob cap
+// in vercel.json killed runs mid-way. Must match the vercel.json entry.
+export const maxDuration = 300;
+
 /**
  * Cron job to sync events data daily (at 00:01 every day)
  * This endpoint should be called by Vercel cron job

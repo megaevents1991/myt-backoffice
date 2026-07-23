@@ -5,6 +5,7 @@ import {
   campaignInputHash,
   generateCampaignForEvent,
   type CampaignEventRow,
+  type CreativeLookupCaches,
 } from "@/lib/creative/auto";
 
 /**
@@ -52,6 +53,8 @@ export async function GET(request: NextRequest) {
   };
 
   let processed = 0;
+  // Shared per-run caches: artists/teams/logos tables load once, not per event.
+  const caches: CreativeLookupCaches = {};
   for (const event of events) {
     // Cheap pre-check so "current" events don't count against the batch.
     if (event.campaign_input_hash === campaignInputHash(event)) {
@@ -64,7 +67,7 @@ export async function GET(request: NextRequest) {
     }
     processed++;
     try {
-      const result = await generateCampaignForEvent(event);
+      const result = await generateCampaignForEvent(event, caches);
       if (result.status === "generated") summary.generated.push(event.id);
       else if (result.status === "skipped")
         summary.skipped.push({ id: event.id, reason: result.reason });

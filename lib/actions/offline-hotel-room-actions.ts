@@ -95,7 +95,7 @@ export async function updateOfflineHotelRoom(
   });
   // is_booked or price changes affect the mirror + cheapest-available price.
   await recomputeHotelMirror(room.hotel_id);
-  revalidatePath(`/(dashboard)/offline-hotels/${room.hotel_id}`);
+  revalidatePath(`/offline-hotels/${room.hotel_id}`);
   return room;
 }
 
@@ -108,7 +108,7 @@ export async function deleteOfflineHotelRoom(roomId: number): Promise<void> {
   await logAudit({ action: "delete", entityType: "offline_hotel_room", entityId: roomId });
   if (room?.hotel_id) {
     await recomputeHotelMirror(room.hotel_id);
-    revalidatePath(`/(dashboard)/offline-hotels/${room.hotel_id}`);
+    revalidatePath(`/offline-hotels/${room.hotel_id}`);
   }
 }
 
@@ -165,7 +165,7 @@ export async function recomputeHotelMirror(hotelId: number): Promise<void> {
     })
   );
 
-  revalidatePath("/(dashboard)/offline-hotels");
-  revalidatePath(`/(dashboard)/offline-hotels/${hotelId}`);
-  for (const eventId of eventIds) revalidatePath(`/(dashboard)/events/${eventId}`);
+  revalidatePath("/offline-hotels");
+  revalidatePath(`/offline-hotels/${hotelId}`);
+  for (const eventId of eventIds) revalidatePath(`/events/${eventId}`);
 }

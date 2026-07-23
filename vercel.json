@@ -70,6 +70,10 @@
       "memory": 1024,
       "maxDuration": 300
     },
+    "app/api/cron/dailyEventsSync/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
     "app/api/cron/ticketPriceSync/route.ts": {
       "memory": 1024,
       "maxDuration": 300

@@ -7,7 +7,9 @@ import { P1EventDB, P1Ticket } from '@/types/p1-events.types';
  * Fetch P1 events
  */
 export async function getP1Events(options?: { category?: string; series?: string }): Promise<P1EventDB[]> {
-  let url = '/api/p1-events/events?limit=10000&upcoming=true';
+  // slim=true: list rows come back WITHOUT the embedded tickets JSONB — the
+  // page lazy-loads tickets per selected event (see getP1Tickets).
+  let url = '/api/p1-events/events?limit=10000&upcoming=true&slim=true';
   
   if (options?.category) {
     url += `&category=${encodeURIComponent(options.category)}`;

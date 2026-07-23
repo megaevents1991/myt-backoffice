@@ -12,10 +12,16 @@ export async function GET(request: NextRequest) {
     const eventId = searchParams.get('event_id');
     const upcomingOnly = searchParams.get('upcoming') !== 'false';
     const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : undefined;
+    // slim=true → list columns only, WITHOUT the embedded tickets JSONB (by far
+    // the heaviest column). The dashboard list uses this; single-event fetches
+    // keep '*' so tickets stay available.
+    const slim = searchParams.get('slim') === 'true';
+    const LIST_COLUMNS =
+      'event_id,title,title_english,category,series_id,series_name,has_available_tickets,is_advertisable,date_start,date_end,date_confirmed,stock,venue_name,venue_city,venue_country_code,venue_latitude,venue_longitude,compare_price_ticket_only,compare_price_ticket_hotel,checkout_link,is_active,last_synced';
 
     let query = supabase
       .from('p1_events')
-      .select('*', { count: 'exact' })
+      .select(slim ? LIST_COLUMNS : '*', { count: 'exact' })
       .eq('is_active', true)
       .order('date_start', { ascending: true });
 
