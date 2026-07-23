@@ -12,12 +12,14 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import {
   listTags,
   createTag,
   updateTag,
   softDeleteTag,
+  bulkSoftDeleteTags,
 } from "@/lib/actions/event-taxonomy-actions";
 import type { EventTag } from "@/types/taxonomy.types";
 
@@ -40,8 +42,44 @@ export function TagsManager({
   // double-tap / Enter+click fires the handler twice before the re-render.
   const addingRef = useRef(false);
   const savingEditRef = useRef(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const refresh = async () => setTags(await listTags());
+
+  const toggleSelected = (id: number, on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  const bulkRemove = async () => {
+    if (!selected.size || bulkDeleting) return;
+    const links = [...selected].reduce((sum, id) => sum + (counts[id] ?? 0), 0);
+    if (
+      !confirm(
+        `Delete ${selected.size} tag(s)?${links ? ` They are assigned to ${links} event link(s) — those links will be removed.` : ""}`
+      )
+    )
+      return;
+    setBulkDeleting(true);
+    try {
+      await bulkSoftDeleteTags([...selected]);
+      setSelected(new Set());
+      await refresh();
+      toast({ title: `Deleted ${selected.size} tag(s)` });
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: e instanceof Error ? e.message : "Failed",
+      });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   const add = async () => {
     if (!name.trim() || addingRef.current) return;
@@ -142,12 +180,34 @@ export function TagsManager({
           {adding ? "Adding..." : "Add"}
         </Button>
       </div>
+      {tags.length > 0 && (
+        <div className="flex items-center gap-3">
+          <Checkbox
+            checked={selected.size > 0 && selected.size === tags.length}
+            onCheckedChange={(v) =>
+              setSelected(v ? new Set(tags.map((t) => t.id)) : new Set())
+            }
+            aria-label="Select all tags"
+          />
+          <span className="text-sm text-muted-foreground">Select all</span>
+          {selected.size > 0 && (
+            <Button size="sm" variant="destructive" onClick={bulkRemove} disabled={bulkDeleting}>
+              {bulkDeleting ? "Deleting..." : `Delete selected (${selected.size})`}
+            </Button>
+          )}
+        </div>
+      )}
       <div className="rounded-md border">
         {tags.length === 0 && (
           <div className="p-4 text-sm text-muted-foreground">No tags yet.</div>
         )}
         {tags.map((t) => (
           <div key={t.id} className="flex items-center gap-2 py-1 px-2 border-b">
+            <Checkbox
+              checked={selected.has(t.id)}
+              onCheckedChange={(v) => toggleSelected(t.id, v === true)}
+              aria-label={`Select ${t.name}`}
+            />
             <span className="flex-1">
               {t.name}
               {t.name_english ? (

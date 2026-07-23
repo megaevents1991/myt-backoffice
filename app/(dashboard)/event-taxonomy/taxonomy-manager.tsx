@@ -14,12 +14,14 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import {
   listCategories,
   createCategory,
   updateCategory,
   softDeleteCategory,
+  bulkSoftDeleteCategories,
 } from "@/lib/actions/event-taxonomy-actions";
 import { buildTree, descendantIds } from "@/lib/taxonomy-tree";
 import { uploadToBucket } from "@/lib/upload-helper";
@@ -36,6 +38,9 @@ function CategoryRow({
   node,
   depth,
   counts,
+  selected,
+  impliedSelected,
+  onToggleSelect,
   onAddSub,
   onEdit,
   onDelete,
@@ -44,17 +49,29 @@ function CategoryRow({
   node: EventCategoryNode;
   depth: number;
   counts: Record<number, number>;
+  selected: Set<number>;
+  /** ids covered because an ANCESTOR is selected (subtree deletes together) */
+  impliedSelected: Set<number>;
+  onToggleSelect: (id: number, on: boolean) => void;
   onAddSub: (id: number) => void;
   onEdit: (c: EventCategory) => void;
   onDelete: (c: EventCategory) => void;
   onMove: (c: EventCategory, dir: -1 | 1) => void;
 }) {
+  const implied = !selected.has(node.id) && impliedSelected.has(node.id);
   return (
     <>
       <div
         className="flex items-center gap-2 py-1 px-2 border-b"
         style={{ paddingInlineStart: depth * 20 + 8 }}
       >
+        <Checkbox
+          checked={selected.has(node.id) || implied}
+          disabled={implied}
+          onCheckedChange={(v) => onToggleSelect(node.id, v === true)}
+          aria-label={`Select ${node.name}`}
+          title={implied ? "Included via its selected parent" : undefined}
+        />
         <span className="flex-1">
           {node.name}
           {node.name_english ? (
@@ -87,6 +104,9 @@ function CategoryRow({
           node={c}
           depth={depth + 1}
           counts={counts}
+          selected={selected}
+          impliedSelected={impliedSelected}
+          onToggleSelect={onToggleSelect}
           onAddSub={onAddSub}
           onEdit={onEdit}
           onDelete={onDelete}
@@ -155,6 +175,51 @@ export function TaxonomyManager({
 
   const tree = buildTree(cats);
   const refresh = async () => setCats(await listCategories());
+
+  // Bulk selection. Selecting a node implies its whole subtree (the server
+  // expands to descendants anyway — the UI just makes that visible).
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const impliedSelected = new Set<number>(
+    [...selected].flatMap((id) => descendantIds(tree, id))
+  );
+  const effectiveIds = new Set<number>([...selected, ...impliedSelected]);
+  const toggleSelect = (id: number, on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  const bulkRemove = async () => {
+    if (!selected.size || bulkDeleting) return;
+    const total = effectiveIds.size;
+    const links = [...effectiveIds].reduce((sum, id) => sum + (counts[id] ?? 0), 0);
+    if (
+      !confirm(
+        `Delete ${total} categor${total === 1 ? "y" : "ies"} (including sub-categories of selected parents)?${
+          links ? ` ${links} event link(s) will be removed.` : ""
+        }`
+      )
+    )
+      return;
+    setBulkDeleting(true);
+    try {
+      const deleted = await bulkSoftDeleteCategories([...selected]);
+      setSelected(new Set());
+      await refresh();
+      toast({ title: `Deleted ${deleted} categor${deleted === 1 ? "y" : "ies"}` });
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: e instanceof Error ? e.message : "Failed",
+      });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   // Parent dropdown must exclude self AND descendants (a node can't move
   // under its own subtree — the server guards it too, but don't offer it).
@@ -275,7 +340,14 @@ export function TaxonomyManager({
 
   return (
     <div className="space-y-3">
-      <Button onClick={() => openNew(null)}>+ Root category</Button>
+      <div className="flex items-center gap-3">
+        <Button onClick={() => openNew(null)}>+ Root category</Button>
+        {selected.size > 0 && (
+          <Button variant="destructive" onClick={bulkRemove} disabled={bulkDeleting}>
+            {bulkDeleting ? "Deleting..." : `Delete selected (${effectiveIds.size})`}
+          </Button>
+        )}
+      </div>
       <div className="rounded-md border">
         {tree.length === 0 && (
           <div className="p-4 text-sm text-muted-foreground">No categories yet.</div>
@@ -286,6 +358,9 @@ export function TaxonomyManager({
             node={n}
             depth={0}
             counts={counts}
+            selected={selected}
+            impliedSelected={impliedSelected}
+            onToggleSelect={toggleSelect}
             onAddSub={openNew}
             onEdit={openEdit}
             onDelete={remove}

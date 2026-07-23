@@ -203,6 +203,47 @@ export async function softDeleteCategory(id: number): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Bulk soft-delete categories. Selection is expanded to each node's WHOLE
+ * subtree (deleting a parent without its children would orphan them — the
+ * single-delete path blocks that instead). Event links are removed first,
+ * same as softDeleteCategory. Returns how many categories were deleted.
+ */
+export async function bulkSoftDeleteCategories(ids: number[]): Promise<number> {
+  await requireStaff();
+  if (!ids.length) return 0;
+  const { data, error } = await tbl("event_categories")
+    .select("id,parent_id")
+    .eq("is_deleted", false);
+  if (error) throw error;
+  const childrenOf = new Map<number, number[]>();
+  (data ?? []).forEach((r: any) => {
+    if (r.parent_id != null) {
+      const arr = childrenOf.get(r.parent_id) ?? [];
+      arr.push(r.id);
+      childrenOf.set(r.parent_id, arr);
+    }
+  });
+  const all = new Set<number>();
+  const queue = [...ids];
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (all.has(id)) continue;
+    all.add(id);
+    queue.push(...(childrenOf.get(id) ?? []));
+  }
+  const targets = [...all];
+  const { error: linkErr } = await tbl("event_category_links")
+    .delete()
+    .in("category_id", targets);
+  if (linkErr) throw linkErr;
+  const { error: delErr } = await tbl("event_categories")
+    .update({ is_deleted: true, is_active: false, updated_at: new Date().toISOString() })
+    .in("id", targets);
+  if (delErr) throw delErr;
+  return targets.length;
+}
+
 /* ---------- tags ---------- */
 
 export async function listTags(): Promise<EventTag[]> {
@@ -278,6 +319,18 @@ export async function softDeleteTag(id: number): Promise<void> {
   const { error } = await tbl("event_tags")
     .update({ is_deleted: true, is_active: false, updated_at: new Date().toISOString() })
     .eq("id", id);
+  if (error) throw error;
+}
+
+/** Bulk soft-delete tags; event links removed first (same as softDeleteTag). */
+export async function bulkSoftDeleteTags(ids: number[]): Promise<void> {
+  await requireStaff();
+  if (!ids.length) return;
+  const { error: linkErr } = await tbl("event_tag_links").delete().in("tag_id", ids);
+  if (linkErr) throw linkErr;
+  const { error } = await tbl("event_tags")
+    .update({ is_deleted: true, is_active: false, updated_at: new Date().toISOString() })
+    .in("id", ids);
   if (error) throw error;
 }
 
