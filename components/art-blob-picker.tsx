@@ -87,7 +87,13 @@ const Blob = ({
  * Returns the original blob unchanged on any failure or when there is nothing
  * to trim — never blocks an upload.
  */
-const ALPHA_FLOOR = 16; // ignore the faint matting halo around the subject
+// Matting leaves a veil of near-invisible pixels far outside the subject, so a
+// plain "alpha > 0" bounding box can span the whole canvas and trim nothing
+// (Jay-Z: subject covered 52% of the width, the alpha veil covered 100%). Only
+// solidly opaque pixels define the subject, and a row/column needs more than a
+// speck of them to count.
+const ALPHA_SOLID = 200;
+const MIN_RUN = 0.002; // ≥0.2% of the row/column must be solid
 const MAX_EDGE = 2400; // long-edge cap — keeps cut-outs off the multi-MB range
 
 async function trimTransparent(blob: Blob): Promise<Blob> {
@@ -102,20 +108,29 @@ async function trimTransparent(blob: Blob): Promise<Blob> {
     ctx.drawImage(bitmap, 0, 0);
 
     const { data } = ctx.getImageData(0, 0, width, height);
-    let top = height;
-    let left = width;
-    let right = -1;
-    let bottom = -1;
+    const rowHits = new Uint32Array(height);
+    const colHits = new Uint32Array(width);
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        if (data[(y * width + x) * 4 + 3] < ALPHA_FLOOR) continue;
-        if (y < top) top = y;
-        if (y > bottom) bottom = y;
-        if (x < left) left = x;
-        if (x > right) right = x;
+        if (data[(y * width + x) * 4 + 3] < ALPHA_SOLID) continue;
+        rowHits[y]++;
+        colHits[x]++;
       }
     }
-    if (right < 0) return blob; // fully transparent
+    const firstLast = (hits: Uint32Array, span: number) => {
+      const min = Math.max(1, Math.floor(span * MIN_RUN));
+      let a = -1;
+      let b = -1;
+      for (let i = 0; i < hits.length; i++)
+        if (hits[i] >= min) {
+          if (a < 0) a = i;
+          b = i;
+        }
+      return [a, b] as const;
+    };
+    const [top, bottom] = firstLast(rowHits, width);
+    const [left, right] = firstLast(colHits, height);
+    if (right < 0 || bottom < 0) return blob; // nothing solid — leave it alone
 
     const cropW = right - left + 1;
     const cropH = bottom - top + 1;
