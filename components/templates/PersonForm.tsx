@@ -281,6 +281,9 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
         <div className="rounded-lg border p-4">
           <ArtBlobPicker
             label="Card art — cut-out + blob (optional)"
+            // Crest margin is deliberate (FOOTBALL_CREST_ART sizes it); only
+            // people must be trimmed tight.
+            autoTrim={kind !== "football_teams"}
             imageUrl={artImageUrl}
             colorIndex={artColorIndex}
             shapeIndex={artShapeIndex}

@@ -95,8 +95,10 @@ const Blob = ({
 const ALPHA_SOLID = 200;
 const MIN_RUN = 0.002; // ≥0.2% of the row/column must be solid
 const MAX_EDGE = 2400; // long-edge cap — keeps cut-outs off the multi-MB range
+const WASTED_LIMIT = 0.1; // ≥10% empty canvas is worth a re-crop
 
-async function trimTransparent(blob: Blob): Promise<Blob> {
+async function trimTransparent(blob: Blob): Promise<{ blob: Blob; trimmed: boolean }> {
+  const unchanged = { blob, trimmed: false };
   try {
     const bitmap = await createImageBitmap(blob);
     const { width, height } = bitmap;
@@ -104,7 +106,7 @@ async function trimTransparent(blob: Blob): Promise<Blob> {
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return blob;
+    if (!ctx) return unchanged;
     ctx.drawImage(bitmap, 0, 0);
 
     const { data } = ctx.getImageData(0, 0, width, height);
@@ -130,26 +132,28 @@ async function trimTransparent(blob: Blob): Promise<Blob> {
     };
     const [top, bottom] = firstLast(rowHits, width);
     const [left, right] = firstLast(colHits, height);
-    if (right < 0 || bottom < 0) return blob; // nothing solid — leave it alone
+    if (right < 0 || bottom < 0) return unchanged; // nothing solid — leave it alone
 
     const cropW = right - left + 1;
     const cropH = bottom - top + 1;
     // A press photo can be 5000px wide / ~9 MB; cards never render above ~800.
     const shrink = Math.min(1, MAX_EDGE / Math.max(cropW, cropH));
-    // Already tight AND already small — nothing to do.
-    if (cropW === width && cropH === height && shrink === 1) return blob;
+    // A hair of margin is not worth a re-upload; the site contain-fits fine.
+    const wasted = 1 - (cropW / width) * (cropH / height);
+    if (wasted < WASTED_LIMIT && shrink === 1) return unchanged;
 
     const out = document.createElement("canvas");
     out.width = Math.round(cropW * shrink);
     out.height = Math.round(cropH * shrink);
     const outCtx = out.getContext("2d");
-    if (!outCtx) return blob;
+    if (!outCtx) return unchanged;
     outCtx.drawImage(canvas, left, top, cropW, cropH, 0, 0, out.width, out.height);
-    return await new Promise<Blob>((resolve) =>
+    const trimmedBlob = await new Promise<Blob>((resolve) =>
       out.toBlob((b) => resolve(b ?? blob), "image/png")
     );
+    return { blob: trimmedBlob, trimmed: trimmedBlob !== blob };
   } catch {
-    return blob;
+    return unchanged;
   }
 }
 
@@ -173,6 +177,7 @@ export function ArtBlobPicker({
   imageOffsetX,
   imageOffsetY,
   label = "Card art — cut-out + blob",
+  autoTrim = true,
   onImage,
   onColor,
   onShape,
@@ -192,6 +197,13 @@ export function ArtBlobPicker({
   imageOffsetX?: number | null;
   imageOffsetY?: number | null;
   label?: string;
+  /**
+   * Crop empty margin off any image assigned here (default). Turn OFF for
+   * football CRESTS: their margin is deliberate — myt-main sizes them with
+   * FOOTBALL_CREST_ART on the stadium background, and tightening a crest is
+   * what broke Inter, Bayern/Roma and PSG.
+   */
+  autoTrim?: boolean;
   onImage: (url: string) => void;
   onColor: (i: number) => void;
   onShape: (i: number) => void;
@@ -209,6 +221,54 @@ export function ArtBlobPicker({
   const offX = imageOffsetX ?? 0;
   const offY = imageOffsetY ?? 0;
 
+  /**
+   * Every path that sets the cut-out URL funnels through here — the file
+   * upload above already trims, this covers the OTHER two: pasting a URL and
+   * browsing storage. Without it a padded PNG dropped straight into a bucket
+   * sailed past the trim and rendered as a small subject floating in the card.
+   * Padded art is re-cropped, uploaded to `templates`, and the field gets the
+   * new URL; anything already tight is passed through untouched (no duplicate
+   * upload when reusing an existing cut-out).
+   */
+  const handlePickedUrl = async (url: string) => {
+    // A photo background (shapeIndex ≥ 6) IS the crest card configuration, so
+    // treat that image as a crest wherever this picker is used — the events
+    // form has no artist/team flag to pass.
+    const crestCard = si >= SHAPES.length;
+    if (!autoTrim || crestCard || !/^https?:\/\//i.test(url)) {
+      onImage(url);
+      return;
+    }
+    onImage(url); // show it immediately; normalize behind the scenes
+    try {
+      setBusy(true);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`fetch ${res.status}`);
+      const { blob, trimmed } = await trimTransparent(await res.blob());
+      if (!trimmed) return;
+      const base = (url.split("/").pop() ?? "art").replace(/\.[^.]+$/, "").slice(0, 60);
+      const file = new File([blob], `${decodeURIComponent(base)}-tight-${Date.now()}.png`, {
+        type: "image/png",
+      });
+      const storedPath = await uploadToBucket("templates", "", file);
+      onImage(await getPublicUrl("templates", storedPath));
+      toast({
+        title: "Cut-out trimmed",
+        description: "Empty margin cropped so the artist fills the card.",
+      });
+    } catch (e: unknown) {
+      // Never block the pick — a cross-origin image just can't be measured.
+      toast({
+        title: "Couldn't check this image",
+        description:
+          "Using it as-is. If it has empty space around the subject it will render small — re-upload it with \"Upload + cut out\".",
+      });
+      console.error("art trim check failed:", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleFile = async (file: File) => {
     try {
       setBusy(true);
@@ -219,7 +279,8 @@ export function ArtBlobPicker({
         output: { format: "image/png", quality: 1 },
       });
       const base = file.name.replace(/\.[^.]+$/, "");
-      const out = new File([await trimTransparent(blob)], `${base}-cutout-${Date.now()}.png`, {
+      const { blob: tight } = await trimTransparent(blob);
+      const out = new File([tight], `${base}-cutout-${Date.now()}.png`, {
         type: "image/png",
       });
 
@@ -282,7 +343,7 @@ export function ArtBlobPicker({
           via allBuckets. */}
       <ImageFilePicker
         value={imageUrl ?? ""}
-        onChange={onImage}
+        onChange={handlePickedUrl}
         label="Cut-out image"
         bucketName="templates"
         allBuckets
