@@ -30,13 +30,14 @@ export function ReservationsTable() {
   // on mount instead of tearing down/re-adding the interval + window listeners
   // on every data change.
   const isIdleRef = useRef(false);
-  const rowCountRef = useRef(0);
+  // Last server row-count the poll saw. Compared count-to-count: the table
+  // fetch is capped at 1000 rows by Supabase, so comparing the exact count
+  // against loaded rows.length fired "New Reservations" on every poll once
+  // the table passed 1000 rows.
+  const lastCountRef = useRef<number | null>(null);
   useEffect(() => {
     isIdleRef.current = isIdle;
   }, [isIdle]);
-  useEffect(() => {
-    rowCountRef.current = reservations.length;
-  }, [reservations]);
 
   useEffect(() => {
     async function fetchReservations() {
@@ -73,13 +74,27 @@ export function ReservationsTable() {
   async function checkForNewReservations() {
     try {
       const count = await getReservationsCount();
-      if (count > rowCountRef.current) {
+      const last = lastCountRef.current;
+      lastCountRef.current = count;
+      // First probe only records the baseline — no toast.
+      if (last !== null && count > last) {
         const data = await getReservations();
         setReservations(data);
+        // Rows are ordered created_at desc and never hard-deleted, so the
+        // first (count - last) rows are exactly the new arrivals.
+        const newCount = count - last;
+        const names = data
+          .slice(0, Math.min(newCount, 3))
+          .map((r) =>
+            [r.main_contact_first_name, r.main_contact_last_name]
+              .filter(Boolean)
+              .join(" ") || `#${r.id}`
+          );
+        const more = newCount - names.length;
         toast({
           variant: "default",
-          title: "New Reservations",
-          description: "The table has been updated with new reservations.",
+          title: `${newCount} New Reservation${newCount > 1 ? "s" : ""}`,
+          description: `${names.join(", ")}${more > 0 ? ` +${more} more` : ""}`,
         });
       }
     } catch (error) {
