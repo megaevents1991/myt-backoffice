@@ -2092,6 +2092,25 @@ export default function EventPage({
               allBuckets
             />
 
+            <div className="space-y-2">
+              <Label htmlFor="campaign_video_url">Campaign Video URL (Meta feed)</Label>
+              <Input
+                id="campaign_video_url"
+                value={event.campaign_video_url ?? ""}
+                placeholder="https://….supabase.co/storage/v1/object/public/campaign_videos/ariana-london.mp4"
+                onChange={(e) =>
+                  setEvent((prev) =>
+                    prev ? { ...prev, campaign_video_url: e.target.value } : prev
+                  )
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Direct link to a video FILE (.mp4, .mov, …), max 200 MB — upload it
+                to Storage and paste the public URL. YouTube/Instagram player links
+                do NOT work and are dropped from the feed.
+              </p>
+            </div>
+
             <ArtBlobPicker
               imageUrl={event.art_image_url}
               colorIndex={event.art_color_index}

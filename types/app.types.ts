@@ -71,6 +71,10 @@ export type Event = {
   campaign_banner_url?: string | null;
   campaign_input_hash?: string | null;
   campaign_generated_at?: string | null;
+  // Direct video FILE url (mp4/mov/…) for the Meta activities feed's
+  // video[0].url. Player/YouTube links are rejected by Meta. Set manually in
+  // the event editor; synced to main.
+  campaign_video_url?: string | null;
   comp_pricing?: {
     price: number;
     name: string;
