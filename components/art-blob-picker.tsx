@@ -75,7 +75,7 @@ const Blob = ({
 };
 
 /**
- * Crops the fully-transparent margin off a cut-out.
+ * Crops the fully-transparent margin off a cut-out and caps its long edge.
  *
  * `removeBackground` erases the background but KEEPS the source photo's
  * canvas, so a press shot with headroom yields a cut-out where the subject
@@ -88,6 +88,7 @@ const Blob = ({
  * to trim — never blocks an upload.
  */
 const ALPHA_FLOOR = 16; // ignore the faint matting halo around the subject
+const MAX_EDGE = 2400; // long-edge cap — keeps cut-outs off the multi-MB range
 
 async function trimTransparent(blob: Blob): Promise<Blob> {
   try {
@@ -114,16 +115,21 @@ async function trimTransparent(blob: Blob): Promise<Blob> {
         if (x > right) right = x;
       }
     }
-    // Fully transparent, or already tight — nothing to do.
-    if (right < 0 || (left === 0 && top === 0 && right === width - 1 && bottom === height - 1))
-      return blob;
+    if (right < 0) return blob; // fully transparent
+
+    const cropW = right - left + 1;
+    const cropH = bottom - top + 1;
+    // A press photo can be 5000px wide / ~9 MB; cards never render above ~800.
+    const shrink = Math.min(1, MAX_EDGE / Math.max(cropW, cropH));
+    // Already tight AND already small — nothing to do.
+    if (cropW === width && cropH === height && shrink === 1) return blob;
 
     const out = document.createElement("canvas");
-    out.width = right - left + 1;
-    out.height = bottom - top + 1;
+    out.width = Math.round(cropW * shrink);
+    out.height = Math.round(cropH * shrink);
     const outCtx = out.getContext("2d");
     if (!outCtx) return blob;
-    outCtx.drawImage(canvas, left, top, out.width, out.height, 0, 0, out.width, out.height);
+    outCtx.drawImage(canvas, left, top, cropW, cropH, 0, 0, out.width, out.height);
     return await new Promise<Blob>((resolve) =>
       out.toBlob((b) => resolve(b ?? blob), "image/png")
     );
