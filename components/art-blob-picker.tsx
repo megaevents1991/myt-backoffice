@@ -75,6 +75,64 @@ const Blob = ({
 };
 
 /**
+ * Crops the fully-transparent margin off a cut-out.
+ *
+ * `removeBackground` erases the background but KEEPS the source photo's
+ * canvas, so a press shot with headroom yields a cut-out where the subject
+ * fills only part of the frame. The site contain-fits the whole canvas, empty
+ * pixels included, so that padding renders as a small artist floating in the
+ * card — the Backstreet Boys / Deep Purple / Noah Kahan bug. Trimming here
+ * means a padded cut-out can't reach the site in the first place.
+ *
+ * Returns the original blob unchanged on any failure or when there is nothing
+ * to trim — never blocks an upload.
+ */
+const ALPHA_FLOOR = 16; // ignore the faint matting halo around the subject
+
+async function trimTransparent(blob: Blob): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const { width, height } = bitmap;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return blob;
+    ctx.drawImage(bitmap, 0, 0);
+
+    const { data } = ctx.getImageData(0, 0, width, height);
+    let top = height;
+    let left = width;
+    let right = -1;
+    let bottom = -1;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (data[(y * width + x) * 4 + 3] < ALPHA_FLOOR) continue;
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
+    }
+    // Fully transparent, or already tight — nothing to do.
+    if (right < 0 || (left === 0 && top === 0 && right === width - 1 && bottom === height - 1))
+      return blob;
+
+    const out = document.createElement("canvas");
+    out.width = right - left + 1;
+    out.height = bottom - top + 1;
+    const outCtx = out.getContext("2d");
+    if (!outCtx) return blob;
+    outCtx.drawImage(canvas, left, top, out.width, out.height, 0, 0, out.width, out.height);
+    return await new Promise<Blob>((resolve) =>
+      out.toBlob((b) => resolve(b ?? blob), "image/png")
+    );
+  } catch {
+    return blob;
+  }
+}
+
+/**
  * Card-art editor: upload any photo → background is removed in-browser
  * (@imgly/background-removal) → the transparent cut-out is uploaded to the
  * `templates` bucket and previewed on the chosen neon blob colour + shape.
@@ -140,7 +198,7 @@ export function ArtBlobPicker({
         output: { format: "image/png", quality: 1 },
       });
       const base = file.name.replace(/\.[^.]+$/, "");
-      const out = new File([blob], `${base}-cutout-${Date.now()}.png`, {
+      const out = new File([await trimTransparent(blob)], `${base}-cutout-${Date.now()}.png`, {
         type: "image/png",
       });
 
