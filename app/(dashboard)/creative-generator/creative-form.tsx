@@ -109,7 +109,11 @@ export function CreativeForm({
   const [price, setPrice] = useState("");
   const [currency, setCurrency] = useState("$");
   const [mode, setMode] = useState<"package" | "ticket">("package");
-  const [attach, setAttach] = useState(true);
+  // OFF by default: on it silently replaced the site's artist card with an ad
+  // creative (brand background + price text) on every generate — 9 events shipped
+  // that way. Campaign creatives are for the Meta feed (campaign_image_url);
+  // putting one on the site card is the exception, so it must be a deliberate tick.
+  const [attach, setAttach] = useState(false);
   // Card design overrides ("" = auto: football bg for matches, blob for artists).
   const [cardBg, setCardBg] = useState<string>("");
   const [blobColor, setBlobColor] = useState<string>("");
