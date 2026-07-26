@@ -39,6 +39,9 @@ export const maxDuration = 60;
 // always serves live (no redirect) but carries the same header.
 const SOURCE_XML_URL = "https://www.mega-events.co.il/feeds/meta-catalog.xml?source=1";
 const SOURCE_CSV_URL = "https://www.mega-events.co.il/feeds/meta-catalog.csv";
+// Meta's ACTIVITIES vertical — the shape Meta actually accepts for our
+// catalog (the e-commerce XML/CSV above are kept for Google Merchant).
+const SOURCE_ACTIVITIES_URL = "https://www.mega-events.co.il/feeds/meta-activities.csv";
 const STORAGE_BUCKET = "public_resources";
 // "-feed" suffix deliberately avoids the plain "feeds/meta-catalog.xml"
 // path — that one got Cloudflare-cache-poisoned during testing (same
@@ -49,6 +52,8 @@ const STORAGE_PATH_XML = "feeds/meta-catalog-feed.xml";
 // Meta demonstrably imports with 0 errors. Registered in Meta as the primary
 // scheduled feed; the XML stays published as a fallback/secondary.
 const STORAGE_PATH_CSV = "feeds/meta-catalog-feed.csv";
+/** The URL registered in Meta Commerce Manager. */
+const STORAGE_PATH_ACTIVITIES = "feeds/meta-activities-feed.csv";
 
 async function fetchLiveSource(url: string, expectedPrefix: string): Promise<Buffer> {
   const res = await fetch(url, {
@@ -92,9 +97,10 @@ export async function GET(request: NextRequest) {
   if (denied) return denied;
 
   try {
-    const [xmlBody, csvBody] = await Promise.all([
+    const [xmlBody, csvBody, activitiesBody] = await Promise.all([
       fetchLiveSource(SOURCE_XML_URL, "<?xml"),
       fetchLiveSource(SOURCE_CSV_URL, "id,title"),
+      fetchLiveSource(SOURCE_ACTIVITIES_URL, "id,image_link"),
     ]);
 
     // XML: NOT application/xml — Cloudflare (Supabase Storage's CDN) Brotli-
@@ -103,20 +109,24 @@ export async function GET(request: NextRequest) {
     // still gives Meta's own sniffing something to go on.
     // CSV: text/csv with standard negotiation (gzip/br only when the client
     // advertises it) — mirrors how the verified-working file was served.
-    const [xmlUrl, csvUrl] = await Promise.all([
+    const [xmlUrl, csvUrl, activitiesUrl] = await Promise.all([
       publish(STORAGE_PATH_XML, xmlBody, "application/octet-stream"),
       publish(STORAGE_PATH_CSV, csvBody, "text/csv; charset=utf-8"),
+      publish(STORAGE_PATH_ACTIVITIES, activitiesBody, "text/csv; charset=utf-8"),
     ]);
 
     console.log(
-      `[publishMetaFeed] published xml ${xmlBody.length}B → ${xmlUrl}, csv ${csvBody.length}B → ${csvUrl}`
+      `[publishMetaFeed] published xml ${xmlBody.length}B, csv ${csvBody.length}B, ` +
+        `activities ${activitiesBody.length}B → ${activitiesUrl}`
     );
     return NextResponse.json({
       published: true,
       xmlBytes: xmlBody.length,
       csvBytes: csvBody.length,
+      activitiesBytes: activitiesBody.length,
       xmlUrl,
       csvUrl,
+      activitiesUrl,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
