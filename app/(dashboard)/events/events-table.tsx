@@ -87,7 +87,22 @@ import {
 } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 
-const COMMON_TAGS = ["Sold", "Hot", "Selling Fast", "Limited Availability", "New"];
+// Storefront tag vocabulary. MUST stay in sync with myt-main
+// `lib/eventTags.ts` — a tag the site doesn't recognize renders NO badge at
+// all (that's how "Hot" / "Selling Fast" / "Limited Availability" were
+// invisible on the site). Same list as the event detail page's Tags select.
+const COMMON_TAGS = [
+  "Sold",
+  "LastTickets",
+  "Limited Availability",
+  "Selling Fast",
+  "Hot",
+  "Popular",
+  "Restock",
+  "New",
+  "VIPevent",
+  "VIPavailable",
+];
 const COMPETITOR_TOAST_DURATION = 2_147_483_647;
 const COMPETITOR_PROVIDER_LABELS = {
   liveevents: "LiveEvents",

@@ -1905,13 +1905,20 @@ export default function EventPage({
                 }}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
+                {/* Same vocabulary as the events-table quick tags and
+                    myt-main `lib/eventTags.ts`. Adding a value here without
+                    adding it there = no badge on the site. */}
                 <option value="null">None</option>
                 <option value="Sold">Sold</option>
-                <option value="LastTickets">LastTickets</option>
-                <option value="Popular">Popular</option>
-                <option value="Restock">Restock</option>
-                <option value="VIPevent">VIP Event</option>
-                <option value="VIPavailable">VIP Available</option>
+                <option value="LastTickets">Last Tickets (כרטיסים אחרונים)</option>
+                <option value="Limited Availability">Limited Availability (מלאי מוגבל)</option>
+                <option value="Selling Fast">Selling Fast (נמכר במהירות)</option>
+                <option value="Hot">Hot (מבוקש במיוחד)</option>
+                <option value="Popular">Popular (נמכר במהירות)</option>
+                <option value="Restock">Restock (חזר למלאי)</option>
+                <option value="New">New (תאריך חדש)</option>
+                <option value="VIPevent">VIP Event (חבילת VIP)</option>
+                <option value="VIPavailable">VIP Available (אופציית VIP)</option>
               </select>
             </div>
 
