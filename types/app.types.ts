@@ -46,6 +46,11 @@ export type Event = {
   // Extra per-ticket markup (USD) added when skip_flight is true.
   // Compensates for the markup normally embedded in base_flight_price.
   skip_flight_markup?: number | null;
+  // LOCKFLIGHT: when set, the main app offers ONLY this offline flight and
+  // never calls Amadeus for this event. skip_flight still applies. When the
+  // flight's allocation for this event is exhausted the package is sold out —
+  // there is deliberately no fallback to a dynamic search.
+  locked_flight_id?: number | null;
   is_deleted: string;
   tags: string;
   tx_excluded_sections?: string[];

@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { FlightsEditableTable } from "@/components/flights-editable-table";
+import { EventFlightLock } from "@/components/event-flight-lock";
 import { useToast } from "@/hooks/use-toast";
 import type { Event, EventTicket, EventType } from "@/types/app.types";
 import {
@@ -2552,6 +2553,15 @@ export default function EventPage({
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {!isNewEvent && (
+              <EventFlightLock
+                eventId={event.id}
+                lockedFlightId={event.locked_flight_id ?? null}
+                defDateDepart={event.def_date_depart}
+                defDateReturn={event.def_date_return}
+                onChanged={reloadLinkedFlights}
+              />
+            )}
             {!isNewEvent && (
               isLoadingLinkedFlights ? (
                 <div className="text-sm text-muted-foreground">Loading flights...</div>
