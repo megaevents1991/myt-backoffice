@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState, useEffect, use, useLayoutEffect, useRef, useMemo } from "react";
+import { useState, useEffect, use, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown, Plane, ExternalLink, BedDouble } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { FlightsEditableTable } from "@/components/flights-editable-table";
 import { useToast } from "@/hooks/use-toast";
 import type { Event, EventTicket, EventType } from "@/types/app.types";
 import {
@@ -46,7 +47,6 @@ import {
   getFlightsByEventId,
   getOfflineFlights,
   addEventToFlight,
-  removeEventFromFlight,
   createOfflineFlight,
 } from "@/lib/actions/offline-flight-actions";
 import type { OfflineFlight } from "@/types/offline-flight.types";
@@ -890,6 +890,13 @@ export default function EventPage({
         setIsLoadingLinkedFlights(false);
         setIsLoadingLinkedHotels(false);
       });
+  }, [event?.id, isNewEvent]);
+
+  // Passed to FlightsEditableTable so an inline/bulk edit made inside the event
+  // page refreshes the same list the page already owns.
+  const reloadLinkedFlights = useCallback(() => {
+    if (isNewEvent || !event?.id) return;
+    getFlightsByEventId(event.id).then(setLinkedFlights).catch(console.error);
   }, [event?.id, isNewEvent]);
 
   const getTicketAmount = (ticket: TixStockListing) => {
@@ -2553,51 +2560,11 @@ export default function EventPage({
                   No offline flights linked to this event yet.
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {linkedFlights.map((flight) => (
-                    <div
-                      key={flight.id}
-                      className="flex items-center justify-between rounded-md border p-3 text-sm"
-                    >
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-medium">
-                          {flight.metadata_name} ({flight.airline_code})
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {flight.outbound_departure_airport} → {flight.outbound_arrival_airport} ·{" "}
-                          {flight.outbound_departure_time.slice(0, 10)} → {flight.inbound_departure_time.slice(0, 10)} ·{" "}
-                          ${flight.price} · {flight.initial_quantity - flight.consumed_quantity} seats left
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="sm" type="button" asChild>
-                          <a href={`/offline-flights/${flight.id}/edit`} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          type="button"
-                          title="Unlink flight"
-                          onClick={async () => {
-                            if (!confirm(`Unlink ${flight.metadata_name} (${flight.airline_code}) from this event?`)) return;
-                            try {
-                              await removeEventFromFlight(flight.id, event.id);
-                              setLinkedFlights((prev) => prev.filter((f) => f.id !== flight.id));
-                              setAllFlights((prev) => [...prev, flight]);
-                              toast({ title: "Flight unlinked", description: `${flight.metadata_name} no longer linked.` });
-                            } catch (err) {
-                              toast({ variant: "destructive", title: "Error", description: (err as Error)?.message });
-                            }
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <FlightsEditableTable
+                  flights={linkedFlights}
+                  eventId={event.id}
+                  onChanged={reloadLinkedFlights}
+                />
               )
             )}
 
