@@ -8,6 +8,7 @@ import type { Event } from "../../types/app.types";
 import { revalidatePath } from "next/cache";
 import { airportsInSameCity } from "@/lib/airport-cities";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
+import { pickFlightColumns, assertFlightValues } from "./offline-flight-columns";
 
 // The `flights` table is not in db.schema.sql so Supabase's generated types don't
 // include it — all .from("flights") calls are cast to bypass the `never` inference.
@@ -38,8 +39,10 @@ export async function createOfflineFlight(
   flight: Omit<OfflineFlight, "id" | "consumed_quantity" | "is_deleted">,
 ) {
   await requireStaff();
+  const row = pickFlightColumns(flight as unknown as Record<string, unknown>);
+  assertFlightValues(row);
   const { data, error } = await flightsTable()
-    .insert({ ...flight, consumed_quantity: 0, is_deleted: false })
+    .insert({ ...row, consumed_quantity: 0, is_deleted: false })
     .select();
 
   if (error) throw error;
@@ -62,6 +65,8 @@ export async function updateOfflineFlight(
   flight: Partial<Omit<OfflineFlight, "id" | "consumed_quantity">>,
 ) {
   await requireStaff();
+  const patch = pickFlightColumns(flight as Record<string, unknown>);
+  assertFlightValues(patch);
   const auditBefore = await fetchBefore("flights", "id", id, flight);
   const { data: current } = await flightsTable()
     .select("event_ids, price")
@@ -73,7 +78,7 @@ export async function updateOfflineFlight(
   const addedEventIds = newEventIds.filter((eid) => !oldEventIds.includes(eid));
 
   const { data, error } = await flightsTable()
-    .update(flight)
+    .update(patch)
     .eq("id", id)
     .select();
 

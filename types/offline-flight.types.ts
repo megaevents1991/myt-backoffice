@@ -35,4 +35,58 @@ export interface OfflineFlight {
 
   // relationships
   event_ids: number[]; // integer[] NOT NULL DEFAULT '{}'
+
+  // --- supplier / commercial (backoffice-only, never in the customer price chain)
+  cost_price?: number | null; // NUMERIC(10,2) — what we pay the supplier
+  cost_currency?: string | null; // VARCHAR(3)
+  supplier?: string | null;
+  pnr?: string | null;
+  group_code?: string | null;
+
+  // --- deadlines
+  ticketing_deadline?: string | null; // DATE "YYYY-MM-DD"
+  last_cancellation_date?: string | null; // DATE
+  payment_deadline?: string | null; // DATE
+  option_expiry?: string | null; // DATE
+
+  // --- operations
+  checked_bag_kg?: number | null;
+  cabin_bag_kg?: number | null;
+  cabin_class?: string | null;
+  aircraft_type?: string | null;
+  block_status?: "option" | "confirmed" | "ticketed" | null;
+
+  // --- misc
+  notes?: string | null;
+  handled_by?: string | null;
+
+  // --- series (set by createOfflineFlightSeries; shared by one batch)
+  series_id?: string | null; // uuid
+  series_name?: string | null;
+
+  // --- single stopover per leg (null = non-stop)
+  outbound_stop_airport?: string | null; // VARCHAR(3)
+  outbound_stop_duration?: string | null; // INTERVAL, rendered "HH:MM:SS"
+  inbound_stop_airport?: string | null;
+  inbound_stop_duration?: string | null;
+}
+
+/** One flight↔event seat quota. Consumed seats are never stored here — they
+ *  come from the `flight_event_consumed` view over active reservations. */
+export interface FlightEventAllocation {
+  id: number;
+  flight_id: number;
+  event_id: number;
+  allocated_seats: number;
+  created_at: string;
+}
+
+/** One row of the allocations panel: the quota joined with derived consumption. */
+export interface FlightAllocationRow {
+  event_id: number;
+  event_name: string;
+  event_date: string;
+  /** null = no allocation row; this event draws on the global pool. */
+  allocated_seats: number | null;
+  consumed_seats: number;
 }
