@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { ReservationPaxEditor } from "@/components/reservation-pax-editor";
 import { useToast } from "@/hooks/use-toast";
 import type { Reservation } from "@/types/reservation.types";
 import { getReservation } from "@/lib/actions/reservation-actions";
@@ -194,21 +195,14 @@ export default function ReservationDetailsPage({
               </div>
             </div>
 
-            {reservation.more_pax_info &&
-              reservation.more_pax_info.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium mb-2">Additional Guests</p>
-                  <div className="space-y-2">
-                    {reservation.more_pax_info.map((guest, index) => (
-                      <div key={index} className="flex gap-2">
-                        <p>
-                          {guest.first_name} {guest.last_name}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <ReservationPaxEditor
+              reservationId={reservation.id}
+              mainContact={{
+                first_name: reservation.main_contact_first_name,
+                last_name: reservation.main_contact_last_name,
+              }}
+              pax={reservation.more_pax_info ?? []}
+            />
           </CardContent>
         </Card>
 

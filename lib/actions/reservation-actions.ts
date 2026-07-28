@@ -2,7 +2,7 @@
 
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server"
-import type { Reservation } from "@/types/reservation.types"
+import type { PaxInfo, Reservation } from "@/types/reservation.types"
 import { revalidatePath } from "next/cache"
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit"
 
@@ -340,3 +340,45 @@ export async function reconcileHotelInventory(hotelId: number): Promise<number> 
   return consumed;
 }
 
+
+/**
+ * Completes the passenger identity details an airline needs to issue tickets.
+ * The main app writes only first/last name at checkout — everything else is
+ * filled in here, so this never overwrites customer-entered data with blanks
+ * unless staff cleared the field deliberately.
+ */
+export async function updateReservationPaxInfo(
+  reservationId: number,
+  pax: PaxInfo[],
+): Promise<void> {
+  await requireStaff();
+  if (!Number.isInteger(reservationId) || reservationId <= 0) {
+    throw new Error("Invalid reservation id");
+  }
+  const clean: PaxInfo[] = pax.map((p) => ({
+    first_name: String(p.first_name ?? ""),
+    last_name: String(p.last_name ?? ""),
+    passport_number: p.passport_number || null,
+    passport_expiry: p.passport_expiry || null,
+    date_of_birth: p.date_of_birth || null,
+    gender: p.gender ?? null,
+    nationality: p.nationality || null,
+  }));
+
+  // `reservations` resolves to `never` in the generated types (same as the
+  // other writes in this file), so the client is cast at the call site.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from("reservations")
+    .update({ more_pax_info: clean })
+    .eq("id", reservationId);
+  if (error) throw error;
+
+  await logAudit({
+    action: "update",
+    entityType: "reservation",
+    entityId: reservationId,
+    metadata: { pax_count: clean.length, field: "more_pax_info" },
+  });
+  revalidatePath(`/reservations/${reservationId}`);
+}

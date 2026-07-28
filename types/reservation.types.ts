@@ -19,6 +19,18 @@ export type ReservationEventOrderInfo =
   | ReservationEventOrderInfoItem
   | { events: ReservationEventOrderInfoItem[] }
 
+export type PaxInfo = {
+  first_name: string
+  last_name: string
+  // Completed by staff in the backoffice for ticketing. The main app writes only
+  // first/last name at checkout, so every field below is optional.
+  passport_number?: string | null
+  passport_expiry?: string | null // "YYYY-MM-DD"
+  date_of_birth?: string | null // "YYYY-MM-DD"
+  gender?: "M" | "F" | "X" | null
+  nationality?: string | null // ISO-3166 alpha-2
+}
+
 export type Reservation = {
   id: number
   created_at: string
@@ -26,10 +38,7 @@ export type Reservation = {
   main_contact_last_name: string
   main_contact_phone_number: string
   main_contact_email: string
-  more_pax_info: {
-    first_name: string
-    last_name: string
-  }[]
+  more_pax_info: PaxInfo[]
   event_order_info: ReservationEventOrderInfo
   flight_order_info: Flight | Record<string, never>
   hotel_order_info: OrderHotel | Record<string, never>
