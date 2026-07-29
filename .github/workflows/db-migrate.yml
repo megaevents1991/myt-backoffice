@@ -7,6 +7,11 @@ name: Apply DB Migrations
 # workflow_dispatch stays for re-runs and manual repairs.
 on:
   workflow_dispatch:
+    inputs:
+      allow_non_master:
+        description: "DANGER: apply migrations from a non-master branch. Leave unchecked."
+        type: boolean
+        default: false
   push:
     branches: [master]
     paths:
@@ -20,6 +25,21 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_REF: fandqafngybfdyslofmr
     steps:
+      # The dispatch UI lets you pick any branch, and this workflow writes to the
+      # SHARED PRODUCTION database. Running it on a feature branch applies
+      # migrations that exist on no other branch: the remote migration history
+      # then holds versions master has never seen, and every later run fails with
+      # "Remote migration versions not found in local migrations directory".
+      # That happened on 2026-07-29 and took a manual repair to undo.
+      - name: Refuse to run off master
+        if: github.ref != 'refs/heads/master' && inputs.allow_non_master != true
+        run: |
+          echo "::error::Apply DB Migrations must run on master. You selected '${{ github.ref_name }}'."
+          echo "Merge the migration to master — this workflow then runs on its own."
+          echo "If you genuinely must apply from a branch, re-run with allow_non_master checked,"
+          echo "and be ready to copy the migration files onto master straight afterwards."
+          exit 1
+
       - uses: actions/checkout@v4
 
       - uses: supabase/setup-cli@v1

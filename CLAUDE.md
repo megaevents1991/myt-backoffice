@@ -210,14 +210,21 @@ Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, 
 
 **This repo owns the schema.** The main app never runs migrations. Schema changes go through versioned migration files in `supabase/migrations/` — never ad-hoc SQL in the dashboard without capturing it.
 
-> **⛔ NEVER run `supabase db push` from a feature branch.** It applies to the
-> SHARED PRODUCTION database. Migrations that exist only on your branch land in
-> the remote migration-history table, master then has files it has never seen,
-> and every later push — yours and CI's — dies with *"Remote migration versions
-> not found in local migrations directory"*. This has already happened once
-> (2026-07-29). `npm run db:push` is guarded by `scripts/guard-db-push.mjs`,
-> which refuses unless you are on master, in sync with origin, with no
-> uncommitted or version-clashing migration files.
+> **⛔ NEVER apply migrations from a feature branch.** Both routes write to the
+> SHARED PRODUCTION database: `supabase db push` locally, and running "Apply DB
+> Migrations" with a branch picked in the dispatch UI — the second is what
+> actually broke it on 2026-07-29.
+>
+> Migrations applied from a branch land in the remote migration-history table
+> while their files exist nowhere else, so master now has versions it has never
+> seen and every later run dies with *"Remote migration versions not found in
+> local migrations directory"*.
+>
+> Both paths are now blocked. The workflow refuses any ref that is not master
+> (override: re-run with `allow_non_master` checked). `npm run db:push` is gated
+> by `scripts/guard-db-push.mjs`, which refuses unless you are on master, in sync
+> with origin, with no uncommitted migration files and no duplicate version
+> prefixes (override: `ALLOW_DB_PUSH=1`).
 
 Workflow for any schema change:
 
