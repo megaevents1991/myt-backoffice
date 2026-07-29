@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { usePrompt } from "@/components/confirm-provider";
 
 /**
  * Rich body editor for Template forms (blog). Visual tab = TipTap; HTML tab =
@@ -32,6 +33,7 @@ export function RichBodyEditor({
   value: string;
   onChange: (html: string) => void;
 }) {
+  const prompt = usePrompt();
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -66,10 +68,15 @@ export function RichBodyEditor({
     }
   }, [value, editor]);
 
-  const setLink = () => {
+  const setLink = async () => {
     if (!editor) return;
     const prev = editor.getAttributes("link").href as string | undefined;
-    const url = window.prompt("Link URL", prev ?? "https://");
+    const url = await prompt({
+      title: "Link URL",
+      description: "Leave it empty to remove the link.",
+      label: "URL",
+      defaultValue: prev ?? "https://",
+    });
     if (url === null) return;
     if (url === "") {
       editor.chain().focus().unsetLink().run();
@@ -155,7 +162,7 @@ export function RichBodyEditor({
               variant="ghost"
               size="sm"
               className={toggle(editor.isActive("link"))}
-              onClick={setLink}
+              onClick={() => void setLink()}
             >
               <LinkIcon className="h-4 w-4" />
             </Button>

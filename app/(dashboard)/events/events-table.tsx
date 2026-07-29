@@ -43,6 +43,7 @@ import {
 } from "@/components/taxonomy/event-taxonomy-select";
 import type { AssignMode } from "@/types/taxonomy.types";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -493,6 +494,7 @@ export function EventsTable() {
   const [mismatchQueue, setMismatchQueue] = useState<NonNullable<typeof dateMismatchDialog>[]>([]);
   const [bulkCompPricingLoading, setBulkCompPricingLoading] = useState(false);
   const { toast } = useToast();
+  const confirm = useConfirm();
   const bulkDetailToastRef = useRef<ReturnType<typeof toast> | null>(null);
 
   // Bulk taxonomy assignment (categories + feed tags) over the selected rows.
@@ -829,9 +831,13 @@ export function EventsTable() {
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     if (
-      !window.confirm(
-        `Delete ${selectedIds.length} event(s)? They will be soft-deleted (marked as deleted, recoverable).`
-      )
+      !(await confirm({
+        title: `Delete ${selectedIds.length} event(s)?`,
+        description:
+          "They are soft-deleted (marked as deleted) and stay recoverable.",
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
     )
       return;
     setBulkLoading(true);

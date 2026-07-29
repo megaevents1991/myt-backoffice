@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "react-hot-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import { X } from "lucide-react";
 import type { FlightAllocationRow } from "@/types/offline-flight.types";
 import {
@@ -30,6 +31,7 @@ export function FlightAllocationsPanel({
   const [isLoading, setIsLoading] = useState(true);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   const reload = useCallback(async () => {
     try {
@@ -96,8 +98,15 @@ export function FlightAllocationsPanel({
     });
   };
 
-  const remove = (eventId: number) => {
-    if (!confirm("Remove this allocation? The event returns to the global pool.")) {
+  const remove = async (eventId: number) => {
+    if (
+      !(await confirm({
+        title: "Remove this allocation?",
+        description: "The event returns to the global pool.",
+        confirmLabel: "Remove",
+        destructive: true,
+      }))
+    ) {
       return;
     }
     startTransition(async () => {

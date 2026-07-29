@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "react-hot-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import { Edit, Trash2, Search } from "lucide-react";
 import type { Category } from "@/types/category.types";
 import {
@@ -27,6 +28,7 @@ export function CategoriesTable() {
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
   const [query, setQuery] = useState("");
+  const confirm = useConfirm();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -47,7 +49,15 @@ export function CategoriesTable() {
   }, []);
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this category?")) return;
+    if (
+      !(await confirm({
+        title: "Delete category?",
+        description: "The category is removed from the templates list.",
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     startTransition(async () => {
       try {
         await softDeleteCategory(id);

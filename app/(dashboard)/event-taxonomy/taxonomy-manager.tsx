@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import {
   listCategories,
   createCategory,
@@ -134,6 +135,7 @@ export function TaxonomyManager({
   counts: Record<number, number>;
 }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [cats, setCats] = useState<EventCategory[]>(initial);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -197,11 +199,14 @@ export function TaxonomyManager({
     const total = effectiveIds.size;
     const links = [...effectiveIds].reduce((sum, id) => sum + (counts[id] ?? 0), 0);
     if (
-      !confirm(
-        `Delete ${total} categor${total === 1 ? "y" : "ies"} (including sub-categories of selected parents)?${
+      !(await confirm({
+        title: `Delete ${total} categor${total === 1 ? "y" : "ies"}?`,
+        description: `Sub-categories of the selected parents are deleted too.${
           links ? ` ${links} event link(s) will be removed.` : ""
-        }`
-      )
+        }`,
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
     )
       return;
     setBulkDeleting(true);
@@ -289,7 +294,14 @@ export function TaxonomyManager({
   };
 
   const remove = async (c: EventCategory) => {
-    if (!confirm(`Delete "${c.name}"?`)) return;
+    if (
+      !(await confirm({
+        title: `Delete "${c.name}"?`,
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await softDeleteCategory(c.id);
       await refresh();

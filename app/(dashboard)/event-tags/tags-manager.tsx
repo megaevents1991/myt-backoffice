@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import {
   listTags,
   createTag,
@@ -31,6 +32,7 @@ export function TagsManager({
   counts: Record<number, number>;
 }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [tags, setTags] = useState<EventTag[]>(initial);
   const [name, setName] = useState("");
   const [nameEnglish, setNameEnglish] = useState("");
@@ -59,9 +61,14 @@ export function TagsManager({
     if (!selected.size || bulkDeleting) return;
     const links = [...selected].reduce((sum, id) => sum + (counts[id] ?? 0), 0);
     if (
-      !confirm(
-        `Delete ${selected.size} tag(s)?${links ? ` They are assigned to ${links} event link(s) — those links will be removed.` : ""}`
-      )
+      !(await confirm({
+        title: `Delete ${selected.size} tag(s)?`,
+        description: links
+          ? `They are assigned to ${links} event link(s) — those links will be removed.`
+          : undefined,
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
     )
       return;
     setBulkDeleting(true);
@@ -148,7 +155,17 @@ export function TagsManager({
 
   const remove = async (t: EventTag) => {
     const n = counts[t.id] ?? 0;
-    if (!confirm(`Delete "${t.name}"?${n ? ` It is assigned to ${n} event(s) — those links will be removed.` : ""}`)) return;
+    if (
+      !(await confirm({
+        title: `Delete "${t.name}"?`,
+        description: n
+          ? `It is assigned to ${n} event(s) — those links will be removed.`
+          : undefined,
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await softDeleteTag(t.id);
       await refresh();
