@@ -37,6 +37,7 @@ Tech standards:
 MYT domain rules:
 @.claude/rules/pricing.md
 @.claude/rules/data-model.md
+@.claude/rules/migrations.md
 @.claude/rules/cross-project.md
 @.claude/rules/conventions.md
 
@@ -212,15 +213,23 @@ Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, 
 
 Workflow for any schema change:
 
-1. `npm run db:new <name>` — creates `supabase/migrations/<timestamp>_<name>.sql`; write the SQL there.
+1. **Merge master first** — `git fetch origin && git merge origin/master`. Several people write
+   migrations in parallel; branching from a stale master is what produces
+   *"Remote migration versions not found"* and duplicate version numbers. See `@.claude/rules/migrations.md`.
+2. `npm run db:new <name>` — creates `supabase/migrations/<timestamp>_<name>.sql`; write the SQL there.
    (Or prototype in the dashboard, then capture the drift: `npm run db:diff <name>` — requires Docker running.)
-2. Commit the migration file with the feature PR.
-3. Apply: `npm run db:push` locally, **or** GitHub → Actions → "Apply DB Migrations" → Run workflow.
-4. Regenerate DB types: `npm run db:types` (writes `types/database.types.ts`).
+3. Commit the migration file with the feature PR.
+4. Apply: `npm run db:push` locally, **or** GitHub → Actions → "Apply DB Migrations" → Run workflow,
+   selecting **the branch that holds the migration** (the dropdown defaults to master, and running
+   from master applies nothing while still reporting success).
+5. Regenerate DB types: `npm run db:types` (writes `types/database.types.ts`).
 
 One-time setup per machine: `npx supabase login`, then `npx supabase link --project-ref fandqafngybfdyslofmr` (asks for the DB password).
 
-CI (`.github/workflows/db-migrate.yml`) needs repo secrets `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD`. Currently manual-trigger only; auto-apply on merge is commented out in the workflow.
+CI (`.github/workflows/db-migrate.yml`) needs repo secrets `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD`.
+Manual-trigger only; auto-apply on merge is commented out. The run is a **dry run** unless the
+`confirm_apply` checkbox is ticked, and it fails fast if two migrations share a version prefix or the
+branch is behind master.
 
 ---
 

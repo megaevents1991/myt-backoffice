@@ -1,13 +1,37 @@
 name: Apply DB Migrations
 
-# Manual trigger for now (one click in GitHub → Actions → Apply DB Migrations → Run workflow).
-# Once trusted, uncomment the push trigger to auto-apply on merge to master.
+# Manual trigger (GitHub → Actions → Apply DB Migrations → Run workflow).
+#
+# Pick the BRANCH holding your migration in the "Use workflow from" dropdown —
+# it defaults to master. Running from master while the migration lives on a
+# branch used to apply nothing and still report success; the "pending
+# migrations" step below now fails instead.
+#
+# Defaults to a DRY RUN. Tick "confirm_apply" to actually write to the database.
 on:
   workflow_dispatch:
+    inputs:
+      confirm_apply:
+        description: "Apply to the shared database. Leave unticked for a dry run that only lists what would change."
+        type: boolean
+        default: false
+      allow_behind_master:
+        description: "Override the up-to-date-with-master check. Only for a hotfix you have thought about."
+        type: boolean
+        default: false
+  # Auto-apply on merge is intentionally NOT enabled. If you turn it on, fix the
+  # `if:` guards on the apply steps first — `inputs` is null outside
+  # workflow_dispatch, so every push would take the dry-run path and report
+  # success while applying nothing.
   # push:
   #   branches: [master]
   #   paths:
   #     - "supabase/migrations/**"
+
+# One migration run at a time — this writes to the database the live app uses.
+concurrency:
+  group: db-migrate
+  cancel-in-progress: false
 
 jobs:
   migrate:
@@ -18,6 +42,78 @@ jobs:
       SUPABASE_PROJECT_REF: fandqafngybfdyslofmr
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so this branch can be compared against master.
+          fetch-depth: 0
+
+      - name: Report what is about to run
+        # Via env, not string interpolation — a ref name can legally contain
+        # shell metacharacters, and this job holds the DB credentials.
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          MODE: ${{ inputs.confirm_apply && 'APPLY' || 'dry run' }}
+        run: |
+          echo "Branch: $REF_NAME"
+          echo "Commit: $(git rev-parse --short HEAD)"
+          echo "Mode:   $MODE"
+          echo
+          echo "Migration files in this checkout:"
+          ls -1 supabase/migrations/*.sql | xargs -r -n1 basename
+
+      # Supabase identifies a migration by its 14-digit version prefix ALONE,
+      # not by filename. Two branches that stamp the same second produce files
+      # that look distinct but collide: applying one marks the other's version
+      # as done, so it is skipped forever, with no error and a green run. That
+      # has already happened in this repo once, so it is checked before
+      # anything touches the database.
+      - name: Reject duplicate migration versions
+        run: |
+          set -euo pipefail
+          dupes=$(ls -1 supabase/migrations/*.sql \
+            | xargs -r -n1 basename \
+            | cut -c1-14 \
+            | sort \
+            | uniq -d)
+          if [ -n "$dupes" ]; then
+            echo "::error::Two migrations share a version prefix. Supabase keys on that number alone, so one would be silently skipped."
+            for v in $dupes; do
+              echo "  version $v:"
+              ls -1 supabase/migrations/${v}*.sql | sed 's/^/    /'
+            done
+            echo "Fix: renumber the newer file to a timestamp after every applied migration, then re-run."
+            exit 1
+          fi
+          echo "All migration versions are unique."
+
+      # A branch cut before someone else's migration was applied fails with
+      # "Remote migration versions not found in local migrations directory" —
+      # the remote history holds versions this checkout has never seen. Merging
+      # master first is the fix, done deliberately in the branch rather than
+      # silently inside CI, where a conflict or an unreviewed merge would end up
+      # applied to the shared database.
+      #
+      # Scoped to supabase/migrations/ on purpose: counting every commit on
+      # master would fail almost every run on an active repo, and a guard that
+      # cries wolf just teaches people to tick the override.
+      - name: Require this branch to have master's migrations
+        env:
+          ALLOW_BEHIND: ${{ inputs.allow_behind_master }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin master
+          behind=$(git rev-list --count HEAD..origin/master -- supabase/migrations/)
+          if [ "$behind" -eq 0 ]; then
+            echo "This branch has every migration that is on master."
+            exit 0
+          fi
+          echo "Missing $behind migration commit(s) that master already has:"
+          git log --oneline HEAD..origin/master -- supabase/migrations/ | sed 's/^/  /'
+          if [ "$ALLOW_BEHIND" = "true" ]; then
+            echo "::warning::Behind master, continuing because allow_behind_master was ticked."
+            exit 0
+          fi
+          echo "::error::Merge master into this branch first: git merge origin/master"
+          exit 1
 
       - uses: supabase/setup-cli@v1
         with:
@@ -26,5 +122,38 @@ jobs:
       - name: Link project
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
+      # Local vs remote side by side, so the log shows which versions exist
+      # where before anything is written.
+      - name: List migrations
+        run: supabase migration list --linked
+
+      # The real preview, and the guard against the trap in the header: running
+      # from the wrong branch leaves nothing pending, which used to look exactly
+      # like success.
+      - name: Preview pending migrations
+        run: |
+          set -uo pipefail
+          supabase db push --include-all --dry-run 2>&1 | tee /tmp/db-push-dry-run.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Dry run failed — nothing was applied. See the output above."
+            exit "$status"
+          fi
+          if grep -qiE "up to date|no migrations to apply|nothing to push" /tmp/db-push-dry-run.log; then
+            echo "::error::No pending migrations for this branch. If you expected some, you probably dispatched from the wrong branch — pick it in the 'Use workflow from' dropdown."
+            exit 1
+          fi
+
+      - name: Dry run — nothing was applied
+        if: ${{ !inputs.confirm_apply }}
+        run: |
+          echo "::notice::Dry run complete. The migrations above were NOT applied."
+          echo "Re-run with 'confirm_apply' ticked to write them to the database."
+
       - name: Push migrations
+        if: ${{ inputs.confirm_apply }}
         run: supabase db push --include-all
+
+      - name: Confirm applied state
+        if: ${{ inputs.confirm_apply }}
+        run: supabase migration list --linked
