@@ -21,6 +21,7 @@ const WRITABLE_COLUMNS = [
   "commission",
   "commission_type",
   "user_discount",
+  "credit_per_ticket",
   "supplier_number",
   "type",
   "is_active",
@@ -45,6 +46,7 @@ function toPartnerRow(input: Partial<PartnerInput>): Record<string, unknown> {
     const value = input[column]
     switch (column) {
       case "commission":
+      case "credit_per_ticket":
       case "user_discount":
         row[column] = assertMoney(column, value)
         break
@@ -101,7 +103,7 @@ function redactPasswordDiff(
  * and would ride along in the RSC payload of every partner list.
  */
 const LIST_COLUMNS =
-  "partner_tracking_code,name_hebrew,email,commission,commission_type,user_discount,supplier_number,type,is_active,created_at"
+  "partner_tracking_code,name_hebrew,email,commission,commission_type,credit_per_ticket,user_discount,supplier_number,type,is_active,created_at"
 
 export type PartnerListItem = Omit<Partner, "password">
 
@@ -299,6 +301,7 @@ export async function duplicatePartner(trackingCode: string, opts?: { skipAudit?
       // Without this the copy falls back to the column default and an
       // "8% of sales" partner silently becomes "$8 per ticket".
       commission_type: source.commission_type,
+      credit_per_ticket: source.credit_per_ticket,
       user_discount: source.user_discount,
       supplier_number: source.supplier_number,
       type: source.type,

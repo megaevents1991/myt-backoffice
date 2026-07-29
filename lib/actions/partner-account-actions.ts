@@ -35,6 +35,8 @@ export interface PartnerAccountInput {
   password?: string | null
   commission: number
   commission_type: CommissionType
+  /** Site credit accrued per paid ticket, on top of the cash commission. */
+  credit_per_ticket: number
   /** Discount passed on to the partner's followers. */
   user_discount: number
   /** Company/VAT number (ח.פ). */
@@ -67,6 +69,9 @@ function validate(input: PartnerAccountInput): string | null {
   if (!Number.isFinite(input.user_discount) || input.user_discount < 0) {
     return "Follower discount must be a non-negative number"
   }
+  if (!Number.isFinite(input.credit_per_ticket) || input.credit_per_ticket < 0) {
+    return "Credit per ticket must be a non-negative number"
+  }
   if (input.supplier_number != null && !Number.isFinite(input.supplier_number)) {
     return "Company number (ח.פ) must be a number"
   }
@@ -80,6 +85,7 @@ function partnerRow(input: PartnerAccountInput) {
     email: input.email.trim().toLowerCase(),
     commission: input.commission,
     commission_type: input.commission_type,
+    credit_per_ticket: input.credit_per_ticket,
     user_discount: input.user_discount,
     supplier_number: input.supplier_number ?? null,
     type: input.type as PartnerType,
@@ -378,7 +384,7 @@ export async function getPartnerAccount(
   const { data: partner, error } = await supabase
     .from("partners")
     .select(
-      "partner_tracking_code,name_hebrew,email,commission,commission_type,user_discount,supplier_number,type,is_active"
+      "partner_tracking_code,name_hebrew,email,commission,commission_type,credit_per_ticket,user_discount,supplier_number,type,is_active"
     )
     .eq("partner_tracking_code", trackingCode)
     .maybeSingle()
@@ -394,6 +400,7 @@ export async function getPartnerAccount(
     email: string
     commission: number
     commission_type: CommissionType | null
+    credit_per_ticket: number | null
     user_discount: number
     supplier_number: number | null
     type: PartnerType | null
@@ -415,6 +422,7 @@ export async function getPartnerAccount(
     password: null,
     commission: row.commission ?? 0,
     commission_type: row.commission_type ?? "fixed_per_ticket",
+    credit_per_ticket: row.credit_per_ticket ?? 0,
     user_discount: row.user_discount ?? 0,
     supplier_number: row.supplier_number,
     is_active: row.is_active,

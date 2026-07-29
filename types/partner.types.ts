@@ -63,6 +63,12 @@ export type Partner = {
   password: string
   commission: number
   commission_type: CommissionType | null
+  /**
+   * USD of site credit accrued per ticket on a paid reservation, converted by
+   * the partner into a single-use coupon. 0 = not on the credit agreement.
+   * Paid in ADDITION to `commission`, not instead of it.
+   */
+  credit_per_ticket: number
   user_discount: number
   /** The partner's company/VAT number (ח.פ), printed on the monthly report. */
   supplier_number: number | null

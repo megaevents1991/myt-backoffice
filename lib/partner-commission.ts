@@ -90,6 +90,34 @@ export function commissionForReservations(
 }
 
 /**
+ * Site credit accrued on paid reservations — separate from cash commission,
+ * and paid in addition to it. Accrues per ticket, the same unit the monthly
+ * report counts, so the two figures always agree about what a "passenger" is.
+ */
+export function creditAccrued(
+  reservations: ReservationLike[],
+  creditPerTicket: number | null
+): number {
+  if (!creditPerTicket || !Number.isFinite(creditPerTicket)) return 0
+  return countTickets(reservations.filter(isPaid)) * creditPerTicket
+}
+
+/**
+ * What the partner can convert right now: everything earned, less everything
+ * already converted. Derived every time rather than stored, so a failed or
+ * repeated conversion can't leave a balance that disagrees with the ledger.
+ * Clamped at 0 — a rate lowered after a conversion must not go negative.
+ */
+export function creditBalance(accrued: number, redeemed: number): number {
+  return Math.max(0, round2(accrued - redeemed))
+}
+
+/** Money is compared and stored to the cent; floats drift past that. */
+export function round2(amount: number): number {
+  return Math.round((amount + Number.EPSILON) * 100) / 100
+}
+
+/**
  * Human-readable rate, e.g. "$25 per ticket" or "8% of sales". A rate of 0 is
  * shown as "$0", not "—": partners created alongside a user start at 0, and
  * "not configured yet" must not look like "no data".

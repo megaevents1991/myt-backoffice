@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { getPartner } from "@/lib/actions/partner-actions";
 import { getPartnerPerformance } from "@/lib/actions/partner-performance-actions";
+import { getPartnerCredit } from "@/lib/actions/partner-credit-actions";
 import { PAID_STATUS, describeCommission } from "@/lib/partner-commission";
 import { PARTNER_TYPE_LABELS, isCustomerRefundPartner } from "@/types/partner.types";
 import { PerformanceChart } from "./performance-chart";
@@ -28,6 +29,13 @@ const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 0,
+});
+
+/** Credit is shown to the cent, matching what the partner sees in their portal. */
+const usdExact = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 2,
 });
 
 export default async function ViewPartnerPage({
@@ -44,7 +52,10 @@ export default async function ViewPartnerPage({
   });
   if (!partner) notFound();
 
-  const performance = await getPartnerPerformance(code);
+  const [performance, credit] = await Promise.all([
+    getPartnerPerformance(code),
+    getPartnerCredit(code),
+  ]);
 
   const type = isCustomerRefundPartner(partner)
     ? "customer_refund"
@@ -170,6 +181,22 @@ export default async function ViewPartnerPage({
               value={partner.supplier_number?.toString() ?? "—"}
             />
             <Detail
+              label="Site credit"
+              value={
+                credit.creditPerTicket > 0
+                  ? `${usdExact.format(credit.balanceUsd)} available · ${usdExact.format(credit.creditPerTicket)}/ticket`
+                  : "Not on the credit agreement"
+              }
+            />
+            <Detail
+              label="Credit converted"
+              value={
+                credit.history.length === 0
+                  ? "Never"
+                  : `${usdExact.format(credit.redeemedUsd)} across ${credit.history.length} coupons`
+              }
+            />
+            <Detail
               label="Coupons"
               value={`${performance.activeCoupons} active · ${performance.couponUses} uses`}
             />
@@ -180,6 +207,60 @@ export default async function ViewPartnerPage({
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Traffic &amp; funnel</CardTitle>
+          <CardDescription>
+            Distinct visitors who arrived through {partner.partner_tracking_code} and how
+            far they got.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!performance.traffic.hasData ? (
+            <p className="py-6 text-sm text-muted-foreground">
+              No visits recorded for this partner yet. Traffic is logged by the booking
+              site when someone arrives on a link carrying this tracking code.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {performance.traffic.byStage.map((stage) => {
+                // Widest stage, not VISIT — if a later stage were ever recorded
+                // without one, dividing by VISIT would give bars over 100%.
+                const top = Math.max(
+                  ...performance.traffic.byStage.map((s) => s.visitors),
+                  1
+                );
+                const share = Math.round((stage.visitors / top) * 100);
+                return (
+                  <div key={stage.stage} className="space-y-1">
+                    <div className="flex items-baseline justify-between text-sm">
+                      <span>{stage.label}</span>
+                      <span className="font-medium tabular-nums">
+                        {stage.visitors}
+                        {stage.stage !== "VISIT" && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {share}%
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${share}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              <p className="pt-1 text-xs text-muted-foreground">
+                {performance.traffic.totalVisitors} distinct visitors
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

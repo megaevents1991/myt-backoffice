@@ -11,6 +11,12 @@ import {
   sumSales,
   type CommissionTerms,
 } from "@/lib/partner-commission"
+import {
+  FUNNEL_STAGES,
+  FUNNEL_STAGE_LABELS,
+  emptyTraffic,
+  type PartnerTraffic,
+} from "@/lib/partner-funnel"
 import type { CommissionType } from "@/types/partner.types"
 import { getReservationEventOrderInfoPrimaryName } from "@/lib/utils"
 import type { ReservationEventOrderInfo } from "@/types/reservation.types"
@@ -50,6 +56,7 @@ export interface PartnerPerformance {
   couponUses: number
   monthly: PartnerMonthlyPoint[]
   reservations: PartnerPerformanceReservation[]
+  traffic: PartnerTraffic
 }
 
 type ReservationRow = {
@@ -72,7 +79,8 @@ export async function getPartnerPerformance(
 ): Promise<PartnerPerformance> {
   await requireStaff()
 
-  const [partnerResult, reservationsResult, couponsResult] = await Promise.all([
+  const [partnerResult, reservationsResult, couponsResult, trafficResult] =
+    await Promise.all([
     supabase
       .from("partners")
       .select("commission,commission_type")
@@ -89,12 +97,19 @@ export async function getPartnerPerformance(
       .from("coupons")
       .select("id,is_active,times_used")
       .eq("partner_tracking_code", trackingCode),
+    // Aggregated in the DB — see partner_funnel_counts. Selecting the raw rows
+    // would pull the partner's whole visit history on every page view.
+    supabase.rpc("partner_funnel_counts", { p_tracking_code: trackingCode }),
   ])
 
   if (partnerResult.error) throw partnerResult.error
   if (reservationsResult.error) throw reservationsResult.error
   if (couponsResult.error) {
     console.error("getPartnerPerformance coupons:", JSON.stringify(couponsResult.error))
+  }
+  if (trafficResult.error) {
+    // Traffic is a nice-to-have; never fail the whole page over it.
+    console.error("getPartnerPerformance traffic:", JSON.stringify(trafficResult.error))
   }
 
   const partnerRow = partnerResult.data as {
@@ -147,6 +162,25 @@ export async function getPartnerPerformance(
   }
   const monthly = [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month))
 
+  // The RPC returns one row per stage with a DISTINCT visitor count, so a
+  // person who browsed five events counts once, not five times.
+  const stageCounts = new Map<string, number>()
+  for (const row of (trafficResult.data ?? []) as { stage: string; visitors: number }[]) {
+    stageCounts.set(row.stage, Number(row.visitors) || 0)
+  }
+  const traffic: PartnerTraffic = trafficResult.error
+    ? emptyTraffic()
+    : {
+        byStage: FUNNEL_STAGES.map((stage) => ({
+          stage,
+          label: FUNNEL_STAGE_LABELS[stage],
+          visitors: stageCounts.get(stage) ?? 0,
+        })),
+        // Everyone is recorded at VISIT first, so that stage is the total.
+        totalVisitors: stageCounts.get("VISIT") ?? 0,
+        hasData: stageCounts.size > 0,
+      }
+
   return {
     commissionRate: terms.rate ?? 0,
     commissionType: terms.type ?? "fixed_per_ticket",
@@ -160,5 +194,6 @@ export async function getPartnerPerformance(
     couponUses: coupons.reduce((sum, c) => sum + (c.times_used ?? 0), 0),
     monthly,
     reservations,
+    traffic,
   }
 }

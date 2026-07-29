@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 
 const navItems = [
   { name: "דשבורד", href: "/portal" },
+  { name: "הצבירה שלי", href: "/portal/credit" },
   { name: "הקופונים שלי", href: "/portal/coupons" },
   { name: "ההזמנות שלי", href: "/portal/reservations" },
   { name: "הצעות מחיר", href: "/portal/quotes" },

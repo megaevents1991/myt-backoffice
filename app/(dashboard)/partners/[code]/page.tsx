@@ -55,6 +55,7 @@ type FormState = {
   password: string;
   commission: string;
   commission_type: CommissionType;
+  credit_per_ticket: string;
   user_discount: string;
   supplier_number: string;
   is_active: boolean;
@@ -69,6 +70,7 @@ const EMPTY_FORM: FormState = {
   password: "",
   commission: "10",
   commission_type: "fixed_per_ticket",
+  credit_per_ticket: "0",
   user_discount: "5",
   supplier_number: "",
   is_active: true,
@@ -122,6 +124,7 @@ export default function PartnerPage({
           password: "",
           commission: String(account.commission ?? 0),
           commission_type: account.commission_type,
+          credit_per_ticket: String(account.credit_per_ticket ?? 0),
           user_discount: String(account.user_discount ?? 0),
           supplier_number: account.supplier_number?.toString() ?? "",
           is_active: account.is_active,
@@ -170,6 +173,7 @@ export default function PartnerPage({
         password: form.password || null,
         commission: Number(form.commission),
         commission_type: form.commission_type,
+        credit_per_ticket: Number(form.credit_per_ticket),
         user_discount: Number(form.user_discount),
         supplier_number: form.supplier_number ? Number(form.supplier_number) : null,
         is_active: form.is_active,
@@ -487,6 +491,24 @@ export default function PartnerPage({
                 />
                 <p className="text-xs text-muted-foreground">
                   Taken off the price for customers arriving through this partner.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="credit_per_ticket">Site Credit ($ per ticket)</Label>
+                <Input
+                  id="credit_per_ticket"
+                  name="credit_per_ticket"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.credit_per_ticket}
+                  onChange={handleChange}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Accrues per ticket on paid reservations, on top of the commission. The
+                  partner converts the balance into a one-time coupon. 0 = not on this
+                  agreement.
                 </p>
               </div>
               <div className="space-y-2">
