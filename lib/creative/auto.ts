@@ -506,3 +506,102 @@ export async function generateCampaignForEvent(
 
   return { status: "generated", squareUrl, bannerUrl };
 }
+
+/* ----------------------- batch runner (cron + UI) ----------------------- */
+
+export type CampaignRunSummary = {
+  /** Feed-eligible events looked at (not deleted, today onward). */
+  scanned: number;
+  /** Already up to date — hash matched, nothing to do. */
+  current: number;
+  generated: number[];
+  skipped: { id: number; reason: string }[];
+  errors: { id: number; error: string }[];
+  /** Stale events left untouched because the run ran out of time/limit. */
+  remaining: number;
+  stoppedEarly: boolean;
+};
+
+export type CampaignRunOptions = {
+  /** Max events to render this run. null/undefined = no cap (time-bound only). */
+  limit?: number | null;
+  /** Wall-clock budget; the run stops cleanly before the platform kills it. */
+  timeBudgetMs?: number;
+};
+
+/**
+ * Regenerate every campaign creative whose input hash changed, oldest event
+ * first. Shared by the nightly cron and the manual "sync everything" button —
+ * both get the same batching semantics.
+ *
+ * There is no per-run render CAP by default: the only bound is `timeBudgetMs`,
+ * so a caller can loop (`while (summary.remaining > 0)`) and drain a backlog of
+ * any size instead of the old 40-per-night trickle.
+ */
+export async function runCampaignCreatives(
+  options: CampaignRunOptions = {},
+): Promise<CampaignRunSummary> {
+  const { limit = null, timeBudgetMs = 250_000 } = options;
+  const started = Date.now();
+  const todayISO = new Date().toISOString().split("T")[0];
+
+  const { data, error } = await supabase
+    .from("events")
+    .select(
+      "id,name,name_english,type,date,location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,art_image_url,card_image_url,campaign_input_hash",
+    )
+    .is("is_deleted", null)
+    .gte("date", todayISO)
+    .order("date", { ascending: true });
+  if (error) {
+    console.error("[campaign] events query failed:", JSON.stringify(error));
+    throw new Error("events query failed");
+  }
+
+  const events = (data ?? []) as unknown as CampaignEventRow[];
+  const summary: CampaignRunSummary = {
+    scanned: events.length,
+    current: 0,
+    generated: [],
+    skipped: [],
+    errors: [],
+    remaining: 0,
+    stoppedEarly: false,
+  };
+
+  let processed = 0;
+  // Shared per-run caches: artists/teams/logos tables load once, not per event.
+  const caches: CreativeLookupCaches = {};
+  for (const event of events) {
+    // Cheap pre-check so "current" events don't count against the batch.
+    if (event.campaign_input_hash === campaignInputHash(event)) {
+      summary.current++;
+      continue;
+    }
+    if (
+      (limit != null && processed >= limit) ||
+      Date.now() - started > timeBudgetMs
+    ) {
+      summary.stoppedEarly = true;
+      summary.remaining++;
+      continue;
+    }
+    processed++;
+    try {
+      const result = await generateCampaignForEvent(event, caches);
+      if (result.status === "generated") summary.generated.push(event.id);
+      else if (result.status === "skipped")
+        summary.skipped.push({ id: event.id, reason: result.reason });
+      else summary.current++;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`[campaign] event ${event.id} failed:`, message);
+      summary.errors.push({ id: event.id, error: message });
+    }
+  }
+
+  console.log(
+    `[campaign] scanned=${summary.scanned} current=${summary.current} generated=${summary.generated.length} skipped=${summary.skipped.length} errors=${summary.errors.length} remaining=${summary.remaining}${summary.stoppedEarly ? " (stopped early)" : ""}`,
+  );
+  return summary;
+}

@@ -1,4 +1,4 @@
-import { getMetaFeedSnapshots } from "@/lib/actions/meta-feed-actions";
+import { getMetaFeedSnapshots, getSyncHealth } from "@/lib/actions/meta-feed-actions";
 import {
   Card,
   CardContent,
@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SyncFeedButton } from "./sync-button";
+import { SyncAllButton } from "./sync-all-button";
 
 /**
  * Meta product feed status + manual sync. The feed itself is built live by the
@@ -32,19 +33,30 @@ const LABELS: Record<string, { title: string; note: string; primary?: boolean }>
   },
 };
 
-function formatAge(updatedAt: string | null): { text: string; stale: boolean } {
-  if (!updatedAt) return { text: "טרם פורסם", stale: true };
+function formatAge(
+  updatedAt: string | null,
+  staleAfterHours = 26,
+  neverText = "טרם פורסם",
+): { text: string; stale: boolean } {
+  if (!updatedAt) return { text: neverText, stale: true };
   const ms = Date.now() - new Date(updatedAt).getTime();
   const hours = Math.floor(ms / 3_600_000);
   const minutes = Math.floor(ms / 60_000);
-  // The cron runs twice a day; older than ~26h means it stopped working.
-  const stale = ms > 26 * 3_600_000;
+  // The cron runs at least daily; older than its window means it stopped working.
+  const stale = ms > staleAfterHours * 3_600_000;
   if (hours < 1) return { text: `לפני ${minutes} דק׳`, stale };
-  return { text: `לפני ${hours} שע׳`, stale };
+  if (hours < 48) return { text: `לפני ${hours} שע׳`, stale };
+  return { text: `לפני ${Math.floor(hours / 24)} ימים`, stale };
 }
 
 export default async function MetaFeedPage() {
-  const snapshots = await getMetaFeedSnapshots();
+  const [snapshots, health] = await Promise.all([
+    getMetaFeedSnapshots(),
+    getSyncHealth(),
+  ]);
+  const staleSyncs = health.rows.filter(
+    (row) => formatAge(row.lastRun, row.staleAfterHours).stale,
+  );
 
   return (
     <div className="container mx-auto py-10 space-y-6">
@@ -58,6 +70,47 @@ export default async function MetaFeedPage() {
         </div>
         <SyncFeedButton />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>בריאות הסנכרונים</CardTitle>
+          <CardDescription>
+            מתי כל סנכרון כתב נתונים בפעם האחרונה. אם כולם אדומים — הקרונים של
+            Vercel לא רצים (בדוק ש־<code dir="ltr">CRON_SECRET</code> מוגדר
+            בפרויקט), והכפתור כאן מריץ את הכול ידנית.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {staleSyncs.length > 0 && (
+            <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">
+              {staleSyncs.length} סנכרונים לא רצו בזמן — הנתונים בפיד עלולים
+              להיות ישנים.
+            </p>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {health.rows.map((row) => {
+              const age = formatAge(row.lastRun, row.staleAfterHours, "מעולם לא רץ");
+              return (
+                <div
+                  key={row.key}
+                  className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                >
+                  <span className="text-sm font-medium">{row.label}</span>
+                  <Badge variant={age.stale ? "destructive" : "secondary"}>{age.text}</Badge>
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="text-sm text-muted-foreground">
+            קריאטיבים: {health.eventsWithCreative} מתוך {health.eventsInFeedWindow}{" "}
+            אירועים בחלון הפיד. אירוע בלי קריאטיב מופיע במטא עם התמונה המקורית.
+          </p>
+
+          <SyncAllButton />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

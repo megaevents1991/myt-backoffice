@@ -52,6 +52,86 @@ export async function syncMetaFeedAction(): Promise<SyncMetaFeedResult> {
   }
 }
 
+export type SyncHealthRow = {
+  key: string;
+  label: string;
+  /** Newest row this sync wrote, or null when it has never written. */
+  lastRun: string | null;
+  /** Older than this = the sync stopped working. */
+  staleAfterHours: number;
+};
+
+export type SyncHealth = {
+  rows: SyncHealthRow[];
+  /** Feed-eligible events, and how many already carry a campaign creative. */
+  eventsInFeedWindow: number;
+  eventsWithCreative: number;
+};
+
+/**
+ * Freshness of every scheduled sync, read straight off the data each one
+ * writes. This is the check that was missing when all the Vercel crons
+ * silently started 401'ing on 2026-07-15 (the cron auth guard shipped without
+ * CRON_SECRET being set) and nothing synced for two weeks — the dashboard
+ * looked fine because nothing surfaces "last run".
+ */
+export async function getSyncHealth(): Promise<SyncHealth> {
+  await requireStaff();
+
+  // Provider tables aren't in the generated DB types — cast like template-crud.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const newest = async (table: string, column: string): Promise<string | null> => {
+    const { data, error } = await db
+      .from(table)
+      .select(column)
+      .order(column, { ascending: false })
+      .limit(1);
+    if (error) {
+      console.error(`[sync-health] ${table} failed:`, JSON.stringify(error));
+      return null;
+    }
+    return (data?.[0]?.[column] as string | undefined) ?? null;
+  };
+
+  const todayISO = new Date().toISOString().split("T")[0];
+  const [
+    sportsEvents,
+    liveEvents,
+    tixstockEvents,
+    creatives,
+    inWindow,
+    withCreative,
+  ] = await Promise.all([
+    newest("xs2e_events", "updated_at"),
+    newest("live_events", "updated_at"),
+    newest("tixstock_events", "updated_at"),
+    newest("events", "campaign_generated_at"),
+    db
+      .from("events")
+      .select("id", { count: "exact", head: true })
+      .is("is_deleted", null)
+      .gte("date", todayISO),
+    db
+      .from("events")
+      .select("id", { count: "exact", head: true })
+      .is("is_deleted", null)
+      .gte("date", todayISO)
+      .not("campaign_image_url", "is", null),
+  ]);
+
+  return {
+    rows: [
+      { key: "sports-events", label: "אירועי ספורט (XS2Event)", lastRun: sportsEvents, staleAfterHours: 26 },
+      { key: "live-events", label: "אירועי LIVE", lastRun: liveEvents, staleAfterHours: 26 },
+      { key: "tixstock-events", label: "אירועי TixStock", lastRun: tixstockEvents, staleAfterHours: 26 },
+      { key: "campaign-creatives", label: "קריאטיבים לפיד", lastRun: creatives, staleAfterHours: 26 },
+    ],
+    eventsInFeedWindow: inWindow.count ?? 0,
+    eventsWithCreative: withCreative.count ?? 0,
+  };
+}
+
 /** Last-published time + size of each snapshot, for the status table. */
 export async function getMetaFeedSnapshots(): Promise<MetaFeedSnapshot[]> {
   await requireStaff();
