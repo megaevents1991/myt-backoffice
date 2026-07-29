@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Loader2, Trash2, Pencil, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import {
   createFootballLogo,
   updateFootballLogo,
@@ -24,6 +25,7 @@ import type { FootballLogo } from "@/types/football-logo.types";
 export function LogoLibrary({ initialLogos }: { initialLogos: FootballLogo[] }) {
   const router = useRouter();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [logos, setLogos] = useState(initialLogos);
   const [search, setSearch] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -101,7 +103,14 @@ export function LogoLibrary({ initialLogos }: { initialLogos: FootballLogo[] }) 
   };
 
   const onDelete = async (logo: FootballLogo) => {
-    if (!window.confirm(`Delete logo "${logo.name_english}"?`)) return;
+    if (
+      !(await confirm({
+        title: `Delete logo "${logo.name_english}"?`,
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     setDeletingId(logo.id);
     try {
       await deleteFootballLogo(logo.id);

@@ -13,7 +13,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ReservationPaxEditor } from "@/components/reservation-pax-editor";
 import { useToast } from "@/hooks/use-toast";
 import type { Reservation } from "@/types/reservation.types";
 import { getReservation } from "@/lib/actions/reservation-actions";
@@ -195,14 +194,49 @@ export default function ReservationDetailsPage({
               </div>
             </div>
 
-            <ReservationPaxEditor
-              reservationId={reservation.id}
-              mainContact={{
-                first_name: reservation.main_contact_first_name,
-                last_name: reservation.main_contact_last_name,
-              }}
-              pax={reservation.more_pax_info ?? []}
-            />
+            {/* Read-only here by design — passengers are edited on the edit
+                screen, so this page never writes. */}
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Passengers</p>
+
+              <div className="rounded-md border p-3 text-sm">
+                <span className="font-medium">
+                  {reservation.main_contact_first_name}{" "}
+                  {reservation.main_contact_last_name}
+                </span>
+                <span className="ml-2 text-xs text-muted-foreground">
+                  main contact
+                </span>
+              </div>
+
+              {(reservation.more_pax_info ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No additional passengers.
+                </p>
+              ) : (
+                (reservation.more_pax_info ?? []).map((pax, index) => {
+                  const details = [
+                    pax.passport_number && `Passport ${pax.passport_number}`,
+                    pax.passport_expiry && `expires ${pax.passport_expiry}`,
+                    pax.date_of_birth && `born ${pax.date_of_birth}`,
+                    pax.gender,
+                    pax.nationality,
+                  ].filter(Boolean);
+                  return (
+                    <div key={index} className="rounded-md border p-3 text-sm">
+                      <span className="font-medium">
+                        {pax.first_name} {pax.last_name}
+                      </span>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {details.length > 0
+                          ? details.join(" · ")
+                          : "no passport details yet"}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </CardContent>
         </Card>
 

@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { FlightsEditableTable } from "@/components/flights-editable-table";
 import { EventFlightLock } from "@/components/event-flight-lock";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import type { Event, EventTicket, EventType } from "@/types/app.types";
 import {
   getEvent,
@@ -68,9 +69,8 @@ import { EventTaxonomySelect, type TaxonomyOption } from "@/components/taxonomy/
 import {
   listCategories,
   listTags,
-  getEventCategoryIds,
+  getCategoryTagMap,
   getEventTagIds,
-  setEventCategories,
   setEventTags,
 } from "@/lib/actions/event-taxonomy-actions";
 import { flattenWithPath } from "@/lib/taxonomy-tree";
@@ -85,6 +85,7 @@ export default function EventPage({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const unwrappedParams = use(params);
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
@@ -131,14 +132,15 @@ export default function EventPage({
   const isNewEvent = unwrappedParams.id === "new";
   const isBatchCreate = isNewEvent && searchParams.get("batch") === "1";
 
-  // Taxonomy: category tree + curated tags. Options are the managed pools; the
-  // selected ids are persisted to the junction tables on save.
+  // Taxonomy: an event is ONLY ever tagged. Its categories are derived — a
+  // category declares which tags compose it (Templates → category form), and
+  // every event carrying one of them is pulled in. The category list below is
+  // therefore read-only, computed from the tags selected right here.
   const [catOptions, setCatOptions] = useState<TaxonomyOption[]>([]);
   const [tagOptions, setTagOptions] = useState<TaxonomyOption[]>([]);
-  const [selectedCatIds, setSelectedCatIds] = useState<number[]>([]);
+  const [catTagMap, setCatTagMap] = useState<Record<number, number[]>>({});
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   // Baseline of the loaded links (dirty detection + Discard). New events start [].
-  const initialCatIdsRef = useRef<number[]>([]);
   const initialTagIdsRef = useRef<number[]>([]);
   // If the links failed to load we must NOT save [] over the event's real links.
   const [taxonomyLoadFailed, setTaxonomyLoadFailed] = useState(false);
@@ -146,37 +148,40 @@ export default function EventPage({
   const idsEqual = (a: number[], b: number[]) =>
     a.length === b.length &&
     [...a].sort((x, y) => x - y).join(",") === [...b].sort((x, y) => x - y).join(",");
-  const taxonomyDirty =
-    !idsEqual(selectedCatIds, initialCatIdsRef.current) ||
-    !idsEqual(selectedTagIds, initialTagIdsRef.current);
+  const taxonomyDirty = !idsEqual(selectedTagIds, initialTagIdsRef.current);
+
+  // Categories this event will land in, from the tags currently selected.
+  const derivedCatLabels = catOptions
+    .filter((c) => (catTagMap[c.id] ?? []).some((tagId) => selectedTagIds.includes(tagId)))
+    .map((c) => c.label);
 
   // Load the category/tag pools once (both new + edit flows).
   useEffect(() => {
     (async () => {
       try {
-        const [cats, tags] = await Promise.all([listCategories(), listTags()]);
+        const [cats, tags, tagMap] = await Promise.all([
+          listCategories(),
+          listTags(),
+          getCategoryTagMap(),
+        ]);
         setCatOptions(flattenWithPath(cats).map((c) => ({ id: c.id, label: c.path })));
         setTagOptions(tags.map((t) => ({ id: t.id, label: t.name })));
+        setCatTagMap(tagMap);
       } catch (e) {
         console.error("Failed to load taxonomy pools:", e);
       }
     })();
   }, []);
 
-  // Load this event's current category/tag selections (edit flow only).
+  // Load this event's current tags (edit flow only).
   useEffect(() => {
     if (isNewEvent) return;
     const eid = Number(unwrappedParams.id);
     if (!Number.isFinite(eid)) return;
     (async () => {
       try {
-        const [catIds, tagIds] = await Promise.all([
-          getEventCategoryIds(eid),
-          getEventTagIds(eid),
-        ]);
-        setSelectedCatIds(catIds);
+        const tagIds = await getEventTagIds(eid);
         setSelectedTagIds(tagIds);
-        initialCatIdsRef.current = catIds;
         initialTagIdsRef.current = tagIds;
         setTaxonomyLoadFailed(false);
       } catch (e) {
@@ -198,15 +203,13 @@ export default function EventPage({
   const persistTaxonomy = async (eventId: number, isNewRow: boolean) => {
     if (taxonomyLoadFailed) return; // no baseline — writing would wipe real links
     if (isNewRow) {
-      if (!selectedCatIds.length && !selectedTagIds.length) return;
+      if (!selectedTagIds.length) return;
     } else if (!taxonomyDirty) {
       return; // unchanged — skip the delete+insert round trip
     }
     try {
-      await setEventCategories(eventId, selectedCatIds);
       await setEventTags(eventId, selectedTagIds);
       if (!isNewRow) {
-        initialCatIdsRef.current = selectedCatIds;
         initialTagIdsRef.current = selectedTagIds;
       }
     } catch (e) {
@@ -1955,21 +1958,10 @@ export default function EventPage({
 
             {taxonomyLoadFailed ? (
               <p className="text-sm text-destructive">
-                Categories/tags failed to load — reload the page to edit them.
+                Tags failed to load — reload the page to edit them.
               </p>
             ) : (
               <>
-                <div className="space-y-2">
-                  <Label>Categories</Label>
-                  <EventTaxonomySelect
-                    kind="category"
-                    options={catOptions}
-                    value={selectedCatIds}
-                    onChange={setSelectedCatIds}
-                    onOptionCreated={(o) => setCatOptions((p) => [...p, o])}
-                  />
-                </div>
-
                 <div className="space-y-2">
                   <Label>Tags (feed / promo)</Label>
                   <EventTaxonomySelect
@@ -1979,6 +1971,27 @@ export default function EventPage({
                     onChange={setSelectedTagIds}
                     onOptionCreated={(o) => setTagOptions((p) => [...p, o])}
                   />
+                </div>
+
+                {/* Read-only: categories are composed of tags, so they follow
+                    from the selection above. Edit the composition in
+                    Templates → Categories. */}
+                <div className="space-y-2">
+                  <Label>קטגוריות (נגזר מהתגיות)</Label>
+                  {derivedCatLabels.length ? (
+                    <div className="flex flex-wrap gap-1">
+                      {derivedCatLabels.map((label) => (
+                        <Badge key={label} variant="secondary">
+                          {label}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      אין קטגוריה שמכילה את התגיות האלה. קובעים אילו תגיות מרכיבות
+                      קטגוריה במסך Templates ← קטגוריות.
+                    </p>
+                  )}
                 </div>
               </>
             )}
@@ -2806,7 +2819,15 @@ export default function EventPage({
                           type="button"
                           title="Unlink hotel"
                           onClick={async () => {
-                            if (!confirm(`Unlink ${hotel.hotel_name} from this event?`)) return;
+                            if (
+                              !(await confirm({
+                                title: `Unlink ${hotel.hotel_name}?`,
+                                description: "The hotel is removed from this event.",
+                                confirmLabel: "Unlink",
+                                destructive: true,
+                              }))
+                            )
+                              return;
                             try {
                               await removeEventFromHotel(hotel.id, event.id);
                               setLinkedHotels((prev) => prev.filter((h) => h.id !== hotel.id));
@@ -3215,8 +3236,7 @@ export default function EventPage({
           setStagedFlights([]);
           setStagedHotels([]);
           setSelectedLocationId("");
-          // Revert taxonomy edits to the loaded baseline too.
-          setSelectedCatIds(initialCatIdsRef.current);
+          // Revert tag edits to the loaded baseline too.
           setSelectedTagIds(initialTagIdsRef.current);
         }}
         saveLabel={

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "react-hot-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import { Edit, Trash2, Eye } from "lucide-react";
 import type { OfflineHotel } from "@/types/offline-hotel.types";
 import {
@@ -26,6 +27,7 @@ export function OfflineHotelsTable() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   useEffect(() => {
     setIsLoading(true);
@@ -48,7 +50,15 @@ export function OfflineHotelsTable() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to soft delete this hotel?")) return;
+    if (
+      !(await confirm({
+        title: "Delete hotel?",
+        description: "This soft deletes the hotel. You can restore it later.",
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     startTransition(async () => {
       try {
         await softDeleteOfflineHotel(id);

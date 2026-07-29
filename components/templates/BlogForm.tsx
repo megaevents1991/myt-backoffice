@@ -27,6 +27,7 @@ import { ArtBlobPicker } from "@/components/art-blob-picker";
 import { HeroImageField } from "@/components/templates/HeroImageField";
 import { RichBodyEditor } from "@/components/templates/RichBodyEditor";
 import { StickySaveBar } from "@/components/sticky-save-bar";
+import { useConfirm } from "@/components/confirm-provider";
 import { createBlogPost, updateBlogPost } from "@/lib/actions/blog-actions";
 import { Label } from "@/components/ui/label";
 
@@ -57,6 +58,7 @@ type FormData = z.infer<typeof schema>;
 
 export function BlogForm({ initial }: { initial?: BlogPost }) {
   const router = useRouter();
+  const confirm = useConfirm();
   const [isPending, startTransition] = useTransition();
   const [imageUrl, setImageUrl] = useState(initial?.image_url ?? "");
   const [uploading, setUploading] = useState(false);
@@ -133,10 +135,18 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
       ? n.value ?? ""
       : (n?.content ?? []).map(nodeText).join("");
 
-  const autoFill = () => {
+  const autoFill = async () => {
     if (!pasteHtml.trim()) return;
     const hasContent = !!form.getValues("title")?.trim() || !!bodyHtml.trim();
-    if (hasContent && !confirm("Overwrite the current title/body with the pasted HTML?"))
+    if (
+      hasContent &&
+      !(await confirm({
+        title: "Overwrite the current title and body?",
+        description: "The pasted HTML replaces what is in the form now.",
+        confirmLabel: "Overwrite",
+        destructive: true,
+      }))
+    )
       return;
 
     const doc = htmlToRichDoc(pasteHtml);
@@ -222,7 +232,7 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
             onChange={(e) => setPasteHtml(e.target.value)}
           />
           <div className="flex items-center gap-3">
-            <Button type="button" variant="secondary" size="sm" onClick={autoFill} disabled={!pasteHtml.trim()}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => void autoFill()} disabled={!pasteHtml.trim()}>
               Fill fields
             </Button>
             <p className="text-xs text-muted-foreground">

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "react-hot-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import { Edit, Trash2, Search } from "lucide-react";
 import type { Person, PersonKind } from "@/types/person.types";
 import * as artist from "@/lib/actions/artist-actions";
@@ -31,6 +32,7 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
   const [query, setQuery] = useState("");
+  const confirm = useConfirm();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -51,8 +53,15 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind]);
 
-  const handleDelete = (id: number) => {
-    if (!confirm("Delete this entry?")) return;
+  const handleDelete = async (id: number) => {
+    if (
+      !(await confirm({
+        title: "Delete this entry?",
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     startTransition(async () => {
       try {
         await a.del(id);

@@ -11,7 +11,8 @@
     "db:diff": "supabase db diff -f",
     "db:push": "supabase db push --linked",
     "db:pull": "supabase db pull",
-    "db:types": "supabase gen types typescript --linked > types/database.types.ts"
+    "db:types": "supabase gen types typescript --linked > types/database.types.ts",
+    "predb:push": "node scripts/guard-db-push.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -211,6 +211,22 @@ Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, 
 
 **This repo owns the schema.** The main app never runs migrations. Schema changes go through versioned migration files in `supabase/migrations/` — never ad-hoc SQL in the dashboard without capturing it.
 
+> **⛔ NEVER apply migrations from a feature branch.** Both routes write to the
+> SHARED PRODUCTION database: `supabase db push` locally, and running "Apply DB
+> Migrations" with a branch picked in the dispatch UI — the second is what
+> actually broke it on 2026-07-29.
+>
+> Migrations applied from a branch land in the remote migration-history table
+> while their files exist nowhere else, so master now has versions it has never
+> seen and every later run dies with *"Remote migration versions not found in
+> local migrations directory"*.
+>
+> Both paths are now blocked. The workflow refuses any ref that is not master
+> (override: re-run with `allow_non_master` checked). `npm run db:push` is gated
+> by `scripts/guard-db-push.mjs`, which refuses unless you are on master, in sync
+> with origin, with no uncommitted migration files and no duplicate version
+> prefixes (override: `ALLOW_DB_PUSH=1`).
+
 Workflow for any schema change:
 
 1. **Merge master first** — `git fetch origin && git merge origin/master`. Several people write
@@ -219,17 +235,28 @@ Workflow for any schema change:
 2. `npm run db:new <name>` — creates `supabase/migrations/<timestamp>_<name>.sql`; write the SQL there.
    (Or prototype in the dashboard, then capture the drift: `npm run db:diff <name>` — requires Docker running.)
 3. Commit the migration file with the feature PR.
-4. Apply: `npm run db:push` locally, **or** GitHub → Actions → "Apply DB Migrations" → Run workflow,
-   selecting **the branch that holds the migration** (the dropdown defaults to master, and running
-   from master applies nothing while still reporting success).
+4. **Merge to master.** The "Apply DB Migrations" workflow runs automatically on
+   any push to master touching `supabase/migrations/**`. Nobody applies anything
+   by hand, and **never from a branch** — that puts versions into the remote
+   history master has never seen and blocks everyone's next push.
+   `workflow_dispatch` remains for re-runs and repairs.
 5. Regenerate DB types: `npm run db:types` (writes `types/database.types.ts`).
+
+Two migrations must never share a version prefix (the leading timestamp) — the
+applied version becomes ambiguous. The guard checks for this too.
+
+If the history is already out of sync, the fix is to bring the missing migration
+*files* onto master (`git checkout <branch> -- supabase/migrations/<file>.sql`)
+so local matches remote. Prefer that over
+`supabase migration repair --status reverted`, which marks them un-applied while
+their schema changes are still live — the history then lies, and re-applying on
+merge fails.
 
 One-time setup per machine: `npx supabase login`, then `npx supabase link --project-ref fandqafngybfdyslofmr` (asks for the DB password).
 
 CI (`.github/workflows/db-migrate.yml`) needs repo secrets `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD`.
-Manual-trigger only; auto-apply on merge is commented out. The run is a **dry run** unless the
-`confirm_apply` checkbox is ticked, and it fails fast if two migrations share a version prefix or the
-branch is behind master.
+It refuses to run off master (override: `allow_non_master`), fails fast if two migrations share a
+version prefix, and serialises runs so two pushes can't interleave against the same history.
 
 ---
 
@@ -256,9 +283,21 @@ Via `NEXT_SECRET_HOTEL_SERVICE_URL` (currently `https://myt-kohl.vercel.app`):
 | `hotels`       | Reads                          | Writes (search cache)         |
 | `flights`      | Manages (offline inventory)    | Reads                         |
 | `event_categories`      | Creates/manages (category tree) | Reads (builds category pages) |
-| `event_category_links`  | Writes (event↔category)         | Reads                         |
+| `event_category_tags`   | Writes (which tags compose a category) | —                      |
+| `event_category_links`  | **VIEW** — derived, read-only   | Reads                         |
 | `event_tags`            | Creates/manages (feed tags)     | Reads (feed targeting)        |
 | `event_tag_links`       | Writes (event↔tag)              | Reads                         |
+
+**Tags compose categories — never the other way round (2026-07-29).** An event
+is only ever *tagged*; you never assign it to a category. A category declares
+which tags make it up (`event_category_tags`, edited on the **Templates →
+category** form — the same screen where the page is built, via
+`categories.event_category_id`), and every event carrying one of those tags is
+pulled in. `event_category_links` is now a VIEW over that join, so main keeps
+reading it unchanged for `/c/` pages and the feed's `product_type`. Membership
+is OR over the tags and does **not** inherit down the tree — a parent collects
+only what its own tags collect (main's `getEventsInCategory` defaults
+`includeDescendants: false` to match). An event can land in several categories.
 
 ### Shared Types — Keep In Sync!
 

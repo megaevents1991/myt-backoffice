@@ -31,7 +31,6 @@ import {
 import {
   listCategories,
   listTags,
-  bulkAssignCategories,
   bulkAssignTags,
   getTaxonomyLinkMaps,
 } from "@/lib/actions/event-taxonomy-actions";
@@ -43,6 +42,7 @@ import {
 } from "@/components/taxonomy/event-taxonomy-select";
 import type { AssignMode } from "@/types/taxonomy.types";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -493,19 +493,19 @@ export function EventsTable() {
   const [mismatchQueue, setMismatchQueue] = useState<NonNullable<typeof dateMismatchDialog>[]>([]);
   const [bulkCompPricingLoading, setBulkCompPricingLoading] = useState(false);
   const { toast } = useToast();
+  const confirm = useConfirm();
   const bulkDetailToastRef = useRef<ReturnType<typeof toast> | null>(null);
 
-  // Bulk taxonomy assignment (categories + feed tags) over the selected rows.
+  // Bulk TAG assignment over the selected rows. Categories are never assigned
+  // by hand any more — a category is composed of tags (Templates → Categories),
+  // so tagging an event is what puts it in one.
   const [catOptions, setCatOptions] = useState<TaxonomyOption[]>([]);
   const [tagOptions, setTagOptions] = useState<TaxonomyOption[]>([]);
-  const [bulkCatOpen, setBulkCatOpen] = useState(false);
   const [bulkTagOpen, setBulkTagOpen] = useState(false);
-  const [bulkCatIds, setBulkCatIds] = useState<number[]>([]);
   const [bulkTagIds, setBulkTagIds] = useState<number[]>([]);
-  const [bulkCatMode, setBulkCatMode] = useState<AssignMode>("add");
   const [bulkTagMode, setBulkTagMode] = useState<AssignMode>("add");
   // Raw categories (for descendant-aware filtering) + per-event link maps
-  // (taxonomy column + filters). "" = no filter.
+  // (taxonomy column + filters; categories are derived). "" = no filter.
   const [rawCats, setRawCats] = useState<EventCategory[]>([]);
   const [catsByEvent, setCatsByEvent] = useState<Record<number, number[]>>({});
   const [tagsByEvent, setTagsByEvent] = useState<Record<number, number[]>>({});
@@ -543,26 +543,6 @@ export function EventsTable() {
     const id = Number(filterCatId);
     return new Set([id, ...descendantIds(buildTree(rawCats), id)]);
   })();
-
-  const handleBulkAssignCategories = async () => {
-    if (selectedIds.length === 0 || bulkCatIds.length === 0) return;
-    setBulkLoading(true);
-    try {
-      await bulkAssignCategories(selectedIds, bulkCatIds, bulkCatMode);
-      toast({
-        title: "Categories assigned",
-        description: `${selectedIds.length} event(s) (${bulkCatMode}).`,
-      });
-      setBulkCatOpen(false);
-      setBulkCatIds([]);
-      await refreshTaxonomyLinks();
-    } catch (e) {
-      console.error("Bulk assign categories failed:", e);
-      toast({ variant: "destructive", title: "Error", description: "Bulk assign failed." });
-    } finally {
-      setBulkLoading(false);
-    }
-  };
 
   const handleBulkAssignTags = async () => {
     if (selectedIds.length === 0 || bulkTagIds.length === 0) return;
@@ -829,9 +809,13 @@ export function EventsTable() {
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     if (
-      !window.confirm(
-        `Delete ${selectedIds.length} event(s)? They will be soft-deleted (marked as deleted, recoverable).`
-      )
+      !(await confirm({
+        title: `Delete ${selectedIds.length} event(s)?`,
+        description:
+          "They are soft-deleted (marked as deleted) and stay recoverable.",
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
     )
       return;
     setBulkLoading(true);
@@ -2271,60 +2255,6 @@ export function EventsTable() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Popover
-              open={bulkCatOpen}
-              onOpenChange={(o) => {
-                setBulkCatOpen(o);
-                // Fresh state per open: unapplied picks + a sticky Replace mode
-                // must not ride into the next bulk action.
-                if (o) {
-                  setBulkCatIds([]);
-                  setBulkCatMode("add");
-                }
-              }}
-            >
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" disabled={bulkLoading}>
-                  Categories
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-80 space-y-3">
-                <p className="text-sm font-medium">
-                  Assign categories to {selectedIds.length} event(s)
-                </p>
-                <EventTaxonomySelect
-                  kind="category"
-                  options={catOptions}
-                  value={bulkCatIds}
-                  onChange={setBulkCatIds}
-                  onOptionCreated={(o) => setCatOptions((p) => [...p, o])}
-                />
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant={bulkCatMode === "add" ? "default" : "outline"}
-                    onClick={() => setBulkCatMode("add")}
-                  >
-                    Add
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={bulkCatMode === "replace" ? "default" : "outline"}
-                    onClick={() => setBulkCatMode("replace")}
-                  >
-                    Replace
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="ml-auto"
-                    onClick={handleBulkAssignCategories}
-                    disabled={bulkLoading || bulkCatIds.length === 0}
-                  >
-                    Apply
-                  </Button>
-                </div>
-              </PopoverContent>
-            </Popover>
             <Popover
               open={bulkTagOpen}
               onOpenChange={(o) => {

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "react-hot-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import { Edit, Trash2, Search } from "lucide-react";
 import type { BlogPost } from "@/types/blog.types";
 import { getBlogPosts, softDeleteBlogPost } from "@/lib/actions/blog-actions";
@@ -24,6 +25,7 @@ export function BlogTable() {
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
   const [query, setQuery] = useState("");
+  const confirm = useConfirm();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -43,8 +45,15 @@ export function BlogTable() {
       .finally(() => setIsLoading(false));
   }, []);
 
-  const handleDelete = (id: number) => {
-    if (!confirm("Delete this post?")) return;
+  const handleDelete = async (id: number) => {
+    if (
+      !(await confirm({
+        title: "Delete this post?",
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     startTransition(async () => {
       try {
         await softDeleteBlogPost(id);

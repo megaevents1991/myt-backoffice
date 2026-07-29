@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "react-hot-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import { Lock, LockOpen, Loader2 } from "lucide-react";
 import {
   getLockableFlights,
@@ -33,6 +34,7 @@ export function EventFlightLock({
   const [picking, setPicking] = useState(false);
   const [options, setOptions] = useState<LockableFlight[] | null>(null);
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   useEffect(() => setLocked(lockedFlightId ?? null), [lockedFlightId]);
 
@@ -69,9 +71,14 @@ export function EventFlightLock({
     });
   };
 
-  const unlock = () => {
+  const unlock = async () => {
     if (
-      !confirm("Unlock this package? Customers will see live flight search again.")
+      !(await confirm({
+        title: "Unlock this package?",
+        description: "Customers will see live flight search again.",
+        confirmLabel: "Unlock",
+        destructive: true,
+      }))
     ) {
       return;
     }
@@ -127,7 +134,7 @@ export function EventFlightLock({
                 setPicking(true);
                 return;
               }
-              if (isLocked) unlock();
+              if (isLocked) void unlock();
               else setPicking(false);
             }}
           />

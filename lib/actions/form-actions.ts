@@ -13,8 +13,12 @@ import type {
   FormLanguages,
   FormStatus,
   FormSummary,
+  FormTheme,
 } from "@/types/form.types";
 import { FORM_FIELD_TYPES } from "@/types/form.types";
+import { DEFAULT_ACCENT } from "@/lib/forms/brand";
+
+const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
 // `forms` isn't in the generated client types — same untyped-table pattern as
 // template-crud.ts / coupon-actions.ts.
@@ -26,7 +30,8 @@ const responsesTable = () => (supabase as any).from("form_responses");
 
 const FORM_COLUMNS =
   "id,slug,title_en,title_he,description_en,description_he,status,languages,default_lang," +
-  "allow_multiple,thank_you_en,thank_you_he,created_by,created_at,updated_at,is_deleted";
+  "allow_multiple,thank_you_en,thank_you_he,theme,accent_color,logo_url,cover_image_url," +
+  "created_by,created_at,updated_at,is_deleted";
 
 const FIELD_COLUMNS =
   "id,form_id,type,position,label_en,label_he,help_en,help_he," +
@@ -158,6 +163,10 @@ export type FormMetaInput = {
   languages: FormLanguages;
   default_lang: FormLang;
   allow_multiple: boolean;
+  theme: FormTheme;
+  accent_color: string;
+  logo_url: string | null;
+  cover_image_url: string | null;
 };
 
 /** Columns mapped one by one — never spread a client object into the row. */
@@ -195,6 +204,14 @@ export async function updateFormMeta(
     languages,
     default_lang: defaultLang,
     allow_multiple: Boolean(input.allow_multiple),
+    theme: input.theme === "light" ? "light" : "dark",
+    // The accent is written into inline styles on a public page — only ever
+    // store a hex value, never arbitrary text from the client.
+    accent_color: HEX_RE.test(input.accent_color ?? "")
+      ? input.accent_color
+      : DEFAULT_ACCENT,
+    logo_url: input.logo_url?.trim() || null,
+    cover_image_url: input.cover_image_url?.trim() || null,
     updated_at: new Date().toISOString(),
   };
 
@@ -354,6 +371,10 @@ export async function duplicateForm(id: number): Promise<Form> {
       languages: loaded.form.languages,
       default_lang: loaded.form.default_lang,
       allow_multiple: loaded.form.allow_multiple,
+      theme: loaded.form.theme,
+      accent_color: loaded.form.accent_color,
+      logo_url: loaded.form.logo_url,
+      cover_image_url: loaded.form.cover_image_url,
       created_by: actor.email ?? null,
     })
     .select(FORM_COLUMNS);

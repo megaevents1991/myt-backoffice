@@ -22,7 +22,12 @@ import {
 } from "@/components/ui/form";
 
 import { getCategory, updateCategory } from "@/lib/actions/category-actions";
+import {
+  getTemplateCategoryTagIds,
+  setTemplateCategoryTagIds,
+} from "@/lib/actions/event-taxonomy-actions";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
+import { CategoryTagsField } from "@/components/templates/CategoryTagsField";
 import { HeroImageField } from "@/components/templates/HeroImageField";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 
@@ -57,6 +62,9 @@ export default function EditCategoryPage({
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [membersRaw, setMembersRaw] = useState("");
+  // Which tags compose this category — the whole membership rule (see
+  // CategoryTagsField).
+  const [catTagIds, setCatTagIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [artImageUrl, setArtImageUrl] = useState("");
   const [artColorIndex, setArtColorIndex] = useState(0);
@@ -84,8 +92,9 @@ export default function EditCategoryPage({
   });
 
   useEffect(() => {
-    getCategory(templateId)
-      .then((c) => {
+    Promise.all([getCategory(templateId), getTemplateCategoryTagIds(templateId)])
+      .then(([c, tagIds]) => {
+        setCatTagIds(tagIds);
         form.reset({
           name: c.name,
           name_english: c.name_english ?? "",
@@ -107,6 +116,7 @@ export default function EditCategoryPage({
         setArtImageOffsetY(c.art_image_offset_y ?? 0);
         setMembersRaw((c.member_ids ?? []).join(", "));
         initialExtrasRef.current = JSON.stringify({
+          catTagIds: tagIds,
           imageUrl: c.image_url ?? "",
           artImageUrl: c.art_image_url ?? "",
           artColorIndex: c.art_color_index ?? 0,
@@ -126,6 +136,7 @@ export default function EditCategoryPage({
   const isDirty =
     form.formState.isDirty ||
     JSON.stringify({
+      catTagIds,
       imageUrl,
       artImageUrl,
       artColorIndex,
@@ -139,6 +150,7 @@ export default function EditCategoryPage({
 
   const resetExtras = () => {
     const e = JSON.parse(initialExtrasRef.current || "{}");
+    setCatTagIds(e.catTagIds ?? []);
     setImageUrl(e.imageUrl ?? "");
     setArtImageUrl(e.artImageUrl ?? "");
     setArtColorIndex(e.artColorIndex ?? 0);
@@ -173,6 +185,8 @@ export default function EditCategoryPage({
           link_url: values.link_url || null,
           member_ids: parseMemberIds(membersRaw),
         });
+        // Tags live on the taxonomy node behind the card (created on demand).
+        await setTemplateCategoryTagIds(templateId, catTagIds);
         toast.success("Category updated!");
         router.push("/templates/categories");
         router.refresh();
@@ -285,6 +299,8 @@ export default function EditCategoryPage({
               onChange={(e) => setMembersRaw(e.target.value)}
             />
           </div>
+
+          <CategoryTagsField value={catTagIds} onChange={setCatTagIds} />
 
           <FormField control={form.control} name="is_active" render={({ field }) => (
             <FormItem className="flex items-center gap-2 space-y-0">
