@@ -46,6 +46,9 @@ export default async function PortalCreditPage() {
               <p className="mt-1 text-sm text-muted-foreground">
                 נצבר {usd.format(credit.accruedUsd)} על {credit.paidTickets} כרטיסים ·
                 מומש {usd.format(credit.redeemedUsd)}
+                {credit.returnedUsd > 0 && (
+                  <> · חזר לצבירה {usd.format(credit.returnedUsd)}</>
+                )}
               </p>
             </div>
             <ConvertCredit balanceUsd={credit.balanceUsd} />
@@ -55,8 +58,10 @@ export default async function PortalCreditPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>המרות קודמות</CardTitle>
-          <CardDescription>כל המרה מפיקה קופון חד-פעמי ומאפסת את הצבירה.</CardDescription>
+          <CardTitle>הקופונים שיצרתם מהצבירה</CardTitle>
+          <CardDescription>
+            אם קופון נוצל רק בחלקו, ההפרש חוזר אוטומטית ליתרה שלכם.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {credit.history.length === 0 ? (
@@ -69,7 +74,8 @@ export default async function PortalCreditPage() {
                 <TableRow>
                   <TableHead>תאריך</TableHead>
                   <TableHead>קוד קופון</TableHead>
-                  <TableHead>סכום</TableHead>
+                  <TableHead>שווי</TableHead>
+                  <TableHead>סטטוס</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -80,6 +86,13 @@ export default async function PortalCreditPage() {
                     </TableCell>
                     <TableCell className="font-mono">{row.coupon_code}</TableCell>
                     <TableCell>{usd.format(Number(row.amount_usd))}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {row.outstanding
+                        ? "זמין לשימוש"
+                        : row.returned_usd > 0
+                          ? `נוצל ${usd.format(row.used_usd)} · ${usd.format(row.returned_usd)} חזרו לצבירה`
+                          : `נוצל במלואו`}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

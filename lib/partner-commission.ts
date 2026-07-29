@@ -102,16 +102,6 @@ export function creditAccrued(
   return countTickets(reservations.filter(isPaid)) * creditPerTicket
 }
 
-/**
- * What the partner can convert right now: everything earned, less everything
- * already converted. Derived every time rather than stored, so a failed or
- * repeated conversion can't leave a balance that disagrees with the ledger.
- * Clamped at 0 — a rate lowered after a conversion must not go negative.
- */
-export function creditBalance(accrued: number, redeemed: number): number {
-  return Math.max(0, round2(accrued - redeemed))
-}
-
 /** Money is compared and stored to the cent; floats drift past that. */
 export function round2(amount: number): number {
   return Math.round((amount + Number.EPSILON) * 100) / 100

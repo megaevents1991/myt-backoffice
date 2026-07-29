@@ -193,7 +193,10 @@ export default async function ViewPartnerPage({
               value={
                 credit.history.length === 0
                   ? "Never"
-                  : `${usdExact.format(credit.redeemedUsd)} across ${credit.history.length} coupons`
+                  : `${usdExact.format(credit.redeemedUsd)} across ${credit.history.length} coupons` +
+                    (credit.returnedUsd > 0
+                      ? ` · ${usdExact.format(credit.returnedUsd)} returned unspent`
+                      : "")
               }
             />
             <Detail
