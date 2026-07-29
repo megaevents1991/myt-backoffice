@@ -49,11 +49,35 @@ export function FlightAllocationsPanel({
     void reload();
   }, [reload]);
 
+  /**
+   * The most seats this event may hold: everything not spoken for by the other
+   * events, plus whatever it already holds itself. Typing past this is blocked
+   * at the input rather than bounced by the server after the fact.
+   */
+  const maxFor = (row: FlightAllocationRow): number =>
+    unallocated + (row.allocated_seats ?? 0);
+
   const save = (eventId: number, raw: string) => {
     const seats = Number.parseInt(raw, 10);
     if (!Number.isInteger(seats) || seats < 0) {
       toast.error("Seats must be a non-negative whole number");
       return;
+    }
+    const row = rows.find((r) => r.event_id === eventId);
+    if (row) {
+      const ceiling = maxFor(row);
+      if (seats > ceiling) {
+        toast.error(
+          `Only ${ceiling} seat(s) available on this flight — the rest are allocated to other events`,
+        );
+        return;
+      }
+      if (seats < row.consumed_seats) {
+        toast.error(
+          `This event has already sold ${row.consumed_seats} seat(s) — it cannot go below that`,
+        );
+        return;
+      }
     }
     startTransition(async () => {
       try {
@@ -109,7 +133,7 @@ export function FlightAllocationsPanel({
             <th className="w-32 py-1 text-right">ORG</th>
             <th className="w-20 py-1 text-right">TAKEN</th>
             <th className="w-24 py-1 text-right">AVAILABLE</th>
-            <th className="w-10" />
+            <th className="w-16" />
           </tr>
         </thead>
         <tbody>
@@ -141,7 +165,7 @@ export function FlightAllocationsPanel({
                       onClick={() =>
                         setDrafts((prev) => ({
                           ...prev,
-                          [row.event_id]: String(Math.max(unallocated, 0)),
+                          [row.event_id]: String(Math.max(maxFor(row), 0)),
                         }))
                       }
                     >
@@ -151,7 +175,10 @@ export function FlightAllocationsPanel({
                     <Input
                       className="h-7 text-right"
                       type="number"
-                      min={0}
+                      // Floor = seats this event has already sold; ceiling =
+                      // what is genuinely free on the flight.
+                      min={row.consumed_seats}
+                      max={maxFor(row)}
                       value={draft ?? String(allocated ?? 0)}
                       disabled={isPending}
                       onChange={(e) =>
@@ -186,17 +213,18 @@ export function FlightAllocationsPanel({
                     </span>
                   )}
                 </td>
-                <td className="py-1 text-right">
+                <td className="py-1 pl-6 text-right">
                   {allocated !== null && (
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7"
+                      className="h-7 w-7 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30"
                       title="Remove allocation"
                       disabled={isPending}
                       onClick={() => remove(row.event_id)}
                     >
                       <X className="h-4 w-4" />
+                      <span className="sr-only">Remove allocation</span>
                     </Button>
                   )}
                 </td>

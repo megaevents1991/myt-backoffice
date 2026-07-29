@@ -3,8 +3,9 @@
 import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "react-hot-toast";
-import { Lock } from "lucide-react";
+import { Lock, LockOpen, Loader2 } from "lucide-react";
 import {
   getLockableFlights,
   lockEventFlight,
@@ -30,21 +31,27 @@ export function EventFlightLock({
 }: EventFlightLockProps) {
   const [locked, setLocked] = useState<number | null>(lockedFlightId ?? null);
   const [picking, setPicking] = useState(false);
-  const [options, setOptions] = useState<LockableFlight[]>([]);
-  const [choice, setChoice] = useState("");
+  const [options, setOptions] = useState<LockableFlight[] | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => setLocked(lockedFlightId ?? null), [lockedFlightId]);
 
+  // Load the linked flights whenever the panel needs to name one — while
+  // picking, and while locked so the banner can describe the flight rather than
+  // just print its id.
   useEffect(() => {
-    if (!picking) return;
+    if (!picking && locked === null) return;
+    if (options !== null) return;
     getLockableFlights(eventId)
       .then(setOptions)
       .catch((error) => {
         console.error("Failed to load lockable flights:", error);
         toast.error("Could not load the linked flights");
+        setOptions([]);
       });
-  }, [picking, eventId]);
+  }, [picking, locked, options, eventId]);
+
+  const lockedFlight = options?.find((o) => o.id === locked) ?? null;
 
   const lock = (flightId: number) => {
     startTransition(async () => {
@@ -64,7 +71,7 @@ export function EventFlightLock({
 
   const unlock = () => {
     if (
-      !confirm("Unlock this package? Customers will see live Amadeus search again.")
+      !confirm("Unlock this package? Customers will see live flight search again.")
     ) {
       return;
     }
@@ -72,6 +79,7 @@ export function EventFlightLock({
       try {
         await unlockEventFlight(eventId);
         setLocked(null);
+        setPicking(false);
         toast.success("Package unlocked");
         onChanged?.();
       } catch (error) {
@@ -81,67 +89,106 @@ export function EventFlightLock({
     });
   };
 
-  return (
-    <div className="space-y-3">
-      <label className="flex items-center gap-3 text-sm">
-        <Switch
-          checked={locked !== null || picking}
-          disabled={isPending}
-          onCheckedChange={(checked) => {
-            if (!checked) {
-              if (locked !== null) unlock();
-              else setPicking(false);
-              return;
-            }
-            setPicking(true);
-          }}
-        />
-        <span className="font-medium">Locked package</span>
-        <span className="text-xs text-muted-foreground">
-          one offline flight, no Amadeus search
-        </span>
-      </label>
+  const isLocked = locked !== null;
 
-      {picking && locked === null && (
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            className="h-9 max-w-lg rounded-md border bg-background px-2 text-sm"
-            value={choice}
-            onChange={(e) => setChoice(e.target.value)}
-          >
-            <option value="">Choose a linked flight…</option>
-            {options.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-                {option.allocated_seats === null
-                  ? " — no allocation"
-                  : ` — ${option.allocated_seats} seats allocated`}
-              </option>
-            ))}
-          </select>
-          <Button size="sm" disabled={isPending || !choice} onClick={() => lock(Number(choice))}>
-            Lock
-          </Button>
-          {options.length === 0 && (
-            <span className="text-xs text-muted-foreground">
-              Link a flight to this event first.
-            </span>
+  return (
+    <div className="rounded-md border">
+      {/* header — the switch is the only control until a decision is needed */}
+      <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+        <div className="flex items-center gap-2">
+          {isLocked ? (
+            <Lock className="h-4 w-4 text-amber-600" />
+          ) : (
+            <LockOpen className="h-4 w-4 text-muted-foreground" />
+          )}
+          <span className="text-sm font-medium">Locked package</span>
+        </div>
+
+        {isLocked && (
+          <Badge className="border-amber-500/50 bg-amber-100 text-amber-900 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-200">
+            Flight #{locked}
+          </Badge>
+        )}
+
+        <span className="text-xs text-muted-foreground">
+          {isLocked
+            ? "Customers see only this flight — no live search."
+            : "Sell exactly one offline flight instead of a live flight search."}
+        </span>
+
+        <div className="ml-auto flex items-center gap-2">
+          {isPending && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+          <Switch
+            checked={isLocked || picking}
+            disabled={isPending}
+            aria-label="Locked package"
+            onCheckedChange={(checked) => {
+              if (checked) {
+                setPicking(true);
+                return;
+              }
+              if (isLocked) unlock();
+              else setPicking(false);
+            }}
+          />
+        </div>
+      </div>
+
+      {/* picker — only while choosing */}
+      {picking && !isLocked && (
+        <div className="border-t px-4 py-3">
+          {options === null ? (
+            <p className="text-sm text-muted-foreground">Loading linked flights…</p>
+          ) : options.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Link a flight to this event first — then you can lock the package to it.
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {options.map((option) => (
+                <li
+                  key={option.id}
+                  className="flex flex-wrap items-center gap-3 py-2 first:pt-0 last:pb-0"
+                >
+                  <span className="font-mono text-xs text-muted-foreground">
+                    #{option.id}
+                  </span>
+                  <span className="text-sm">{option.label}</span>
+                  <Badge variant="outline" className="text-xs">
+                    {option.allocated_seats === null
+                      ? "global pool"
+                      : `${option.allocated_seats} seats allocated`}
+                  </Badge>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="ml-auto"
+                    disabled={isPending}
+                    onClick={() => lock(option.id)}
+                  >
+                    Lock to this
+                  </Button>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}
 
-      {locked !== null && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-400 bg-amber-50 p-3 text-sm dark:bg-amber-950/20">
-          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-          <div>
-            <p className="font-medium">
-              Locked package — customers see only flight #{locked}. No Amadeus search.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Dates fixed to {defDateDepart ?? "—"} → {defDateReturn ?? "—"}. Takes
-              effect on the site only once the main-app release is live.
-            </p>
-          </div>
+      {/* locked detail */}
+      {isLocked && (
+        <div className="border-t bg-amber-50 px-4 py-3 dark:bg-amber-950/20">
+          <p className="text-sm">
+            {lockedFlight ? lockedFlight.label : `Flight #${locked}`}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Package dates fixed to {defDateDepart ?? "—"} → {defDateReturn ?? "—"}.
+            When this flight sells out the package shows as sold out — it never falls
+            back to a live search, which would change the price.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Takes effect on the site once the main-app release is live.
+          </p>
         </div>
       )}
     </div>

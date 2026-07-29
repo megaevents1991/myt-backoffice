@@ -50,6 +50,10 @@ export const FLIGHT_FIELDS: FlightField[] = [
   { key: "outbound_cabin_bags_included", label: "Out cabin bag", group: "Outbound", type: "boolean", bulkEditable: true },
   { key: "outbound_stop_airport", label: "Out stopover", group: "Outbound", type: "iata", bulkEditable: true },
   { key: "outbound_stop_duration", label: "Out stop duration", group: "Outbound", type: "duration", bulkEditable: true },
+  // Editable since the migration dropped the old `stops = 0` constraint. Without
+  // an input here a connecting flight can be given a stopover airport but still
+  // reports itself as direct to the customer.
+  { key: "stops", label: "Stops", group: "Outbound", type: "number", bulkEditable: true },
 
   { key: "inbound_flight_number", label: "In flight no.", group: "Inbound", type: "text", bulkEditable: false },
   { key: "inbound_departure_airport", label: "In from", group: "Inbound", type: "iata", bulkEditable: true },

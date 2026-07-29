@@ -895,9 +895,32 @@ export default function EventPage({
 
   // Passed to FlightsEditableTable so an inline/bulk edit made inside the event
   // page refreshes the same list the page already owns.
+  //
+  // Editing a flight's price also rewrites the event's base_flight_price (and,
+  // on a fresh link, its default dates) server-side. Those columns must be
+  // folded into BOTH the local event and the dirty baseline — otherwise the
+  // sticky Save bar appears the moment you touch a flight, offering to save a
+  // change the user never made.
   const reloadLinkedFlights = useCallback(() => {
     if (isNewEvent || !event?.id) return;
-    getFlightsByEventId(event.id).then(setLinkedFlights).catch(console.error);
+    const id = event.id;
+    getFlightsByEventId(id).then(setLinkedFlights).catch(console.error);
+    getEvent(id)
+      .then((fresh) => {
+        const serverOwned = {
+          base_flight_price: fresh.base_flight_price,
+          def_date_depart: fresh.def_date_depart,
+          def_date_return: fresh.def_date_return,
+        };
+        setEvent((prev) => (prev ? { ...prev, ...serverOwned } : prev));
+        if (initialEventRef.current) {
+          initialEventRef.current = JSON.stringify({
+            ...JSON.parse(initialEventRef.current),
+            ...serverOwned,
+          });
+        }
+      })
+      .catch(console.error);
   }, [event?.id, isNewEvent]);
 
   const getTicketAmount = (ticket: TixStockListing) => {
