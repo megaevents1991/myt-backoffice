@@ -37,6 +37,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { toast } from "react-hot-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import {
   ChevronDown,
   ChevronRight,
@@ -164,6 +165,7 @@ export function FlightsEditableTable({
   const [priceValue, setPriceValue] = useState<string>("");
   const [bulkEventId, setBulkEventId] = useState<string>("");
   const [isPending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   useEffect(() => setFlights(flightsProp), [flightsProp]);
 
@@ -214,12 +216,16 @@ export function FlightsEditableTable({
     });
   };
 
-  const runBulk = (
+  const runBulk = async (
     label: string,
     fn: () => Promise<number>,
     { confirmText }: { confirmText?: string } = {},
   ) => {
-    if (confirmText && !confirm(confirmText)) return;
+    if (
+      confirmText &&
+      !(await confirm({ description: confirmText, destructive: true }))
+    )
+      return;
     startTransition(async () => {
       try {
         const count = await fn();
@@ -233,8 +239,16 @@ export function FlightsEditableTable({
     });
   };
 
-  const handleDelete = (id: number) => {
-    if (!confirm("Are you sure you want to soft delete this flight?")) return;
+  const handleDelete = async (id: number) => {
+    if (
+      !(await confirm({
+        title: "Delete flight?",
+        description: "This soft deletes the flight. You can restore it later.",
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
     startTransition(async () => {
       try {
         await softDeleteOfflineFlight(id);
@@ -250,8 +264,15 @@ export function FlightsEditableTable({
     });
   };
 
-  const handleRestore = (id: number) => {
-    if (!confirm("Restore this flight to active status?")) return;
+  const handleRestore = async (id: number) => {
+    if (
+      !(await confirm({
+        title: "Restore flight?",
+        description: "The flight returns to active status.",
+        confirmLabel: "Restore",
+      }))
+    )
+      return;
     startTransition(async () => {
       try {
         await restoreOfflineFlight(id);
@@ -408,7 +429,14 @@ export function FlightsEditableTable({
         }}
         onBlur={(event) => {
           const next = fromInputValue(field, event.currentTarget.value);
-          if (String(next ?? "") !== String(raw ?? "")) {
+          // Compare against the ORIGINAL round-tripped through the same
+          // normalization, not against the raw column value. Postgres returns
+          // numeric as "1337.00" while the input yields 1337 — comparing those
+          // directly reports a change on every blur, so merely opening and
+          // closing the drawer wrote to the database and pushed a new base
+          // flight price onto every linked event.
+          const unchanged = fromInputValue(field, toInputValue(field, raw));
+          if (JSON.stringify(next) !== JSON.stringify(unchanged)) {
             commit(flight.id, field.key, next);
           }
           onDone();
