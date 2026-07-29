@@ -117,17 +117,10 @@ export async function duplicateEvent(id: number, opts?: { skipAudit?: boolean })
   if (insertError) throw insertError
   const created = newEventData[0] as Event
 
-  // Copy taxonomy links (categories + feed tags) to the duplicate. Tolerant:
-  // a link-copy failure must not break duplication itself.
+  // Copy the feed tags to the duplicate — that alone carries its categories
+  // too, since a category is composed of tags (event_category_links is a
+  // derived view). Tolerant: a copy failure must not break duplication itself.
   try {
-    const { data: catLinks, error: catErr } = await (supabase as any)
-      .from("event_category_links").select("category_id").eq("event_id", id);
-    if (catErr) throw catErr;
-    if (catLinks?.length) {
-      const { error } = await (supabase as any).from("event_category_links")
-        .insert(catLinks.map((r: { category_id: number }) => ({ event_id: created.id, category_id: r.category_id })));
-      if (error) throw error;
-    }
     const { data: tagLinks, error: tagErr } = await (supabase as any)
       .from("event_tag_links").select("tag_id").eq("event_id", id);
     if (tagErr) throw tagErr;

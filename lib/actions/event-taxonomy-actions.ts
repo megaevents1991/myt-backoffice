@@ -194,8 +194,9 @@ export async function softDeleteCategory(id: number): Promise<void> {
     .limit(1);
   if (kErr) throw kErr;
   if (kids && kids.length) throw new Error("Move or delete child categories first.");
-  // Remove event links first — otherwise ghost links resurface in Phase 2 reads.
-  const { error: linkErr } = await tbl("event_category_links").delete().eq("category_id", id);
+  // Drop the tag composition — event membership is derived from it, so this is
+  // what empties the category (event_category_links is a view now).
+  const { error: linkErr } = await tbl("event_category_tags").delete().eq("category_id", id);
   if (linkErr) throw linkErr;
   const { error } = await tbl("event_categories")
     .update({ is_deleted: true, is_active: false, updated_at: new Date().toISOString() })
@@ -233,7 +234,7 @@ export async function bulkSoftDeleteCategories(ids: number[]): Promise<number> {
     queue.push(...(childrenOf.get(id) ?? []));
   }
   const targets = [...all];
-  const { error: linkErr } = await tbl("event_category_links")
+  const { error: linkErr } = await tbl("event_category_tags")
     .delete()
     .in("category_id", targets);
   if (linkErr) throw linkErr;
@@ -316,6 +317,9 @@ export async function softDeleteTag(id: number): Promise<void> {
   // Remove event links first — otherwise ghost links resurface in Phase 2 reads.
   const { error: linkErr } = await tbl("event_tag_links").delete().eq("tag_id", id);
   if (linkErr) throw linkErr;
+  // ...and stop it composing any category (tags are what categories are made of).
+  const { error: catErr } = await tbl("event_category_tags").delete().eq("tag_id", id);
+  if (catErr) throw catErr;
   const { error } = await tbl("event_tags")
     .update({ is_deleted: true, is_active: false, updated_at: new Date().toISOString() })
     .eq("id", id);
@@ -328,39 +332,143 @@ export async function bulkSoftDeleteTags(ids: number[]): Promise<void> {
   if (!ids.length) return;
   const { error: linkErr } = await tbl("event_tag_links").delete().in("tag_id", ids);
   if (linkErr) throw linkErr;
+  const { error: catErr } = await tbl("event_category_tags").delete().in("tag_id", ids);
+  if (catErr) throw catErr;
   const { error } = await tbl("event_tags")
     .update({ is_deleted: true, is_active: false, updated_at: new Date().toISOString() })
     .in("id", ids);
   if (error) throw error;
 }
 
-/* ---------- links (single event) ---------- */
+/* ---------- category composition (which tags make up a category) ---------- */
 
-export async function getEventCategoryIds(eventId: number): Promise<number[]> {
+/**
+ * Tags compose categories, not the other way around: an event is never
+ * assigned to a category by hand. You tag the event; a category declares which
+ * tags it is made of, and every event carrying one of them is pulled in
+ * (`event_category_links` is a VIEW over this — see the migration).
+ */
+export async function getCategoryTagMap(): Promise<Record<number, number[]>> {
   await requireStaff();
-  const { data, error } = await tbl("event_category_links")
-    .select("category_id")
-    .eq("event_id", eventId);
+  const { data, error } = await tbl("event_category_tags").select("category_id,tag_id");
   if (error) throw error;
-  return (data ?? []).map((r: any) => r.category_id as number);
+  const map: Record<number, number[]> = {};
+  (data ?? []).forEach((r: any) => {
+    (map[r.category_id] ??= []).push(r.tag_id);
+  });
+  return map;
 }
+
+/**
+ * The Templates category card is the single editing surface (that's where the
+ * team builds the category page), so tags are chosen there — but they live on
+ * the taxonomy node the card points at, which is what the main app's /c/ pages
+ * and the feed's product_type read. A card that never had a node (built in
+ * Templates rather than auto-created from the taxonomy screen) gets one here,
+ * mirroring its name/image, hidden until someone flips it live.
+ */
+async function ensureNodeForCard(cardId: number): Promise<number> {
+  const { data: card, error } = await tbl("categories")
+    .select("id,name,name_english,slug,subtitle,image_url,link_url,event_category_id")
+    .eq("id", cardId)
+    .single();
+  if (error) throw error;
+  if (card.event_category_id) return card.event_category_id as number;
+
+  // Pair with an existing node before creating a twin: same name, or the node
+  // this card already links to via /c/<slug>.
+  const linkedSlug = /^\/c\//.test(card.link_url ?? "")
+    ? (card.link_url as string).replace(/\/+$/, "").split("/").pop()
+    : null;
+  let nodeId: number | null = null;
+  if (linkedSlug) {
+    const { data, error: sErr } = await tbl("event_categories")
+      .select("id")
+      .eq("slug", linkedSlug)
+      .eq("is_deleted", false)
+      .maybeSingle();
+    if (sErr) throw sErr;
+    nodeId = (data?.id as number) ?? null;
+  }
+  if (!nodeId) {
+    const existing = await findByName("event_categories", card.name);
+    nodeId = (existing?.id as number) ?? null;
+  }
+  if (!nodeId) {
+    const slug = await uniqueSlug(
+      "event_categories",
+      slugify(card.name_english || card.slug || card.name),
+    );
+    const { data, error: insErr } = await tbl("event_categories")
+      .insert({
+        name: card.name,
+        name_english: card.name_english ?? null,
+        parent_id: null,
+        image_url: card.image_url ?? null,
+        description: card.subtitle ?? null,
+        slug,
+        is_active: false, // the /c/ page opens only when the team says so
+        is_deleted: false,
+      })
+      .select()
+      .single();
+    if (insErr) throw insErr;
+    nodeId = data.id as number;
+  }
+
+  const { error: linkErr } = await tbl("categories")
+    .update({ event_category_id: nodeId })
+    .eq("id", cardId);
+  if (linkErr) throw linkErr;
+  return nodeId;
+}
+
+/** Tags composing the category behind a Templates card ([] when it has none). */
+export async function getTemplateCategoryTagIds(cardId: number): Promise<number[]> {
+  await requireStaff();
+  const { data: card, error } = await tbl("categories")
+    .select("event_category_id")
+    .eq("id", cardId)
+    .single();
+  if (error) throw error;
+  if (!card.event_category_id) return [];
+  const { data, error: tErr } = await tbl("event_category_tags")
+    .select("tag_id")
+    .eq("category_id", card.event_category_id);
+  if (tErr) throw tErr;
+  return (data ?? []).map((r: any) => r.tag_id as number);
+}
+
+/** Save the tag composition from the Templates category form. */
+export async function setTemplateCategoryTagIds(
+  cardId: number,
+  tagIds: number[],
+): Promise<void> {
+  await requireStaff();
+  const nodeId = await ensureNodeForCard(cardId);
+  await setCategoryTags(nodeId, tagIds);
+}
+
+export async function setCategoryTags(categoryId: number, tagIds: number[]): Promise<void> {
+  await requireStaff();
+  const { error: delErr } = await tbl("event_category_tags")
+    .delete()
+    .eq("category_id", categoryId);
+  if (delErr) throw delErr;
+  if (tagIds.length) {
+    const rows = tagIds.map((tag_id) => ({ category_id: categoryId, tag_id }));
+    const { error } = await tbl("event_category_tags").insert(rows);
+    if (error) throw error;
+  }
+}
+
+/* ---------- links (single event) ---------- */
 
 export async function getEventTagIds(eventId: number): Promise<number[]> {
   await requireStaff();
   const { data, error } = await tbl("event_tag_links").select("tag_id").eq("event_id", eventId);
   if (error) throw error;
   return (data ?? []).map((r: any) => r.tag_id as number);
-}
-
-export async function setEventCategories(eventId: number, categoryIds: number[]): Promise<void> {
-  await requireStaff();
-  const { error: delErr } = await tbl("event_category_links").delete().eq("event_id", eventId);
-  if (delErr) throw delErr;
-  if (categoryIds.length) {
-    const rows = categoryIds.map((category_id) => ({ event_id: eventId, category_id }));
-    const { error } = await tbl("event_category_links").insert(rows);
-    if (error) throw error;
-  }
 }
 
 export async function setEventTags(eventId: number, tagIds: number[]): Promise<void> {
@@ -376,32 +484,10 @@ export async function setEventTags(eventId: number, tagIds: number[]): Promise<v
 
 /* ---------- bulk ---------- */
 
-export async function bulkAssignCategories(
-  eventIds: number[],
-  categoryIds: number[],
-  mode: AssignMode
-): Promise<void> {
-  await requireStaff();
-  if (!eventIds.length) return;
-  if (mode === "replace") {
-    const { error } = await tbl("event_category_links").delete().in("event_id", eventIds);
-    if (error) throw error;
-  }
-  if (!categoryIds.length) return;
-  const rows = eventIds.flatMap((event_id) =>
-    categoryIds.map((category_id) => ({ event_id, category_id }))
-  );
-  // upsert ignores existing (event_id, category_id) pairs on "add".
-  const { error } = await tbl("event_category_links").upsert(rows, {
-    onConflict: "event_id,category_id",
-    ignoreDuplicates: true,
-  });
-  if (error) throw error;
-}
-
 /**
- * Full event→taxonomy link maps for the events table (taxonomy column +
- * filters). One round trip per link table; both tables are small.
+ * Full event→taxonomy maps for the events table (taxonomy column + filters).
+ * `cats` is READ-ONLY and derived — it comes from the event_category_links
+ * view, i.e. from what the event's tags earn it.
  */
 export async function getTaxonomyLinkMaps(): Promise<{
   cats: Record<number, number[]>;

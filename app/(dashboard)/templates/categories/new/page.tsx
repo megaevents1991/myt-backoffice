@@ -22,7 +22,9 @@ import {
 } from "@/components/ui/form";
 
 import { createCategory } from "@/lib/actions/category-actions";
+import { setTemplateCategoryTagIds } from "@/lib/actions/event-taxonomy-actions";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
+import { CategoryTagsField } from "@/components/templates/CategoryTagsField";
 import { HeroImageField } from "@/components/templates/HeroImageField";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 
@@ -57,6 +59,9 @@ export default function NewCategoryPage() {
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [membersRaw, setMembersRaw] = useState("");
+  // Which tags compose this category — the whole membership rule (see
+  // CategoryTagsField). Saved after the card itself exists.
+  const [catTagIds, setCatTagIds] = useState<number[]>([]);
   const [artImageUrl, setArtImageUrl] = useState("");
   const [artColorIndex, setArtColorIndex] = useState(0);
   const [artShapeIndex, setArtShapeIndex] = useState(0);
@@ -103,12 +108,13 @@ export default function NewCategoryPage() {
     setArtImageOffsetX(0);
     setArtImageOffsetY(0);
     setMembersRaw("");
+    setCatTagIds([]);
   };
 
   async function onSubmit(values: CategoryFormData) {
     startTransition(async () => {
       try {
-        await createCategory({
+        const created = await createCategory({
           slug: values.slug?.trim() || autoSlug(values.name_english, values.name),
           name: values.name,
           name_english: values.name_english || null,
@@ -128,6 +134,9 @@ export default function NewCategoryPage() {
           link_url: values.link_url || null,
           member_ids: parseMemberIds(membersRaw),
         });
+        // Tags live on the taxonomy node behind the card; the action creates
+        // that node on first save.
+        if (catTagIds.length) await setTemplateCategoryTagIds(created.id, catTagIds);
         toast.success("Category created!");
         router.push("/templates/categories");
         router.refresh();
@@ -240,6 +249,8 @@ export default function NewCategoryPage() {
             />
             <p className="text-sm text-muted-foreground">Listed on the category page.</p>
           </div>
+
+          <CategoryTagsField value={catTagIds} onChange={setCatTagIds} />
 
           <FormField control={form.control} name="is_active" render={({ field }) => (
             <FormItem className="flex items-center gap-2 space-y-0">

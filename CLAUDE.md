@@ -275,9 +275,21 @@ Via `NEXT_SECRET_HOTEL_SERVICE_URL` (currently `https://myt-kohl.vercel.app`):
 | `hotels`       | Reads                          | Writes (search cache)         |
 | `flights`      | Manages (offline inventory)    | Reads                         |
 | `event_categories`      | Creates/manages (category tree) | Reads (builds category pages) |
-| `event_category_links`  | Writes (event↔category)         | Reads                         |
+| `event_category_tags`   | Writes (which tags compose a category) | —                      |
+| `event_category_links`  | **VIEW** — derived, read-only   | Reads                         |
 | `event_tags`            | Creates/manages (feed tags)     | Reads (feed targeting)        |
 | `event_tag_links`       | Writes (event↔tag)              | Reads                         |
+
+**Tags compose categories — never the other way round (2026-07-29).** An event
+is only ever *tagged*; you never assign it to a category. A category declares
+which tags make it up (`event_category_tags`, edited on the **Templates →
+category** form — the same screen where the page is built, via
+`categories.event_category_id`), and every event carrying one of those tags is
+pulled in. `event_category_links` is now a VIEW over that join, so main keeps
+reading it unchanged for `/c/` pages and the feed's `product_type`. Membership
+is OR over the tags and does **not** inherit down the tree — a parent collects
+only what its own tags collect (main's `getEventsInCategory` defaults
+`includeDescendants: false` to match). An event can land in several categories.
 
 ### Shared Types — Keep In Sync!
 
