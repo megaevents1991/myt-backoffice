@@ -66,6 +66,10 @@
       "memory": 1024,
       "maxDuration": 60
     },
+    "app/api/admin-sync/[step]/route.ts": {
+      "memory": 1024,
+      "maxDuration": 800
+    },
     "app/api/cron/partnerMonthlyReport/route.ts": {
       "memory": 1024,
       "maxDuration": 300

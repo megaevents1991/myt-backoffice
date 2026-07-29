@@ -122,6 +122,10 @@ export type FlightSegment = {
   duration: string;
   checkBagsIncluded: boolean;
   flightNumber?: string;
+  // Offline flights only: the weight allowance behind checkBagsIncluded /
+  // cabinBagsIncluded, when the supplier gave us one.
+  checkedBagKg?: number | null;
+  cabinBagKg?: number | null;
 };
 
 export type OrderHotel = {

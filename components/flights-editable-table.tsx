@@ -74,8 +74,11 @@ import {
 } from "@/components/flight-field-groups";
 import type { FlightWritableColumn } from "@/lib/actions/offline-flight-columns";
 import { FlightAllocationsPanel } from "@/components/flight-allocations-panel";
+import { useTablePreferences } from "@/hooks/use-table-preferences";
 
-const COLUMNS_STORAGE_KEY = "flights-table-columns";
+// Preferences are stored per staff account (see useTablePreferences), so the
+// same column choice follows you between machines.
+const TABLE_KEY = "offline-flights";
 const DEADLINE_WARNING_DAYS = 7;
 
 export type FlightsEditableTableProps = {
@@ -149,8 +152,9 @@ export function FlightsEditableTable({
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [drawerFlight, setDrawerFlight] = useState<OfflineFlight | null>(null);
   const [editing, setEditing] = useState<{ id: number; key: string } | null>(null);
-  const [visibleColumns, setVisibleColumns] =
-    useState<FlightWritableColumn[]>(DEFAULT_VISIBLE_COLUMNS);
+  const [columnPrefs, setColumnPrefs] = useTablePreferences<{
+    visibleColumns: FlightWritableColumn[];
+  }>(TABLE_KEY, { visibleColumns: DEFAULT_VISIBLE_COLUMNS });
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
   const [events, setEvents] = useState<Pick<Event, "id" | "name" | "date">[]>([]);
@@ -164,21 +168,6 @@ export function FlightsEditableTable({
   useEffect(() => setFlights(flightsProp), [flightsProp]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(COLUMNS_STORAGE_KEY);
-    if (!stored) return;
-    try {
-      const parsed = JSON.parse(stored) as string[];
-      const valid = parsed.filter((key) =>
-        FLIGHT_FIELD_BY_KEY.has(key),
-      ) as FlightWritableColumn[];
-      if (valid.length > 0) setVisibleColumns(valid);
-    } catch {
-      // A corrupt entry is not worth failing the page over — keep the defaults.
-    }
-  }, []);
-
-  useEffect(() => {
     if (eventId) return;
     getActiveEvents()
       .then((data) =>
@@ -187,19 +176,22 @@ export function FlightsEditableTable({
       .catch((error) => console.error("Failed to load events:", error));
   }, [eventId]);
 
-  const persistColumns = (next: FlightWritableColumn[]) => {
-    setVisibleColumns(next);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(next));
-    }
-  };
+  // Guards against a stale stored key (a column that was renamed or dropped)
+  // silently blanking a table cell.
+  const visibleColumns = useMemo(
+    () =>
+      (columnPrefs.visibleColumns ?? DEFAULT_VISIBLE_COLUMNS).filter((key) =>
+        FLIGHT_FIELD_BY_KEY.has(key),
+      ),
+    [columnPrefs.visibleColumns],
+  );
 
   const toggleColumn = (key: FlightWritableColumn) => {
-    persistColumns(
-      visibleColumns.includes(key)
+    setColumnPrefs({
+      visibleColumns: visibleColumns.includes(key)
         ? visibleColumns.filter((c) => c !== key)
         : [...visibleColumns, key],
-    );
+    });
   };
 
   const commit = (id: number, key: string, value: unknown) => {
@@ -283,22 +275,41 @@ export function FlightsEditableTable({
     [visibleColumns],
   );
 
+  // Filter options come from the flights you can actually see. A series whose
+  // every flight was deleted must not linger in the dropdown — picking it would
+  // filter the table down to nothing.
+  const filterableFlights = useMemo(
+    () => (filters.showDeleted ? flights : flights.filter((f) => !f.is_deleted)),
+    [flights, filters.showDeleted],
+  );
+
   const seriesNames = useMemo(
     () =>
       Array.from(
         new Set(
-          flights
+          filterableFlights
             .map((f) => f.series_name)
             .filter((name): name is string => Boolean(name)),
         ),
       ).sort(),
-    [flights],
+    [filterableFlights],
   );
 
   const airlines = useMemo(
-    () => Array.from(new Set(flights.map((f) => f.airline_code))).sort(),
-    [flights],
+    () => Array.from(new Set(filterableFlights.map((f) => f.airline_code))).sort(),
+    [filterableFlights],
   );
+
+  // Deleting the last flight of a series (or of an airline) while its filter is
+  // active would otherwise leave you staring at an empty table with no clue why.
+  useEffect(() => {
+    setFilters((prev) => {
+      const next = { ...prev };
+      if (next.series && !seriesNames.includes(next.series)) next.series = "";
+      if (next.airline && !airlines.includes(next.airline)) next.airline = "";
+      return next.series === prev.series && next.airline === prev.airline ? prev : next;
+    });
+  }, [seriesNames, airlines]);
 
   const filtered = useMemo(() => {
     return flights.filter((flight) => {

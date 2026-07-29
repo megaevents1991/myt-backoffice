@@ -3,12 +3,22 @@
 // RTL-or-neutral runs, reverse the characters of RTL runs, then reverse run order.
 const RTL_CHAR = /[֐-׿]/;
 const LTR_CHAR = /[A-Za-z0-9€$₪]/; // Latin, digits, €, $, ₪
+// Digit group/decimal separators. Neutral on their own (a comma inside Hebrew
+// prose must stay neutral so the whole sentence reverses as one run), but
+// LTR when they sit BETWEEN digits — otherwise "$1,299" splits into
+// "$1" / "," / "299" and the run reversal renders it as "299,$1".
+const NUM_SEP = /[.,]/;
+const DIGIT = /[0-9]/;
 
 export function bidiVisual(text: string): string {
   if (!RTL_CHAR.test(text)) return text;
+  const chars = [...text];
   const runs: { ltr: boolean; s: string }[] = [];
-  for (const ch of text) {
-    const ltr = LTR_CHAR.test(ch);
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    const ltr =
+      LTR_CHAR.test(ch) ||
+      (NUM_SEP.test(ch) && DIGIT.test(chars[i - 1] ?? "") && DIGIT.test(chars[i + 1] ?? ""));
     const last = runs[runs.length - 1];
     if (last && last.ltr === ltr) last.s += ch;
     else runs.push({ ltr, s: ch });
@@ -29,7 +39,6 @@ const INK = "#FAFAF5";
 const MINT = "#5BFF95";
 const AQUA = "#45E2FF";
 const VIOLET = "#BBA1FF";
-const GOLD = "#FACC15";
 
 // Full brand neon palette (same order as the site's EVENT_ART_COLORS).
 export const BLOB_HEX = [
@@ -59,7 +68,7 @@ export const BLOB_SHAPES: { d: string; w: number; h: number }[] = [
   },
 ];
 
-const TAGLINE = "טיסות · מלון · כרטיסים — חבילה אחת";
+const TAGLINE = "טיסות, מלון, כרטיסים - הרכיבו בעצמכם";
 
 // The real "MegaΣvents." logotype (exact paths from myt-main's
 // components/ui/myt.tsx MYT component, exported from the Figma brand book) —
@@ -138,8 +147,13 @@ export type CreativeInput = {
   bgScale?: number | null;
 };
 
+// Package price is already a per-traveler figure (same number the site's event
+// card prints under "לנוסע · כולל טיסה, מלון וכרטיס") — so the pill says what
+// it is instead of "starting from". Thousands separator matches the site
+// (`toLocaleString("en-US")`); bidiVisual keeps "1,299" glued together.
 export function buildPriceText(mode: "package" | "ticket", price: number, currency: string): string {
-  return mode === "ticket" ? `כרטיסים החל מ-${currency}${price}` : `חבילות החל מ-${currency}${price}`;
+  const amount = `${currency}${price.toLocaleString("en-US")}`;
+  return mode === "ticket" ? `כרטיסים החל מ-${amount}` : `מחיר ממוצע לנוסע ${amount}`;
 }
 
 // Deterministic string → positive int (same technique as render.tsx's blob
@@ -316,8 +330,13 @@ export function MatchTemplate({
   const awayIsCutout = awayHasCutout ?? true;
   const bothCutouts = homeIsCutout && awayIsCutout;
 
-  const cardW = kind === "artist" ? (isSquare ? 520 : 330) : isSquare ? 380 : 250;
-  const cardH = kind === "artist" ? (isSquare ? 560 : 380) : isSquare ? 440 : 300;
+  // Subject cards are 1:1 — same aspect the feed itself wants, and the site's
+  // own event art. (Was 380×440 / 520×560 portrait.)
+  // Banner cards are a touch smaller than they were tall-wise: the pill now
+  // renders at full (square) size on the 628px-high banner too, so the middle
+  // band has less room to give.
+  const cardW = kind === "artist" ? (isSquare ? 520 : 300) : isSquare ? 380 : 235;
+  const cardH = cardW;
   // No-cutout circular avatar diameter — reuses the same footprint as the
   // card it replaces, so layouts don't jump between cutout/photo events.
   const avatarSize = isSingleSubject ? (isSquare ? 460 : 300) : cardW;
@@ -512,24 +531,27 @@ export function MatchTemplate({
       )}
 
       {/* footer: date/location + price pill */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: isSquare ? 48 : 22 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: isSquare ? 48 : 34 }}>
         <div style={{ display: "flex", alignItems: "center", fontSize: isSquare ? 34 : 23, color: "rgba(250,250,245,0.88)" }}>
           <div style={{ display: "flex" }}>{timeText ? `${dateText} | ${timeText}` : dateText}</div>
           {locationText ? (
             <div style={{ display: "flex", marginLeft: 18 }}>{`· ${bidiVisual(locationText)}`}</div>
           ) : null}
         </div>
+        {/* Price/CTA pill — brand mint (the site's CTA green), and the SAME
+            physical size on the banner as on the square so the two creatives
+            carry one button, not a big one and a small one. */}
         <div
           style={{
             display: "flex",
-            marginTop: isSquare ? 20 : 10,
-            padding: isSquare ? "14px 44px" : "8px 28px",
+            marginTop: isSquare ? 20 : 14,
+            padding: "14px 44px",
             borderRadius: 999,
-            backgroundColor: GOLD,
+            backgroundColor: MINT,
             color: CANVAS,
-            fontSize: isSquare ? 44 : 28,
+            fontSize: 44,
             fontWeight: 700,
-            boxShadow: `0 0 60px ${GOLD}55`,
+            boxShadow: `0 0 60px ${MINT}55`,
           }}
         >
           {bidiVisual(priceText)}

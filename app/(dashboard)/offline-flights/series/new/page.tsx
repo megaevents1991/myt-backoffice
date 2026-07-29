@@ -146,10 +146,64 @@ export default function NewOfflineFlightSeriesPage() {
   const [nights, setNights] = useState("3");
   const [rows, setRows] = useState<DraftRow[]>([]);
   const [isBuilding, setIsBuilding] = useState(false);
+  const [isValidatingAirline, setIsValidatingAirline] = useState(false);
+  const [airlineLookup, setAirlineLookup] = useState<{
+    airlineName: string;
+    airlineLogo: string;
+    icaoCode: string;
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const set = <K extends keyof Template>(key: K, value: Template[K]) =>
     setTemplate((prev) => ({ ...prev, [key]: value }));
+
+  /**
+   * Same lookup the single-flight form uses: one airline code in, the real name
+   * and logo out. Without it a series of 20 flights inherits whatever was typed
+   * by hand, and a wrong logo is then wrong on every card the customer sees.
+   */
+  const validateAirlineCode = async () => {
+    const airlineCode = template.airline_code.trim().toUpperCase();
+    if (!airlineCode) {
+      toast.error("Enter an airline code first");
+      return;
+    }
+
+    setIsValidatingAirline(true);
+    setAirlineLookup(null);
+    try {
+      const response = await fetch("/api/validate-airline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ airlineCode }),
+      });
+      const data = await response.json();
+
+      if (!data.success) {
+        toast.error(data.error || "Could not find that airline code");
+        return;
+      }
+
+      toast.success(`Found: ${data.airlineName}`);
+      setAirlineLookup({
+        airlineName: data.airlineName,
+        airlineLogo: data.airlineLogo,
+        icaoCode: data.icaoCode,
+      });
+      setTemplate((prev) => ({
+        ...prev,
+        airline_code: airlineCode,
+        metadata_iata: airlineCode,
+        metadata_name: data.airlineName,
+        metadata_logo: data.airlineLogo,
+      }));
+    } catch (error) {
+      console.error("Airline validation failed:", error);
+      toast.error("Could not reach the airline lookup");
+    } finally {
+      setIsValidatingAirline(false);
+    }
+  };
 
   const step1Valid =
     template.seriesName.trim() !== "" &&
@@ -321,11 +375,31 @@ export default function NewOfflineFlightSeriesPage() {
             </div>
             <div>
               <Label>Airline code</Label>
-              <Input
-                value={template.airline_code}
-                onChange={(e) => set("airline_code", e.target.value.toUpperCase())}
-                placeholder="LY"
-              />
+              <div className="flex gap-2">
+                <Input
+                  value={template.airline_code}
+                  onChange={(e) => {
+                    set("airline_code", e.target.value.toUpperCase());
+                    setAirlineLookup(null);
+                  }}
+                  placeholder="LY"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={isValidatingAirline || !template.airline_code.trim()}
+                  onClick={validateAirlineCode}
+                >
+                  {isValidatingAirline ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Look up"
+                  )}
+                </Button>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Fills the airline name and logo for every flight in the series.
+              </p>
             </div>
             <div>
               <Label>Airline name</Label>
@@ -350,6 +424,24 @@ export default function NewOfflineFlightSeriesPage() {
                 onChange={(e) => set("metadata_logo", e.target.value)}
                 placeholder="https://…"
               />
+            </div>
+            <div className="flex items-end">
+              {airlineLookup && (
+                <div className="flex w-full items-center gap-3 rounded-md border border-green-600/40 bg-green-50 p-2 text-xs dark:bg-green-950/20">
+                  {airlineLookup.airlineLogo && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={airlineLookup.airlineLogo}
+                      alt={airlineLookup.airlineName}
+                      className="h-8 w-auto object-contain"
+                    />
+                  )}
+                  <div>
+                    <p className="font-medium">{airlineLookup.airlineName}</p>
+                    <p className="text-muted-foreground">{airlineLookup.icaoCode}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>
