@@ -117,6 +117,10 @@ export async function getPortalStats(): Promise<PortalStats> {
   if (couponResult.error) {
     console.error("getPortalStats coupons:", JSON.stringify(couponResult.error));
   }
+  if (partnerResult.error) {
+    // Don't fail the page, but never let a broken lookup quietly become "$0".
+    console.error("getPortalStats partner:", JSON.stringify(partnerResult.error));
+  }
 
   const reservations = (resResult.data ?? []) as {
     id: number;

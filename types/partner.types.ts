@@ -14,7 +14,6 @@
 export const MARKETING_PARTNER_TYPES = ["agent", "affiliate"] as const
 export const PARTNER_TYPES = [...MARKETING_PARTNER_TYPES, "customer_refund"] as const
 
-export type MarketingPartnerType = (typeof MARKETING_PARTNER_TYPES)[number]
 export type PartnerType = (typeof PARTNER_TYPES)[number]
 
 export const PARTNER_TYPE_LABELS: Record<PartnerType, string> = {
@@ -37,7 +36,10 @@ export function isCustomerRefundPartner(partner: {
   name_hebrew?: string | null
 }): boolean {
   if (partner.type === "customer_refund") return true
-  if (partner.type === "agent" || partner.type === "affiliate") return false
+  // The name marker wins over the `type` column on purpose: `type` DEFAULTs to
+  // 'affiliate', and the main app inserts these rows without setting it — so a
+  // brand-new refund row arrives typed as an influencer. Trusting `type` here
+  // would let every row created after this deploy back into the partner lists.
   return partner.name_hebrew?.includes(CUSTOMER_REFUND_NAME_MARKER) ?? false
 }
 

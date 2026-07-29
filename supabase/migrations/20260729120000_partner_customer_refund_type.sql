@@ -20,18 +20,26 @@ update "public"."partners"
    set "type" = 'affiliate'
  where "type" is null;
 
--- 3. Constrain the column now that every row holds a known value. Kept
---    nullable so an insert that omits `type` still lands on the DB default
---    rather than failing.
-alter table "public"."partners" drop constraint if exists "partners_type_check";
-alter table "public"."partners"
-  add constraint "partners_type_check"
-  check ("type" is null or "type" in ('agent', 'affiliate', 'customer_refund'));
+-- 3. Normalize any other legacy value so every row holds one of the three
+--    known types and the app never meets a string it can't classify.
+update "public"."partners"
+   set "type" = 'affiliate'
+ where "type" is not null
+   and "type" not in ('agent', 'affiliate', 'customer_refund');
+
+-- Deliberately NO check constraint on `type`. The main app inserts into this
+-- table on every customer booking; a value outside the allow-list would make
+-- that insert fail, turning a data-hygiene rule into a lost booking. The
+-- backoffice validates the value in `toPartnerRow` (lib/actions/partner-actions.ts)
+-- instead. Add the constraint once the main app's writes are confirmed.
 
 comment on column "public"."partners"."type" is
   'agent = סוכן, affiliate = משפיען (both partner marketing, managed by staff); customer_refund = החזר ללקוח, opened automatically per booking by the main app — excluded from partner lists and dashboard counts.';
 
--- Every partner-facing query filters on this.
+-- Not yet a filter index: the column keeps its 'affiliate' DEFAULT and the main
+-- app still inserts refund rows without setting `type`, so classification lives
+-- in `isCustomerRefundPartner` (name marker). Once the main app writes
+-- 'customer_refund' itself, queries can filter on the column and use this.
 create index if not exists "partners_type_idx" on "public"."partners" ("type");
 
 -- The portal, the staff performance view and the monthly report cron all filter

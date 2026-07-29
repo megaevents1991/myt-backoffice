@@ -177,8 +177,9 @@ export async function bulkDeletePartners(trackingCodes: string[]) {
 
 /**
  * Copy a partner as a starting point for a new one. The copy is created
- * INACTIVE and keeps the source email: staff must edit it before it goes live,
- * and until then the monthly report cron won't pay or mail it twice.
+ * INACTIVE with a plus-addressed email and an unusable password, so staff must
+ * edit it before it goes live, and until then the monthly report cron won't pay
+ * or mail it twice.
  */
 export async function duplicatePartner(trackingCode: string, opts?: { skipAudit?: boolean }) {
   await requireStaff();
@@ -196,7 +197,9 @@ export async function duplicatePartner(trackingCode: string, opts?: { skipAudit?
     ...toPartnerRow({
       name_hebrew: source.name_hebrew,
       email: copyEmail(source.email, newTrackingCode),
-      password: "",
+      // Never copy the source password, and never leave it empty — the main app
+      // reads this table for affiliate auth. Staff set a real one before use.
+      password: `disabled-${crypto.randomUUID()}`,
       commission: source.commission,
       user_discount: source.user_discount,
       supplier_number: source.supplier_number,

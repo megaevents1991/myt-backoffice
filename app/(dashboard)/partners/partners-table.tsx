@@ -105,14 +105,25 @@ export function PartnersTable() {
     const active = partners.filter((p) => p.is_active);
     const activeType = (t: PartnerType) =>
       active.filter((p) => partnerType(p) === t).length;
+    // All counts are active-only, matching the default status filter — so
+    // "All" always equals agent + affiliate and never overstates the rows shown.
+    const marketing = active.filter((p) => partnerType(p) !== "customer_refund");
     return {
-      all: partners.filter((p) => partnerType(p) !== "customer_refund").length,
+      all: marketing.length,
       agent: activeType("agent"),
       affiliate: activeType("affiliate"),
       customer_refund: activeType("customer_refund"),
-      inactive: partners.length - active.length,
+      // Scoped to the type tab in view — the status filter is orthogonal to it,
+      // so a global number would contradict the rows on the refund tab.
+      inactive: partners.filter(
+        (p) =>
+          !p.is_active &&
+          (typeFilter === "all"
+            ? partnerType(p) !== "customer_refund"
+            : partnerType(p) === typeFilter)
+      ).length,
     };
-  }, [partners]);
+  }, [partners, typeFilter]);
 
   const selectedCodes = useMemo(
     () => Object.keys(rowSelection).filter((code) => rowSelection[code]),

@@ -1,5 +1,6 @@
 import { getSession } from "@/lib/auth/guards";
 import { getPortalReservations } from "@/lib/actions/portal-actions";
+import { isPaid } from "@/lib/partner-commission";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -58,11 +59,7 @@ export default async function PortalReservationsPage() {
               <TableCell>{reservation.customer_name || "—"}</TableCell>
               <TableCell>{reservation.event_title ?? reservation.event_id}</TableCell>
               <TableCell>
-                <Badge
-                  variant={
-                    reservation.status.toLowerCase() === "paid" ? "default" : "outline"
-                  }
-                >
+                <Badge variant={isPaid(reservation) ? "default" : "outline"}>
                   {reservation.status}
                 </Badge>
               </TableCell>
