@@ -24,10 +24,11 @@ import type { ReservationEventOrderInfo } from "@/types/reservation.types"
 /**
  * Everything the partner dashboard shows, in one round trip.
  *
- * Commission is deliberately split into two figures. The monthly report bills
- * the PREVIOUS calendar month, so a single "this month" number would show a
- * partner a total that is still growing and is not what they are about to be
- * paid — the kind of ambiguity that turns into an argument about money.
+ * Commission is split into pending and billed, both read from the same
+ * `billed_at` flag the monthly report stamps. A calendar-month figure would be
+ * computed on a different basis than the invoice, so the two would disagree
+ * whenever a reservation was paid after the report went out — the kind of
+ * ambiguity that turns into an argument about money.
  */
 
 export interface PortalCommission {
@@ -35,12 +36,14 @@ export interface PortalCommission {
   label: string
   /** Earned since 1 January, all paid reservations. */
   yearToDateUsd: number
-  /** Accrued in the current calendar month. Not billed yet. */
-  thisMonthUsd: number
-  /** The previous calendar month — what the monthly report pays out. */
-  lastMonthUsd: number
-  /** `YYYY-MM` of the month being paid, so the UI can name it. */
-  lastMonthKey: string
+  /**
+   * Owed but not yet in a monthly report — reservations that are paid and
+   * carry no `billed_at`. This is the same fact the report bills on, so the
+   * portal and the invoice cannot drift apart.
+   */
+  pendingUsd: number
+  /** Already included in a monthly report. */
+  billedUsd: number
 }
 
 export interface PortalClickedEvent {
@@ -70,11 +73,7 @@ type ReservationRow = {
   status: string | null
   user_shown_price: number | null
   event_order_info: ReservationEventOrderInfo | null
-}
-
-/** `YYYY-MM` for a date, in UTC — the same basis the monthly cron groups on. */
-function monthKey(date: Date): string {
-  return date.toISOString().slice(0, 7)
+  billed_at: string | null
 }
 
 export async function getPortalDashboard(): Promise<PortalDashboard> {
@@ -90,7 +89,7 @@ export async function getPortalDashboard(): Promise<PortalDashboard> {
         .maybeSingle(),
       supabase
         .from("reservations")
-        .select("created_at,status,user_shown_price,event_order_info")
+        .select("created_at,status,user_shown_price,event_order_info,billed_at")
         .eq("aff_partner_tracking_code", code),
       supabase
         .from("coupons")
@@ -125,12 +124,7 @@ export async function getPortalDashboard(): Promise<PortalDashboard> {
   const rows = (reservationsResult.data ?? []) as unknown as ReservationRow[]
   const paid = rows.filter(isPaid)
 
-  const now = new Date()
-  const thisMonth = monthKey(now)
-  const lastMonth = monthKey(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)))
-  const yearPrefix = String(now.getUTCFullYear())
-
-  const inMonth = (key: string) => paid.filter((r) => r.created_at?.startsWith(key))
+  const yearPrefix = String(new Date().getUTCFullYear())
 
   const coupons = (couponsResult.data ?? []) as unknown as {
     is_active: boolean
@@ -198,9 +192,18 @@ export async function getPortalDashboard(): Promise<PortalDashboard> {
           terms
         )
       ),
-      thisMonthUsd: round2(commissionForReservations(inMonth(thisMonth), terms)),
-      lastMonthUsd: round2(commissionForReservations(inMonth(lastMonth), terms)),
-      lastMonthKey: lastMonth,
+      pendingUsd: round2(
+        commissionForReservations(
+          paid.filter((r) => !r.billed_at),
+          terms
+        )
+      ),
+      billedUsd: round2(
+        commissionForReservations(
+          paid.filter((r) => !!r.billed_at),
+          terms
+        )
+      ),
     },
     activeCoupons: coupons.filter((c) => c.is_active).length,
     couponUses: coupons.reduce((sum, c) => sum + (c.times_used ?? 0), 0),

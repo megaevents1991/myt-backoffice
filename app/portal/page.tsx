@@ -25,18 +25,6 @@ const usdExact = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
-const HE_MONTHS = [
-  "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
-  "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
-];
-
-/** "2026-06" → "יוני 2026" */
-function monthLabel(key: string): string {
-  const [year, month] = key.split("-");
-  const index = Number(month) - 1;
-  return HE_MONTHS[index] ? `${HE_MONTHS[index]} ${year}` : key;
-}
-
 export default async function PortalDashboardPage() {
   const session = await getSession();
   const isPartner = !!session && PARTNER_ROLES.includes(session.role);
@@ -49,19 +37,20 @@ export default async function PortalDashboardPage() {
 
   const money = [
     {
-      label: `עמלה — ${monthLabel(dashboard.commission.lastMonthKey)}`,
-      value: usdExact.format(dashboard.commission.lastMonthUsd),
-      // Deliberately NOT "this is your invoice": this is computed live, while
-      // the monthly report is a snapshot taken on the 1st. A reservation paid
-      // after that date shows here but not on the invoice.
-      hint: "נצבר בחודש שעבר",
-      icon: Wallet,
+      label: "עמלה לתשלום",
+      value: usdExact.format(dashboard.commission.pendingUsd),
+      // Reads the same `billed_at` fact the monthly report bills on, so this
+      // figure and the invoice cannot disagree.
+      hint: "ייכלל בדוח החודשי הקרוב",
+      icon: CalendarClock,
     },
     {
-      label: "נצבר החודש",
-      value: usdExact.format(dashboard.commission.thisMonthUsd),
-      hint: "עדיין נצבר — טרם חויב",
-      icon: CalendarClock,
+      // NOT "paid to you": billed_at means it went out in a report, and the
+      // report itself asks the partner to invoice before payment.
+      label: "נכלל בדוחות",
+      value: usdExact.format(dashboard.commission.billedUsd),
+      hint: "כבר דווח לתשלום",
+      icon: Wallet,
     },
     {
       label: "עמלות מתחילת השנה",

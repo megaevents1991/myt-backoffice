@@ -73,9 +73,11 @@ export default async function ViewPartnerPage({
       icon: Wallet,
     },
     {
-      label: "This month",
-      value: usd.format(performance.currentMonthCommissionUsd),
-      hint: "Billed by the monthly report",
+      label: "Pending",
+      value: usd.format(performance.pendingCommissionUsd),
+      // Same `billed_at` fact the cron bills on and the partner's own portal
+      // shows, so staff arbitrating a dispute read the partner's number.
+      hint: "Not yet in a monthly report",
       icon: DollarSign,
     },
     {

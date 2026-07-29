@@ -4,11 +4,11 @@ import { requirePartner, requireStaff } from "@/lib/auth/guards"
 import { supabase } from "@/lib/supabase-server"
 import { logAudit } from "@/lib/audit"
 import {
-  PAID_STATUS,
   countTickets,
   creditAccrued,
   isPaid,
   round2,
+  wasSettledAtCutoff,
 } from "@/lib/partner-commission"
 import type { ReservationEventOrderInfo } from "@/types/reservation.types"
 
@@ -52,6 +52,9 @@ export interface PartnerCreditRedemption {
 type ReservationRow = {
   status: string | null
   event_order_info: ReservationEventOrderInfo | null
+  /** ISO timestamp; compared as a string against the accrual start date. */
+  created_at: string | null
+  billed_at: string | null
 }
 
 /** One row per coupon code, from the partner_coupon_usage RPC. */
@@ -145,12 +148,12 @@ async function loadCredit(trackingCode: string): Promise<PartnerCredit> {
   const [partnerResult, reservationsResult, redemptionsResult] = await Promise.all([
     supabase
       .from("partners")
-      .select("credit_per_ticket")
+      .select("credit_per_ticket,credit_accrual_start")
       .eq("partner_tracking_code", trackingCode)
       .maybeSingle(),
     supabase
       .from("reservations")
-      .select("status,event_order_info")
+      .select("status,event_order_info,created_at,billed_at")
       .eq("aff_partner_tracking_code", trackingCode),
     supabase
       .from("partner_credit_redemptions")
@@ -163,9 +166,31 @@ async function loadCredit(trackingCode: string): Promise<PartnerCredit> {
   if (reservationsResult.error) throw reservationsResult.error
   if (redemptionsResult.error) throw redemptionsResult.error
 
-  const creditPerTicket =
-    (partnerResult.data as { credit_per_ticket: number } | null)?.credit_per_ticket ?? 0
-  const reservations = (reservationsResult.data ?? []) as unknown as ReservationRow[]
+  const partnerRow = partnerResult.data as {
+    credit_per_ticket: number
+    credit_accrual_start: string | null
+  } | null
+  const creditPerTicket = partnerRow?.credit_per_ticket ?? 0
+  const accrualStart = partnerRow?.credit_accrual_start ?? null
+
+  // Only reservations from the partner's accrual start earn credit. Everything
+  // before it was settled outside this system, and without the cut-off, setting
+  // a rate would hand the partner their entire booking history as new credit.
+  //
+  // An old booking PAID after the cutoff was never part of the settlement, so
+  // it still earns credit — matching how commission treats it.
+  //
+  // The test is `wasSettledAtCutoff`, not "has billed_at": the cron stamps that
+  // same column every month, so a plain null-check would include such a booking
+  // today and silently drop it the moment it is billed, shrinking the partner's
+  // balance for no visible reason.
+  const allReservations = (reservationsResult.data ?? []) as unknown as ReservationRow[]
+  const reservations = accrualStart
+    ? allReservations.filter(
+        (r) =>
+          (r.created_at ?? "") >= accrualStart || !wasSettledAtCutoff(r.billed_at)
+      )
+    : allReservations
   const rawHistory = (redemptionsResult.data ?? []) as unknown as LedgerRow[]
 
   // Anyone can redeem a partner's coupon, so usage is NOT scoped to the

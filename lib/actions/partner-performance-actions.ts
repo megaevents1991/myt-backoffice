@@ -8,6 +8,7 @@ import {
   countReservationTickets,
   countTickets,
   isPaid,
+  round2,
   sumSales,
   type CommissionTerms,
 } from "@/lib/partner-commission"
@@ -50,8 +51,9 @@ export interface PartnerPerformance {
   paidTickets: number
   totalSalesUsd: number
   commissionUsd: number
-  /** Paid reservations in the calendar month the monthly cron will next bill. */
-  currentMonthCommissionUsd: number
+  /** Commission owed but not yet in a monthly report — the same `billed_at`
+   *  fact the cron bills on, so staff and the partner never see two numbers. */
+  pendingCommissionUsd: number
   activeCoupons: number
   couponUses: number
   monthly: PartnerMonthlyPoint[]
@@ -67,6 +69,7 @@ type ReservationRow = {
   status: string | null
   user_shown_price: number | null
   event_order_info: ReservationEventOrderInfo | null
+  billed_at: string | null
 }
 
 /**
@@ -89,7 +92,7 @@ export async function getPartnerPerformance(
     supabase
       .from("reservations")
       .select(
-        "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info"
+        "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info,billed_at"
       )
       .eq("aff_partner_tracking_code", trackingCode)
       .order("created_at", { ascending: false }),
@@ -145,7 +148,6 @@ export async function getPartnerPerformance(
 
   const paid = rows.filter(isPaid)
   const paidTickets = countTickets(paid)
-  const currentMonth = new Date().toISOString().slice(0, 7)
 
   const byMonth = new Map<string, PartnerMonthlyPoint>()
   for (const r of paid) {
@@ -189,7 +191,9 @@ export async function getPartnerPerformance(
     paidTickets,
     totalSalesUsd: sumSales(paid),
     commissionUsd: commissionForReservations(paid, terms),
-    currentMonthCommissionUsd: byMonth.get(currentMonth)?.commission_usd ?? 0,
+    pendingCommissionUsd: round2(
+      commissionForReservations(paid.filter((r) => !r.billed_at), terms)
+    ),
     activeCoupons: coupons.filter((c) => c.is_active).length,
     couponUses: coupons.reduce((sum, c) => sum + (c.times_used ?? 0), 0),
     monthly,

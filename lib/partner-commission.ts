@@ -102,6 +102,24 @@ export function creditAccrued(
   return countTickets(reservations.filter(isPaid)) * creditPerTicket
 }
 
+/**
+ * The instant historical partner balances were settled outside this system —
+ * commission and site credit both. Mirrors the backfill in migration
+ * 20260729220000, which stamps exactly this value into `billed_at`.
+ *
+ * That makes the two distinguishable: a reservation stamped AT the cutoff was
+ * part of the settlement, while anything the monthly cron stamps later was not.
+ */
+export const SETTLEMENT_CUTOFF_ISO = "2026-07-01T00:00:00+00:00"
+const SETTLEMENT_CUTOFF_MS = Date.parse(SETTLEMENT_CUTOFF_ISO)
+
+/** True when this reservation was part of the pre-cutoff settlement. */
+export function wasSettledAtCutoff(billedAt: string | null | undefined): boolean {
+  if (!billedAt) return false
+  const stamped = Date.parse(billedAt)
+  return Number.isFinite(stamped) && stamped <= SETTLEMENT_CUTOFF_MS
+}
+
 /** Money is compared and stored to the cent; floats drift past that. */
 export function round2(amount: number): number {
   return Math.round((amount + Number.EPSILON) * 100) / 100
