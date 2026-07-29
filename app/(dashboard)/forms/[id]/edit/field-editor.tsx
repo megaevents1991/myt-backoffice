@@ -34,7 +34,9 @@ import type {
   FormFieldDraft,
   FormFieldOption,
   FormFieldType,
+  FormLang,
 } from "@/types/form.types";
+import { adminLabel } from "@/lib/forms/i18n";
 import { BilingualInput } from "./bilingual-input";
 
 /**
@@ -56,6 +58,8 @@ type Props = {
   field: FormFieldDraft;
   index: number;
   total: number;
+  /** Languages the parent form offers — drives which tabs appear. */
+  langs: FormLang[];
   onChange: (patch: Partial<FormFieldDraft>) => void;
   onMove: (direction: -1 | 1) => void;
   onDuplicate: () => void;
@@ -66,12 +70,14 @@ export function FieldEditor({
   field,
   index,
   total,
+  langs,
   onChange,
   onMove,
   onDuplicate,
   onDelete,
 }: Props) {
-  const [open, setOpen] = useState(field.label_en.trim() === "");
+  const title = adminLabel(field.label_en, field.label_he);
+  const [open, setOpen] = useState(title === "");
 
   const isChoice = CHOICE_TYPES.includes(field.type);
   const isTextual = TEXTUAL_TYPES.includes(field.type);
@@ -117,7 +123,7 @@ export function FieldEditor({
             <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
           )}
           <span className="truncate text-sm font-medium">
-            {field.label_en.trim() || <span className="text-muted-foreground">Untitled question</span>}
+            {title || <span className="text-muted-foreground">Untitled question</span>}
           </span>
           <Badge variant="secondary" className="shrink-0 text-[10px]">
             {FIELD_TYPE_LABELS[field.type]}
@@ -205,6 +211,7 @@ export function FieldEditor({
           <BilingualInput
             label={isSection ? "Section title" : "Question"}
             required
+            langs={langs}
             valueEn={field.label_en}
             valueHe={field.label_he ?? ""}
             onChangeEn={(value) => onChange({ label_en: value })}
@@ -213,6 +220,7 @@ export function FieldEditor({
 
           <BilingualInput
             label="Helper text"
+            langs={langs}
             valueEn={field.help_en ?? ""}
             valueHe={field.help_he ?? ""}
             onChangeEn={(value) => onChange({ help_en: value || null })}
@@ -222,6 +230,7 @@ export function FieldEditor({
           {isTextual && (
             <BilingualInput
               label="Placeholder"
+              langs={langs}
               valueEn={field.placeholder_en ?? ""}
               valueHe={field.placeholder_he ?? ""}
               onChangeEn={(value) => onChange({ placeholder_en: value || null })}
@@ -234,28 +243,39 @@ export function FieldEditor({
               <Label className="text-xs font-medium text-muted-foreground">Options</Label>
               {field.options.map((option, optionIndex) => (
                 <div key={optionIndex} className="flex items-center gap-2">
-                  <Input
-                    className="flex-1"
-                    placeholder="Option (English)"
-                    value={option.label_en}
-                    onChange={(e) => setOption(optionIndex, { label_en: e.target.value })}
-                    onBlur={() => {
-                      if (!option.value) {
-                        setOption(optionIndex, {
-                          value: optionValueFrom(option.label_en, optionIndex),
-                        });
+                  {langs.includes("en") && (
+                    <Input
+                      className="flex-1"
+                      placeholder="Option (English)"
+                      value={option.label_en}
+                      onChange={(e) => setOption(optionIndex, { label_en: e.target.value })}
+                      onBlur={() => {
+                        if (!option.value) {
+                          setOption(optionIndex, {
+                            value: optionValueFrom(option.label_en, optionIndex),
+                          });
+                        }
+                      }}
+                    />
+                  )}
+                  {langs.includes("he") && (
+                    <Input
+                      className="flex-1 text-right"
+                      dir="rtl"
+                      placeholder="אפשרות (עברית)"
+                      value={option.label_he ?? ""}
+                      onChange={(e) =>
+                        setOption(optionIndex, { label_he: e.target.value || null })
                       }
-                    }}
-                  />
-                  <Input
-                    className="flex-1 text-right"
-                    dir="rtl"
-                    placeholder="אפשרות (עברית)"
-                    value={option.label_he ?? ""}
-                    onChange={(e) =>
-                      setOption(optionIndex, { label_he: e.target.value || null })
-                    }
-                  />
+                      onBlur={() => {
+                        if (!option.value) {
+                          setOption(optionIndex, {
+                            value: optionValueFrom(option.label_en, optionIndex),
+                          });
+                        }
+                      }}
+                    />
+                  )}
                   <Button
                     type="button"
                     variant="ghost"

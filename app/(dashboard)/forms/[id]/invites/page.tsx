@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getForm } from "@/lib/actions/form-actions";
 import { getFormInvites } from "@/lib/actions/form-invite-actions";
+import { adminLabel } from "@/lib/forms/i18n";
 import { InvitesClient } from "./invites-client";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,9 @@ export default async function FormInvitesPage({
             Back to the form
           </Link>
         </Button>
-        <h1 className="text-2xl font-bold tracking-tight">Send “{loaded.form.title_en}”</h1>
+        <h1 className="text-2xl font-bold tracking-tight">
+          Send “{adminLabel(loaded.form.title_en, loaded.form.title_he)}”
+        </h1>
         <p className="text-muted-foreground">
           Each recipient gets their own link, so you can see who opened it and who
           filled it in. The shared public link stays available too.

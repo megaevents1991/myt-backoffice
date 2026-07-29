@@ -29,13 +29,16 @@ import {
   CHOICE_TYPES,
   FIELD_TYPE_LABELS,
   FORM_FIELD_TYPES,
+  enabledLangs,
 } from "@/types/form.types";
+import { adminLabel, hasAnyLang } from "@/lib/forms/i18n";
 import type {
   Form,
   FormField,
   FormFieldDraft,
   FormFieldType,
   FormLang,
+  FormLanguages,
   FormStatus,
 } from "@/types/form.types";
 import { FieldEditor } from "./field-editor";
@@ -82,7 +85,12 @@ function withOptionValues(field: FormFieldDraft): FormFieldDraft {
   return {
     ...field,
     options: field.options
-      .filter((option) => option.label_en.trim() !== "" || option.value !== "")
+      .filter(
+        (option) =>
+          option.label_en.trim() !== "" ||
+          (option.label_he ?? "").trim() !== "" ||
+          option.value !== "",
+      )
       .map((option, index) => ({
         ...option,
         value:
@@ -115,14 +123,21 @@ export function FormBuilder({ form, initialFields }: Props) {
   const [thankYouEn, setThankYouEn] = useState(form.thank_you_en ?? "");
   const [thankYouHe, setThankYouHe] = useState(form.thank_you_he ?? "");
   const [slug, setSlug] = useState(form.slug);
+  const [languages, setLanguages] = useState<FormLanguages>(form.languages ?? "both");
   const [defaultLang, setDefaultLang] = useState<FormLang>(form.default_lang);
   const [allowMultiple, setAllowMultiple] = useState(form.allow_multiple);
+
+  // Which language tabs the builder offers, and what the fill page can render.
+  const langs = enabledLangs(languages);
 
   const [fields, setFields] = useState<FormFieldDraft[]>(
     initialFields.map((field) => ({ ...field })),
   );
   const [previewLang, setPreviewLang] = useState<FormLang>(form.default_lang);
   const [dirty, setDirty] = useState(false);
+
+  // Switching the form to one language must not leave the preview on the other.
+  const activePreviewLang = langs.includes(previewLang) ? previewLang : langs[0];
 
   // Next draft field gets the next negative id; the server treats those as inserts.
   const nextDraftId = useRef(-1);
@@ -189,6 +204,7 @@ export function FormBuilder({ form, initialFields }: Props) {
         title_he: titleHe || null,
         description_en: descriptionEn || null,
         description_he: descriptionHe || null,
+        languages,
         default_lang: defaultLang,
         thank_you_en: thankYouEn || null,
         thank_you_he: thankYouHe || null,
@@ -211,6 +227,7 @@ export function FormBuilder({ form, initialFields }: Props) {
       titleHe,
       descriptionEn,
       descriptionHe,
+      languages,
       defaultLang,
       thankYouEn,
       thankYouHe,
@@ -220,14 +237,18 @@ export function FormBuilder({ form, initialFields }: Props) {
   );
 
   function handleSave() {
-    if (!titleEn.trim()) {
-      toast({ title: "An English title is required", variant: "destructive" });
+    // Either language will do — a Hebrew-only form is legitimate, and the
+    // renderer falls back to whichever string was filled in.
+    if (!hasAnyLang(titleEn, titleHe)) {
+      toast({ title: "Give the form a title", variant: "destructive" });
       return;
     }
-    const missingLabel = fields.findIndex((field) => !field.label_en.trim());
+    const missingLabel = fields.findIndex(
+      (field) => !hasAnyLang(field.label_en, field.label_he),
+    );
     if (missingLabel >= 0) {
       toast({
-        title: `Question ${missingLabel + 1} has no English text`,
+        title: `Question ${missingLabel + 1} has no text yet`,
         variant: "destructive",
       });
       return;
@@ -243,6 +264,7 @@ export function FormBuilder({ form, initialFields }: Props) {
           thank_you_en: thankYouEn || null,
           thank_you_he: thankYouHe || null,
           slug,
+          languages,
           default_lang: defaultLang,
           allow_multiple: allowMultiple,
         });
@@ -293,7 +315,7 @@ export function FormBuilder({ form, initialFields }: Props) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="truncate text-2xl font-bold tracking-tight">
-            {titleEn || "Untitled form"}
+            {adminLabel(titleEn, titleHe) || "Untitled form"}
           </h1>
           <p className="text-sm text-muted-foreground">
             /f/{slug}
@@ -352,6 +374,7 @@ export function FormBuilder({ form, initialFields }: Props) {
             <BilingualInput
               label="Form title"
               required
+              langs={langs}
               valueEn={titleEn}
               valueHe={titleHe}
               onChangeEn={touch(setTitleEn)}
@@ -360,6 +383,7 @@ export function FormBuilder({ form, initialFields }: Props) {
             <BilingualInput
               label="Description"
               multiline
+              langs={langs}
               valueEn={descriptionEn}
               valueHe={descriptionHe}
               onChangeEn={touch(setDescriptionEn)}
@@ -369,6 +393,7 @@ export function FormBuilder({ form, initialFields }: Props) {
               label="Thank-you message"
               multiline
               rows={2}
+              langs={langs}
               valueEn={thankYouEn}
               valueHe={thankYouHe}
               onChangeEn={touch(setThankYouEn)}
@@ -387,7 +412,36 @@ export function FormBuilder({ form, initialFields }: Props) {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium text-muted-foreground">
-                  Default language
+                  Form language
+                </Label>
+                <Select
+                  value={languages}
+                  onValueChange={(next) => {
+                    const value = next as FormLanguages;
+                    touch(setLanguages)(value);
+                    // A single-language form opens in that language.
+                    if (value !== "both") {
+                      setDefaultLang(value);
+                      setPreviewLang(value);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="en">English only</SelectItem>
+                    <SelectItem value="he">עברית בלבד</SelectItem>
+                    <SelectItem value="both">Both — client can switch</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {languages === "both" && (
+              <div className="space-y-1.5 sm:max-w-[50%]">
+                <Label className="text-xs font-medium text-muted-foreground">
+                  Opens in
                 </Label>
                 <Select
                   value={defaultLang}
@@ -401,8 +455,12 @@ export function FormBuilder({ form, initialFields }: Props) {
                     <SelectItem value="he">עברית</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  The client sees this first and can switch with a button. Invite
+                  emails open in the recipient&apos;s own language.
+                </p>
               </div>
-            </div>
+            )}
 
             <div className="flex items-center gap-2">
               <Switch
@@ -423,6 +481,7 @@ export function FormBuilder({ form, initialFields }: Props) {
                 field={field}
                 index={index}
                 total={fields.length}
+                langs={langs}
                 onChange={(patch) => updateField(index, patch)}
                 onMove={(direction) => moveField(index, direction)}
                 onDuplicate={() => duplicateField(index)}
@@ -460,30 +519,32 @@ export function FormBuilder({ form, initialFields }: Props) {
               <span className="text-sm font-medium">Preview</span>
               <div className="flex items-center gap-2">
                 <Badge variant={status === "live" ? "default" : "secondary"}>{status}</Badge>
-                <div className="flex overflow-hidden rounded-md border text-xs">
-                  {(["en", "he"] as const).map((code) => (
-                    <button
-                      key={code}
-                      type="button"
-                      onClick={() => setPreviewLang(code)}
-                      className={cn(
-                        "px-2 py-1",
-                        previewLang === code
-                          ? "bg-primary text-primary-foreground"
-                          : "hover:bg-accent",
-                      )}
-                    >
-                      {code === "en" ? "EN" : "עב"}
-                    </button>
-                  ))}
-                </div>
+                {langs.length > 1 && (
+                  <div className="flex overflow-hidden rounded-md border text-xs">
+                    {langs.map((code) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => setPreviewLang(code)}
+                        className={cn(
+                          "px-2 py-1",
+                          activePreviewLang === code
+                            ? "bg-primary text-primary-foreground"
+                            : "hover:bg-accent",
+                        )}
+                      >
+                        {code === "en" ? "EN" : "עב"}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
               <FormRenderer
-                key={previewLang}
+                key={activePreviewLang}
                 payload={previewPayload}
-                initialLang={previewLang}
+                initialLang={activePreviewLang}
                 preview
                 showLangToggle={false}
               />

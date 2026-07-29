@@ -7,6 +7,7 @@ import { requireStaff } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import { appOrigin, sendMail } from "@/lib/email";
 import { pickLang } from "@/lib/forms/i18n";
+import { resolveLang } from "@/types/form.types";
 import type { FormInvite, FormLang } from "@/types/form.types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -118,7 +119,7 @@ export async function createAndSendInvites(
   await requireStaff();
 
   const { data: form, error: formError } = await formsTable()
-    .select("id,title_en,title_he,status,is_deleted")
+    .select("id,title_en,title_he,status,is_deleted,languages,default_lang")
     .eq("id", formId)
     .maybeSingle();
 
@@ -132,7 +133,12 @@ export async function createAndSendInvites(
     .map((r) => ({
       name: r.name?.trim() || null,
       email: r.email?.trim().toLowerCase() ?? "",
-      lang: (r.lang === "he" ? "he" : "en") as FormLang,
+      // A single-language form can only be sent in that language.
+      lang: resolveLang(
+        form.languages,
+        r.lang === "he" ? "he" : "en",
+        (form.default_lang as FormLang) ?? "en",
+      ),
     }))
     .filter((r) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email))
     .slice(0, MAX_RECIPIENTS_PER_SEND);

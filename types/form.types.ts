@@ -37,6 +37,28 @@ export const TEXTUAL_TYPES: FormFieldType[] = [
 export type FormLang = "en" | "he";
 export type FormStatus = "draft" | "live" | "closed";
 
+/**
+ * Which languages a form actually offers. `both` shows one language at a time
+ * with an EN/עב toggle, starting at `default_lang`; `en` / `he` show that
+ * language only, with no toggle.
+ */
+export type FormLanguages = FormLang | "both";
+
+/** The languages a form is authored in — drives which tabs the builder shows. */
+export function enabledLangs(languages: FormLanguages): FormLang[] {
+  return languages === "both" ? ["en", "he"] : [languages];
+}
+
+/** Clamp a requested language to what the form actually offers. */
+export function resolveLang(
+  languages: FormLanguages,
+  requested: FormLang | null | undefined,
+  fallback: FormLang,
+): FormLang {
+  if (languages !== "both") return languages;
+  return requested ?? fallback;
+}
+
 export type FormFieldOption = {
   value: string;
   label_en: string;
@@ -79,6 +101,7 @@ export type Form = {
   description_en: string | null;
   description_he: string | null;
   status: FormStatus;
+  languages: FormLanguages;
   default_lang: FormLang;
   allow_multiple: boolean;
   thank_you_en: string | null;
@@ -145,6 +168,7 @@ export type PublicForm = {
     | "title_he"
     | "description_en"
     | "description_he"
+    | "languages"
     | "default_lang"
     | "thank_you_en"
     | "thank_you_he"

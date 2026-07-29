@@ -164,7 +164,10 @@ export function formatAnswer(
   const labelOf = (v: string) => {
     const option = field.options.find((o) => o.value === v);
     if (!option) return v;
-    return (lang === "he" ? option.label_he : option.label_en) || option.label_en || v;
+    // Falls back across languages — an option may be authored in Hebrew only.
+    const preferred = lang === "he" ? option.label_he : option.label_en;
+    const other = lang === "he" ? option.label_en : option.label_he;
+    return preferred?.trim() || other?.trim() || v;
   };
 
   if (field.type === "yes_no") {

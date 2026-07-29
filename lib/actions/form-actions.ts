@@ -10,6 +10,7 @@ import type {
   FormFieldDraft,
   FormFieldType,
   FormLang,
+  FormLanguages,
   FormStatus,
   FormSummary,
 } from "@/types/form.types";
@@ -24,7 +25,7 @@ const responsesTable = () => (supabase as any).from("form_responses");
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 const FORM_COLUMNS =
-  "id,slug,title_en,title_he,description_en,description_he,status,default_lang," +
+  "id,slug,title_en,title_he,description_en,description_he,status,languages,default_lang," +
   "allow_multiple,thank_you_en,thank_you_he,created_by,created_at,updated_at,is_deleted";
 
 const FIELD_COLUMNS =
@@ -128,6 +129,7 @@ export async function createForm(): Promise<Form> {
     title_en: "Untitled form",
     title_he: null,
     status: "draft" as FormStatus,
+    languages: "both" as FormLanguages,
     default_lang: "en" as FormLang,
     allow_multiple: false,
     created_by: actor.email ?? null,
@@ -153,6 +155,7 @@ export type FormMetaInput = {
   thank_you_en: string | null;
   thank_you_he: string | null;
   slug: string;
+  languages: FormLanguages;
   default_lang: FormLang;
   allow_multiple: boolean;
 };
@@ -164,21 +167,33 @@ export async function updateFormMeta(
 ): Promise<Form> {
   await requireStaff();
 
-  const title = input.title_en?.trim();
-  if (!title) throw new Error("English title is required");
+  // A form may be authored in Hebrew only — require one language, not English.
+  const titleEn = input.title_en?.trim() ?? "";
+  const titleHe = input.title_he?.trim() ?? "";
+  if (!titleEn && !titleHe) throw new Error("Add a title in English or Hebrew");
 
-  const requestedSlug = await slugify(input.slug || title);
+  const languages: FormLanguages = (["en", "he", "both"] as const).includes(
+    input.languages,
+  )
+    ? input.languages
+    : "both";
+  // A single-language form has nothing to toggle to.
+  const defaultLang: FormLang =
+    languages === "both" ? (input.default_lang === "he" ? "he" : "en") : languages;
+
+  const requestedSlug = await slugify(input.slug || titleEn || titleHe);
   const slug = await uniqueSlug(requestedSlug, id);
 
   const patch = {
-    title_en: title,
+    title_en: titleEn,
     title_he: input.title_he?.trim() || null,
     description_en: input.description_en?.trim() || null,
     description_he: input.description_he?.trim() || null,
     thank_you_en: input.thank_you_en?.trim() || null,
     thank_you_he: input.thank_you_he?.trim() || null,
     slug,
-    default_lang: input.default_lang === "he" ? "he" : "en",
+    languages,
+    default_lang: defaultLang,
     allow_multiple: Boolean(input.allow_multiple),
     updated_at: new Date().toISOString(),
   };
@@ -336,6 +351,7 @@ export async function duplicateForm(id: number): Promise<Form> {
       thank_you_en: loaded.form.thank_you_en,
       thank_you_he: loaded.form.thank_you_he,
       status: "draft",
+      languages: loaded.form.languages,
       default_lang: loaded.form.default_lang,
       allow_multiple: loaded.form.allow_multiple,
       created_by: actor.email ?? null,

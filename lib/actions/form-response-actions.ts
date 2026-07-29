@@ -7,6 +7,7 @@ import { requireStaff } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import { validateAnswers } from "@/lib/forms/validation";
 import { strings } from "@/lib/forms/i18n";
+import { resolveLang } from "@/types/form.types";
 import type {
   AnswerMap,
   FormField,
@@ -23,7 +24,7 @@ const responsesTable = () => (supabase as any).from("form_responses");
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 const PUBLIC_FORM_COLUMNS =
-  "id,slug,title_en,title_he,description_en,description_he,default_lang," +
+  "id,slug,title_en,title_he,description_en,description_he,languages,default_lang," +
   "thank_you_en,thank_you_he,status,allow_multiple";
 
 const FIELD_COLUMNS =
@@ -97,7 +98,7 @@ export async function getPublicFormBySlug(slug: string): Promise<PublicFormLoad>
     inviteToken: null,
     prefill: {},
     recipientName: null,
-    lang: (data.default_lang as FormLang) ?? "en",
+    lang: resolveLang(data.languages, null, (data.default_lang as FormLang) ?? "en"),
   };
 }
 
@@ -125,7 +126,13 @@ export async function getPublicFormByToken(token: string): Promise<PublicFormLoa
 
   if (formError || !form) return { state: "not_found" };
 
-  const lang = (invite.lang as FormLang) ?? (form.default_lang as FormLang) ?? "en";
+  // A single-language form ignores the invite's language — there is nothing else
+  // to render it in.
+  const lang = resolveLang(
+    form.languages,
+    invite.lang as FormLang | null,
+    (form.default_lang as FormLang) ?? "en",
+  );
 
   if (invite.submitted_at && !form.allow_multiple) {
     return { state: "already_submitted", lang };

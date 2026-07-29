@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { createForm, duplicateForm, softDeleteForm } from "@/lib/actions/form-actions";
+import { adminLabel } from "@/lib/forms/i18n";
 import type { FormStatus, FormSummary } from "@/types/form.types";
 
 const STATUS_VARIANT: Record<FormStatus, "default" | "secondary" | "outline"> = {
@@ -134,9 +135,9 @@ export function FormsClient({ initialForms }: { initialForms: FormSummary[] }) {
               <TableRow key={form.id}>
                 <TableCell>
                   <Link href={`/forms/${form.id}/edit`} className="font-medium hover:underline">
-                    {form.title_en}
+                    {adminLabel(form.title_en, form.title_he) || "Untitled form"}
                   </Link>
-                  {form.title_he && (
+                  {form.title_en && form.title_he && (
                     <div className="text-xs text-muted-foreground" dir="rtl">
                       {form.title_he}
                     </div>
@@ -203,7 +204,9 @@ export function FormsClient({ initialForms }: { initialForms: FormSummary[] }) {
       <AlertDialog open={deleting !== null} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete “{deleting?.title_en}”?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Delete “{deleting ? adminLabel(deleting.title_en, deleting.title_he) : ""}”?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               The form stops accepting answers and disappears from this list. Its{" "}
               {deleting?.response_count ?? 0} response(s) stay in the database.

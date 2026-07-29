@@ -4,6 +4,7 @@ import { guardAdminRoute } from "@/lib/auth/guards";
 import { getForm } from "@/lib/actions/form-actions";
 import { getFormResponses } from "@/lib/actions/form-response-actions";
 import { formatAnswer } from "@/lib/forms/validation";
+import { adminLabel } from "@/lib/forms/i18n";
 
 // Excel forbids : \ / ? * [ ] in sheet names and caps them at 31 chars.
 function safeSheetName(name: string): string {
@@ -31,7 +32,9 @@ export async function GET(request: Request) {
     const questions = loaded.fields.filter((field) => field.type !== "section");
 
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet(safeSheetName(loaded.form.title_en));
+    const sheet = workbook.addWorksheet(
+      safeSheetName(adminLabel(loaded.form.title_en, loaded.form.title_he)),
+    );
 
     sheet.columns = [
       { header: "Submitted", key: "submitted_at", width: 20 },
@@ -39,7 +42,7 @@ export async function GET(request: Request) {
       { header: "Email", key: "recipient_email", width: 26 },
       { header: "Language", key: "lang", width: 10 },
       ...questions.map((field) => ({
-        header: field.label_en || `Question ${field.id}`,
+        header: adminLabel(field.label_en, field.label_he) || `Question ${field.id}`,
         key: `q${field.id}`,
         width: 28,
       })),

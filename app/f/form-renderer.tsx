@@ -72,6 +72,8 @@ export function FormRenderer({
 
   const t = strings(lang);
   const rtl = isRtl(lang);
+  // Only a bilingual form has anything to toggle to.
+  const canToggle = showLangToggle && form.languages === "both";
 
   const title = useMemo(
     () => pickLang(form.title_en, form.title_he, lang),
@@ -143,7 +145,7 @@ export function FormRenderer({
             <p className="mt-2 whitespace-pre-line text-muted-foreground">{description}</p>
           )}
         </div>
-        {showLangToggle && (
+        {canToggle && (
           <Button
             type="button"
             variant="outline"

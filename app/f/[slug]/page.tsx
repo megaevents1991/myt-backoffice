@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getPublicFormBySlug } from "@/lib/actions/form-response-actions";
 import { pickLang, strings } from "@/lib/forms/i18n";
+import { resolveLang } from "@/types/form.types";
 import type { FormLang } from "@/types/form.types";
 import { FormRenderer } from "../form-renderer";
 import { FormMessage } from "../form-message";
@@ -39,8 +40,9 @@ export default async function PublicFormPage({ params, searchParams }: PageProps
     return <FormMessage lang={loaded.lang} message={strings(loaded.lang).alreadySubmitted} />;
   }
 
-  const lang: FormLang =
-    langParam === "he" ? "he" : langParam === "en" ? "en" : loaded.lang;
+  const requested: FormLang | null =
+    langParam === "he" ? "he" : langParam === "en" ? "en" : null;
+  const lang = resolveLang(loaded.payload.form.languages, requested, loaded.lang);
 
   return <FormRenderer payload={loaded.payload} initialLang={lang} slug={slug} />;
 }

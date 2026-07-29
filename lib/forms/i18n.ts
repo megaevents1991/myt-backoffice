@@ -37,6 +37,33 @@ export function optionLabel(
   return pickLang(option.label_en, option.label_he, lang);
 }
 
+/**
+ * Whichever language was actually filled in, English first.
+ *
+ * A form may be authored in Hebrew only, so admin-facing surfaces that are not
+ * language-aware — the forms list, results table headers, the xlsx export — must
+ * never assume the English string exists.
+ */
+export function adminLabel(
+  en: string | null | undefined,
+  he: string | null | undefined,
+): string {
+  return en?.trim() || he?.trim() || "";
+}
+
+/** Admin-facing name for a question. */
+export function fieldAdminLabel(field: FormField): string {
+  return adminLabel(field.label_en, field.label_he);
+}
+
+/** True when a string pair has at least one language filled in. */
+export function hasAnyLang(
+  en: string | null | undefined,
+  he: string | null | undefined,
+): boolean {
+  return Boolean(en?.trim() || he?.trim());
+}
+
 export const isRtl = (lang: FormLang) => lang === "he";
 export const dirFor = (lang: FormLang) => (isRtl(lang) ? "rtl" : "ltr");
 

@@ -117,8 +117,13 @@ these tables.
 - **Field ids are stable.** `answers` is keyed by `form_fields.id`, so `saveFormFields`
   updates existing rows in place instead of delete-and-reinsert. Choice option `value`s
   are generated once and never regenerated on a label edit, for the same reason.
-- Bilingual with no i18n library: `*_en` / `*_he` column pairs, Hebrew falling back to
-  English (`lib/forms/i18n.ts`). RTL is applied by `dir` on the form container.
+- Bilingual with no i18n library: `*_en` / `*_he` column pairs, falling back **either
+  way** (`adminLabel` / `pickLang` in `lib/forms/i18n.ts`) — a form may be authored in
+  Hebrew only, so nothing may assume the English string exists. RTL is applied by `dir`
+  on the form container.
+- `forms.languages` (`en` | `he` | `both`) is the per-form language choice. `both` shows
+  one language at a time starting at `default_lang`, with a client-facing toggle; a
+  single language hides the toggle and hides the other tab in the builder too.
 - Invite emails go out through `lib/email.ts` (shared ZeptoMail transport).
 
 ### Cron Jobs (Vercel)
@@ -171,6 +176,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 NEXT_SECRET_SUPABASE_SERVICE_ROLE_KEY=
 NEXT_SECRET_ADMIN_EMAIL=
 NEXT_SECRET_ADMIN_PASSWORD=
+# REQUIRED IN VERCEL or every cron 401s. Vercel injects it as
+# "Authorization: Bearer $CRON_SECRET" on each cron run; guardCronRoute checks it.
+# Missing between 2026-07-15 and 2026-07-29 → nothing synced for two weeks.
+CRON_SECRET=
+# Legacy ?key= fallback for manual triggers only (was public in the repo once — rotate).
 NEXT_SECRET_CRON_SECRET_KEY=
 NEXT_SECRET_AMADEUS_CLIENT_ID=
 NEXT_SECRET_AMADEUS_CLIENT_SECRET=

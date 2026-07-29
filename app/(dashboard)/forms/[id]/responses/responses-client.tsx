@@ -31,6 +31,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { deleteFormResponse } from "@/lib/actions/form-response-actions";
 import { formatAnswer } from "@/lib/forms/validation";
+import { adminLabel } from "@/lib/forms/i18n";
 import type { FormField, FormResponseRow } from "@/types/form.types";
 
 const CHART_COLOR = "hsl(var(--primary))";
@@ -93,7 +94,7 @@ export function ResponsesClient({ formId, fields, initialResponses }: Props) {
                 <TableHead className="whitespace-nowrap">From</TableHead>
                 {questions.map((field) => (
                   <TableHead key={field.id} className="min-w-[160px]">
-                    {field.label_en}
+                    {adminLabel(field.label_en, field.label_he)}
                   </TableHead>
                 ))}
               </TableRow>
@@ -164,7 +165,7 @@ export function ResponsesClient({ formId, fields, initialResponses }: Props) {
                 return (
                   <div key={field.id} className="space-y-1">
                     <div className="text-xs font-medium text-muted-foreground">
-                      {field.label_en}
+                      {adminLabel(field.label_en, field.label_he)}
                     </div>
                     <div className="whitespace-pre-line text-sm">
                       {value || <span className="text-muted-foreground">—</span>}
@@ -211,7 +212,9 @@ function QuestionSummary({
         buckets.set("Yes", 0);
         buckets.set("No", 0);
       } else {
-        for (const option of field.options) buckets.set(option.label_en || option.value, 0);
+        for (const option of field.options) {
+          buckets.set(adminLabel(option.label_en, option.label_he) || option.value, 0);
+        }
       }
       for (const value of answered) {
         const labels =
@@ -219,7 +222,8 @@ function QuestionSummary({
             ? [value ? "Yes" : "No"]
             : (Array.isArray(value) ? value : [String(value)]).map((raw) => {
                 const option = field.options.find((o) => o.value === raw);
-                return option?.label_en || option?.value || String(raw);
+                if (!option) return String(raw);
+                return adminLabel(option.label_en, option.label_he) || option.value;
               });
         for (const label of labels) buckets.set(label, (buckets.get(label) ?? 0) + 1);
       }
@@ -250,7 +254,7 @@ function QuestionSummary({
   return (
     <div className="rounded-lg border bg-card p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="font-medium">{field.label_en}</h3>
+        <h3 className="font-medium">{adminLabel(field.label_en, field.label_he)}</h3>
         <span className="text-xs text-muted-foreground">
           {answered.length} answered
           {average !== null && ` · average ${average}`}

@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getForm } from "@/lib/actions/form-actions";
 import { getFormResponses } from "@/lib/actions/form-response-actions";
+import { adminLabel } from "@/lib/forms/i18n";
 import { ResponsesClient } from "./responses-client";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,9 @@ export default async function FormResponsesPage({
               Back to the form
             </Link>
           </Button>
-          <h1 className="text-2xl font-bold tracking-tight">{loaded.form.title_en}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {adminLabel(loaded.form.title_en, loaded.form.title_he)}
+          </h1>
           <p className="text-muted-foreground">
             {responses.length} response{responses.length === 1 ? "" : "s"}
           </p>
