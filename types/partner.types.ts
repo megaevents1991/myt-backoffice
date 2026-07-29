@@ -70,6 +70,8 @@ export type Partner = {
    */
   credit_per_ticket: number
   user_discount: number
+  /** Agent may settle a booking with a voucher, per their agreement. */
+  voucher_payment_allowed: boolean
   /** The partner's company/VAT number (ח.פ), printed on the monthly report. */
   supplier_number: number | null
   type: PartnerType | null

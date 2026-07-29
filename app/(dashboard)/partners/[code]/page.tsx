@@ -56,6 +56,7 @@ type FormState = {
   commission: string;
   commission_type: CommissionType;
   credit_per_ticket: string;
+  voucher_payment_allowed: boolean;
   user_discount: string;
   supplier_number: string;
   is_active: boolean;
@@ -71,6 +72,7 @@ const EMPTY_FORM: FormState = {
   commission: "10",
   commission_type: "fixed_per_ticket",
   credit_per_ticket: "0",
+  voucher_payment_allowed: false,
   user_discount: "5",
   supplier_number: "",
   is_active: true,
@@ -125,6 +127,7 @@ export default function PartnerPage({
           commission: String(account.commission ?? 0),
           commission_type: account.commission_type,
           credit_per_ticket: String(account.credit_per_ticket ?? 0),
+          voucher_payment_allowed: account.voucher_payment_allowed,
           user_discount: String(account.user_discount ?? 0),
           supplier_number: account.supplier_number?.toString() ?? "",
           is_active: account.is_active,
@@ -174,6 +177,7 @@ export default function PartnerPage({
         commission: Number(form.commission),
         commission_type: form.commission_type,
         credit_per_ticket: Number(form.credit_per_ticket),
+        voucher_payment_allowed: form.voucher_payment_allowed,
         user_discount: Number(form.user_discount),
         supplier_number: form.supplier_number ? Number(form.supplier_number) : null,
         is_active: form.is_active,
@@ -511,6 +515,31 @@ export default function PartnerPage({
                   agreement.
                 </p>
               </div>
+              {/* Only an agent books on a customer's behalf, so only they can
+                  settle one. An influencer just shares a link. */}
+              {form.type === "agent" && (
+                <div className="space-y-2">
+                  <Label htmlFor="voucher_payment_allowed">Voucher Payment</Label>
+                  <div className="flex h-10 items-center gap-3">
+                    <Switch
+                      id="voucher_payment_allowed"
+                      checked={form.voucher_payment_allowed}
+                      onCheckedChange={(checked) =>
+                        setField("voucher_payment_allowed", checked)
+                      }
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      {form.voucher_payment_allowed
+                        ? "May settle a booking with a voucher"
+                        : "Card only"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Per their agreement. Off means they pay by card — their own or
+                    the customer&apos;s.
+                  </p>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="supplier_number">Company Number (ח.פ)</Label>
                 <Input

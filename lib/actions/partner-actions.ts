@@ -22,6 +22,7 @@ const WRITABLE_COLUMNS = [
   "commission_type",
   "user_discount",
   "credit_per_ticket",
+  "voucher_payment_allowed",
   "supplier_number",
   "type",
   "is_active",
@@ -75,6 +76,7 @@ function toPartnerRow(input: Partial<PartnerInput>): Record<string, unknown> {
         row[column] =
           value === "" || value == null ? null : assertMoney("supplier_number", value)
         break
+      case "voucher_payment_allowed":
       case "is_active":
         row[column] = Boolean(value)
         break
@@ -103,7 +105,7 @@ function redactPasswordDiff(
  * and would ride along in the RSC payload of every partner list.
  */
 const LIST_COLUMNS =
-  "partner_tracking_code,name_hebrew,email,commission,commission_type,credit_per_ticket,user_discount,supplier_number,type,is_active,created_at"
+  "partner_tracking_code,name_hebrew,email,commission,commission_type,credit_per_ticket,voucher_payment_allowed,user_discount,supplier_number,type,is_active,created_at"
 
 export type PartnerListItem = Omit<Partner, "password">
 

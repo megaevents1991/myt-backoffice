@@ -39,6 +39,11 @@ export interface PartnerAccountInput {
   credit_per_ticket: number
   /** Discount passed on to the partner's followers. */
   user_discount: number
+  /**
+   * Agent may settle a booking with a voucher instead of a card, per their
+   * agreement. Meaningless for an influencer, who never books.
+   */
+  voucher_payment_allowed: boolean
   /** Company/VAT number (ח.פ). */
   supplier_number?: number | null
   is_active: boolean
@@ -87,6 +92,9 @@ function partnerRow(input: PartnerAccountInput) {
     commission_type: input.commission_type,
     credit_per_ticket: input.credit_per_ticket,
     user_discount: input.user_discount,
+    // Only an agent books, so this can never be true for an influencer.
+    voucher_payment_allowed:
+      input.type === "agent" && input.voucher_payment_allowed,
     supplier_number: input.supplier_number ?? null,
     type: input.type as PartnerType,
     is_active: input.is_active,
@@ -384,7 +392,7 @@ export async function getPartnerAccount(
   const { data: partner, error } = await supabase
     .from("partners")
     .select(
-      "partner_tracking_code,name_hebrew,email,commission,commission_type,credit_per_ticket,user_discount,supplier_number,type,is_active"
+      "partner_tracking_code,name_hebrew,email,commission,commission_type,credit_per_ticket,voucher_payment_allowed,user_discount,supplier_number,type,is_active"
     )
     .eq("partner_tracking_code", trackingCode)
     .maybeSingle()
@@ -401,6 +409,7 @@ export async function getPartnerAccount(
     commission: number
     commission_type: CommissionType | null
     credit_per_ticket: number | null
+    voucher_payment_allowed: boolean | null
     user_discount: number
     supplier_number: number | null
     type: PartnerType | null
@@ -423,6 +432,7 @@ export async function getPartnerAccount(
     commission: row.commission ?? 0,
     commission_type: row.commission_type ?? "fixed_per_ticket",
     credit_per_ticket: row.credit_per_ticket ?? 0,
+    voucher_payment_allowed: row.voucher_payment_allowed ?? false,
     user_discount: row.user_discount ?? 0,
     supplier_number: row.supplier_number,
     is_active: row.is_active,
