@@ -1,13 +1,16 @@
 name: Apply DB Migrations
 
-# Manual trigger for now (one click in GitHub → Actions → Apply DB Migrations → Run workflow).
-# Once trusted, uncomment the push trigger to auto-apply on merge to master.
+# Migrations apply automatically when they reach master, so nobody has to run
+# `supabase db push` by hand. Running it from a feature branch applies migrations
+# that exist on no other branch, which leaves the remote migration history ahead
+# of master and blocks every later push (see scripts/guard-db-push.mjs).
+# workflow_dispatch stays for re-runs and manual repairs.
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [master]
-  #   paths:
-  #     - "supabase/migrations/**"
+  push:
+    branches: [master]
+    paths:
+      - "supabase/migrations/**"
 
 jobs:
   migrate:

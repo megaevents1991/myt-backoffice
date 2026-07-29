@@ -210,17 +210,38 @@ Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, 
 
 **This repo owns the schema.** The main app never runs migrations. Schema changes go through versioned migration files in `supabase/migrations/` — never ad-hoc SQL in the dashboard without capturing it.
 
+> **⛔ NEVER run `supabase db push` from a feature branch.** It applies to the
+> SHARED PRODUCTION database. Migrations that exist only on your branch land in
+> the remote migration-history table, master then has files it has never seen,
+> and every later push — yours and CI's — dies with *"Remote migration versions
+> not found in local migrations directory"*. This has already happened once
+> (2026-07-29). `npm run db:push` is guarded by `scripts/guard-db-push.mjs`,
+> which refuses unless you are on master, in sync with origin, with no
+> uncommitted or version-clashing migration files.
+
 Workflow for any schema change:
 
 1. `npm run db:new <name>` — creates `supabase/migrations/<timestamp>_<name>.sql`; write the SQL there.
    (Or prototype in the dashboard, then capture the drift: `npm run db:diff <name>` — requires Docker running.)
 2. Commit the migration file with the feature PR.
-3. Apply: `npm run db:push` locally, **or** GitHub → Actions → "Apply DB Migrations" → Run workflow.
+3. **Merge to master.** The "Apply DB Migrations" workflow runs automatically on
+   any push to master touching `supabase/migrations/**`. Nobody needs to apply
+   anything by hand; `workflow_dispatch` remains for re-runs and repairs.
 4. Regenerate DB types: `npm run db:types` (writes `types/database.types.ts`).
+
+Two migrations must never share a version prefix (the leading timestamp) — the
+applied version becomes ambiguous. The guard checks for this too.
+
+If the history is already out of sync, the fix is to bring the missing migration
+*files* onto master (`git checkout <branch> -- supabase/migrations/<file>.sql`)
+so local matches remote. Prefer that over
+`supabase migration repair --status reverted`, which marks them un-applied while
+their schema changes are still live — the history then lies, and re-applying on
+merge fails.
 
 One-time setup per machine: `npx supabase login`, then `npx supabase link --project-ref fandqafngybfdyslofmr` (asks for the DB password).
 
-CI (`.github/workflows/db-migrate.yml`) needs repo secrets `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD`. Currently manual-trigger only; auto-apply on merge is commented out in the workflow.
+CI (`.github/workflows/db-migrate.yml`) needs repo secrets `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD`.
 
 ---
 
