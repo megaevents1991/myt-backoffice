@@ -28,7 +28,7 @@ export const CUSTOMER_REFUND_NAME_MARKER = "ניתן להתעלם"
 /**
  * True for the auto-created per-customer refund rows. Reads the `type` column,
  * falling back to the Hebrew name marker for rows predating the backfill
- * migration. The fallback matches `20260729120000_partner_customer_refund_type`
+ * migration. The fallback matches `20260729160000_partner_customer_refund_type`
  * exactly, so the app and the DB never disagree about what a row is.
  */
 export function isCustomerRefundPartner(partner: {
