@@ -426,7 +426,23 @@ export function MatchTemplate({
       {isSingleSubject ? (
         <div style={{ display: "flex", flex: 1, flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           {bare ? (
-            <div style={{ display: "flex", width: cardW, height: cardH }} />
+            // No subject image at all — the event's own name carries the card.
+            // Used as the last-resort feed creative (every priced event must
+            // reach Meta branded) and as the designer's drop-art-on-top base;
+            // a centred wordmark beats a phantom gap in both.
+            <div
+              style={{
+                display: "flex",
+                textAlign: "center",
+                padding: `0 ${isSquare ? 80 : 60}px`,
+                fontSize: isSquare ? 88 : 56,
+                fontWeight: 700,
+                lineHeight: 1.15,
+                textShadow: "0 2px 16px rgba(0,0,0,0.7)",
+              }}
+            >
+              {bidiVisual(homeName)}
+            </div>
           ) : homeIsCutout || photoUrl ? (
             // A real cut-out always gets the blob/photo-bg card; a regular
             // photo ALSO gets it when a stock category photo (e.g. football
@@ -440,9 +456,12 @@ export function MatchTemplate({
                og.tsx fallback for a person with only a regular photo). */
             <AvatarCircle img={homeLogoUrl} color={artistColor} size={avatarSize} imgScale={iScale} imgOffsetX={iOffX} imgOffsetY={iOffY} />
           )}
-          <div style={{ display: "flex", fontSize: isSquare ? 58 : 38, fontWeight: 700, marginTop: isSquare ? 24 : 12, textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}>
-            {bidiVisual(homeName)}
-          </div>
+          {/* bare already renders the name as the centrepiece above */}
+          {!bare && (
+            <div style={{ display: "flex", fontSize: isSquare ? 58 : 38, fontWeight: 700, marginTop: isSquare ? 24 : 12, textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}>
+              {bidiVisual(homeName)}
+            </div>
+          )}
         </div>
       ) : photoUrl && !bare ? (
         /* photo background: ONE wide stadium panel holding both logos + VS */

@@ -141,7 +141,11 @@ export async function deriveCreativeDefaults(
   const price = computePackagePrice(event);
   if (price === null) warnings.push("אין כרטיסים זמינים — מחיר לא חושב, מלא ידנית");
 
-  const displayName = event.name || event.name_english || "";
+  // Names carry stray whitespace in the DB (114 future events at the time of
+  // writing) — an untrimmed "%גרייסי אברמס %" ilike matches nothing.
+  const hebName = (event.name ?? "").trim();
+  const engName = (event.name_english ?? "").trim();
+  const displayName = hebName || engName;
 
   // Kind detection: type prefix is unreliable (most events are tx_event), so
   // structure decides — "A - B" names are matches; a name that doesn't split
@@ -158,14 +162,24 @@ export async function deriveCreativeDefaults(
   // path, failed there too, and its perfectly good cutout went unused.
   let isMusic = event.type.startsWith("music") || (!!event.art_image_url && !splitsInTwo);
   if (!isMusic && !splitsInTwo) {
-    const { data: probe, error: pErr } = await supabase
-      .from("artists")
-      .select("id")
-      .eq("is_deleted", false)
-      .or(`name.ilike.%${displayName}%,name_english.ilike.%${displayName}%`)
-      .limit(1);
-    if (pErr) console.error(JSON.stringify(pErr));
-    isMusic = (probe?.length ?? 0) > 0;
+    // Probe BOTH names. The Hebrew spellings drift from the library's
+    // ("בון גובי" vs "בון ג'ובי", "פטבול" vs "פיטבול") while the English is
+    // usually identical, so searching the Hebrew alone lost artists that were
+    // sitting right there with an image.
+    const terms = [hebName, engName].filter(Boolean);
+    for (const term of terms) {
+      const { data: probe, error: pErr } = await supabase
+        .from("artists")
+        .select("id")
+        .eq("is_deleted", false)
+        .or(`name.ilike.%${term}%,name_english.ilike.%${term}%`)
+        .limit(1);
+      if (pErr) console.error(JSON.stringify(pErr));
+      if ((probe?.length ?? 0) > 0) {
+        isMusic = true;
+        break;
+      }
+    }
   }
 
   if (isMusic) {
@@ -192,7 +206,8 @@ export async function deriveCreativeDefaults(
       }));
       if (caches) caches.artists = rows;
     }
-    const match = matchPerson(displayName, rows);
+    // Hebrew first, English as the fallback — same reason as the probe above.
+    const match = matchPerson(hebName, rows) ?? matchPerson(engName, rows);
     if (match) {
       artistName = match.name;
       if (!artistImageUrl) {
@@ -408,10 +423,12 @@ export async function generateCampaignForEvent(
   // Existing campaign_image_url/banner (if any, from a prior successful
   // run) are left untouched — a newly-failing derivation shouldn't blank
   // out a previously good creative.
-  const markChecked = async (): Promise<void> => {
+  // The reason is stored on the event so "why is this product missing?" is
+  // answerable in the UI instead of only in a cron response nobody reads.
+  const markChecked = async (reason: string): Promise<void> => {
     const { error } = await supabase
       .from("events")
-      .update({ campaign_input_hash: hash } as never)
+      .update({ campaign_input_hash: hash, campaign_skip_reason: reason } as never)
       .eq("id", event.id);
     if (error) {
       console.error("campaign hash checkpoint failed:", JSON.stringify(error));
@@ -420,7 +437,9 @@ export async function generateCampaignForEvent(
 
   const defaults = await deriveCreativeDefaults(event.id, caches);
   if (defaults.price === null) {
-    await markChecked();
+    // The only remaining skip: Meta requires a price, so a priceless event has
+    // no product to advertise. Everything else now renders SOMETHING branded.
+    await markChecked("אין מחיר — אין כרטיסים זמינים לחישוב מחיר חבילה");
     return { status: "skipped", reason: "no computable price" };
   }
 
@@ -467,20 +486,19 @@ export async function generateCampaignForEvent(
       ...baseFields,
     };
   } else {
-    // No matched team/artist logo at all (unmatched names, no artist image,
-    // etc.) — fall back to a full-bleed creative using the event's own photo
-    // instead of skipping entirely. Only a genuinely imageless event still skips.
-    const photoUrl = event.card_image_url;
-    if (!photoUrl) {
-      await markChecked();
-      return { status: "skipped", reason: `${defaults.warnings.join("; ")} (no fallback photo either)` };
-    }
-    params = {
-      kind: "photo",
-      imageUrl: photoUrl,
-      eventName: event.name || event.name_english || "",
-      ...baseFields,
-    };
+    // No matched team/artist logo — fall back to the event's own photo, and
+    // when there isn't one either, to a BARE branded canvas (wordmark,
+    // tagline, name, date, price pill; no subject image).
+    //
+    // Every priced event must reach the feed carrying our branding, so this
+    // path never skips: a plain provider photo in a Meta ad is worth less than
+    // a branded card, and an event with nothing at all used to drop out of the
+    // catalogue entirely.
+    const photoUrl = event.card_image_url || event.art_image_url;
+    const eventName = (event.name || event.name_english || "").trim();
+    params = photoUrl
+      ? { kind: "photo", imageUrl: photoUrl, eventName, ...baseFields }
+      : { kind: "photo", imageUrl: "", eventName, bare: true, ...baseFields };
   }
 
   const input = await buildCreativeInput(params);
@@ -495,6 +513,7 @@ export async function generateCampaignForEvent(
       campaign_banner_url: bannerUrl,
       campaign_input_hash: hash,
       campaign_generated_at: new Date().toISOString(),
+      campaign_skip_reason: null,
     } as never)
     .eq("id", event.id);
   if (error) {
