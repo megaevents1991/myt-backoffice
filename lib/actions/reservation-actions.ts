@@ -48,8 +48,17 @@ export async function createReservation(reservation: Omit<Reservation, "id" | "c
   return created
 }
 
-// Statuses that release the offline inventory the reservation consumed.
-const RELEASED_STATUSES = new Set(["Cancelled", "Lost"]);
+/**
+ * Statuses that hold NO offline inventory.
+ *
+ * `24Save` is a 24-hour price hold, not a booking: the customer has paid
+ * nothing, reserved nothing, and may never return. The main app stopped
+ * consuming seats for it at checkout, so anything that recomputes consumption
+ * from reservations has to agree — otherwise the counters here would write the
+ * seats straight back, and the customer's own hold would then read as sold out
+ * when they came back through their recovery link.
+ */
+const RELEASED_STATUSES = new Set(["Cancelled", "Lost", "24Save"]);
 
 export async function updateReservation(id: number, reservation: Partial<Reservation>) {
   await requireStaff();
@@ -226,9 +235,9 @@ export type InventoryReservation = Pick<
 const INVENTORY_RESERVATION_FIELDS =
   "id, created_at, main_contact_first_name, main_contact_last_name, main_contact_email, main_contact_phone_number, status, more_pax_info, offline_flight_id, offline_hotel_id, offline_hotel_ids";
 
-// Lost/Cancelled reservations no longer hold inventory and are hidden from
-// the inventory detail pages.
-const ACTIVE_RESERVATION_STATUSES_FILTER = "Cancelled,Lost";
+// Cancelled/Lost/24Save reservations hold no inventory and are hidden from the
+// inventory detail pages. Keep in step with RELEASED_STATUSES above.
+const ACTIVE_RESERVATION_STATUSES_FILTER = "Cancelled,Lost,24Save";
 
 // Belt-and-suspenders: the SQL `not.in` filter is case-sensitive and exact, so
 // a stored status like "lost" or "Lost " would slip past it. Re-filter in JS
