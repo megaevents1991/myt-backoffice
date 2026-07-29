@@ -27,6 +27,7 @@ import {
 import { validateAnswers } from "@/lib/forms/validation";
 import { CANVAS, DEFAULT_ACCENT, INK, hexToRgb, onAccent } from "@/lib/forms/brand";
 import { BrandGlow } from "./brand-glow";
+import { Wordmark } from "./wordmark";
 import type {
   AnswerMap,
   AnswerValue,
@@ -218,9 +219,9 @@ export function FormRenderer({
                     className="h-10 w-auto max-w-[190px] object-contain"
                   />
                 ) : (
-                  <span className="text-sm font-black uppercase tracking-[0.22em] text-[var(--muted)]">
-                    MegaΣvents
-                  </span>
+                  // No logo set: fall back to the real brand wordmark, with the
+                  // trailing dot picking up this form's accent.
+                  <Wordmark className="h-6 w-auto text-[var(--ink)]" dotColor={theme.accent} />
                 )}
 
                 {canToggle && (
