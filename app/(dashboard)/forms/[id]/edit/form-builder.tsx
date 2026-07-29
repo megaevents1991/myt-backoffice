@@ -2,7 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { BarChart3, ExternalLink, Link2, Plus, Save, Send } from "lucide-react";
+import {
+  BarChart3,
+  ExternalLink,
+  Image as ImageIcon,
+  Link2,
+  Plus,
+  Save,
+  Send,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +40,8 @@ import {
   enabledLangs,
 } from "@/types/form.types";
 import { adminLabel, hasAnyLang } from "@/lib/forms/i18n";
+import { BRAND_ACCENTS, DEFAULT_ACCENT } from "@/lib/forms/brand";
+import { StorageImageBrowser } from "@/components/storage-image-browser";
 import type {
   Form,
   FormField,
@@ -40,9 +50,63 @@ import type {
   FormLang,
   FormLanguages,
   FormStatus,
+  FormTheme,
 } from "@/types/form.types";
 import { FieldEditor } from "./field-editor";
 import { BilingualInput } from "./bilingual-input";
+
+/** Pick an image from Supabase Storage, or clear the one already chosen. */
+function ImageSlot({
+  label,
+  hint,
+  url,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  url: string;
+  onChange: (url: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
+      <div className="flex items-center gap-3">
+        <div className="flex h-14 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
+          {url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={url} alt="" className="h-full w-full object-contain" />
+          ) : (
+            <ImageIcon className="h-5 w-5 text-muted-foreground" />
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <StorageImageBrowser
+            uploadBucket="templates"
+            uploadFolder="forms"
+            trigger={
+              <Button type="button" variant="outline" size="sm">
+                {url ? "Change" : "Choose"}
+              </Button>
+            }
+            onConfirm={(urls) => urls[0] && onChange(urls[0])}
+          />
+          {url && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground"
+              onClick={() => onChange("")}
+            >
+              Remove
+            </Button>
+          )}
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">{hint}</p>
+    </div>
+  );
+}
 
 function defaultConfig(type: FormFieldType) {
   switch (type) {
@@ -126,6 +190,10 @@ export function FormBuilder({ form, initialFields }: Props) {
   const [languages, setLanguages] = useState<FormLanguages>(form.languages ?? "both");
   const [defaultLang, setDefaultLang] = useState<FormLang>(form.default_lang);
   const [allowMultiple, setAllowMultiple] = useState(form.allow_multiple);
+  const [theme, setTheme] = useState<FormTheme>(form.theme ?? "dark");
+  const [accent, setAccent] = useState(form.accent_color || DEFAULT_ACCENT);
+  const [logoUrl, setLogoUrl] = useState(form.logo_url ?? "");
+  const [coverUrl, setCoverUrl] = useState(form.cover_image_url ?? "");
 
   // Which language tabs the builder offers, and what the fill page can render.
   const langs = enabledLangs(languages);
@@ -209,6 +277,10 @@ export function FormBuilder({ form, initialFields }: Props) {
         thank_you_en: thankYouEn || null,
         thank_you_he: thankYouHe || null,
         status,
+        theme,
+        accent_color: accent,
+        logo_url: logoUrl || null,
+        cover_image_url: coverUrl || null,
       },
       fields: fields.map((field, index) => {
         const prepared = withOptionValues(field);
@@ -232,6 +304,10 @@ export function FormBuilder({ form, initialFields }: Props) {
       thankYouEn,
       thankYouHe,
       status,
+      theme,
+      accent,
+      logoUrl,
+      coverUrl,
       fields,
     ],
   );
@@ -267,6 +343,10 @@ export function FormBuilder({ form, initialFields }: Props) {
           languages,
           default_lang: defaultLang,
           allow_multiple: allowMultiple,
+          theme,
+          accent_color: accent,
+          logo_url: logoUrl || null,
+          cover_image_url: coverUrl || null,
         });
         setSlug(saved.slug);
 
@@ -471,6 +551,76 @@ export function FormBuilder({ form, initialFields }: Props) {
               <Label htmlFor="allow-multiple" className="text-sm font-normal">
                 Let one invite link be submitted more than once
               </Label>
+            </div>
+          </div>
+
+          {/* Branding for the public page */}
+          <div className="space-y-4 rounded-lg border bg-card p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Design</h2>
+              <div className="flex overflow-hidden rounded-md border text-xs">
+                {(["dark", "light"] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => touch(setTheme)(option)}
+                    className={cn(
+                      "px-3 py-1 capitalize transition-colors",
+                      theme === option
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-accent",
+                    )}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">
+                Accent colour
+              </Label>
+              <div className="flex flex-wrap items-center gap-2">
+                {BRAND_ACCENTS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    title={option.name}
+                    aria-label={option.name}
+                    aria-pressed={accent.toLowerCase() === option.value.toLowerCase()}
+                    onClick={() => touch(setAccent)(option.value)}
+                    className={cn(
+                      "h-8 w-8 rounded-full border-2 transition-transform hover:scale-110",
+                      accent.toLowerCase() === option.value.toLowerCase()
+                        ? "border-foreground"
+                        : "border-transparent",
+                    )}
+                    style={{ background: option.value }}
+                  />
+                ))}
+                <Input
+                  value={accent}
+                  onChange={(e) => touch(setAccent)(e.target.value)}
+                  placeholder="#5BFF95"
+                  className="h-8 w-[110px] font-mono text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ImageSlot
+                label="Logo"
+                hint="Shown top-left. PNG/SVG with transparency works best."
+                url={logoUrl}
+                onChange={touch(setLogoUrl)}
+              />
+              <ImageSlot
+                label="Cover image"
+                hint="Sits behind the title, dimmed so text stays readable."
+                url={coverUrl}
+                onChange={touch(setCoverUrl)}
+              />
             </div>
           </div>
 

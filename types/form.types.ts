@@ -44,6 +44,9 @@ export type FormStatus = "draft" | "live" | "closed";
  */
 export type FormLanguages = FormLang | "both";
 
+/** Dark uses the brand indigo canvas; light is ink on off-white, same accent. */
+export type FormTheme = "dark" | "light";
+
 /** The languages a form is authored in — drives which tabs the builder shows. */
 export function enabledLangs(languages: FormLanguages): FormLang[] {
   return languages === "both" ? ["en", "he"] : [languages];
@@ -104,6 +107,11 @@ export type Form = {
   languages: FormLanguages;
   default_lang: FormLang;
   allow_multiple: boolean;
+  /** Branding for the public fill page. */
+  theme: FormTheme;
+  accent_color: string;
+  logo_url: string | null;
+  cover_image_url: string | null;
   thank_you_en: string | null;
   thank_you_he: string | null;
   created_by: string | null;
@@ -173,6 +181,10 @@ export type PublicForm = {
     | "thank_you_en"
     | "thank_you_he"
     | "status"
+    | "theme"
+    | "accent_color"
+    | "logo_url"
+    | "cover_image_url"
   >;
   fields: FormField[];
 };

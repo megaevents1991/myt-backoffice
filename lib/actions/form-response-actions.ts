@@ -25,7 +25,7 @@ const responsesTable = () => (supabase as any).from("form_responses");
 
 const PUBLIC_FORM_COLUMNS =
   "id,slug,title_en,title_he,description_en,description_he,languages,default_lang," +
-  "thank_you_en,thank_you_he,status,allow_multiple";
+  "thank_you_en,thank_you_he,status,allow_multiple,theme,accent_color,logo_url,cover_image_url";
 
 const FIELD_COLUMNS =
   "id,form_id,type,position,label_en,label_he,help_en,help_he," +
