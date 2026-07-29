@@ -32,6 +32,75 @@ function canManage(actorRole: Role, targetRole: Role): boolean {
   return !ADMIN_ROLES.includes(targetRole);
 }
 
+/**
+ * Make sure the `partners` row an agent/affiliate login points at exists.
+ * Existing codes are left untouched — commercial terms are edited on the
+ * partner screen, and silently rewriting a live commission from the user form
+ * is not something an admin picking a name from a dropdown is asking for.
+ */
+async function ensurePartnerForUser(args: {
+  trackingCode: string;
+  role: Role;
+  email: string;
+  name: string;
+}): Promise<{ ok: true; created: boolean } | { ok: false; error: string }> {
+  const trackingCode = args.trackingCode.trim();
+  const { data: existing, error: lookupError } = await supabase
+    .from("partners")
+    .select("partner_tracking_code")
+    .eq("partner_tracking_code", trackingCode)
+    .maybeSingle();
+  if (lookupError) {
+    console.error("ensurePartnerForUser lookup:", JSON.stringify(lookupError));
+    return { ok: false, error: "Could not check the partner for this user" };
+  }
+  if (existing) return { ok: true, created: false };
+
+  const { error: insertError } = await supabase.from("partners").insert({
+    partner_tracking_code: trackingCode,
+    name_hebrew: args.name || null,
+    email: args.email,
+    // Legacy plaintext column the main app reads for affiliate auth. The login
+    // is Supabase Auth, so this gets an unusable sentinel — never "".
+    password: `disabled-${crypto.randomUUID()}`,
+    // Zeroed on purpose: an unconfigured partner must never quietly start
+    // earning. Terms are set on the partner screen.
+    commission: 0,
+    commission_type: "fixed_per_ticket",
+    user_discount: 0,
+    type: args.role,
+    is_active: true,
+    created_at: new Date().toISOString().slice(0, 10),
+  });
+  if (insertError) {
+    console.error("ensurePartnerForUser insert:", JSON.stringify(insertError));
+    return { ok: false, error: "Could not create the partner for this user" };
+  }
+
+  await logAudit({
+    action: "create",
+    entityType: "partner",
+    entityId: trackingCode,
+    metadata: { created_with_user: true, commission: 0 },
+  });
+  return { ok: true, created: true };
+}
+
+/** Undo a partner created moments ago for a user that then failed to be created. */
+async function rollbackCreatedPartner(trackingCode: string | null): Promise<void> {
+  if (!trackingCode) return;
+  const { error } = await supabase
+    .from("partners")
+    .delete()
+    .eq("partner_tracking_code", trackingCode);
+  if (error) {
+    console.error(
+      `createUser rollback failed (orphan partner "${trackingCode}"):`,
+      JSON.stringify(error)
+    );
+  }
+}
+
 async function getTargetRole(id: string): Promise<Role | null> {
   const { data, error } = await (supabase as any)
     .from("user_profiles")
@@ -79,6 +148,21 @@ export async function createUser(input: {
     return { ok: false, error: "Agent/affiliate users need a partner link" };
   }
 
+  // An agent/affiliate login is meaningless without the partner row it points
+  // at — the portal reads every figure from it, and the FK would reject the
+  // profile anyway. Create it here so picking a brand-new code just works.
+  let createdPartnerCode: string | null = null;
+  if (PARTNER_ROLES.includes(input.role) && input.partner_tracking_code) {
+    const ensured = await ensurePartnerForUser({
+      trackingCode: input.partner_tracking_code,
+      role: input.role,
+      email,
+      name: input.display_name,
+    });
+    if (!ensured.ok) return { ok: false, error: ensured.error };
+    if (ensured.created) createdPartnerCode = input.partner_tracking_code.trim();
+  }
+
   const { data: created, error: authError } = await supabase.auth.admin.createUser({
     email,
     password: input.password,
@@ -86,6 +170,7 @@ export async function createUser(input: {
   });
   if (authError || !created.user) {
     console.error("createUser auth:", JSON.stringify(authError));
+    await rollbackCreatedPartner(createdPartnerCode);
     return { ok: false, error: authError?.message ?? "Auth user creation failed" };
   }
 
@@ -105,6 +190,7 @@ export async function createUser(input: {
     await supabase.auth.admin.deleteUser(created.user.id).catch((e) =>
       console.error("createUser rollback failed (orphan auth user):", JSON.stringify(e))
     );
+    await rollbackCreatedPartner(createdPartnerCode);
     return { ok: false, error: "Profile creation failed" };
   }
   await logAudit({

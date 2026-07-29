@@ -3,8 +3,10 @@
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server"
 import {
+  COMMISSION_TYPES,
   CUSTOMER_REFUND_NAME_MARKER,
   PARTNER_TYPES,
+  type CommissionType,
   type Partner,
   type PartnerInput,
   type PartnerType,
@@ -17,6 +19,7 @@ const WRITABLE_COLUMNS = [
   "email",
   "password",
   "commission",
+  "commission_type",
   "user_discount",
   "supplier_number",
   "type",
@@ -51,6 +54,21 @@ function toPartnerRow(input: Partial<PartnerInput>): Record<string, unknown> {
         }
         row[column] = value ?? null
         break
+      case "commission_type": {
+        const commissionType = (value ?? "fixed_per_ticket") as CommissionType
+        if (!COMMISSION_TYPES.includes(commissionType)) {
+          throw new Error(`commission_type must be one of ${COMMISSION_TYPES.join(", ")}`)
+        }
+        // A percentage over 100 is always a typo, and it is real money.
+        if (commissionType === "percent_of_sale") {
+          const rate = Number(input.commission)
+          if (Number.isFinite(rate) && rate > 100) {
+            throw new Error("A percentage commission cannot exceed 100")
+          }
+        }
+        row[column] = commissionType
+        break
+      }
       case "supplier_number":
         row[column] =
           value === "" || value == null ? null : assertMoney("supplier_number", value)
@@ -83,7 +101,7 @@ function redactPasswordDiff(
  * and would ride along in the RSC payload of every partner list.
  */
 const LIST_COLUMNS =
-  "partner_tracking_code,name_hebrew,email,commission,user_discount,supplier_number,type,is_active,created_at"
+  "partner_tracking_code,name_hebrew,email,commission,commission_type,user_discount,supplier_number,type,is_active,created_at"
 
 export type PartnerListItem = Omit<Partner, "password">
 
@@ -175,6 +193,11 @@ export async function getPartner(trackingCode: string) {
   return data as unknown as PartnerListItem
 }
 
+/**
+ * Partner row only, with no portal login. The dashboard now goes through
+ * `createPartnerAccount` (lib/actions/partner-account-actions.ts), which keeps
+ * the two in step; this stays for scripts and one-off imports.
+ */
 export async function createPartner(partner: PartnerInput & { partner_tracking_code: string }) {
   await requireStaff();
   const trackingCode = partner.partner_tracking_code?.trim()
@@ -202,6 +225,7 @@ export async function createPartner(partner: PartnerInput & { partner_tracking_c
   return created
 }
 
+/** Partner row only — see the note on createPartner. */
 export async function updatePartner(trackingCode: string, partner: Partial<PartnerInput>) {
   await requireStaff();
   const row = toPartnerRow(partner)
@@ -272,6 +296,9 @@ export async function duplicatePartner(trackingCode: string, opts?: { skipAudit?
       // reads this table for affiliate auth. Staff set a real one before use.
       password: `disabled-${crypto.randomUUID()}`,
       commission: source.commission,
+      // Without this the copy falls back to the column default and an
+      // "8% of sales" partner silently becomes "$8 per ticket".
+      commission_type: source.commission_type,
       user_discount: source.user_discount,
       supplier_number: source.supplier_number,
       type: source.type,

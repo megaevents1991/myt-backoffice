@@ -3,7 +3,7 @@
 import type React from "react";
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, FileText, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,6 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { PasswordInput } from "@/components/ui/password-input";
+import { PhoneInput } from "@/components/phone-input";
 import {
   Select,
   SelectContent,
@@ -25,39 +27,50 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
+  COMMISSION_TYPES,
+  COMMISSION_TYPE_LABELS,
   MARKETING_PARTNER_TYPES,
   PARTNER_TYPE_LABELS,
-  isCustomerRefundPartner,
-  type PartnerType,
+  type CommissionType,
 } from "@/types/partner.types";
 import {
-  getPartner,
-  updatePartner,
-  createPartner,
-} from "@/lib/actions/partner-actions";
+  getPartnerAccount,
+  createPartnerAccount,
+  updatePartnerAccount,
+  type MarketingPartnerType,
+} from "@/lib/actions/partner-account-actions";
+import {
+  uploadUserContract,
+  getContractDownloadUrl,
+  removeUserContract,
+} from "@/lib/actions/user-actions";
 
-/** Form state — `password` is write-only and never loaded from the server. */
-type PartnerForm = {
+/** Numbers are held as strings so a half-typed field doesn't become NaN. */
+type FormState = {
   partner_tracking_code: string;
-  name_hebrew: string;
+  name: string;
   email: string;
+  phone: string;
+  type: MarketingPartnerType;
   password: string;
   commission: string;
+  commission_type: CommissionType;
   user_discount: string;
   supplier_number: string;
-  type: PartnerType;
   is_active: boolean;
 };
 
-const EMPTY_FORM: PartnerForm = {
+const EMPTY_FORM: FormState = {
   partner_tracking_code: "",
-  name_hebrew: "",
+  name: "",
   email: "",
+  phone: "",
+  type: "affiliate",
   password: "",
   commission: "10",
+  commission_type: "fixed_per_ticket",
   user_discount: "5",
   supplier_number: "",
-  type: "affiliate",
   is_active: true,
 };
 
@@ -69,58 +82,72 @@ export default function PartnerPage({
   const router = useRouter();
   const { toast } = useToast();
   const unwrappedParams = use(params);
-  const [form, setForm] = useState<PartnerForm | null>(null);
+  const [form, setForm] = useState<FormState | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [contractUrl, setContractUrl] = useState<string | null>(null);
+  const [contractFile, setContractFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [blocked, setBlocked] = useState(false);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const isNewPartner = unwrappedParams.code === "new";
 
   useEffect(() => {
-    async function fetchPartner() {
+    async function load() {
       if (isNewPartner) {
         setForm(EMPTY_FORM);
         setLoading(false);
         return;
       }
-
       try {
-        const data = await getPartner(unwrappedParams.code);
+        const account = await getPartnerAccount(unwrappedParams.code);
+        if (!account) {
+          toast({
+            variant: "destructive",
+            title: "Not found",
+            description: "This partner no longer exists.",
+          });
+          return;
+        }
+        if (account.is_customer_refund) {
+          setBlocked(true);
+          return;
+        }
         setForm({
-          partner_tracking_code: data.partner_tracking_code,
-          name_hebrew: data.name_hebrew ?? "",
-          email: data.email,
+          partner_tracking_code: account.partner_tracking_code,
+          name: account.name,
+          email: account.email,
+          phone: account.phone ?? "",
+          type: account.type,
           password: "",
-          commission: String(data.commission ?? 0),
-          user_discount: String(data.user_discount ?? 0),
-          supplier_number: data.supplier_number?.toString() ?? "",
-          type: isCustomerRefundPartner(data)
-            ? "customer_refund"
-            : data.type === "agent"
-              ? "agent"
-              : "affiliate",
-          is_active: data.is_active,
+          commission: String(account.commission ?? 0),
+          commission_type: account.commission_type,
+          user_discount: String(account.user_discount ?? 0),
+          supplier_number: account.supplier_number?.toString() ?? "",
+          is_active: account.is_active,
         });
+        setUserId(account.user_id);
+        setContractUrl(account.contract_url);
       } catch (error) {
-        console.error("Error fetching partner:", error);
+        console.error("Error loading partner:", error);
         toast({
           variant: "destructive",
           title: "Error",
-          description: "Failed to load partner details. Please try again.",
+          description: "Failed to load this partner. Please try again.",
         });
       } finally {
         setLoading(false);
       }
     }
-
-    fetchPartner();
+    load();
   }, [unwrappedParams.code, toast, isNewPartner]);
 
-  const setField = <K extends keyof PartnerForm>(name: K, value: PartnerForm[K]) => {
+  const setField = <K extends keyof FormState>(name: K, value: FormState[K]) => {
     setForm((prev) => (prev ? { ...prev, [name]: value } : prev));
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setField(e.target.name as keyof PartnerForm, e.target.value);
+    setField(e.target.name as keyof FormState, e.target.value);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -134,33 +161,58 @@ export default function PartnerPage({
     setShowSaveConfirm(false);
     setSaving(true);
     try {
-      const base = {
-        name_hebrew: form.name_hebrew,
-        email: form.email,
+      const payload = {
+        partner_tracking_code: form.partner_tracking_code.trim(),
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone || null,
+        type: form.type,
+        password: form.password || null,
         commission: Number(form.commission),
+        commission_type: form.commission_type,
         user_discount: Number(form.user_discount),
         supplier_number: form.supplier_number ? Number(form.supplier_number) : null,
-        type: form.type,
         is_active: form.is_active,
       };
 
-      if (isNewPartner) {
-        await createPartner({
-          ...base,
-          partner_tracking_code: form.partner_tracking_code.trim(),
-          password: form.password,
-        });
-      } else {
-        // Only send a password when one was typed — an empty field means "keep".
-        await updatePartner(unwrappedParams.code, {
-          ...base,
-          ...(form.password ? { password: form.password } : {}),
-        });
+      const result = isNewPartner
+        ? await createPartnerAccount(payload)
+        : await updatePartnerAccount(unwrappedParams.code, payload);
+
+      if (!result.ok) {
+        toast({ variant: "destructive", title: "Error", description: result.error });
+        return;
+      }
+
+      // The agreement is stored against the login, so it can only be uploaded
+      // once that exists. Non-fatal: the account is saved either way.
+      if (contractFile) {
+        if (!result.user_id) {
+          toast({
+            variant: "destructive",
+            title: "Agreement not uploaded",
+            description:
+              "This partner has no login yet. Set a password to create one, then upload the agreement.",
+          });
+        } else {
+          const data = new FormData();
+          data.set("file", contractFile);
+          const upload = await uploadUserContract(result.user_id, data);
+          if (!upload.ok) {
+            toast({
+              variant: "destructive",
+              title: "Agreement not uploaded",
+              description: upload.error,
+            });
+          }
+        }
       }
 
       toast({
-        title: "Success",
-        description: "Partner has been saved successfully.",
+        title: "Saved",
+        description: result.user_id
+          ? "Partner and portal login saved."
+          : "Partner saved. Set a password to give them a portal login.",
       });
       router.push("/partners");
       router.refresh();
@@ -170,29 +222,60 @@ export default function PartnerPage({
         variant: "destructive",
         title: "Error",
         description:
-          error instanceof Error
-            ? error.message
-            : "Failed to save partner. Please try again.",
+          error instanceof Error ? error.message : "Failed to save. Please try again.",
       });
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) {
-    return <div>Loading partner details...</div>;
+  const handleDownloadContract = async () => {
+    if (!userId) return;
+    const result = await getContractDownloadUrl(userId);
+    if (result.ok) {
+      window.open(result.url, "_blank", "noopener,noreferrer");
+    } else {
+      toast({ variant: "destructive", title: "Error", description: result.error });
+    }
+  };
+
+  const handleRemoveContract = async () => {
+    if (!userId) return;
+    const result = await removeUserContract(userId);
+    if (result.ok) {
+      setContractUrl(null);
+      toast({ title: "Agreement removed" });
+    } else {
+      toast({ variant: "destructive", title: "Error", description: result.error });
+    }
+  };
+
+  if (loading) return <div>Loading partner details...</div>;
+
+  if (blocked) {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" onClick={() => router.push("/partners")}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back
+        </Button>
+        <Card>
+          <CardHeader>
+            <CardTitle>Not a partner record</CardTitle>
+            <CardDescription>
+              This is an automatic customer-refund record, opened by the booking system
+              for a single customer. It has no commercial terms and no portal login, so
+              there is nothing to edit here.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
   }
 
-  if (!form) {
-    return <div>Partner not found</div>;
-  }
+  if (!form) return <div>Partner not found</div>;
 
-  // Customer-refund rows are opened automatically per booking, so staff never
-  // pick that type by hand — it only appears when editing a row that already is one.
-  const typeOptions: PartnerType[] =
-    form.type === "customer_refund"
-      ? ["customer_refund"]
-      : [...MARKETING_PARTNER_TYPES];
+  const isPercent = form.commission_type === "percent_of_sale";
 
   return (
     <div className="space-y-6">
@@ -201,19 +284,19 @@ export default function PartnerPage({
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight ml-4">
-          {isNewPartner ? "Create Partner" : `Edit Partner: ${form.email}`}
+        <h1 className="ml-4 text-3xl font-bold tracking-tight">
+          {isNewPartner ? "Create Partner" : `Edit Partner: ${form.name || form.email}`}
         </h1>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-8">
+      <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Partner Information</CardTitle>
+            <CardTitle>Partner &amp; login</CardTitle>
             <CardDescription>
-              An agent (סוכן) sells on the customer&apos;s behalf and is invoiced via a
-              supplier number. An influencer (משפיען) drives traffic with a tracking code
-              and coupons.
+              Saving creates both the partner and its portal login. An agent (סוכן) sells
+              on the customer&apos;s behalf and is invoiced; an influencer (משפיען) drives
+              traffic with a tracking code and coupons.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -227,6 +310,10 @@ export default function PartnerPage({
                   onChange={handleChange}
                   required
                 />
+                <p className="text-xs text-muted-foreground">
+                  Identifies the partner in booking links and coupons. Cannot be changed
+                  later.
+                </p>
               </div>
             )}
 
@@ -235,19 +322,24 @@ export default function PartnerPage({
                 <Label htmlFor="type">Partner Type</Label>
                 <Select
                   value={form.type}
-                  onValueChange={(value) => setField("type", value as PartnerType)}
+                  onValueChange={(value) =>
+                    setField("type", value as MarketingPartnerType)
+                  }
                 >
                   <SelectTrigger id="type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {typeOptions.map((type) => (
+                    {MARKETING_PARTNER_TYPES.map((type) => (
                       <SelectItem key={type} value={type}>
                         {PARTNER_TYPE_LABELS[type]}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  Also becomes the portal role.
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -261,75 +353,128 @@ export default function PartnerPage({
                   <span className="text-sm text-muted-foreground">
                     {form.is_active
                       ? "Active"
-                      : "Inactive — excluded from the monthly report"}
+                      : "Inactive — no portal access, no monthly report"}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="name_hebrew">Hebrew Name</Label>
-              <Input
-                id="name_hebrew"
-                name="name_hebrew"
-                value={form.name_hebrew}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                value={form.email}
-                onChange={handleChange}
-                required
-              />
-              <p className="text-sm text-muted-foreground">
-                The monthly activity report is sent to this address.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                value={form.password}
-                onChange={handleChange}
-                required={isNewPartner}
-              />
-              <p className="text-sm text-muted-foreground">
-                {isNewPartner
-                  ? "Set a password for the partner."
-                  : "Leave blank to keep the current password."}
-              </p>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="commission">Commission ($ per ticket)</Label>
+                <Label htmlFor="name">Partner Name</Label>
+                <Input
+                  id="name"
+                  name="name"
+                  value={form.name}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone</Label>
+                <PhoneInput
+                  id="phone"
+                  value={form.phone}
+                  onChange={(phone: string) => setField("phone", phone)}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  value={form.email}
+                  onChange={handleChange}
+                  disabled={!isNewPartner && !!userId}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  {!isNewPartner && userId
+                    ? "The portal login is tied to this address, so it can't be changed here."
+                    : "Used for the portal login and the monthly report."}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <PasswordInput
+                  id="password"
+                  name="password"
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={handleChange}
+                  required={isNewPartner}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {isNewPartner
+                    ? "8+ characters. Give it to the partner — it is not shown again."
+                    : userId
+                      ? "Leave blank to keep the current password."
+                      : "No portal login yet. Set a password to create one."}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Commercial terms</CardTitle>
+            <CardDescription>
+              What this partner earns, and what their followers get.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="commission_type">Commission Basis</Label>
+                <Select
+                  value={form.commission_type}
+                  onValueChange={(value) =>
+                    setField("commission_type", value as CommissionType)
+                  }
+                >
+                  <SelectTrigger id="commission_type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COMMISSION_TYPES.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {COMMISSION_TYPE_LABELS[type]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="commission">
+                  {isPercent ? "Commission (%)" : "Commission ($ per ticket)"}
+                </Label>
                 <Input
                   id="commission"
                   name="commission"
                   type="number"
                   min="0"
+                  max={isPercent ? 100 : undefined}
                   step="1"
                   value={form.commission}
                   onChange={handleChange}
                   required
                 />
                 <p className="text-xs text-muted-foreground">
-                  Paid per ticket sold, not a percentage.
+                  {isPercent
+                    ? "Percent of the package price the customer paid."
+                    : "Paid for every ticket on a paid reservation."}
                 </p>
               </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="user_discount">User Discount ($)</Label>
+                <Label htmlFor="user_discount">Follower Discount ($)</Label>
                 <Input
                   id="user_discount"
                   name="user_discount"
@@ -340,9 +485,12 @@ export default function PartnerPage({
                   onChange={handleChange}
                   required
                 />
+                <p className="text-xs text-muted-foreground">
+                  Taken off the price for customers arriving through this partner.
+                </p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="supplier_number">Supplier Number</Label>
+                <Label htmlFor="supplier_number">Company Number (ח.פ)</Label>
                 <Input
                   id="supplier_number"
                   name="supplier_number"
@@ -352,10 +500,54 @@ export default function PartnerPage({
                   onChange={handleChange}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Optional — used on the invoice-style monthly report.
+                  Optional — printed on the monthly invoice-style report.
                 </p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Cooperation agreement</CardTitle>
+            <CardDescription>
+              PDF, Word or image, up to 10MB. Stored privately.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {contractUrl && !contractFile && (
+              <div className="flex items-center gap-2 text-sm">
+                <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-primary"
+                  onClick={handleDownloadContract}
+                >
+                  Agreement on file — download
+                </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-destructive hover:text-destructive"
+                  onClick={handleRemoveContract}
+                  aria-label="Remove agreement"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+            <Input
+              id="contract"
+              type="file"
+              accept=".pdf,.doc,.docx,image/png,image/jpeg"
+              onChange={(e) => setContractFile(e.target.files?.[0] ?? null)}
+            />
+            {contractUrl && contractFile && (
+              <p className="text-xs text-muted-foreground">
+                The new file replaces the current agreement on save.
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -375,8 +567,8 @@ export default function PartnerPage({
         title={isNewPartner ? "Create this partner?" : "Save changes?"}
         description={
           isNewPartner
-            ? "This will create the partner."
-            : "This will save your changes to this partner."
+            ? "This creates the partner and a portal login they can sign in with."
+            : "This saves the partner and keeps its portal login in step."
         }
         confirmLabel={isNewPartner ? "Create Partner" : "Save Changes"}
         onConfirm={performSave}

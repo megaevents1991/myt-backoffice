@@ -3,11 +3,15 @@
 import { requireStaff } from "@/lib/auth/guards"
 import { supabase } from "@/lib/supabase-server"
 import {
-  commissionForTickets,
+  commissionForReservation,
+  commissionForReservations,
   countReservationTickets,
   countTickets,
   isPaid,
+  sumSales,
+  type CommissionTerms,
 } from "@/lib/partner-commission"
+import type { CommissionType } from "@/types/partner.types"
 import { getReservationEventOrderInfoPrimaryName } from "@/lib/utils"
 import type { ReservationEventOrderInfo } from "@/types/reservation.types"
 
@@ -32,7 +36,9 @@ export interface PartnerMonthlyPoint {
 }
 
 export interface PartnerPerformance {
-  commissionPerTicket: number
+  /** `partners.commission` — read as $/ticket or % per `commissionType`. */
+  commissionRate: number
+  commissionType: CommissionType
   totalReservations: number
   paidReservations: number
   paidTickets: number
@@ -69,7 +75,7 @@ export async function getPartnerPerformance(
   const [partnerResult, reservationsResult, couponsResult] = await Promise.all([
     supabase
       .from("partners")
-      .select("commission")
+      .select("commission,commission_type")
       .eq("partner_tracking_code", trackingCode)
       .single(),
     supabase
@@ -91,8 +97,14 @@ export async function getPartnerPerformance(
     console.error("getPartnerPerformance coupons:", JSON.stringify(couponsResult.error))
   }
 
-  const commissionPerTicket =
-    (partnerResult.data as { commission: number } | null)?.commission ?? 0
+  const partnerRow = partnerResult.data as {
+    commission: number
+    commission_type: CommissionType | null
+  } | null
+  const terms: CommissionTerms = {
+    type: partnerRow?.commission_type ?? "fixed_per_ticket",
+    rate: partnerRow?.commission ?? 0,
+  }
   const rows = (reservationsResult.data ?? []) as unknown as ReservationRow[]
   const coupons = (couponsResult.data ?? []) as unknown as {
     is_active: boolean
@@ -111,8 +123,8 @@ export async function getPartnerPerformance(
       event_title: getReservationEventOrderInfoPrimaryName(r.event_order_info),
       tickets,
       sales_usd: r.user_shown_price ?? 0,
-      // Only paid reservations earn — same PAID_STATUS the monthly cron bills on.
-      commission_usd: isPaid(r) ? commissionForTickets(tickets, commissionPerTicket) : 0,
+      // Only paid reservations earn — commissionForReservation enforces that.
+      commission_usd: commissionForReservation(r, terms),
     }
   })
 
@@ -130,18 +142,19 @@ export async function getPartnerPerformance(
     point.reservations += 1
     point.tickets += tickets
     point.sales_usd += r.user_shown_price ?? 0
-    point.commission_usd += commissionForTickets(tickets, commissionPerTicket)
+    point.commission_usd += commissionForReservation(r, terms)
     byMonth.set(month, point)
   }
   const monthly = [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month))
 
   return {
-    commissionPerTicket,
+    commissionRate: terms.rate ?? 0,
+    commissionType: terms.type ?? "fixed_per_ticket",
     totalReservations: rows.length,
     paidReservations: paid.length,
     paidTickets,
-    totalSalesUsd: paid.reduce((sum, r) => sum + (r.user_shown_price ?? 0), 0),
-    commissionUsd: commissionForTickets(paidTickets, commissionPerTicket),
+    totalSalesUsd: sumSales(paid),
+    commissionUsd: commissionForReservations(paid, terms),
     currentMonthCommissionUsd: byMonth.get(currentMonth)?.commission_usd ?? 0,
     activeCoupons: coupons.filter((c) => c.is_active).length,
     couponUses: coupons.reduce((sum, c) => sum + (c.times_used ?? 0), 0),

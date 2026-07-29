@@ -32,12 +32,7 @@ export default async function PortalDashboardPage() {
     { label: "הזמנות ששולמו", value: stats.paidReservations, icon: CheckCircle2 },
     { label: "סה\"כ מכירות ($)", value: usd.format(stats.totalSalesUsd), icon: DollarSign },
     { label: "כרטיסים ששולמו", value: stats.paidTickets, icon: Ticket },
-    {
-      label: "עמלה לכרטיס",
-      value:
-        stats.commissionPerTicket != null ? usd.format(stats.commissionPerTicket) : "—",
-      icon: DollarSign,
-    },
+    { label: "תנאי עמלה", value: stats.commissionLabel, icon: DollarSign },
     {
       label: "עמלה משוערת ($)",
       value: usd.format(stats.estimatedCommissionUsd),

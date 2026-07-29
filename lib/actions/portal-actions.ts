@@ -3,10 +3,14 @@
 import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import {
-  commissionForTickets,
+  commissionForReservations,
   countTickets,
+  describeCommission,
   isPaid,
+  sumSales,
+  type CommissionTerms,
 } from "@/lib/partner-commission";
+import type { CommissionType } from "@/types/partner.types";
 import type { ReservationEventOrderInfo } from "@/types/reservation.types";
 
 export interface PortalProfile {
@@ -22,8 +26,8 @@ export interface PortalStats {
   totalReservations: number;
   paidReservations: number;
   totalSalesUsd: number;
-  /** Flat USD per ticket — see lib/partner-commission.ts. */
-  commissionPerTicket: number | null;
+  /** Ready-to-display rate, e.g. "$25 per ticket" or "8% of sales". */
+  commissionLabel: string;
   paidTickets: number;
   estimatedCommissionUsd: number;
   activeCoupons: number;
@@ -87,7 +91,7 @@ export async function getPortalStats(): Promise<PortalStats> {
     totalReservations: 0,
     paidReservations: 0,
     totalSalesUsd: 0,
-    commissionPerTicket: null,
+    commissionLabel: "—",
     paidTickets: 0,
     estimatedCommissionUsd: 0,
     activeCoupons: 0,
@@ -105,7 +109,7 @@ export async function getPortalStats(): Promise<PortalStats> {
       .eq("partner_tracking_code", session.partner_code),
     (supabase as any)
       .from("partners")
-      .select("commission")
+      .select("commission,commission_type")
       .eq("partner_tracking_code", session.partner_code)
       .maybeSingle(),
   ]);
@@ -133,19 +137,20 @@ export async function getPortalStats(): Promise<PortalStats> {
     is_active: boolean;
     times_used: number | null;
   }[];
-  const commissionPerTicket = partnerResult.data?.commission ?? null;
+  const terms: CommissionTerms = {
+    type: (partnerResult.data?.commission_type as CommissionType | null) ?? "fixed_per_ticket",
+    rate: partnerResult.data?.commission ?? null,
+  };
 
   const paid = reservations.filter(isPaid);
-  const totalSalesUsd = paid.reduce((sum, r) => sum + (r.user_shown_price ?? 0), 0);
-  const paidTickets = countTickets(paid);
 
   return {
     totalReservations: reservations.length,
     paidReservations: paid.length,
-    totalSalesUsd,
-    commissionPerTicket,
-    paidTickets,
-    estimatedCommissionUsd: commissionForTickets(paidTickets, commissionPerTicket),
+    totalSalesUsd: sumSales(paid),
+    commissionLabel: describeCommission(terms),
+    paidTickets: countTickets(paid),
+    estimatedCommissionUsd: commissionForReservations(paid, terms),
     activeCoupons: coupons.filter((c) => c.is_active).length,
     couponUses: coupons.reduce((sum, c) => sum + (c.times_used ?? 0), 0),
   };

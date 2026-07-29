@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/table";
 import { getPartner } from "@/lib/actions/partner-actions";
 import { getPartnerPerformance } from "@/lib/actions/partner-performance-actions";
-import { PAID_STATUS } from "@/lib/partner-commission";
+import { PAID_STATUS, describeCommission } from "@/lib/partner-commission";
 import { PARTNER_TYPE_LABELS, isCustomerRefundPartner } from "@/types/partner.types";
 import { PerformanceChart } from "./performance-chart";
 
@@ -55,7 +55,10 @@ export default async function ViewPartnerPage({
     {
       label: "Commission earned",
       value: usd.format(performance.commissionUsd),
-      hint: `${performance.paidTickets} tickets × ${usd.format(performance.commissionPerTicket)}`,
+      hint: describeCommission({
+        type: performance.commissionType,
+        rate: performance.commissionRate,
+      }),
       icon: Wallet,
     },
     {
@@ -155,8 +158,11 @@ export default async function ViewPartnerPage({
           <CardContent className="space-y-4 text-sm">
             <Detail label="Email" value={partner.email} />
             <Detail
-              label="Commission per ticket"
-              value={usd.format(partner.commission)}
+              label="Commission"
+              value={describeCommission({
+                type: performance.commissionType,
+                rate: performance.commissionRate,
+              })}
             />
             <Detail label="User discount" value={usd.format(partner.user_discount)} />
             <Detail

@@ -6,8 +6,11 @@ import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { guardCronRoute } from "@/lib/auth/guards";
 import {
   PAID_STATUS,
+  commissionForReservation,
+  commissionForReservations,
   countReservationTickets,
   countTickets,
+  type CommissionTerms,
 } from "@/lib/partner-commission";
 
 interface Reservation {
@@ -15,11 +18,14 @@ interface Reservation {
   event_order_info: any;
   created_at: string;
   accounting_number: number;
+  /** Both are needed to price a reservation — see lib/partner-commission.ts. */
+  status: string;
+  user_shown_price: number | null;
 }
 
 interface PartnerData {
   partnerName: string;
-  commission: number;
+  terms: CommissionTerms;
   email: string;
   reservations: Reservation[];
   supplier_number?: number | null;
@@ -32,7 +38,7 @@ interface PartnerReportProps {
   totalReservations: number;
   totalTickets: number;
   reservations: Reservation[];
-  commission: number;
+  terms: CommissionTerms;
   supplier_number?: number | null;
 }
 
@@ -130,7 +136,7 @@ export async function GET(req: Request) {
 
       const { data: partnerData, error: partnerError } = (await supabase
         .from("partners")
-        .select("name_hebrew,email,commission,supplier_number,is_active")
+        .select("name_hebrew,email,commission,commission_type,supplier_number,is_active")
         .eq("partner_tracking_code", trackingCode)
         .single()) as { data: any | null; error: any };
       if (partnerError) {
@@ -153,7 +159,10 @@ export async function GET(req: Request) {
 
       const result = await sendMonthlyReportEmail({
         partnerName: partnerData?.name_hebrew,
-        commission: partnerData?.commission,
+        terms: {
+          type: partnerData?.commission_type ?? "fixed_per_ticket",
+          rate: partnerData?.commission ?? null,
+        },
         email: partnerData.email,
         reservations: partnerReservations as Reservation[],
         supplier_number: partnerData?.supplier_number,
@@ -232,10 +241,15 @@ const generateEmailHtml = ({
   year,
   totalReservations,
   totalTickets,
-  commission,
+  terms,
   reservations,
   supplier_number = null,
 }: PartnerReportProps) => {
+  // Percentage commission divides, so raw sums render as 133.51999999999998.
+  // This is an invoice — always two decimals.
+  const money = (amount: number) => amount.toFixed(2);
+  // One total, computed the same way the backoffice and the portal compute it.
+  const totalCommission = money(commissionForReservations(reservations, terms));
   if (supplier_number) {
     return `
     <!DOCTYPE html>
@@ -356,7 +370,7 @@ const generateEmailHtml = ({
             </div>
             <div class="summary-item">
               <span class="summary-label">Total Amount (USD):</span>
-              <span>${totalTickets * commission}</span>
+              <span>${totalCommission}</span>
             </div>
           </div>
 
@@ -404,7 +418,7 @@ const generateEmailHtml = ({
                   <td>${eventLocation}</td>
                   <td>${tickets}</td>
                   <td>${formattedDate}</td>
-                  <td>${tickets * commission}</td>
+                  <td>${money(commissionForReservation(reservation, terms))}</td>
                   <td>${reservation.accounting_number}</td>
                 </tr>
               `;
@@ -554,7 +568,7 @@ const generateEmailHtml = ({
             </div>
             <div class="summary-item">
               <span class="summary-label">Total Amount (USD):</span>
-              <span>${totalTickets * commission}</span>
+              <span>${totalCommission}</span>
             </div>
           </div>
           
@@ -600,7 +614,7 @@ const generateEmailHtml = ({
                   <td>${eventLocation}</td>
                   <td>${tickets}</td>
                   <td>${formattedDate}</td>
-                  <td>${tickets * commission}</td>
+                  <td>${money(commissionForReservation(reservation, terms))}</td>
                   <td>${reservation.accounting_number || "TBD"}</td>
                 </tr>
               `;
@@ -650,7 +664,7 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
     year,
     totalReservations,
     totalTickets,
-    commission: partnerData.commission,
+    terms: partnerData.terms,
     reservations: partnerData.reservations,
   });
 
@@ -661,7 +675,7 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
     totalReservations,
     totalTickets,
     reservations: partnerData.reservations,
-    commission: partnerData.commission,
+    terms: partnerData.terms,
     supplier_number: partnerData.supplier_number,
   });
 

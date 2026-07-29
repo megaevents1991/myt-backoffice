@@ -43,6 +43,18 @@ export function isCustomerRefundPartner(partner: {
   return partner.name_hebrew?.includes(CUSTOMER_REFUND_NAME_MARKER) ?? false
 }
 
+/**
+ * How `partners.commission` is read. The column carries no unit of its own.
+ * `fixed_per_ticket` is the DB default and how every legacy partner is paid.
+ */
+export const COMMISSION_TYPES = ["fixed_per_ticket", "percent_of_sale"] as const
+export type CommissionType = (typeof COMMISSION_TYPES)[number]
+
+export const COMMISSION_TYPE_LABELS: Record<CommissionType, string> = {
+  fixed_per_ticket: "דולר לכרטיס",
+  percent_of_sale: "אחוז ממחיר החבילה",
+}
+
 export type Partner = {
   created_at: string
   name_hebrew: string | null
@@ -50,7 +62,9 @@ export type Partner = {
   email: string
   password: string
   commission: number
+  commission_type: CommissionType | null
   user_discount: number
+  /** The partner's company/VAT number (ח.פ), printed on the monthly report. */
   supplier_number: number | null
   type: PartnerType | null
   is_active: boolean

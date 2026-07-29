@@ -22,6 +22,9 @@ import {
   type CustomerRefundPartners,
   type PartnerListItem,
 } from "@/lib/actions/partner-actions";
+import { describeCommission } from "@/lib/partner-commission";
+import { ADMIN_ROLES } from "@/types/auth.types";
+import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -69,6 +72,11 @@ export function PartnersTable() {
   const [refunds, setRefunds] = useState<CustomerRefundPartners | null>(null);
   const [refundsLoading, setRefundsLoading] = useState(false);
   const { toast } = useToast();
+  // Editing a partner also creates/updates its portal login, which is an
+  // admin-only action — so editors get a read-only list rather than buttons
+  // that fail with "Unauthorized".
+  const { user: me } = useAuth();
+  const canManage = !!me && ADMIN_ROLES.includes(me.role);
 
   useEffect(() => {
     async function fetchPartners() {
@@ -300,15 +308,21 @@ export function PartnersTable() {
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
-          Commission / ticket
+          Commission
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       ),
-      cell: ({ row }) => usd.format(row.original.commission ?? 0),
+      // The column carries no unit of its own — a percentage partner formatted
+      // as currency reads as "$8" when they actually earn 8% of the sale.
+      cell: ({ row }) =>
+        describeCommission({
+          type: row.original.commission_type,
+          rate: row.original.commission,
+        }),
     },
     {
       accessorKey: "user_discount",
-      header: "User Discount",
+      header: "Follower Discount",
       cell: ({ row }) => usd.format(row.original.user_discount ?? 0),
     },
     {
@@ -357,18 +371,22 @@ export function PartnersTable() {
                     <span>View performance</span>
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href={`/partners/${trackingCode}`} className="flex items-center">
-                    <Edit className="mr-2 h-4 w-4" />
-                    <span>Edit</span>
-                  </Link>
-                </DropdownMenuItem>
-                <AlertDialogTrigger asChild>
-                  <DropdownMenuItem className="flex items-center text-destructive focus:text-destructive">
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    <span>Delete</span>
+                {canManage && (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/partners/${trackingCode}`} className="flex items-center">
+                      <Edit className="mr-2 h-4 w-4" />
+                      <span>Edit</span>
+                    </Link>
                   </DropdownMenuItem>
-                </AlertDialogTrigger>
+                )}
+                {canManage && (
+                  <AlertDialogTrigger asChild>
+                    <DropdownMenuItem className="flex items-center text-destructive focus:text-destructive">
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      <span>Delete</span>
+                    </DropdownMenuItem>
+                  </AlertDialogTrigger>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -424,6 +442,7 @@ export function PartnersTable() {
       rowSelection={rowSelection}
       onRowSelectionChange={setRowSelection}
       bulkActions={
+        !canManage ? undefined : (
         <div className="flex items-center gap-2">
           {/* Refund rows are opened per booking, never templated from — and a
               copy would land on a tab the user isn't looking at. */}
@@ -460,6 +479,7 @@ export function PartnersTable() {
             </AlertDialogContent>
           </AlertDialog>
         </div>
+        )
       }
       rightActions={
         <div className="flex flex-wrap items-center gap-2">

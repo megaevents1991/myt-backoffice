@@ -1,18 +1,26 @@
 import { normalizeReservationEventOrderInfo } from "@/lib/utils"
+import type { CommissionType } from "@/types/partner.types"
 import type { ReservationEventOrderInfo } from "@/types/reservation.types"
 
 /**
  * Single source of truth for partner payout.
  *
- * `partners.commission` is a FLAT USD AMOUNT PER TICKET — not a percentage.
- * The monthly report cron has always paid `tickets * commission`; the portal
- * once read the same column as a percent of sales and showed partners a wildly
- * different number for the same month. Both surfaces now call in here.
+ * `partners.commission` carries no unit of its own — `commission_type` says how
+ * to read it. The portal once read the column as a percentage while the monthly
+ * report cron paid it as $/ticket, so the same partner saw two different
+ * payouts for the same month. Every surface now calls in here.
  */
 
 type ReservationLike = {
   status?: string | null
+  user_shown_price?: number | null
   event_order_info?: ReservationEventOrderInfo | null
+}
+
+/** How a partner is paid. `rate` is `partners.commission`. */
+export type CommissionTerms = {
+  type: CommissionType | null
+  rate: number | null
 }
 
 /** Tickets in one reservation, summed across every event in its order info. */
@@ -41,8 +49,54 @@ export function isPaid(reservation: ReservationLike): boolean {
   return reservation.status === PAID_STATUS
 }
 
-/** Commission in USD for a ticket count at a given per-ticket rate. */
-export function commissionForTickets(tickets: number, ratePerTicket: number | null): number {
-  if (!ratePerTicket || !Number.isFinite(ratePerTicket)) return 0
-  return tickets * ratePerTicket
+/** The package price the customer paid — the base for percentage commission. */
+export function saleValue(reservation: ReservationLike): number {
+  return reservation.user_shown_price ?? 0
+}
+
+/** Sales total across reservations. */
+export function sumSales(reservations: ReservationLike[]): number {
+  return reservations.reduce((sum, r) => sum + saleValue(r), 0)
+}
+
+function isUsableRate(rate: number | null): rate is number {
+  return rate != null && Number.isFinite(rate)
+}
+
+/**
+ * Commission in USD for one reservation. Returns 0 unless it is paid, so this
+ * is safe to map over a mixed list.
+ */
+export function commissionForReservation(
+  reservation: ReservationLike,
+  terms: CommissionTerms
+): number {
+  if (!isPaid(reservation)) return 0
+  if (!isUsableRate(terms.rate)) return 0
+  if (terms.type === "percent_of_sale") {
+    return (saleValue(reservation) * terms.rate) / 100
+  }
+  // `fixed_per_ticket` is the default for every legacy row, so an unset or
+  // unrecognised type must land here — that is how the cron has always paid.
+  return countReservationTickets(reservation) * terms.rate
+}
+
+/** Commission in USD earned by the paid reservations in the list. */
+export function commissionForReservations(
+  reservations: ReservationLike[],
+  terms: CommissionTerms
+): number {
+  return reservations.reduce((sum, r) => sum + commissionForReservation(r, terms), 0)
+}
+
+/**
+ * Human-readable rate, e.g. "$25 per ticket" or "8% of sales". A rate of 0 is
+ * shown as "$0", not "—": partners created alongside a user start at 0, and
+ * "not configured yet" must not look like "no data".
+ */
+export function describeCommission(terms: CommissionTerms): string {
+  if (!isUsableRate(terms.rate)) return "—"
+  return terms.type === "percent_of_sale"
+    ? `${terms.rate}% of sales`
+    : `$${terms.rate} per ticket`
 }
