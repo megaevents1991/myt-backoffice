@@ -62,6 +62,34 @@ export async function getQuoteEvents(): Promise<QuoteEventOption[]> {
   }));
 }
 
+/**
+ * What the system would price ONE package at for this event, right now.
+ *
+ * Per traveller, matching computePackagePrice — the order flow multiplies it by
+ * the number of travellers. Recomputed server-side rather than accepting a
+ * number from the quote form: the whole point of storing it is to measure what
+ * the partner did to the price, so the partner's browser cannot be the source
+ * of the baseline.
+ */
+async function suggestedUnitPriceFor(eventId: number | null): Promise<number | null> {
+  if (eventId == null) return null;
+  const { data, error } = await (supabase as any)
+    .from("events")
+    .select(
+      "id,name,date,location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel",
+    )
+    .eq("id", eventId)
+    .is("is_deleted", null)
+    .maybeSingle();
+  if (error) {
+    // A missing baseline is recorded as NULL rather than failing the quote —
+    // the partner's work is not lost over a reporting field.
+    console.error("suggestedUnitPriceFor:", JSON.stringify(error));
+    return null;
+  }
+  return data ? computePackagePrice(data as QuoteEventRow) : null;
+}
+
 export async function getPortalQuotes(): Promise<PortalQuote[]> {
   const session = await requirePartner();
   const { data, error } = await (supabase as any)
@@ -127,23 +155,42 @@ export async function createQuote(input: {
     return { ok: false, error: "Amount too large" };
   }
 
-  const { data, error } = await (supabase as any)
+  // Snapshot what the system would have charged per traveller, computed HERE
+  // from the event row — never taken from the client, which is the side being
+  // measured.
+  const base_unit_price = await suggestedUnitPriceFor(input.event_id ?? null);
+
+  const row = {
+    created_by: session.sub,
+    partner_tracking_code: session.partner_code,
+    event_id: input.event_id ?? null,
+    customer_name,
+    title,
+    line_items: input.line_items,
+    currency: "USD",
+    total,
+    notes: input.notes ?? null,
+    valid_until: input.valid_until ?? null,
+    status: "final",
+  };
+
+  let { data, error } = await (supabase as any)
     .from("quotes")
-    .insert({
-      created_by: session.sub,
-      partner_tracking_code: session.partner_code,
-      event_id: input.event_id ?? null,
-      customer_name,
-      title,
-      line_items: input.line_items,
-      currency: "USD",
-      total,
-      notes: input.notes ?? null,
-      valid_until: input.valid_until ?? null,
-      status: "final",
-    })
+    .insert({ ...row, base_unit_price })
     .select("id")
     .single();
+
+  // The migration adding this column and the deploy that writes it ship from
+  // the same merge, so there is a window where the column does not exist yet.
+  // A reporting field must not stop a partner creating quotes in that window.
+  if (error?.code === "PGRST204") {
+    console.error("createQuote: base_unit_price column missing, saving without it");
+    ({ data, error } = await (supabase as any)
+      .from("quotes")
+      .insert(row)
+      .select("id")
+      .single());
+  }
 
   if (error) {
     console.error("createQuote:", JSON.stringify(error));

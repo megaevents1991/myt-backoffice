@@ -43,7 +43,14 @@ function formatEventDate(date: string | null): string {
 // creative-form.tsx `price`): coercing to number on every keystroke makes
 // decimals untypable ("199.99" → 19999). Parsed only for the running-total
 // display and once at submit.
-type LineItemRow = { label: string; qty: string; unit_price: string; _key: number };
+type LineItemRow = {
+  label: string;
+  qty: string;
+  unit_price: string;
+  _key: number;
+  /** Seeded from the event's package price — the row the baseline applies to. */
+  fromEvent?: boolean;
+};
 
 export function QuoteForm({ events }: { events: QuoteEventOption[] }) {
   const router = useRouter();
@@ -90,6 +97,7 @@ export function QuoteForm({ events }: { events: QuoteEventOption[] }) {
         qty: "1",
         unit_price: String(event.suggested_price ?? 0),
         _key: newKey(),
+        fromEvent: true,
       },
     ]);
   };
@@ -117,6 +125,22 @@ export function QuoteForm({ events }: { events: QuoteEventOption[] }) {
     const price = Number(item.unit_price);
     return Number.isFinite(qty) && Number.isFinite(price) ? sum + qty * price : sum;
   }, 0);
+
+  // What the partner is giving up or adding versus the system price. Shown
+  // while they type, because under the agreement the difference comes out of
+  // their own commission — that is worth knowing before sending, not after.
+  //
+  // The suggested price is PER TRAVELLER, so it is scaled by the package row's
+  // quantity. Comparing it to the whole total would tell a partner quoting a
+  // family of four at the system price that they had added three packages of
+  // margin.
+  const packageRow = lineItems.find((item) => item.fromEvent);
+  const packageQty = Number(packageRow?.qty);
+  const basePrice =
+    selectedEvent?.suggested_price != null && Number.isFinite(packageQty) && packageQty > 0
+      ? selectedEvent.suggested_price * packageQty
+      : null;
+  const delta = basePrice == null ? null : Math.round((total - basePrice) * 100) / 100;
 
   const onSubmit = () => {
     const trimmedCustomer = customerName.trim();
@@ -341,8 +365,27 @@ export function QuoteForm({ events }: { events: QuoteEventOption[] }) {
           הוסף שורה
         </Button>
 
-        <div className="flex justify-end border-t pt-3 text-lg font-bold">
-          סה&quot;כ: {usd.format(total)}
+        <div className="space-y-1 border-t pt-3">
+          <div className="flex justify-end text-lg font-bold">
+            סה&quot;כ: {usd.format(total)}
+          </div>
+          {basePrice != null && (
+            <div className="flex justify-end text-sm text-muted-foreground">
+              מחיר המערכת: {usd.format(basePrice)}
+              {packageQty > 1 && ` (${packageQty} × ${usd.format(basePrice / packageQty)})`}
+            </div>
+          )}
+          {delta != null && delta !== 0 && (
+            <div
+              className={`flex justify-end text-sm font-medium ${
+                delta < 0 ? "text-destructive" : "text-foreground"
+              }`}
+            >
+              {delta < 0
+                ? `הורדתם ${usd.format(Math.abs(delta))} — הסכום יירד מהעמלה שלכם`
+                : `הוספתם ${usd.format(delta)} — הסכום יתווסף לעמלה שלכם`}
+            </div>
+          )}
         </div>
       </div>
 

@@ -193,6 +193,9 @@ NEXT_SECRET_XS2EVENT_API_URL=
 NEXT_SECRET_TIXSTOCK_API_URL=
 NEXT_SECRET_TIXSTOCK_TOKEN=
 NEXT_SECRET_REVALIDATION_SECRET=
+# Optional — customer-facing site the partner portal builds tracking links against.
+# Defaults to https://www.mega-events.co.il (lib/site.ts).
+NEXT_PUBLIC_MAIN_SITE_URL=
 # Absolute origin of this backoffice, used to build the form links that get emailed
 # out. Falls back to VERCEL_URL, then http://localhost:3000.
 NEXT_PUBLIC_APP_URL=
