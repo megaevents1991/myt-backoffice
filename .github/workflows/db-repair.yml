@@ -1,0 +1,54 @@
+name: Repair DB Migration History
+
+# When the remote migration history and the files on master disagree, every
+# `db push` fails and nothing can be applied until a human runs
+# `supabase migration repair` — which needs credentials only CI has.
+#
+# That state is reachable without anyone doing something silly: a run that
+# records a version and then fails before applying its SQL leaves the history
+# claiming a migration that never ran (2026-07-29, 20260729200000).
+#
+# Marks the given versions as reverted, then pushes again. Repairing does NOT
+# touch schema — it only rewrites the bookkeeping table, so the migration it
+# frees must be safe to re-run (ours are `if not exists` / `drop if exists`).
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: "Migration versions to mark reverted, space-separated (e.g. 20260729200000)"
+        required: true
+        type: string
+      status:
+        description: "reverted = 'this never ran, try it again'. applied = 'it did run, stop trying'."
+        type: choice
+        options: [reverted, applied]
+        default: reverted
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: fandqafngybfdyslofmr
+    steps:
+      - name: Refuse to run off master
+        if: github.ref != 'refs/heads/master'
+        run: |
+          echo "::error::Repair rewrites the history of the SHARED PRODUCTION database — master only."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Repair history
+        run: supabase migration repair --status "${{ inputs.status }}" ${{ inputs.versions }}
+
+      - name: Push migrations
+        run: supabase db push --include-all
