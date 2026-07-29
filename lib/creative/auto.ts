@@ -359,8 +359,10 @@ export type CampaignEventRow = Event & { campaign_input_hash?: string | null };
 // Bump whenever a rendering/template change should force ALL existing
 // creatives to regenerate on the next cron pass, even though their
 // underlying event data hasn't changed. v2: no-cutout avatar treatment +
-// real wordmark logo (2026-07-19).
-const RENDER_VERSION = "v2";
+// real wordmark logo (2026-07-19). v3: new tagline, "מחיר ממוצע לנוסע" pill
+// in brand mint at one size across both creatives, square subject cards,
+// thousands separator (2026-07-29).
+const RENDER_VERSION = "v3";
 
 /**
  * Hash of everything printed on the creative — change → regenerate. Includes
