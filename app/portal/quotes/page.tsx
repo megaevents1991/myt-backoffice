@@ -6,10 +6,8 @@ import { QuotesClient } from "./quotes-client";
 export default async function PortalQuotesPage() {
   const session = await getSession();
   const isPartner = !!session && PARTNER_ROLES.includes(session.role);
-
-  // Staff visiting /portal see the layout's notice only — never call partner
-  // actions for them (getPortalQuotes throws for non-agent/affiliate roles).
-  if (!isPartner) return null;
+  // Quotes are an agent tool; an influencer only promotes a link.
+  if (!isPartner || session.role !== "agent") return null;
 
   const quotes = await getPortalQuotes();
 

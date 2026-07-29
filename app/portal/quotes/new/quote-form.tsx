@@ -26,6 +26,7 @@ import {
   type QuoteEventOption,
   type QuoteLineItem,
 } from "@/lib/actions/quote-actions";
+import type { CommissionType } from "@/types/partner.types";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -52,7 +53,14 @@ type LineItemRow = {
   fromEvent?: boolean;
 };
 
-export function QuoteForm({ events }: { events: QuoteEventOption[] }) {
+export function QuoteForm({
+  events,
+  terms,
+}: {
+  events: QuoteEventOption[];
+  /** The agent's commission, used to show their discount ceiling. */
+  terms: { type: CommissionType; rate: number } | null;
+}) {
   const router = useRouter();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -142,6 +150,27 @@ export function QuoteForm({ events }: { events: QuoteEventOption[] }) {
       : null;
   const delta = basePrice == null ? null : Math.round((total - basePrice) * 100) / 100;
 
+  // An agent may give away their own commission and no more. Mirrors the
+  // server rule in createQuote — this copy is the warning, that one is the gate.
+  // Per traveller, matching the server. For a percentage the commission is
+  // paid on the DISCOUNTED price, so the largest legal discount d solves
+  // d = (base - d) * r/100  →  d = base*r / (100 + r).
+  const baseUnit = selectedEvent?.suggested_price ?? null;
+  const maxDiscountPerTraveller =
+    baseUnit == null || !terms
+      ? null
+      : Math.round(
+          (terms.type === "percent_of_sale"
+            ? (baseUnit * terms.rate) / (100 + terms.rate)
+            : terms.rate) * 100
+        ) / 100;
+
+  const packageUnitPrice = Number(packageRow?.unit_price);
+  const discountPerTraveller =
+    baseUnit == null || !Number.isFinite(packageUnitPrice)
+      ? null
+      : Math.round((baseUnit - packageUnitPrice) * 100) / 100;
+
   const onSubmit = () => {
     const trimmedCustomer = customerName.trim();
     const trimmedTitle = title.trim();
@@ -194,6 +223,12 @@ export function QuoteForm({ events }: { events: QuoteEventOption[] }) {
         customer_name: trimmedCustomer,
         title: trimmedTitle,
         line_items: parsedItems,
+        // Sent explicitly so the server measures the discount against the
+        // package row itself rather than guessing which row that is.
+        package:
+          packageRow && Number.isFinite(packageUnitPrice)
+            ? { qty: Number(packageRow.qty) || 1, unit_price: packageUnitPrice }
+            : null,
         notes: notes.trim() || null,
         valid_until: validUntil || null,
       });
@@ -386,6 +421,16 @@ export function QuoteForm({ events }: { events: QuoteEventOption[] }) {
                 : `הוספתם ${usd.format(delta)} — הסכום יתווסף לעמלה שלכם`}
             </div>
           )}
+          {/* The server refuses a discount larger than the commission — say so
+              here rather than letting them finish the quote and be rejected. */}
+          {maxDiscountPerTraveller != null &&
+            discountPerTraveller != null &&
+            discountPerTraveller > maxDiscountPerTraveller && (
+              <div className="flex justify-end text-sm font-medium text-destructive">
+                ההנחה המקסימלית שלכם היא{" "}
+                {usd.format(maxDiscountPerTraveller)} לנוסע
+              </div>
+            )}
         </div>
       </div>
 

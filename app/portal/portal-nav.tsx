@@ -7,22 +7,29 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 
-const navItems = [
+type NavItem = { name: string; href: string; agentOnly?: boolean };
+
+const navItems: NavItem[] = [
   { name: "דשבורד", href: "/portal" },
   { name: "הלינקים שלי", href: "/portal/links" },
   { name: "הצבירה שלי", href: "/portal/credit" },
   { name: "הקופונים שלי", href: "/portal/coupons" },
   { name: "ההזמנות שלי", href: "/portal/reservations" },
-  { name: "הצעות מחיר", href: "/portal/quotes" },
+  // Agents only — an influencer promotes a link and never prices a package
+  // for a named customer. The server action enforces it too.
+  { name: "הצעות מחיר", href: "/portal/quotes", agentOnly: true },
 ];
 
 export function PortalNav() {
   const pathname = usePathname();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+  const isAgent = user?.role === "agent";
 
   return (
     <nav className="flex items-center gap-1">
-      {navItems.map((item) => {
+      {navItems
+        .filter((item) => !item.agentOnly || isAgent)
+        .map((item) => {
         const isActive =
           pathname === item.href ||
           (item.href !== "/portal" && pathname.startsWith(`${item.href}/`));

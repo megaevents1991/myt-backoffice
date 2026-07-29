@@ -37,8 +37,17 @@ export async function POST(
     }
     // 404 (not 403) for both "doesn't exist" and "not yours" — don't confirm foreign quote ids.
     if (!quote) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    if (!STAFF_ROLES.includes(session.role) && quote.partner_tracking_code !== session.partner_code) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // Non-staff must be an AGENT and own the quote. Role first: without it an
+    // influencer could still mint PDFs for legacy quotes on their code, and a
+    // null partner_code would match a quote whose code is also null.
+    if (!STAFF_ROLES.includes(session.role)) {
+      const ownsIt =
+        session.role === "agent" &&
+        !!session.partner_code &&
+        quote.partner_tracking_code === session.partner_code;
+      if (!ownsIt) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
     }
 
     let partnerName: string | null = null;
