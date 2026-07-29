@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Edit, Trash2, Eye, MoreHorizontal, Copy } from "lucide-react";
@@ -15,9 +15,11 @@ import {
 } from "@/types/partner.types";
 import {
   getPartners,
+  getCustomerRefundPartners,
   deletePartner,
   bulkDeletePartners,
   bulkDuplicatePartners,
+  type CustomerRefundPartners,
   type PartnerListItem,
 } from "@/lib/actions/partner-actions";
 import { useToast } from "@/hooks/use-toast";
@@ -62,6 +64,10 @@ export function PartnersTable() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
+  // Refund rows live in their own tab and load on demand — there are thousands,
+  // and fetching them alongside the real partners is what truncated this list.
+  const [refunds, setRefunds] = useState<CustomerRefundPartners | null>(null);
+  const [refundsLoading, setRefundsLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -84,38 +90,67 @@ export function PartnersTable() {
     fetchPartners();
   }, [toast]);
 
-  const filtered = useMemo(
-    () =>
-      partners.filter((partner) => {
-        const type = partnerType(partner);
-        // Refund rows only ever show under their own tab — never under "all".
-        if (typeFilter === "all") {
-          if (type === "customer_refund") return false;
-        } else if (type !== typeFilter) {
-          return false;
-        }
-        if (statusFilter === "active" && !partner.is_active) return false;
-        if (statusFilter === "inactive" && partner.is_active) return false;
-        return true;
-      }),
-    [partners, typeFilter, statusFilter]
-  );
+  // The "fetched already" flag is a ref, not state, and the deps list holds only
+  // `typeFilter`: a state flag here would re-render, tear this effect down, and
+  // cancel its own in-flight request — leaving the tab loading forever.
+  const refundsRequested = useRef(false);
+
+  useEffect(() => {
+    if (typeFilter !== "customer_refund" || refundsRequested.current) return;
+    refundsRequested.current = true;
+    setRefundsLoading(true);
+    getCustomerRefundPartners()
+      .then(setRefunds)
+      .catch((error: unknown) => {
+        console.error("Error fetching customer-refund partners:", error);
+        refundsRequested.current = false; // let re-opening the tab retry
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load customer-refund rows.",
+        });
+      })
+      .finally(() => setRefundsLoading(false));
+  }, [typeFilter, toast]);
+
+  const filtered = useMemo(() => {
+    // The refund tab reads its own lazily-fetched page; `partners` deliberately
+    // never carries those rows (see getPartners).
+    const source =
+      typeFilter === "customer_refund" ? (refunds?.rows ?? []) : partners;
+    return source.filter((partner) => {
+      const type = partnerType(partner);
+      if (typeFilter === "all") {
+        if (type === "customer_refund") return false;
+      } else if (type !== typeFilter) {
+        return false;
+      }
+      if (statusFilter === "active" && !partner.is_active) return false;
+      if (statusFilter === "inactive" && partner.is_active) return false;
+      return true;
+    });
+  }, [partners, refunds, typeFilter, statusFilter]);
 
   const counts = useMemo(() => {
     const active = partners.filter((p) => p.is_active);
     const activeType = (t: PartnerType) =>
       active.filter((p) => partnerType(p) === t).length;
-    // All counts are active-only, matching the default status filter — so
+    // Marketing counts are active-only, matching the default status filter — so
     // "All" always equals agent + affiliate and never overstates the rows shown.
     const marketing = active.filter((p) => partnerType(p) !== "customer_refund");
     return {
       all: marketing.length,
       agent: activeType("agent"),
       affiliate: activeType("affiliate"),
-      customer_refund: activeType("customer_refund"),
+      // Whole-table total from a count query — those rows aren't loaded here.
+      customer_refund: refunds?.total ?? null,
       // Scoped to the type tab in view — the status filter is orthogonal to it,
-      // so a global number would contradict the rows on the refund tab.
-      inactive: partners.filter(
+      // so a global number would contradict the rows on the refund tab. On the
+      // refund tab this counts the loaded page only, which is all we hold.
+      inactive: (typeFilter === "customer_refund"
+        ? (refunds?.rows ?? [])
+        : partners
+      ).filter(
         (p) =>
           !p.is_active &&
           (typeFilter === "all"
@@ -123,19 +158,29 @@ export function PartnersTable() {
             : partnerType(p) === typeFilter)
       ).length,
     };
-  }, [partners, typeFilter]);
+  }, [partners, refunds, typeFilter]);
 
   const selectedCodes = useMemo(
     () => Object.keys(rowSelection).filter((code) => rowSelection[code]),
     [rowSelection]
   );
 
+  /** Drop deleted rows from BOTH lists — the refund tab has its own copy. */
+  const forgetPartners = (codes: string[]) => {
+    setPartners((prev) =>
+      prev.filter((p) => !codes.includes(p.partner_tracking_code))
+    );
+    setRefunds((prev) => {
+      if (!prev) return prev;
+      const rows = prev.rows.filter((p) => !codes.includes(p.partner_tracking_code));
+      return { ...prev, rows, total: prev.total - (prev.rows.length - rows.length) };
+    });
+  };
+
   const handleDelete = async (trackingCode: string) => {
     try {
       await deletePartner(trackingCode);
-      setPartners((prev) =>
-        prev.filter((partner) => partner.partner_tracking_code !== trackingCode)
-      );
+      forgetPartners([trackingCode]);
       toast({ title: "Partner deleted", description: "Partner has been deleted." });
     } catch (error) {
       console.error("Error deleting partner:", error);
@@ -152,9 +197,7 @@ export function PartnersTable() {
     setBusy(true);
     try {
       await bulkDeletePartners(selectedCodes);
-      setPartners((prev) =>
-        prev.filter((partner) => !selectedCodes.includes(partner.partner_tracking_code))
-      );
+      forgetPartners(selectedCodes);
       setRowSelection({});
       toast({
         title: "Partners deleted",
@@ -356,10 +399,24 @@ export function PartnersTable() {
     return <div>Loading partners...</div>;
   }
 
+  const onRefundTab = typeFilter === "customer_refund";
+
   return (
-    <DataTable
-      columns={columns}
-      data={filtered}
+    <div className="space-y-3">
+      {onRefundTab && refundsLoading && (
+        <p className="text-sm text-muted-foreground">
+          Loading customer-refund rows…
+        </p>
+      )}
+      {onRefundTab && refunds?.truncated && (
+        <p className="text-sm text-muted-foreground">
+          Showing the {refunds.rows.length} most recent of {refunds.total} customer-refund
+          rows. These are opened automatically per booking and are not partner marketing.
+        </p>
+      )}
+      <DataTable
+        columns={columns}
+        data={filtered}
       searchColumns={["name_hebrew", "email", "partner_tracking_code"]}
       searchPlaceholder="Search by name, email or tracking code..."
       enableRowSelection
@@ -368,10 +425,12 @@ export function PartnersTable() {
       onRowSelectionChange={setRowSelection}
       bulkActions={
         <div className="flex items-center gap-2">
+          {/* Refund rows are opened per booking, never templated from — and a
+              copy would land on a tab the user isn't looking at. */}
           <Button
             variant="outline"
             size="sm"
-            disabled={busy}
+            disabled={busy || onRefundTab}
             onClick={handleBulkDuplicate}
           >
             <Copy className="mr-2 h-4 w-4" />
@@ -415,7 +474,11 @@ export function PartnersTable() {
               })),
               {
                 key: "customer_refund" as TypeFilter,
-                label: `${PARTNER_TYPE_LABELS.customer_refund} (${counts.customer_refund})`,
+                // Count is unknown until the tab is opened and the page loads.
+                label:
+                  counts.customer_refund == null
+                    ? PARTNER_TYPE_LABELS.customer_refund
+                    : `${PARTNER_TYPE_LABELS.customer_refund} (${counts.customer_refund})`,
               },
             ]}
           />
@@ -430,8 +493,9 @@ export function PartnersTable() {
             ]}
           />
         </div>
-      }
-    />
+        }
+      />
+    </div>
   );
 }
 

@@ -2,7 +2,13 @@
 
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server"
-import { PARTNER_TYPES, type Partner, type PartnerInput, type PartnerType } from "@/types/partner.types"
+import {
+  CUSTOMER_REFUND_NAME_MARKER,
+  PARTNER_TYPES,
+  type Partner,
+  type PartnerInput,
+  type PartnerType,
+} from "@/types/partner.types"
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit"
 
 /** Columns a staff user is allowed to write. Anything else is dropped. */
@@ -81,15 +87,80 @@ const LIST_COLUMNS =
 
 export type PartnerListItem = Omit<Partner, "password">
 
+/** PostgREST returns at most this many rows per request (`max_rows`, supabase/config.toml). */
+const MAX_ROWS = 1000
+
+/**
+ * The partners staff actually manage — agents and influencers.
+ *
+ * The customer-refund rows are excluded SERVER-side, and that is load-bearing,
+ * not tidiness: they are ~1235 of the ~1312 rows and are opened per booking, so
+ * ordered by `created_at` they filled the entire 1000-row cap and silently
+ * truncated real partners out of the response. That is why long-standing
+ * affiliates went missing from this list while still appearing in the coupon
+ * dropdown, which has always filtered them server-side.
+ *
+ * The name marker is checked as well as `type` because new refund rows arrive
+ * typed `affiliate` by the column DEFAULT — same order as isCustomerRefundPartner().
+ */
 export async function getPartners() {
   await requireStaff();
   const { data, error } = await supabase
     .from("partners")
     .select(LIST_COLUMNS)
-    .order("created_at", { ascending: false })
+    // `.is.null` must be spelled out — a bare negation drops NULL-named rows,
+    // which is where the code-only affiliates (e.g. "mega") live.
+    .or(`name_hebrew.is.null,name_hebrew.not.ilike.*${CUSTOMER_REFUND_NAME_MARKER}*`)
+    .or("type.is.null,type.neq.customer_refund")
+    .order("name_hebrew", { ascending: true, nullsFirst: false })
 
   if (error) throw error
-  return data as unknown as PartnerListItem[]
+  const rows = data as unknown as PartnerListItem[]
+  if (rows.length >= MAX_ROWS) {
+    console.error(
+      `getPartners: hit the ${MAX_ROWS}-row cap — the partner list is truncated. Add paging.`
+    )
+  }
+  return rows
+}
+
+export interface CustomerRefundPartners {
+  rows: PartnerListItem[]
+  /** Total in the DB, which is far more than `rows` carries. */
+  total: number
+  truncated: boolean
+}
+
+/**
+ * The auto-created per-booking refund rows, for their own tab. Kept out of
+ * getPartners() and explicitly paged — there are thousands of them.
+ */
+export async function getCustomerRefundPartners(limit = 200): Promise<CustomerRefundPartners> {
+  await requireStaff();
+  const capped = Math.max(1, Math.min(limit, MAX_ROWS))
+  const refundFilter = `name_hebrew.ilike.*${CUSTOMER_REFUND_NAME_MARKER}*,type.eq.customer_refund`
+
+  const [listResult, countResult] = await Promise.all([
+    supabase
+      .from("partners")
+      .select(LIST_COLUMNS)
+      .or(refundFilter)
+      .order("created_at", { ascending: false })
+      .limit(capped),
+    supabase
+      .from("partners")
+      .select("partner_tracking_code", { count: "exact", head: true })
+      .or(refundFilter),
+  ])
+
+  if (listResult.error) throw listResult.error
+  if (countResult.error) {
+    console.error("getCustomerRefundPartners count:", JSON.stringify(countResult.error))
+  }
+
+  const rows = (listResult.data ?? []) as unknown as PartnerListItem[]
+  const total = countResult.count ?? rows.length
+  return { rows, total, truncated: total > rows.length }
 }
 
 export async function getPartner(trackingCode: string) {
