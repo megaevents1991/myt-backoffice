@@ -3,13 +3,17 @@
 import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import {
+  commissionForReservation,
   commissionForReservations,
+  countReservationTickets,
   countTickets,
   describeCommission,
   isPaid,
+  round2,
   sumSales,
   type CommissionTerms,
 } from "@/lib/partner-commission";
+import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import type { CommissionType } from "@/types/partner.types";
 import type { ReservationEventOrderInfo } from "@/types/reservation.types";
 
@@ -55,6 +59,27 @@ export interface PortalReservation {
   user_shown_price: number;
   event_id: number;
   event_title: string | null;
+  event_date: string | null;
+  event_location: string | null;
+  ticket_category: string | null;
+  /** Tickets across every event on the booking. */
+  tickets: number;
+  /** Travellers on the booking, including the person who booked it. */
+  pax: number;
+  /** Ours to quote back at us — staff-entered, may be empty. */
+  booking_reference: string | null;
+  /** Whether the customer's confirmation went out. */
+  materials_sent: boolean;
+  /** What this booking earns the partner. Zero until it is paid. */
+  commission_usd: number;
+  /** True once it has gone out in a monthly report. */
+  billed: boolean;
+}
+
+export interface PortalReservationsPage {
+  rows: PortalReservation[];
+  /** True when older bookings exist beyond the page returned. */
+  truncated: boolean;
 }
 
 export async function getPortalProfile(): Promise<PortalProfile | null> {
@@ -172,20 +197,54 @@ export async function getPortalCoupons(): Promise<PortalCoupon[]> {
   return (data as PortalCoupon[]) ?? [];
 }
 
-export async function getPortalReservations(): Promise<PortalReservation[]> {
+const RESERVATIONS_PAGE_SIZE = 500;
+
+/**
+ * Columns a partner may see on their own bookings.
+ *
+ * Listed explicitly, never "everything except" — a column added to
+ * `reservations` later must not start leaking on its own. Deliberately absent:
+ * `main_contact_phone_number` and `main_contact_email` (the customer is ours,
+ * not the partner's), `payment_info`, `offline_flight_cost` /
+ * `offline_hotel_cost` / `final_purchase_price_ils` (our cost — showing them
+ * hands the partner our margin on every booking), `accounting_number`, and
+ * `comments`, which is the staff's internal note field.
+ */
+const PORTAL_RESERVATION_COLUMNS =
+  "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_id,event_order_info,more_pax_info,booking_reference,confirmation_email_sent,billed_at";
+
+export async function getPortalReservations(): Promise<PortalReservationsPage> {
   const session = await requirePartner();
-  const { data, error } = await (supabase as any)
-    .from("reservations")
-    .select(
-      "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_id,event_order_info"
-    )
-    .eq("aff_partner_tracking_code", session.partner_code)
-    .order("created_at", { ascending: false })
-    .limit(500);
-  if (error) {
-    console.error("getPortalReservations:", JSON.stringify(error));
-    return [];
+
+  const [reservationsResult, partnerResult] = await Promise.all([
+    (supabase as any)
+      .from("reservations")
+      .select(PORTAL_RESERVATION_COLUMNS)
+      .eq("aff_partner_tracking_code", session.partner_code)
+      .order("created_at", { ascending: false })
+      // One more than the page, purely to detect that older rows exist.
+      .limit(RESERVATIONS_PAGE_SIZE + 1),
+    (supabase as any)
+      .from("partners")
+      .select("commission,commission_type")
+      .eq("partner_tracking_code", session.partner_code)
+      .maybeSingle(),
+  ]);
+
+  if (reservationsResult.error) {
+    console.error("getPortalReservations:", JSON.stringify(reservationsResult.error));
+    return { rows: [], truncated: false };
   }
+  if (partnerResult.error) {
+    // Never let a lookup failure quietly render every booking as $0 commission.
+    console.error("getPortalReservations partner:", JSON.stringify(partnerResult.error));
+  }
+
+  const terms: CommissionTerms = {
+    type: (partnerResult.data?.commission_type as CommissionType | null) ?? "fixed_per_ticket",
+    rate: partnerResult.data?.commission ?? null,
+  };
+
   type Row = {
     id: number;
     created_at: string;
@@ -194,25 +253,21 @@ export async function getPortalReservations(): Promise<PortalReservation[]> {
     status: string;
     user_shown_price: number | null;
     event_id: number;
-    event_order_info: unknown;
+    event_order_info: ReservationEventOrderInfo | null;
+    more_pax_info: unknown;
+    booking_reference: string | null;
+    confirmation_email_sent: boolean | null;
+    billed_at: string | null;
   };
-  return ((data ?? []) as Row[]).map((r) => {
-    // Event title lives inside the order-info JSON when present. Shape is
-    // ReservationEventOrderInfoItem ({ name, ... }) or { events: ReservationEventOrderInfoItem[] }
-    // (see types/reservation.types.ts) — the title field is `name`, not `event_name`.
-    let event_title: string | null = null;
-    const info = r.event_order_info as
-      | { events?: { name?: string }[] }
-      | { name?: string }
-      | null;
-    if (info && typeof info === "object") {
-      if (Array.isArray((info as { events?: unknown }).events)) {
-        const first = (info as { events: { name?: string }[] }).events[0];
-        event_title = first?.name ?? null;
-      } else if ("name" in info && typeof info.name === "string") {
-        event_title = info.name;
-      }
-    }
+
+  const all = (reservationsResult.data ?? []) as Row[];
+  const truncated = all.length > RESERVATIONS_PAGE_SIZE;
+  const rows = all.slice(0, RESERVATIONS_PAGE_SIZE).map((r) => {
+    // The order-info JSON holds one item or { events: [...] }; the title field
+    // is `name`. Ticket counts and category are already in here — the portal
+    // used to fetch this and throw all but the title away.
+    const events = normalizeReservationEventOrderInfo(r.event_order_info);
+    const first = events[0];
     return {
       id: r.id,
       created_at: r.created_at,
@@ -222,7 +277,22 @@ export async function getPortalReservations(): Promise<PortalReservation[]> {
       status: r.status,
       user_shown_price: r.user_shown_price ?? 0,
       event_id: r.event_id,
-      event_title,
+      event_title: first?.name ?? null,
+      // `date` is typed string | Date on the order-info item.
+      event_date: first?.date == null ? null : String(first.date),
+      event_location: first?.location_name ?? null,
+      ticket_category: first?.category ?? null,
+      tickets: countReservationTickets(r),
+      // `more_pax_info` is the ADDITIONAL passengers — the main contact is not
+      // in it (the main app writes `passengers.slice(1)`), so the +1 is the
+      // booker. Every other pax count in this repo does the same.
+      pax: 1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0),
+      booking_reference: r.booking_reference,
+      materials_sent: r.confirmation_email_sent === true,
+      commission_usd: round2(commissionForReservation(r, terms)),
+      billed: !!r.billed_at,
     };
   });
+
+  return { rows, truncated };
 }
