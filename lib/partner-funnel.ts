@@ -27,6 +27,16 @@ export const FUNNEL_STAGE_LABELS: Record<FunnelStage, string> = {
   CONFIRMED: "Confirmed",
 }
 
+/** The partner portal is Hebrew throughout. */
+export const FUNNEL_STAGE_LABELS_HE: Record<FunnelStage, string> = {
+  VISIT: "נכנסו לאתר",
+  EVENT_SELECTED: "בחרו אירוע",
+  TICKET_SELECTED: "בחרו כרטיסים",
+  FLIGHT_SELECTED: "בחרו טיסה",
+  HOTEL_SELECTED: "בחרו מלון",
+  CONFIRMED: "הגיעו לתשלום",
+}
+
 export interface PartnerTraffic {
   /**
    * Distinct visitors who reached each stage at least once. A visitor who
