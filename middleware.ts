@@ -17,6 +17,13 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Public form fill pages (/f/<slug>, /f/i/<token>) — the only unauthenticated
+  // pages in the app. They are read-only renders; the submit server action does
+  // its own validation, publish-state check and rate limiting.
+  if (pathname === "/f" || pathname.startsWith("/f/")) {
+    return NextResponse.next();
+  }
+
   const session = await verifySessionValue(req.cookies.get(SESSION_COOKIE)?.value);
   const isAuthPage = pathname.startsWith("/auth");
   const home = session && PARTNER_ROLES.includes(session.role) ? "/portal" : "/dashboard";

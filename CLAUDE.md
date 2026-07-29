@@ -95,6 +95,32 @@ Core `Event` type (from Supabase `events` table, not the external sources above)
 
 Ticket prices (from sports events) are stored in **cents** — divide by 100. Use `getTicketNetPriceEUR` / `getTicketFaceValueEUR` from `lib/utils.ts`.
 
+### Dynamic Forms (טפסים)
+
+Google-Forms-style bilingual questionnaires built in `/forms`, filled by clients on a
+public page, answered into Supabase. Backoffice-only — the main app does not read
+these tables.
+
+| Table            | Holds                                                            |
+| ---------------- | ---------------------------------------------------------------- |
+| `forms`          | title/description/thank-you in EN+HE, `slug`, `status`, soft delete |
+| `form_fields`    | one row per question: type, position, EN+HE labels, `options`, `config` |
+| `form_invites`   | per-recipient `token`, language, `sent_at`/`opened_at`/`submitted_at` |
+| `form_responses` | `answers` jsonb keyed by **field id**, plus `lang`, `ip`           |
+
+- **`/f/<slug>` and `/f/i/<token>` are the only unauthenticated pages** — `middleware.ts`
+  skips the session check for `/f/*`. The submit server action
+  (`lib/actions/form-response-actions.ts`) is therefore a public endpoint: it resolves
+  `form_id`/`invite_id` from the slug or token (never from the client), re-checks that
+  the form is `live`, validates every answer against the stored field definitions,
+  drops unknown field ids, rate-limits per IP per hour, and uses a honeypot.
+- **Field ids are stable.** `answers` is keyed by `form_fields.id`, so `saveFormFields`
+  updates existing rows in place instead of delete-and-reinsert. Choice option `value`s
+  are generated once and never regenerated on a label edit, for the same reason.
+- Bilingual with no i18n library: `*_en` / `*_he` column pairs, Hebrew falling back to
+  English (`lib/forms/i18n.ts`). RTL is applied by `dir` on the form container.
+- Invite emails go out through `lib/email.ts` (shared ZeptoMail transport).
+
 ### Cron Jobs (Vercel)
 
 Defined in `vercel.json`. All cron routes are secured via `guardCronRoute()`
@@ -156,6 +182,9 @@ NEXT_SECRET_XS2EVENT_API_URL=
 NEXT_SECRET_TIXSTOCK_API_URL=
 NEXT_SECRET_TIXSTOCK_TOKEN=
 NEXT_SECRET_REVALIDATION_SECRET=
+# Absolute origin of this backoffice, used to build the form links that get emailed
+# out. Falls back to VERCEL_URL, then http://localhost:3000.
+NEXT_PUBLIC_APP_URL=
 NEXT_SECRET_EMAIL_SERVER_USER=
 NEXT_SECRET_EMAIL_SERVER_PASSWORD=
 # Optional — P1 feed URLs have hardcoded fallback values in p1-events-sync.ts
