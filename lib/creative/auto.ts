@@ -399,6 +399,23 @@ export function campaignInputHash(event: Event): string {
     .slice(0, 12);
 }
 
+/**
+ * Best-effort note of why an event has no creative (null clears it).
+ *
+ * Deliberately its own tolerant write: `campaign_skip_reason` is a diagnostic,
+ * and a deploy that lands before its migration must not take creative
+ * generation down with it. Failure is logged, never thrown.
+ */
+async function setSkipReason(eventId: number, reason: string | null): Promise<void> {
+  const { error } = await supabase
+    .from("events")
+    .update({ campaign_skip_reason: reason } as never)
+    .eq("id", eventId);
+  if (error) {
+    console.error("campaign skip reason not stored:", JSON.stringify(error));
+  }
+}
+
 export type CampaignResult =
   | { status: "current" }
   | { status: "skipped"; reason: string }
@@ -428,11 +445,12 @@ export async function generateCampaignForEvent(
   const markChecked = async (reason: string): Promise<void> => {
     const { error } = await supabase
       .from("events")
-      .update({ campaign_input_hash: hash, campaign_skip_reason: reason } as never)
+      .update({ campaign_input_hash: hash } as never)
       .eq("id", event.id);
     if (error) {
       console.error("campaign hash checkpoint failed:", JSON.stringify(error));
     }
+    await setSkipReason(event.id, reason);
   };
 
   const defaults = await deriveCreativeDefaults(event.id, caches);
@@ -513,7 +531,6 @@ export async function generateCampaignForEvent(
       campaign_banner_url: bannerUrl,
       campaign_input_hash: hash,
       campaign_generated_at: new Date().toISOString(),
-      campaign_skip_reason: null,
     } as never)
     .eq("id", event.id);
   if (error) {
@@ -522,6 +539,7 @@ export async function generateCampaignForEvent(
       "Creative rendered but saving campaign columns failed (migration applied?)",
     );
   }
+  await setSkipReason(event.id, null);
 
   return { status: "generated", squareUrl, bannerUrl };
 }
