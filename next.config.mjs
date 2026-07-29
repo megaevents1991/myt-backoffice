@@ -21,6 +21,12 @@ const nextConfig = {
     webpackBuildWorker: true,
     parallelServerBuildTraces: true,
     parallelServerCompiles: true,
+    serverActions: {
+      // Next defaults to 1MB, which the partner logo upload exceeds while
+      // still being inside the 2MB the UI promises — and the framework
+      // rejects it before the action runs, so nothing gets to report why.
+      bodySizeLimit: "3mb",
+    },
   },
   webpack: (config) => {
     // .playwright-mcp holds browser-session logs; watching it causes an

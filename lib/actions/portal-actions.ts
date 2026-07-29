@@ -74,6 +74,10 @@ export interface PortalReservation {
   commission_usd: number;
   /** True once it has gone out in a monthly report. */
   billed: boolean;
+  /** A 24-hour price hold the customer saved but never paid for. */
+  is_hold: boolean;
+  /** When the hold stops working. Null unless `is_hold`. */
+  hold_expires_at: string | null;
 }
 
 export interface PortalReservationsPage {
@@ -199,6 +203,25 @@ export async function getPortalCoupons(): Promise<PortalCoupon[]> {
 
 const RESERVATIONS_PAGE_SIZE = 500;
 
+/** The status the main app writes for a 24-hour price hold. */
+const HOLD_STATUS = "24Save";
+
+/**
+ * When a hold stops being resumable.
+ *
+ * The main app's recovery endpoint allows 25 hours, not the 24 it advertises.
+ * The partner is shown the real cut-off — telling them 24 would have them chase
+ * a customer whose link still works, or give up an hour early.
+ */
+const HOLD_WINDOW_MS = 25 * 60 * 60 * 1000;
+
+function holdExpiry(createdAt: string): string | null {
+  const created = new Date(createdAt).getTime();
+  return Number.isFinite(created)
+    ? new Date(created + HOLD_WINDOW_MS).toISOString()
+    : null;
+}
+
 /**
  * Columns a partner may see on their own bookings.
  *
@@ -291,6 +314,15 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
       materials_sent: r.confirmation_email_sent === true,
       commission_usd: round2(commissionForReservation(r, terms)),
       billed: !!r.billed_at,
+      is_hold: r.status === HOLD_STATUS,
+      hold_expires_at:
+        r.status === HOLD_STATUS ? holdExpiry(r.created_at) : null,
+      // Deliberately NOT the customer's recovery link. Opening it loads the
+      // saved order through the main app's find-order endpoint, which returns
+      // the customer's phone, email and every passenger name — the exact data
+      // PORTAL_RESERVATION_COLUMNS above refuses to select. The partner would
+      // open it just to check it works. They already have the customer's name
+      // and the event, which is what they need to make the call.
     };
   });
 

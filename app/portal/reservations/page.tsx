@@ -4,6 +4,7 @@ import { isPaid } from "@/lib/partner-commission";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { OpenHolds } from "./open-holds";
 import {
   Table,
   TableBody,
@@ -50,6 +51,7 @@ export default async function PortalReservationsPage() {
   }
 
   const paid = rows.filter(isPaid);
+  const holds = rows.filter((r) => r.is_hold);
   const totals = {
     tickets: paid.reduce((sum, r) => sum + r.tickets, 0),
     sales: paid.reduce((sum, r) => sum + r.user_shown_price, 0),
@@ -71,6 +73,8 @@ export default async function PortalReservationsPage() {
           </CardDescription>
         </CardHeader>
       </Card>
+
+      <OpenHolds holds={holds} />
 
       {truncated && (
         <p className="text-sm text-muted-foreground">
