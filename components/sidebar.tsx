@@ -27,6 +27,7 @@ import {
   UserCog,
   FolderTree,
   Tag,
+  Rss,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -84,6 +85,7 @@ const navGroups: NavGroup[] = [
         href: "/creative-generator",
         icon: ImageIcon,
       },
+      { name: "Meta Product Feed", href: "/meta-feed", icon: Rss },
       { name: "Assets", href: "/assets", icon: Images },
       { name: "Storage", href: "/storage", icon: Database },
       { name: "Locations", href: "/locations", icon: MapPin },
