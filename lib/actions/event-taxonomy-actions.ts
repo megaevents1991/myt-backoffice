@@ -439,6 +439,69 @@ export async function getTemplateCategoryTagIds(cardId: number): Promise<number[
   return (data ?? []).map((r: any) => r.tag_id as number);
 }
 
+/** Canonical /c/ path for a node: ancestor slugs + its own. */
+async function categoryPath(nodeId: number): Promise<string> {
+  const { data, error } = await tbl("event_categories")
+    .select("id,parent_id,slug")
+    .eq("is_deleted", false);
+  if (error) throw error;
+  const byId = new Map<number, { parent_id: number | null; slug: string }>(
+    (data ?? []).map((r: any) => [r.id, { parent_id: r.parent_id, slug: r.slug }]),
+  );
+  const self = byId.get(nodeId);
+  if (!self) return "";
+  const parts = [self.slug];
+  const seen = new Set<number>([nodeId]);
+  let cur = self.parent_id;
+  while (cur != null && byId.has(cur) && !seen.has(cur)) {
+    seen.add(cur);
+    parts.unshift(byId.get(cur)!.slug);
+    cur = byId.get(cur)!.parent_id;
+  }
+  return `/c/${parts.join("/")}`;
+}
+
+/**
+ * Keep the taxonomy node in step with the Templates card the team edits.
+ *
+ * The two carry the same category in two places, and the split bites: the
+ * card's "Active" publishes the homepage tile while the NODE's is_active is
+ * what /c/ checks, so flipping the card alone left the page 404ing. Saving the
+ * card now mirrors its name/image/visibility onto the node, and points the
+ * card at the /c/ page — the one that actually lists the events the tags pull
+ * in (/category/<slug> only ever listed member pages).
+ */
+async function mirrorCardToNode(cardId: number, nodeId: number): Promise<void> {
+  const { data: card, error } = await tbl("categories")
+    .select("name,name_english,subtitle,image_url,is_active,link_url")
+    .eq("id", cardId)
+    .single();
+  if (error) throw error;
+
+  const { error: nodeErr } = await tbl("event_categories")
+    .update({
+      name: card.name,
+      name_english: card.name_english ?? null,
+      image_url: card.image_url ?? null,
+      description: card.subtitle ?? null,
+      is_active: card.is_active,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", nodeId);
+  if (nodeErr) throw nodeErr;
+
+  // Only claim the link when it isn't a deliberate custom one.
+  const path = await categoryPath(nodeId);
+  const link = (card.link_url ?? "").trim();
+  const replaceable = link === "" || link.startsWith("/category/") || link.startsWith("/c/");
+  if (path && replaceable && link !== path) {
+    const { error: linkErr } = await tbl("categories")
+      .update({ link_url: path })
+      .eq("id", cardId);
+    if (linkErr) throw linkErr;
+  }
+}
+
 /** Save the tag composition from the Templates category form. */
 export async function setTemplateCategoryTagIds(
   cardId: number,
@@ -447,6 +510,7 @@ export async function setTemplateCategoryTagIds(
   await requireStaff();
   const nodeId = await ensureNodeForCard(cardId);
   await setCategoryTags(nodeId, tagIds);
+  await mirrorCardToNode(cardId, nodeId);
 }
 
 export async function setCategoryTags(categoryId: number, tagIds: number[]): Promise<void> {

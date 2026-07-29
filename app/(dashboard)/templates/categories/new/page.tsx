@@ -257,7 +257,12 @@ export default function NewCategoryPage() {
               <FormControl>
                 <Checkbox checked={field.value} onCheckedChange={field.onChange} />
               </FormControl>
-              <FormLabel className="!mt-0">Active (visible on the site)</FormLabel>
+              <FormLabel className="!mt-0">
+                פעיל באתר
+                <span className="block text-xs font-normal text-muted-foreground">
+                  מדליק גם את הכרטיס בדף הבית וגם את עמוד הקטגוריה עצמו (/c/…)
+                </span>
+              </FormLabel>
             </FormItem>
           )} />
 
