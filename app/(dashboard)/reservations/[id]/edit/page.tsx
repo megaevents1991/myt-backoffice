@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import type { Reservation } from "@/types/reservation.types";
+import type { PaxInfo, Reservation } from "@/types/reservation.types";
 import type { EventTicket } from "@/types/app.types";
 import {
   getReservation,
@@ -130,6 +130,26 @@ export default function EditReservationPage({
         };
       });
     }
+  };
+
+  /**
+   * Edits one passenger in place. Empty strings are stored as null so a cleared
+   * field reads as "not supplied" rather than an empty passport number.
+   */
+  const handlePaxChange = (
+    index: number,
+    field: keyof PaxInfo,
+    value: string,
+  ) => {
+    setReservation((prev) => {
+      if (!prev) return prev;
+      const pax = [...(prev.more_pax_info ?? [])];
+      pax[index] = {
+        ...pax[index],
+        [field]: field === "first_name" || field === "last_name" ? value : value || null,
+      };
+      return { ...prev, more_pax_info: pax };
+    });
   };
 
   const handleSubmit = (e?: React.FormEvent) => {
@@ -281,6 +301,90 @@ export default function EditReservationPage({
                 onChange={handleChange}
                 required
               />
+            </div>
+
+            {/* Passengers live in the edit form, not on the view page, and save
+                with everything else — one Save button for the whole screen.
+                The airline needs passport, date of birth and gender to issue a
+                ticket; checkout only collects names, so staff complete the rest
+                here and the ticketing export reads it back out. */}
+            <div className="space-y-3 pt-2">
+              <Label>Passengers</Label>
+
+              <div className="rounded-md border p-3 text-sm">
+                <span className="font-medium">
+                  {reservation.main_contact_first_name}{" "}
+                  {reservation.main_contact_last_name}
+                </span>
+                <span className="ml-2 text-xs text-muted-foreground">
+                  main contact — edit the name fields above
+                </span>
+              </div>
+
+              {(reservation.more_pax_info ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No additional passengers on this reservation.
+                </p>
+              ) : (
+                (reservation.more_pax_info ?? []).map((pax, index) => (
+                  <div
+                    key={index}
+                    className="grid gap-3 rounded-md border p-3 md:grid-cols-4"
+                  >
+                    {(
+                      [
+                        ["first_name", "First name", "text"],
+                        ["last_name", "Last name", "text"],
+                        ["passport_number", "Passport no.", "text"],
+                        ["passport_expiry", "Passport expiry", "date"],
+                        ["date_of_birth", "Date of birth", "date"],
+                        ["nationality", "Nationality", "text"],
+                      ] as const
+                    ).map(([field, label, type]) => (
+                      <div key={field} className="space-y-1">
+                        <Label
+                          htmlFor={`pax-${index}-${field}`}
+                          className="text-xs font-normal"
+                        >
+                          {label}
+                        </Label>
+                        <Input
+                          id={`pax-${index}-${field}`}
+                          type={type}
+                          className="h-9"
+                          maxLength={field === "nationality" ? 2 : undefined}
+                          placeholder={field === "nationality" ? "IL" : undefined}
+                          value={pax[field] ?? ""}
+                          onChange={(e) =>
+                            handlePaxChange(index, field, e.target.value)
+                          }
+                        />
+                      </div>
+                    ))}
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor={`pax-${index}-gender`}
+                        className="text-xs font-normal"
+                      >
+                        Gender
+                      </Label>
+                      <select
+                        id={`pax-${index}-gender`}
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                        value={pax.gender ?? ""}
+                        onChange={(e) =>
+                          handlePaxChange(index, "gender", e.target.value)
+                        }
+                      >
+                        <option value="">—</option>
+                        <option value="M">M</option>
+                        <option value="F">F</option>
+                        <option value="X">X</option>
+                      </select>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
