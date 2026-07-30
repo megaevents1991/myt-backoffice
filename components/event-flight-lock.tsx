@@ -21,6 +21,12 @@ export type EventFlightLockProps = {
   defDateReturn?: string | null;
   /** Called after a successful lock/unlock so the page can refresh the event. */
   onChanged?: () => void;
+  /**
+   * The new locked flight id (or null). This panel writes straight to the
+   * database, so the page needs it to keep its own copy of the event honest —
+   * otherwise a later save would write back the stale value.
+   */
+  onLockChange?: (flightId: number | null) => void;
 };
 
 export function EventFlightLock({
@@ -29,6 +35,7 @@ export function EventFlightLock({
   defDateDepart,
   defDateReturn,
   onChanged,
+  onLockChange,
 }: EventFlightLockProps) {
   const [locked, setLocked] = useState<number | null>(lockedFlightId ?? null);
   const [picking, setPicking] = useState(false);
@@ -61,6 +68,7 @@ export function EventFlightLock({
         const { warning } = await lockEventFlight(eventId, flightId);
         setLocked(flightId);
         setPicking(false);
+        onLockChange?.(flightId);
         toast.success("Package locked");
         if (warning) toast(warning, { icon: "⚠️", duration: 6000 });
         onChanged?.();
@@ -87,6 +95,7 @@ export function EventFlightLock({
         await unlockEventFlight(eventId);
         setLocked(null);
         setPicking(false);
+        onLockChange?.(null);
         toast.success("Package unlocked");
         onChanged?.();
       } catch (error) {
