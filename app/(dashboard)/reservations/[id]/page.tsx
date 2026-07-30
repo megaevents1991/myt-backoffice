@@ -310,7 +310,10 @@ export default function ReservationDetailsPage({
                         Awaiting voucher — do not call customer for payment
                       </span>
                     ) : reservation.partner_settlement_method === "agent_card" ? (
-                      "Agent's own card (charged net of commission)"
+                      `Agent's own card — charged ₪${(
+                        reservation.final_purchase_price_ils -
+                        (reservation.agent_card_discount_ils || 0)
+                      ).toLocaleString()} of ₪${reservation.final_purchase_price_ils.toLocaleString()} (net of commission)`
                     ) : (
                       "Customer's card"
                     )}
