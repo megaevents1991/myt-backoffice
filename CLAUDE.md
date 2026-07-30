@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **✅ Partner self-service portal RETIRED, moved to main's /agent (2026-07-30).**
+> `app/portal/*` (dashboard, links, credit, coupons, reservations, quotes) is no
+> longer reachable — `middleware.ts` redirects any `/portal*` request, and any
+> partner-role (`agent`/`affiliate`) session hitting anything else in this app,
+> straight to `../myt-main`'s `/agent` area, which now has the same features
+> plus package search and booking-on-behalf-of-customer. The page/action files
+> under `app/portal/` and `lib/actions/{portal,partner-credit,quote}-actions.ts`
+> were deliberately left in place rather than deleted (reversible, and
+> `lib/partner-commission.ts`/`getPartnerPerformance`/`getPartnerCredit` are
+> still live, real dependencies of the STAFF-facing `/partners/[code]/view`
+> admin screen — that one is untouched and stays here, by explicit request:
+> admin control/dashboard remains in the backoffice, only the partner's own
+> self-service moved). Do not build on `app/portal/*` going forward.
+
 > **✅ Contentful → Supabase CMS migration COMPLETE (2026-07-22).**
 > This backoffice owns the CMS under **Templates** (תבניות): per-type
 > Supabase tables (`categories`, `artists`, `football_teams`, `blog_posts`)
@@ -275,6 +289,8 @@ Via `NEXT_SECRET_HOTEL_SERVICE_URL` (currently `https://myt-kohl.vercel.app`):
 
 1. `GET /api/hotels` — Proxied hotel search (in `app/api/hotels/search/route.ts`)
 2. `GET /api/revalidate` — Triggers ISR cache refresh after event changes (in `app/api/revalidate/route.ts`)
+
+`middleware.ts` also redirects retired `/portal*` traffic to `NEXT_PUBLIC_MAIN_SITE_URL` + `/agent` (falls back to `https://www.mega-events.co.il`, same default as `lib/site.ts`) — a partner-role session lands on main's own agent area instead of anything rendered here.
 
 ### Shared Database Tables
 
