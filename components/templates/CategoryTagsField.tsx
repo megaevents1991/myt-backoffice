@@ -50,7 +50,6 @@ export function CategoryTagsField({
         </p>
       ) : (
         <EventTaxonomySelect
-          kind="tag"
           options={options}
           value={value}
           onChange={onChange}

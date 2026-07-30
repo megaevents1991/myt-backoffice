@@ -80,7 +80,9 @@ const navGroups: NavGroup[] = [
     label: "Content",
     items: [
       { name: "Templates (תבניות)", href: "/templates", icon: LayoutTemplate },
-      { name: "Categories (קטגוריות)", href: "/event-taxonomy", icon: FolderTree },
+      // Categories live under Templates now — one screen builds the page,
+      // picks the tags that fill it and places it in the tree.
+      { name: "Categories (קטגוריות)", href: "/templates/categories", icon: FolderTree },
       { name: "Tags (תגיות)", href: "/event-tags", icon: Tag },
       {
         name: "Creative Generator",

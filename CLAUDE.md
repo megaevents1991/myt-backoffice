@@ -285,34 +285,43 @@ Via `NEXT_SECRET_HOTEL_SERVICE_URL` (currently `https://myt-kohl.vercel.app`):
 | `partners`     | Creates, manages               | Reads (affiliate auth)        |
 | `hotels`       | Reads                          | Writes (search cache)         |
 | `flights`      | Manages (offline inventory)    | Reads                         |
-| `event_categories`      | Creates/manages (category tree) | Reads (builds category pages) |
-| `event_category_tags`   | Writes (which tags compose a category) | —                      |
+| `categories`            | Creates/manages (card + tree)   | Reads (/c/ pages, homepage tiles) |
+| `category_tags`         | Writes (which tags compose a category) | —                      |
 | `event_category_links`  | **VIEW** — derived, read-only   | Reads                         |
 | `event_tags`            | Creates/manages (feed tags)     | Reads (feed targeting)        |
 | `event_tag_links`       | Writes (event↔tag)              | Reads                         |
 
 **Tags compose categories — never the other way round (2026-07-29).** An event
 is only ever *tagged*; you never assign it to a category. A category declares
-which tags make it up (`event_category_tags`, edited on the **Templates →
-category** form — the same screen where the page is built, via
-`categories.event_category_id`), and every event carrying one of those tags is
-pulled in. `event_category_links` is now a VIEW over that join, so main keeps
-reading it unchanged for `/c/` pages and the feed's `product_type`. Membership
-is OR over the tags and does **not** inherit down the tree — a parent collects
-only what its own tags collect (main's `getEventsInCategory` defaults
-`includeDescendants: false` to match). An event can land in several categories.
+which tags make it up (`category_tags`), and every event carrying one of them
+is pulled in. `event_category_links` is a VIEW over that join — what main reads
+for `/c/` pages and the feed's `product_type`. Membership is OR over the tags
+and does **not** inherit down the tree: a parent collects only what its own
+tags collect (main's `getEventsInCategory` defaults `includeDescendants: false`
+to match). An event lands in as many categories as its tags earn it.
+
+**One category table.** `categories` is it — the Templates card (image,
+subtitle, blob art, member pages) which also carries the tree (`parent_id`) and
+its tags. The old parallel `event_categories` node is gone (kept as
+`event_categories_legacy` for one release), and with it the separate
+`/event-taxonomy` screen: **Templates → Categories** is where a category is
+created, placed in the tree, given its tags and switched live. One switch —
+`is_active` publishes both the homepage tile and the `/c/` page — and the
+card's `link_url` is kept pointing at its own `/c/` path. On the customer side
+`/category/<slug>` permanently redirects to `/c/`, so there is one category URL.
 
 ### Shared Types — Keep In Sync!
 
 Types in `types/app.types.ts` are duplicated in `../myt---main/lib/app.types.ts`. These types MUST match:
 `Event`, `EventType`, `Flight`, `FlightSegment`, `Order`, `OrderHotel`, `OrderTicket`, `FlightSearchOptions`, `TimeRange`, `AffiliateTracking`, `VipConfig`, `EventTicket`
 
-**Event taxonomy (new, 2026-07-15):** `types/taxonomy.types.ts` (`EventCategory`,
+**Event taxonomy:** `types/taxonomy.types.ts` (`EventCategory`,
 `EventCategoryNode`, `EventTag`) + the pure tree helpers in `lib/taxonomy-tree.ts`
 (`buildTree`, `flattenWithPath`, `descendantIds`) are mirrored to main as
-`lib/taxonomy.types.ts` + `lib/taxonomy-tree.ts`. Backoffice writes the four
-`event_categor*` / `event_tag*` tables; main reads them to build category pages
-and target the product feed. Keep both copies in sync.
+`lib/taxonomy.types.ts` + `lib/taxonomy-tree.ts`. `EventCategory` is a row of
+`categories`. Backoffice writes `categories`, `category_tags`, `event_tags`
+and `event_tag_links`; main reads them to build category pages and target the
+product feed. Keep both copies in sync.
 
 **Known intentional differences:**
 

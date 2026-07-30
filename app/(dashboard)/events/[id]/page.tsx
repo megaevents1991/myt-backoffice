@@ -1965,7 +1965,6 @@ export default function EventPage({
                 <div className="space-y-2">
                   <Label>Tags (feed / promo)</Label>
                   <EventTaxonomySelect
-                    kind="tag"
                     options={tagOptions}
                     value={selectedTagIds}
                     onChange={setSelectedTagIds}

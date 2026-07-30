@@ -2275,7 +2275,6 @@ export function EventsTable() {
                   Assign tags to {selectedIds.length} event(s)
                 </p>
                 <EventTaxonomySelect
-                  kind="tag"
                   options={tagOptions}
                   value={bulkTagIds}
                   onChange={setBulkTagIds}

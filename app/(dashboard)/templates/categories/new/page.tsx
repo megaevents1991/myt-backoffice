@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
@@ -21,8 +21,8 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
-import { createCategory } from "@/lib/actions/category-actions";
-import { setTemplateCategoryTagIds } from "@/lib/actions/event-taxonomy-actions";
+import { createCategory, getCategories } from "@/lib/actions/category-actions";
+import { setCategoryTags } from "@/lib/actions/event-taxonomy-actions";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
 import { CategoryTagsField } from "@/components/templates/CategoryTagsField";
 import { HeroImageField } from "@/components/templates/HeroImageField";
@@ -44,6 +44,7 @@ const categoryFormSchema = z.object({
   tag: z.string().optional(),
   sport: z.string().optional(),
   link_url: z.string().optional(),
+  parent_id: z.string().optional(),
   display_order: z.coerce.number().int().min(0).default(0),
   is_active: z.boolean().default(true),
 });
@@ -62,6 +63,13 @@ export default function NewCategoryPage() {
   // Which tags compose this category — the whole membership rule (see
   // CategoryTagsField). Saved after the card itself exists.
   const [catTagIds, setCatTagIds] = useState<number[]>([]);
+  // Parent options — a category page nests under its parent (/c/sport/football).
+  const [parentOptions, setParentOptions] = useState<{ id: number; name: string }[]>([]);
+  useEffect(() => {
+    getCategories()
+      .then((rows) => setParentOptions(rows.map((c) => ({ id: c.id, name: c.name }))))
+      .catch((e) => console.error("Failed to load parent categories:", e));
+  }, []);
   const [artImageUrl, setArtImageUrl] = useState("");
   const [artColorIndex, setArtColorIndex] = useState(0);
   const [artShapeIndex, setArtShapeIndex] = useState(0);
@@ -80,6 +88,7 @@ export default function NewCategoryPage() {
       tag: "",
       sport: "",
       link_url: "",
+      parent_id: "",
       display_order: 0,
       is_active: true,
     },
@@ -132,11 +141,11 @@ export default function NewCategoryPage() {
           tag: values.tag || null,
           sport: values.sport || null,
           link_url: values.link_url || null,
+          parent_id: values.parent_id ? Number(values.parent_id) : null,
           member_ids: parseMemberIds(membersRaw),
         });
-        // Tags live on the taxonomy node behind the card; the action creates
-        // that node on first save.
-        if (catTagIds.length) await setTemplateCategoryTagIds(created.id, catTagIds);
+        // Tags ARE the category: every event carrying one lands in it.
+        if (catTagIds.length) await setCategoryTags(created.id, catTagIds);
         toast.success("Category created!");
         router.push("/templates/categories");
         router.refresh();
@@ -171,6 +180,29 @@ export default function NewCategoryPage() {
                 <FormLabel>Slug (optional)</FormLabel>
                 <FormControl><Input placeholder="auto from name (e.g. champions-league)" {...field} /></FormControl>
                 <FormDescription>Leave blank to auto-generate. URL: /category/&lt;slug&gt;</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="parent_id" render={({ field }) => (
+              <FormItem>
+                <FormLabel>קטגוריית אב</FormLabel>
+                <FormControl>
+                  <select
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={field.value ?? ""}
+                    onChange={field.onChange}
+                  >
+                    <option value="">— ראשית —</option>
+                    {parentOptions.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </FormControl>
+                <FormDescription>
+                  קובע את הנתיב של עמוד הקטגוריה: /c/&lt;אב&gt;/&lt;slug&gt;
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
@@ -257,7 +289,12 @@ export default function NewCategoryPage() {
               <FormControl>
                 <Checkbox checked={field.value} onCheckedChange={field.onChange} />
               </FormControl>
-              <FormLabel className="!mt-0">Active (visible on the site)</FormLabel>
+              <FormLabel className="!mt-0">
+                פעיל באתר
+                <span className="block text-xs font-normal text-muted-foreground">
+                  מדליק גם את הכרטיס בדף הבית וגם את עמוד הקטגוריה עצמו (/c/…)
+                </span>
+              </FormLabel>
             </FormItem>
           )} />
 

@@ -21,10 +21,10 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
-import { getCategory, updateCategory } from "@/lib/actions/category-actions";
+import { getCategories, getCategory, updateCategory } from "@/lib/actions/category-actions";
 import {
-  getTemplateCategoryTagIds,
-  setTemplateCategoryTagIds,
+  getCategoryTagIds,
+  setCategoryTags,
 } from "@/lib/actions/event-taxonomy-actions";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
 import { CategoryTagsField } from "@/components/templates/CategoryTagsField";
@@ -41,6 +41,7 @@ const categoryFormSchema = z.object({
   tag: z.string().optional(),
   sport: z.string().optional(),
   link_url: z.string().optional(),
+  parent_id: z.string().optional(),
   display_order: z.coerce.number().int().min(0).default(0),
   is_active: z.boolean().default(true),
 });
@@ -65,6 +66,8 @@ export default function EditCategoryPage({
   // Which tags compose this category — the whole membership rule (see
   // CategoryTagsField).
   const [catTagIds, setCatTagIds] = useState<number[]>([]);
+  // Parent options — self excluded; the server also refuses a cycle.
+  const [parentOptions, setParentOptions] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [artImageUrl, setArtImageUrl] = useState("");
   const [artColorIndex, setArtColorIndex] = useState(0);
@@ -86,13 +89,21 @@ export default function EditCategoryPage({
       tag: "",
       sport: "",
       link_url: "",
+      parent_id: "",
       display_order: 0,
       is_active: true,
     },
   });
 
   useEffect(() => {
-    Promise.all([getCategory(templateId), getTemplateCategoryTagIds(templateId)])
+    getCategories()
+      .then((rows) =>
+        setParentOptions(
+          rows.filter((c) => c.id !== templateId).map((c) => ({ id: c.id, name: c.name }))
+        )
+      )
+      .catch((e) => console.error("Failed to load parent categories:", e));
+    Promise.all([getCategory(templateId), getCategoryTagIds(templateId)])
       .then(([c, tagIds]) => {
         setCatTagIds(tagIds);
         form.reset({
@@ -103,6 +114,7 @@ export default function EditCategoryPage({
           tag: c.tag ?? "",
           sport: c.sport ?? "",
           link_url: c.link_url ?? "",
+          parent_id: c.parent_id != null ? String(c.parent_id) : "",
           display_order: c.display_order,
           is_active: c.is_active,
         });
@@ -183,10 +195,11 @@ export default function EditCategoryPage({
           tag: values.tag || null,
           sport: values.sport || null,
           link_url: values.link_url || null,
+          parent_id: values.parent_id ? Number(values.parent_id) : null,
           member_ids: parseMemberIds(membersRaw),
         });
-        // Tags live on the taxonomy node behind the card (created on demand).
-        await setTemplateCategoryTagIds(templateId, catTagIds);
+        // Tags ARE the category: every event carrying one lands in it.
+        await setCategoryTags(templateId, catTagIds);
         toast.success("Category updated!");
         router.push("/templates/categories");
         router.refresh();
@@ -223,6 +236,29 @@ export default function EditCategoryPage({
                 <FormLabel>Slug</FormLabel>
                 <FormControl><Input {...field} /></FormControl>
                 <FormDescription>URL: /category/&lt;slug&gt;</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="parent_id" render={({ field }) => (
+              <FormItem>
+                <FormLabel>קטגוריית אב</FormLabel>
+                <FormControl>
+                  <select
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={field.value ?? ""}
+                    onChange={field.onChange}
+                  >
+                    <option value="">— ראשית —</option>
+                    {parentOptions.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </FormControl>
+                <FormDescription>
+                  קובע את הנתיב של עמוד הקטגוריה: /c/&lt;אב&gt;/&lt;slug&gt;
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
@@ -307,7 +343,12 @@ export default function EditCategoryPage({
               <FormControl>
                 <Checkbox checked={field.value} onCheckedChange={field.onChange} />
               </FormControl>
-              <FormLabel className="!mt-0">Active (visible on the site)</FormLabel>
+              <FormLabel className="!mt-0">
+                פעיל באתר
+                <span className="block text-xs font-normal text-muted-foreground">
+                  מדליק גם את הכרטיס בדף הבית וגם את עמוד הקטגוריה עצמו (/c/…)
+                </span>
+              </FormLabel>
             </FormItem>
           )} />
 

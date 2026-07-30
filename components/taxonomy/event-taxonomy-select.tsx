@@ -14,22 +14,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { createCategory, createTag } from "@/lib/actions/event-taxonomy-actions";
+import { createTag } from "@/lib/actions/event-taxonomy-actions";
 
 export type TaxonomyOption = { id: number; label: string };
 
-// Category labels are full paths ("כדורגל › ליגה אנגלית") — compare the leaf
-// segment too, so typing an existing leaf name doesn't offer a duplicate create.
-const leafOf = (label: string) => label.split(" › ").pop()?.trim().toLowerCase() ?? "";
-
 export function EventTaxonomySelect({
-  kind,
   options,
   value,
   onChange,
   onOptionCreated,
 }: {
-  kind: "category" | "tag";
   options: TaxonomyOption[];
   value: number[];
   onChange: (ids: number[]) => void;
@@ -42,8 +36,6 @@ export function EventTaxonomySelect({
   // Synchronous re-entry guard — the `creating` STATE updates async, so a
   // double-tap fires handleCreate twice before the re-render (duplicate rows).
   const creatingRef = useRef(false);
-  // Parent for an inline-created category (Shopify-style). "" = root.
-  const [createParentId, setCreateParentId] = useState("");
   // English name for an inline-created tag — required (it becomes the feed slug).
   const [createEnglish, setCreateEnglish] = useState("");
 
@@ -53,13 +45,11 @@ export function EventTaxonomySelect({
     onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
 
   const q = query.trim();
-  const exists = options.some(
-    (o) => o.label.toLowerCase() === q.toLowerCase() || leafOf(o.label) === q.toLowerCase()
-  );
+  const exists = options.some((o) => o.label.toLowerCase() === q.toLowerCase());
 
   const handleCreate = async () => {
     if (!q || creatingRef.current) return;
-    if (kind === "tag" && !/[a-z]/i.test(createEnglish)) {
+    if (!/[a-z]/i.test(createEnglish)) {
       toast({
         variant: "destructive",
         title: "English name required",
@@ -70,30 +60,19 @@ export function EventTaxonomySelect({
     creatingRef.current = true;
     setCreating(true);
     try {
-      const parentId = createParentId ? Number(createParentId) : null;
-      const created =
-        kind === "category"
-          ? await createCategory({ name: q, parent_id: parentId })
-          : await createTag({ name: q, name_english: createEnglish.trim() });
-      const parentLabel = parentId
-        ? options.find((o) => o.id === parentId)?.label
-        : null;
-      const opt: TaxonomyOption = {
-        id: created.id,
-        label: parentLabel ? `${parentLabel} › ${created.name}` : created.name,
-      };
+      const created = await createTag({ name: q, name_english: createEnglish.trim() });
+      const opt: TaxonomyOption = { id: created.id, label: created.name };
       // Idempotent server create can return an existing row — don't double-add.
       if (!options.some((o) => o.id === created.id)) onOptionCreated?.(opt);
       if (!value.includes(created.id)) onChange([...value, created.id]);
       setQuery("");
-      setCreateParentId("");
       setCreateEnglish("");
-      toast({ title: `${kind === "category" ? "Category" : "Tag"} "${created.name}" added` });
+      toast({ title: `Tag "${created.name}" added` });
     } catch (e) {
-      console.error(`Inline ${kind} create failed:`, e);
+      console.error("Inline tag create failed:", e);
       toast({
         variant: "destructive",
-        title: `Failed to create ${kind}`,
+        title: "Failed to create tag",
         description: e instanceof Error ? e.message : "Please try again.",
       });
     } finally {
@@ -120,13 +99,13 @@ export function EventTaxonomySelect({
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button type="button" variant="outline" size="sm">
-            {kind === "category" ? "Select categories" : "Select tags"}
+            Select tags
           </Button>
         </PopoverTrigger>
         <PopoverContent className="p-0 w-72" align="start">
           <Command shouldFilter>
             <CommandInput
-              placeholder={`Search ${kind}s...`}
+              placeholder="Search tags..."
               value={query}
               onValueChange={setQuery}
             />
@@ -161,7 +140,7 @@ export function EventTaxonomySelect({
                 )}
               </CommandGroup>
             </CommandList>
-            {kind === "tag" && q && !exists && (
+            {q && !exists && (
               <div className="border-t p-2 space-y-1">
                 <p className="text-xs text-muted-foreground">
                   English name for “{q}” (required — feed slug)
@@ -172,23 +151,6 @@ export function EventTaxonomySelect({
                   value={createEnglish}
                   onChange={(e) => setCreateEnglish(e.target.value)}
                 />
-              </div>
-            )}
-            {kind === "category" && q && !exists && (
-              <div className="border-t p-2 space-y-1">
-                <p className="text-xs text-muted-foreground">Parent for “{q}”</p>
-                <select
-                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  value={createParentId}
-                  onChange={(e) => setCreateParentId(e.target.value)}
-                >
-                  <option value="">— Root —</option>
-                  {sorted.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
               </div>
             )}
           </Command>
