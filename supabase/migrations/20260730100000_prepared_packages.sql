@@ -17,6 +17,10 @@
 
 create table if not exists "public"."prepared_packages" (
   "id" bigint generated always as identity primary key,
+  -- Opaque, unguessable — used in the shared link and looked up by
+  -- myt-main instead of the sequential "id" above, so a package can't be
+  -- enumerated by walking integers.
+  "share_token" text not null unique,
   "partner_tracking_code" text not null
     references "public"."partners"("partner_tracking_code") on delete cascade,
   "created_by" uuid,
@@ -35,6 +39,9 @@ create index if not exists "prepared_packages_partner_idx"
 
 create index if not exists "prepared_packages_event_idx"
   on "public"."prepared_packages" ("event_id");
+
+create index if not exists "prepared_packages_share_token_idx"
+  on "public"."prepared_packages" ("share_token");
 
 -- Service-role only, like every other table here.
 alter table "public"."prepared_packages" enable row level security;
