@@ -13,12 +13,18 @@ export type PackagePriceEvent = {
 // Replicates main-app computePackagePrice: flight + hotel + min available
 // ticket + markups (composed per-component when any markup_* set, else the
 // global 175) + event_additional_markup. See myt-main lib/events/price.ts.
-export function computePackagePrice(event: PackagePriceEvent): number | null {
+// Per-traveler USD, like main's — the order flow multiplies by pax.
+// `ticketPrice` prices a SPECIFIC category instead of the cheapest one
+// (main reaches the same number as min-based price + category delta).
+export function computePackagePrice(
+  event: PackagePriceEvent,
+  ticketPrice?: number | null,
+): number | null {
   const available = (event.tickets_and_rates || []).filter(
     (t) => t?.available !== false,
   );
   if (available.length === 0) return null;
-  const minTicket = Math.min(...available.map((t) => t.price));
+  const ticket = ticketPrice ?? Math.min(...available.map((t) => t.price));
   const composed =
     event.markup_ticket != null ||
     event.markup_flight != null ||
@@ -29,8 +35,22 @@ export function computePackagePrice(event: PackagePriceEvent): number | null {
   return Math.round(
     (event.base_flight_price ?? 0) +
       (event.base_hotel_price ?? 0) +
-      minTicket +
+      ticket +
       markup +
       (event.event_additional_markup ?? 0),
   );
+}
+
+export function hasAvailableTickets(event: Pick<PackagePriceEvent, "tickets_and_rates">): boolean {
+  return (event.tickets_and_rates || []).some((t) => t?.available !== false);
+}
+
+// Mirrors myt-main lib/events/price.ts isEventSoldOut. `lockedFlightSoldOut`
+// is main's in-memory markLockedPackagesSoldOut flag — callers here derive it
+// themselves (the backoffice reads `flights` directly) and pass it in.
+export function isEventSoldOut(
+  event: Pick<PackagePriceEvent, "tickets_and_rates"> & { tags?: string | null },
+  lockedFlightSoldOut = false,
+): boolean {
+  return !hasAvailableTickets(event) || event.tags === "Sold" || lockedFlightSoldOut;
 }

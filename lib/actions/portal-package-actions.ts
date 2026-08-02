@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { partnerLink } from "@/lib/site";
+import { computePackagePrice, isEventSoldOut } from "@/lib/package-price";
 import type { EventTicket, EventType } from "@/types/app.types";
+
+/** myt-main's deployment — the same base URL the hotel proxy already uses. */
+const MAIN_APP_URL = (
+  process.env.NEXT_SECRET_HOTEL_SERVICE_URL || "https://www.mega-events.co.il"
+).replace(/\/$/, "");
 
 /**
  * Prepared packages — the portal's live-link builder.
@@ -77,7 +83,20 @@ export interface BuilderEvent {
   date: string;
   location_name: string;
   type: EventType;
-  tickets: { category: string; price: number; id: string; vendor?: string }[];
+  /** Customer-facing site price per traveler (cheapest category); null = sold out. */
+  site_price: number | null;
+  sold_out: boolean;
+  locked_flight_id: number | null;
+  def_date_depart: string | null;
+  def_date_return: string | null;
+  tickets: {
+    category: string;
+    price: number;
+    id: string;
+    vendor?: string;
+    /** Site price per traveler with THIS category. */
+    site_price: number | null;
+  }[];
 }
 
 type EventListRow = {
@@ -88,7 +107,54 @@ type EventListRow = {
   type: string;
   tickets_and_rates: EventTicket[] | null;
   is_deleted?: string | null;
+  base_flight_price: number | null;
+  base_hotel_price: number | null;
+  event_additional_markup?: number | null;
+  markup_ticket?: number | null;
+  markup_flight?: number | null;
+  markup_hotel?: number | null;
+  tags?: string | null;
+  locked_flight_id?: number | null;
+  def_date_depart?: string | null;
+  def_date_return?: string | null;
 };
+
+const EVENT_COLUMNS =
+  "id, name, date, location, type, tickets_and_rates, is_deleted, base_flight_price, base_hotel_price, " +
+  "event_additional_markup, markup_ticket, markup_flight, markup_hotel, tags, locked_flight_id, " +
+  "def_date_depart, def_date_return";
+
+/**
+ * Locked packages sell exactly one offline flight with no Amadeus fallback —
+ * when that flight has no seats left the whole package is sold out (main's
+ * markLockedPackagesSoldOut, mirrored lite: global remaining only).
+ */
+async function lockedFlightSoldOutSet(lockedIds: number[]): Promise<Set<number>> {
+  if (lockedIds.length === 0) return new Set();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("flights")
+    .select("id, initial_quantity, consumed_quantity, is_deleted")
+    .in("id", lockedIds);
+  if (error) {
+    console.error("lockedFlightSoldOutSet:", JSON.stringify(error));
+    return new Set(); // fail open, like main
+  }
+  const rows = (data ?? []) as {
+    id: number;
+    initial_quantity: number | null;
+    consumed_quantity: number | null;
+    is_deleted: boolean | null;
+  }[];
+  const soldOut = new Set<number>();
+  for (const id of lockedIds) {
+    const row = rows.find((r) => r.id === id);
+    if (!row || row.is_deleted || (row.initial_quantity ?? 0) - (row.consumed_quantity ?? 0) < 1) {
+      soldOut.add(id);
+    }
+  }
+  return soldOut;
+}
 
 export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
   await requirePartner();
@@ -96,7 +162,7 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from("events")
-    .select("id, name, date, location, type, tickets_and_rates")
+    .select(EVENT_COLUMNS)
     .is("is_deleted", null)
     .gte("date", new Date().toISOString())
     .order("date", { ascending: true })
@@ -107,17 +173,38 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
     return [];
   }
 
-  return ((data ?? []) as EventListRow[]).map((row) => {
+  const rows = (data ?? []) as EventListRow[];
+  const lockedIds = [
+    ...new Set(rows.map((r) => r.locked_flight_id).filter((id): id is number => id != null)),
+  ];
+  const lockedSoldOut = await lockedFlightSoldOutSet(lockedIds);
+
+  return rows.map((row) => {
     const tickets = ((row.tickets_and_rates ?? []) as EventTicket[])
       .filter((t) => t && t.available !== false && typeof t.category === "string")
-      .map((t) => ({ category: t.category, price: t.price, id: t.id, vendor: t.vendor }));
+      .map((t) => ({
+        category: t.category,
+        price: t.price,
+        id: t.id,
+        vendor: t.vendor,
+        site_price: computePackagePrice(row, t.price),
+      }));
     const location = (row.location ?? {}) as { name?: string };
+    const soldOut = isEventSoldOut(
+      row,
+      row.locked_flight_id != null && lockedSoldOut.has(row.locked_flight_id),
+    );
     return {
       id: row.id,
       name: row.name,
       date: row.date,
       location_name: location.name ?? "",
       type: row.type as EventType,
+      site_price: soldOut ? null : computePackagePrice(row),
+      sold_out: soldOut,
+      locked_flight_id: row.locked_flight_id ?? null,
+      def_date_depart: row.def_date_depart ?? null,
+      def_date_return: row.def_date_return ?? null,
       tickets,
     };
   });
@@ -500,6 +587,305 @@ function buildHotelSnapshot(
 }
 
 // ---------------------------------------------------------------------------
+// Live search — proxied to myt-main's own customer-facing APIs, so the offers
+// an agent pins are EXACTLY what a customer would be offered. Both actions are
+// requirePartner-gated server-side; no new public routes are exposed here.
+// ---------------------------------------------------------------------------
+
+/**
+ * A flight offer as main's /api/flights/search returns it (offline inventory
+ * merged with live Amadeus). Display fields are typed; everything else (the
+ * raw Amadeus `offer` blob etc.) rides along untyped and is snapshotted as-is
+ * — main round-trips this exact object through reservations.flight_order_info.
+ * `price` is the TOTAL for all travelers (main's semantics).
+ */
+export interface LiveFlightOffer {
+  id: string;
+  airline: string;
+  price: number;
+  numOfTravelers: number;
+  stops: number;
+  duration?: string;
+  outbound: {
+    departureTime: string;
+    arrivalTime: string;
+    departureAirport: string;
+    arrivalAirport: string;
+    flightNumber?: string;
+    checkBagsIncluded?: boolean;
+    cabinBagsIncluded?: boolean;
+  };
+  inbound: {
+    departureTime: string;
+    arrivalTime: string;
+    departureAirport: string;
+    arrivalAirport: string;
+    flightNumber?: string;
+    checkBagsIncluded?: boolean;
+    cabinBagsIncluded?: boolean;
+  };
+  metadata?: { name?: string; logo?: string; iata?: string };
+  virtualOfferType?: boolean;
+  isOffline?: boolean;
+  offlineId?: number;
+  offlineRawPrice?: number;
+  [key: string]: unknown;
+}
+
+export type LiveFlightSearchResult =
+  | { ok: true; flights: LiveFlightOffer[]; locked: boolean; lockedSoldOut: boolean }
+  | { ok: false; error: string };
+
+export async function searchLiveFlights(input: {
+  eventId: number;
+  departureDate: string;
+  returnDate: string;
+  adults: number;
+}): Promise<LiveFlightSearchResult> {
+  await requirePartner();
+
+  const eventId = Number(input.eventId);
+  if (!Number.isFinite(eventId)) return { ok: false, error: "אירוע לא תקין" };
+  if (!input.departureDate || !input.returnDate) {
+    return { ok: false, error: "יש לבחור תאריכי טיסה" };
+  }
+  // Amadeus rejects adults > 9 — surface that instead of a generic upstream 500.
+  if ((input.adults || 1) > 9) {
+    return { ok: false, error: "חיפוש טיסות חי נתמך עד 9 נוסעים — לקבוצה גדולה השאירו את בחירת הטיסה ללקוח או הצמידו טיסה מהמלאי" };
+  }
+
+  try {
+    const res = await fetch(`${MAIN_APP_URL}/api/flights/search?eventId=${eventId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        departureDate: input.departureDate,
+        returnDate: input.returnDate,
+        adults: Math.max(1, Math.min(9, Math.floor(input.adults || 1))),
+        originLocationCode: "TLV",
+        nonStop: false,
+      }),
+      // Amadeus searches are slow; main's route caps itself at 30s.
+      signal: AbortSignal.timeout(35_000),
+    });
+    const data = (await res.json()) as {
+      flights?: LiveFlightOffer[];
+      locked?: boolean;
+      lockedSoldOut?: boolean;
+      error?: string;
+    };
+    if (!res.ok) {
+      console.error("searchLiveFlights upstream:", res.status, data?.error);
+      return { ok: false, error: "חיפוש הטיסות נכשל. נסו שוב." };
+    }
+    return {
+      ok: true,
+      flights: data.flights ?? [],
+      locked: data.locked === true,
+      lockedSoldOut: data.lockedSoldOut === true,
+    };
+  } catch (err) {
+    console.error("searchLiveFlights:", err);
+    return { ok: false, error: "חיפוש הטיסות נכשל. נסו שוב." };
+  }
+}
+
+/**
+ * A ready-to-save OrderHotel candidate assembled the same way main's
+ * HotelSelection assembles one on rate pick (rate + info metadata + the
+ * search request echoed back for guests/checkin/checkout).
+ */
+export interface LiveHotelOption {
+  /** Stable key within one search response. */
+  key: string;
+  name: string;
+  stars: number;
+  address: string;
+  distance_m: number;
+  image: string | null;
+  room_name: string;
+  meal: string;
+  /** Total stay price, USD (rate show_amount). */
+  price: number;
+  /** The full OrderHotel snapshot main round-trips — saved verbatim on pick. */
+  snapshot: Record<string, unknown>;
+}
+
+export type LiveHotelSearchResult =
+  | { ok: true; options: LiveHotelOption[]; checkin: string; checkout: string }
+  | { ok: false; error: string };
+
+type WorldotaRate = {
+  room_name?: string;
+  meal?: string;
+  payment_options?: { payment_types?: { show_amount?: string }[] };
+  [key: string]: unknown;
+};
+
+type WorldotaHotel = { hid: number; id: string; rates: WorldotaRate[] };
+
+type HotelsInfoEntry = {
+  rooms?: Record<string, { name?: string }>;
+  general?: { amenities?: string[]; images?: string[] };
+  metadata?: {
+    hotelName?: string;
+    address?: string;
+    rating?: number;
+    distanceFromCenter?: number;
+  };
+};
+
+export async function searchLiveHotels(input: {
+  eventId: number;
+  checkin: string;
+  checkout: string;
+  travelers: number;
+}): Promise<LiveHotelSearchResult> {
+  await requirePartner();
+
+  const eventId = Number(input.eventId);
+  if (!Number.isFinite(eventId)) return { ok: false, error: "אירוע לא תקין" };
+  if (!input.checkin || !input.checkout || input.checkin >= input.checkout) {
+    return { ok: false, error: "יש לבחור תאריכי שהייה תקינים" };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: eventData, error: eventError } = await (supabase as any)
+    .from("events")
+    .select("id, location")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (eventError || !eventData) {
+    console.error("searchLiveHotels event:", JSON.stringify(eventError));
+    return { ok: false, error: "האירוע לא נמצא" };
+  }
+  const location = (eventData as { location: { latitude?: number; longitude?: number; country_code?: string } })
+    .location;
+  if (location?.latitude == null || location?.longitude == null) {
+    return { ok: false, error: "לאירוע אין מיקום מוגדר" };
+  }
+
+  // Rooms of two, remainder joins the last room — same spirit as main's
+  // getRoomParams seeding the party from the traveler count.
+  const travelers = Math.max(1, Math.min(20, Math.floor(input.travelers || 1)));
+  const guests: { adults: number; children: number[] }[] = [];
+  let left = travelers;
+  while (left > 0) {
+    const take = left === 3 ? 3 : Math.min(2, left);
+    guests.push({ adults: take, children: [] });
+    left -= take;
+  }
+
+  try {
+    const searchRes = await fetch(`${MAIN_APP_URL}/api/hotels`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location,
+        checkin: input.checkin,
+        checkout: input.checkout,
+        guests,
+        radius: location.country_code === "US" ? 5000 : 2000,
+        eventId,
+      }),
+      signal: AbortSignal.timeout(35_000),
+    });
+    const search = (await searchRes.json()) as {
+      data?: { hotels?: WorldotaHotel[] };
+      debug?: { request?: { guests?: unknown; checkin?: string; checkout?: string } };
+      error?: string | null;
+    };
+    if (!searchRes.ok || !search?.data?.hotels) {
+      console.error("searchLiveHotels upstream:", searchRes.status, search?.error);
+      return { ok: false, error: "חיפוש המלונות נכשל. נסו שוב." };
+    }
+
+    const hotels = (search.data.hotels ?? []).slice(0, 20);
+    if (hotels.length === 0) {
+      return { ok: true, options: [], checkin: input.checkin, checkout: input.checkout };
+    }
+
+    const infoRes = await fetch(`${MAIN_APP_URL}/api/hotels-info`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        hotels: hotels.map((h) => ({
+          hid: h.hid,
+          id: h.id,
+          rooms: (h.rates ?? []).map((r) => r.room_name).filter(Boolean).slice(0, 10),
+        })),
+        event: { location },
+      }),
+      signal: AbortSignal.timeout(35_000),
+    });
+    const info = (await infoRes.json()) as Record<string, HotelsInfoEntry>;
+
+    const echoedGuests = search.debug?.request?.guests ?? guests;
+    const checkin = search.debug?.request?.checkin ?? input.checkin;
+    const checkout = search.debug?.request?.checkout ?? input.checkout;
+
+    const options: LiveHotelOption[] = [];
+    for (const hotel of hotels) {
+      const entry = infoRes.ok ? info?.[hotel.id] : undefined;
+      // Main drops hotels without usable static info from its cards too.
+      if (!entry?.metadata) continue;
+
+      const rates = (hotel.rates ?? [])
+        .filter((r) => r?.payment_options?.payment_types?.[0]?.show_amount)
+        .sort(
+          (a, b) =>
+            Number(a.payment_options!.payment_types![0].show_amount) -
+            Number(b.payment_options!.payment_types![0].show_amount),
+        )
+        .slice(0, 3);
+
+      for (const rate of rates) {
+        const amount = Number(rate.payment_options!.payment_types![0].show_amount);
+        const roomName =
+          rate.room_name || entry.rooms?.[Object.keys(entry.rooms || {})[0]]?.name || "";
+        // The exact shape main's HotelSelection setHotel() produces for a live
+        // hotel — /api/package/[id] and confirm-order round-trip it unchanged.
+        const snapshot: Record<string, unknown> = {
+          rate,
+          address: entry.metadata.address ?? "",
+          name: entry.metadata.hotelName ?? "",
+          id: hotel.id,
+          price: String(amount),
+          guests: echoedGuests,
+          checkin,
+          checkout,
+          hotelInformation: {
+            hotelName: entry.metadata.hotelName ?? "",
+            roomName,
+            stars: entry.metadata.rating ?? 0,
+            amenities: entry.general?.amenities ?? [],
+            distance: entry.metadata.distanceFromCenter ?? 0,
+          },
+        };
+        options.push({
+          key: `${hotel.id}|${roomName}|${amount}`,
+          name: entry.metadata.hotelName ?? "",
+          stars: entry.metadata.rating ?? 0,
+          address: entry.metadata.address ?? "",
+          distance_m: entry.metadata.distanceFromCenter ?? 0,
+          image: entry.general?.images?.[0] ?? null,
+          room_name: roomName,
+          meal: rate.meal ?? "nomeal",
+          price: amount,
+          snapshot,
+        });
+      }
+    }
+
+    options.sort((a, b) => a.price - b.price);
+    return { ok: true, options: options.slice(0, 30), checkin, checkout };
+  } catch (err) {
+    console.error("searchLiveHotels:", err);
+    return { ok: false, error: "חיפוש המלונות נכשל. נסו שוב." };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Create / list / delete
 // ---------------------------------------------------------------------------
 
@@ -507,8 +893,16 @@ export type CreatePackageInput = {
   eventId: number;
   category: string;
   qty: number;
-  flight: { mode: "offline"; flightId: number } | { mode: "live" } | { mode: "none" };
-  hotel: { mode: "offline"; units: { rowId: number; count: number }[] } | { mode: "live" } | { mode: "none" };
+  flight:
+    | { mode: "offline"; flightId: number }
+    | { mode: "live-offer"; offer: LiveFlightOffer }
+    | { mode: "live" }
+    | { mode: "none" };
+  hotel:
+    | { mode: "offline"; units: { rowId: number; count: number }[] }
+    | { mode: "live-offer"; offer: Record<string, unknown> }
+    | { mode: "live" }
+    | { mode: "none" };
 };
 
 export type CreatePackageResult = { ok: true; link: string } | { ok: false; error: string };
@@ -560,8 +954,39 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
   };
 
   // Flight
-  let flightOrderInfo: ReturnType<typeof buildFlightSnapshot> | null = null;
+  let flightOrderInfo: object | null = null;
   const flightSkipped = input.flight.mode === "none";
+  if (input.flight.mode === "live-offer") {
+    // A live (Amadeus) offer has no cheap ground truth to re-verify against —
+    // main's own savePreparedPackage trusts it the same way, and confirm-order's
+    // price floor remains the real backstop at booking time. Offline rows that
+    // arrive through the live search DO carry their true inventory cost, so
+    // those are floored here exactly like main does.
+    const offer = input.flight.offer;
+    if (
+      !offer ||
+      typeof offer !== "object" ||
+      typeof offer.outbound?.departureTime !== "string" ||
+      typeof offer.inbound?.departureTime !== "string" ||
+      !Number.isFinite(Number(offer.price))
+    ) {
+      return { ok: false, error: "הטיסה שנבחרה אינה תקינה" };
+    }
+    if (new Date(offer.outbound.departureTime).getTime() <= Date.now()) {
+      return { ok: false, error: "הטיסה שנבחרה כבר יצאה" };
+    }
+    if (
+      offer.isOffline &&
+      offer.offlineRawPrice != null &&
+      Number(offer.price) < Number(offer.offlineRawPrice)
+    ) {
+      return { ok: false, error: "מחיר הטיסה שנבחרה אינו תקין" };
+    }
+    if (JSON.stringify(offer).length > 400_000) {
+      return { ok: false, error: "הטיסה שנבחרה אינה תקינה" };
+    }
+    flightOrderInfo = offer;
+  }
   if (input.flight.mode === "offline") {
     const { data: flightRow, error: flightError } = await supabase
       .from("flights")
@@ -588,8 +1013,45 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
   }
 
   // Hotel
-  let hotelOrderInfo: ReturnType<typeof buildHotelSnapshot> | null = null;
+  let hotelOrderInfo: object | null = null;
   const hotelSkipped = input.hotel.mode === "none";
+  if (input.hotel.mode === "live-offer") {
+    const offer = input.hotel.offer as {
+      rate?: unknown;
+      checkin?: unknown;
+      checkout?: unknown;
+      price?: unknown;
+      isOffline?: unknown;
+      offlineRawPrice?: unknown;
+    };
+    if (
+      !offer ||
+      typeof offer !== "object" ||
+      !offer.rate ||
+      typeof offer.checkin !== "string" ||
+      typeof offer.checkout !== "string" ||
+      !Number.isFinite(Number(offer.price))
+    ) {
+      return { ok: false, error: "המלון שנבחר אינו תקין" };
+    }
+    // Date-only checkin parses as UTC midnight on main's isInFuture — a
+    // same-day checkin resolves as hotel_needs_repick the moment the link is
+    // opened, so a package saved with one is dead on arrival. Require tomorrow+.
+    if (offer.checkin <= new Date().toISOString().slice(0, 10)) {
+      return { ok: false, error: "צ'ק-אין חייב להיות מחר או מאוחר יותר — צ'ק-אין של היום יידרש בחירה מחדש בפתיחת הלינק" };
+    }
+    if (
+      offer.isOffline === true &&
+      offer.offlineRawPrice != null &&
+      Number(offer.price) < Number(offer.offlineRawPrice)
+    ) {
+      return { ok: false, error: "מחיר המלון שנבחר אינו תקין" };
+    }
+    if (JSON.stringify(offer).length > 400_000) {
+      return { ok: false, error: "המלון שנבחר אינו תקין" };
+    }
+    hotelOrderInfo = input.hotel.offer;
+  }
   if (input.hotel.mode === "offline") {
     const requested = (input.hotel.units ?? []).filter((u) => u && u.count > 0);
     if (requested.length === 0) return { ok: false, error: "יש לבחור חדרים" };

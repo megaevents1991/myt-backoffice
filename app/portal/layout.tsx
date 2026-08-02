@@ -34,7 +34,7 @@ export default async function PortalLayout({
       className={`portal-theme min-h-screen ${assistant.variable} ${rubik.variable}`}
     >
       {/* Forest brand band — same near-black green the main site headers use */}
-      <header className="bg-brand-forest text-primary-foreground">
+      <header className="portal-hero text-primary-foreground">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4">
           <div className="flex min-w-0 items-center gap-3">
             {profile?.logo_url ? (

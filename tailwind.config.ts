@@ -82,6 +82,12 @@ const config: Config = {
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
   		},
+  		boxShadow: {
+  			// Main-app card shadow scale (tailwind.config.ts there) — used by the portal.
+  			card: '0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04)',
+  			'card-hover': '0 10px 24px -6px rgb(0 0 0 / 0.12)',
+  			'mint-glow': '0 6px 24px -4px hsl(var(--brand-mint) / 0.55)'
+  		},
   		keyframes: {
   			'accordion-down': {
   				from: {

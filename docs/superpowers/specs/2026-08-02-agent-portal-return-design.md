@@ -103,6 +103,30 @@ CLAUDE.md on `feat/agent-area`: `/agent/*`, `lib/agent-*-actions`, `lib/partner-
 deprecated — remove in the future; do not build on them. Keep the three customer-facing pieces
 (§Decision). No code changes.
 
+## Round 2 additions (same day) — full parity with main's agent area
+
+- **Site price + sold-out in the builder** — `lib/package-price.ts` gained an
+  optional specific-ticket price param plus `hasAvailableTickets`/`isEventSoldOut`
+  (mirroring main's `lib/events/price.ts`, incl. a lite locked-flight check
+  against `flights` remaining). Builder event cards show the per-traveler site
+  price or "אזל"; ticket cards show the per-category site price; review shows
+  the estimated site total.
+- **Live search in the wizard** — two `requirePartner` server actions call
+  myt-main's own customer APIs server-side (base `NEXT_SECRET_HOTEL_SERVICE_URL`):
+  `searchLiveFlights` → `POST /api/flights/search?eventId=` (Amadeus + offline
+  merged; offers stored verbatim as `flight_order_info`, main's own shape) and
+  `searchLiveHotels` → `POST /api/hotels` + `POST /api/hotels-info` (Ratehawk;
+  the action assembles ready OrderHotel snapshots the way main's HotelSelection
+  does). `createPreparedPackage` gained `live-offer` modes with main's exact
+  trust model: live offers trusted (no ground truth short of re-search,
+  confirm-order's floor is the backstop), offline-sourced offers floored
+  against `offlineRawPrice`. Locked-flight events skip live flight search
+  (locked sells exactly one flight).
+- **Clicked-events cross-ref**: already ported in round 1 — verified identical.
+- **Visual polish**: aurora-glow forest hero, mint CTAs with glow, card shadow
+  scale (`shadow-card`/`card-hover`), segmented wizard progress bar.
+- **Nothing in main was deleted** — its `/agent` area stays deprecated-but-alive.
+
 ## Error handling
 
 - All new actions: `requirePartner()` first line, `{ data, error }` checks, explicit column

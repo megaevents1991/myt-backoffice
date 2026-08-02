@@ -23,7 +23,10 @@ export default async function PortalPackagesPage() {
             ומלון — בלי לחפש לבד.
           </p>
         </div>
-        <Button asChild>
+        <Button
+          asChild
+          className="rounded-full bg-brand-mint px-5 font-semibold text-brand-forest transition-all duration-200 hover:bg-brand-mint/90 hover:shadow-mint-glow active:scale-[0.98]"
+        >
           <Link href="/portal/packages/new">
             <Plus className="h-4 w-4" />
             בניית חבילה חדשה

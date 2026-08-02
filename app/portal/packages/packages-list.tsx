@@ -89,7 +89,10 @@ export function PackagesList({ packages }: { packages: PreparedPackageListItem[]
         <p className="mt-1 text-sm text-muted-foreground">
           בנו חבילה ראשונה ושתפו את הלינק עם הקהל שלכם.
         </p>
-        <Button asChild className="mt-4">
+        <Button
+          asChild
+          className="mt-4 rounded-full bg-brand-mint px-5 font-semibold text-brand-forest transition-all duration-200 hover:bg-brand-mint/90 hover:shadow-mint-glow active:scale-[0.98]"
+        >
           <Link href="/portal/packages/new">בניית חבילה</Link>
         </Button>
       </div>
@@ -99,7 +102,10 @@ export function PackagesList({ packages }: { packages: PreparedPackageListItem[]
   return (
     <ul className="space-y-3">
       {packages.map((pkg) => (
-        <li key={pkg.id} className="rounded-xl border bg-card p-4 shadow-sm">
+        <li
+          key={pkg.id}
+          className="rounded-2xl border bg-card p-4 shadow-card transition-shadow hover:shadow-card-hover"
+        >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="truncate font-medium">{pkg.event_name}</p>
