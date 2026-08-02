@@ -1,0 +1,19 @@
+-- Deliberately does nothing. This version exists only so the local migrations
+-- directory matches the remote history table.
+--
+-- What happened: the category collapse was first applied from a feature branch
+-- as 20260729200000. c24ad93 then renamed the file to 20260729230000 to sort it
+-- after the partner migrations, on the assumption it had not run yet — and a
+-- later push applied it a second time under the new version. The remote history
+-- now records BOTH versions, so both files have to exist here or every
+-- `supabase db push` dies with "Remote migration versions not found in local
+-- migrations directory".
+--
+-- The real DDL lives in 20260729200000_one_category_table.sql, which is the
+-- version that ran first. Copying it here instead of leaving this empty would
+-- break a from-scratch rebuild: that script renames `event_categories` to
+-- `event_categories_legacy` at the end, so a second run has nothing left to
+-- read and fails on its first UPDATE.
+--
+-- Do not add statements to this file.
+select 1;
