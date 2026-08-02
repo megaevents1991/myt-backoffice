@@ -32,6 +32,12 @@ import {
   getRelevantEventsForFlight,
 } from "@/lib/actions/offline-flight-actions";
 import { OfflineFlight } from "@/types/offline-flight.types";
+import { FlightStopoverFields } from "@/components/flight-stopover-fields";
+import {
+  stopoverSchemaShape,
+  stopoverSuperRefine,
+  toStopoverColumns,
+} from "@/lib/flight-stops";
 import {
   Popover,
   PopoverContent,
@@ -168,14 +174,10 @@ const offlineFlightFormSchema = z.object({
       "Invalid total duration (ISO 8601 format, e.g., PT4H5M)."
     )
     .min(1, "Total duration is required."),
-  // Connecting flights are storable since the migration dropped the old
-  // `stops = 0` constraint. Pinning this to a literal 0 made the form reject
-  // every one of them.
-  stops: z.coerce
-    .number()
-    .int()
-    .min(0, { message: "Stops cannot be negative." })
-    .max(3, { message: "More than 3 stops is almost certainly a typo." }),
+  // No `stops` field: it is derived from the two stopover airports below (and
+  // by the `flights_derive_stops` trigger on save), so the count can never
+  // disagree with the airports behind it.
+  ...stopoverSchemaShape,
   airline_code: z
     .string()
     .regex(
@@ -257,7 +259,7 @@ const offlineFlightFormSchema = z.object({
 
   // Relationships
   event_ids: z.array(z.number().int()).default([]),
-});
+}).superRefine(stopoverSuperRefine);
 
 type OfflineFlightFormData = z.infer<typeof offlineFlightFormSchema>;
 
@@ -283,7 +285,12 @@ export default function NewOfflineFlightPage() {
     defaultValues: {
       initial_quantity: 10,
       price: 100.0,
-      stops: 0,
+      outbound_has_stop: "0",
+      outbound_stop_airport: "",
+      outbound_stop_duration: "",
+      inbound_has_stop: "0",
+      inbound_stop_airport: "",
+      inbound_stop_duration: "",
       outbound_check_bags_included: false,
       outbound_cabin_bags_included: true,
       inbound_check_bags_included: false,
@@ -457,10 +464,17 @@ export default function NewOfflineFlightPage() {
   async function onSubmit(values: OfflineFlightFormData) {
     startTransition(async () => {
       try {
+        // `*_has_stop` drives the form only — the row carries the airports, and
+        // `stops` is derived from them (here and by the DB trigger).
+        const {
+          outbound_has_stop: _outboundHasStop,
+          inbound_has_stop: _inboundHasStop,
+          ...columns
+        } = values;
         const flightDataToSave: Omit<
           OfflineFlight,
           "id" | "consumed_quantity" | "is_deleted"
-        > = values;
+        > = { ...columns, ...toStopoverColumns(values) };
         await createOfflineFlight(flightDataToSave);
         toast.success("Offline flight created successfully!");
         router.push("/offline-flights");
@@ -560,24 +574,6 @@ export default function NewOfflineFlightPage() {
                     </FormControl>
                     <FormDescription>
                       Auto-calculated from outbound + inbound durations.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="stops"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Stops</FormLabel>
-                    <FormControl>
-                      <Input type="number" min={0} max={3} {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      0 for a direct flight. For a connecting flight set 1, then
-                      add the stopover airport and layover from the flights list
-                      (click the row id to open it) — otherwise it is sold as direct.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -704,6 +700,7 @@ export default function NewOfflineFlightPage() {
                   </FormItem>
                 )}
               />
+              <FlightStopoverFields direction="outbound" />
             </div>
 
             <h2 className="text-xl font-semibold border-b pb-2 mt-6">
@@ -825,6 +822,7 @@ export default function NewOfflineFlightPage() {
                   </FormItem>
                 )}
               />
+              <FlightStopoverFields direction="inbound" />
             </div>
 
             <h2 className="text-xl font-semibold border-b pb-2 mt-6">
