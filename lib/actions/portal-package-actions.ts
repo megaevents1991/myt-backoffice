@@ -893,6 +893,8 @@ export type CreatePackageInput = {
   eventId: number;
   category: string;
   qty: number;
+  /** May the customer change the pinned composition? Default true (editable). */
+  allowEdit?: boolean;
   flight:
     | { mode: "offline"; flightId: number }
     | { mode: "live-offer"; offer: LiveFlightOffer }
@@ -1120,23 +1122,36 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
   // Opaque token — main looks packages up by this, never by the row id.
   const shareToken = crypto.randomUUID();
 
+  const baseRow = {
+    share_token: shareToken,
+    partner_tracking_code: session.partner_code,
+    created_by: session.sub,
+    event_id: event.id,
+    event_order_info: eventOrderInfo,
+    flight_order_info: flightOrderInfo,
+    flight_skipped: flightSkipped,
+    hotel_order_info: hotelOrderInfo,
+    hotel_skipped: hotelSkipped,
+    num_travelers: qty,
+  };
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: inserted, error: insertError } = await (supabase as any)
+  let { data: inserted, error: insertError } = await (supabase as any)
     .from("prepared_packages")
-    .insert({
-      share_token: shareToken,
-      partner_tracking_code: session.partner_code,
-      created_by: session.sub,
-      event_id: event.id,
-      event_order_info: eventOrderInfo,
-      flight_order_info: flightOrderInfo,
-      flight_skipped: flightSkipped,
-      hotel_order_info: hotelOrderInfo,
-      hotel_skipped: hotelSkipped,
-      num_travelers: qty,
-    })
+    .insert({ ...baseRow, allow_edit: input.allowEdit !== false })
     .select("share_token")
     .single();
+
+  // Deploy/migration race: if allow_edit hasn't landed yet, save without it
+  // (column default is true) rather than failing the whole package.
+  if (insertError && (insertError.code === "PGRST204" || insertError.code === "42703")) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ data: inserted, error: insertError } = await (supabase as any)
+      .from("prepared_packages")
+      .insert(baseRow)
+      .select("share_token")
+      .single());
+  }
 
   if (insertError || !inserted) {
     console.error("createPreparedPackage insert:", JSON.stringify(insertError));
@@ -1163,6 +1178,8 @@ export interface PreparedPackageListItem {
   flight_summary: string | null;
   hotel: "offline" | "live" | "none";
   hotel_summary: string | null;
+  /** False = the customer cannot change the pinned composition. */
+  allow_edit: boolean;
 }
 
 type PreparedPackageRow = {
@@ -1183,20 +1200,33 @@ type PreparedPackageRow = {
   hotel_order_info: { name?: string; checkin?: string; checkout?: string } | null;
   hotel_skipped: boolean;
   num_travelers: number;
+  allow_edit?: boolean | null;
 };
+
+const LIST_COLUMNS =
+  "id, share_token, created_at, event_id, event_order_info, flight_order_info, flight_skipped, hotel_order_info, hotel_skipped, num_travelers";
 
 export async function getMyPreparedPackages(): Promise<PreparedPackageListItem[]> {
   const session = await requirePartner();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  let { data, error } = await (supabase as any)
     .from("prepared_packages")
-    .select(
-      "id, share_token, created_at, event_id, event_order_info, flight_order_info, flight_skipped, hotel_order_info, hotel_skipped, num_travelers",
-    )
+    .select(`${LIST_COLUMNS}, allow_edit`)
     .eq("partner_tracking_code", session.partner_code)
     .order("created_at", { ascending: false })
     .limit(200);
+
+  // Migration race: fall back to the pre-allow_edit column list.
+  if (error && (error.code === "42703" || error.code === "PGRST204")) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ data, error } = await (supabase as any)
+      .from("prepared_packages")
+      .select(LIST_COLUMNS)
+      .eq("partner_tracking_code", session.partner_code)
+      .order("created_at", { ascending: false })
+      .limit(200));
+  }
 
   if (error) {
     console.error("getMyPreparedPackages:", JSON.stringify(error));
@@ -1231,6 +1261,7 @@ export async function getMyPreparedPackages(): Promise<PreparedPackageListItem[]
               row.hotel_order_info?.checkout ?? ""
             }`
           : null,
+      allow_edit: row.allow_edit !== false,
     };
   });
 }
