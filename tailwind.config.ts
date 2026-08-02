@@ -12,7 +12,20 @@ const config: Config = {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			// Resolves only inside .portal-theme (the portal layout defines the
+  			// vars via next/font); elsewhere it falls through to the system stack.
+  			display: ['var(--font-portal-display)', 'var(--font-portal-sans)', 'sans-serif']
+  		},
   		colors: {
+  			brand: {
+  				forest: 'hsl(var(--brand-forest))',
+  				mint: 'hsl(var(--brand-mint))',
+  				aqua: 'hsl(var(--brand-aqua))',
+  				violet: 'hsl(var(--brand-violet))',
+  				coral: 'hsl(var(--brand-coral))',
+  				gold: 'hsl(var(--brand-gold))'
+  			},
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

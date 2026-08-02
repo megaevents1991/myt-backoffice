@@ -42,7 +42,9 @@ export default async function PortalCreditPage() {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-sm text-muted-foreground">יתרה להמרה</p>
-              <p className="text-4xl font-bold">{usd.format(credit.balanceUsd)}</p>
+              <p className="font-display text-4xl font-bold tabular-nums">
+                {usd.format(credit.balanceUsd)}
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 נצבר {usd.format(credit.accruedUsd)} על {credit.paidTickets} כרטיסים ·
                 מומש {usd.format(credit.redeemedUsd)}

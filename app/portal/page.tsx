@@ -84,13 +84,15 @@ export default async function PortalDashboardPage() {
         {money.map((card) => {
           const Icon = card.icon;
           return (
-            <Card key={card.label}>
+            <Card key={card.label} className="shadow-sm">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">{card.label}</CardTitle>
-                <Icon className="h-4 w-4 text-muted-foreground" />
+                <span className="rounded-lg bg-secondary/25 p-1.5 text-primary">
+                  <Icon className="h-4 w-4" />
+                </span>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{card.value}</div>
+                <div className="font-display text-2xl font-bold tabular-nums">{card.value}</div>
                 <p className="text-xs text-muted-foreground">{card.hint}</p>
               </CardContent>
             </Card>
@@ -102,13 +104,13 @@ export default async function PortalDashboardPage() {
         {activity.map((card) => {
           const Icon = card.icon;
           return (
-            <Card key={card.label}>
+            <Card key={card.label} className="shadow-sm">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">{card.label}</CardTitle>
                 <Icon className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{card.value}</div>
+                <div className="font-display text-2xl font-bold tabular-nums">{card.value}</div>
               </CardContent>
             </Card>
           );
@@ -141,7 +143,7 @@ export default async function PortalDashboardPage() {
                       </div>
                       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                         <div
-                          className="h-full rounded-full bg-primary"
+                          className="h-full rounded-full bg-brand-mint"
                           style={{ width: `${share}%` }}
                         />
                       </div>
@@ -205,11 +207,11 @@ export default async function PortalDashboardPage() {
         <CardContent className="flex gap-8 text-sm">
           <div>
             <p className="text-muted-foreground">קופונים פעילים</p>
-            <p className="text-2xl font-bold">{dashboard.activeCoupons}</p>
+            <p className="font-display text-2xl font-bold tabular-nums">{dashboard.activeCoupons}</p>
           </div>
           <div>
             <p className="text-muted-foreground">שימושים</p>
-            <p className="text-2xl font-bold">{dashboard.couponUses}</p>
+            <p className="font-display text-2xl font-bold tabular-nums">{dashboard.couponUses}</p>
           </div>
         </CardContent>
       </Card>

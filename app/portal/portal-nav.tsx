@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
-import { Button } from "@/components/ui/button";
 
 type NavItem = { name: string; href: string; agentOnly?: boolean };
 
@@ -27,7 +26,7 @@ export function PortalNav() {
   const isAgent = user?.role === "agent";
 
   return (
-    <nav className="flex items-center gap-1">
+    <nav className="flex flex-wrap items-center gap-1">
       {navItems
         .filter((item) => !item.agentOnly || isAgent)
         .map((item) => {
@@ -40,25 +39,24 @@ export function PortalNav() {
             key={item.href}
             href={item.href}
             className={cn(
-              "rounded-md px-3 py-2 text-sm font-medium",
+              "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
               isActive
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-brand-mint text-brand-forest"
+                : "text-primary-foreground/70 hover:bg-white/10 hover:text-primary-foreground"
             )}
           >
             {item.name}
           </Link>
         );
       })}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="text-muted-foreground hover:bg-muted hover:text-foreground"
+      <button
+        type="button"
         onClick={() => logout()}
+        className="ms-1 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-primary-foreground/70 transition-colors hover:bg-white/10 hover:text-primary-foreground"
       >
         <LogOut className="h-4 w-4" />
         התנתק
-      </Button>
+      </button>
     </nav>
   );
 }

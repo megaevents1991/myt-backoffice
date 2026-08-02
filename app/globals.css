@@ -92,3 +92,47 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/*
+ * Partner portal theme — the main app's brand (forest #0A1A14 + glow mint
+ * #5BFF95 + the neon accent set), scoped to the /portal subtree only. The
+ * admin dashboard above keeps the stock neutral tokens; shadcn primitives
+ * rendered inside .portal-theme pick these up automatically.
+ * Values lifted from ../myt-main/app/globals.css — keep in sync by hand.
+ */
+@layer base {
+  .portal-theme {
+    --background: 60 33% 97%; /* #FAFAF5 off-white */
+    --foreground: 244 81% 4%; /* #030213 */
+    --card: 0 0% 100%;
+    --card-foreground: 244 81% 4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 244 81% 4%;
+    --primary: 158 44% 7%; /* #0A1A14 dark forest — pills, CTAs */
+    --primary-foreground: 60 33% 97%;
+    --secondary: 141 100% 68%; /* #5BFF95 glow mint */
+    --secondary-foreground: 158 44% 7%;
+    --muted: 150 20% 94%;
+    --muted-foreground: 240 7% 48%; /* #717182 */
+    --accent: 141 70% 92%; /* soft mint tint for hovers */
+    --accent-foreground: 158 44% 7%;
+    --destructive: 354 100% 65%; /* #FF4F61 neon coral */
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 15% 87%;
+    --input: 150 15% 87%;
+    --ring: 141 100% 45%;
+    --radius: 0.75rem;
+
+    /* Neon accent palette (constant, from main's brand book) */
+    --brand-forest: 158 44% 7%;
+    --brand-mint: 141 100% 68%;
+    --brand-aqua: 189 100% 64%;
+    --brand-violet: 257 100% 82%;
+    --brand-coral: 354 100% 65%;
+    --brand-gold: 48 96% 53%;
+
+    font-family: var(--font-portal-sans), "Arial Hebrew", Arial, sans-serif;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+}
