@@ -27,16 +27,7 @@ export async function middleware(req: NextRequest) {
   const session = await verifySessionValue(req.cookies.get(SESSION_COOKIE)?.value);
   const isAuthPage = pathname.startsWith("/auth");
 
-  // Partner self-service (dashboard, links, credit, coupons, reservations,
-  // quotes) moved entirely to the main site's /agent area (2026-07-30) — this
-  // is no longer a real destination for a partner role, just a redirect out.
-  // Staff keep their OWN, richer admin view at /partners/[code]/view; nothing
-  // here touches that.
-  const mainAgentUrl = () =>
-    (process.env.NEXT_PUBLIC_MAIN_SITE_URL || "https://www.mega-events.co.il").replace(/\/$/, "") +
-    "/agent";
-
-  const home = session && PARTNER_ROLES.includes(session.role) ? mainAgentUrl() : "/dashboard";
+  const home = session && PARTNER_ROLES.includes(session.role) ? "/portal" : "/dashboard";
 
   // Signed-in user hitting an auth page → send to their home.
   if (session && isAuthPage) {
@@ -52,11 +43,9 @@ export async function middleware(req: NextRequest) {
     const isPortal = pathname === "/portal" || pathname.startsWith("/portal/");
     const isUsersAdmin = pathname === "/users" || pathname.startsWith("/users/");
 
-    // A partner role has nowhere left to go in this app at all — and /portal
-    // itself is retired for everyone, not just partners (it can no longer
-    // render anything a partner-scoped session could use).
-    if (isPortal || (PARTNER_ROLES.includes(session.role) && pathname !== "/")) {
-      return NextResponse.redirect(new URL(mainAgentUrl(), req.url));
+    // Partner roles may ONLY use /portal (staff may also enter /portal to debug).
+    if (PARTNER_ROLES.includes(session.role) && !isPortal && pathname !== "/") {
+      return NextResponse.redirect(new URL("/portal", req.url));
     }
     // /users is for superadmin/admin only.
     if (isUsersAdmin && session.role !== "admin" && session.role !== "superadmin") {
