@@ -145,7 +145,10 @@ export function PackageWizard({ events }: { events: BuilderEvent[] }) {
     return [...groups.values()];
   }, [hotels]);
 
-  const selectedUnits = hotelChoice.mode === "offline" ? hotelChoice.units : {};
+  const selectedUnits = useMemo<Record<number, number>>(
+    () => (hotelChoice.mode === "offline" ? hotelChoice.units : {}),
+    [hotelChoice],
+  );
   const selectedGroupKey = useMemo(() => {
     const activeRow = hotels.find((h) => (selectedUnits[h.rowId] ?? 0) > 0);
     return activeRow
