@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   createPreparedPackage,
@@ -135,6 +136,7 @@ export function PackageWizard({ events }: { events: BuilderEvent[] }) {
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [flightChoice, setFlightChoice] = useState<FlightChoice>({ mode: "live" });
   const [hotelChoice, setHotelChoice] = useState<HotelChoice>({ mode: "live" });
+  const [allowEdit, setAllowEdit] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -317,6 +319,7 @@ export function PackageWizard({ events }: { events: BuilderEvent[] }) {
         eventId: event.id,
         category,
         qty,
+        allowEdit,
         flight:
           flightChoice.mode === "live-offer"
             ? { mode: "live-offer", offer: flightChoice.offer }
@@ -1011,6 +1014,17 @@ export function PackageWizard({ events }: { events: BuilderEvent[] }) {
                 </p>
               </div>
             )}
+          </div>
+          <div className="flex items-start justify-between gap-4 rounded-xl border bg-card p-4 shadow-card">
+            <div>
+              <p className="text-sm font-medium">הלקוח יכול לערוך את החבילה</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {allowEdit
+                  ? "הלקוח יוכל להחליף כרטיסים, טיסה ומלון לפני התשלום."
+                  : "החבילה נעולה — הלקוח משלם על ההרכב שבניתם. רכיב שהשארתם לבחירה חיה או שהתיישן עדיין ייבחר על ידו."}
+              </p>
+            </div>
+            <Switch checked={allowEdit} onCheckedChange={setAllowEdit} />
           </div>
           <p className="text-xs text-muted-foreground">
             המחיר המשוער הוא מחיר החבילה הבסיסי באתר לקטגוריה שנבחרה; טיסה או מלון

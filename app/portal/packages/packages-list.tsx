@@ -119,6 +119,11 @@ export function PackagesList({ packages }: { packages: PreparedPackageListItem[]
                   .join(" · ")}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                {!pkg.allow_edit && (
+                  <Badge className="bg-brand-forest font-normal text-primary-foreground hover:bg-brand-forest">
+                    נעולה לעריכה
+                  </Badge>
+                )}
                 <span className="text-muted-foreground">טיסה:</span>
                 <PartBadge mode={pkg.flight} offlineLabel="טיסה מוצמדת" summary={pkg.flight_summary} />
                 <span className="ms-2 text-muted-foreground">מלון:</span>
