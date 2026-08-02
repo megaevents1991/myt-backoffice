@@ -16,7 +16,14 @@ export const PUBLIC_SITE_URL = (
  * `aff` as a legacy fallback. The code is stored in localStorage on arrival, so
  * it keeps counting after the visitor navigates away from this URL.
  */
-export function partnerLink(trackingCode: string, eventId?: number | null): string {
+export function partnerLink(
+  trackingCode: string,
+  eventId?: number | null,
+  shareToken?: string | null,
+): string {
   const path = eventId == null ? "/" : `/order/${eventId}`
-  return `${PUBLIC_SITE_URL}${path}?utm_source=${encodeURIComponent(trackingCode)}`
+  const base = `${PUBLIC_SITE_URL}${path}?utm_source=${encodeURIComponent(trackingCode)}`
+  // `pkg` is read by myt-main's useHandlePreparedPackage → GET /api/package/[token],
+  // which re-validates the saved combination against live data before applying it.
+  return shareToken ? `${base}&pkg=${encodeURIComponent(shareToken)}` : base
 }

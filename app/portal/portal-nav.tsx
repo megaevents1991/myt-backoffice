@@ -11,6 +11,7 @@ type NavItem = { name: string; href: string; agentOnly?: boolean };
 
 const navItems: NavItem[] = [
   { name: "דשבורד", href: "/portal" },
+  { name: "החבילות שלי", href: "/portal/packages" },
   { name: "הלינקים שלי", href: "/portal/links" },
   { name: "הצבירה שלי", href: "/portal/credit" },
   { name: "הקופונים שלי", href: "/portal/coupons" },
