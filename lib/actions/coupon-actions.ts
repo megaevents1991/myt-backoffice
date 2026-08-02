@@ -3,6 +3,7 @@
 import { supabase } from "@/lib/supabase-server"
 import { requireStaff } from "@/lib/auth/guards"
 import type { Coupon } from "@/types/app.types"
+import { isCustomerRefundPartner } from "@/types/partner.types"
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit"
 
 export type CouponInput = {
@@ -104,21 +105,25 @@ export async function getCouponEventOptions() {
 }
 
 /** Light partner list for the "attribute to affiliate" dropdown.
- *  Excludes the auto-created per-customer partners (name "החזר ללקוח ניתן
- *  להתעלם") — ~1235 of the 1312 rows — so only real agents/influencers/affiliate
- *  codes appear. Code-only affiliates (null name, e.g. "mega") are kept. */
+ *  Excludes the auto-created per-customer refund rows — ~1235 of the 1312 —
+ *  so only real agents/influencers/affiliate codes appear. Code-only affiliates
+ *  (null name, e.g. "mega") are kept. */
 export async function getCouponPartnerOptions() {
   await requireStaff()
   const { data, error } = await supabase
     .from("partners")
     .select("partner_tracking_code, name_hebrew, type")
-    .or("name_hebrew.is.null,name_hebrew.not.ilike.*ניתן להתעלם*")
+    // `type.is.null` must be spelled out — a bare `neq` drops NULL-typed rows,
+    // which is where the code-only affiliates live.
+    .or("type.is.null,type.neq.customer_refund")
     .order("name_hebrew", { ascending: true, nullsFirst: false })
 
   if (error) throw error
-  return (data ?? []) as {
+  const rows = (data ?? []) as {
     partner_tracking_code: string
     name_hebrew: string | null
     type: string | null
   }[]
+  // Second pass for any row the backfill migration hasn't typed yet.
+  return rows.filter((row) => !isCustomerRefundPartner(row))
 }

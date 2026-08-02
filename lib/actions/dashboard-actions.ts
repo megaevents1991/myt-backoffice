@@ -3,6 +3,7 @@
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server"
 import { getReservationEventOrderInfoPrimaryName } from "@/lib/utils"
+import { isCustomerRefundPartner } from "@/types/partner.types"
 
 async function countReservationsByStatus(status: string): Promise<number> {
   try {
@@ -43,19 +44,18 @@ export async function getDashboardCounts() {
       })(),
       (async () => {
         try {
-          type PartnerRow = { partner_tracking_code?: string | null; type?: string | null }
+          type PartnerRow = { type: string | null; name_hebrew: string | null }
           const { data: partnersRaw, error } = await supabase
             .from("partners")
-            .select("partner_tracking_code, type");
+            .select("type, name_hebrew")
+            .eq("is_active", true);
           if (error) throw error;
           const rows: PartnerRow[] = (partnersRaw as PartnerRow[]) || [];
-          const hasType = rows.some(r => typeof r.type === "string");
-          const deriveAgent = (code: string | null | undefined) => /AGT|AGENT/i.test(code || "");
-          const agentRows = rows.filter(r => (hasType ? r.type === "agent" : deriveAgent(r.partner_tracking_code)));
-          const affiliateRows = rows.filter(r => (hasType ? r.type === "affiliate" : !deriveAgent(r.partner_tracking_code)));
+          // Customer-refund rows are their own type and belong in neither count.
+          const marketing = rows.filter(r => !isCustomerRefundPartner(r));
           return {
-            agents: agentRows.length,
-            partners: affiliateRows.filter(r => !/_\d{3}$/.test(r.partner_tracking_code || "")).length,
+            agents: marketing.filter(r => r.type === "agent").length,
+            partners: marketing.filter(r => (r.type ?? "affiliate") === "affiliate").length,
           };
         } catch (e) {
           console.error("DashboardCounts: partners query failed", e);

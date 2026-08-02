@@ -5,22 +5,31 @@ import { usePathname } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
-import { Button } from "@/components/ui/button";
 
-const navItems = [
+type NavItem = { name: string; href: string; agentOnly?: boolean };
+
+const navItems: NavItem[] = [
   { name: "דשבורד", href: "/portal" },
+  { name: "החבילות שלי", href: "/portal/packages" },
+  { name: "הלינקים שלי", href: "/portal/links" },
+  { name: "הצבירה שלי", href: "/portal/credit" },
   { name: "הקופונים שלי", href: "/portal/coupons" },
   { name: "ההזמנות שלי", href: "/portal/reservations" },
-  { name: "הצעות מחיר", href: "/portal/quotes" },
+  // Agents only — an influencer promotes a link and never prices a package
+  // for a named customer. The server action enforces it too.
+  { name: "הצעות מחיר", href: "/portal/quotes", agentOnly: true },
 ];
 
 export function PortalNav() {
   const pathname = usePathname();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+  const isAgent = user?.role === "agent";
 
   return (
-    <nav className="flex items-center gap-1">
-      {navItems.map((item) => {
+    <nav className="flex flex-wrap items-center gap-1">
+      {navItems
+        .filter((item) => !item.agentOnly || isAgent)
+        .map((item) => {
         const isActive =
           pathname === item.href ||
           (item.href !== "/portal" && pathname.startsWith(`${item.href}/`));
@@ -30,25 +39,24 @@ export function PortalNav() {
             key={item.href}
             href={item.href}
             className={cn(
-              "rounded-md px-3 py-2 text-sm font-medium",
+              "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
               isActive
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-brand-mint text-brand-forest"
+                : "text-primary-foreground/70 hover:bg-white/10 hover:text-primary-foreground"
             )}
           >
             {item.name}
           </Link>
         );
       })}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="text-muted-foreground hover:bg-muted hover:text-foreground"
+      <button
+        type="button"
         onClick={() => logout()}
+        className="ms-1 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-primary-foreground/70 transition-colors hover:bg-white/10 hover:text-primary-foreground"
       >
         <LogOut className="h-4 w-4" />
         התנתק
-      </Button>
+      </button>
     </nav>
   );
 }

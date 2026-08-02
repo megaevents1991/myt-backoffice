@@ -26,6 +26,7 @@ export async function middleware(req: NextRequest) {
 
   const session = await verifySessionValue(req.cookies.get(SESSION_COOKIE)?.value);
   const isAuthPage = pathname.startsWith("/auth");
+
   const home = session && PARTNER_ROLES.includes(session.role) ? "/portal" : "/dashboard";
 
   // Signed-in user hitting an auth page → send to their home.

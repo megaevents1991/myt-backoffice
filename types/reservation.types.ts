@@ -61,5 +61,11 @@ export type Reservation = {
   offline_hotel_id?: number | null;
   offline_hotel_ids?: number[] | null;
   offline_hotel_cost?: number | null;
+  // Set only for bookings an agent entered on a customer's behalf — see
+  // myt-main's confirm-order/utils.ts (resolveAgentSettlement). Never shown
+  // to the customer; staff-only context for why a Pending row is Pending.
+  partner_settlement_method?: "customer_card" | "agent_card" | "voucher" | null;
+  // ILS subtracted from final_purchase_price_ils before charging, agent_card only.
+  agent_card_discount_ils?: number | null;
 }
 

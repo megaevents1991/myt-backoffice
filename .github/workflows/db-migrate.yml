@@ -17,6 +17,13 @@ on:
     paths:
       - "supabase/migrations/**"
 
+# One migration run at a time — this writes to the database the live app uses.
+# A merge landing while a dispatch is mid-push would interleave two `db push`
+# runs against the same migration history.
+concurrency:
+  group: db-migrate
+  cancel-in-progress: false
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
@@ -42,12 +49,44 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      # Supabase identifies a migration by its 14-digit version prefix ALONE, not
+      # by filename. Two branches that stamp the same second produce files that
+      # look distinct but collide: applying one marks the other's version as done,
+      # so it is skipped forever — no error, green run, missing column. That has
+      # already happened here, so it is checked before anything is applied.
+      #
+      # No `inputs` in this step on purpose: it must hold for the push trigger
+      # too, where the inputs context is null.
+      - name: Reject duplicate migration versions
+        run: |
+          set -euo pipefail
+          dupes=$(ls -1 supabase/migrations/*.sql \
+            | xargs -r -n1 basename \
+            | cut -c1-14 \
+            | sort \
+            | uniq -d)
+          if [ -n "$dupes" ]; then
+            echo "::error::Two migrations share a version prefix. Supabase keys on that number alone, so one would be silently skipped."
+            for v in $dupes; do
+              echo "  version $v:"
+              ls -1 supabase/migrations/${v}*.sql | sed 's/^/    /'
+            done
+            echo "Fix: renumber the newer file to a timestamp after every applied migration."
+            exit 1
+          fi
+          echo "All migration versions are unique."
+
       - uses: supabase/setup-cli@v1
         with:
           version: latest
 
       - name: Link project
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      # Local vs remote side by side, so the log records which versions were
+      # pending before the push — worth having when reading a failed run later.
+      - name: List migrations
+        run: supabase migration list --linked
 
       - name: Push migrations
         run: supabase db push --include-all

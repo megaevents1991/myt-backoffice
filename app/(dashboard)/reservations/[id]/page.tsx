@@ -300,6 +300,26 @@ export default function ReservationDetailsPage({
                   </p>
                 </div>
               )}
+
+              {reservation.partner_settlement_method && (
+                <div>
+                  <p className="text-sm font-medium">Agent Settlement</p>
+                  <p className="text-lg">
+                    {reservation.partner_settlement_method === "voucher" ? (
+                      <span className="font-bold text-amber-600">
+                        Awaiting voucher — do not call customer for payment
+                      </span>
+                    ) : reservation.partner_settlement_method === "agent_card" ? (
+                      `Agent's own card — charged ₪${(
+                        reservation.final_purchase_price_ils -
+                        (reservation.agent_card_discount_ils || 0)
+                      ).toLocaleString()} of ₪${reservation.final_purchase_price_ils.toLocaleString()} (net of commission)`
+                    ) : (
+                      "Customer's card"
+                    )}
+                  </p>
+                </div>
+              )}
             </div>
             <div>
               <p className="text-sm font-medium">Comments</p>

@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **✅ Partner self-service portal is BACK HOME here (2026-08-02).**
+> The 2026-07-30 move of `app/portal/*` to main's `/agent` was reversed: main is
+> for customers only, and the partner (`agent`/`affiliate`) self-service lives in
+> this backoffice at `/portal` — dashboard, links, credit, coupons, reservations,
+> quotes, and the **prepared-package live-link builder** (`/portal/packages`,
+> `lib/actions/portal-package-actions.ts`, table `prepared_packages`). A package
+> link is `{main}/order/{eventId}?utm_source={code}&pkg={share_token}`; myt-main
+> consumes it via `app/api/package/[id]` (that route, the checkout settlement
+> logic and `utm_source` tracking are customer-facing and STAY in main). Main's
+> `feat/agent-area` branch's `/agent` area is **deprecated** — do not build on
+> it; it is slated for removal. Staff-facing `/partners/[code]/view` remains
+> here, unchanged. The portal is styled with the main app's brand (forest
+> `#0A1A14` / mint `#5BFF95`, Assistant+Rubik) via the `portal-theme` scope in
+> `app/globals.css` — the admin dashboard look is untouched.
+
 > **✅ Contentful → Supabase CMS migration COMPLETE (2026-07-22).**
 > This backoffice owns the CMS under **Templates** (תבניות): per-type
 > Supabase tables (`categories`, `artists`, `football_teams`, `blog_posts`)
@@ -37,6 +52,7 @@ Tech standards:
 MYT domain rules:
 @.claude/rules/pricing.md
 @.claude/rules/data-model.md
+@.claude/rules/migrations.md
 @.claude/rules/cross-project.md
 @.claude/rules/conventions.md
 
@@ -192,6 +208,9 @@ NEXT_SECRET_XS2EVENT_API_URL=
 NEXT_SECRET_TIXSTOCK_API_URL=
 NEXT_SECRET_TIXSTOCK_TOKEN=
 NEXT_SECRET_REVALIDATION_SECRET=
+# Optional — customer-facing site the partner portal builds tracking links against.
+# Defaults to https://www.mega-events.co.il (lib/site.ts).
+NEXT_PUBLIC_MAIN_SITE_URL=
 # Absolute origin of this backoffice, used to build the form links that get emailed
 # out. Falls back to VERCEL_URL, then http://localhost:3000.
 NEXT_PUBLIC_APP_URL=
@@ -228,13 +247,18 @@ Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, 
 
 Workflow for any schema change:
 
-1. `npm run db:new <name>` — creates `supabase/migrations/<timestamp>_<name>.sql`; write the SQL there.
+1. **Merge master first** — `git fetch origin && git merge origin/master`. Several people write
+   migrations in parallel; branching from a stale master is what produces
+   *"Remote migration versions not found"* and duplicate version numbers. See `@.claude/rules/migrations.md`.
+2. `npm run db:new <name>` — creates `supabase/migrations/<timestamp>_<name>.sql`; write the SQL there.
    (Or prototype in the dashboard, then capture the drift: `npm run db:diff <name>` — requires Docker running.)
-2. Commit the migration file with the feature PR.
-3. **Merge to master.** The "Apply DB Migrations" workflow runs automatically on
-   any push to master touching `supabase/migrations/**`. Nobody needs to apply
-   anything by hand; `workflow_dispatch` remains for re-runs and repairs.
-4. Regenerate DB types: `npm run db:types` (writes `types/database.types.ts`).
+3. Commit the migration file with the feature PR.
+4. **Merge to master.** The "Apply DB Migrations" workflow runs automatically on
+   any push to master touching `supabase/migrations/**`. Nobody applies anything
+   by hand, and **never from a branch** — that puts versions into the remote
+   history master has never seen and blocks everyone's next push.
+   `workflow_dispatch` remains for re-runs and repairs.
+5. Regenerate DB types: `npm run db:types` (writes `types/database.types.ts`).
 
 Two migrations must never share a version prefix (the leading timestamp) — the
 applied version becomes ambiguous. The guard checks for this too.
@@ -249,6 +273,8 @@ merge fails.
 One-time setup per machine: `npx supabase login`, then `npx supabase link --project-ref fandqafngybfdyslofmr` (asks for the DB password).
 
 CI (`.github/workflows/db-migrate.yml`) needs repo secrets `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD`.
+It refuses to run off master (override: `allow_non_master`), fails fast if two migrations share a
+version prefix, and serialises runs so two pushes can't interleave against the same history.
 
 ---
 
@@ -264,6 +290,8 @@ Via `NEXT_SECRET_HOTEL_SERVICE_URL` (currently `https://myt-kohl.vercel.app`):
 
 1. `GET /api/hotels` — Proxied hotel search (in `app/api/hotels/search/route.ts`)
 2. `GET /api/revalidate` — Triggers ISR cache refresh after event changes (in `app/api/revalidate/route.ts`)
+
+`middleware.ts` confines partner-role (`agent`/`affiliate`) sessions to `/portal*` — a partner hitting any other path is redirected to `/portal`. Staff may also open `/portal` to debug. Partner tracking links and package links point at `NEXT_PUBLIC_MAIN_SITE_URL` (default `https://www.mega-events.co.il`, see `lib/site.ts`).
 
 ### Shared Database Tables
 

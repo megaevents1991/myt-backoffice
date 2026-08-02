@@ -4,17 +4,28 @@ import { supabase } from "@/lib/supabase-server";
 import nodemailer from "nodemailer";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { guardCronRoute } from "@/lib/auth/guards";
+import {
+  PAID_STATUS,
+  commissionForReservation,
+  commissionForReservations,
+  countReservationTickets,
+  countTickets,
+  type CommissionTerms,
+} from "@/lib/partner-commission";
 
 interface Reservation {
   main_contact_first_name: string;
   event_order_info: any;
   created_at: string;
   accounting_number: number;
+  /** Both are needed to price a reservation — see lib/partner-commission.ts. */
+  status: string;
+  user_shown_price: number | null;
 }
 
 interface PartnerData {
   partnerName: string;
-  commission: number;
+  terms: CommissionTerms;
   email: string;
   reservations: Reservation[];
   supplier_number?: number | null;
@@ -22,13 +33,62 @@ interface PartnerData {
 
 interface PartnerReportProps {
   partnerName: string;
-  month: string;
+  period: string;
   year: string;
   totalReservations: number;
   totalTickets: number;
   reservations: Reservation[];
-  commission: number;
+  terms: CommissionTerms;
   supplier_number?: number | null;
+}
+
+/**
+ * Reservations billed per run. Below PostgREST's 1000-row cap so a truncated
+ * response is impossible; a full batch is reported rather than assumed away.
+ */
+const BILLING_BATCH_SIZE = 900;
+
+/**
+ * Stamp reservations as billed. Returns a reason string on failure, null on
+ * success.
+ *
+ * `.in("id", [])` is a perfectly valid request that matches nothing and returns
+ * no error, so an id list that came out empty or malformed would look like a
+ * clean success and the same rows would be billed again every run. The count
+ * is checked rather than trusted.
+ */
+async function markBilled(
+  rows: { id: number }[],
+  trackingCode: string,
+): Promise<string | null> {
+  const ids = rows.map((r) => r.id).filter((id) => typeof id === "number");
+  if (ids.length !== rows.length) {
+    return `expected ${rows.length} reservation ids for ${trackingCode}, resolved ${ids.length}`;
+  }
+  if (ids.length === 0) return null;
+
+  const { error } = await supabase
+    .from("reservations")
+    .update({ billed_at: new Date().toISOString() })
+    .in("id", ids);
+  return error ? JSON.stringify(error) : null;
+}
+
+/** DD/MM/YYYY, matching the date column inside the report. */
+function formatDay(value: string | undefined): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
+/** The span the report actually covers, e.g. "28/07/2026 – 30/08/2026". */
+function formatPeriod(first: string | undefined, last: string | undefined): string {
+  const from = formatDay(first);
+  const to = formatDay(last);
+  if (!from && !to) return "";
+  if (!from || from === to) return to || from;
+  return `${from} – ${to}`;
 }
 
 const transporter = nodemailer.createTransport({
@@ -69,38 +129,44 @@ export async function GET(req: Request) {
   const failed: { partner: string; email: string; error: string }[] = [];
 
   try {
-    const now = new Date();
-    const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const firstDayOfMonth = new Date(
-      previousMonth.getFullYear(),
-      previousMonth.getMonth(),
-      1,
-    );
-    const lastDayOfMonth = new Date(
-      previousMonth.getFullYear(),
-      previousMonth.getMonth() + 1,
-      0,
-      23,
-      59,
-      59,
-      999,
-    );
-
+    // Bill on STATE, not on a date window.
+    //
+    // This used to select reservations created in the previous calendar month
+    // that are Paid now. A reservation created on 28 July and paid on 3 August
+    // matched neither run — the August run wanted July-created rows but it
+    // wasn't paid yet, the September run wanted August-created rows — so it was
+    // never billed and nothing reported the gap.
+    //
+    // Anything paid and not yet stamped is owed, however long ago it was
+    // created. `billed_at` was backfilled to the 2026-07-01 settlement cutoff,
+    // so this cannot re-pay history.
     const { data: reservations, error } = (await supabase
       .from("reservations")
       .select("*")
-      .eq("status", "Paid")
+      .eq("status", PAID_STATUS)
+      .is("billed_at", null)
       .not("aff_partner_tracking_code", "is", null) // Exclude null tracking codes
-      .neq("aff_partner_tracking_code", "") // Also exclude empty string tracking codes
-      .gte("created_at", firstDayOfMonth.toISOString()) // Greater than or equal to first day of month
-      .lte("created_at", lastDayOfMonth.toISOString())) as {
+      .neq("aff_partner_tracking_code", "")
+      // Oldest first, so if the batch ever fills, the money that has been
+      // waiting longest goes out rather than an arbitrary slice.
+      .order("created_at", { ascending: true })
+      .limit(BILLING_BATCH_SIZE)) as {
       data: any[] | null;
       error: any;
-    }; // Less than or equal to last day of month
+    };
 
     if (error) {
       console.error("Error fetching reservations:", error);
       return new Response("Error fetching reservations", { status: 500 });
+    }
+
+    // PostgREST truncates silently at max_rows. Without an explicit cap and
+    // this check, a backlog would quietly push billable reservations out of an
+    // unordered result and partners would stop being paid on a green run.
+    if (reservations && reservations.length >= BILLING_BATCH_SIZE) {
+      const message = `Hit the ${BILLING_BATCH_SIZE}-reservation billing cap — more are waiting. Re-run after this one to clear the rest.`;
+      console.error(`partnerMonthlyReport: ${message}`);
+      failed.push({ partner: "(batch)", email: "-", error: message });
     }
 
     if (!reservations || reservations.length === 0) {
@@ -125,9 +191,13 @@ export async function GET(req: Request) {
 
       const { data: partnerData, error: partnerError } = (await supabase
         .from("partners")
-        .select("*")
+        .select("name_hebrew,email,commission,commission_type,supplier_number,is_active")
         .eq("partner_tracking_code", trackingCode)
-        .single()) as { data: any | null; error: any };
+        // maybeSingle, not single: an orphan tracking code is a missing row,
+        // not an error. With .single() it raised PGRST116 and hit the `continue`
+        // below without ever stamping, so those rows were re-selected on every
+        // run for ever and ate into the batch cap.
+        .maybeSingle()) as { data: any | null; error: any };
       if (partnerError) {
         console.error(
           `Error fetching partner data for tracking code ${trackingCode}:`,
@@ -135,23 +205,71 @@ export async function GET(req: Request) {
         );
         continue;
       }
+      // These are never payable, so stamp them. Skipping without stamping used
+      // to be harmless — the old date window moved past them after a month. Now
+      // they would be re-selected on every run, for ever, until the permanent
+      // residue fills the batch and crowds out reservations that ARE owed.
       if (!partnerData || partnerData.email === "support@mega-events.co.il") {
         console.log(
           `skipping ${trackingCode}, as this is workaround for purchased user`,
         );
+        const skipError = await markBilled(
+          partnerReservations as { id: number }[],
+          trackingCode,
+        );
+        if (skipError) {
+          // Nobody was mailed, so this isn't a payment problem — but leaving
+          // them unstamped brings the permanent-residue issue back.
+          console.error(
+            `partnerMonthlyReport: could not stamp non-payable rows for ${trackingCode}:`,
+            skipError,
+          );
+        }
+        continue;
+      }
+      // An inactive partner is deliberately left unbilled: reactivate them and
+      // the money is still owed. Bounded by the number of inactive partners.
+      if (!partnerData.is_active) {
+        console.log(`skipping ${trackingCode}, partner is inactive`);
         continue;
       }
 
       const result = await sendMonthlyReportEmail({
         partnerName: partnerData?.name_hebrew,
-        commission: partnerData?.commission,
+        terms: {
+          type: partnerData?.commission_type ?? "fixed_per_ticket",
+          rate: partnerData?.commission ?? null,
+        },
         email: partnerData.email,
         reservations: partnerReservations as Reservation[],
         supplier_number: partnerData?.supplier_number,
       } as PartnerData);
 
       if (result.ok) {
-        sent.push({ partner: partnerData?.name_hebrew, email: partnerData.email });
+        // Stamp only after the report actually went out. Marking them billed
+        // first would mean a mail failure silently wrote off the money — the
+        // rows would never be picked up again. The cost of this order is a
+        // possible duplicate report, which someone will notice; the other way
+        // round, nobody ever does.
+        const stampError = await markBilled(
+          partnerReservations as { id: number }[],
+          trackingCode,
+        );
+        if (stampError) {
+          // The partner was paid but the rows still look unbilled, so the next
+          // run would pay again. Loud, and reported to ops as a failure.
+          console.error(
+            `partnerMonthlyReport: ${trackingCode} was emailed but billed_at was not set — the next run will double-bill:`,
+            stampError,
+          );
+          failed.push({
+            partner: partnerData?.name_hebrew,
+            email: partnerData.email,
+            error: `REPORT SENT BUT NOT MARKED BILLED — will double-bill: ${stampError}`,
+          });
+        } else {
+          sent.push({ partner: partnerData?.name_hebrew, email: partnerData.email });
+        }
       } else {
         failed.push({
           partner: partnerData?.name_hebrew,
@@ -219,14 +337,19 @@ async function sendOpsSummary(
 
 const generateEmailHtml = ({
   partnerName,
-  month,
+  period,
   year,
   totalReservations,
   totalTickets,
-  commission,
+  terms,
   reservations,
   supplier_number = null,
 }: PartnerReportProps) => {
+  // Percentage commission divides, so raw sums render as 133.51999999999998.
+  // This is an invoice — always two decimals.
+  const money = (amount: number) => amount.toFixed(2);
+  // One total, computed the same way the backoffice and the portal compute it.
+  const totalCommission = money(commissionForReservations(reservations, terms));
   if (supplier_number) {
     return `
     <!DOCTYPE html>
@@ -234,7 +357,7 @@ const generateEmailHtml = ({
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Monthly Partner Reservations Report - ${month} ${year}</title>
+        <title>Monthly Partner Reservations Report - ${period}</title>
         <style>
           body {
             font-family: Arial, sans-serif;
@@ -333,7 +456,7 @@ const generateEmailHtml = ({
         <div class="container">
           <div class="header">
             <h1 dir="rtl"> דו"ח הזמנות חודשי לפרטנר ${partnerName} - מספר ספק ${supplier_number}</h1>
-            <p>${month} ${year}</p>
+            <p>${period}</p>
           </div>         
           <div class="summary">
             <h2>Monthly Summary</h2>
@@ -347,7 +470,7 @@ const generateEmailHtml = ({
             </div>
             <div class="summary-item">
               <span class="summary-label">Total Amount (USD):</span>
-              <span>${totalTickets * commission}</span>
+              <span>${totalCommission}</span>
             </div>
           </div>
 
@@ -386,10 +509,7 @@ const generateEmailHtml = ({
                       .map((e) => e.location_name)
                       .filter(Boolean)
                       .join(" | ") || "Unknown";
-                  const tickets = events.reduce(
-                    (s, e) => s + (Number(e.number_of_ticket) || 0),
-                    0,
-                  );
+                  const tickets = countReservationTickets(reservation);
 
                   return `
                 <tr>
@@ -398,7 +518,7 @@ const generateEmailHtml = ({
                   <td>${eventLocation}</td>
                   <td>${tickets}</td>
                   <td>${formattedDate}</td>
-                  <td>${tickets * commission}</td>
+                  <td>${money(commissionForReservation(reservation, terms))}</td>
                   <td>${reservation.accounting_number}</td>
                 </tr>
               `;
@@ -429,7 +549,7 @@ const generateEmailHtml = ({
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Monthly Partner Reservations Report - ${month} ${year}</title>
+        <title>Monthly Partner Reservations Report - ${period}</title>
         <style>
           body {
             font-family: Arial, sans-serif;
@@ -528,13 +648,13 @@ const generateEmailHtml = ({
         <div class="container">
           <div class="header">
             <h1 dir="rtl">דו"ח הזמנות חודשי</h1>
-            <p>${month} ${year}</p>
+            <p>${period}</p>
           </div>
           
           <p dir="rtl" class="rtl-text">היי ${partnerName},</p>
           
           <p dir="rtl" class="rtl-text">תודה על שותפותך!
-אנחנו שמחים לשתף אותך בדוח ההזמנות החודשי שלך עבור ${month} ${year}.</p>
+אנחנו שמחים לשתף אותך בדוח ההזמנות שלך עבור ${period}.</p>
           
           <div class="summary">
             <h2>Monthly Summary</h2>
@@ -548,7 +668,7 @@ const generateEmailHtml = ({
             </div>
             <div class="summary-item">
               <span class="summary-label">Total Amount (USD):</span>
-              <span>${totalTickets * commission}</span>
+              <span>${totalCommission}</span>
             </div>
           </div>
           
@@ -585,10 +705,7 @@ const generateEmailHtml = ({
                       .map((e) => e.location_name)
                       .filter(Boolean)
                       .join(" | ") || "Unknown";
-                  const tickets = events.reduce(
-                    (s, e) => s + (Number(e.number_of_ticket) || 0),
-                    0,
-                  );
+                  const tickets = countReservationTickets(reservation);
 
                   return `
                 <tr>
@@ -597,7 +714,7 @@ const generateEmailHtml = ({
                   <td>${eventLocation}</td>
                   <td>${tickets}</td>
                   <td>${formattedDate}</td>
-                  <td>${tickets * commission}</td>
+                  <td>${money(commissionForReservation(reservation, terms))}</td>
                   <td>${reservation.accounting_number || "TBD"}</td>
                 </tr>
               `;
@@ -633,41 +750,40 @@ const generateEmailHtml = ({
 
 async function sendMonthlyReportEmail(partnerData: PartnerData) {
   const now = new Date();
-  const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1);
 
-  const month = previousMonth.toLocaleString("default", { month: "long" });
-  const year = previousMonth.getFullYear().toString();
+  // The period comes from the reservations, not from "last month". A report now
+  // covers everything not previously billed, which after a mail failure, a
+  // partner reactivation, or a late payment can span several months — labelling
+  // that "July 2026" while the rows inside are dated August is a statement the
+  // partner can see is false on the same page.
+  const dates = partnerData.reservations
+    .map((r) => r.created_at)
+    .filter(Boolean)
+    .sort();
+  const period = formatPeriod(dates[0], dates[dates.length - 1]);
+  const year = now.getFullYear().toString();
 
   const totalReservations = partnerData.reservations.length;
-  const totalTickets = partnerData.reservations.reduce((sum, reservation) => {
-    const events = normalizeReservationEventOrderInfo(
-      reservation.event_order_info,
-    );
-    const tickets = events.reduce(
-      (s, e) => s + (Number(e.number_of_ticket) || 0),
-      0,
-    );
-    return sum + tickets;
-  }, 0);
+  const totalTickets = countTickets(partnerData.reservations);
 
   const emailHtmlForPartner = generateEmailHtml({
     partnerName: partnerData.partnerName,
-    month,
+    period,
     year,
     totalReservations,
     totalTickets,
-    commission: partnerData.commission,
+    terms: partnerData.terms,
     reservations: partnerData.reservations,
   });
 
   const emailHtmlToOrly = generateEmailHtml({
     partnerName: partnerData.partnerName,
-    month,
+    period,
     year,
     totalReservations,
     totalTickets,
     reservations: partnerData.reservations,
-    commission: partnerData.commission,
+    terms: partnerData.terms,
     supplier_number: partnerData.supplier_number,
   });
 
@@ -675,16 +791,16 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
     await transporter.sendMail({
       from: "alon@mega-events.co.il",
       to: partnerData.email,
-      subject: `Monthly Partner Activity Report - ${month} ${year}`,
+      subject: `Monthly Partner Activity Report - ${period}`,
       html: emailHtmlForPartner,
     });
     await transporter.sendMail({
       from: "alon@mega-events.co.il",
       to: "alon@megatr.co.il, office@megatr.co.il",
-      subject: `Monthly Partner Report - ${month} ${year} - Supplier Number ${partnerData.supplier_number}`,
+      subject: `Monthly Partner Report - ${period} - Supplier Number ${partnerData.supplier_number}`,
       html: emailHtmlToOrly,
     });
-    console.log(`Email sent to ${partnerData.partnerName} - ${month} ${year}`);
+    console.log(`Email sent to ${partnerData.partnerName} - ${period}`);
     return { ok: true as const };
   } catch (error) {
     console.error(`Error sending to ${partnerData.partnerName}: `, error);

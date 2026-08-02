@@ -370,7 +370,20 @@ export function ReservationsTable() {
       },
       cell: ({ row }) => {
         const status = row.getValue("status") as string;
-        return <div>{status || "-"}</div>;
+        const settlementMethod = row.original.partner_settlement_method;
+        return (
+          <div className="flex items-center gap-1.5">
+            {status || "-"}
+            {settlementMethod === "voucher" && (
+              <span
+                className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800"
+                title="Awaiting voucher from partner — do not call customer for payment"
+              >
+                Voucher
+              </span>
+            )}
+          </div>
+        );
       },
     },
     {
