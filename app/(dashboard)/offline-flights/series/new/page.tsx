@@ -23,6 +23,7 @@ import {
   type SeriesFlightDraft,
 } from "@/lib/actions/offline-flight-bulk-actions";
 import { getRelevantEventsForFlight } from "@/lib/actions/offline-flight-actions";
+import { toStopoverColumns } from "@/lib/flight-stops";
 
 type RelevantEvent = { id: number; name: string; date: string };
 
@@ -48,6 +49,12 @@ type Template = {
   outbound_cabin_bags_included: boolean;
   inbound_check_bags_included: boolean;
   inbound_cabin_bags_included: boolean;
+  // Per direction: a series can fly out through a connection and come back
+  // direct, or connect somewhere different on the way home.
+  outbound_stop_airport: string;
+  outbound_stop_duration: string;
+  inbound_stop_airport: string;
+  inbound_stop_duration: string;
   supplier: string;
   cost_price: string;
   cost_currency: string;
@@ -91,6 +98,10 @@ const EMPTY_TEMPLATE: Template = {
   outbound_cabin_bags_included: true,
   inbound_check_bags_included: false,
   inbound_cabin_bags_included: true,
+  outbound_stop_airport: "",
+  outbound_stop_duration: "",
+  inbound_stop_airport: "",
+  inbound_stop_duration: "",
   supplier: "",
   cost_price: "",
   cost_currency: "USD",
@@ -291,7 +302,9 @@ export default function NewOfflineFlightSeriesPage() {
           airline_code: template.airline_code,
           price: Number(row.price),
           initial_quantity: Number.parseInt(row.initial_quantity, 10),
-          stops: 0,
+          // Derived from the template's stopover airports, same rule the DB
+          // trigger applies — a hardcoded 0 sold every connecting series as direct.
+          ...toStopoverColumns(template),
           duration: addIsoDurations(outboundDuration, inboundDuration),
           outbound_departure_airport: template.outbound_departure_airport,
           outbound_arrival_airport: template.outbound_arrival_airport,
@@ -508,6 +521,26 @@ export default function NewOfflineFlightSeriesPage() {
               />
             </div>
             <div>
+              <Label>Outbound stopover</Label>
+              <Input
+                placeholder="blank = direct"
+                value={template.outbound_stop_airport}
+                onChange={(e) =>
+                  set("outbound_stop_airport", e.target.value.toUpperCase())
+                }
+                maxLength={3}
+              />
+            </div>
+            <div>
+              <Label>Outbound layover (HH:MM)</Label>
+              <Input
+                placeholder="e.g., 2:30"
+                value={template.outbound_stop_duration}
+                onChange={(e) => set("outbound_stop_duration", e.target.value)}
+                disabled={!template.outbound_stop_airport.trim()}
+              />
+            </div>
+            <div>
               <Label>Return from</Label>
               <Input
                 value={template.inbound_departure_airport}
@@ -534,6 +567,26 @@ export default function NewOfflineFlightSeriesPage() {
                 onChange={(e) =>
                   set("inbound_flight_number", e.target.value.toUpperCase())
                 }
+              />
+            </div>
+            <div>
+              <Label>Return stopover</Label>
+              <Input
+                placeholder="blank = direct"
+                value={template.inbound_stop_airport}
+                onChange={(e) =>
+                  set("inbound_stop_airport", e.target.value.toUpperCase())
+                }
+                maxLength={3}
+              />
+            </div>
+            <div>
+              <Label>Return layover (HH:MM)</Label>
+              <Input
+                placeholder="e.g., 2:30"
+                value={template.inbound_stop_duration}
+                onChange={(e) => set("inbound_stop_duration", e.target.value)}
+                disabled={!template.inbound_stop_airport.trim()}
               />
             </div>
 

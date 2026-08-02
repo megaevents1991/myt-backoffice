@@ -29,6 +29,13 @@ import {
   getRelevantEventsForFlight,
 } from "@/lib/actions/offline-flight-actions";
 import { OfflineFlight } from "@/types/offline-flight.types";
+import { FlightStopoverFields } from "@/components/flight-stopover-fields";
+import {
+  intervalToHhMm,
+  stopoverSchemaShape,
+  stopoverSuperRefine,
+  toStopoverColumns,
+} from "@/lib/flight-stops";
 import {
   Popover,
   PopoverContent,
@@ -164,14 +171,10 @@ const offlineFlightFormSchema = z.object({
       "Invalid total duration (ISO 8601 format, e.g., PT4H5M)."
     )
     .min(1, "Total duration is required."),
-  // Connecting flights are storable since the migration dropped the old
-  // `stops = 0` constraint. Pinning this to a literal 0 made the form reject
-  // every one of them.
-  stops: z.coerce
-    .number()
-    .int()
-    .min(0, { message: "Stops cannot be negative." })
-    .max(3, { message: "More than 3 stops is almost certainly a typo." }),
+  // No `stops` field: it is derived from the two stopover airports below (and
+  // by the `flights_derive_stops` trigger on save), so the count can never
+  // disagree with the airports behind it.
+  ...stopoverSchemaShape,
   airline_code: z
     .string()
     .regex(
@@ -250,7 +253,7 @@ const offlineFlightFormSchema = z.object({
 
   // Relationships
   event_ids: z.array(z.number().int()).default([]),
-});
+}).superRefine(stopoverSuperRefine);
 
 type OfflineFlightFormData = z.infer<typeof offlineFlightFormSchema>;
 
@@ -337,9 +340,15 @@ export default function EditOfflineFlightPage({
             outbound_duration: toIsoDuration(flight.outbound_duration),
             inbound_duration: toIsoDuration(flight.inbound_duration),
             price: Number(flight.price),
-            // Load the flight's real value — hardcoding 0 here silently turned
-            // every connecting flight back into a direct one on save.
-            stops: Number(flight.stops) || 0,
+            // Seed the per-direction stop toggles from the airports actually
+            // stored. Hardcoding a stop count here silently turned every
+            // connecting flight back into a direct one on save.
+            outbound_stop_airport: flight.outbound_stop_airport ?? "",
+            outbound_stop_duration: intervalToHhMm(flight.outbound_stop_duration),
+            outbound_has_stop: flight.outbound_stop_airport ? "1" : "0",
+            inbound_stop_airport: flight.inbound_stop_airport ?? "",
+            inbound_stop_duration: intervalToHhMm(flight.inbound_stop_duration),
+            inbound_has_stop: flight.inbound_stop_airport ? "1" : "0",
             outbound_departure_time: formatForDateTimeLocalInput(
               flight.outbound_departure_time
             ),
@@ -436,7 +445,14 @@ export default function EditOfflineFlightPage({
     // console.log for values can be removed or kept
     startTransition(async () => {
       try {
-        const dataToUpdate = values;
+        // `*_has_stop` drives the form only — the row carries the airports, and
+        // `stops` is derived from them (here and by the DB trigger).
+        const {
+          outbound_has_stop: _outboundHasStop,
+          inbound_has_stop: _inboundHasStop,
+          ...columns
+        } = values;
+        const dataToUpdate = { ...columns, ...toStopoverColumns(values) };
         await updateOfflineFlight(
           flightId, // Use the stored parsed number ID
           dataToUpdate as Partial<
@@ -538,24 +554,6 @@ export default function EditOfflineFlightPage({
                     <Input placeholder="e.g., PT8H30M" {...field} />
                   </FormControl>
                   <FormDescription>Auto-calculated from outbound + inbound durations.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="stops"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Stops</FormLabel>
-                  <FormControl>
-                    <Input type="number" min={0} max={3} {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    0 for a direct flight. For a connecting flight set 1, then add
-                    the stopover airport and layover from the flights list (click
-                    the row id to open it) — otherwise it is sold as direct.
-                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -681,6 +679,7 @@ export default function EditOfflineFlightPage({
                 </FormItem>
               )}
             />
+            <FlightStopoverFields direction="outbound" />
           </div>
 
           <h2 className="text-xl font-semibold border-b pb-2 mt-6">
@@ -802,6 +801,7 @@ export default function EditOfflineFlightPage({
                 </FormItem>
               )}
             />
+            <FlightStopoverFields direction="inbound" />
           </div>
 
           <h2 className="text-xl font-semibold border-b pb-2 mt-6">

@@ -51,6 +51,11 @@ export type Event = {
   // flight's allocation for this event is exhausted the package is sold out —
   // there is deliberately no fallback to a dynamic search.
   locked_flight_id?: number | null;
+  // Derived at read time in the MAIN app (markLockedPackagesSoldOut), NOT a
+  // column: the locked flight has no seats left for this event, so the catalog
+  // card reads sold out. Mirrored here only to keep the shared type identical —
+  // the backoffice never sets it.
+  locked_flight_sold_out?: boolean;
   is_deleted: string;
   tags: string;
   tx_excluded_sections?: string[];

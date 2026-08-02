@@ -9,6 +9,17 @@ import { Separator } from "@/components/ui/separator";
 import { LogoImage } from "@/components/logo-image";
 import { ReservationsForInventory } from "@/components/reservations-for-inventory";
 import { FlightPassengerManifest } from "@/components/offline-flights/flight-passenger-manifest";
+import { intervalToHhMm } from "@/lib/flight-stops";
+
+/** "Direct", or the airport the leg connects through and how long it sits there. */
+function describeLegStops(
+  stopAirport?: string | null,
+  stopDuration?: string | null
+): string {
+  if (!stopAirport?.trim()) return "Direct";
+  const layover = intervalToHhMm(stopDuration);
+  return layover ? `1 stop · ${stopAirport} (${layover})` : `1 stop · ${stopAirport}`;
+}
 
 interface OfflineFlightDetailsPageProps {
   params: Promise<{
@@ -147,7 +158,22 @@ export default async function OfflineFlightDetailsPage({
                 label="Total Duration (Round Trip)"
                 value={flight.duration}
               />
-              <FlightDetailItem label="Stops" value={flight.stops} />
+              {/* Per direction, because the legs differ: out may connect while
+                  the return flies direct, through a different airport. */}
+              <FlightDetailItem
+                label="Outbound Stops"
+                value={describeLegStops(
+                  flight.outbound_stop_airport,
+                  flight.outbound_stop_duration
+                )}
+              />
+              <FlightDetailItem
+                label="Inbound Stops"
+                value={describeLegStops(
+                  flight.inbound_stop_airport,
+                  flight.inbound_stop_duration
+                )}
+              />
             </div>
             <Separator className="my-2" />
 

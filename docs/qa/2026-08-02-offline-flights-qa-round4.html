@@ -1,0 +1,690 @@
+<title>Offline Flights — QA Round 4</title>
+
+<style>
+  :root {
+    --paper: #f1f4f3;
+    --panel: #ffffff;
+    --ink: #0d1517;
+    --ink-soft: #46585a;
+    --muted: #6f8082;
+    --rule: #cbd4d3;
+    --accent: #10606e;
+    --accent-soft: #e2eeef;
+    --pass: #2e7d4f;
+    --fail: #b0331f;
+    --warn: #9a6212;
+    --warn-soft: #fbf1de;
+
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+    --gutter: 3.6rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #111819; --panel: #161f20; --ink: #e2e9e8; --ink-soft: #a7b6b6;
+      --muted: #7d8e8f; --rule: #26302f; --accent: #4aa8ba; --accent-soft: #16302f;
+      --pass: #63b083; --fail: #e2735c; --warn: #d0a052; --warn-soft: #2a2317;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #111819; --panel: #161f20; --ink: #e2e9e8; --ink-soft: #a7b6b6;
+    --muted: #7d8e8f; --rule: #26302f; --accent: #4aa8ba; --accent-soft: #16302f;
+    --pass: #63b083; --fail: #e2735c; --warn: #d0a052; --warn-soft: #2a2317;
+  }
+
+  :root[data-theme="light"] {
+    --paper: #f1f4f3; --panel: #ffffff; --ink: #0d1517; --ink-soft: #46585a;
+    --muted: #6f8082; --rule: #cbd4d3; --accent: #10606e; --accent-soft: #e2eeef;
+    --pass: #2e7d4f; --fail: #b0331f; --warn: #9a6212; --warn-soft: #fbf1de;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 62rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+
+  header.masthead { padding: 3.5rem 0 2rem; border-bottom: 2px solid var(--ink); }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.9rem;
+  }
+
+  h1 {
+    font-family: var(--mono); font-size: clamp(1.7rem, 4.5vw, 2.6rem);
+    letter-spacing: -0.02em; line-height: 1.1; margin: 0 0 0.8rem;
+    text-wrap: balance;
+  }
+
+  .lede { margin: 0; max-width: 62ch; color: var(--ink-soft); }
+
+  .progress {
+    position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap;
+    align-items: center; gap: 1.25rem; padding: 0.85rem 1.5rem;
+    margin: 2.5rem -1.5rem; background: var(--panel);
+    border-bottom: 1px solid var(--rule); font-family: var(--mono);
+    font-size: 0.78rem; letter-spacing: 0.04em;
+  }
+
+  .progress .count { font-variant-numeric: tabular-nums; }
+  .progress .c-pass { color: var(--pass); }
+  .progress .c-fail { color: var(--fail); }
+  .progress .c-todo { color: var(--muted); }
+  .progress .spacer { flex: 1; }
+
+  button.act {
+    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em;
+    text-transform: uppercase; padding: 0.45rem 0.85rem; background: transparent;
+    color: var(--ink); border: 1px solid var(--rule); cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  button.act:hover { background: var(--accent-soft); border-color: var(--accent); }
+  button.act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  h2 {
+    font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.18em;
+    text-transform: uppercase; margin: 0;
+  }
+
+  .section-head {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.9rem;
+    margin-top: 3rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--rule);
+  }
+
+  .section-head .note { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+
+  code { font-family: var(--mono); font-size: 0.86em; background: var(--accent-soft); padding: 0.1em 0.35em; }
+
+  .caution {
+    border-left: 3px solid var(--warn); background: var(--warn-soft);
+    padding: 0.85rem 1rem; margin: 1.5rem 0 0;
+  }
+
+  .caution p { margin: 0 0 0.5rem; }
+  .caution p:last-child { margin-bottom: 0; }
+  .caution strong { color: var(--warn); }
+
+  .flow {
+    display: grid; grid-template-columns: var(--gutter) 1fr; gap: 0 1.2rem;
+    padding: 1.6rem 0; border-bottom: 1px dashed var(--rule);
+  }
+
+  .flow[data-state="pass"] { background: linear-gradient(90deg, var(--accent-soft) 0, transparent 40%); }
+  .flow[data-state="fail"] { background: linear-gradient(90deg, var(--warn-soft) 0, transparent 40%); }
+
+  .flow .code {
+    font-family: var(--mono); font-size: 0.95rem; font-weight: 700;
+    color: var(--accent); padding-top: 0.1rem;
+  }
+
+  .flow .body { min-width: 0; }
+  .flow h3 { font-family: var(--sans); font-size: 1.02rem; font-weight: 600; margin: 0 0 0.15rem; text-wrap: balance; }
+
+  .flow .proves {
+    font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 0.9rem;
+  }
+
+  .flow .said {
+    border-left: 2px solid var(--rule); padding-left: 0.85rem;
+    margin: 0 0 0.9rem; color: var(--muted); font-style: italic;
+  }
+
+  .cause {
+    background: var(--panel); border: 1px solid var(--rule);
+    padding: 0.8rem 1rem; margin: 0 0 1rem;
+  }
+
+  .cause p { margin: 0 0 0.4rem; font-size: 0.92rem; }
+  .cause p:last-child { margin-bottom: 0; }
+
+  .cause .label {
+    font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted); display: block;
+    margin-bottom: 0.4rem;
+  }
+
+  .flow ol, .flow ul { margin: 0 0 0.9rem; padding-left: 1.15rem; }
+  .flow li { margin-bottom: 0.25rem; }
+
+  .expect {
+    border-left: 2px solid var(--accent); padding: 0.15rem 0 0.15rem 0.85rem;
+    margin: 0 0 1rem; color: var(--ink-soft);
+  }
+
+  .expect b { color: var(--ink); font-weight: 600; }
+
+  .verdict { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+
+  .verdict button:not(.act) {
+    font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em;
+    text-transform: uppercase; padding: 0.38rem 0.8rem; background: transparent;
+    color: var(--muted); border: 1px solid var(--rule); cursor: pointer;
+    transition: all 0.12s;
+  }
+
+  .verdict button:not(.act):hover { border-color: var(--ink-soft); color: var(--ink); }
+  .verdict button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .verdict button[aria-pressed="true"][data-v="pass"] { background: var(--pass); border-color: var(--pass); color: #fff; }
+  .verdict button[aria-pressed="true"][data-v="fail"] { background: var(--fail); border-color: var(--fail); color: #fff; }
+
+  textarea {
+    display: none; width: 100%; margin-top: 0.7rem; padding: 0.6rem 0.7rem;
+    font-family: var(--sans); font-size: 0.9rem; line-height: 1.5;
+    color: var(--ink); background: var(--panel); border: 1px solid var(--rule);
+    resize: vertical; min-height: 4.5rem;
+  }
+
+  textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .flow[data-state="fail"] textarea, textarea.shown { display: block; }
+
+  .report { margin-top: 3rem; padding: 1.5rem; background: var(--panel); border: 1px solid var(--rule); }
+  .report p { margin: 0 0 1rem; color: var(--ink-soft); max-width: 60ch; }
+  #report-out { display: none; white-space: pre-wrap; margin-top: 1rem; font-family: var(--mono); font-size: 0.78rem; }
+  #report-out.shown { display: block; }
+
+  footer.foot {
+    margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--rule);
+    font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.06em; color: var(--muted);
+  }
+
+  @media (max-width: 640px) { :root { --gutter: 2.6rem; } .flow { gap: 0 0.8rem; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">MYT · Offline flights v2 · round 4</p>
+    <h1>Stops, per direction</h1>
+    <p class="lede">
+      Round 3 closed with two open items. Both are rebuilt rather than patched:
+      a stopover is now set per leg, and a locked package that has sold out
+      says so on the catalog card. Ten flows below — what changed is written up
+      under each one, so you know what you're actually testing.
+    </p>
+  </header>
+
+  <div class="progress">
+    <span class="count c-pass">PASS <b id="n-pass">0</b></span>
+    <span class="count c-fail">FAIL <b id="n-fail">0</b></span>
+    <span class="count c-todo">LEFT <b id="n-todo">11</b></span>
+    <span class="spacer"></span>
+    <button class="act" id="btn-reset" type="button">Reset marks</button>
+  </div>
+
+  <section>
+    <div class="caution">
+      <p><strong>Everything is applied — nothing here is blocked.</strong>
+      <code>20260802090000_flights_derive_stops</code> ran on 2026-08-02 and was verified
+      live: writing a wrong stop count is corrected back, and setting a stopover on
+      either leg raises that leg's count on its own. All eleven flows below are testable.</p>
+
+      <p><strong>M6 and L1 need a locked event, and nothing is locked right now.</strong>
+      For M6 you also need that event's flight to have <b>no free seats</b> — either lock
+      it to a flight that is already full, or set the event's allocation on that flight
+      to 0. Andr&eacute; Rieu will not show it on its own: 809 and 810 sit on flight 34
+      with 28 seats free, 811 on flight 35 with 27.</p>
+
+      <p><strong>Everything writes to production.</strong> Keep locks and allocation
+      changes on a test event — a lock takes effect for real customers immediately.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Stops, rebuilt</h2>
+      <span class="note">backoffice master · 11d2b40</span>
+    </div>
+
+    <div class="flow" data-id="M4a">
+      <div class="code">M4a</div>
+      <div class="body">
+        <h3>Setting a connection on the way out</h3>
+        <p class="proves">Was: "לא נוח, כשלוחצים על 1 צריך להיפתח המיקום"</p>
+
+        <div class="cause">
+          <span class="label">What changed</span>
+          <p>There was a bare <b>Stops</b> number near the top of the form and no
+          stopover inputs anywhere on it — the airport fields existed only in the
+          flights-list drawer, on a different screen. So the number and the connection
+          behind it were set in two different places, and nothing kept them in step.</p>
+          <p>The number is gone. Each leg now has its own <b>Stops</b> choice inside its
+          own section, and choosing <b>1 stop</b> is what opens the airport and layover
+          inputs, right there.</p>
+        </div>
+
+        <ol>
+          <li><code>/offline-flights</code> → <b>New flight</b>. Fill in the usual fields.</li>
+          <li>Scroll to <b>Outbound Flight</b>. Set <b>Outbound Stops</b> to <b>1 stop (connection)</b>.</li>
+          <li>Two fields should appear immediately: <b>Outbound Stopover Airport</b> and
+          <b>Outbound Layover</b>. Enter <code>VIE</code> and <code>2:30</code>.</li>
+          <li>Save, then open the flight's detail page.</li>
+        </ol>
+        <p class="expect"><b>Expect:</b> the two fields appear the moment you pick 1 stop —
+        no saving, no other screen. The detail page reads
+        <b>Outbound Stops: 1 stop · VIE (2:30)</b> and <b>Inbound Stops: Direct</b>.</p>
+        <div class="verdict" data-for="M4a"></div>
+      </div>
+    </div>
+
+    <div class="flow" data-id="M4b">
+      <div class="code">M4b</div>
+      <div class="body">
+        <h3>Out and back are independent</h3>
+        <p class="proves">Was: "צריך להיות הפרדה בין הלוך לחזור"</p>
+
+        <div class="cause">
+          <span class="label">What changed</span>
+          <p>One count covered the whole round trip, so a flight was either direct both
+          ways or connecting both ways — there was no way to say "out direct, back
+          through Vienna". The two legs are now separate all the way down, and the old
+          round-trip count is derived from them rather than typed.</p>
+        </div>
+
+        <ol>
+          <li>Create a flight with <b>Outbound Stops</b> = Direct and
+          <b>Inbound Stops</b> = 1 stop through <code>ATH</code>.</li>
+          <li>Save, reopen the edit page.</li>
+          <li>Now make a second flight that connects <b>both</b> ways, through two
+          <b>different</b> airports — say out via <code>VIE</code>, back via <code>ATH</code>.</li>
+          <li>Save and reopen that one too.</li>
+        </ol>
+        <p class="expect"><b>Expect:</b> both survive exactly as entered. Flight 1 comes
+        back Direct outbound / 1 stop inbound — not both, not neither. Flight 2 keeps two
+        different airports rather than copying one across.</p>
+        <div class="verdict" data-for="M4b"></div>
+      </div>
+    </div>
+
+    <div class="flow" data-id="M4c">
+      <div class="code">M4c</div>
+      <div class="body">
+        <h3>"1 stop" with no airport is refused</h3>
+        <p class="proves">The half-filled state that used to sell as direct</p>
+
+        <div class="cause">
+          <span class="label">Why this matters</span>
+          <p>This is the shape of the original bug. A flight that claimed a stop but
+          carried no airport had nothing to show the customer, so it rendered as direct
+          — the flight said one thing and the booking page said another.</p>
+        </div>
+
+        <ol>
+          <li>On a new flight, set <b>Outbound Stops</b> to <b>1 stop</b>.</li>
+          <li>Leave <b>Outbound Stopover Airport</b> empty. Try to save.</li>
+          <li>Now put a nonsense code in it — <code>XX</code>, or <code>VIENNA</code>.</li>
+          <li>Fix it to <code>VIE</code> and put <code>90 minutes</code> in the layover.</li>
+        </ol>
+        <p class="expect"><b>Expect:</b> step 2 refuses with <i>"A connecting leg needs
+        its stopover airport"</i> — it must <b>not</b> save quietly as a direct flight.
+        Step 3 refuses too (three letters). Step 4 refuses the layover — it wants
+        <code>1:30</code>. Each message points at the field it's about.</p>
+        <div class="verdict" data-for="M4c"></div>
+      </div>
+    </div>
+
+    <div class="flow" data-id="M4d">
+      <div class="code">M4d</div>
+      <div class="body">
+        <h3>Editing a connecting flight keeps its connection</h3>
+        <p class="proves">Round 3's trap: editing used to flatten it back to direct</p>
+
+        <div class="cause">
+          <span class="label">What changed</span>
+          <p>The edit form used to reload the stop count as a hardcoded 0, so opening a
+          connecting flight and pressing Save turned it direct. It now reads the real
+          stopover off the row, and converts the database's <code>02:30:00</code> back
+          into <code>2:30</code> so a re-save doesn't fail on its own value.</p>
+        </div>
+
+        <ol>
+          <li>Open the connecting flight from M4a in the edit page.</li>
+          <li>Check the layover reads <code>2:30</code>, not <code>02:30:00</code>.</li>
+          <li>Change something unrelated — the price. Save.</li>
+          <li>Reopen. Then switch <b>Outbound Stops</b> back to <b>Direct</b>, save, reopen again.</li>
+        </ol>
+        <p class="expect"><b>Expect:</b> the connection survives step 3 untouched — this
+        is the exact case that used to eat it. After step 4 the airport and layover are
+        cleared, not left behind as orphans on a flight now calling itself direct.</p>
+        <div class="verdict" data-for="M4d"></div>
+      </div>
+    </div>
+
+    <div class="flow" data-id="M4e">
+      <div class="code">M4e</div>
+      <div class="body">
+        <h3>Setting a stopover from the flights list</h3>
+        <p class="proves">The drawer is the fourth way in, and it writes one field at a time</p>
+
+        <div class="cause">
+          <span class="label">What changed</span>
+          <p>The drawer saves a single field per edit, so it can't work out the
+          round-trip count on its own — and the old editable <b>Stops</b> column let you
+          set a count here that nothing kept true. That column is gone; the database now
+          derives the count from the airports on every write, whichever screen the write
+          came from.</p>
+        </div>
+
+        <ol>
+          <li>In <code>/offline-flights</code>, click a row id to open the drawer.</li>
+          <li>Set <b>In stopover</b> to <code>ATH</code>. Close the drawer.</li>
+          <li>Open that flight's detail page.</li>
+          <li>Reopen the drawer and clear <b>In stopover</b> again.</li>
+        </ol>
+        <p class="expect"><b>Expect:</b> after step 3 the detail page reads
+        <b>Inbound Stops: 1 stop · ATH</b> with <b>Outbound Stops: Direct</b> — the
+        return leg alone. After step 4 it is back to Direct both ways. There is no
+        editable Stops column in the drawer any more; the stopover airports are what you
+        set.</p>
+        <div class="verdict" data-for="M4e"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>New this round</h2>
+      <span class="note">main · c1077dc · deployed</span>
+    </div>
+
+    <div class="flow" data-id="S1">
+      <div class="code">S1</div>
+      <div class="body">
+        <h3>A whole series of connecting flights</h3>
+        <p class="proves">The series builder used to force every row direct</p>
+
+        <div class="cause">
+          <span class="label">What changed</span>
+          <p>The builder wrote a hardcoded 0 into every row it made, so a series of
+          connecting flights was impossible — you'd have had to open all twenty
+          afterwards and fix them one at a time.</p>
+        </div>
+
+        <ol>
+          <li><code>/offline-flights</code> → <b>New series</b>.</li>
+          <li>In step 1, fill in the template and set <b>Outbound stopover</b> to
+          <code>VIE</code> with layover <code>2:00</code>. Leave the return blank.</li>
+          <li>Note that <b>Outbound layover</b> is greyed out until you type an airport.</li>
+          <li>Pick three departure dates, build the series, save it.</li>
+          <li>Open two of the created flights.</li>
+        </ol>
+        <p class="expect"><b>Expect:</b> every flight in the series carries the same
+        connection — 1 stop out via VIE, direct back. Not just the first row.</p>
+        <div class="verdict" data-for="S1"></div>
+      </div>
+    </div>
+
+    <div class="flow" data-id="M6">
+      <div class="code">M6</div>
+      <div class="body">
+        <h3>A sold-out locked package says so on the card</h3>
+        <p class="proves">Was: "בעמוד של אנדרה ריו הכרטיס צריך להיות סולד אאוט - זה לא קורה"</p>
+
+        <div class="cause">
+          <span class="label">What was actually wrong</span>
+          <p>The catalog decided sold-out from ticket availability alone. A locked
+          package sells one offline flight and deliberately has <b>no</b> fallback to a
+          live search — so when that flight empties the package is finished, but its
+          tickets still said "available" and the card kept advertising it. The customer
+          only found out at the flight step.</p>
+          <p>The card now also fails a locked package whose flight is empty, using the
+          same two limits the flight search uses: the flight's own seat pool, and the
+          event's allocation on it.</p>
+        </div>
+
+        <ol>
+          <li>On a test event, lock the package to a flight that has free seats.</li>
+          <li>Find that event's card on the homepage or in search — it should look normal.</li>
+          <li>Now set the event's <b>allocation</b> on that flight to <b>0</b> and save.</li>
+          <li>Reload the homepage. (The catalog caches for up to an hour — if nothing
+          changes, wait or ask Dor to trigger a revalidate.)</li>
+          <li>Open that event's order page and walk to the flight step.</li>
+        </ol>
+        <p class="expect"><b>Expect:</b> after step 4 the card reads
+        <b>אזלו הכרטיסים</b> and drops out of search. Step 5 shows the
+        <b>"החבילה אזלה"</b> panel — and critically <b>no live flight results in its
+        place</b>, which would silently re-price the package. Card and order page must
+        agree; them disagreeing is the whole bug.</p>
+        <div class="verdict" data-for="M6"></div>
+      </div>
+    </div>
+
+    <div class="flow" data-id="M6b">
+      <div class="code">M6b</div>
+      <div class="body">
+        <h3>Unlocked events are untouched</h3>
+        <p class="proves">The new rule must not hide anything else</p>
+        <ol>
+          <li>Pick three events that are <b>not</b> locked, with tickets available.</li>
+          <li>Check they still appear on the homepage and in search.</li>
+          <li>Check an event you know is genuinely sold out still reads sold out.</li>
+        </ol>
+        <p class="expect"><b>Expect:</b> nothing changes for any of them. The new check
+        only ever looks at events with a locked flight; everything else takes the old
+        path exactly as before.</p>
+        <div class="verdict" data-for="M6b"></div>
+      </div>
+    </div>
+
+    <div class="flow" data-id="L1">
+      <div class="code">L1</div>
+      <div class="body">
+        <h3>No "other dates?" popup on a locked package</h3>
+        <p class="proves">Was: "עושים LOCK ומגיעים לעמוד טיסה שלא יקפוץ הפופ אפ"</p>
+
+        <div class="cause">
+          <span class="label">What was actually wrong</span>
+          <p>The tooltip opens itself on a timer after the page loads, and it never
+          checked whether the date picker was usable. On a locked package the dates are
+          the flight's and the picker is disabled — so it was popping up to offer an
+          action it had just taken away.</p>
+        </div>
+
+        <ol>
+          <li>Open the flight step for a <b>locked</b> event.</li>
+          <li>Wait a few seconds without touching anything.</li>
+          <li>Now open the flight step for a normal, unlocked event and wait again.</li>
+        </ol>
+        <p class="expect"><b>Expect:</b> nothing pops up in step 2 — the date picker
+        stays quietly dimmed with its "תאריכי החבילה קבועים לפי הטיסה" hover text. In
+        step 3 the <b>"רוצים לטוס בתאריכים אחרים? בחרו כאן"</b> tooltip still appears as
+        it always did. Losing it there would be a regression.</p>
+        <div class="verdict" data-for="L1"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Spot-check</h2>
+      <span class="note">Both flight form schemas changed — these paths need a pass</span>
+    </div>
+
+    <div class="flow" data-id="R4">
+      <div class="code">R4</div>
+      <div class="body">
+        <h3>Creating a plain direct flight still works</h3>
+        <p class="proves">The new-flight schema changed</p>
+        <ol>
+          <li><code>/offline-flights</code> → new flight. Fill it in, leave both
+          <b>Stops</b> selects on <b>Direct</b>.</li>
+          <li>Save, then reopen it.</li>
+        </ol>
+        <p class="expect"><b>Expect:</b> a normal direct flight saves exactly as before,
+        and comes back Direct both ways. Note there is no longer a free-typed stops
+        number to get wrong — a leg is Direct or 1 stop, because a leg stores one
+        stopover airport and nothing more.</p>
+        <div class="verdict" data-for="R4"></div>
+      </div>
+    </div>
+
+    <div class="flow" data-id="R5">
+      <div class="code">R5</div>
+      <div class="body">
+        <h3>Editing a flight still saves everything else</h3>
+        <p class="proves">The edit form's reset changed</p>
+        <ol>
+          <li>Open an existing direct flight's edit page.</li>
+          <li>Change the price, a flight number and a time. Save.</li>
+          <li>Reopen and confirm all three stuck, and that it is still Direct both ways.</li>
+        </ol>
+        <p class="expect"><b>Expect:</b> unchanged behaviour. Only the stopover half of
+        the reset moved, but it runs in the same pass as every other field, so it's
+        worth one look.</p>
+        <div class="verdict" data-for="R5"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="report">
+    <h2 style="margin-bottom:0.8rem">When you're done</h2>
+    <p>Builds a summary of what you marked, with your notes on anything broken. Paste it back to Dor.</p>
+    <div class="verdict">
+      <button class="act" id="btn-report" type="button">Copy report</button>
+      <span id="copy-note" style="font-family:var(--mono);font-size:0.7rem;color:var(--pass)"></span>
+    </div>
+    <pre id="report-out"></pre>
+  </section>
+
+  <footer class="foot">
+    Round 4 · backoffice master 37bc9c7 · main c1077dc · migration 20260802090000 applied · 2026-08-02
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var KEY = "myt-offline-flights-qa-r4";
+    var state = {};
+
+    try { state = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { state = {}; }
+
+    var flows = Array.prototype.slice.call(document.querySelectorAll(".flow"));
+
+    function save() {
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* private browsing */ }
+    }
+
+    function tally() {
+      var pass = 0, fail = 0;
+      flows.forEach(function (f) {
+        var v = (state[f.dataset.id] || {}).verdict;
+        if (v === "pass") pass++;
+        else if (v === "fail") fail++;
+      });
+      document.getElementById("n-pass").textContent = pass;
+      document.getElementById("n-fail").textContent = fail;
+      document.getElementById("n-todo").textContent = flows.length - pass - fail;
+    }
+
+    flows.forEach(function (flow) {
+      var id = flow.dataset.id;
+      var host = flow.querySelector(".verdict");
+      var entry = state[id] || {};
+
+      var btnPass = document.createElement("button");
+      btnPass.type = "button";
+      btnPass.dataset.v = "pass";
+      btnPass.textContent = "Works";
+
+      var btnFail = document.createElement("button");
+      btnFail.type = "button";
+      btnFail.dataset.v = "fail";
+      btnFail.textContent = "Broken";
+
+      var note = document.createElement("textarea");
+      note.placeholder = "What went wrong? Which step, what you saw, what you expected.";
+      note.value = entry.note || "";
+      note.setAttribute("aria-label", "Notes for flow " + id);
+
+      function render() {
+        var v = (state[id] || {}).verdict || "";
+        flow.dataset.state = v;
+        btnPass.setAttribute("aria-pressed", String(v === "pass"));
+        btnFail.setAttribute("aria-pressed", String(v === "fail"));
+        note.classList.toggle("shown", v === "fail" || !!note.value);
+      }
+
+      function mark(v) {
+        var cur = state[id] || {};
+        cur.verdict = cur.verdict === v ? "" : v;
+        state[id] = cur;
+        save(); render(); tally();
+        if (cur.verdict === "fail") note.focus();
+      }
+
+      btnPass.addEventListener("click", function () { mark("pass"); });
+      btnFail.addEventListener("click", function () { mark("fail"); });
+      note.addEventListener("input", function () {
+        var cur = state[id] || {};
+        cur.note = note.value;
+        state[id] = cur;
+        save();
+      });
+
+      host.appendChild(btnPass);
+      host.appendChild(btnFail);
+      host.appendChild(note);
+      render();
+    });
+
+    tally();
+
+    document.getElementById("btn-reset").addEventListener("click", function () {
+      if (!confirm("Clear every mark and note on this page?")) return;
+      state = {};
+      save();
+      location.reload();
+    });
+
+    document.getElementById("btn-report").addEventListener("click", function () {
+      var lines = ["MYT offline flights v2 — QA round 4", ""];
+      var broken = [], ok = [], todo = [];
+
+      flows.forEach(function (flow) {
+        var id = flow.dataset.id;
+        var title = flow.querySelector("h3").textContent.trim();
+        var entry = state[id] || {};
+        if (entry.verdict === "fail") {
+          broken.push("[" + id + "] " + title + (entry.note ? "\n    → " + entry.note.trim() : ""));
+        } else if (entry.verdict === "pass") {
+          ok.push(id);
+        } else {
+          todo.push(id);
+        }
+      });
+
+      if (broken.length) {
+        lines.push("BROKEN (" + broken.length + ")");
+        lines.push(broken.join("\n"));
+        lines.push("");
+      }
+      if (ok.length) lines.push("WORKS (" + ok.length + "): " + ok.join(", "));
+      if (todo.length) lines.push("NOT CHECKED (" + todo.length + "): " + todo.join(", "));
+
+      var text = lines.join("\n");
+      var out = document.getElementById("report-out");
+      out.textContent = text;
+      out.classList.add("shown");
+
+      var note = document.getElementById("copy-note");
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(
+          function () { note.textContent = "Copied — paste it to Dor."; },
+          function () { note.textContent = "Couldn't copy; select the text below."; }
+        );
+      } else {
+        note.textContent = "Select the text below and copy it.";
+      }
+    });
+  })();
+</script>
