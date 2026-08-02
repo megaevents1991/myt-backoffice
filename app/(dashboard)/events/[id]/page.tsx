@@ -1353,8 +1353,16 @@ export default function EventPage({
         initialEventRef.current = null;
         router.replace(`/events/${createdEvent.id}`);
       } else {
-        // For existing events, use updateEvent
-        await updateEvent(event.id, event);
+        // For existing events, use updateEvent.
+        //
+        // locked_flight_id is deliberately withheld: it is owned by
+        // lockEventFlight / unlockEventFlight, not by this form. Sending the
+        // copy held in local state would write back whatever was loaded when
+        // the page opened, silently unlocking a package that was locked a
+        // moment ago.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { locked_flight_id, ...eventWithoutLock } = event;
+        await updateEvent(event.id, eventWithoutLock);
         // Links: only when actually changed, never on a failed baseline load
         // (isolated — a link failure never reports the event save as failed).
         await persistTaxonomy(event.id, false);
@@ -2595,6 +2603,14 @@ export default function EventPage({
                 defDateDepart={event.def_date_depart}
                 defDateReturn={event.def_date_return}
                 onChanged={reloadLinkedFlights}
+                onLockChange={(flightId) =>
+                  // Reflect the lock in local state immediately. The panel
+                  // writes straight to the database, so without this the page
+                  // keeps showing (and re-baselining) the value it loaded with.
+                  setEvent((prev) =>
+                    prev ? { ...prev, locked_flight_id: flightId } : prev,
+                  )
+                }
               />
             )}
             {!isNewEvent && (

@@ -3,7 +3,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "react-hot-toast";
 
@@ -56,6 +56,9 @@ const parseMemberIds = (raw: string): string[] =>
 
 export default function NewCategoryPage() {
   const router = useRouter();
+  // "+ תת-קטגוריה" on a row arrives as ?parent=<id> — the form opens with the
+  // parent already chosen so building a branch is one step, not two.
+  const presetParent = useSearchParams().get("parent") ?? "";
   const [isPending, startTransition] = useTransition();
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -88,7 +91,7 @@ export default function NewCategoryPage() {
       tag: "",
       sport: "",
       link_url: "",
-      parent_id: "",
+      parent_id: presetParent,
       display_order: 0,
       is_active: true,
     },

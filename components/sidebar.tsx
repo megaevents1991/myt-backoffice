@@ -113,6 +113,14 @@ export function Sidebar() {
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
   const visibleGroups = navGroups.filter((group) => !group.adminOnly || isAdmin);
 
+  // Only the MOST SPECIFIC matching item lights up. A plain prefix test marks
+  // every ancestor active too, so on /templates/categories both "Templates"
+  // and "Categories" looked selected — which reads as a stuck button.
+  const activeHref = visibleGroups
+    .flatMap((group) => group.items.map((item) => item.href))
+    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((a, b) => b.length - a.length)[0];
+
   return (
     <>
       {/* Mobile toggle button - visible only on small screens */}
@@ -149,9 +157,7 @@ export function Sidebar() {
                   </p>
                 )}
                 {group.items.map((item) => {
-                  const isActive =
-                    pathname === item.href ||
-                    pathname.startsWith(`${item.href}/`);
+                  const isActive = item.href === activeHref;
                   const Icon = item.icon;
 
                   return (

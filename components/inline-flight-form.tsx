@@ -52,7 +52,8 @@ export const inlineFlightSchema = z.object({
     .string()
     .regex(isoDurationPattern, "Invalid total duration (ISO 8601, e.g. PT8H30M).")
     .min(1, "Total duration is required."),
-  stops: z.literal(0),
+  // See the note in the flight form schemas — connecting flights are valid.
+  stops: z.coerce.number().int().min(0).max(3),
 
   outbound_departure_airport: z
     .string()

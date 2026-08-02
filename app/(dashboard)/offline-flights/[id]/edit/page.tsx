@@ -164,9 +164,14 @@ const offlineFlightFormSchema = z.object({
       "Invalid total duration (ISO 8601 format, e.g., PT4H5M)."
     )
     .min(1, "Total duration is required."),
-  stops: z.literal(0, {
-    errorMap: () => ({ message: "Stops must be 0 for direct flights." }),
-  }),
+  // Connecting flights are storable since the migration dropped the old
+  // `stops = 0` constraint. Pinning this to a literal 0 made the form reject
+  // every one of them.
+  stops: z.coerce
+    .number()
+    .int()
+    .min(0, { message: "Stops cannot be negative." })
+    .max(3, { message: "More than 3 stops is almost certainly a typo." }),
   airline_code: z
     .string()
     .regex(
@@ -332,7 +337,9 @@ export default function EditOfflineFlightPage({
             outbound_duration: toIsoDuration(flight.outbound_duration),
             inbound_duration: toIsoDuration(flight.inbound_duration),
             price: Number(flight.price),
-            stops: 0 as const,
+            // Load the flight's real value — hardcoding 0 here silently turned
+            // every connecting flight back into a direct one on save.
+            stops: Number(flight.stops) || 0,
             outbound_departure_time: formatForDateTimeLocalInput(
               flight.outbound_departure_time
             ),
@@ -542,10 +549,12 @@ export default function EditOfflineFlightPage({
                 <FormItem>
                   <FormLabel>Stops</FormLabel>
                   <FormControl>
-                    <Input type="number" readOnly {...field} />
+                    <Input type="number" min={0} max={3} {...field} />
                   </FormControl>
                   <FormDescription>
-                    Must be 0 for direct flights.
+                    0 for a direct flight. For a connecting flight set 1, then add
+                    the stopover airport and layover from the flights list (click
+                    the row id to open it) — otherwise it is sold as direct.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
