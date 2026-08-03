@@ -39,6 +39,9 @@ const usd = new Intl.NumberFormat("en-US", {
 });
 
 export const INSIGHTS_RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "3d", label: "3 days" },
   { key: "7d", label: "7 days" },
   { key: "30d", label: "30 days" },
   { key: "90d", label: "90 days" },

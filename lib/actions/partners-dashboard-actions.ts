@@ -21,7 +21,10 @@ import {
 } from "@/lib/partner-funnel"
 import { normalizeReservationEventOrderInfo } from "@/lib/utils"
 import type { ReservationEventOrderInfo } from "@/types/reservation.types"
-import type { InsightsRange } from "@/lib/actions/partner-performance-actions"
+import {
+  rangeWindowISO,
+  type InsightsRange,
+} from "@/lib/actions/partner-performance-actions"
 
 export interface PartnersOverviewTopPartner {
   code: string
@@ -134,13 +137,7 @@ export async function getPartnersOverview(
 ): Promise<PartnersOverview> {
   await requireStaff()
 
-  const from = (() => {
-    if (range === "all") return null
-    const days = range === "7d" ? 7 : range === "30d" ? 30 : 90
-    const d = new Date()
-    d.setDate(d.getDate() - days)
-    return d.toISOString()
-  })()
+  const { from, to } = await rangeWindowISO(range)
 
   let reservationsQuery = supabase
     .from("reservations")
@@ -151,6 +148,7 @@ export async function getPartnersOverview(
     .order("created_at", { ascending: false })
     .limit(5000)
   if (from) reservationsQuery = reservationsQuery.gte("created_at", from)
+  if (to) reservationsQuery = reservationsQuery.lt("created_at", to)
 
   let packagesQuery = supabase
     .from("prepared_packages")
@@ -158,6 +156,7 @@ export async function getPartnersOverview(
     .order("created_at", { ascending: false })
     .limit(2000)
   if (from) packagesQuery = packagesQuery.gte("created_at", from)
+  if (to) packagesQuery = packagesQuery.lt("created_at", to)
 
   const [
     partnersResult,
@@ -179,15 +178,15 @@ export async function getPartnersOverview(
       .or("type.is.null,type.neq.customer_refund"),
     reservationsQuery,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).rpc("partners_funnel_counts_all", { p_from: from, p_to: null }),
+    (supabase as any).rpc("partners_funnel_counts_all", { p_from: from, p_to: to }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).rpc("partners_clicked_events_all", {
       p_from: from,
-      p_to: null,
+      p_to: to,
       p_limit: 12,
     }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).rpc("partners_visitors_by_code", { p_from: from, p_to: null }),
+    (supabase as any).rpc("partners_visitors_by_code", { p_from: from, p_to: to }),
     // Live leads: 24h holds still inside their real 25h window — always "now",
     // deliberately not range-filtered.
     supabase

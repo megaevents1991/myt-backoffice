@@ -45,8 +45,16 @@ export interface PartnerMonthlyPoint {
   commission_usd: number
 }
 
-/** Time window for the whole performance view. */
-export type InsightsRange = "7d" | "30d" | "90d" | "all"
+/** Time window for the whole performance view. Day-based options use
+ *  Asia/Jerusalem calendar days; the Nd options are rolling windows. */
+export type InsightsRange =
+  | "today"
+  | "yesterday"
+  | "3d"
+  | "7d"
+  | "30d"
+  | "90d"
+  | "all"
 
 export interface TopCount {
   label: string
@@ -129,12 +137,47 @@ type ReservationRow = {
   } | null
 }
 
-export async function rangeStartISO(range: InsightsRange): Promise<string | null> {
-  if (range === "all") return null
-  const days = range === "7d" ? 7 : range === "30d" ? 30 : 90
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  return d.toISOString()
+const JLM_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" })
+const JLM_HOUR = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Jerusalem",
+  hour: "2-digit",
+  hour12: false,
+})
+
+/** UTC instant of Jerusalem midnight `daysAgo` calendar days back (DST-safe:
+ *  probes both +02/+03 offsets and keeps the one that lands on 00:00). */
+function jerusalemMidnight(daysAgo: number): string {
+  const dateStr = JLM_DATE.format(new Date(Date.now() - daysAgo * 86_400_000))
+  for (const offset of ["+03:00", "+02:00"]) {
+    const candidate = new Date(`${dateStr}T00:00:00${offset}`)
+    if (JLM_DATE.format(candidate) === dateStr && JLM_HOUR.format(candidate) === "00") {
+      return candidate.toISOString()
+    }
+  }
+  return new Date(`${dateStr}T00:00:00+03:00`).toISOString()
+}
+
+/** The [from, to) window a range means. Nulls = unbounded on that side. */
+export async function rangeWindowISO(
+  range: InsightsRange
+): Promise<{ from: string | null; to: string | null }> {
+  switch (range) {
+    case "today":
+      return { from: jerusalemMidnight(0), to: null }
+    case "yesterday":
+      return { from: jerusalemMidnight(1), to: jerusalemMidnight(0) }
+    case "3d":
+      // Last three calendar days, today included.
+      return { from: jerusalemMidnight(2), to: null }
+    case "all":
+      return { from: null, to: null }
+    default: {
+      const days = range === "7d" ? 7 : range === "30d" ? 30 : 90
+      const d = new Date()
+      d.setDate(d.getDate() - days)
+      return { from: d.toISOString(), to: null }
+    }
+  }
 }
 
 function topCounts(map: Map<string, number>, limit = 6): TopCount[] {
@@ -165,7 +208,7 @@ export async function getPartnerPerformance(
 ): Promise<PartnerPerformance> {
   await requireStaff()
 
-  const from = await rangeStartISO(range)
+  const { from, to } = await rangeWindowISO(range)
 
   let reservationsQuery = supabase
     .from("reservations")
@@ -175,6 +218,7 @@ export async function getPartnerPerformance(
     .eq("aff_partner_tracking_code", trackingCode)
     .order("created_at", { ascending: false })
   if (from) reservationsQuery = reservationsQuery.gte("created_at", from)
+  if (to) reservationsQuery = reservationsQuery.lt("created_at", to)
 
   const [partnerResult, reservationsResult, couponsResult, trafficResult, clicksResult] =
     await Promise.all([
@@ -194,13 +238,13 @@ export async function getPartnerPerformance(
     (supabase as any).rpc("partner_funnel_counts_range", {
       p_tracking_code: trackingCode,
       p_from: from,
-      p_to: null,
+      p_to: to,
     }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).rpc("partner_clicked_events_range", {
       p_tracking_code: trackingCode,
       p_from: from,
-      p_to: null,
+      p_to: to,
       p_limit: 12,
     }),
   ])
