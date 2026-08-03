@@ -59,33 +59,45 @@ export function PartnersInsights({
   const tiles = [
     {
       label: "Partner sales",
-      value: usd.format(overview.totalSalesUsd),
-      hint: `${overview.paidReservations} paid bookings · ${overview.paidTickets} tickets`,
+      value: usd.format(overview.grossSalesUsd),
+      hint: `All packages ordered this period · ${usd.format(overview.totalSalesUsd)} of it paid`,
       icon: DollarSign,
     },
     {
-      label: "Commission owed",
-      value: usd.format(overview.totalCommissionUsd),
-      hint: "Per each partner's own terms",
+      label: "Orders entered",
+      value: overview.totalReservations,
+      hint: "Any status, this period",
+      icon: ClipboardList,
+    },
+    {
+      label: "Paid orders",
+      value: overview.paidReservations,
+      hint: `Commission owed: ${usd.format(overview.totalCommissionUsd)}`,
       icon: Wallet,
     },
     {
-      label: "Net after commission",
-      value: usd.format(overview.netAfterCommissionUsd),
-      hint: "Before supplier costs",
-      icon: TrendingUp,
+      label: "Tickets",
+      value: overview.allTickets,
+      hint: `${overview.paidTickets} of them on paid orders`,
+      icon: Ticket,
     },
     {
-      label: "Coupon discounts",
-      value: usd.format(overview.couponDiscountUsd),
-      hint: "Given on paid partner bookings",
-      icon: Ticket,
+      label: "Net after costs",
+      value: usd.format(overview.netAfterCostsUsd),
+      hint: `Paid − commission − ${usd.format(overview.knownSupplierCostsUsd)} known costs · ticket costs not tracked`,
+      icon: TrendingUp,
     },
     {
       label: "Producing partners",
       value: overview.producingPartners,
       hint: "With a paid booking in this period",
       icon: ClipboardList,
+    },
+    {
+      label: "Live holds",
+      value: overview.openHolds.count,
+      hint: `${usd.format(overview.openHolds.valueUsd)} in flight right now`,
+      icon: Hourglass,
     },
     {
       label: "Active partners",
@@ -97,16 +109,10 @@ export function PartnersInsights({
       label: "Conversion",
       value:
         overview.globalConversionRate != null
-          ? `${(overview.globalConversionRate * 100).toFixed(1)}%`
+          ? `${(overview.globalConversionRate * 100).toFixed(2)}%`
           : "—",
       hint: `${overview.globalFunnel.totalVisitors} visitors → ${overview.paidReservations} paid`,
       icon: Percent,
-    },
-    {
-      label: "Live holds",
-      value: overview.openHolds.count,
-      hint: `${usd.format(overview.openHolds.valueUsd)} in flight right now`,
-      icon: Hourglass,
     },
   ];
 
@@ -209,7 +215,49 @@ export function PartnersInsights({
         </Card>
       </div>
 
-      <Card>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Ticket className="h-4 w-4 text-muted-foreground" />
+              Top events this period
+            </CardTitle>
+            <CardDescription>Top 3 by paid tickets.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {overview.topBookedEvents.length === 0 ? (
+              <p className="py-4 text-muted-foreground">
+                No paid bookings in this period.
+              </p>
+            ) : (
+              overview.topBookedEvents.map((event, i) => (
+                <div
+                  key={`${event.name}-${event.date ?? ""}`}
+                  className="flex items-start justify-between gap-3 border-b pb-2 last:border-0 last:pb-0"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">
+                      <span className="text-muted-foreground">{i + 1}.</span> {event.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {event.date ? new Date(event.date).toLocaleDateString() : "—"}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right text-xs text-muted-foreground">
+                    <p className="text-sm font-semibold tabular-nums text-foreground">
+                      {event.tickets} tickets
+                    </p>
+                    <p>
+                      {event.bookings} bookings · {usd.format(event.salesUsd)}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Flame className="h-4 w-4 text-muted-foreground" />
@@ -266,7 +314,8 @@ export function PartnersInsights({
             </Table>
           )}
         </CardContent>
-      </Card>
+        </Card>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
@@ -409,7 +458,7 @@ export function PartnersInsights({
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {partner.conversionRate != null
-                        ? `${(partner.conversionRate * 100).toFixed(1)}%`
+                        ? `${(partner.conversionRate * 100).toFixed(2)}%`
                         : "—"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{partner.tickets}</TableCell>

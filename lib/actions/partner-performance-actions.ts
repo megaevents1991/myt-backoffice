@@ -442,7 +442,7 @@ export async function getPartnerPerformance(
     activeCoupons: coupons.filter((c) => c.is_active).length,
     couponUses: coupons.reduce((sum, c) => sum + (c.times_used ?? 0), 0),
     conversionRate:
-      traffic.totalVisitors > 0 ? round2(paid.length / traffic.totalVisitors) : null,
+      traffic.totalVisitors > 0 ? paid.length / traffic.totalVisitors : null,
     avgOrderValueUsd: paid.length > 0 ? round2(totalSalesUsd / paid.length) : null,
     monthly,
     reservations,

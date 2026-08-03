@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase-server"
 import {
   commissionForReservation,
   countReservationTickets,
+  countTickets,
   isPaid,
   round2,
   type CommissionTerms,
@@ -75,6 +76,14 @@ export interface PartnersOverviewMonthlyPoint {
   commission_usd: number
 }
 
+export interface TopBookedEvent {
+  name: string
+  date: string | null
+  bookings: number
+  tickets: number
+  salesUsd: number
+}
+
 export interface PartnersOverview {
   range: InsightsRange
   activeAgents: number
@@ -84,7 +93,17 @@ export interface PartnersOverview {
   totalReservations: number
   paidReservations: number
   paidTickets: number
+  /** Tickets across ALL orders entered in the window, any status. */
+  allTickets: number
+  /** Gross volume of ALL orders entered in the window, any status. */
+  grossSalesUsd: number
+  /** PAID sales only — what the commission/net math runs on. */
   totalSalesUsd: number
+  /** Offline flight+hotel inventory costs + coupon discounts on paid rows.
+   *  Ticket costs are NOT tracked anywhere — see netAfterCostsUsd. */
+  knownSupplierCostsUsd: number
+  /** Paid sales − commission − known supplier costs. Ticket costs missing. */
+  netAfterCostsUsd: number
   totalCommissionUsd: number
   /** Sales minus partner commission — what stays with us BEFORE supplier
    *  costs (ticket/flight/hotel costs are not reliably in the data). */
@@ -98,6 +117,8 @@ export interface PartnersOverview {
   globalConversionRate: number | null
   /** Hot right now: most-clicked events across every partner's audience. */
   hotEvents: HotEvent[]
+  /** Top 3 most-BOOKED events (paid) in the window, by tickets. */
+  topBookedEvents: TopBookedEvent[]
   /** Live 24h holds (status 24Save within its 25h window) — leads in flight. */
   openHolds: OpenHoldsSummary
   /** Prepared-package links built in the window. */
@@ -122,6 +143,9 @@ type ReservationRow = {
   aff_partner_tracking_code: string | null
   coupon_discount_usd: number | null
   event_id: number | null
+  offline_flight_cost: number | null
+  offline_hotel_cost: number | null
+  offline_hotel_ids: number[] | null
 }
 
 const HOLD_STATUS = "24Save"
@@ -142,7 +166,7 @@ export async function getPartnersOverview(
   let reservationsQuery = supabase
     .from("reservations")
     .select(
-      "created_at,status,user_shown_price,event_order_info,aff_partner_tracking_code,coupon_discount_usd,event_id"
+      "created_at,status,user_shown_price,event_order_info,aff_partner_tracking_code,coupon_discount_usd,event_id,offline_flight_cost,offline_hotel_cost,offline_hotel_ids"
     )
     .not("aff_partner_tracking_code", "is", null)
     .order("created_at", { ascending: false })
@@ -275,6 +299,43 @@ export async function getPartnersOverview(
   }
 
   const totalSales = paid.reduce((sum, r) => sum + (r.user_shown_price ?? 0), 0)
+  const grossSales = rows.reduce((sum, r) => sum + (r.user_shown_price ?? 0), 0)
+  const allTickets = countTickets(rows)
+
+  // Known supplier costs on PAID rows: offline flight (per traveler) + offline
+  // hotel (per room) inventory costs, plus coupon discounts. Ticket costs and
+  // live Amadeus/Ratehawk supplier prices are NOT tracked on reservations —
+  // net is therefore an upper bound, labeled as such in the UI.
+  let knownSupplierCosts = 0
+  const topBooked = new Map<string, TopBookedEvent>()
+  for (const r of paid) {
+    const tickets = countReservationTickets(r)
+    if (r.offline_flight_cost != null) {
+      knownSupplierCosts += Number(r.offline_flight_cost) * Math.max(1, tickets)
+    }
+    if (r.offline_hotel_cost != null) {
+      const rooms = Math.max(1, r.offline_hotel_ids?.length ?? 1)
+      knownSupplierCosts += Number(r.offline_hotel_cost) * rooms
+    }
+    knownSupplierCosts += Number(r.coupon_discount_usd ?? 0)
+
+    for (const item of normalizeReservationEventOrderInfo(r.event_order_info)) {
+      if (!item?.name) continue
+      const date =
+        typeof item.date === "string" ? item.date : item.date ? String(item.date) : null
+      const key = `${item.name.trim().toLowerCase()}|${date ?? ""}`
+      const entry =
+        topBooked.get(key) ??
+        { name: item.name, date, bookings: 0, tickets: 0, salesUsd: 0 }
+      entry.bookings += 1
+      entry.tickets += item.number_of_ticket ?? 0
+      entry.salesUsd += item.total_tickets_price ?? 0
+      topBooked.set(key, entry)
+    }
+  }
+  const topBookedEvents = [...topBooked.values()]
+    .sort((a, b) => b.tickets - a.tickets || b.bookings - a.bookings)
+    .slice(0, 3)
 
   // ---- Global funnel + per-partner visitors → conversion ----
   const stageCounts = new Map<string, number>()
@@ -423,7 +484,11 @@ export async function getPartnersOverview(
     totalReservations: rows.length,
     paidReservations: paid.length,
     paidTickets,
+    allTickets,
+    grossSalesUsd: round2(grossSales),
     totalSalesUsd: totalSales,
+    knownSupplierCostsUsd: round2(knownSupplierCosts),
+    netAfterCostsUsd: round2(totalSales - totalCommission - knownSupplierCosts),
     totalCommissionUsd: round2(totalCommission),
     netAfterCommissionUsd: round2(totalSales - totalCommission),
     couponDiscountUsd: round2(couponDiscount),
@@ -434,17 +499,16 @@ export async function getPartnersOverview(
         return {
           ...top,
           visitors,
-          conversionRate: visitors > 0 ? round2(top.paidReservations / visitors) : null,
+          conversionRate: visitors > 0 ? top.paidReservations / visitors : null,
         }
       })
       .sort((a, b) => b.salesUsd - a.salesUsd)
       .slice(0, 10),
     globalFunnel,
     globalConversionRate:
-      globalFunnel.totalVisitors > 0
-        ? round2(paid.length / globalFunnel.totalVisitors)
-        : null,
+      globalFunnel.totalVisitors > 0 ? paid.length / globalFunnel.totalVisitors : null,
     hotEvents,
+    topBookedEvents,
     openHolds,
     packages,
   }
