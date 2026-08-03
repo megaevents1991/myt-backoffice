@@ -84,7 +84,7 @@ export function PartnersInsights({
     {
       label: "Net after costs",
       value: usd.format(overview.netAfterCostsUsd),
-      hint: "After commission + supplier costs on record",
+      hint: "After flights, hotels, tickets & commission",
       icon: TrendingUp,
     },
     {

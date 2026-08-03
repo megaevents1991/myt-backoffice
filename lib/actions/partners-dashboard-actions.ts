@@ -99,10 +99,11 @@ export interface PartnersOverview {
   grossSalesUsd: number
   /** PAID sales only — what the commission/net math runs on. */
   totalSalesUsd: number
-  /** Offline flight+hotel inventory costs + coupon discounts on paid rows.
-   *  Ticket costs are NOT tracked anywhere — see netAfterCostsUsd. */
+  /** Component costs on paid rows: flight price (or inventory cost when
+   *  offline), hotel price (or inventory cost), the ticket line, coupons. */
   knownSupplierCostsUsd: number
-  /** Paid sales − commission − known supplier costs. Ticket costs missing. */
+  /** Paid sales − commission − component costs. Conservative: the ticket
+   *  line is SALE price, so our per-ticket sync markup hides inside costs. */
   netAfterCostsUsd: number
   totalCommissionUsd: number
   /** Sales minus partner commission — what stays with us BEFORE supplier
@@ -146,6 +147,11 @@ type ReservationRow = {
   offline_flight_cost: number | null
   offline_hotel_cost: number | null
   offline_hotel_ids: number[] | null
+  /** JSON sub-selects — component prices without dragging the raw offer blobs. */
+  flight_price: number | string | null
+  flight_offline: boolean | null
+  hotel_price: number | string | null
+  hotel_offline: boolean | null
 }
 
 const HOLD_STATUS = "24Save"
@@ -166,7 +172,7 @@ export async function getPartnersOverview(
   let reservationsQuery = supabase
     .from("reservations")
     .select(
-      "created_at,status,user_shown_price,event_order_info,aff_partner_tracking_code,coupon_discount_usd,event_id,offline_flight_cost,offline_hotel_cost,offline_hotel_ids"
+      "created_at,status,user_shown_price,event_order_info,aff_partner_tracking_code,coupon_discount_usd,event_id,offline_flight_cost,offline_hotel_cost,offline_hotel_ids,flight_price:flight_order_info->price,flight_offline:flight_order_info->isOffline,hotel_price:hotel_order_info->price,hotel_offline:hotel_order_info->isOffline"
     )
     .not("aff_partner_tracking_code", "is", null)
     .order("created_at", { ascending: false })
@@ -302,22 +308,30 @@ export async function getPartnersOverview(
   const grossSales = rows.reduce((sum, r) => sum + (r.user_shown_price ?? 0), 0)
   const allTickets = countTickets(rows)
 
-  // Known supplier costs on PAID rows: offline flight (per traveler) + offline
-  // hotel (per room) inventory costs, plus coupon discounts. Ticket costs and
-  // live Amadeus/Ratehawk supplier prices are NOT tracked on reservations —
-  // net is therefore an upper bound, labeled as such in the UI.
+  // Costs on PAID rows, per Dor's model: every reservation carries its
+  // component prices — flight (Amadeus price, or our inventory cost when
+  // offline), hotel (Ratehawk price / inventory cost), tickets (the package's
+  // ticket line — sale price incl. the per-ticket sync markup, so this net is
+  // conservative), plus coupon discounts. Commission is subtracted separately.
   let knownSupplierCosts = 0
   const topBooked = new Map<string, TopBookedEvent>()
   for (const r of paid) {
     const tickets = countReservationTickets(r)
-    if (r.offline_flight_cost != null) {
+    if (r.flight_offline === true && r.offline_flight_cost != null) {
       knownSupplierCosts += Number(r.offline_flight_cost) * Math.max(1, tickets)
+    } else if (r.flight_price != null && Number.isFinite(Number(r.flight_price))) {
+      knownSupplierCosts += Number(r.flight_price)
     }
-    if (r.offline_hotel_cost != null) {
+    if (r.hotel_offline === true && r.offline_hotel_cost != null) {
       const rooms = Math.max(1, r.offline_hotel_ids?.length ?? 1)
       knownSupplierCosts += Number(r.offline_hotel_cost) * rooms
+    } else if (r.hotel_price != null && Number.isFinite(Number(r.hotel_price))) {
+      knownSupplierCosts += Number(r.hotel_price)
     }
     knownSupplierCosts += Number(r.coupon_discount_usd ?? 0)
+    for (const item of normalizeReservationEventOrderInfo(r.event_order_info)) {
+      knownSupplierCosts += Number(item?.total_tickets_price ?? 0)
+    }
 
     for (const item of normalizeReservationEventOrderInfo(r.event_order_info)) {
       if (!item?.name) continue
