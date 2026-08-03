@@ -94,6 +94,12 @@ export function PartnersInsights({
       icon: ClipboardList,
     },
     {
+      label: "Traffic partners",
+      value: overview.producingTrafficPartners,
+      hint: "Brought at least one visitor this period",
+      icon: Handshake,
+    },
+    {
       label: "Live holds",
       value: overview.openHolds.count,
       hint: `${usd.format(overview.openHolds.valueUsd)} in flight right now`,
@@ -113,6 +119,15 @@ export function PartnersInsights({
           : "—",
       hint: `${overview.globalFunnel.totalVisitors} visitors → ${overview.paidReservations} paid`,
       icon: Percent,
+    },
+    {
+      label: "Cost per conversion",
+      value:
+        overview.costPerConversionUsd != null
+          ? usd.format(overview.costPerConversionUsd)
+          : "—",
+      hint: "Commission + coupons per paid booking",
+      icon: Wallet,
     },
   ];
 
@@ -136,7 +151,7 @@ export function PartnersInsights({
         ))}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {tiles.map((tile) => {
           const Icon = tile.icon;
           return (

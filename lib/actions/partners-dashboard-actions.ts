@@ -90,6 +90,10 @@ export interface PartnersOverview {
   activeAffiliates: number
   /** Marketing partners with at least one PAID attributed booking in range. */
   producingPartners: number
+  /** Marketing partners whose links brought at least one visitor in range. */
+  producingTrafficPartners: number
+  /** (Commission + coupon discounts) per paid booking; null when none paid. */
+  costPerConversionUsd: number | null
   totalReservations: number
   paidReservations: number
   paidTickets: number
@@ -495,6 +499,13 @@ export async function getPartnersOverview(
       (p) => p.type !== "agent" && p.is_active !== false
     ).length,
     producingPartners: byPartner.size,
+    producingTrafficPartners: [...visitorsByCode.entries()].filter(
+      ([code, visitors]) => visitors > 0 && partnerByCode.has(code)
+    ).length,
+    costPerConversionUsd:
+      paid.length > 0
+        ? round2((totalCommission + couponDiscount) / paid.length)
+        : null,
     totalReservations: rows.length,
     paidReservations: paid.length,
     paidTickets,
