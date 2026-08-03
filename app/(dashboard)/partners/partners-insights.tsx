@@ -59,8 +59,8 @@ export function PartnersInsights({
   const tiles = [
     {
       label: "Partner sales",
-      value: usd.format(overview.grossSalesUsd),
-      hint: `All packages ordered this period · ${usd.format(overview.totalSalesUsd)} of it paid`,
+      value: usd.format(overview.totalSalesUsd),
+      hint: `Paid only · ${usd.format(overview.grossSalesUsd)} ordered in total`,
       icon: DollarSign,
     },
     {
