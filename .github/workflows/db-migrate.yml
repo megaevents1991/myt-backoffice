@@ -77,6 +77,11 @@ jobs:
           echo "All migration versions are unique."
 
       - uses: supabase/setup-cli@v1
+        env:
+          # "version: latest" resolves the release via the GitHub API; without a
+          # token that call is anonymous and rate-limited per runner IP — it
+          # failed twice on 2026-08-03 with "rate limit exceeded".
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           version: latest
 
