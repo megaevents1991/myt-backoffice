@@ -100,12 +100,6 @@ export function PartnersInsights({
       icon: Handshake,
     },
     {
-      label: "Live holds",
-      value: overview.openHolds.count,
-      hint: `${usd.format(overview.openHolds.valueUsd)} in flight right now`,
-      icon: Hourglass,
-    },
-    {
       label: "Active partners",
       value: overview.activeAgents + overview.activeAffiliates,
       hint: `${overview.activeAgents} agents · ${overview.activeAffiliates} affiliates`,
