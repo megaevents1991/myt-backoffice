@@ -24,7 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { getPartnersOverview } from "@/lib/actions/partners-dashboard-actions";
+import type { PartnersOverview } from "@/lib/actions/partners-dashboard-actions";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
 import { OverviewChart } from "./overview-chart";
 
@@ -34,27 +34,21 @@ const usd = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-const RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
+export const INSIGHTS_RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
   { key: "7d", label: "7 days" },
   { key: "30d", label: "30 days" },
   { key: "90d", label: "90 days" },
   { key: "all", label: "All time" },
 ];
 
-export const dynamic = "force-dynamic";
-
-export default async function PartnersDashboardPage({
-  searchParams,
+/** The cross-partner insights block — the opening view of /partners. */
+export function PartnersInsights({
+  overview,
+  range,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  overview: PartnersOverview;
+  range: InsightsRange;
 }) {
-  const { range: rangeParam } = await searchParams;
-  const range: InsightsRange = RANGE_OPTIONS.some((o) => o.key === rangeParam)
-    ? (rangeParam as InsightsRange)
-    : "90d";
-
-  const overview = await getPartnersOverview(range);
-
   const tiles = [
     {
       label: "Partner sales",
@@ -96,29 +90,22 @@ export default async function PartnersDashboardPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Partners Insights</h1>
-          <p className="text-sm text-muted-foreground">
-            Cross-partner production, what it costs us, and who delivers.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {RANGE_OPTIONS.map((option) => (
-            <Link
-              key={option.key}
-              href={`/partners/dashboard?range=${option.key}`}
-              className={cn(
-                "rounded border px-2 py-1 text-xs",
-                range === option.key
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-background hover:bg-muted"
-              )}
-            >
-              {option.label}
-            </Link>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted-foreground">Period:</span>
+        {INSIGHTS_RANGE_OPTIONS.map((option) => (
+          <Link
+            key={option.key}
+            href={`/partners?range=${option.key}`}
+            className={cn(
+              "rounded border px-2 py-1 text-xs",
+              range === option.key
+                ? "bg-primary text-primary-foreground"
+                : "bg-background hover:bg-muted"
+            )}
+          >
+            {option.label}
+          </Link>
+        ))}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">

@@ -29,7 +29,6 @@ import {
   Tag,
   Rss,
   ClipboardCheck,
-  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -58,7 +57,6 @@ const navGroups: NavGroup[] = [
       { name: "Reservations", href: "/reservations", icon: ClipboardList },
       { name: "Coupons", href: "/coupons", icon: Percent },
       { name: "Partners", href: "/partners", icon: Handshake },
-      { name: "Partners Insights", href: "/partners/dashboard", icon: TrendingUp },
       { name: "Forms (טפסים)", href: "/forms", icon: ClipboardCheck },
     ],
   },

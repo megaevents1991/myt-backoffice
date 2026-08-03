@@ -1,16 +1,23 @@
-"use client";
-
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { PlusCircle } from "lucide-react";
-import { ADMIN_ROLES } from "@/types/auth.types";
-import { useAuth } from "@/contexts/auth-context";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getPartnersOverview } from "@/lib/actions/partners-dashboard-actions";
+import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
+import { AddPartnerButton } from "./add-partner-button";
+import { PartnersInsights, INSIGHTS_RANGE_OPTIONS } from "./partners-insights";
 import { PartnersTable } from "./partners-table";
 
-export default function PartnersPage() {
-  // Adding a partner also creates its portal login — an admin-only action.
-  const { user: me } = useAuth();
-  const canManage = !!me && ADMIN_ROLES.includes(me.role);
+export const dynamic = "force-dynamic";
+
+export default async function PartnersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string }>;
+}) {
+  const { range: rangeParam } = await searchParams;
+  const range: InsightsRange = INSIGHTS_RANGE_OPTIONS.some((o) => o.key === rangeParam)
+    ? (rangeParam as InsightsRange)
+    : "90d";
+
+  const overview = await getPartnersOverview(range);
 
   return (
     <div className="space-y-6">
@@ -18,20 +25,24 @@ export default function PartnersPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Partners</h1>
           <p className="text-muted-foreground">
-            Agents and influencers, their commission terms and portal access.
+            Cross-partner production first; the full list and terms one tab over.
           </p>
         </div>
-        {canManage && (
-          <Link href="/partners/new">
-            <Button>
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add Partner
-            </Button>
-          </Link>
-        )}
+        <AddPartnerButton />
       </div>
 
-      <PartnersTable />
+      <Tabs defaultValue="insights">
+        <TabsList>
+          <TabsTrigger value="insights">Insights</TabsTrigger>
+          <TabsTrigger value="list">Partners list</TabsTrigger>
+        </TabsList>
+        <TabsContent value="insights" className="mt-4">
+          <PartnersInsights overview={overview} range={range} />
+        </TabsContent>
+        <TabsContent value="list" className="mt-4">
+          <PartnersTable />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
