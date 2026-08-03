@@ -77,8 +77,8 @@ export function PartnersInsights({
     },
     {
       label: "Tickets",
-      value: overview.allTickets,
-      hint: `${overview.paidTickets} of them on paid orders`,
+      value: overview.paidTickets,
+      hint: `Paid only · ${overview.allTickets} ordered in total`,
       icon: Ticket,
     },
     {
