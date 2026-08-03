@@ -84,7 +84,7 @@ export function PartnersInsights({
     {
       label: "Net after costs",
       value: usd.format(overview.netAfterCostsUsd),
-      hint: `Paid − commission − ${usd.format(overview.knownSupplierCostsUsd)} known costs · ticket costs not tracked`,
+      hint: "After commission + supplier costs on record",
       icon: TrendingUp,
     },
     {
