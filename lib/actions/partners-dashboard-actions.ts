@@ -69,11 +69,18 @@ export interface PackagesSummary {
   topCreators: { code: string; name: string; count: number }[]
 }
 
-export interface PartnersOverviewMonthlyPoint {
-  /** `YYYY-MM`, ascending. */
-  month: string
-  sales_usd: number
-  commission_usd: number
+/** Where a visitor's first tracked page in the window was. */
+export type EntryKind = "home" | "artist" | "event" | "other"
+
+export interface EntryFunnels {
+  home: PartnerTraffic
+  artist: PartnerTraffic
+  event: PartnerTraffic
+  /** Visitors who entered on any other page (category, blog, search…). */
+  otherVisitors: number
+  /** True while computed from a capped client-side scan (RPC not deployed
+   *  yet) — numbers may undercount on long windows. */
+  approximate: boolean
 }
 
 export interface TopBookedEvent {
@@ -114,10 +121,11 @@ export interface PartnersOverview {
    *  costs (ticket/flight/hotel costs are not reliably in the data). */
   netAfterCommissionUsd: number
   couponDiscountUsd: number
-  monthly: PartnersOverviewMonthlyPoint[]
   topPartners: PartnersOverviewTopPartner[]
   /** Funnel across ALL partner traffic in the window. */
   globalFunnel: PartnerTraffic
+  /** The same funnel split by entry page: home / artist / specific event. */
+  entryFunnels: EntryFunnels
   /** Paid partner bookings ÷ distinct visitors; null when no visitors. */
   globalConversionRate: number | null
   /** Hot right now: most-clicked events across every partner's audience. */
@@ -161,6 +169,46 @@ type ReservationRow = {
 const HOLD_STATUS = "24Save"
 const HOLD_WINDOW_MS = 25 * 60 * 60 * 1000
 
+/** Row cap for the client-side entry-funnel fallback scan. */
+const ENTRY_SCAN_LIMIT = 10000
+
+/** Mirror of the classification in partners_entry_funnels_all (SQL). A first
+ *  row that is not a VISIT means the user surfaced inside the order flow —
+ *  order pages carry no VISIT tracker, so that's a direct event landing. */
+function classifyEntry(stage: string | null, path: string | null): EntryKind {
+  if (stage !== "VISIT") return "event"
+  if (!path || path === "/") return "home"
+  if (path.startsWith("/artists") || path.startsWith("/football")) return "artist"
+  if (path.startsWith("/order")) return "event"
+  return "other"
+}
+
+function trafficFromCounts(counts: Map<string, number> | undefined): PartnerTraffic {
+  const byStage = FUNNEL_STAGES.map((stage) => ({
+    stage,
+    label: FUNNEL_STAGE_LABELS[stage],
+    visitors: counts?.get(stage) ?? 0,
+  }))
+  return {
+    byStage,
+    totalVisitors: counts?.get("VISIT") ?? 0,
+    hasData: byStage.some((s) => s.visitors > 0),
+  }
+}
+
+function buildEntryFunnels(
+  countsByEntry: Map<string, Map<string, number>>,
+  approximate: boolean
+): EntryFunnels {
+  return {
+    home: trafficFromCounts(countsByEntry.get("home")),
+    artist: trafficFromCounts(countsByEntry.get("artist")),
+    event: trafficFromCounts(countsByEntry.get("event")),
+    otherVisitors: countsByEntry.get("other")?.get("VISIT") ?? 0,
+    approximate,
+  }
+}
+
 /**
  * Cross-partner rollup for the staff Partners Insights dashboard. Commission
  * math goes through lib/partner-commission per partner's own terms — the same
@@ -196,6 +244,7 @@ export async function getPartnersOverview(
     partnersResult,
     reservationsResult,
     funnelResult,
+    entryResult,
     hotResult,
     visitorsResult,
     holdsResult,
@@ -213,6 +262,8 @@ export async function getPartnersOverview(
     reservationsQuery,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).rpc("partners_funnel_counts_all", { p_from: from, p_to: to }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).rpc("partners_entry_funnels_all", { p_from: from, p_to: to }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).rpc("partners_clicked_events_all", {
       p_from: from,
@@ -238,6 +289,7 @@ export async function getPartnersOverview(
   // never fail the whole tab over one of them.
   for (const [label, result] of [
     ["funnel", funnelResult],
+    ["entry", entryResult],
     ["hot", hotResult],
     ["visitors", visitorsResult],
     ["holds", holdsResult],
@@ -265,7 +317,6 @@ export async function getPartnersOverview(
   const paid = rows.filter(isPaid)
 
   const byPartner = new Map<string, PartnersOverviewTopPartner>()
-  const byMonth = new Map<string, PartnersOverviewMonthlyPoint>()
   let totalCommission = 0
   let paidTickets = 0
   let couponDiscount = 0
@@ -300,12 +351,6 @@ export async function getPartnersOverview(
     top.salesUsd += sales
     top.commissionUsd = round2(top.commissionUsd + commission)
     byPartner.set(code, top)
-
-    const month = r.created_at.slice(0, 7)
-    const point = byMonth.get(month) ?? { month, sales_usd: 0, commission_usd: 0 }
-    point.sales_usd += sales
-    point.commission_usd = round2(point.commission_usd + commission)
-    byMonth.set(month, point)
   }
 
   const totalSales = paid.reduce((sum, r) => sum + (r.user_shown_price ?? 0), 0)
@@ -379,6 +424,64 @@ export async function getPartnersOverview(
   }[]) {
     visitorsByCode.set(row.affiliate_id, Number(row.visitors) || 0)
   }
+
+  // ---- Entry-segmented funnels (home / artist / event) ----
+  const countsByEntry = new Map<string, Map<string, number>>()
+  let entryApproximate = false
+  if (!entryResult.error) {
+    for (const row of (entryResult.data ?? []) as {
+      entry: string
+      stage: string
+      visitors: number
+    }[]) {
+      const perStage = countsByEntry.get(row.entry) ?? new Map<string, number>()
+      perStage.set(row.stage, Number(row.visitors) || 0)
+      countsByEntry.set(row.entry, perStage)
+    }
+  } else {
+    // RPC not deployed yet (migration applies on merge to master) — degrade to
+    // a capped ascending scan and compute the same aggregation here.
+    let scanQuery = supabase
+      .from("affiliates_tracking")
+      .select("user_id,stage,path:data->>path")
+      .not("user_id", "is", null)
+      .order("created_at", { ascending: true })
+      .limit(ENTRY_SCAN_LIMIT)
+    if (from) scanQuery = scanQuery.gte("created_at", from)
+    if (to) scanQuery = scanQuery.lt("created_at", to)
+    const scanResult = await scanQuery
+    if (scanResult.error) {
+      console.error("getPartnersOverview entry scan:", JSON.stringify(scanResult.error))
+    } else {
+      const scanRows = (scanResult.data ?? []) as unknown as {
+        user_id: string
+        stage: string | null
+        path: string | null
+      }[]
+      entryApproximate = scanRows.length >= ENTRY_SCAN_LIMIT
+      const entryByUser = new Map<string, EntryKind>()
+      const stagesByUser = new Map<string, Set<string>>()
+      for (const row of scanRows) {
+        if (!entryByUser.has(row.user_id)) {
+          entryByUser.set(row.user_id, classifyEntry(row.stage, row.path))
+        }
+        if (row.stage && row.stage !== "VISIT") {
+          const set = stagesByUser.get(row.user_id) ?? new Set<string>()
+          set.add(row.stage)
+          stagesByUser.set(row.user_id, set)
+        }
+      }
+      for (const [userId, entry] of entryByUser) {
+        const perStage = countsByEntry.get(entry) ?? new Map<string, number>()
+        perStage.set("VISIT", (perStage.get("VISIT") ?? 0) + 1)
+        for (const stage of stagesByUser.get(userId) ?? []) {
+          perStage.set(stage, (perStage.get(stage) ?? 0) + 1)
+        }
+        countsByEntry.set(entry, perStage)
+      }
+    }
+  }
+  const entryFunnels = buildEntryFunnels(countsByEntry, entryApproximate)
 
   // ---- Hot events across every partner's audience ----
   const bookedNames = new Set(
@@ -517,7 +620,6 @@ export async function getPartnersOverview(
     totalCommissionUsd: round2(totalCommission),
     netAfterCommissionUsd: round2(totalSales - totalCommission),
     couponDiscountUsd: round2(couponDiscount),
-    monthly: [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month)),
     topPartners: [...byPartner.values()]
       .map((top) => {
         const visitors = visitorsByCode.get(top.code) ?? 0
@@ -530,6 +632,7 @@ export async function getPartnersOverview(
       .sort((a, b) => b.salesUsd - a.salesUsd)
       .slice(0, 10),
     globalFunnel,
+    entryFunnels,
     globalConversionRate:
       globalFunnel.totalVisitors > 0 ? paid.length / globalFunnel.totalVisitors : null,
     hotEvents,

@@ -4,12 +4,15 @@ import {
   DollarSign,
   Flame,
   Handshake,
+  Home,
   Hourglass,
+  Music,
   Package,
   Percent,
   Ticket,
   TrendingUp,
   Wallet,
+  type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,7 +33,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { PartnersOverview } from "@/lib/actions/partners-dashboard-actions";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
-import { OverviewChart } from "./overview-chart";
+import type { PartnerTraffic } from "@/lib/partner-funnel";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -54,6 +57,66 @@ export const INSIGHTS_RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
   { key: "90d", label: "90 days" },
   { key: "all", label: "All time" },
 ];
+
+/** One entry-segment funnel: who landed there, how far they got. */
+function EntryFunnelCard({
+  icon: Icon,
+  title,
+  description,
+  funnel,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  funnel: PartnerTraffic;
+}) {
+  const top = Math.max(...funnel.byStage.map((s) => s.visitors), 1);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-muted-foreground" />
+          {title}
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!funnel.hasData ? (
+          <p className="py-6 text-sm text-muted-foreground">
+            No visitors in this period.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {funnel.byStage.map((stage) => {
+              const share = Math.round((stage.visitors / top) * 100);
+              return (
+                <div key={stage.stage} className="space-y-1">
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span>{stage.label}</span>
+                    <span className="font-medium tabular-nums">
+                      {stage.visitors}
+                      {stage.stage !== "VISIT" && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {share}%
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary"
+                      style={{ width: `${share}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 /** The cross-partner insights block — the opening view of /partners. */
 export function PartnersInsights({
@@ -171,65 +234,34 @@ export function PartnersInsights({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Sales vs commission by month</CardTitle>
-            <CardDescription>
-              Paid partner-attributed reservations only, in USD.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <OverviewChart data={overview.monthly} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>All-partner funnel</CardTitle>
-            <CardDescription>
-              Every visitor who arrived through any partner link.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!overview.globalFunnel.hasData ? (
-              <p className="py-6 text-sm text-muted-foreground">
-                No partner traffic recorded in this period.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {overview.globalFunnel.byStage.map((stage) => {
-                  const top = Math.max(
-                    ...overview.globalFunnel.byStage.map((s) => s.visitors),
-                    1
-                  );
-                  const share = Math.round((stage.visitors / top) * 100);
-                  return (
-                    <div key={stage.stage} className="space-y-1">
-                      <div className="flex items-baseline justify-between text-sm">
-                        <span>{stage.label}</span>
-                        <span className="font-medium tabular-nums">
-                          {stage.visitors}
-                          {stage.stage !== "VISIT" && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              {share}%
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-primary"
-                          style={{ width: `${share}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <EntryFunnelCard
+          icon={Home}
+          title="Entered on the homepage"
+          description="Visitors whose first page through a partner link was the homepage."
+          funnel={overview.entryFunnels.home}
+        />
+        <EntryFunnelCard
+          icon={Music}
+          title="Entered on an artist page"
+          description="First landed on an artist or team page."
+          funnel={overview.entryFunnels.artist}
+        />
+        <EntryFunnelCard
+          icon={Ticket}
+          title="Entered on a specific event"
+          description="Landed straight inside an event page — package deep-links included."
+          funnel={overview.entryFunnels.event}
+        />
       </div>
+      {(overview.entryFunnels.otherVisitors > 0 ||
+        overview.entryFunnels.approximate) && (
+        <p className="-mt-4 text-xs text-muted-foreground">
+          {overview.entryFunnels.otherVisitors > 0 &&
+            `${overview.entryFunnels.otherVisitors} more visitors entered on other pages (categories, blog…).`}
+          {overview.entryFunnels.approximate &&
+            " Numbers are approximate until the entry-funnel DB function is deployed."}
+        </p>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
