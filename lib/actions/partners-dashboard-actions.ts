@@ -149,6 +149,7 @@ type PartnerRow = {
 }
 
 type ReservationRow = {
+  id: number | string
   created_at: string
   status: string | null
   user_shown_price: number | null
@@ -171,6 +172,48 @@ const HOLD_WINDOW_MS = 25 * 60 * 60 * 1000
 
 /** Row cap for the client-side entry-funnel fallback scan. */
 const ENTRY_SCAN_LIMIT = 10000
+
+/** Most-recent rows the money tiles aggregate over (was `.limit(5000)`). */
+const RESERVATION_SCAN_LIMIT = 5000
+const PACKAGE_SCAN_LIMIT = 2000
+
+/**
+ * PostgREST hard-caps every response (max-rows, 1000 on this project), so a
+ * plain `.limit(5000)` silently returns the first 1000 rows and nothing else.
+ * Page with `.range()` until `max` rows, a short page, or an error.
+ * `truncated` means the cap cut real data — callers surface that, never hide it.
+ * Rows are deduped by `id` so a concurrent insert can't double-count a row
+ * that slid across a page boundary mid-pagination.
+ */
+async function fetchPaged<T extends { id: number | string }>(
+  makeQuery: () => {
+    range: (from: number, to: number) => PromiseLike<{
+      data: unknown
+      error: { message: string } | null
+    }>
+  },
+  max: number
+): Promise<{ rows: T[]; truncated: boolean; error: { message: string } | null }> {
+  const rows: T[] = []
+  const seen = new Set<number | string>()
+  let offset = 0
+  while (offset < max) {
+    const want = Math.min(1000, max - offset)
+    const res = await makeQuery().range(offset, offset + want - 1)
+    if (res.error) return { rows, truncated: false, error: res.error }
+    const page = (res.data ?? []) as T[]
+    offset += page.length
+    for (const row of page) {
+      if (row.id != null) {
+        if (seen.has(row.id)) continue
+        seen.add(row.id)
+      }
+      rows.push(row)
+    }
+    if (page.length < want) return { rows, truncated: false, error: null }
+  }
+  return { rows, truncated: true, error: null }
+}
 
 /** Mirror of the classification in partners_entry_funnels_all (SQL). A first
  *  row that is not a VISIT means the user surfaced inside the order flow —
@@ -221,24 +264,30 @@ export async function getPartnersOverview(
 
   const { from, to } = await rangeWindowISO(range)
 
-  let reservationsQuery = supabase
-    .from("reservations")
-    .select(
-      "created_at,status,user_shown_price,event_order_info,aff_partner_tracking_code,coupon_discount_usd,event_id,offline_flight_cost,offline_hotel_cost,offline_hotel_ids,flight_price:flight_order_info->price,flight_offline:flight_order_info->isOffline,hotel_price:hotel_order_info->price,hotel_offline:hotel_order_info->isOffline"
-    )
-    .not("aff_partner_tracking_code", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(5000)
-  if (from) reservationsQuery = reservationsQuery.gte("created_at", from)
-  if (to) reservationsQuery = reservationsQuery.lt("created_at", to)
+  const reservationsQuery = () => {
+    let q = supabase
+      .from("reservations")
+      .select(
+        "id,created_at,status,user_shown_price,event_order_info,aff_partner_tracking_code,coupon_discount_usd,event_id,offline_flight_cost,offline_hotel_cost,offline_hotel_ids,flight_price:flight_order_info->price,flight_offline:flight_order_info->isOffline,hotel_price:hotel_order_info->price,hotel_offline:hotel_order_info->isOffline"
+      )
+      .not("aff_partner_tracking_code", "is", null)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+    if (from) q = q.gte("created_at", from)
+    if (to) q = q.lt("created_at", to)
+    return q
+  }
 
-  let packagesQuery = supabase
-    .from("prepared_packages")
-    .select("partner_tracking_code,event_id,allow_edit,created_at")
-    .order("created_at", { ascending: false })
-    .limit(2000)
-  if (from) packagesQuery = packagesQuery.gte("created_at", from)
-  if (to) packagesQuery = packagesQuery.lt("created_at", to)
+  const packagesQuery = () => {
+    let q = supabase
+      .from("prepared_packages")
+      .select("id,partner_tracking_code,event_id,allow_edit,created_at")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+    if (from) q = q.gte("created_at", from)
+    if (to) q = q.lt("created_at", to)
+    return q
+  }
 
   const [
     partnersResult,
@@ -259,7 +308,7 @@ export async function getPartnersOverview(
       // rows are ~95% of the table and would blow the 1000-row cap.
       .or(`name_hebrew.is.null,name_hebrew.not.ilike.*${CUSTOMER_REFUND_NAME_MARKER}*`)
       .or("type.is.null,type.neq.customer_refund"),
-    reservationsQuery,
+    fetchPaged<ReservationRow>(reservationsQuery, RESERVATION_SCAN_LIMIT),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).rpc("partners_funnel_counts_all", { p_from: from, p_to: to }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -280,11 +329,28 @@ export async function getPartnersOverview(
       .eq("status", HOLD_STATUS)
       .not("aff_partner_tracking_code", "is", null)
       .gte("created_at", new Date(Date.now() - HOLD_WINDOW_MS).toISOString()),
-    packagesQuery,
+    fetchPaged<{
+      id: number | string
+      partner_tracking_code: string
+      event_id: number | null
+      allow_edit: boolean | null
+      created_at: string
+    }>(packagesQuery, PACKAGE_SCAN_LIMIT),
   ])
 
   if (partnersResult.error) throw partnersResult.error
   if (reservationsResult.error) throw reservationsResult.error
+  // Never cap silently — the tiles read as totals, so say so when they aren't.
+  if (reservationsResult.truncated) {
+    console.warn(
+      `getPartnersOverview: reservations capped at ${RESERVATION_SCAN_LIMIT} rows for range ${range}`
+    )
+  }
+  if (packagesResult.truncated) {
+    console.warn(
+      `getPartnersOverview: packages capped at ${PACKAGE_SCAN_LIMIT} rows for range ${range}`
+    )
+  }
   // The tracking/holds/packages blocks are nice-to-have — log and degrade,
   // never fail the whole tab over one of them.
   for (const [label, result] of [
@@ -311,7 +377,7 @@ export async function getPartnersOverview(
 
   // Only bookings attributed to a real marketing partner — an unknown or
   // refund-row code is not partner production.
-  const rows = ((reservationsResult.data ?? []) as unknown as ReservationRow[]).filter(
+  const rows = reservationsResult.rows.filter(
     (r) => r.aff_partner_tracking_code && partnerByCode.has(r.aff_partner_tracking_code)
   )
   const paid = rows.filter(isPaid)
@@ -440,28 +506,38 @@ export async function getPartnersOverview(
     }
   } else {
     // RPC not deployed yet (migration applies on merge to master) — degrade to
-    // a capped ascending scan and compute the same aggregation here.
-    let scanQuery = supabase
-      .from("affiliates_tracking")
-      .select("user_id,stage,path:data->>path")
-      .not("user_id", "is", null)
-      .order("created_at", { ascending: true })
-      .limit(ENTRY_SCAN_LIMIT)
-    if (from) scanQuery = scanQuery.gte("created_at", from)
-    if (to) scanQuery = scanQuery.lt("created_at", to)
-    const scanResult = await scanQuery
-    if (scanResult.error) {
-      console.error("getPartnersOverview entry scan:", JSON.stringify(scanResult.error))
-    } else {
-      const scanRows = (scanResult.data ?? []) as unknown as {
-        user_id: string
-        stage: string | null
-        path: string | null
-      }[]
-      entryApproximate = scanRows.length >= ENTRY_SCAN_LIMIT
+    // an ascending scan and compute the same aggregation here. The scan MUST
+    // paginate: PostgREST's max-rows (1000) silently truncates anything bigger,
+    // which is how this card once showed ~200 "visitors" for a 7.6k-row window.
+    // Ascending keeps each covered user's first row (their entry) correct even
+    // when the window itself is truncated at the cap.
+    const scanQuery = () => {
+      let q = supabase
+        .from("affiliates_tracking")
+        .select("id,user_id,stage,path:data->>path")
+        .not("user_id", "is", null)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+      if (from) q = q.gte("created_at", from)
+      if (to) q = q.lt("created_at", to)
+      return q
+    }
+    const scan = await fetchPaged<{
+      id: number | string
+      user_id: string
+      stage: string | null
+      path: string | null
+    }>(scanQuery, ENTRY_SCAN_LIMIT)
+    if (scan.error) {
+      console.error("getPartnersOverview entry scan:", JSON.stringify(scan.error))
+    }
+    if (scan.rows.length) {
+      // Partial coverage (cap hit, or an error after some pages) is served but
+      // flagged — the UI's "approximate" note keys off this.
+      entryApproximate = scan.truncated || scan.error != null
       const entryByUser = new Map<string, EntryKind>()
       const stagesByUser = new Map<string, Set<string>>()
-      for (const row of scanRows) {
+      for (const row of scan.rows) {
         if (!entryByUser.has(row.user_id)) {
           entryByUser.set(row.user_id, classifyEntry(row.stage, row.path))
         }
@@ -548,14 +624,9 @@ export async function getPartnersOverview(
   }
 
   // ---- Prepared packages built in the window ----
-  const packageRows = (
-    (packagesResult.data ?? []) as {
-      partner_tracking_code: string
-      event_id: number | null
-      allow_edit: boolean | null
-      created_at: string
-    }[]
-  ).filter((row) => partnerByCode.has(row.partner_tracking_code))
+  const packageRows = packagesResult.rows.filter((row) =>
+    partnerByCode.has(row.partner_tracking_code)
+  )
   const packagesByPartner = new Map<string, number>()
   let matched = 0
   for (const row of packageRows) {
