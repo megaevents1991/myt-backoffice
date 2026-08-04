@@ -360,7 +360,7 @@ export function PartnersInsights({
               <Ticket className="h-4 w-4 text-muted-foreground" />
               Top events this period
             </CardTitle>
-            <CardDescription>Top 3 by paid tickets.</CardDescription>
+            <CardDescription>Top 15 by paid tickets.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {overview.topBookedEvents.length === 0 ? (
@@ -403,7 +403,8 @@ export function PartnersInsights({
           </CardTitle>
           <CardDescription>
             Most-clicked events across every partner&apos;s audience in this period —
-            event, date and location, and whether the interest converted anywhere.
+            event, date and location, and how much of the interest became paid
+            bookings.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -421,7 +422,7 @@ export function PartnersInsights({
                   <TableHead className="text-right">Visitors</TableHead>
                   <TableHead className="text-right">Clicks</TableHead>
                   <TableHead className="text-right">Partners</TableHead>
-                  <TableHead>Converted</TableHead>
+                  <TableHead className="text-right">Converted</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -439,11 +440,21 @@ export function PartnersInsights({
                     <TableCell className="text-right tabular-nums">{event.visitors}</TableCell>
                     <TableCell className="text-right tabular-nums">{event.clicks}</TableCell>
                     <TableCell className="text-right tabular-nums">{event.partners}</TableCell>
-                    <TableCell>
-                      {event.booked ? (
-                        <Badge>Booked</Badge>
+                    <TableCell className="text-right tabular-nums">
+                      {event.paidBookings > 0 ? (
+                        <>
+                          <span className="font-medium">{event.paidBookings}</span>
+                          {event.conversionRate != null && (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {(event.conversionRate * 100).toFixed(
+                                event.conversionRate < 0.01 ? 1 : 0
+                              )}
+                              %
+                            </span>
+                          )}
+                        </>
                       ) : (
-                        <Badge variant="secondary">Never booked</Badge>
+                        <span className="text-muted-foreground">0</span>
                       )}
                     </TableCell>
                   </TableRow>

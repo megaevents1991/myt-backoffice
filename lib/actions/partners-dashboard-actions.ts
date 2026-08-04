@@ -49,8 +49,10 @@ export interface HotEvent {
   visitors: number
   /** Distinct partners whose audiences clicked it. */
   partners: number
-  /** A paid partner-attributed booking of it exists in the window. */
-  booked: boolean
+  /** PAID partner-attributed bookings of this event (name+day) in the window. */
+  paidBookings: number
+  /** paidBookings ÷ clicking visitors; null when no visitors. */
+  conversionRate: number | null
 }
 
 export interface OpenHoldsSummary {
@@ -134,7 +136,7 @@ export interface PartnersOverview {
   globalConversionRate: number | null
   /** Hot right now: most-clicked events across every partner's audience. */
   hotEvents: HotEvent[]
-  /** Top 3 most-BOOKED events (paid) in the window, by tickets. */
+  /** Top 15 most-BOOKED events (paid) in the window, by tickets. */
   topBookedEvents: TopBookedEvent[]
   /** Live 24h holds (status 24Save within its 25h window) — leads in flight. */
   openHolds: OpenHoldsSummary
@@ -322,7 +324,7 @@ export async function getPartnersOverview(
     (supabase as any).rpc("partners_clicked_events_all", {
       p_from: from,
       p_to: to,
-      p_limit: 12,
+      p_limit: 15,
     }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).rpc("partners_visitors_by_code", { p_from: from, p_to: to }),
@@ -469,7 +471,7 @@ export async function getPartnersOverview(
   }
   const topBookedEvents = [...topBooked.values()]
     .sort((a, b) => b.tickets - a.tickets || b.bookings - a.bookings)
-    .slice(0, 3)
+    .slice(0, 15)
 
   // ---- Global funnel + per-partner visitors → conversion ----
   const stageCounts = new Map<string, number>()
@@ -605,13 +607,21 @@ export async function getPartnersOverview(
   const entryFunnels = buildEntryFunnels(countsByEntry, entryApproximate)
 
   // ---- Hot events across every partner's audience ----
-  const bookedNames = new Set(
-    paid
-      .flatMap((r) => normalizeReservationEventOrderInfo(r.event_order_info))
-      .map((event) => event?.name)
-      .filter((name): name is string => !!name)
-      .map((name) => name.trim().toLowerCase())
-  )
+  // Paid bookings per event, keyed by name+day (both sides normalize to
+  // yyyy-mm-dd: tracking stores "2026-06-15", reservations an ISO midnight)
+  // so two dates of the same tour convert separately; a name-only fallback
+  // covers hot rows whose tracking carried no date.
+  const paidByEventDay = new Map<string, number>()
+  const paidByEventName = new Map<string, number>()
+  for (const r of paid) {
+    for (const item of normalizeReservationEventOrderInfo(r.event_order_info)) {
+      if (!item?.name) continue
+      const name = item.name.trim().toLowerCase()
+      const day = typeof item.date === "string" ? item.date.slice(0, 10) : ""
+      paidByEventDay.set(`${name}|${day}`, (paidByEventDay.get(`${name}|${day}`) ?? 0) + 1)
+      paidByEventName.set(name, (paidByEventName.get(name) ?? 0) + 1)
+    }
+  }
   const hotEvents: HotEvent[] = (
     (hotResult.data ?? []) as {
       event_name: string | null
@@ -623,15 +633,23 @@ export async function getPartnersOverview(
     }[]
   )
     .filter((row) => !!row.event_name)
-    .map((row) => ({
-      name: row.event_name as string,
-      date: row.event_date,
-      location: row.event_location,
-      clicks: Number(row.clicks ?? 0),
-      visitors: Number(row.visitors ?? 0),
-      partners: Number(row.partners ?? 0),
-      booked: bookedNames.has((row.event_name as string).trim().toLowerCase()),
-    }))
+    .map((row) => {
+      const name = (row.event_name as string).trim().toLowerCase()
+      const visitors = Number(row.visitors ?? 0)
+      const paidBookings = row.event_date
+        ? paidByEventDay.get(`${name}|${row.event_date.slice(0, 10)}`) ?? 0
+        : paidByEventName.get(name) ?? 0
+      return {
+        name: row.event_name as string,
+        date: row.event_date,
+        location: row.event_location,
+        clicks: Number(row.clicks ?? 0),
+        visitors,
+        partners: Number(row.partners ?? 0),
+        paidBookings,
+        conversionRate: visitors > 0 ? paidBookings / visitors : null,
+      }
+    })
 
   // ---- Open holds (live leads) ----
   const holdRows = (holdsResult.data ?? []) as {
