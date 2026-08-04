@@ -154,6 +154,62 @@ const usd = (value: number) => `$${Math.round(value).toLocaleString("en-US")}`;
 
 const dateOnly = (value: string | null | undefined) => (value ? value.slice(0, 10) : "");
 
+/** "PT4H5M" → "4h 05" — main's duration label. */
+const durationLabel = (value: string | null | undefined) => {
+  const match = value?.match(/PT(\d+)H(\d*)M?/);
+  if (!match) return "";
+  return match[2] ? `${match[1]}h ${match[2].padStart(2, "0")}` : `${match[1]}h`;
+};
+
+/** One direction of a flight, laid out like main's flight card. */
+function FlightLeg({
+  label,
+  depTime,
+  depAirport,
+  arrTime,
+  arrAirport,
+  duration,
+  stopLabel,
+}: {
+  label: string;
+  depTime: string | null | undefined;
+  depAirport: string;
+  arrTime?: string | null;
+  arrAirport: string;
+  duration?: string | null;
+  stopLabel?: string | null;
+}) {
+  const dur = durationLabel(duration);
+  return (
+    <div className="flex items-center gap-3 text-sm">
+      <span className="w-9 shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
+      <div className="w-14 shrink-0 text-end">
+        <p className="font-semibold tabular-nums leading-tight">{timeFmt(depTime)}</p>
+        <p className="text-[11px] text-muted-foreground" dir="ltr">{depAirport}</p>
+      </div>
+      <div className="min-w-0 flex-1 px-1">
+        <p
+          className={cn(
+            "text-center text-[11px] leading-tight",
+            stopLabel ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          {stopLabel ?? "ישירה"}
+          {dur ? ` · ${dur}` : ""}
+        </p>
+        <div className="relative mt-1 h-px w-full bg-border">
+          <span className="absolute -top-[3px] end-0 h-[7px] w-[7px] rounded-full border bg-background" />
+          <span className="absolute -top-[3px] start-0 h-[7px] w-[7px] rounded-full bg-brand-forest" />
+        </div>
+      </div>
+      <div className="w-14 shrink-0">
+        <p className="font-semibold tabular-nums leading-tight">{arrTime ? timeFmt(arrTime) : "—"}</p>
+        <p className="text-[11px] text-muted-foreground" dir="ltr">{arrAirport}</p>
+      </div>
+    </div>
+  );
+}
+
 export function PackageWizard({
   events,
   initialEventId,
@@ -371,24 +427,43 @@ export function PackageWizard({
 
   const hasMeal = (meal: string | null | undefined) => !!meal && meal !== "nomeal";
 
-  const visibleOfflineFlights = flights.filter(
-    (f) =>
-      (!fsDirectOnly || (!f.outbound_stop_airport && !f.inbound_stop_airport)) &&
-      (!fsBagsOnly || f.bags_included),
-  );
-  const liveFlightMatches = (fsResults ?? []).filter(
-    (o) =>
-      (!fsDirectOnly || o.stops === 0) &&
-      (!fsBagsOnly || (o.outbound.checkBagsIncluded && o.inbound.checkBagsIncluded)),
-  );
+  const [fsSort, setFsSort] = useState<"price" | "time">("price");
+  const [hsSort, setHsSort] = useState<"price" | "distance" | "stars">("price");
+
+  const visibleOfflineFlights = flights
+    .filter(
+      (f) =>
+        (!fsDirectOnly || (!f.outbound_stop_airport && !f.inbound_stop_airport)) &&
+        (!fsBagsOnly || f.bags_included),
+    )
+    .sort((a, b) =>
+      fsSort === "price"
+        ? a.price - b.price
+        : a.outbound_departure_time.localeCompare(b.outbound_departure_time),
+    );
+  const liveFlightMatches = (fsResults ?? [])
+    .filter(
+      (o) =>
+        (!fsDirectOnly || o.stops === 0) &&
+        (!fsBagsOnly || (o.outbound.checkBagsIncluded && o.inbound.checkBagsIncluded)),
+    )
+    .sort((a, b) =>
+      fsSort === "price"
+        ? a.price - b.price
+        : (a.outbound.departureTime || "").localeCompare(b.outbound.departureTime || ""),
+    );
   const visibleHotelGroups = hsBreakfastOnly
     ? hotelGroups
         .map((group) => group.filter((room) => hasMeal(room.meal_plan)))
         .filter((group) => group.length > 0)
     : hotelGroups;
-  const liveHotelMatches = (hsResults ?? []).filter(
-    (o) => (!hsBreakfastOnly || hasMeal(o.meal)) && o.stars >= hsMinStars,
-  );
+  const liveHotelMatches = (hsResults ?? [])
+    .filter((o) => (!hsBreakfastOnly || hasMeal(o.meal)) && o.stars >= hsMinStars)
+    .sort((a, b) => {
+      if (hsSort === "distance") return (a.distance_m || 1e9) - (b.distance_m || 1e9);
+      if (hsSort === "stars") return b.stars - a.stars || a.price - b.price;
+      return a.price - b.price;
+    });
 
   const canContinueFromHotel =
     hotelChoice.mode !== "offline" || (Object.keys(selectedUnits).length > 0 && hotelCapacity >= qty);
@@ -764,6 +839,13 @@ export function PackageWizard({
                       <Luggage className="h-3 w-3" /> עם כבודה
                     </span>
                   </FilterChip>
+                  <span className="ms-2 text-xs text-muted-foreground">מיון:</span>
+                  <FilterChip active={fsSort === "price"} onClick={() => setFsSort("price")}>
+                    מחיר
+                  </FilterChip>
+                  <FilterChip active={fsSort === "time"} onClick={() => setFsSort("time")}>
+                    שעת יציאה
+                  </FilterChip>
                 </div>
               )}
               {visibleOfflineFlights.length > 0 && (
@@ -778,8 +860,8 @@ export function PackageWizard({
                     selected={flightChoice.mode === "offline" && flightChoice.flightId === f.id}
                     onClick={() => setFlightChoice({ mode: "offline", flightId: f.id })}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <div className="flex w-36 shrink-0 items-center gap-2">
                         {f.airline_logo ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={f.airline_logo} alt="" className="h-8 w-8 rounded object-contain" />
@@ -788,33 +870,41 @@ export function PackageWizard({
                         )}
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">{f.airline_name}</p>
-                          <p className="text-xs text-muted-foreground" dir="ltr">
-                            {f.outbound_departure_airport}→{f.outbound_arrival_airport}{" "}
-                            {dateFmt(f.outbound_departure_time)} {timeFmt(f.outbound_departure_time)}
-                            {" · "}
-                            {f.inbound_departure_airport}→{f.inbound_arrival_airport}{" "}
-                            {dateFmt(f.inbound_departure_time)} {timeFmt(f.inbound_departure_time)}
-                          </p>
-                          <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            {f.outbound_stop_airport || f.inbound_stop_airport
-                              ? `עצירה: ${[f.outbound_stop_airport, f.inbound_stop_airport].filter(Boolean).join(", ")}`
-                              : "ישירה"}
-                            {f.bags_included ? (
-                              <span className="flex items-center gap-1">
-                                <Luggage className="h-3 w-3" />
-                                כבודה כלולה
-                                {f.checked_bag_kg ? ` (${f.checked_bag_kg} ק"ג)` : ""}
-                              </span>
-                            ) : (
-                              <span>ללא כבודה רשומה</span>
-                            )}
+                          <p className="text-[11px] text-muted-foreground" dir="ltr">
+                            {dateFmt(f.outbound_departure_time)} – {dateFmt(f.inbound_departure_time)}
                           </p>
                         </div>
                       </div>
-                      <div className="text-end">
-                        <p className="font-semibold tabular-nums">{usd(f.price)}</p>
-                        <p className="text-xs text-muted-foreground">
+                      <div className="min-w-60 flex-1 space-y-2">
+                        <FlightLeg
+                          label="הלוך"
+                          depTime={f.outbound_departure_time}
+                          depAirport={f.outbound_departure_airport}
+                          arrTime={f.outbound_arrival_time}
+                          arrAirport={f.outbound_arrival_airport}
+                          duration={f.outbound_duration}
+                          stopLabel={f.outbound_stop_airport ? `עצירה · ${f.outbound_stop_airport}` : null}
+                        />
+                        <FlightLeg
+                          label="חזור"
+                          depTime={f.inbound_departure_time}
+                          depAirport={f.inbound_departure_airport}
+                          arrTime={f.inbound_arrival_time}
+                          arrAirport={f.inbound_arrival_airport}
+                          duration={f.inbound_duration}
+                          stopLabel={f.inbound_stop_airport ? `עצירה · ${f.inbound_stop_airport}` : null}
+                        />
+                      </div>
+                      <div className="w-32 shrink-0 text-end">
+                        <p className="font-display text-lg font-bold tabular-nums">{usd(f.price)}</p>
+                        <p className="text-[11px] text-muted-foreground">
                           לנוסע · {soldOutForQty ? "אין מספיק מקומות" : `נותרו ${f.remaining}`}
+                        </p>
+                        <p className="mt-1 flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
+                          <Luggage className="h-3 w-3" />
+                          {f.bags_included
+                            ? `כבודה כלולה${f.checked_bag_kg ? ` · ${f.checked_bag_kg} ק"ג` : ""}`
+                            : "ללא כבודה רשומה"}
                         </p>
                       </div>
                     </div>
@@ -881,8 +971,8 @@ export function PackageWizard({
                             }
                             onClick={() => setFlightChoice({ mode: "live-offer", offer })}
                           >
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex flex-wrap items-center gap-4">
+                              <div className="flex w-36 shrink-0 items-center gap-2">
                                 {offer.metadata?.logo ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
@@ -896,37 +986,49 @@ export function PackageWizard({
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-medium">
                                     {offer.metadata?.name || offer.airline}
-                                    {offer.isOffline && (
-                                      <Badge variant="secondary" className="ms-2 font-normal">
-                                        מלאי שלנו
-                                      </Badge>
-                                    )}
                                   </p>
-                                  <p className="text-xs text-muted-foreground" dir="ltr">
-                                    {offer.outbound.departureAirport}→{offer.outbound.arrivalAirport}{" "}
-                                    {dateFmt(offer.outbound.departureTime)}{" "}
-                                    {timeFmt(offer.outbound.departureTime)}
-                                    {" · "}
-                                    {offer.inbound.departureAirport}→{offer.inbound.arrivalAirport}{" "}
-                                    {dateFmt(offer.inbound.departureTime)}{" "}
-                                    {timeFmt(offer.inbound.departureTime)}
+                                  <p className="text-[11px] text-muted-foreground" dir="ltr">
+                                    {dateFmt(offer.outbound.departureTime)} –{" "}
+                                    {dateFmt(offer.inbound.departureTime)}
                                   </p>
-                                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    {offer.stops > 0 ? `${offer.stops} עצירות` : "ישירה"}
-                                    {(offer.outbound.checkBagsIncluded ||
-                                      offer.inbound.checkBagsIncluded) && (
-                                      <span className="flex items-center gap-1">
-                                        <Luggage className="h-3 w-3" /> כבודה כלולה
-                                      </span>
-                                    )}
-                                  </p>
+                                  {offer.isOffline && (
+                                    <Badge variant="secondary" className="mt-0.5 font-normal">
+                                      מלאי שלנו
+                                    </Badge>
+                                  )}
                                 </div>
                               </div>
-                              <div className="text-end">
-                                <p className="font-semibold tabular-nums">{usd(offer.price)}</p>
-                                <p className="text-xs text-muted-foreground">
+                              <div className="min-w-60 flex-1 space-y-2">
+                                <FlightLeg
+                                  label="הלוך"
+                                  depTime={offer.outbound.departureTime}
+                                  depAirport={offer.outbound.departureAirport}
+                                  arrTime={offer.outbound.arrivalTime}
+                                  arrAirport={offer.outbound.arrivalAirport}
+                                  stopLabel={offer.stops > 0 ? `${offer.stops} עצירות` : null}
+                                />
+                                <FlightLeg
+                                  label="חזור"
+                                  depTime={offer.inbound.departureTime}
+                                  depAirport={offer.inbound.departureAirport}
+                                  arrTime={offer.inbound.arrivalTime}
+                                  arrAirport={offer.inbound.arrivalAirport}
+                                  stopLabel={offer.stops > 0 ? `${offer.stops} עצירות` : null}
+                                />
+                              </div>
+                              <div className="w-32 shrink-0 text-end">
+                                <p className="font-display text-lg font-bold tabular-nums">
+                                  {usd(offer.price)}
+                                </p>
+                                <p className="text-[11px] text-muted-foreground">
                                   {`סה"כ ל-${offer.numOfTravelers} נוסעים`}
                                 </p>
+                                {(offer.outbound.checkBagsIncluded ||
+                                  offer.inbound.checkBagsIncluded) && (
+                                  <p className="mt-1 flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
+                                    <Luggage className="h-3 w-3" /> כבודה כלולה
+                                  </p>
+                                )}
                               </div>
                             </div>
                           </OptionCard>
@@ -985,6 +1087,16 @@ export function PackageWizard({
                       {stars === 0 ? "כל הדירוגים" : `${stars}★ ומעלה`}
                     </FilterChip>
                   ))}
+                  <span className="ms-2 text-xs text-muted-foreground">מיון:</span>
+                  <FilterChip active={hsSort === "price"} onClick={() => setHsSort("price")}>
+                    מחיר
+                  </FilterChip>
+                  <FilterChip active={hsSort === "distance"} onClick={() => setHsSort("distance")}>
+                    קרוב לאירוע
+                  </FilterChip>
+                  <FilterChip active={hsSort === "stars"} onClick={() => setHsSort("stars")}>
+                    דירוג
+                  </FilterChip>
                 </div>
               )}
               {visibleHotelGroups.length > 0 && (
@@ -1156,10 +1268,10 @@ export function PackageWizard({
                               <img
                                 src={option.image}
                                 alt=""
-                                className="h-14 w-14 shrink-0 rounded-lg object-cover"
+                                className="h-20 w-24 shrink-0 rounded-lg object-cover"
                               />
                             ) : (
-                              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted">
+                              <div className="flex h-20 w-24 shrink-0 items-center justify-center rounded-lg bg-muted">
                                 <BedDouble className="h-5 w-5 text-muted-foreground" />
                               </div>
                             )}

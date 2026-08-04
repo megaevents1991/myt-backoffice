@@ -357,10 +357,15 @@ export interface BuilderFlight {
   checked_bag_kg: number | null;
   cabin_bag_kg: number | null;
   outbound_departure_time: string;
+  outbound_arrival_time: string;
+  /** ISO-8601 duration ("PT4H5M") like main's flight search emits. */
+  outbound_duration: string;
   outbound_departure_airport: string;
   outbound_arrival_airport: string;
   outbound_flight_number: string;
   inbound_departure_time: string;
+  inbound_arrival_time: string;
+  inbound_duration: string;
   inbound_departure_airport: string;
   inbound_arrival_airport: string;
   inbound_flight_number: string;
@@ -499,10 +504,14 @@ export async function getPackageBuilderInventory(eventId: number): Promise<Build
       checked_bag_kg: f.checked_bag_kg ?? null,
       cabin_bag_kg: f.cabin_bag_kg ?? null,
       outbound_departure_time: f.outbound_departure_time,
+      outbound_arrival_time: f.outbound_arrival_time,
+      outbound_duration: pgIntervalToPT(f.outbound_duration),
       outbound_departure_airport: f.outbound_departure_airport,
       outbound_arrival_airport: f.outbound_arrival_airport,
       outbound_flight_number: f.outbound_flight_number,
       inbound_departure_time: f.inbound_departure_time,
+      inbound_arrival_time: f.inbound_arrival_time,
+      inbound_duration: pgIntervalToPT(f.inbound_duration),
       inbound_departure_airport: f.inbound_departure_airport,
       inbound_arrival_airport: f.inbound_arrival_airport,
       inbound_flight_number: f.inbound_flight_number,
