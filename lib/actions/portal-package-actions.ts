@@ -179,7 +179,7 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
   ];
   const lockedSoldOut = await lockedFlightSoldOutSet(lockedIds);
 
-  return rows.map((row) => {
+  const builderEvents = rows.map((row) => {
     const tickets = ((row.tickets_and_rates ?? []) as EventTicket[])
       .filter((t) => t && t.available !== false && typeof t.category === "string")
       .map((t) => ({
@@ -208,6 +208,11 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
       tickets,
     };
   });
+
+  // Sold-out events are dead rows for a link builder: no package can be built
+  // and a shared link would land on a sold-out page. (Deleted and past events
+  // are already excluded by the query itself.)
+  return builderEvents.filter((event) => !event.sold_out);
 }
 
 export interface BuilderFlight {

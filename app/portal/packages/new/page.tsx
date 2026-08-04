@@ -4,10 +4,16 @@ import { PackageWizard } from "./package-wizard";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewPackagePage() {
+export default async function NewPackagePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ event?: string }>;
+}) {
   const session = await getSession();
   if (!session?.partner_code) return null;
 
+  const { event: eventParam } = await searchParams;
+  const initialEventId = Number(eventParam);
   const events = await getPackageBuilderEvents();
 
   return (
@@ -19,7 +25,10 @@ export default async function NewPackagePage() {
           על החבילה המוכנה.
         </p>
       </div>
-      <PackageWizard events={events} />
+      <PackageWizard
+        events={events}
+        initialEventId={Number.isFinite(initialEventId) ? initialEventId : undefined}
+      />
     </main>
   );
 }

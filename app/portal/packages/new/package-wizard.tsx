@@ -125,7 +125,14 @@ const usd = (value: number) => `$${Math.round(value).toLocaleString("en-US")}`;
 
 const dateOnly = (value: string | null | undefined) => (value ? value.slice(0, 10) : "");
 
-export function PackageWizard({ events }: { events: BuilderEvent[] }) {
+export function PackageWizard({
+  events,
+  initialEventId,
+}: {
+  events: BuilderEvent[];
+  /** Deep entry from the unified packages page — lands straight on tickets. */
+  initialEventId?: number;
+}) {
   const [step, setStep] = useState(0);
   const [query, setQuery] = useState("");
   const [event, setEvent] = useState<BuilderEvent | null>(null);
@@ -196,6 +203,15 @@ export function PackageWizard({ events }: { events: BuilderEvent[] }) {
       })
       .finally(() => setInventoryLoading(false));
   };
+
+  // ?event= deep entry: skip the search step when the event is buildable.
+  // Runs once — a later manual "build another" must not snap back here.
+  useEffect(() => {
+    if (!initialEventId) return;
+    const preselected = events.find((e) => e.id === initialEventId);
+    if (preselected) selectEvent(preselected);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const selectedTicket = event?.tickets.find((t) => t.category === category) ?? null;
 
