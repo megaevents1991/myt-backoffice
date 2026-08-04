@@ -102,6 +102,19 @@ export async function POST(
       profile = anyProfile ?? null;
     }
 
+    // Until the payment_link column lands, createQuote degrades the link into
+    // the notes — lift it back out so the PDF renders a real clickable CTA
+    // instead of dead text, and drop that line from the visible notes.
+    let paymentLink: string | null = quote.payment_link ?? null;
+    let notes: string | null = quote.notes ?? null;
+    if (!paymentLink && notes) {
+      const match = notes.match(/להזמנה ותשלום מאובטח:\s*(\S+)/);
+      if (match) {
+        paymentLink = match[1];
+        notes = notes.replace(match[0], "").trim() || null;
+      }
+    }
+
     const html = renderQuoteHtml({
       quote: {
         id: quote.id,
@@ -110,9 +123,9 @@ export async function POST(
         title: quote.title,
         line_items: quote.line_items ?? [],
         total: quote.total,
-        notes: quote.notes,
+        notes,
         valid_until: quote.valid_until,
-        payment_link: quote.payment_link ?? null,
+        payment_link: paymentLink,
       },
       partner: {
         name_hebrew: partnerName,
