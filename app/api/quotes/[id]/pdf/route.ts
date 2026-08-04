@@ -23,13 +23,25 @@ export async function POST(
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
 
-    const { data: quote, error: quoteError } = await (supabase as any)
+    let { data: quote, error: quoteError } = await (supabase as any)
       .from("quotes")
       .select(
-        "id,created_at,created_by,partner_tracking_code,customer_name,title,line_items,total,notes,valid_until",
+        "id,created_at,created_by,partner_tracking_code,customer_name,title,line_items,total,notes,valid_until,payment_link",
       )
       .eq("id", quoteId)
       .maybeSingle();
+
+    // Migration race: before the payment_link column lands, fall back to the
+    // original column list (the link, if any, lives inside notes then).
+    if (quoteError && (quoteError.code === "42703" || quoteError.code === "PGRST204")) {
+      ({ data: quote, error: quoteError } = await (supabase as any)
+        .from("quotes")
+        .select(
+          "id,created_at,created_by,partner_tracking_code,customer_name,title,line_items,total,notes,valid_until",
+        )
+        .eq("id", quoteId)
+        .maybeSingle());
+    }
 
     if (quoteError) {
       console.error("quote pdf: fetch quote failed", JSON.stringify(quoteError));
@@ -100,6 +112,7 @@ export async function POST(
         total: quote.total,
         notes: quote.notes,
         valid_until: quote.valid_until,
+        payment_link: quote.payment_link ?? null,
       },
       partner: {
         name_hebrew: partnerName,

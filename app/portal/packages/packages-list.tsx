@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Check, Copy, Loader2, Package, Trash2 } from "lucide-react";
+import { Check, Copy, ExternalLink, FileText, Loader2, Package, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -65,7 +65,14 @@ function PartBadge({
   return <Badge variant="outline" className="font-normal text-muted-foreground">ללא</Badge>;
 }
 
-export function PackagesList({ packages }: { packages: PreparedPackageListItem[] }) {
+export function PackagesList({
+  packages,
+  isAgent = false,
+}: {
+  packages: PreparedPackageListItem[];
+  /** Agents also get "send offer" and "order for the customer" per package. */
+  isAgent?: boolean;
+}) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -130,7 +137,25 @@ export function PackagesList({ packages }: { packages: PreparedPackageListItem[]
                 <PartBadge mode={pkg.hotel} offlineLabel="מלון מוצמד" summary={pkg.hotel_summary} />
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {isAgent && (
+                <>
+                  <Button asChild type="button" size="sm" variant="outline">
+                    <Link href={`/portal/quotes/new?package=${pkg.id}`}>
+                      <FileText className="h-4 w-4" />
+                      שלח הצעה ללקוח
+                    </Link>
+                  </Button>
+                  <Button asChild type="button" size="sm" variant="outline">
+                    {/* The site's order flow — agent-mode settlement (card /
+                        customer card / voucher when allowed) happens there. */}
+                    <a href={pkg.link} target="_blank" rel="noreferrer">
+                      <ExternalLink className="h-4 w-4" />
+                      הזמנה עבור הלקוח
+                    </a>
+                  </Button>
+                </>
+              )}
               <CopyLinkButton link={pkg.link} />
               <AlertDialog>
                 <AlertDialogTrigger asChild>

@@ -6,6 +6,7 @@ import { ChevronsUpDown, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Popover,
@@ -53,36 +54,69 @@ type LineItemRow = {
   fromEvent?: boolean;
 };
 
+export interface QuotePrefill {
+  eventId: number;
+  qty: number;
+  note: string;
+  /** The package's coded order link — offered as the PDF's pay CTA. */
+  paymentLink: string;
+}
+
 export function QuoteForm({
   events,
   terms,
+  prefill = null,
 }: {
   events: QuoteEventOption[];
   /** The agent's commission, used to show their discount ceiling. */
   terms: { type: CommissionType; rate: number } | null;
+  /** Seeded from a prepared package ("שלח הצעה ללקוח"). */
+  prefill?: QuotePrefill | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
 
+  // A prefill only sticks when its event is still quotable (in the list).
+  const prefillEvent = prefill
+    ? events.find((e) => e.id === prefill.eventId) ?? null
+    : null;
+
   // null = nothing chosen yet (placeholder shown); "" = explicit "ללא אירוע";
   // otherwise the string id of the selected event.
-  const [eventId, setEventId] = useState<string | null>(null);
+  const [eventId, setEventId] = useState<string | null>(
+    prefillEvent ? String(prefillEvent.id) : null,
+  );
   const [eventOpen, setEventOpen] = useState(false);
 
   const [customerName, setCustomerName] = useState("");
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(
+    prefillEvent ? `הצעת מחיר — ${prefillEvent.name}` : "",
+  );
   const [titleTouched, setTitleTouched] = useState(false);
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(prefill?.note ?? "");
   const [validUntil, setValidUntil] = useState("");
+  // Attach the package's order link to the PDF — the agent may switch the
+  // offer to information-only instead.
+  const [includeLink, setIncludeLink] = useState(!!prefill?.paymentLink);
 
   // Stable per-row keys (not array index) so removing a middle row doesn't
   // shift focus/state onto the wrong input.
   const nextKeyRef = useRef(0);
   const newKey = () => nextKeyRef.current++;
-  const [lineItems, setLineItems] = useState<LineItemRow[]>(() => [
-    { label: "", qty: "1", unit_price: "0", _key: newKey() },
-  ]);
+  const [lineItems, setLineItems] = useState<LineItemRow[]>(() =>
+    prefillEvent
+      ? [
+          {
+            label: `חבילה: ${prefillEvent.name}`,
+            qty: String(prefill?.qty ?? 1),
+            unit_price: String(prefillEvent.suggested_price ?? 0),
+            _key: newKey(),
+            fromEvent: true,
+          },
+        ]
+      : [{ label: "", qty: "1", unit_price: "0", _key: newKey() }],
+  );
 
   const selectedEvent =
     eventId && eventId !== "" ? events.find((e) => String(e.id) === eventId) : undefined;
@@ -231,6 +265,8 @@ export function QuoteForm({
             : null,
         notes: notes.trim() || null,
         valid_until: validUntil || null,
+        payment_link:
+          prefill?.paymentLink && includeLink ? prefill.paymentLink : null,
       });
 
       if (!result.ok) {
@@ -331,6 +367,20 @@ export function QuoteForm({
             className="w-48"
           />
         </div>
+
+        {prefill?.paymentLink && (
+          <div className="flex items-start justify-between gap-4 rounded-md border bg-muted/30 p-3">
+            <div>
+              <p className="text-sm font-medium">לינק להרשמה ותשלום ב-PDF</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {includeLink
+                  ? "ההצעה תכלול כפתור שמוביל את הלקוח ישר לחבילה באתר, על הקוד שלכם."
+                  : "הצעה למידע בלבד — בלי לינק תשלום."}
+              </p>
+            </div>
+            <Switch checked={includeLink} onCheckedChange={setIncludeLink} />
+          </div>
+        )}
       </div>
 
       <div className="space-y-3 rounded-md border p-4">

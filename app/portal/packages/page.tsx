@@ -71,7 +71,7 @@ export default async function PortalPackagesPage() {
         </CardContent>
       </Card>
 
-      <PackagesList packages={packages} />
+      <PackagesList packages={packages} isAgent={session.role === "agent"} />
 
       <Card>
         <CardHeader>

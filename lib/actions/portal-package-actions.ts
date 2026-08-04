@@ -1191,6 +1191,7 @@ export interface PreparedPackageListItem {
   id: number;
   link: string;
   created_at: string;
+  event_id: number;
   event_name: string;
   event_date: string;
   location_name: string;
@@ -1265,6 +1266,7 @@ export async function getMyPreparedPackages(): Promise<PreparedPackageListItem[]
       id: row.id,
       link: partnerLink(session.partner_code, row.event_id, row.share_token),
       created_at: row.created_at,
+      event_id: row.event_id,
       event_name: info.name ?? `אירוע ${row.event_id}`,
       event_date: info.date ?? "",
       location_name: info.location_name ?? "",

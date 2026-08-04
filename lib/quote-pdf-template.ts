@@ -25,6 +25,8 @@ export interface QuoteForPdf {
   total: number | null;
   notes: string | null;
   valid_until: string | null;
+  /** Partner-coded site order link → the "register & pay" CTA; null = info-only. */
+  payment_link?: string | null;
 }
 
 export interface PartnerBrandingForPdf {
@@ -129,6 +131,16 @@ export function renderQuoteHtml(args: {
       </div>`
     : "";
 
+  // href AND visible text both escaped; the action already restricted the URL
+  // to our own site carrying the agent's code.
+  const paymentHtml = quote.payment_link
+    ? `
+      <div class="pay-cta">
+        <a class="pay-btn" href="${esc(quote.payment_link)}">להרשמה ותשלום מאובטח באתר ›</a>
+        <div class="pay-url">${esc(quote.payment_link)}</div>
+      </div>`
+    : "";
+
   return `<!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head>
@@ -175,6 +187,13 @@ export function renderQuoteHtml(args: {
   thead th.num, td.num { text-align: left; }
   tbody td { padding: 8px; border-bottom: 1px solid #eceef1; font-size: 13px; }
   tfoot td { padding: 10px 8px; font-weight: 700; font-size: 15px; border-top: 2px solid #1f2430; }
+  .pay-cta { margin: 24px 0 20px; text-align: center; }
+  .pay-btn {
+    display: inline-block; padding: 12px 28px; border-radius: 999px;
+    background: #0A1A14; color: #5BFF95; font-weight: 700; font-size: 15px;
+    text-decoration: none;
+  }
+  .pay-url { margin-top: 8px; font-size: 10px; color: #888e99; direction: ltr; word-break: break-all; }
   .notes { margin-bottom: 20px; padding: 10px 12px; background: #f7f8fa; border-radius: 6px; }
   .notes-label { font-weight: 600; margin-bottom: 4px; }
   .notes-body { white-space: pre-wrap; font-size: 13px; }
@@ -229,6 +248,7 @@ export function renderQuoteHtml(args: {
       </tfoot>
     </table>
 
+    ${paymentHtml}
     ${notesHtml}
 
     <div class="footer">הצעה זו אינה מהווה התחייבות. המחירים בדולר ארה"ב.</div>
