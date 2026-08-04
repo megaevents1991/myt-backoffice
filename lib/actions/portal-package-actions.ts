@@ -5,6 +5,7 @@ import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { partnerLink } from "@/lib/site";
 import { computePackagePrice, isEventSoldOut } from "@/lib/package-price";
+import type { TixStockListing } from "@/lib/tixstock.types";
 import type { EventTicket, EventType } from "@/types/app.types";
 
 /** myt-main's deployment — the same base URL the hotel proxy already uses. */
@@ -99,6 +100,8 @@ export interface BuilderEvent {
     /** Site price per traveler with THIS category. */
     site_price: number | null;
   }[];
+  /** tx_event only: TixStock event id (from any ticket's eid) → live pricing. */
+  tix_event_id: string | null;
 }
 
 type EventListRow = {
@@ -109,6 +112,7 @@ type EventListRow = {
   type: string;
   tickets_and_rates: EventTicket[] | null;
   map_image_url?: string | null;
+  tx_excluded_sections?: string[] | null;
   is_deleted?: string | null;
   base_flight_price: number | null;
   base_hotel_price: number | null;
@@ -123,7 +127,7 @@ type EventListRow = {
 };
 
 const EVENT_COLUMNS =
-  "id, name, date, location, type, tickets_and_rates, map_image_url, is_deleted, base_flight_price, base_hotel_price, " +
+  "id, name, date, location, type, tickets_and_rates, map_image_url, tx_excluded_sections, is_deleted, base_flight_price, base_hotel_price, " +
   "event_additional_markup, markup_ticket, markup_flight, markup_hotel, tags, locked_flight_id, " +
   "def_date_depart, def_date_return";
 
@@ -210,6 +214,12 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
       def_date_depart: row.def_date_depart ?? null,
       def_date_return: row.def_date_return ?? null,
       tickets,
+      tix_event_id:
+        row.type === "tx_event"
+          ? (((row.tickets_and_rates ?? []) as (EventTicket & { eid?: string })[]).find(
+              (t) => t?.eid,
+            )?.eid ?? null)
+          : null,
     };
   });
 
@@ -217,6 +227,122 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
   // and a shared link would land on a sold-out page. (Deleted and past events
   // are already excluded by the query itself.)
   return builderEvents.filter((event) => !event.sold_out);
+}
+
+export interface LiveTicketCategory {
+  category: string;
+  id: string;
+  vendor?: string;
+  /** Live per-ticket price (ceil'd USD) — cheapest listing satisfying qty. */
+  price: number;
+  /** Customer-facing site price per traveler at that live price. */
+  site_price: number | null;
+}
+
+export type LiveTicketsResult =
+  | { ok: true; categories: LiveTicketCategory[]; listings: TixStockListing[] }
+  | { ok: false; error: string };
+
+/**
+ * tx_event live pricing — proxied through main's own /api/tixstock/tickets so
+ * the wizard shows EXACTLY what the customer's ticket step shows: the same
+ * listings, the same per-quantity cheapest-qualifying rule, the same refreshed
+ * category list. (Main: app/order/TicketSelection.tsx.)
+ */
+export async function getLiveTicketOffers(input: {
+  eventId: number;
+  qty: number;
+}): Promise<LiveTicketsResult> {
+  await requirePartner();
+
+  const eventId = Number(input.eventId);
+  const qty = Math.max(1, Math.min(20, Math.floor(input.qty || 1)));
+  if (!Number.isFinite(eventId)) return { ok: false, error: "אירוע לא תקין" };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("events")
+    .select(EVENT_COLUMNS)
+    .eq("id", eventId)
+    .maybeSingle();
+  if (error || !data) {
+    console.error("getLiveTicketOffers event:", JSON.stringify(error));
+    return { ok: false, error: "האירוע לא נמצא" };
+  }
+  const row = data as EventListRow;
+  if (row.type !== "tx_event") return { ok: false, error: "לאירוע הזה אין תמחור חי" };
+
+  const tickets = ((row.tickets_and_rates ?? []) as (EventTicket & { eid?: string })[]).filter(
+    (t) => t && t.available !== false && typeof t.category === "string",
+  );
+  const tixEventId = tickets.find((t) => t.eid)?.eid ?? null;
+  if (!tixEventId) return { ok: false, error: "לאירוע אין מזהה TixStock" };
+
+  try {
+    const params = new URLSearchParams({
+      event_id: tixEventId,
+      ticket_quantity: String(qty),
+      db_event_id: String(row.id),
+    });
+    if (row.tx_excluded_sections?.length) {
+      params.set("excluded_sections", row.tx_excluded_sections.join(","));
+    }
+    const res = await fetch(`${MAIN_APP_URL}/api/tixstock/tickets?${params.toString()}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(30_000),
+    });
+    const json = (await res.json()) as {
+      data?: { data?: TixStockListing[] };
+      tickets_and_rates?: (EventTicket & { eid?: string })[];
+    };
+    if (!res.ok) {
+      console.error("getLiveTicketOffers upstream:", res.status);
+      return { ok: false, error: "טעינת המחירים החיים נכשלה. נסו שוב." };
+    }
+    const listings = json?.data?.data ?? [];
+    const categories = (json?.tickets_and_rates ?? tickets).filter(
+      (t) => t && t.available !== false && typeof t.category === "string",
+    );
+
+    // Main's rule verbatim: cheapest listing in the category that can satisfy
+    // qty (singles need a true single or a fully splittable listing).
+    const livePriceFor = (category: string): number | null => {
+      const norm = category.trim().toLowerCase();
+      const qualifying = listings.filter((l) => {
+        const listingCat = l.seat_details?.category?.trim().toLowerCase();
+        if (listingCat !== norm) return false;
+        const qtyAvail = l.number_of_tickets_for_sale?.quantity_available ?? 0;
+        const splitQty = l.number_of_tickets_for_sale?.split_quantity ?? 0;
+        if (qty === 1) return qtyAvail === 1 || qtyAvail === splitQty;
+        return qtyAvail >= qty || splitQty >= qty;
+      });
+      if (qualifying.length === 0) return null;
+      const cheapest = qualifying.reduce((min, l) => {
+        const a = parseFloat(l.proceed_price?.amount ?? "Infinity");
+        const b = parseFloat(min.proceed_price?.amount ?? "Infinity");
+        return a < b ? l : min;
+      }, qualifying[0]);
+      const amount = parseFloat(cheapest.proceed_price?.amount ?? "NaN");
+      return Number.isFinite(amount) ? Math.ceil(amount) : null;
+    };
+
+    const result: LiveTicketCategory[] = [];
+    for (const t of categories) {
+      const live = livePriceFor(t.category);
+      if (live == null) continue; // cannot satisfy the requested quantity
+      result.push({
+        category: t.category,
+        id: t.id,
+        vendor: t.vendor,
+        price: live,
+        site_price: computePackagePrice(row, live),
+      });
+    }
+    return { ok: true, categories: result, listings };
+  } catch (err) {
+    console.error("getLiveTicketOffers:", err);
+    return { ok: false, error: "טעינת המחירים החיים נכשלה. נסו שוב." };
+  }
 }
 
 export interface BuilderFlight {

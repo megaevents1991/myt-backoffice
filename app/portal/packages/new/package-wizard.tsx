@@ -23,8 +23,11 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { TixstockDynamicMap } from "@/components/TixstockDynamicMap";
+import type { TixStockMatchableListing } from "@/lib/tixstock-map";
 import {
   createPreparedPackage,
+  getLiveTicketOffers,
   getPackageBuilderInventory,
   searchLiveFlights,
   searchLiveHotels,
@@ -33,6 +36,7 @@ import {
   type BuilderHotelRoom,
   type LiveFlightOffer,
   type LiveHotelOption,
+  type LiveTicketCategory,
 } from "@/lib/actions/portal-package-actions";
 
 type FlightChoice =
@@ -194,6 +198,70 @@ export function PackageWizard({
   const [hsBreakfastOnly, setHsBreakfastOnly] = useState(false);
   const [hsMinStars, setHsMinStars] = useState(0);
 
+  // tx_event live pricing + dynamic map — mirrors main's ticket step.
+  const [liveTix, setLiveTix] = useState<LiveTicketCategory[] | null>(null);
+  const [tixListings, setTixListings] = useState<TixStockMatchableListing[]>([]);
+  const [tixLoading, setTixLoading] = useState(false);
+  const [tixError, setTixError] = useState<string | null>(null);
+  const [hoveredCat, setHoveredCat] = useState<string | null>(null);
+
+  const isTx = event?.type === "tx_event";
+  useEffect(() => {
+    if (!event || event.type !== "tx_event" || !event.tix_event_id) {
+      setLiveTix(null);
+      setTixListings([]);
+      setTixError(null);
+      return;
+    }
+    let cancelled = false;
+    setTixLoading(true);
+    setTixError(null);
+    getLiveTicketOffers({ eventId: event.id, qty })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok) {
+          setLiveTix(res.categories);
+          setTixListings(
+            res.listings.map((l) => ({
+              id: l.id,
+              seat_details: l.seat_details ?? {},
+              proceed_price: (() => {
+                const n = parseFloat(l.proceed_price?.amount ?? "");
+                return Number.isFinite(n) ? n : null;
+              })(),
+            })),
+          );
+          setCategory((prev) =>
+            prev && res.categories.some((c) => c.category === prev)
+              ? prev
+              : res.categories[0]?.category ?? null,
+          );
+        } else {
+          setTixError(res.error);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTixLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event?.id, event?.type, event?.tix_event_id, qty]);
+
+  /** Cheapest listing of a category — hover/selection anchor for the map. */
+  const cheapestListingOf = (cat: string | null): TixStockMatchableListing | null => {
+    if (!cat) return null;
+    const norm = cat.trim().toLowerCase();
+    const inCat = tixListings.filter(
+      (l) => l.seat_details?.category?.trim().toLowerCase() === norm,
+    );
+    if (inCat.length === 0) return null;
+    return inCat.reduce((min, l) =>
+      (l.proceed_price ?? Infinity) < (min.proceed_price ?? Infinity) ? l : min,
+    );
+  };
+
   // Party size drives both searches — a qty change invalidates old results.
   useEffect(() => {
     setFsResults(null);
@@ -244,7 +312,15 @@ export function PackageWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectedTicket = event?.tickets.find((t) => t.category === category) ?? null;
+  // tx events price from the live feed; everything else from the event row.
+  const activeTickets: {
+    category: string;
+    price: number;
+    id: string;
+    vendor?: string;
+    site_price: number | null;
+  }[] = isTx && liveTix ? liveTix : event?.tickets ?? [];
+  const selectedTicket = activeTickets.find((t) => t.category === category) ?? null;
 
   // ------- offline hotel grouping (unchanged mechanics) -------
   const hotelGroups = useMemo(() => {
@@ -527,36 +603,82 @@ export function PackageWizard({
             <span className="font-medium">{event.name}</span>
             <span className="text-muted-foreground"> · {dateFmt(event.date)}</span>
           </div>
-          {event.map_image_url && (
-            <details className="group rounded-xl border bg-card shadow-card" open>
-              <summary className="flex cursor-pointer items-center gap-2 p-3 text-sm font-medium">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                מפת האולם והקטגוריות
-                <span className="text-xs font-normal text-muted-foreground group-open:hidden">
-                  (לחצו להצגה)
-                </span>
-              </summary>
-              <div className="border-t p-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={event.map_image_url}
-                  alt={`מפת האולם — ${event.name}`}
-                  className="mx-auto max-h-96 w-auto max-w-full rounded-lg object-contain"
+          {event.map_image_url &&
+            (isTx && tixListings.length > 0 ? (
+              <div className="rounded-xl border bg-card p-3 shadow-card">
+                <p className="mb-2 flex items-center gap-2 text-sm font-medium">
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  מפת האולם — לחיצה על גוש בוחרת קטגוריה
+                </p>
+                <TixstockDynamicMap
+                  mapUrl={event.map_image_url}
+                  tickets={tixListings}
+                  hoveredTicket={cheapestListingOf(hoveredCat)}
+                  selectedTicketId={cheapestListingOf(category)?.id ?? null}
+                  onTicketSelect={(ticketId) => {
+                    const listing = tixListings.find((l) => l.id === ticketId);
+                    const cat = listing?.seat_details?.category?.trim().toLowerCase();
+                    if (!cat) return;
+                    const match = activeTickets.find(
+                      (t) => t.category.trim().toLowerCase() === cat,
+                    );
+                    if (match) setCategory(match.category);
+                  }}
                 />
               </div>
-            </details>
+            ) : (
+              <details className="group rounded-xl border bg-card shadow-card" open>
+                <summary className="flex cursor-pointer items-center gap-2 p-3 text-sm font-medium">
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  מפת האולם והקטגוריות
+                  <span className="text-xs font-normal text-muted-foreground group-open:hidden">
+                    (לחצו להצגה)
+                  </span>
+                </summary>
+                <div className="border-t p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={event.map_image_url}
+                    alt={`מפת האולם — ${event.name}`}
+                    className="mx-auto max-h-96 w-auto max-w-full rounded-lg object-contain"
+                  />
+                </div>
+              </details>
+            ))}
+          {isTx && tixLoading && (
+            <div className="flex items-center gap-2 rounded-xl border p-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              מושכים מחירים חיים מהספק ל-{qty} כרטיסים...
+            </div>
+          )}
+          {isTx && tixError && (
+            <p className="text-sm text-destructive">
+              {tixError}{" "}
+              <span className="text-muted-foreground">
+                (מוצגים מחירי הבוקר מהמערכת)
+              </span>
+            </p>
           )}
           <div className="grid gap-2 sm:grid-cols-2">
-            {event.tickets.map((t) => (
+            {activeTickets.map((t) => (
               <OptionCard
                 key={t.category}
                 selected={category === t.category}
                 onClick={() => setCategory(t.category)}
               >
-                <div className="flex items-center justify-between gap-3">
+                <div
+                  onMouseEnter={() => setHoveredCat(t.category)}
+                  onMouseLeave={() => setHoveredCat((c) => (c === t.category ? null : c))}
+                  className="flex items-center justify-between gap-3"
+                >
                   <span className="flex items-center gap-2 font-medium">
                     <Ticket className="h-4 w-4 text-muted-foreground" />
                     {t.category}
+                    {isTx && liveTix && (
+                      <Badge variant="secondary" className="font-normal">
+                        מחיר חי
+                      </Badge>
+                    )}
                   </span>
                   <span className="text-end">
                     {t.site_price != null && (
@@ -572,6 +694,11 @@ export function PackageWizard({
               </OptionCard>
             ))}
           </div>
+          {isTx && liveTix && activeTickets.length === 0 && !tixLoading && (
+            <p className="text-sm text-muted-foreground">
+              אין כרטיסים חיים שמספיקים ל-{qty} נוסעים — נסו כמות אחרת.
+            </p>
+          )}
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium">מספר נוסעים / כרטיסים</span>
             <div className="flex items-center rounded-md border">
