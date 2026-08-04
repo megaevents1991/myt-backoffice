@@ -271,17 +271,42 @@ export function HotEventsTable({ events }: { events: HotEvent[] }) {
             </TableCell>
             <TableCell className="text-right tabular-nums">
               {event.paidBookings > 0 ? (
-                <>
-                  <span className="font-medium">{event.paidBookings}</span>
-                  {event.conversionRate != null && (
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      {(event.conversionRate * 100).toFixed(
-                        event.conversionRate < 0.01 ? 1 : 0
+                <HoverCard openDelay={150}>
+                  <HoverCardTrigger asChild>
+                    <span className="cursor-help underline decoration-dotted underline-offset-4">
+                      <span className="font-medium">{event.paidBookings}</span>
+                      {event.conversionRate != null && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {(event.conversionRate * 100).toFixed(
+                            event.conversionRate < 0.01 ? 1 : 0
+                          )}
+                          %
+                        </span>
                       )}
-                      %
                     </span>
-                  )}
-                </>
+                  </HoverCardTrigger>
+                  <HoverCardContent align="end" className="w-64 p-3">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">
+                      Paid bookings each partner closed
+                    </p>
+                    <div className="max-h-56 space-y-1 overflow-y-auto text-sm">
+                      {event.paidBreakdown.map((share) => (
+                        <div
+                          key={share.code}
+                          className="flex items-baseline justify-between gap-3"
+                        >
+                          <span className="min-w-0 truncate">{share.name}</span>
+                          <span className="shrink-0 tabular-nums">
+                            {share.bookings}
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              · {usd.format(share.salesUsd)}
+                            </span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </HoverCardContent>
+                </HoverCard>
               ) : (
                 <span className="text-muted-foreground">0</span>
               )}

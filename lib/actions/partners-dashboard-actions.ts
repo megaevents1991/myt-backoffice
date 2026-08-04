@@ -48,6 +48,14 @@ export interface HotEventPartnerShare {
   clicks: number
 }
 
+export interface HotEventPaidShare {
+  code: string
+  name: string
+  bookings: number
+  /** The event's own ticket line on those bookings, not the package total. */
+  salesUsd: number
+}
+
 export interface HotEvent {
   name: string
   date: string | null
@@ -60,6 +68,8 @@ export interface HotEvent {
   partnerBreakdown: HotEventPartnerShare[]
   /** PAID partner-attributed bookings of this event (name+day) in the window. */
   paidBookings: number
+  /** Which partners those paid bookings belong to — Converted's hover. */
+  paidBreakdown: HotEventPaidShare[]
   /** paidBookings ÷ clicking visitors; null when no visitors. */
   conversionRate: number | null
 }
@@ -669,13 +679,29 @@ export async function getPartnersOverview(
   // covers hot rows whose tracking carried no date.
   const paidByEventDay = new Map<string, number>()
   const paidByEventName = new Map<string, number>()
+  type PaidShareAcc = Map<string, { bookings: number; salesUsd: number }>
+  const paidShareByDay = new Map<string, PaidShareAcc>()
+  const paidShareByName = new Map<string, PaidShareAcc>()
   for (const r of paid) {
+    const code = r.aff_partner_tracking_code as string
     for (const item of normalizeReservationEventOrderInfo(r.event_order_info)) {
       if (!item?.name) continue
       const name = item.name.trim().toLowerCase()
       const day = typeof item.date === "string" ? item.date.slice(0, 10) : ""
       paidByEventDay.set(`${name}|${day}`, (paidByEventDay.get(`${name}|${day}`) ?? 0) + 1)
       paidByEventName.set(name, (paidByEventName.get(name) ?? 0) + 1)
+      const sales = Number(item.total_tickets_price ?? 0)
+      for (const [map, key] of [
+        [paidShareByDay, `${name}|${day}`],
+        [paidShareByName, name],
+      ] as const) {
+        const acc = map.get(key) ?? new Map<string, { bookings: number; salesUsd: number }>()
+        const share = acc.get(code) ?? { bookings: 0, salesUsd: 0 }
+        share.bookings += 1
+        share.salesUsd += sales
+        acc.set(code, share)
+        map.set(key, acc)
+      }
     }
   }
   type HotSourceRow = {
@@ -786,6 +812,9 @@ export async function getPartnersOverview(
       const paidBookings = row.event_date
         ? paidByEventDay.get(`${name}|${row.event_date.slice(0, 10)}`) ?? 0
         : paidByEventName.get(name) ?? 0
+      const paidShares = row.event_date
+        ? paidShareByDay.get(`${name}|${row.event_date.slice(0, 10)}`)
+        : paidShareByName.get(name)
       return {
         name: row.event_name as string,
         date: row.event_date,
@@ -798,6 +827,16 @@ export async function getPartnersOverview(
             hotKey(row.event_name as string, row.event_date, row.event_location)
           ) ?? [],
         paidBookings,
+        paidBreakdown: paidShares
+          ? [...paidShares.entries()]
+              .map(([code, share]) => ({
+                code,
+                name: partnerLabel(code),
+                bookings: share.bookings,
+                salesUsd: round2(share.salesUsd),
+              }))
+              .sort((a, b) => b.bookings - a.bookings || b.salesUsd - a.salesUsd)
+          : [],
         conversionRate: visitors > 0 ? paidBookings / visitors : null,
       }
     })
