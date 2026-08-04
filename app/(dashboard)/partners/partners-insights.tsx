@@ -14,7 +14,6 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -22,19 +21,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import type { PartnersOverview } from "@/lib/actions/partners-dashboard-actions";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
 import type { FunnelStage, PartnerTraffic } from "@/lib/partner-funnel";
-import { HotEventsTable, TopEventsTable } from "./insights-tables";
+import { HotEventsTable, TopEventsTable, TopPartnersTable } from "./insights-tables";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -481,70 +472,7 @@ export function PartnersInsights({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {overview.topPartners.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No paid partner-attributed reservations in this period.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Partner</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="text-right">Visitors</TableHead>
-                  <TableHead className="text-right">Paid bookings</TableHead>
-                  <TableHead className="text-right">Conv.</TableHead>
-                  <TableHead className="text-right">Tickets</TableHead>
-                  <TableHead className="text-right">Sales</TableHead>
-                  <TableHead className="text-right">Commission</TableHead>
-                  <TableHead className="text-right">Net</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {overview.topPartners.map((partner) => (
-                  <TableRow key={partner.code}>
-                    <TableCell className="font-medium">
-                      <Link
-                        href={`/partners/${partner.code}/view?range=${range}`}
-                        className="hover:underline"
-                      >
-                        {partner.name}
-                      </Link>
-                      <span className="ml-2 font-mono text-xs text-muted-foreground">
-                        {partner.code}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={partner.type === "agent" ? "default" : "secondary"}>
-                        {partner.type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {partner.visitors || "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {partner.paidReservations}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {partner.conversionRate != null
-                        ? `${(partner.conversionRate * 100).toFixed(2)}%`
-                        : "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{partner.tickets}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {usd.format(partner.salesUsd)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {usd.format(partner.commissionUsd)}
-                    </TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
-                      {usd.format(partner.salesUsd - partner.commissionUsd)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          <TopPartnersTable partners={overview.topPartners} range={range} />
         </CardContent>
       </Card>
     </div>

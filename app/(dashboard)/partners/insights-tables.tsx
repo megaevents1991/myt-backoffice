@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { ArrowUpDown } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import {
   HoverCard,
   HoverCardContent,
@@ -17,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import type {
   HotEvent,
+  PartnersOverviewTopPartner,
   TopBookedEvent,
 } from "@/lib/actions/partners-dashboard-actions";
 
@@ -153,6 +156,131 @@ export function TopEventsTable({ events }: { events: TopBookedEvent[] }) {
             <TableCell className="px-2 text-right tabular-nums">{event.tickets}</TableCell>
             <TableCell className="px-2 text-right tabular-nums">
               {usd.format(event.salesUsd)}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+/** Bottom card: top partners by paid sales — sortable on every column. */
+export function TopPartnersTable({
+  partners,
+  range,
+}: {
+  partners: PartnersOverviewTopPartner[];
+  range: string;
+}) {
+  const { sorted, sort, toggle } = useSortedRows(
+    partners,
+    { key: "sales", dir: "desc" },
+    (row, key) => {
+      switch (key) {
+        case "name":
+          return row.name;
+        case "type":
+          return row.type;
+        case "visitors":
+          return row.visitors;
+        case "paid":
+          return row.paidReservations;
+        case "conv":
+          return row.conversionRate;
+        case "tickets":
+          return row.tickets;
+        case "sales":
+          return row.salesUsd;
+        case "commission":
+          return row.commissionUsd;
+        case "net":
+          return row.salesUsd - row.commissionUsd;
+        default:
+          return null;
+      }
+    }
+  );
+
+  if (partners.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        No paid partner-attributed reservations in this period.
+      </p>
+    );
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>
+            <SortHeader label="Partner" sortKey="name" sort={sort} toggle={toggle} />
+          </TableHead>
+          <TableHead>
+            <SortHeader label="Type" sortKey="type" sort={sort} toggle={toggle} />
+          </TableHead>
+          <TableHead className="text-right">
+            <SortHeader label="Visitors" sortKey="visitors" sort={sort} toggle={toggle} align="right" />
+          </TableHead>
+          <TableHead className="text-right">
+            <SortHeader label="Paid bookings" sortKey="paid" sort={sort} toggle={toggle} align="right" />
+          </TableHead>
+          <TableHead className="text-right">
+            <SortHeader label="Conv." sortKey="conv" sort={sort} toggle={toggle} align="right" />
+          </TableHead>
+          <TableHead className="text-right">
+            <SortHeader label="Tickets" sortKey="tickets" sort={sort} toggle={toggle} align="right" />
+          </TableHead>
+          <TableHead className="text-right">
+            <SortHeader label="Sales" sortKey="sales" sort={sort} toggle={toggle} align="right" />
+          </TableHead>
+          <TableHead className="text-right">
+            <SortHeader label="Commission" sortKey="commission" sort={sort} toggle={toggle} align="right" />
+          </TableHead>
+          <TableHead className="text-right">
+            <SortHeader label="Net" sortKey="net" sort={sort} toggle={toggle} align="right" />
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sorted.map((partner) => (
+          <TableRow key={partner.code}>
+            <TableCell className="font-medium">
+              <Link
+                href={`/partners/${partner.code}/view?range=${range}`}
+                className="hover:underline"
+              >
+                {partner.name}
+              </Link>
+              <span className="ml-2 font-mono text-xs text-muted-foreground">
+                {partner.code}
+              </span>
+            </TableCell>
+            <TableCell>
+              <Badge variant={partner.type === "agent" ? "default" : "secondary"}>
+                {partner.type}
+              </Badge>
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {partner.visitors || "—"}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {partner.paidReservations}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {partner.conversionRate != null
+                ? `${(partner.conversionRate * 100).toFixed(2)}%`
+                : "—"}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">{partner.tickets}</TableCell>
+            <TableCell className="text-right tabular-nums">
+              {usd.format(partner.salesUsd)}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {usd.format(partner.commissionUsd)}
+            </TableCell>
+            <TableCell className="text-right font-medium tabular-nums">
+              {usd.format(partner.salesUsd - partner.commissionUsd)}
             </TableCell>
           </TableRow>
         ))}
