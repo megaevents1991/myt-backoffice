@@ -102,6 +102,46 @@ as $$
    group by t.affiliate_id;
 $$;
 
+-- Per-partner slice of the hot-events aggregation — feeds the staff table's
+-- hover breakdown (who drove the clicks on each event, and how many).
+create or replace function "public"."partners_clicked_event_partners_all"(
+  "p_from" timestamptz default null,
+  "p_to" timestamptz default null
+)
+returns table (
+  "event_name" text,
+  "event_date" text,
+  "event_location" text,
+  "affiliate_id" text,
+  "clicks" bigint,
+  "visitors" bigint
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select t.data->'data'->>'event'         as event_name,
+         t.data->'data'->>'eventDate'     as event_date,
+         t.data->'data'->>'eventLocation' as event_location,
+         t.affiliate_id,
+         count(*)                         as clicks,
+         count(distinct t.user_id)        as visitors
+    from public.affiliates_tracking t
+   where t.stage = 'EVENT_SELECTED'
+     and t.data->'data'->>'event' is not null
+     and (p_from is null or t.created_at >= p_from)
+     and (p_to is null or t.created_at < p_to)
+     and public.tracking_code_is_real_partner(t.affiliate_id)
+   group by 1, 2, 3, 4;
+$$;
+
+revoke all on function "public"."partners_clicked_event_partners_all"(timestamptz, timestamptz) from public, anon, authenticated;
+grant execute on function "public"."partners_clicked_event_partners_all"(timestamptz, timestamptz) to service_role;
+
+comment on function "public"."partners_clicked_event_partners_all"(timestamptz, timestamptz) is
+  'Per-partner clicks/visitors on each event across real-partner traffic — the hover breakdown behind partners_clicked_events_all.';
+
 comment on function "public"."partners_funnel_counts_all"(timestamptz, timestamptz) is
   'Funnel across ALL real partners (refund pseudo-codes excluded) in an optional created_at window. Distinct visitors per stage.';
 comment on function "public"."partners_clicked_events_all"(timestamptz, timestamptz, integer) is

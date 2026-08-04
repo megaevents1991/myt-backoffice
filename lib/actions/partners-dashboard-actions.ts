@@ -41,6 +41,13 @@ export interface PartnersOverviewTopPartner {
   conversionRate: number | null
 }
 
+export interface HotEventPartnerShare {
+  code: string
+  name: string
+  visitors: number
+  clicks: number
+}
+
 export interface HotEvent {
   name: string
   date: string | null
@@ -49,6 +56,8 @@ export interface HotEvent {
   visitors: number
   /** Distinct partners whose audiences clicked it. */
   partners: number
+  /** Who drove those clicks, largest first — the hover breakdown. */
+  partnerBreakdown: HotEventPartnerShare[]
   /** PAID partner-attributed bookings of this event (name+day) in the window. */
   paidBookings: number
   /** paidBookings ÷ clicking visitors; null when no visitors. */
@@ -318,6 +327,7 @@ export async function getPartnersOverview(
     funnelResult,
     entryResult,
     hotResult,
+    hotPartnersResult,
     visitorsResult,
     holdsResult,
     packagesResult,
@@ -341,6 +351,11 @@ export async function getPartnersOverview(
       p_from: from,
       p_to: to,
       p_limit: 15,
+    }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).rpc("partners_clicked_event_partners_all", {
+      p_from: from,
+      p_to: to,
     }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).rpc("partners_visitors_by_code", { p_from: from, p_to: to }),
@@ -380,6 +395,7 @@ export async function getPartnersOverview(
     ["funnel", funnelResult],
     ["entry", entryResult],
     ["hot", hotResult],
+    ["hotPartners", hotPartnersResult],
     ["visitors", visitorsResult],
     ["holds", holdsResult],
     ["packages", packagesResult],
@@ -670,17 +686,31 @@ export async function getPartnersOverview(
     visitors: number | null
     partners: number | null
   }
+  const partnerLabel = (code: string) => {
+    const partner = partnerByCode.get(code)
+    return partner?.name_hebrew || partner?.email || code
+  }
+  const hotKey = (name: string, date: string | null, location: string | null) =>
+    `${name}|${date ?? ""}|${location ?? ""}`
+
   let hotSource: HotSourceRow[] = (hotResult.data ?? []) as HotSourceRow[]
+  // Who drove each event's clicks — the hover breakdown behind the Partners
+  // column, keyed like hotSource rows.
+  const breakdownByKey = new Map<string, HotEventPartnerShare[]>()
   // Same interim override as the global funnel: full-window scan available →
   // recompute hot events refund-free (the deployed RPC can't filter yet).
   if (completeScanRows) {
     const byEvent = new Map<
       string,
-      { row: HotSourceRow; users: Set<string>; codes: Set<string> }
+      {
+        row: HotSourceRow
+        users: Set<string>
+        perCode: Map<string, { users: Set<string>; clicks: number }>
+      }
     >()
     for (const row of completeScanRows) {
       if (row.stage !== "EVENT_SELECTED" || !row.event) continue
-      const key = `${row.event}|${row.event_date ?? ""}|${row.event_location ?? ""}`
+      const key = hotKey(row.event, row.event_date, row.event_location)
       const entry =
         byEvent.get(key) ??
         {
@@ -693,21 +723,60 @@ export async function getPartnersOverview(
             partners: 0,
           },
           users: new Set<string>(),
-          codes: new Set<string>(),
+          perCode: new Map<string, { users: Set<string>; clicks: number }>(),
         }
       entry.row.clicks = Number(entry.row.clicks) + 1
       entry.users.add(row.user_id)
-      if (row.affiliate_id) entry.codes.add(row.affiliate_id)
+      if (row.affiliate_id) {
+        const share = entry.perCode.get(row.affiliate_id) ?? { users: new Set<string>(), clicks: 0 }
+        share.users.add(row.user_id)
+        share.clicks++
+        entry.perCode.set(row.affiliate_id, share)
+      }
       byEvent.set(key, entry)
     }
-    hotSource = [...byEvent.values()]
-      .map(({ row, users, codes }) => ({
-        ...row,
-        visitors: users.size,
-        partners: codes.size,
-      }))
+    hotSource = [...byEvent.entries()]
+      .map(([key, { row, users, perCode }]) => {
+        breakdownByKey.set(
+          key,
+          [...perCode.entries()]
+            .map(([code, share]) => ({
+              code,
+              name: partnerLabel(code),
+              visitors: share.users.size,
+              clicks: share.clicks,
+            }))
+            .sort((a, b) => b.visitors - a.visitors || b.clicks - a.clicks)
+        )
+        return { ...row, visitors: users.size, partners: perCode.size }
+      })
       .sort((a, b) => Number(b.visitors) - Number(a.visitors) || Number(b.clicks) - Number(a.clicks))
       .slice(0, 15)
+  } else if (!hotPartnersResult.error) {
+    // Post-merge path: the per-partner RPC exists (and already excludes
+    // refund codes); group its rows under the same keys hotSource uses.
+    for (const row of (hotPartnersResult.data ?? []) as {
+      event_name: string | null
+      event_date: string | null
+      event_location: string | null
+      affiliate_id: string | null
+      clicks: number | null
+      visitors: number | null
+    }[]) {
+      if (!row.event_name || !row.affiliate_id) continue
+      const key = hotKey(row.event_name, row.event_date, row.event_location)
+      const list = breakdownByKey.get(key) ?? []
+      list.push({
+        code: row.affiliate_id,
+        name: partnerLabel(row.affiliate_id),
+        visitors: Number(row.visitors ?? 0),
+        clicks: Number(row.clicks ?? 0),
+      })
+      breakdownByKey.set(key, list)
+    }
+    for (const list of breakdownByKey.values()) {
+      list.sort((a, b) => b.visitors - a.visitors || b.clicks - a.clicks)
+    }
   }
   const hotEvents: HotEvent[] = hotSource
     .filter((row) => !!row.event_name)
@@ -724,6 +793,10 @@ export async function getPartnersOverview(
         clicks: Number(row.clicks ?? 0),
         visitors,
         partners: Number(row.partners ?? 0),
+        partnerBreakdown:
+          breakdownByKey.get(
+            hotKey(row.event_name as string, row.event_date, row.event_location)
+          ) ?? [],
         paidBookings,
         conversionRate: visitors > 0 ? paidBookings / visitors : null,
       }

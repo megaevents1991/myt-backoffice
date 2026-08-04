@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import type { PartnersOverview } from "@/lib/actions/partners-dashboard-actions";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
 import type { FunnelStage, PartnerTraffic } from "@/lib/partner-funnel";
+import { HotEventsTable, TopEventsTable } from "./insights-tables";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -362,36 +363,8 @@ export function PartnersInsights({
             </CardTitle>
             <CardDescription>Top 15 by paid tickets.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {overview.topBookedEvents.length === 0 ? (
-              <p className="py-4 text-muted-foreground">
-                No paid bookings in this period.
-              </p>
-            ) : (
-              overview.topBookedEvents.map((event, i) => (
-                <div
-                  key={`${event.name}-${event.date ?? ""}`}
-                  className="flex items-start justify-between gap-3 border-b pb-2 last:border-0 last:pb-0"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">
-                      <span className="text-muted-foreground">{i + 1}.</span> {event.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {event.date ? new Date(event.date).toLocaleDateString() : "—"}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-right text-xs text-muted-foreground">
-                    <p className="text-sm font-semibold tabular-nums text-foreground">
-                      {event.tickets} tickets
-                    </p>
-                    <p>
-                      {event.bookings} bookings · {usd.format(event.salesUsd)}
-                    </p>
-                  </div>
-                </div>
-              ))
-            )}
+          <CardContent className="px-3">
+            <TopEventsTable events={overview.topBookedEvents} />
           </CardContent>
         </Card>
 
@@ -408,60 +381,7 @@ export function PartnersInsights({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {overview.hotEvents.length === 0 ? (
-            <p className="py-6 text-sm text-muted-foreground">
-              No event clicks recorded in this period.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Event</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead className="text-right">Visitors</TableHead>
-                  <TableHead className="text-right">Clicks</TableHead>
-                  <TableHead className="text-right">Partners</TableHead>
-                  <TableHead className="text-right">Converted</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {overview.hotEvents.map((event) => (
-                  <TableRow key={`${event.name}-${event.date ?? ""}-${event.location ?? ""}`}>
-                    <TableCell className="max-w-[16rem] truncate font-medium">
-                      {event.name}
-                    </TableCell>
-                    <TableCell>
-                      {event.date ? new Date(event.date).toLocaleDateString() : "—"}
-                    </TableCell>
-                    <TableCell className="max-w-[12rem] truncate">
-                      {event.location ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{event.visitors}</TableCell>
-                    <TableCell className="text-right tabular-nums">{event.clicks}</TableCell>
-                    <TableCell className="text-right tabular-nums">{event.partners}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {event.paidBookings > 0 ? (
-                        <>
-                          <span className="font-medium">{event.paidBookings}</span>
-                          {event.conversionRate != null && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              {(event.conversionRate * 100).toFixed(
-                                event.conversionRate < 0.01 ? 1 : 0
-                              )}
-                              %
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">0</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          <HotEventsTable events={overview.hotEvents} />
         </CardContent>
         </Card>
       </div>
