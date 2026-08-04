@@ -37,10 +37,11 @@ import {
   type TopCount,
 } from "@/lib/actions/partner-performance-actions";
 import { getPartnerCredit } from "@/lib/actions/partner-credit-actions";
-import { PAID_STATUS, describeCommission } from "@/lib/partner-commission";
+import { describeCommission } from "@/lib/partner-commission";
 import { PARTNER_TYPE_LABELS, isCustomerRefundPartner } from "@/types/partner.types";
 import { EntryFunnelsGrid } from "../../entry-funnel-cards";
 import { PerformanceChart } from "./performance-chart";
+import { ReservationsTable } from "./reservations-table";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -464,56 +465,7 @@ export default async function ViewPartnerPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {performance.reservations.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No reservations attributed to this partner yet.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Event</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Tickets</TableHead>
-                  <TableHead className="text-right">Sales</TableHead>
-                  <TableHead className="text-right">Commission</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {performance.reservations.map((reservation) => (
-                  <TableRow key={reservation.id}>
-                    <TableCell>
-                      {new Date(reservation.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>{reservation.customer_name}</TableCell>
-                    <TableCell className="max-w-[16rem] truncate">
-                      {reservation.event_title}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          reservation.status === PAID_STATUS ? "default" : "secondary"
-                        }
-                      >
-                        {reservation.status || "—"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">{reservation.tickets}</TableCell>
-                    <TableCell className="text-right">
-                      {usd.format(reservation.sales_usd)}
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {reservation.commission_usd > 0
-                        ? usd.format(reservation.commission_usd)
-                        : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          <ReservationsTable reservations={performance.reservations} />
         </CardContent>
       </Card>
     </div>
