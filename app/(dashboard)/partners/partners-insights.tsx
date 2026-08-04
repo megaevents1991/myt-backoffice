@@ -403,8 +403,8 @@ export function PartnersInsights({
           </CardTitle>
           <CardDescription>
             Most-clicked events across every partner&apos;s audience in this period —
-            event, date and location, and how much of the interest became paid
-            bookings.
+            event, date and location. Converted counts only bookings that are
+            PAID and attributed to a real partner or agent.
           </CardDescription>
         </CardHeader>
         <CardContent>

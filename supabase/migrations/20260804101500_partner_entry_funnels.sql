@@ -29,6 +29,15 @@ as $$
      where t.user_id is not null
        and (p_from is null or t.created_at >= p_from)
        and (p_to is null or t.created_at < p_to)
+       -- Refund-credit browsing is not partner traffic (customers get a
+       -- personal "ניתן להתעלם" code); keep the funnels marketing-only.
+       and not exists (
+         select 1
+           from public.partners p
+          where p.partner_tracking_code = t.affiliate_id
+            and (coalesce(p.name_hebrew, '') like '%ניתן להתעלם%'
+                 or p.type = 'customer_refund')
+       )
   ),
   entries as (
     select distinct on (user_id) user_id, stage, path

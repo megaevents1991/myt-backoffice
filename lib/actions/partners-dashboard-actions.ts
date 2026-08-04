@@ -176,6 +176,22 @@ type ReservationRow = {
 const HOLD_STATUS = "24Save"
 const HOLD_WINDOW_MS = 25 * 60 * 60 * 1000
 
+/** One paged row of the entry-funnel fallback scan over affiliates_tracking. */
+type ScanRow = {
+  id: number | string
+  user_id: string
+  stage: string | null
+  created_at: string
+  affiliate_id: string | null
+  path: string | null
+  /** CONFIRMED rows carry the event under `eventName`… */
+  event_name: string | null
+  /** …EVENT_SELECTED rows under `event` (+ date and location). */
+  event: string | null
+  event_date: string | null
+  event_location: string | null
+}
+
 /** Row cap for the client-side entry-funnel fallback scan. */
 const ENTRY_SCAN_LIMIT = 10000
 
@@ -478,7 +494,7 @@ export async function getPartnersOverview(
   for (const row of (funnelResult.data ?? []) as { stage: string; visitors: number }[]) {
     stageCounts.set(row.stage, Number(row.visitors) || 0)
   }
-  const globalFunnel: PartnerTraffic = funnelResult.error
+  let globalFunnel: PartnerTraffic = funnelResult.error
     ? emptyTraffic()
     : {
         byStage: FUNNEL_STAGES.map((stage) => ({
@@ -501,6 +517,10 @@ export async function getPartnersOverview(
   // ---- Entry-segmented funnels (home / artist / event) ----
   const countsByEntry = new Map<string, Map<string, number>>()
   let entryApproximate = false
+  // Set when the fallback scan covered the whole window: real-partner-only
+  // tracking rows, used to re-derive the RPC aggregates below (the deployed
+  // RPCs still count refund-code browsing until the exclusion migration lands).
+  let completeScanRows: ScanRow[] | null = null
   if (!entryResult.error) {
     for (const row of (entryResult.data ?? []) as {
       entry: string
@@ -522,7 +542,7 @@ export async function getPartnersOverview(
       let q = supabase
         .from("affiliates_tracking")
         .select(
-          "id,user_id,stage,created_at,affiliate_id,path:data->>path,event_name:data->data->>eventName"
+          "id,user_id,stage,created_at,affiliate_id,path:data->>path,event_name:data->data->>eventName,event:data->data->>event,event_date:data->data->>eventDate,event_location:data->data->>eventLocation"
         )
         .not("user_id", "is", null)
         .order("created_at", { ascending: true })
@@ -531,19 +551,17 @@ export async function getPartnersOverview(
       if (to) q = q.lt("created_at", to)
       return q
     }
-    const scan = await fetchPaged<{
-      id: number | string
-      user_id: string
-      stage: string | null
-      created_at: string
-      affiliate_id: string | null
-      path: string | null
-      event_name: string | null
-    }>(scanQuery, ENTRY_SCAN_LIMIT)
+    const scan = await fetchPaged<ScanRow>(scanQuery, ENTRY_SCAN_LIMIT)
     if (scan.error) {
       console.error("getPartnersOverview entry scan:", JSON.stringify(scan.error))
     }
-    if (scan.rows.length) {
+    // Refund-credit browsing (personal "ניתן להתעלם" codes) is not partner
+    // traffic — same exclusion the money tiles apply, now on tracking too.
+    const scanRows = scan.rows.filter(
+      (row) => row.affiliate_id && partnerByCode.has(row.affiliate_id)
+    )
+    if (!scan.truncated && !scan.error) completeScanRows = scanRows
+    if (scanRows.length) {
       // Partial coverage (cap hit, or an error after some pages) is served but
       // flagged — the UI's "approximate" note keys off this.
       entryApproximate = scan.truncated || scan.error != null
@@ -562,7 +580,7 @@ export async function getPartnersOverview(
       }))
       const PAID_MATCH_WINDOW_MS = 30 * 60 * 1000
       const paidUsers = new Set<string>()
-      for (const row of scan.rows) {
+      for (const row of scanRows) {
         if (row.stage !== "CONFIRMED" || !row.event_name || paidUsers.has(row.user_id))
           continue
         const name = row.event_name.trim().toLowerCase()
@@ -581,7 +599,7 @@ export async function getPartnersOverview(
 
       const entryByUser = new Map<string, EntryKind>()
       const stagesByUser = new Map<string, Set<string>>()
-      for (const row of scan.rows) {
+      for (const row of scanRows) {
         if (!entryByUser.has(row.user_id)) {
           entryByUser.set(row.user_id, classifyEntry(row.stage, row.path))
         }
@@ -606,6 +624,28 @@ export async function getPartnersOverview(
   }
   const entryFunnels = buildEntryFunnels(countsByEntry, entryApproximate)
 
+  // While the refund-exclusion migration hasn't landed, the deployed RPCs
+  // still count refund-code browsing. When the scan covered the whole window,
+  // re-derive the global funnel from its filtered rows instead.
+  if (completeScanRows) {
+    const usersByStage = new Map<string, Set<string>>()
+    for (const row of completeScanRows) {
+      if (!row.stage) continue
+      const set = usersByStage.get(row.stage) ?? new Set<string>()
+      set.add(row.user_id)
+      usersByStage.set(row.stage, set)
+    }
+    globalFunnel = {
+      byStage: FUNNEL_STAGES.map((stage) => ({
+        stage,
+        label: FUNNEL_STAGE_LABELS[stage],
+        visitors: usersByStage.get(stage)?.size ?? 0,
+      })),
+      totalVisitors: usersByStage.get("VISIT")?.size ?? 0,
+      hasData: usersByStage.size > 0,
+    }
+  }
+
   // ---- Hot events across every partner's audience ----
   // Paid bookings per event, keyed by name+day (both sides normalize to
   // yyyy-mm-dd: tracking stores "2026-06-15", reservations an ISO midnight)
@@ -622,16 +662,54 @@ export async function getPartnersOverview(
       paidByEventName.set(name, (paidByEventName.get(name) ?? 0) + 1)
     }
   }
-  const hotEvents: HotEvent[] = (
-    (hotResult.data ?? []) as {
-      event_name: string | null
-      event_date: string | null
-      event_location: string | null
-      clicks: number | null
-      visitors: number | null
-      partners: number | null
-    }[]
-  )
+  type HotSourceRow = {
+    event_name: string | null
+    event_date: string | null
+    event_location: string | null
+    clicks: number | null
+    visitors: number | null
+    partners: number | null
+  }
+  let hotSource: HotSourceRow[] = (hotResult.data ?? []) as HotSourceRow[]
+  // Same interim override as the global funnel: full-window scan available →
+  // recompute hot events refund-free (the deployed RPC can't filter yet).
+  if (completeScanRows) {
+    const byEvent = new Map<
+      string,
+      { row: HotSourceRow; users: Set<string>; codes: Set<string> }
+    >()
+    for (const row of completeScanRows) {
+      if (row.stage !== "EVENT_SELECTED" || !row.event) continue
+      const key = `${row.event}|${row.event_date ?? ""}|${row.event_location ?? ""}`
+      const entry =
+        byEvent.get(key) ??
+        {
+          row: {
+            event_name: row.event,
+            event_date: row.event_date,
+            event_location: row.event_location,
+            clicks: 0,
+            visitors: 0,
+            partners: 0,
+          },
+          users: new Set<string>(),
+          codes: new Set<string>(),
+        }
+      entry.row.clicks = Number(entry.row.clicks) + 1
+      entry.users.add(row.user_id)
+      if (row.affiliate_id) entry.codes.add(row.affiliate_id)
+      byEvent.set(key, entry)
+    }
+    hotSource = [...byEvent.values()]
+      .map(({ row, users, codes }) => ({
+        ...row,
+        visitors: users.size,
+        partners: codes.size,
+      }))
+      .sort((a, b) => Number(b.visitors) - Number(a.visitors) || Number(b.clicks) - Number(a.clicks))
+      .slice(0, 15)
+  }
+  const hotEvents: HotEvent[] = hotSource
     .filter((row) => !!row.event_name)
     .map((row) => {
       const name = (row.event_name as string).trim().toLowerCase()
