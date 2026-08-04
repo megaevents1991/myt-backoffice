@@ -39,6 +39,7 @@ import {
 import { getPartnerCredit } from "@/lib/actions/partner-credit-actions";
 import { PAID_STATUS, describeCommission } from "@/lib/partner-commission";
 import { PARTNER_TYPE_LABELS, isCustomerRefundPartner } from "@/types/partner.types";
+import { EntryFunnelsGrid } from "../../entry-funnel-cards";
 import { PerformanceChart } from "./performance-chart";
 
 const usd = new Intl.NumberFormat("en-US", {
@@ -335,6 +336,8 @@ export default async function ViewPartnerPage({
           )}
         </CardContent>
       </Card>
+
+      <EntryFunnelsGrid entryFunnels={performance.entryFunnels} />
 
       <Card>
         <CardHeader>

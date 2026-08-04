@@ -20,6 +20,17 @@ import {
   emptyTraffic,
   type PartnerTraffic,
 } from "@/lib/partner-funnel"
+import {
+  ENTRY_SCAN_LIMIT,
+  ENTRY_SCAN_SELECT,
+  buildEntryFunnels,
+  entryCountsFromRows,
+  matchPaidUsers,
+  paidCandidatesFrom,
+  type EntryFunnels,
+  type EntryScanRow,
+} from "@/lib/partner-entry-funnels"
+import { fetchPaged } from "@/lib/supabase-paged"
 import { normalizeReservationEventOrderInfo } from "@/lib/utils"
 import type { ReservationEventOrderInfo } from "@/types/reservation.types"
 import {
@@ -84,23 +95,7 @@ export interface PackagesSummary {
   topCreators: { code: string; name: string; count: number }[]
 }
 
-/** Where a visitor's first tracked page in the window was. */
-export type EntryKind = "home" | "artist" | "event" | "other"
-
-export interface EntryFunnels {
-  home: PartnerTraffic
-  artist: PartnerTraffic
-  event: PartnerTraffic
-  /** Visitors who entered on any other page (category, blog, search…). */
-  otherVisitors: number
-  /** Users whose CONFIRMED matched a now-Paid reservation of the same partner
-   *  + event name within ±30min — a match, not proof (reservations carry no
-   *  tracking user id) — split by where they entered. */
-  paidByEntry: { home: number; artist: number; event: number }
-  /** True while computed from a capped client-side scan (RPC not deployed
-   *  yet) — numbers may undercount on long windows. */
-  approximate: boolean
-}
+export type { EntryFunnels } from "@/lib/partner-entry-funnels"
 
 export interface TopBookedEvent {
   name: string
@@ -184,108 +179,9 @@ type ReservationRow = {
   hotel_offline: boolean | null
 }
 
-/** One paged row of the entry-funnel fallback scan over affiliates_tracking. */
-type ScanRow = {
-  id: number | string
-  user_id: string
-  stage: string | null
-  created_at: string
-  affiliate_id: string | null
-  path: string | null
-  /** CONFIRMED rows carry the event under `eventName`… */
-  event_name: string | null
-  /** …EVENT_SELECTED rows under `event` (+ date and location). */
-  event: string | null
-  event_date: string | null
-  event_location: string | null
-}
-
-/** Row cap for the client-side entry-funnel fallback scan. */
-const ENTRY_SCAN_LIMIT = 10000
-
 /** Most-recent rows the money tiles aggregate over (was `.limit(5000)`). */
 const RESERVATION_SCAN_LIMIT = 5000
 const PACKAGE_SCAN_LIMIT = 2000
-
-/**
- * PostgREST hard-caps every response (max-rows, 1000 on this project), so a
- * plain `.limit(5000)` silently returns the first 1000 rows and nothing else.
- * Page with `.range()` until `max` rows, a short page, or an error.
- * `truncated` means the cap cut real data — callers surface that, never hide it.
- * Rows are deduped by `id` so a concurrent insert can't double-count a row
- * that slid across a page boundary mid-pagination.
- */
-async function fetchPaged<T extends { id: number | string }>(
-  makeQuery: () => {
-    range: (from: number, to: number) => PromiseLike<{
-      data: unknown
-      error: { message: string } | null
-    }>
-  },
-  max: number
-): Promise<{ rows: T[]; truncated: boolean; error: { message: string } | null }> {
-  const rows: T[] = []
-  const seen = new Set<number | string>()
-  let offset = 0
-  while (offset < max) {
-    const want = Math.min(1000, max - offset)
-    const res = await makeQuery().range(offset, offset + want - 1)
-    if (res.error) return { rows, truncated: false, error: res.error }
-    const page = (res.data ?? []) as T[]
-    offset += page.length
-    for (const row of page) {
-      if (row.id != null) {
-        if (seen.has(row.id)) continue
-        seen.add(row.id)
-      }
-      rows.push(row)
-    }
-    if (page.length < want) return { rows, truncated: false, error: null }
-  }
-  return { rows, truncated: true, error: null }
-}
-
-/** Mirror of the classification in partners_entry_funnels_all (SQL). A first
- *  row that is not a VISIT means the user surfaced inside the order flow —
- *  order pages carry no VISIT tracker, so that's a direct event landing. */
-function classifyEntry(stage: string | null, path: string | null): EntryKind {
-  if (stage !== "VISIT") return "event"
-  if (!path || path === "/") return "home"
-  if (path.startsWith("/artists") || path.startsWith("/football")) return "artist"
-  if (path.startsWith("/order")) return "event"
-  return "other"
-}
-
-function trafficFromCounts(counts: Map<string, number> | undefined): PartnerTraffic {
-  const byStage = FUNNEL_STAGES.map((stage) => ({
-    stage,
-    label: FUNNEL_STAGE_LABELS[stage],
-    visitors: counts?.get(stage) ?? 0,
-  }))
-  return {
-    byStage,
-    totalVisitors: counts?.get("VISIT") ?? 0,
-    hasData: byStage.some((s) => s.visitors > 0),
-  }
-}
-
-function buildEntryFunnels(
-  countsByEntry: Map<string, Map<string, number>>,
-  approximate: boolean
-): EntryFunnels {
-  return {
-    home: trafficFromCounts(countsByEntry.get("home")),
-    artist: trafficFromCounts(countsByEntry.get("artist")),
-    event: trafficFromCounts(countsByEntry.get("event")),
-    otherVisitors: countsByEntry.get("other")?.get("VISIT") ?? 0,
-    paidByEntry: {
-      home: countsByEntry.get("home")?.get("PAID") ?? 0,
-      artist: countsByEntry.get("artist")?.get("PAID") ?? 0,
-      event: countsByEntry.get("event")?.get("PAID") ?? 0,
-    },
-    approximate,
-  }
-}
 
 /**
  * Cross-partner rollup for the staff Partners Insights dashboard. Commission
@@ -524,12 +420,12 @@ export async function getPartnersOverview(
   }
 
   // ---- Entry-segmented funnels (home / artist / event) ----
-  const countsByEntry = new Map<string, Map<string, number>>()
+  let countsByEntry = new Map<string, Map<string, number>>()
   let entryApproximate = false
   // Set when the fallback scan covered the whole window: real-partner-only
   // tracking rows, used to re-derive the RPC aggregates below (the deployed
   // RPCs still count refund-code browsing until the exclusion migration lands).
-  let completeScanRows: ScanRow[] | null = null
+  let completeScanRows: EntryScanRow[] | null = null
   if (!entryResult.error) {
     for (const row of (entryResult.data ?? []) as {
       entry: string
@@ -550,9 +446,7 @@ export async function getPartnersOverview(
     const scanQuery = () => {
       let q = supabase
         .from("affiliates_tracking")
-        .select(
-          "id,user_id,stage,created_at,affiliate_id,path:data->>path,event_name:data->data->>eventName,event:data->data->>event,event_date:data->data->>eventDate,event_location:data->data->>eventLocation"
-        )
+        .select(ENTRY_SCAN_SELECT)
         .not("user_id", "is", null)
         .order("created_at", { ascending: true })
         .order("id", { ascending: true })
@@ -560,7 +454,7 @@ export async function getPartnersOverview(
       if (to) q = q.lt("created_at", to)
       return q
     }
-    const scan = await fetchPaged<ScanRow>(scanQuery, ENTRY_SCAN_LIMIT)
+    const scan = await fetchPaged<EntryScanRow>(scanQuery, ENTRY_SCAN_LIMIT)
     if (scan.error) {
       console.error("getPartnersOverview entry scan:", JSON.stringify(scan.error))
     }
@@ -575,60 +469,9 @@ export async function getPartnersOverview(
       // flagged — the UI's "approximate" note keys off this.
       entryApproximate = scan.truncated || scan.error != null
 
-      // Mirror of the RPC's paid_users match: a CONFIRMED row against a
-      // now-Paid reservation of the same partner + event name within ±30min.
-      // Reservations carry no tracking user id, so this is a match, not proof.
-      const paidCandidates = paid.map((r) => ({
-        code: r.aff_partner_tracking_code,
-        time: new Date(r.created_at).getTime(),
-        names: new Set(
-          normalizeReservationEventOrderInfo(r.event_order_info)
-            .map((item) => item?.name?.trim().toLowerCase())
-            .filter((name): name is string => !!name)
-        ),
-      }))
-      const PAID_MATCH_WINDOW_MS = 30 * 60 * 1000
-      const paidUsers = new Set<string>()
-      for (const row of scanRows) {
-        if (row.stage !== "CONFIRMED" || !row.event_name || paidUsers.has(row.user_id))
-          continue
-        const name = row.event_name.trim().toLowerCase()
-        const time = new Date(row.created_at).getTime()
-        if (
-          paidCandidates.some(
-            (r) =>
-              r.code === row.affiliate_id &&
-              Math.abs(r.time - time) <= PAID_MATCH_WINDOW_MS &&
-              r.names.has(name)
-          )
-        ) {
-          paidUsers.add(row.user_id)
-        }
-      }
-
-      const entryByUser = new Map<string, EntryKind>()
-      const stagesByUser = new Map<string, Set<string>>()
-      for (const row of scanRows) {
-        if (!entryByUser.has(row.user_id)) {
-          entryByUser.set(row.user_id, classifyEntry(row.stage, row.path))
-        }
-        if (row.stage && row.stage !== "VISIT") {
-          const set = stagesByUser.get(row.user_id) ?? new Set<string>()
-          set.add(row.stage)
-          stagesByUser.set(row.user_id, set)
-        }
-      }
-      for (const [userId, entry] of entryByUser) {
-        const perStage = countsByEntry.get(entry) ?? new Map<string, number>()
-        perStage.set("VISIT", (perStage.get("VISIT") ?? 0) + 1)
-        for (const stage of stagesByUser.get(userId) ?? []) {
-          perStage.set(stage, (perStage.get(stage) ?? 0) + 1)
-        }
-        if (paidUsers.has(userId)) {
-          perStage.set("PAID", (perStage.get("PAID") ?? 0) + 1)
-        }
-        countsByEntry.set(entry, perStage)
-      }
+      // Shared with the per-partner view — see lib/partner-entry-funnels.
+      const paidUsers = matchPaidUsers(scanRows, paidCandidatesFrom(paid))
+      countsByEntry = entryCountsFromRows(scanRows, paidUsers)
     }
   }
   const entryFunnels = buildEntryFunnels(countsByEntry, entryApproximate)

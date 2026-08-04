@@ -4,14 +4,11 @@ import {
   DollarSign,
   Flame,
   Handshake,
-  Home,
-  Music,
   Package,
   Percent,
   Ticket,
   TrendingUp,
   Wallet,
-  type LucideIcon,
 } from "lucide-react";
 import {
   Card,
@@ -23,7 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { PartnersOverview } from "@/lib/actions/partners-dashboard-actions";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
-import type { FunnelStage, PartnerTraffic } from "@/lib/partner-funnel";
+import { EntryFunnelsGrid } from "./entry-funnel-cards";
 import { HotEventsTable, TopEventsTable, TopPartnersTable } from "./insights-tables";
 
 const usd = new Intl.NumberFormat("en-US", {
@@ -48,177 +45,6 @@ export const INSIGHTS_RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
   { key: "90d", label: "90 days" },
   { key: "all", label: "All time" },
 ];
-
-interface EntryFunnelRow {
-  key: string;
-  label: string;
-  /** null = the flow has this step but nothing tracks it yet — rendered as "—". */
-  visitors: number | null;
-  /** Small print after the label — what this row really measures. */
-  note?: string;
-  /** Show the share un-rounded (Confirmed: 0.4% must not read as 0%). */
-  precise?: boolean;
-}
-
-const stageVisitors = (funnel: PartnerTraffic, stage: FunnelStage) =>
-  funnel.byStage.find((s) => s.stage === stage)?.visitors ?? 0;
-
-/** What each recorded stage really marks — the click LEAVING that screen. */
-const BROWSE_STAGE_NOTES: Partial<Record<FunnelStage, string>> = {
-  EVENT_SELECTED: "clicked into an event",
-  TICKET_SELECTED: "moved on to flights",
-  FLIGHT_SELECTED: "moved on to the hotel",
-  HOTEL_SELECTED: "reached the order summary",
-  CONFIRMED: "paid or asked for an agent",
-};
-
-const PAID_ROW_NOTE = "order now marked Paid — matched by partner, event & time";
-
-/** Home/artist entries: the recorded funnel, captioned like the event card,
- *  with the same matched-Paid row at the bottom. */
-const browseEntryRows = (
-  funnel: PartnerTraffic,
-  paid: number
-): EntryFunnelRow[] => [
-  ...funnel.byStage.map((s) => ({
-    key: s.stage,
-    label: s.label,
-    visitors: s.visitors,
-    note: BROWSE_STAGE_NOTES[s.stage],
-    precise: s.stage === "CONFIRMED",
-  })),
-  {
-    key: "PAID",
-    label: "Paid",
-    note: PAID_ROW_NOTE,
-    visitors: paid,
-    precise: true,
-  },
-];
-
-/**
- * Event deep-links land inside the order flow, so there is no "picked an
- * event" moment, and the wizard fires each stage on the click that LEAVES its
- * screen (see main's OrderForm nextStep): a ticket pick means moving on to
- * flights, a flight pick (chosen or skipped) moving on to the hotel, a hotel
- * pick reaching the order summary. Same counts, honest captions — plus one
- * caveat: /order pages fire no VISIT, so "Visited" only holds visitors who
- * advanced at least one screen; pure bounces are invisible until main tracks
- * order-page landings.
- */
-const eventEntryRows = (funnel: PartnerTraffic, paid: number): EntryFunnelRow[] => [
-  {
-    key: "VISIT",
-    label: "Visited",
-    note: "advanced at least one screen — landings aren't logged yet",
-    visitors: funnel.totalVisitors,
-  },
-  {
-    key: "TICKET_SELECTED",
-    label: "Picked tickets",
-    note: "moved on to flights",
-    visitors: stageVisitors(funnel, "TICKET_SELECTED"),
-  },
-  {
-    key: "FLIGHT_SELECTED",
-    label: "Picked a flight",
-    note: "moved on to the hotel",
-    visitors: stageVisitors(funnel, "FLIGHT_SELECTED"),
-  },
-  {
-    key: "HOTEL_SELECTED",
-    label: "Picked a hotel",
-    note: "reached the order summary",
-    visitors: stageVisitors(funnel, "HOTEL_SELECTED"),
-  },
-  {
-    key: "CONFIRMED",
-    label: "Confirmed",
-    note: "paid or asked for an agent",
-    visitors: stageVisitors(funnel, "CONFIRMED"),
-    precise: true,
-  },
-  {
-    key: "PAID",
-    label: "Paid",
-    note: PAID_ROW_NOTE,
-    visitors: paid,
-    precise: true,
-  },
-];
-
-/** Exact enough to never show a real signal as 0%: 0.36%, 1.2%, 4.0%. */
-const preciseShare = (pct: number) =>
-  pct === 0 ? "0" : pct < 1 ? pct.toFixed(2) : pct.toFixed(1);
-
-/** One entry-segment funnel: who landed there, how far they got. */
-function EntryFunnelCard({
-  icon: Icon,
-  title,
-  description,
-  hasData,
-  rows,
-}: {
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  hasData: boolean;
-  rows: EntryFunnelRow[];
-}) {
-  const top = Math.max(...rows.map((r) => r.visitors ?? 0), 1);
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon className="h-4 w-4 text-muted-foreground" />
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {!hasData ? (
-          <p className="py-6 text-sm text-muted-foreground">
-            No visitors in this period.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {rows.map((row) => {
-              const pct = row.visitors != null ? (row.visitors / top) * 100 : null;
-              return (
-                <div key={row.key} className="space-y-1">
-                  <div className="flex items-baseline justify-between gap-2 text-sm">
-                    <span className="min-w-0">
-                      {row.label}
-                      {row.note && (
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {row.note}
-                        </span>
-                      )}
-                    </span>
-                    <span className="shrink-0 font-medium tabular-nums">
-                      {row.visitors ?? "—"}
-                      {pct != null && row.key !== "VISIT" && (
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {row.precise ? preciseShare(pct) : Math.round(pct)}%
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary"
-                      style={{ width: `${pct ?? 0}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
 
 /** The cross-partner insights block — the opening view of /partners. */
 export function PartnersInsights({
@@ -335,44 +161,7 @@ export function PartnersInsights({
         })}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <EntryFunnelCard
-          icon={Home}
-          title="Entered on the homepage"
-          description="Visitors whose first page through a partner link was the homepage. Each step below marks moving one screen deeper."
-          hasData={overview.entryFunnels.home.hasData}
-          rows={browseEntryRows(
-            overview.entryFunnels.home,
-            overview.entryFunnels.paidByEntry.home
-          )}
-        />
-        <EntryFunnelCard
-          icon={Music}
-          title="Entered on an artist page"
-          description="First landed on an artist or team page. Each step below marks moving one screen deeper."
-          hasData={overview.entryFunnels.artist.hasData}
-          rows={browseEntryRows(
-            overview.entryFunnels.artist,
-            overview.entryFunnels.paidByEntry.artist
-          )}
-        />
-        <EntryFunnelCard
-          icon={Ticket}
-          title="Entered on a specific event"
-          description="Landed straight inside the order flow — package deep-links included. Each step below marks moving one screen deeper."
-          hasData={overview.entryFunnels.event.hasData}
-          rows={eventEntryRows(overview.entryFunnels.event, overview.entryFunnels.paidByEntry.event)}
-        />
-      </div>
-      {(overview.entryFunnels.otherVisitors > 0 ||
-        overview.entryFunnels.approximate) && (
-        <p className="-mt-4 text-xs text-muted-foreground">
-          {overview.entryFunnels.otherVisitors > 0 &&
-            `${overview.entryFunnels.otherVisitors} more visitors entered on other pages (categories, blog…).`}
-          {overview.entryFunnels.approximate &&
-            " Numbers are approximate until the entry-funnel DB function is deployed."}
-        </p>
-      )}
+      <EntryFunnelsGrid entryFunnels={overview.entryFunnels} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
