@@ -33,7 +33,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { PartnersOverview } from "@/lib/actions/partners-dashboard-actions";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
-import type { PartnerTraffic } from "@/lib/partner-funnel";
+import type { FunnelStage, PartnerTraffic } from "@/lib/partner-funnel";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -58,19 +58,92 @@ export const INSIGHTS_RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
   { key: "all", label: "All time" },
 ];
 
+interface EntryFunnelRow {
+  key: string;
+  label: string;
+  /** null = the flow has this step but nothing tracks it yet — rendered as "—". */
+  visitors: number | null;
+  /** Small print after the label — what this row really measures. */
+  note?: string;
+  /** Show the share un-rounded (Confirmed: 0.4% must not read as 0%). */
+  precise?: boolean;
+}
+
+const stageVisitors = (funnel: PartnerTraffic, stage: FunnelStage) =>
+  funnel.byStage.find((s) => s.stage === stage)?.visitors ?? 0;
+
+/** Home/artist entries: the funnel exactly as recorded. */
+const recordedRows = (funnel: PartnerTraffic): EntryFunnelRow[] =>
+  funnel.byStage.map((s) => ({
+    key: s.stage,
+    label: s.label,
+    visitors: s.visitors,
+    precise: s.stage === "CONFIRMED",
+  }));
+
+/**
+ * Event deep-links land inside the order flow, so there is no "picked an
+ * event" moment, and the wizard fires each stage on the click that LEAVES its
+ * screen (see main's OrderForm nextStep): a ticket pick means moving on to
+ * flights, a flight pick (chosen or skipped) moving on to the hotel, a hotel
+ * pick reaching the order summary. Same counts, honest captions — plus one
+ * caveat: /order pages fire no VISIT, so "Visited" only holds visitors who
+ * advanced at least one screen; pure bounces are invisible until main tracks
+ * order-page landings.
+ */
+const eventEntryRows = (funnel: PartnerTraffic): EntryFunnelRow[] => [
+  {
+    key: "VISIT",
+    label: "Visited",
+    note: "advanced at least one screen — landings aren't logged yet",
+    visitors: funnel.totalVisitors,
+  },
+  {
+    key: "TICKET_SELECTED",
+    label: "Picked tickets",
+    note: "moved on to flights",
+    visitors: stageVisitors(funnel, "TICKET_SELECTED"),
+  },
+  {
+    key: "FLIGHT_SELECTED",
+    label: "Picked a flight",
+    note: "moved on to the hotel",
+    visitors: stageVisitors(funnel, "FLIGHT_SELECTED"),
+  },
+  {
+    key: "HOTEL_SELECTED",
+    label: "Picked a hotel",
+    note: "reached the order summary",
+    visitors: stageVisitors(funnel, "HOTEL_SELECTED"),
+  },
+  {
+    key: "CONFIRMED",
+    label: "Confirmed",
+    note: "paid or asked for an agent",
+    visitors: stageVisitors(funnel, "CONFIRMED"),
+    precise: true,
+  },
+];
+
+/** Exact enough to never show a real signal as 0%: 0.36%, 1.2%, 4.0%. */
+const preciseShare = (pct: number) =>
+  pct === 0 ? "0" : pct < 1 ? pct.toFixed(2) : pct.toFixed(1);
+
 /** One entry-segment funnel: who landed there, how far they got. */
 function EntryFunnelCard({
   icon: Icon,
   title,
   description,
-  funnel,
+  hasData,
+  rows,
 }: {
   icon: LucideIcon;
   title: string;
   description: string;
-  funnel: PartnerTraffic;
+  hasData: boolean;
+  rows: EntryFunnelRow[];
 }) {
-  const top = Math.max(...funnel.byStage.map((s) => s.visitors), 1);
+  const top = Math.max(...rows.map((r) => r.visitors ?? 0), 1);
   return (
     <Card>
       <CardHeader>
@@ -81,23 +154,30 @@ function EntryFunnelCard({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
-        {!funnel.hasData ? (
+        {!hasData ? (
           <p className="py-6 text-sm text-muted-foreground">
             No visitors in this period.
           </p>
         ) : (
           <div className="space-y-3">
-            {funnel.byStage.map((stage) => {
-              const share = Math.round((stage.visitors / top) * 100);
+            {rows.map((row) => {
+              const pct = row.visitors != null ? (row.visitors / top) * 100 : null;
               return (
-                <div key={stage.stage} className="space-y-1">
-                  <div className="flex items-baseline justify-between text-sm">
-                    <span>{stage.label}</span>
-                    <span className="font-medium tabular-nums">
-                      {stage.visitors}
-                      {stage.stage !== "VISIT" && (
+                <div key={row.key} className="space-y-1">
+                  <div className="flex items-baseline justify-between gap-2 text-sm">
+                    <span className="min-w-0">
+                      {row.label}
+                      {row.note && (
                         <span className="ml-2 text-xs text-muted-foreground">
-                          {share}%
+                          {row.note}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 font-medium tabular-nums">
+                      {row.visitors ?? "—"}
+                      {pct != null && row.key !== "VISIT" && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {row.precise ? preciseShare(pct) : Math.round(pct)}%
                         </span>
                       )}
                     </span>
@@ -105,7 +185,7 @@ function EntryFunnelCard({
                   <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                     <div
                       className="h-full rounded-full bg-primary"
-                      style={{ width: `${share}%` }}
+                      style={{ width: `${pct ?? 0}%` }}
                     />
                   </div>
                 </div>
@@ -238,19 +318,22 @@ export function PartnersInsights({
           icon={Home}
           title="Entered on the homepage"
           description="Visitors whose first page through a partner link was the homepage."
-          funnel={overview.entryFunnels.home}
+          hasData={overview.entryFunnels.home.hasData}
+          rows={recordedRows(overview.entryFunnels.home)}
         />
         <EntryFunnelCard
           icon={Music}
           title="Entered on an artist page"
           description="First landed on an artist or team page."
-          funnel={overview.entryFunnels.artist}
+          hasData={overview.entryFunnels.artist.hasData}
+          rows={recordedRows(overview.entryFunnels.artist)}
         />
         <EntryFunnelCard
           icon={Ticket}
           title="Entered on a specific event"
-          description="Landed straight inside an event page — package deep-links included."
-          funnel={overview.entryFunnels.event}
+          description="Landed straight inside the order flow — package deep-links included. Each step below marks moving one screen deeper."
+          hasData={overview.entryFunnels.event.hasData}
+          rows={eventEntryRows(overview.entryFunnels.event)}
         />
       </div>
       {(overview.entryFunnels.otherVisitors > 0 ||
