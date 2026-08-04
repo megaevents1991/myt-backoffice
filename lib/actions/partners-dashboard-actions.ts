@@ -78,6 +78,10 @@ export interface EntryFunnels {
   event: PartnerTraffic
   /** Visitors who entered on any other page (category, blog, search…). */
   otherVisitors: number
+  /** Event-entry users whose CONFIRMED matched a now-Paid reservation of the
+   *  same partner + event name within ±30min — a match, not proof
+   *  (reservations carry no tracking user id). */
+  eventPaid: number
   /** True while computed from a capped client-side scan (RPC not deployed
    *  yet) — numbers may undercount on long windows. */
   approximate: boolean
@@ -248,6 +252,7 @@ function buildEntryFunnels(
     artist: trafficFromCounts(countsByEntry.get("artist")),
     event: trafficFromCounts(countsByEntry.get("event")),
     otherVisitors: countsByEntry.get("other")?.get("VISIT") ?? 0,
+    eventPaid: countsByEntry.get("event")?.get("PAID") ?? 0,
     approximate,
   }
 }
@@ -514,7 +519,9 @@ export async function getPartnersOverview(
     const scanQuery = () => {
       let q = supabase
         .from("affiliates_tracking")
-        .select("id,user_id,stage,path:data->>path")
+        .select(
+          "id,user_id,stage,created_at,affiliate_id,path:data->>path,event_name:data->data->>eventName"
+        )
         .not("user_id", "is", null)
         .order("created_at", { ascending: true })
         .order("id", { ascending: true })
@@ -526,7 +533,10 @@ export async function getPartnersOverview(
       id: number | string
       user_id: string
       stage: string | null
+      created_at: string
+      affiliate_id: string | null
       path: string | null
+      event_name: string | null
     }>(scanQuery, ENTRY_SCAN_LIMIT)
     if (scan.error) {
       console.error("getPartnersOverview entry scan:", JSON.stringify(scan.error))
@@ -535,6 +545,38 @@ export async function getPartnersOverview(
       // Partial coverage (cap hit, or an error after some pages) is served but
       // flagged — the UI's "approximate" note keys off this.
       entryApproximate = scan.truncated || scan.error != null
+
+      // Mirror of the RPC's paid_users match: a CONFIRMED row against a
+      // now-Paid reservation of the same partner + event name within ±30min.
+      // Reservations carry no tracking user id, so this is a match, not proof.
+      const paidCandidates = paid.map((r) => ({
+        code: r.aff_partner_tracking_code,
+        time: new Date(r.created_at).getTime(),
+        names: new Set(
+          normalizeReservationEventOrderInfo(r.event_order_info)
+            .map((item) => item?.name?.trim().toLowerCase())
+            .filter((name): name is string => !!name)
+        ),
+      }))
+      const PAID_MATCH_WINDOW_MS = 30 * 60 * 1000
+      const paidUsers = new Set<string>()
+      for (const row of scan.rows) {
+        if (row.stage !== "CONFIRMED" || !row.event_name || paidUsers.has(row.user_id))
+          continue
+        const name = row.event_name.trim().toLowerCase()
+        const time = new Date(row.created_at).getTime()
+        if (
+          paidCandidates.some(
+            (r) =>
+              r.code === row.affiliate_id &&
+              Math.abs(r.time - time) <= PAID_MATCH_WINDOW_MS &&
+              r.names.has(name)
+          )
+        ) {
+          paidUsers.add(row.user_id)
+        }
+      }
+
       const entryByUser = new Map<string, EntryKind>()
       const stagesByUser = new Map<string, Set<string>>()
       for (const row of scan.rows) {
@@ -552,6 +594,9 @@ export async function getPartnersOverview(
         perStage.set("VISIT", (perStage.get("VISIT") ?? 0) + 1)
         for (const stage of stagesByUser.get(userId) ?? []) {
           perStage.set(stage, (perStage.get(stage) ?? 0) + 1)
+        }
+        if (paidUsers.has(userId)) {
+          perStage.set("PAID", (perStage.get("PAID") ?? 0) + 1)
         }
         countsByEntry.set(entry, perStage)
       }

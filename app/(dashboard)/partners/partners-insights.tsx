@@ -91,7 +91,7 @@ const recordedRows = (funnel: PartnerTraffic): EntryFunnelRow[] =>
  * advanced at least one screen; pure bounces are invisible until main tracks
  * order-page landings.
  */
-const eventEntryRows = (funnel: PartnerTraffic): EntryFunnelRow[] => [
+const eventEntryRows = (funnel: PartnerTraffic, paid: number): EntryFunnelRow[] => [
   {
     key: "VISIT",
     label: "Visited",
@@ -121,6 +121,13 @@ const eventEntryRows = (funnel: PartnerTraffic): EntryFunnelRow[] => [
     label: "Confirmed",
     note: "paid or asked for an agent",
     visitors: stageVisitors(funnel, "CONFIRMED"),
+    precise: true,
+  },
+  {
+    key: "PAID",
+    label: "Paid",
+    note: "order now marked Paid — matched by partner, event & time",
+    visitors: paid,
     precise: true,
   },
 ];
@@ -333,7 +340,7 @@ export function PartnersInsights({
           title="Entered on a specific event"
           description="Landed straight inside the order flow — package deep-links included. Each step below marks moving one screen deeper."
           hasData={overview.entryFunnels.event.hasData}
-          rows={eventEntryRows(overview.entryFunnels.event)}
+          rows={eventEntryRows(overview.entryFunnels.event, overview.entryFunnels.eventPaid)}
         />
       </div>
       {(overview.entryFunnels.otherVisitors > 0 ||
