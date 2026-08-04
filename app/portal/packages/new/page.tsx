@@ -3,6 +3,10 @@ import { getPackageBuilderEvents } from "@/lib/actions/portal-package-actions";
 import { PackageWizard } from "./package-wizard";
 
 export const dynamic = "force-dynamic";
+// The wizard's server actions proxy slow supplier searches through main
+// (Amadeus ~30s, Ratehawk two-step, TixStock listings) — the default function
+// window cuts them off mid-flight and the UI reads it as "doesn't work".
+export const maxDuration = 60;
 
 export default async function NewPackagePage({
   searchParams,
