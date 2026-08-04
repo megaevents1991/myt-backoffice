@@ -63,14 +63,38 @@ interface EntryFunnelRow {
 const stageVisitors = (funnel: PartnerTraffic, stage: FunnelStage) =>
   funnel.byStage.find((s) => s.stage === stage)?.visitors ?? 0;
 
-/** Home/artist entries: the funnel exactly as recorded. */
-const recordedRows = (funnel: PartnerTraffic): EntryFunnelRow[] =>
-  funnel.byStage.map((s) => ({
+/** What each recorded stage really marks — the click LEAVING that screen. */
+const BROWSE_STAGE_NOTES: Partial<Record<FunnelStage, string>> = {
+  EVENT_SELECTED: "clicked into an event",
+  TICKET_SELECTED: "moved on to flights",
+  FLIGHT_SELECTED: "moved on to the hotel",
+  HOTEL_SELECTED: "reached the order summary",
+  CONFIRMED: "paid or asked for an agent",
+};
+
+const PAID_ROW_NOTE = "order now marked Paid — matched by partner, event & time";
+
+/** Home/artist entries: the recorded funnel, captioned like the event card,
+ *  with the same matched-Paid row at the bottom. */
+const browseEntryRows = (
+  funnel: PartnerTraffic,
+  paid: number
+): EntryFunnelRow[] => [
+  ...funnel.byStage.map((s) => ({
     key: s.stage,
     label: s.label,
     visitors: s.visitors,
+    note: BROWSE_STAGE_NOTES[s.stage],
     precise: s.stage === "CONFIRMED",
-  }));
+  })),
+  {
+    key: "PAID",
+    label: "Paid",
+    note: PAID_ROW_NOTE,
+    visitors: paid,
+    precise: true,
+  },
+];
 
 /**
  * Event deep-links land inside the order flow, so there is no "picked an
@@ -117,7 +141,7 @@ const eventEntryRows = (funnel: PartnerTraffic, paid: number): EntryFunnelRow[] 
   {
     key: "PAID",
     label: "Paid",
-    note: "order now marked Paid — matched by partner, event & time",
+    note: PAID_ROW_NOTE,
     visitors: paid,
     precise: true,
   },
@@ -315,23 +339,29 @@ export function PartnersInsights({
         <EntryFunnelCard
           icon={Home}
           title="Entered on the homepage"
-          description="Visitors whose first page through a partner link was the homepage."
+          description="Visitors whose first page through a partner link was the homepage. Each step below marks moving one screen deeper."
           hasData={overview.entryFunnels.home.hasData}
-          rows={recordedRows(overview.entryFunnels.home)}
+          rows={browseEntryRows(
+            overview.entryFunnels.home,
+            overview.entryFunnels.paidByEntry.home
+          )}
         />
         <EntryFunnelCard
           icon={Music}
           title="Entered on an artist page"
-          description="First landed on an artist or team page."
+          description="First landed on an artist or team page. Each step below marks moving one screen deeper."
           hasData={overview.entryFunnels.artist.hasData}
-          rows={recordedRows(overview.entryFunnels.artist)}
+          rows={browseEntryRows(
+            overview.entryFunnels.artist,
+            overview.entryFunnels.paidByEntry.artist
+          )}
         />
         <EntryFunnelCard
           icon={Ticket}
           title="Entered on a specific event"
           description="Landed straight inside the order flow — package deep-links included. Each step below marks moving one screen deeper."
           hasData={overview.entryFunnels.event.hasData}
-          rows={eventEntryRows(overview.entryFunnels.event, overview.entryFunnels.eventPaid)}
+          rows={eventEntryRows(overview.entryFunnels.event, overview.entryFunnels.paidByEntry.event)}
         />
       </div>
       {(overview.entryFunnels.otherVisitors > 0 ||

@@ -93,10 +93,10 @@ export interface EntryFunnels {
   event: PartnerTraffic
   /** Visitors who entered on any other page (category, blog, search…). */
   otherVisitors: number
-  /** Event-entry users whose CONFIRMED matched a now-Paid reservation of the
-   *  same partner + event name within ±30min — a match, not proof
-   *  (reservations carry no tracking user id). */
-  eventPaid: number
+  /** Users whose CONFIRMED matched a now-Paid reservation of the same partner
+   *  + event name within ±30min — a match, not proof (reservations carry no
+   *  tracking user id) — split by where they entered. */
+  paidByEntry: { home: number; artist: number; event: number }
   /** True while computed from a capped client-side scan (RPC not deployed
    *  yet) — numbers may undercount on long windows. */
   approximate: boolean
@@ -278,7 +278,11 @@ function buildEntryFunnels(
     artist: trafficFromCounts(countsByEntry.get("artist")),
     event: trafficFromCounts(countsByEntry.get("event")),
     otherVisitors: countsByEntry.get("other")?.get("VISIT") ?? 0,
-    eventPaid: countsByEntry.get("event")?.get("PAID") ?? 0,
+    paidByEntry: {
+      home: countsByEntry.get("home")?.get("PAID") ?? 0,
+      artist: countsByEntry.get("artist")?.get("PAID") ?? 0,
+      event: countsByEntry.get("event")?.get("PAID") ?? 0,
+    },
     approximate,
   }
 }
