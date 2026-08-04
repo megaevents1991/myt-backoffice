@@ -1,5 +1,8 @@
 import { getSession } from "@/lib/auth/guards";
-import { getPackageBuilderEvents } from "@/lib/actions/portal-package-actions";
+import {
+  getMyCommissionTerms,
+  getPackageBuilderEvents,
+} from "@/lib/actions/portal-package-actions";
 import { PackageWizard } from "./package-wizard";
 
 export const dynamic = "force-dynamic";
@@ -18,20 +21,24 @@ export default async function NewPackagePage({
 
   const { event: eventParam } = await searchParams;
   const initialEventId = Number(eventParam);
-  const events = await getPackageBuilderEvents();
+  const [events, commissionTerms] = await Promise.all([
+    getPackageBuilderEvents(),
+    getMyCommissionTerms().catch(() => null),
+  ]);
 
   return (
     <main className="space-y-6">
       <div>
         <h1 className="font-display text-xl font-bold">בניית חבילה</h1>
         <p className="text-sm text-muted-foreground">
-          בוחרים אירוע, כרטיסים, טיסה ומלון — ומקבלים לינק שמנחית את הלקוח ישר
-          על החבילה המוכנה.
+          בוחרים אירוע, כרטיסים, טיסה ומלון — בדיוק כמו שהלקוח רואה באתר —
+          ומקבלים לינק שמנחית אותו ישר על החבילה המוכנה.
         </p>
       </div>
       <PackageWizard
         events={events}
         initialEventId={Number.isFinite(initialEventId) ? initialEventId : undefined}
+        commissionTerms={commissionTerms}
       />
     </main>
   );

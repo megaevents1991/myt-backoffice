@@ -432,15 +432,21 @@ export function TixstockDynamicMap({
     );
   }
 
-  if (error) {
+  // The interactive layer needs the SVG *content* (proxy fetch + injection);
+  // a plain <img> needs neither CORS nor the proxy. So when the dynamic
+  // pipeline fails, degrade to the static venue image instead of vanishing.
+  if (error || !paintedSvg) {
     return (
-      <div className="flex items-center justify-center p-8 text-red-500">
-        {error}
+      <div className="w-full" dir="ltr">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={mapUrl}
+          alt="מפת האולם"
+          className="mx-auto max-h-[45svh] w-auto max-w-full rounded-xl object-contain lg:max-h-[calc(100vh-10rem)]"
+        />
       </div>
     );
   }
-
-  if (!paintedSvg) return null;
 
   return (
     <div className="w-full" dir="ltr">

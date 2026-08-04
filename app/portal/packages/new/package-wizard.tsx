@@ -1,36 +1,27 @@
 "use client";
 
+/**
+ * The portal's package wizard, rebuilt to mirror myt-main's order flow
+ * end-to-end (user: the agent must get the exact experience the site gives):
+ * Stepper on top, main's step screens (ticket-step / flight-step / hotel-step /
+ * review-step), and the sticky ContinueBar with slot pills + running
+ * per-person total. State lives here and never unmounts across steps, so
+ * edit-from-summary (returnToSummary) keeps every selection — main's model.
+ */
+
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  ArrowRight,
-  BedDouble,
-  Check,
-  Copy,
-  Loader2,
-  Luggage,
-  MapPin,
-  Minus,
-  Plane,
-  Plus,
-  Search,
-  Star,
-  Ticket,
-} from "lucide-react";
+import { BedDouble, Check, Copy, Plane, Search, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { TixstockDynamicMap } from "@/components/TixstockDynamicMap";
-import type { TixStockMatchableListing } from "@/lib/tixstock-map";
 import {
   createPreparedPackage,
   getLiveTicketOffers,
   getPackageBuilderInventory,
   searchLiveFlights,
   searchLiveHotels,
+  type BuilderCommissionTerms,
   type BuilderEvent,
   type BuilderFlight,
   type BuilderHotelRoom,
@@ -38,187 +29,47 @@ import {
   type LiveHotelOption,
   type LiveTicketCategory,
 } from "@/lib/actions/portal-package-actions";
+import type { TixStockMatchableListing } from "@/lib/tixstock-map";
+import {
+  WizardContext,
+  type FlightChoice,
+  type HotelChoice,
+  type WizardState,
+} from "./wizard-context";
+import {
+  ContinueBar,
+  dateOnly,
+  deltaAmount,
+  deltaNote,
+  deltaVsBase,
+  dateFmt,
+  usd,
+  WizardStepper,
+  type ContinueSlot,
+  type Delta,
+} from "./wizard-ui";
+import { TicketStep } from "./ticket-step";
+import { FlightStep } from "./flight-step";
+import { HotelStep } from "./hotel-step";
+import { ReviewStep } from "./review-step";
 
-type FlightChoice =
-  | { mode: "offline"; flightId: number }
-  | { mode: "live-offer"; offer: LiveFlightOffer }
-  | { mode: "live" }
-  | { mode: "none" };
-type HotelChoice =
-  | { mode: "offline"; units: Record<number, number> }
-  | { mode: "live-offer"; option: LiveHotelOption }
-  | { mode: "live" }
-  | { mode: "none" };
-
-const STEPS = ["אירוע", "כרטיסים", "טיסה", "מלון", "סיכום"] as const;
-
-function StepHeader({ step }: { step: number }) {
-  return (
-    <div className="space-y-2">
-      <ol className="flex flex-wrap items-center gap-2 text-xs">
-        {STEPS.map((label, i) => (
-          <li key={label} className="flex items-center gap-2">
-            <span
-              className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full border font-medium transition-colors",
-                i < step && "border-transparent bg-brand-mint text-brand-forest",
-                i === step && "border-transparent bg-primary text-primary-foreground",
-                i > step && "text-muted-foreground",
-              )}
-            >
-              {i < step ? <Check className="h-3.5 w-3.5" /> : i + 1}
-            </span>
-            <span className={cn(i === step ? "font-semibold" : "text-muted-foreground")}>
-              {label}
-            </span>
-            {i < STEPS.length - 1 && <span className="text-muted-foreground/50">—</span>}
-          </li>
-        ))}
-      </ol>
-      <div className="h-1 w-full max-w-md overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full rounded-full bg-brand-mint transition-all duration-300"
-          style={{ width: `${((step + 1) / STEPS.length) * 100}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function OptionCard({
-  selected,
-  onClick,
-  children,
-  disabled,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "w-full rounded-xl border bg-card p-4 text-start shadow-card transition-all",
-        selected
-          ? "border-primary ring-1 ring-primary"
-          : "hover:-translate-y-0.5 hover:shadow-card-hover",
-        disabled && "cursor-not-allowed opacity-50 hover:translate-y-0 hover:shadow-card",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
+const STEPS = ["אירוע", "כרטיסים", "טיסה", "מלון", "סיום"] as const;
 
 const MINT_CTA =
   "rounded-full bg-brand-mint px-5 font-semibold text-brand-forest transition-all duration-200 hover:bg-brand-mint/90 hover:shadow-mint-glow active:scale-[0.98]";
 
-function FilterChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-        active
-          ? "border-transparent bg-brand-forest text-primary-foreground"
-          : "bg-background hover:bg-muted",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-const dateFmt = (value: string | null | undefined) =>
-  value ? new Date(value).toLocaleDateString("he-IL") : "";
-
-const timeFmt = (value: string | null | undefined) =>
-  value
-    ? new Date(value).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })
-    : "";
-
-const usd = (value: number) => `$${Math.round(value).toLocaleString("en-US")}`;
-
-const dateOnly = (value: string | null | undefined) => (value ? value.slice(0, 10) : "");
-
-/** "PT4H5M" → "4h 05" — main's duration label. */
-const durationLabel = (value: string | null | undefined) => {
-  const match = value?.match(/PT(\d+)H(\d*)M?/);
-  if (!match) return "";
-  return match[2] ? `${match[1]}h ${match[2].padStart(2, "0")}` : `${match[1]}h`;
-};
-
-/** One direction of a flight, laid out like main's flight card. */
-function FlightLeg({
-  label,
-  depTime,
-  depAirport,
-  arrTime,
-  arrAirport,
-  duration,
-  stopLabel,
-}: {
-  label: string;
-  depTime: string | null | undefined;
-  depAirport: string;
-  arrTime?: string | null;
-  arrAirport: string;
-  duration?: string | null;
-  stopLabel?: string | null;
-}) {
-  const dur = durationLabel(duration);
-  return (
-    <div className="flex items-center gap-3 text-sm">
-      <span className="w-9 shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="w-14 shrink-0 text-end">
-        <p className="font-semibold tabular-nums leading-tight">{timeFmt(depTime)}</p>
-        <p className="text-[11px] text-muted-foreground" dir="ltr">{depAirport}</p>
-      </div>
-      <div className="min-w-0 flex-1 px-1">
-        <p
-          className={cn(
-            "text-center text-[11px] leading-tight",
-            stopLabel ? "text-destructive" : "text-muted-foreground",
-          )}
-        >
-          {stopLabel ?? "ישירה"}
-          {dur ? ` · ${dur}` : ""}
-        </p>
-        <div className="relative mt-1 h-px w-full bg-border">
-          <span className="absolute -top-[3px] end-0 h-[7px] w-[7px] rounded-full border bg-background" />
-          <span className="absolute -top-[3px] start-0 h-[7px] w-[7px] rounded-full bg-brand-forest" />
-        </div>
-      </div>
-      <div className="w-14 shrink-0">
-        <p className="font-semibold tabular-nums leading-tight">{arrTime ? timeFmt(arrTime) : "—"}</p>
-        <p className="text-[11px] text-muted-foreground" dir="ltr">{arrAirport}</p>
-      </div>
-    </div>
-  );
-}
-
 export function PackageWizard({
   events,
   initialEventId,
+  commissionTerms,
 }: {
   events: BuilderEvent[];
   /** Deep entry from the unified packages page — lands straight on tickets. */
   initialEventId?: number;
+  commissionTerms?: BuilderCommissionTerms | null;
 }) {
   const [step, setStep] = useState(0);
+  const [returnToSummary, setReturnToSummary] = useState(false);
   const [query, setQuery] = useState("");
   const [event, setEvent] = useState<BuilderEvent | null>(null);
   const [category, setCategory] = useState<string | null>(null);
@@ -229,7 +80,7 @@ export function PackageWizard({
   const [flightChoice, setFlightChoice] = useState<FlightChoice>({ mode: "live" });
   const [hotelChoice, setHotelChoice] = useState<HotelChoice>({ mode: "live" });
   const [allowEdit, setAllowEdit] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -248,12 +99,6 @@ export function PackageWizard({
   const [hsError, setHsError] = useState<string | null>(null);
   const [hsResults, setHsResults] = useState<LiveHotelOption[] | null>(null);
 
-  // Display filters — narrow what's shown, never what's saved.
-  const [fsDirectOnly, setFsDirectOnly] = useState(false);
-  const [fsBagsOnly, setFsBagsOnly] = useState(false);
-  const [hsBreakfastOnly, setHsBreakfastOnly] = useState(false);
-  const [hsMinStars, setHsMinStars] = useState(0);
-
   // tx_event live pricing + dynamic map — mirrors main's ticket step.
   const [liveTix, setLiveTix] = useState<LiveTicketCategory[] | null>(null);
   const [tixListings, setTixListings] = useState<TixStockMatchableListing[]>([]);
@@ -262,6 +107,7 @@ export function PackageWizard({
   const [hoveredCat, setHoveredCat] = useState<string | null>(null);
 
   const isTx = event?.type === "tx_event";
+
   useEffect(() => {
     if (!event || event.type !== "tx_event" || !event.tix_event_id) {
       setLiveTix(null);
@@ -290,11 +136,14 @@ export function PackageWizard({
           setCategory((prev) =>
             prev && res.categories.some((c) => c.category === prev)
               ? prev
-              : res.categories[0]?.category ?? null,
+              : cheapestCategory(res.categories),
           );
         } else {
           setTixError(res.error);
         }
+      })
+      .catch(() => {
+        if (!cancelled) setTixError("טעינת המחירים החיים נכשלה. נסו שוב.");
       })
       .finally(() => {
         if (!cancelled) setTixLoading(false);
@@ -305,19 +154,6 @@ export function PackageWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?.id, event?.type, event?.tix_event_id, qty]);
 
-  /** Cheapest listing of a category — hover/selection anchor for the map. */
-  const cheapestListingOf = (cat: string | null): TixStockMatchableListing | null => {
-    if (!cat) return null;
-    const norm = cat.trim().toLowerCase();
-    const inCat = tixListings.filter(
-      (l) => l.seat_details?.category?.trim().toLowerCase() === norm,
-    );
-    if (inCat.length === 0) return null;
-    return inCat.reduce((min, l) =>
-      (l.proceed_price ?? Infinity) < (min.proceed_price ?? Infinity) ? l : min,
-    );
-  };
-
   // Party size drives both searches — a qty change invalidates old results.
   useEffect(() => {
     setFsResults(null);
@@ -325,6 +161,11 @@ export function PackageWizard({
     setFlightChoice((prev) => (prev.mode === "live-offer" ? { mode: "live" } : prev));
     setHotelChoice((prev) => (prev.mode === "live-offer" ? { mode: "live" } : prev));
   }, [qty]);
+
+  // Main scrolls to the top on every step change (OrderForm.tsx).
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [step]);
 
   const matches = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -340,7 +181,7 @@ export function PackageWizard({
 
   const selectEvent = (e: BuilderEvent) => {
     setEvent(e);
-    setCategory(e.tickets[0]?.category ?? null);
+    setCategory(cheapestCategory(e.tickets));
     setFlightChoice({ mode: "live" });
     setHotelChoice({ mode: "live" });
     setFsResults(null);
@@ -349,12 +190,19 @@ export function PackageWizard({
     setHsError(null);
     setFsDepart(dateOnly(e.def_date_depart));
     setFsReturn(dateOnly(e.def_date_return));
+    setHsCheckin("");
+    setHsCheckout("");
+    setReturnToSummary(false);
     setStep(1);
     setInventoryLoading(true);
     getPackageBuilderInventory(e.id)
       .then((inv) => {
         setFlights(inv.flights);
         setHotels(inv.hotels);
+      })
+      .catch(() => {
+        setFlights([]);
+        setHotels([]);
       })
       .finally(() => setInventoryLoading(false));
   };
@@ -369,37 +217,17 @@ export function PackageWizard({
   }, []);
 
   // tx events price from the live feed; everything else from the event row.
-  const activeTickets: {
-    category: string;
-    price: number;
-    id: string;
-    vendor?: string;
-    site_price: number | null;
-  }[] = isTx && liveTix ? liveTix : event?.tickets ?? [];
+  const activeTickets = useMemo(
+    () => (isTx && liveTix ? liveTix : event?.tickets ?? []),
+    [isTx, liveTix, event],
+  );
   const selectedTicket = activeTickets.find((t) => t.category === category) ?? null;
 
-  // ------- offline hotel grouping (unchanged mechanics) -------
-  const hotelGroups = useMemo(() => {
-    const groups = new Map<string, BuilderHotelRoom[]>();
-    for (const room of hotels) {
-      const key = `${room.hid ?? room.hotel_name}|${room.check_in}|${room.check_out}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(room);
-    }
-    return [...groups.values()];
-  }, [hotels]);
-
+  // ------- offline hotel mechanics (unchanged) -------
   const selectedUnits = useMemo<Record<number, number>>(
     () => (hotelChoice.mode === "offline" ? hotelChoice.units : {}),
     [hotelChoice],
   );
-
-  const selectedGroupKey = useMemo(() => {
-    const activeRow = hotels.find((h) => (selectedUnits[h.rowId] ?? 0) > 0);
-    return activeRow
-      ? `${activeRow.hid ?? activeRow.hotel_name}|${activeRow.check_in}|${activeRow.check_out}`
-      : null;
-  }, [hotels, selectedUnits]);
 
   const setUnitCount = (room: BuilderHotelRoom, delta: number) => {
     setHotelChoice((prev) => {
@@ -425,48 +253,50 @@ export function PackageWizard({
       ? flights.find((f) => f.id === flightChoice.flightId) ?? null
       : null;
 
-  const hasMeal = (meal: string | null | undefined) => !!meal && meal !== "nomeal";
-
-  const [fsSort, setFsSort] = useState<"price" | "time">("price");
-  const [hsSort, setHsSort] = useState<"price" | "distance" | "stars">("price");
-
-  const visibleOfflineFlights = flights
-    .filter(
-      (f) =>
-        (!fsDirectOnly || (!f.outbound_stop_airport && !f.inbound_stop_airport)) &&
-        (!fsBagsOnly || f.bags_included),
-    )
-    .sort((a, b) =>
-      fsSort === "price"
-        ? a.price - b.price
-        : a.outbound_departure_time.localeCompare(b.outbound_departure_time),
-    );
-  const liveFlightMatches = (fsResults ?? [])
-    .filter(
-      (o) =>
-        (!fsDirectOnly || o.stops === 0) &&
-        (!fsBagsOnly || (o.outbound.checkBagsIncluded && o.inbound.checkBagsIncluded)),
-    )
-    .sort((a, b) =>
-      fsSort === "price"
-        ? a.price - b.price
-        : (a.outbound.departureTime || "").localeCompare(b.outbound.departureTime || ""),
-    );
-  const visibleHotelGroups = hsBreakfastOnly
-    ? hotelGroups
-        .map((group) => group.filter((room) => hasMeal(room.meal_plan)))
-        .filter((group) => group.length > 0)
-    : hotelGroups;
-  const liveHotelMatches = (hsResults ?? [])
-    .filter((o) => (!hsBreakfastOnly || hasMeal(o.meal)) && o.stars >= hsMinStars)
-    .sort((a, b) => {
-      if (hsSort === "distance") return (a.distance_m || 1e9) - (b.distance_m || 1e9);
-      if (hsSort === "stars") return b.stars - a.stars || a.price - b.price;
-      return a.price - b.price;
-    });
-
   const canContinueFromHotel =
-    hotelChoice.mode !== "offline" || (Object.keys(selectedUnits).length > 0 && hotelCapacity >= qty);
+    hotelChoice.mode !== "offline" ||
+    (Object.keys(selectedUnits).length > 0 && hotelCapacity >= qty);
+
+  // ------- pricing: per-person deltas vs the site's package baselines -------
+  const basePerPerson = event?.site_price ?? null;
+
+  const ticketDelta: Delta | null =
+    selectedTicket?.site_price != null && basePerPerson != null
+      ? deltaVsBase(selectedTicket.site_price, basePerPerson)
+      : null;
+
+  const flightDelta: Delta | null = (() => {
+    if (!event) return null;
+    if (flightChoice.mode === "offline" && chosenFlight) {
+      return deltaVsBase(chosenFlight.price, event.base_flight_price);
+    }
+    if (flightChoice.mode === "live-offer") {
+      const offer = flightChoice.offer;
+      const travelers = Math.max(1, offer.numOfTravelers || qty);
+      return deltaVsBase(offer.price / travelers, event.base_flight_price);
+    }
+    return null;
+  })();
+
+  const hotelDelta: Delta | null = (() => {
+    if (!event) return null;
+    if (hotelChoice.mode === "offline" && hotelTotal > 0) {
+      return deltaVsBase(hotelTotal / Math.max(1, qty), event.base_hotel_price);
+    }
+    if (hotelChoice.mode === "live-offer") {
+      return deltaVsBase(hotelChoice.option.price / Math.max(1, qty), event.base_hotel_price);
+    }
+    return null;
+  })();
+
+  // Main's continue-bar preview: base + max(0, ticket) + flight + hotel deltas.
+  const totalPerPerson = (() => {
+    if (basePerPerson == null) return null;
+    let total = basePerPerson + Math.max(0, ticketDelta ? deltaAmount(ticketDelta) : 0);
+    if (flightDelta) total += deltaAmount(flightDelta);
+    if (hotelDelta) total += deltaAmount(hotelDelta);
+    return total;
+  })();
 
   // ------- live searches -------
   const runFlightSearch = () => {
@@ -487,6 +317,7 @@ export function PackageWizard({
           setFsError(res.error);
         }
       })
+      .catch(() => setFsError("החיפוש נכשל. נסו שוב."))
       .finally(() => setFsLoading(false));
   };
 
@@ -527,12 +358,34 @@ export function PackageWizard({
           setHsError(res.error);
         }
       })
+      .catch(() => setHsError("החיפוש נכשל. נסו שוב."))
       .finally(() => setHsLoading(false));
   };
 
+  // ------- navigation -------
+  const flowComplete = !!event && !!selectedTicket;
+
+  const goNext = () => {
+    if (returnToSummary && flowComplete) {
+      setReturnToSummary(false);
+      setStep(4);
+      return;
+    }
+    setStep((s) => Math.min(4, s + 1));
+  };
+  const goBack = () => setStep((s) => Math.max(0, s - 1));
+  const editStep = (target: number) => {
+    setReturnToSummary(true);
+    setStep(target);
+  };
+  useEffect(() => {
+    if (step === 4) setReturnToSummary(false);
+  }, [step]);
+
+  // ------- submit -------
   const submit = () => {
     if (!event || !category) return;
-    setError(null);
+    setSubmitError(null);
     startTransition(async () => {
       const result = await createPreparedPackage({
         eventId: event.id,
@@ -557,7 +410,7 @@ export function PackageWizard({
               : hotelChoice,
       });
       if (result.ok) setLink(result.link);
-      else setError(result.error);
+      else setSubmitError(result.error);
     });
   };
 
@@ -570,6 +423,157 @@ export function PackageWizard({
     } catch {
       setCopied(false);
     }
+  };
+
+  // ------- continue bar wiring -------
+  const flightSlotValue = (() => {
+    if (flightChoice.mode === "offline") return chosenFlight?.airline_name ?? null;
+    if (flightChoice.mode === "live-offer") {
+      return flightChoice.offer.metadata?.name || flightChoice.offer.airline;
+    }
+    if (flightChoice.mode === "none") return "ללא טיסה";
+    return step > 2 || returnToSummary ? "הלקוח יבחר באתר" : null;
+  })();
+  const hotelSlotValue = (() => {
+    if (hotelChoice.mode === "offline") {
+      const names = [
+        ...new Set(
+          hotels.filter((h) => (selectedUnits[h.rowId] ?? 0) > 0).map((h) => h.hotel_name),
+        ),
+      ];
+      return names[0] ?? null;
+    }
+    if (hotelChoice.mode === "live-offer") return hotelChoice.option.name;
+    if (hotelChoice.mode === "none") return "ללא מלון";
+    return step > 3 ? "הלקוח יבחר באתר" : null;
+  })();
+
+  const primaryDisabled =
+    (step === 1 && !selectedTicket) || (step === 3 && !canContinueFromHotel);
+
+  const slotTarget = (target: number): number | null => {
+    if (target === step) return null;
+    if (target < step) return target;
+    if (target === step + 1 && !primaryDisabled) return target;
+    return null;
+  };
+
+  const slots: ContinueSlot[] = [
+    {
+      key: "ticket",
+      icon: Ticket,
+      label: "כרטיס",
+      value: selectedTicket ? `${qty} × ${selectedTicket.category}` : null,
+      note: ticketDelta ? deltaNote(ticketDelta) : null,
+      target: slotTarget(1),
+    },
+    {
+      key: "flight",
+      icon: Plane,
+      label: "טיסה",
+      value: flightSlotValue,
+      note: flightDelta ? deltaNote(flightDelta) : null,
+      target: slotTarget(2),
+    },
+    {
+      key: "hotel",
+      icon: BedDouble,
+      label: "מלון",
+      value: hotelSlotValue,
+      note: hotelDelta ? deltaNote(hotelDelta) : null,
+      target: slotTarget(3),
+    },
+  ];
+
+  const primaryLabel = returnToSummary
+    ? "שמור וחזור לסיכום"
+    : step === 1
+      ? "בחר והמשך לטיסה"
+      : step === 2
+        ? "בחר והמשך למלון"
+        : "בחר והמשך לסיכום";
+
+  const skip =
+    step === 2
+      ? {
+          label: "דלג — הלקוח יבחר",
+          action: () => {
+            setFlightChoice({ mode: "live" });
+            goNext();
+          },
+        }
+      : step === 3
+        ? {
+            label: "דלג — הלקוח יבחר",
+            action: () => {
+              setHotelChoice({ mode: "live" });
+              goNext();
+            },
+          }
+        : null;
+
+  // ------- context value -------
+  const wizardState: WizardState = {
+    step,
+    setStep,
+    goNext,
+    goBack,
+    returnToSummary,
+    events,
+    event,
+    selectEvent,
+    qty,
+    setQty,
+    category,
+    setCategory,
+    activeTickets,
+    selectedTicket,
+    isTx,
+    liveTix,
+    tixListings,
+    tixLoading,
+    tixError,
+    hoveredCat,
+    setHoveredCat,
+    flights,
+    hotels,
+    inventoryLoading,
+    flightChoice,
+    setFlightChoice,
+    fsDepart,
+    setFsDepart,
+    fsReturn,
+    setFsReturn,
+    fsLoading,
+    fsError,
+    fsResults,
+    runFlightSearch,
+    hotelChoice,
+    setHotelChoice,
+    selectedUnits,
+    setUnitCount,
+    hotelCapacity,
+    hotelTotal,
+    hsCheckin,
+    setHsCheckin,
+    hsCheckout,
+    setHsCheckout,
+    hsLoading,
+    hsError,
+    hsResults,
+    runHotelSearch,
+    defaultHotelDates,
+    basePerPerson,
+    ticketDelta,
+    flightDelta,
+    hotelDelta,
+    totalPerPerson,
+    commissionTerms: commissionTerms ?? null,
+    allowEdit,
+    setAllowEdit,
+    submit,
+    isPending,
+    submitError,
   };
 
   // ------- success screen -------
@@ -618,855 +622,112 @@ export function PackageWizard({
   }
 
   return (
-    <div className="space-y-6">
-      <StepHeader step={step} />
+    <WizardContext.Provider value={wizardState}>
+      <div className="space-y-4">
+        <WizardStepper
+          steps={STEPS}
+          current={step}
+          locked={returnToSummary}
+          onStepClick={(i) => setStep(i)}
+        />
 
-      {/* Step 1 — event */}
-      {step === 0 && (
-        <section className="space-y-3">
-          <div className="relative max-w-md">
-            <Search className="absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="חיפוש אירוע או עיר..."
-              className="pe-9"
-            />
-          </div>
-          {matches.length === 0 ? (
-            <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-              לא נמצאו אירועים פתוחים למכירה
+        {/* Step 0 — event picker */}
+        {step === 0 && (
+          <section className="space-y-3">
+            <div className="relative max-w-md">
+              <Search className="absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="חיפוש אירוע או עיר..."
+                className="pe-9"
+              />
             </div>
-          ) : (
-            <ul className="grid gap-2 sm:grid-cols-2">
-              {matches.map((e) => (
-                <li key={e.id}>
-                  <OptionCard
-                    selected={event?.id === e.id}
-                    disabled={e.sold_out}
-                    onClick={() => selectEvent(e)}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{e.name}</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {[dateFmt(e.date), e.location_name].filter(Boolean).join(" · ")}
-                        </p>
-                      </div>
-                      {e.sold_out ? (
-                        <Badge variant="destructive" className="shrink-0">אזל</Badge>
-                      ) : e.site_price != null ? (
-                        <span className="shrink-0 text-sm font-semibold tabular-nums">
-                          {usd(e.site_price)}
-                          <span className="ms-1 text-xs font-normal text-muted-foreground">לנוסע</span>
-                        </span>
-                      ) : null}
-                    </div>
-                  </OptionCard>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
-      {/* Step 2 — tickets */}
-      {step === 1 && event && (
-        <section className="space-y-4">
-          <div className="rounded-xl border bg-muted/30 p-3 text-sm">
-            <span className="font-medium">{event.name}</span>
-            <span className="text-muted-foreground"> · {dateFmt(event.date)}</span>
-          </div>
-          {event.map_image_url &&
-            (isTx && tixListings.length > 0 ? (
-              <div className="rounded-xl border bg-card p-3 shadow-card">
-                <p className="mb-2 flex items-center gap-2 text-sm font-medium">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  מפת האולם — לחיצה על גוש בוחרת קטגוריה
-                </p>
-                <TixstockDynamicMap
-                  mapUrl={event.map_image_url}
-                  tickets={tixListings}
-                  hoveredTicket={cheapestListingOf(hoveredCat)}
-                  selectedTicketId={cheapestListingOf(category)?.id ?? null}
-                  onTicketSelect={(ticketId) => {
-                    const listing = tixListings.find((l) => l.id === ticketId);
-                    const cat = listing?.seat_details?.category?.trim().toLowerCase();
-                    if (!cat) return;
-                    const match = activeTickets.find(
-                      (t) => t.category.trim().toLowerCase() === cat,
-                    );
-                    if (match) setCategory(match.category);
-                  }}
-                />
+            {matches.length === 0 ? (
+              <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                לא נמצאו אירועים פתוחים למכירה
               </div>
             ) : (
-              <details className="group rounded-xl border bg-card shadow-card" open>
-                <summary className="flex cursor-pointer items-center gap-2 p-3 text-sm font-medium">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  מפת האולם והקטגוריות
-                  <span className="text-xs font-normal text-muted-foreground group-open:hidden">
-                    (לחצו להצגה)
-                  </span>
-                </summary>
-                <div className="border-t p-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={event.map_image_url}
-                    alt={`מפת האולם — ${event.name}`}
-                    className="mx-auto max-h-96 w-auto max-w-full rounded-lg object-contain"
-                  />
-                </div>
-              </details>
-            ))}
-          {isTx && tixLoading && (
-            <div className="flex items-center gap-2 rounded-xl border p-3 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              מושכים מחירים חיים מהספק ל-{qty} כרטיסים...
-            </div>
-          )}
-          {isTx && tixError && (
-            <p className="text-sm text-destructive">
-              {tixError}{" "}
-              <span className="text-muted-foreground">
-                (מוצגים מחירי הבוקר מהמערכת)
-              </span>
-            </p>
-          )}
-          <div className="grid gap-2 sm:grid-cols-2">
-            {activeTickets.map((t) => (
-              <OptionCard
-                key={t.category}
-                selected={category === t.category}
-                onClick={() => setCategory(t.category)}
-              >
-                <div
-                  onMouseEnter={() => setHoveredCat(t.category)}
-                  onMouseLeave={() => setHoveredCat((c) => (c === t.category ? null : c))}
-                  className="flex items-center justify-between gap-3"
-                >
-                  <span className="flex items-center gap-2 font-medium">
-                    <Ticket className="h-4 w-4 text-muted-foreground" />
-                    {t.category}
-                    {isTx && liveTix && (
-                      <Badge variant="secondary" className="font-normal">
-                        מחיר חי
-                      </Badge>
-                    )}
-                  </span>
-                  <span className="text-end">
-                    {t.site_price != null && (
-                      <span className="block font-semibold tabular-nums">
-                        {usd(t.site_price)}
-                        <span className="ms-1 text-xs font-normal text-muted-foreground">
-                          לנוסע באתר
-                        </span>
-                      </span>
-                    )}
-                  </span>
-                </div>
-              </OptionCard>
-            ))}
-          </div>
-          {isTx && liveTix && activeTickets.length === 0 && !tixLoading && (
-            <p className="text-sm text-muted-foreground">
-              אין כרטיסים חיים שמספיקים ל-{qty} נוסעים — נסו כמות אחרת.
-            </p>
-          )}
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium">מספר נוסעים / כרטיסים</span>
-            <div className="flex items-center rounded-md border">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => setQty((q) => Math.max(1, q - 1))}
-                disabled={qty <= 1}
-              >
-                <Minus className="h-4 w-4" />
-              </Button>
-              <span className="w-8 text-center text-sm font-semibold tabular-nums">{qty}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => setQty((q) => Math.min(20, q + 1))}
-                disabled={qty >= 20}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          {selectedTicket && (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/30 p-3">
-              <span className="text-sm">
-                {qty} × {selectedTicket.category}
-                <span className="ms-2 text-xs text-muted-foreground">
-                  (שורת הכרטיסים: {usd(selectedTicket.price * qty)})
-                </span>
-              </span>
-              {selectedTicket.site_price != null && (
-                <span className="font-display text-lg font-bold tabular-nums">
-                  {usd(selectedTicket.site_price * qty)}
-                  <span className="ms-1 text-xs font-normal text-muted-foreground">
-                    לחבילה באתר · {usd(selectedTicket.site_price)} לנוסע
-                  </span>
-                </span>
-              )}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* Step 3 — flight */}
-      {step === 2 && event && (
-        <section className="space-y-3">
-          {inventoryLoading ? (
-            <div className="flex items-center gap-2 rounded-xl border p-6 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> טוען טיסות...
-            </div>
-          ) : (
-            <>
-              {(flights.length > 0 || (fsResults?.length ?? 0) > 0) && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted-foreground">סינון:</span>
-                  <FilterChip active={fsDirectOnly} onClick={() => setFsDirectOnly((v) => !v)}>
-                    ישירות בלבד
-                  </FilterChip>
-                  <FilterChip active={fsBagsOnly} onClick={() => setFsBagsOnly((v) => !v)}>
-                    <span className="flex items-center gap-1">
-                      <Luggage className="h-3 w-3" /> עם כבודה
-                    </span>
-                  </FilterChip>
-                  <span className="ms-2 text-xs text-muted-foreground">מיון:</span>
-                  <FilterChip active={fsSort === "price"} onClick={() => setFsSort("price")}>
-                    מחיר
-                  </FilterChip>
-                  <FilterChip active={fsSort === "time"} onClick={() => setFsSort("time")}>
-                    שעת יציאה
-                  </FilterChip>
-                </div>
-              )}
-              {visibleOfflineFlights.length > 0 && (
-                <p className="text-sm font-semibold text-muted-foreground">מלאי מובטח שלנו</p>
-              )}
-              {visibleOfflineFlights.map((f) => {
-                const soldOutForQty = f.remaining < qty;
-                return (
-                  <OptionCard
-                    key={f.id}
-                    disabled={soldOutForQty}
-                    selected={flightChoice.mode === "offline" && flightChoice.flightId === f.id}
-                    onClick={() => setFlightChoice({ mode: "offline", flightId: f.id })}
-                  >
-                    <div className="flex flex-wrap items-center gap-4">
-                      <div className="flex w-36 shrink-0 items-center gap-2">
-                        {f.airline_logo ? (
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {matches.map((e) => (
+                  <li key={e.id}>
+                    <button
+                      type="button"
+                      onClick={() => selectEvent(e)}
+                      className={cn(
+                        "w-full rounded-xl border-2 bg-card p-3 text-start shadow-lg transition-shadow hover:shadow-xl hover:outline hover:outline-2 hover:outline-offset-[-2px] hover:outline-brand-forest",
+                        event?.id === e.id ? "border-brand-forest bg-brand-mint/10" : "border-border",
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        {e.image_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={f.airline_logo} alt="" className="h-8 w-8 rounded object-contain" />
+                          <img
+                            src={e.image_url}
+                            alt=""
+                            className="size-12 shrink-0 rounded-full border-2 border-white object-cover object-top shadow-md"
+                          />
                         ) : (
-                          <Plane className="h-5 w-5 text-muted-foreground" />
+                          <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-muted">
+                            <Ticket className="h-5 w-5 text-muted-foreground" />
+                          </span>
                         )}
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{f.airline_name}</p>
-                          <p className="text-[11px] text-muted-foreground" dir="ltr">
-                            {dateFmt(f.outbound_departure_time)} – {dateFmt(f.inbound_departure_time)}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-bold">{e.name}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {[dateFmt(e.date), e.location_name].filter(Boolean).join(" · ")}
                           </p>
                         </div>
-                      </div>
-                      <div className="min-w-60 flex-1 space-y-2">
-                        <FlightLeg
-                          label="הלוך"
-                          depTime={f.outbound_departure_time}
-                          depAirport={f.outbound_departure_airport}
-                          arrTime={f.outbound_arrival_time}
-                          arrAirport={f.outbound_arrival_airport}
-                          duration={f.outbound_duration}
-                          stopLabel={f.outbound_stop_airport ? `עצירה · ${f.outbound_stop_airport}` : null}
-                        />
-                        <FlightLeg
-                          label="חזור"
-                          depTime={f.inbound_departure_time}
-                          depAirport={f.inbound_departure_airport}
-                          arrTime={f.inbound_arrival_time}
-                          arrAirport={f.inbound_arrival_airport}
-                          duration={f.inbound_duration}
-                          stopLabel={f.inbound_stop_airport ? `עצירה · ${f.inbound_stop_airport}` : null}
-                        />
-                      </div>
-                      <div className="w-32 shrink-0 text-end">
-                        <p className="font-display text-lg font-bold tabular-nums">{usd(f.price)}</p>
-                        <p className="text-[11px] text-muted-foreground">
-                          לנוסע · {soldOutForQty ? "אין מספיק מקומות" : `נותרו ${f.remaining}`}
-                        </p>
-                        <p className="mt-1 flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
-                          <Luggage className="h-3 w-3" />
-                          {f.bags_included
-                            ? `כבודה כלולה${f.checked_bag_kg ? ` · ${f.checked_bag_kg} ק"ג` : ""}`
-                            : "ללא כבודה רשומה"}
-                        </p>
-                      </div>
-                    </div>
-                  </OptionCard>
-                );
-              })}
-
-              {/* Live search — locked packages sell exactly one flight, so no search there */}
-              {event.locked_flight_id == null && (
-                <div className="rounded-xl border bg-card p-4 shadow-card">
-                  <p className="flex items-center gap-2 text-sm font-semibold">
-                    <Plane className="h-4 w-4 text-muted-foreground" />
-                    חיפוש טיסות בזמן אמת
-                  </p>
-                  <div className="mt-3 flex flex-wrap items-end gap-2">
-                    <label className="text-xs text-muted-foreground">
-                      יציאה
-                      <Input
-                        type="date"
-                        dir="ltr"
-                        value={fsDepart}
-                        onChange={(e) => setFsDepart(e.target.value)}
-                        className="mt-1 w-40"
-                      />
-                    </label>
-                    <label className="text-xs text-muted-foreground">
-                      חזרה
-                      <Input
-                        type="date"
-                        dir="ltr"
-                        value={fsReturn}
-                        onChange={(e) => setFsReturn(e.target.value)}
-                        className="mt-1 w-40"
-                      />
-                    </label>
-                    <Button
-                      type="button"
-                      onClick={runFlightSearch}
-                      disabled={fsLoading || !fsDepart || !fsReturn}
-                      className={MINT_CTA}
-                    >
-                      {fsLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Search className="h-4 w-4" />
-                      )}
-                      חיפוש
-                    </Button>
-                  </div>
-                  {fsError && <p className="mt-2 text-sm text-destructive">{fsError}</p>}
-                  {fsResults && fsResults.length > 0 && liveFlightMatches.length === 0 && (
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      אין תוצאות שעוברות את הסינון — נקו את הפילטרים למעלה.
-                    </p>
-                  )}
-                  {liveFlightMatches.length > 0 && (
-                    <ul className="mt-3 space-y-2">
-                      {liveFlightMatches.slice(0, 30).map((offer) => (
-                        <li key={offer.id}>
-                          <OptionCard
-                            selected={
-                              flightChoice.mode === "live-offer" &&
-                              flightChoice.offer.id === offer.id
-                            }
-                            onClick={() => setFlightChoice({ mode: "live-offer", offer })}
-                          >
-                            <div className="flex flex-wrap items-center gap-4">
-                              <div className="flex w-36 shrink-0 items-center gap-2">
-                                {offer.metadata?.logo ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={offer.metadata.logo}
-                                    alt=""
-                                    className="h-8 w-8 rounded object-contain"
-                                  />
-                                ) : (
-                                  <Plane className="h-5 w-5 text-muted-foreground" />
-                                )}
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium">
-                                    {offer.metadata?.name || offer.airline}
-                                  </p>
-                                  <p className="text-[11px] text-muted-foreground" dir="ltr">
-                                    {dateFmt(offer.outbound.departureTime)} –{" "}
-                                    {dateFmt(offer.inbound.departureTime)}
-                                  </p>
-                                  {offer.isOffline && (
-                                    <Badge variant="secondary" className="mt-0.5 font-normal">
-                                      מלאי שלנו
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="min-w-60 flex-1 space-y-2">
-                                <FlightLeg
-                                  label="הלוך"
-                                  depTime={offer.outbound.departureTime}
-                                  depAirport={offer.outbound.departureAirport}
-                                  arrTime={offer.outbound.arrivalTime}
-                                  arrAirport={offer.outbound.arrivalAirport}
-                                  stopLabel={offer.stops > 0 ? `${offer.stops} עצירות` : null}
-                                />
-                                <FlightLeg
-                                  label="חזור"
-                                  depTime={offer.inbound.departureTime}
-                                  depAirport={offer.inbound.departureAirport}
-                                  arrTime={offer.inbound.arrivalTime}
-                                  arrAirport={offer.inbound.arrivalAirport}
-                                  stopLabel={offer.stops > 0 ? `${offer.stops} עצירות` : null}
-                                />
-                              </div>
-                              <div className="w-32 shrink-0 text-end">
-                                <p className="font-display text-lg font-bold tabular-nums">
-                                  {usd(offer.price)}
-                                </p>
-                                <p className="text-[11px] text-muted-foreground">
-                                  {`סה"כ ל-${offer.numOfTravelers} נוסעים`}
-                                </p>
-                                {(offer.outbound.checkBagsIncluded ||
-                                  offer.inbound.checkBagsIncluded) && (
-                                  <p className="mt-1 flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
-                                    <Luggage className="h-3 w-3" /> כבודה כלולה
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </OptionCard>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-
-              <OptionCard
-                selected={flightChoice.mode === "live"}
-                onClick={() => setFlightChoice({ mode: "live" })}
-              >
-                <p className="text-sm font-medium">הלקוח יבחר טיסה באתר</p>
-                <p className="text-xs text-muted-foreground">
-                  הלינק יפתח את שלב הטיסות והלקוח יבחר מהטיסות הזמינות בזמן אמת.
-                </p>
-              </OptionCard>
-              <OptionCard
-                selected={flightChoice.mode === "none"}
-                onClick={() => setFlightChoice({ mode: "none" })}
-              >
-                <p className="text-sm font-medium">חבילה ללא טיסה</p>
-                <p className="text-xs text-muted-foreground">הלקוח מגיע בכוחות עצמו.</p>
-              </OptionCard>
-            </>
-          )}
-        </section>
-      )}
-
-      {/* Step 4 — hotel */}
-      {step === 3 && event && (
-        <section className="space-y-3">
-          {inventoryLoading ? (
-            <div className="flex items-center gap-2 rounded-xl border p-6 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> טוען מלונות...
-            </div>
-          ) : (
-            <>
-              {(hotelGroups.length > 0 || (hsResults?.length ?? 0) > 0) && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted-foreground">סינון:</span>
-                  <FilterChip
-                    active={hsBreakfastOnly}
-                    onClick={() => setHsBreakfastOnly((v) => !v)}
-                  >
-                    עם ארוחת בוקר
-                  </FilterChip>
-                  {[0, 3, 4, 5].map((stars) => (
-                    <FilterChip
-                      key={stars}
-                      active={hsMinStars === stars}
-                      onClick={() => setHsMinStars(stars)}
-                    >
-                      {stars === 0 ? "כל הדירוגים" : `${stars}★ ומעלה`}
-                    </FilterChip>
-                  ))}
-                  <span className="ms-2 text-xs text-muted-foreground">מיון:</span>
-                  <FilterChip active={hsSort === "price"} onClick={() => setHsSort("price")}>
-                    מחיר
-                  </FilterChip>
-                  <FilterChip active={hsSort === "distance"} onClick={() => setHsSort("distance")}>
-                    קרוב לאירוע
-                  </FilterChip>
-                  <FilterChip active={hsSort === "stars"} onClick={() => setHsSort("stars")}>
-                    דירוג
-                  </FilterChip>
-                </div>
-              )}
-              {visibleHotelGroups.length > 0 && (
-                <p className="text-sm font-semibold text-muted-foreground">מלאי מובטח שלנו</p>
-              )}
-              {visibleHotelGroups.map((group) => {
-                const anchor = group[0];
-                const groupKey = `${anchor.hid ?? anchor.hotel_name}|${anchor.check_in}|${anchor.check_out}`;
-                const otherGroupSelected = selectedGroupKey !== null && selectedGroupKey !== groupKey;
-                return (
-                  <div
-                    key={groupKey}
-                    className={cn(
-                      "rounded-xl border bg-card p-4 shadow-card",
-                      selectedGroupKey === groupKey && "border-primary ring-1 ring-primary",
-                      otherGroupSelected && "opacity-50",
-                    )}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <BedDouble className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium">{anchor.hotel_name}</span>
-                        {anchor.stars > 0 && (
-                          <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
-                            {anchor.stars}
-                            <Star className="h-3 w-3 fill-current" />
+                        {e.site_price != null && (
+                          <span className="shrink-0 text-sm font-bold tabular-nums">
+                            {usd(e.site_price)}
+                            <span className="ms-1 block text-end text-xs font-normal text-muted-foreground">
+                              לנוסע
+                            </span>
                           </span>
                         )}
                       </div>
-                      <span className="text-xs text-muted-foreground" dir="ltr">
-                        {anchor.check_in} → {anchor.check_out}
-                      </span>
-                    </div>
-                    <ul className="mt-3 space-y-2">
-                      {group.map((room) => {
-                        const count = selectedUnits[room.rowId] ?? 0;
-                        return (
-                          <li
-                            key={room.rowId}
-                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2"
-                          >
-                            <div>
-                              <p className="text-sm font-medium">
-                                {room.room_type}
-                                <span className="ms-2 text-xs font-normal text-muted-foreground">
-                                  עד {room.capacity} נוסעים · נותרו {room.remaining}
-                                  {room.meal_plan ? ` · ${room.meal_plan}` : ""}
-                                </span>
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-sm font-semibold tabular-nums">{usd(room.price)}</span>
-                              <div className="flex items-center rounded-md border bg-background">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  disabled={count === 0 || otherGroupSelected}
-                                  onClick={() => setUnitCount(room, -1)}
-                                >
-                                  <Minus className="h-3.5 w-3.5" />
-                                </Button>
-                                <span className="w-6 text-center text-sm font-semibold tabular-nums">
-                                  {count}
-                                </span>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  disabled={count >= room.remaining || otherGroupSelected}
-                                  onClick={() => setUnitCount(room, 1)}
-                                >
-                                  <Plus className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                );
-              })}
-
-              {hotelChoice.mode === "offline" && hotelCapacity < qty && (
-                <p className="text-sm text-destructive">
-                  החדרים שנבחרו מתאימים ל-{hotelCapacity} נוסעים, אבל בחבילה {qty} — הוסיפו חדר.
-                </p>
-              )}
-
-              {/* Live hotel search (Ratehawk via the main site) */}
-              <div className="rounded-xl border bg-card p-4 shadow-card">
-                <p className="flex items-center gap-2 text-sm font-semibold">
-                  <BedDouble className="h-4 w-4 text-muted-foreground" />
-                  חיפוש מלונות בזמן אמת
-                </p>
-                <div className="mt-3 flex flex-wrap items-end gap-2">
-                  <label className="text-xs text-muted-foreground">
-                    {"צ'ק-אין"}
-                    <Input
-                      type="date"
-                      dir="ltr"
-                      value={hsCheckin}
-                      onChange={(e) => setHsCheckin(e.target.value)}
-                      onFocus={() => {
-                        if (!hsCheckin && !hsCheckout) {
-                          const d = defaultHotelDates();
-                          setHsCheckin(d.checkin);
-                          setHsCheckout(d.checkout);
-                        }
-                      }}
-                      className="mt-1 w-40"
-                    />
-                  </label>
-                  <label className="text-xs text-muted-foreground">
-                    {"צ'ק-אאוט"}
-                    <Input
-                      type="date"
-                      dir="ltr"
-                      value={hsCheckout}
-                      onChange={(e) => setHsCheckout(e.target.value)}
-                      className="mt-1 w-40"
-                    />
-                  </label>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      if (!hsCheckin || !hsCheckout) {
-                        const d = defaultHotelDates();
-                        setHsCheckin(d.checkin);
-                        setHsCheckout(d.checkout);
-                        if (!d.checkin || !d.checkout) return;
-                      }
-                      runHotelSearch();
-                    }}
-                    disabled={hsLoading}
-                    className={MINT_CTA}
-                  >
-                    {hsLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Search className="h-4 w-4" />
-                    )}
-                    חיפוש
-                  </Button>
-                </div>
-                {hsError && <p className="mt-2 text-sm text-destructive">{hsError}</p>}
-                {hsResults && hsResults.length > 0 && liveHotelMatches.length === 0 && (
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    אין מלונות שעוברים את הסינון — נקו את הפילטרים למעלה.
-                  </p>
-                )}
-                {liveHotelMatches.length > 0 && (
-                  <ul className="mt-3 space-y-2">
-                    {liveHotelMatches.slice(0, 24).map((option) => (
-                      <li key={option.key}>
-                        <OptionCard
-                          selected={
-                            hotelChoice.mode === "live-offer" &&
-                            hotelChoice.option.key === option.key
-                          }
-                          onClick={() => setHotelChoice({ mode: "live-offer", option })}
-                        >
-                          <div className="flex items-center gap-3">
-                            {option.image ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={option.image}
-                                alt=""
-                                className="h-20 w-24 shrink-0 rounded-lg object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-20 w-24 shrink-0 items-center justify-center rounded-lg bg-muted">
-                                <BedDouble className="h-5 w-5 text-muted-foreground" />
-                              </div>
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                                {option.name}
-                                {option.stars > 0 && (
-                                  <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
-                                    {option.stars}
-                                    <Star className="h-3 w-3 fill-current" />
-                                  </span>
-                                )}
-                              </p>
-                              <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                                <span className="truncate">{option.room_name}</span>
-                                {hasMeal(option.meal) && (
-                                  <Badge variant="secondary" className="shrink-0 font-normal">
-                                    כולל ארוחת בוקר
-                                  </Badge>
-                                )}
-                              </p>
-                              <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <MapPin className="h-3 w-3" />
-                                {option.distance_m > 0
-                                  ? `${(option.distance_m / 1000).toFixed(1)} ק"מ מהאירוע`
-                                  : option.address}
-                              </p>
-                            </div>
-                            <div className="text-end">
-                              <p className="font-semibold tabular-nums">{usd(option.price)}</p>
-                              <p className="text-xs text-muted-foreground">לכל השהייה</p>
-                            </div>
-                          </div>
-                        </OptionCard>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <OptionCard
-                selected={hotelChoice.mode === "live"}
-                onClick={() => setHotelChoice({ mode: "live" })}
-              >
-                <p className="text-sm font-medium">הלקוח יבחר מלון באתר</p>
-                <p className="text-xs text-muted-foreground">
-                  הלינק יפתח את שלב המלונות עם ההיצע החי סביב האירוע.
-                </p>
-              </OptionCard>
-              <OptionCard
-                selected={hotelChoice.mode === "none"}
-                onClick={() => setHotelChoice({ mode: "none" })}
-              >
-                <p className="text-sm font-medium">חבילה ללא מלון</p>
-                <p className="text-xs text-muted-foreground">הלקוח מסדר לינה לבד.</p>
-              </OptionCard>
-            </>
-          )}
-        </section>
-      )}
-
-      {/* Step 5 — review */}
-      {step === 4 && event && selectedTicket && (
-        <section className="max-w-xl space-y-4">
-          <div className="divide-y rounded-2xl border bg-card shadow-card">
-            <div className="p-4">
-              <p className="text-xs text-muted-foreground">אירוע</p>
-              <p className="mt-0.5 font-medium">{event.name}</p>
-              <p className="text-xs text-muted-foreground">
-                {[dateFmt(event.date), event.location_name].filter(Boolean).join(" · ")}
-              </p>
-            </div>
-            <div className="flex items-center justify-between p-4">
-              <div>
-                <p className="text-xs text-muted-foreground">כרטיסים</p>
-                <p className="mt-0.5 text-sm font-medium">
-                  {qty} × {selectedTicket.category}
-                </p>
-              </div>
-              <p className="font-semibold tabular-nums">{usd(selectedTicket.price * qty)}</p>
-            </div>
-            <div className="flex items-center justify-between p-4">
-              <div>
-                <p className="text-xs text-muted-foreground">טיסה</p>
-                <p className="mt-0.5 text-sm font-medium">
-                  {flightChoice.mode === "none" && "ללא טיסה"}
-                  {flightChoice.mode === "live" && "הלקוח יבחר באתר"}
-                  {flightChoice.mode === "offline" && chosenFlight && (
-                    <span dir="ltr">
-                      {chosenFlight.airline_name} · {dateFmt(chosenFlight.outbound_departure_time)}–
-                      {dateFmt(chosenFlight.inbound_departure_time)}
-                    </span>
-                  )}
-                  {flightChoice.mode === "live-offer" && (
-                    <span dir="ltr">
-                      {flightChoice.offer.metadata?.name || flightChoice.offer.airline} ·{" "}
-                      {dateFmt(flightChoice.offer.outbound.departureTime)}–
-                      {dateFmt(flightChoice.offer.inbound.departureTime)}
-                    </span>
-                  )}
-                </p>
-              </div>
-              {flightChoice.mode === "offline" && chosenFlight && (
-                <p className="font-semibold tabular-nums">{usd(chosenFlight.price * qty)}</p>
-              )}
-              {flightChoice.mode === "live-offer" && (
-                <p className="font-semibold tabular-nums">{usd(flightChoice.offer.price)}</p>
-              )}
-            </div>
-            <div className="flex items-center justify-between p-4">
-              <div>
-                <p className="text-xs text-muted-foreground">מלון</p>
-                <p className="mt-0.5 text-sm font-medium">
-                  {hotelChoice.mode === "none" && "ללא מלון"}
-                  {hotelChoice.mode === "live" && "הלקוח יבחר באתר"}
-                  {hotelChoice.mode === "offline" &&
-                    hotels
-                      .filter((h) => (selectedUnits[h.rowId] ?? 0) > 0)
-                      .map((h) => `${selectedUnits[h.rowId]} × ${h.room_type} — ${h.hotel_name}`)
-                      .join(", ")}
-                  {hotelChoice.mode === "live-offer" &&
-                    `${hotelChoice.option.name} · ${hotelChoice.option.room_name}`}
-                </p>
-              </div>
-              {hotelChoice.mode === "offline" && (
-                <p className="font-semibold tabular-nums">{usd(hotelTotal)}</p>
-              )}
-              {hotelChoice.mode === "live-offer" && (
-                <p className="font-semibold tabular-nums">{usd(hotelChoice.option.price)}</p>
-              )}
-            </div>
-            {selectedTicket.site_price != null && (
-              <div className="flex items-center justify-between bg-muted/30 p-4">
-                <p className="text-sm font-medium">מחיר חבילה משוער באתר</p>
-                <p className="font-display text-lg font-bold tabular-nums">
-                  {usd(selectedTicket.site_price * qty)}
-                  <span className="ms-1 text-xs font-normal text-muted-foreground">
-                    ({usd(selectedTicket.site_price)} לנוסע)
-                  </span>
-                </p>
-              </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
-          </div>
-          <div className="flex items-start justify-between gap-4 rounded-xl border bg-card p-4 shadow-card">
-            <div>
-              <p className="text-sm font-medium">הלקוח יכול לערוך את החבילה</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {allowEdit
-                  ? "הלקוח יוכל להחליף כרטיסים, טיסה ומלון לפני התשלום."
-                  : "החבילה נעולה — הלקוח משלם על ההרכב שבניתם. רכיב שהשארתם לבחירה חיה או שהתיישן עדיין ייבחר על ידו."}
-              </p>
-            </div>
-            <Switch checked={allowEdit} onCheckedChange={setAllowEdit} />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            המחיר המשוער הוא מחיר החבילה הבסיסי באתר לקטגוריה שנבחרה; טיסה או מלון
-            ספציפיים שהוצמדו עשויים להוסיף תוספת. הכל מאומת מחדש מול נתונים חיים בכל
-            פתיחה של הלינק.
-          </p>
-          {error && <p className="text-sm font-medium text-destructive">{error}</p>}
-        </section>
-      )}
+          </section>
+        )}
 
-      {/* Footer nav */}
-      {step > 0 && (
-        <div className="flex items-center justify-between border-t pt-4">
-          <Button type="button" variant="ghost" onClick={() => setStep((s) => s - 1)}>
-            <ArrowRight className="h-4 w-4" />
-            חזרה
-          </Button>
-          {step < 4 ? (
-            <Button
-              type="button"
-              onClick={() => setStep((s) => s + 1)}
-              disabled={
-                (step === 1 && (!category || !selectedTicket)) ||
-                (step === 3 && !canContinueFromHotel)
-              }
-            >
-              המשך
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={submit}
-              disabled={isPending}
-              className={cn("px-6", MINT_CTA)}
-            >
-              {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              יצירת לינק לחבילה
-            </Button>
-          )}
-        </div>
-      )}
-    </div>
+        {step === 1 && <TicketStep />}
+        {step === 2 && <FlightStep />}
+        {step === 3 && <HotelStep />}
+        {step === 4 && <ReviewStep editStep={editStep} />}
+
+        {/* Sticky continue bar — steps 1-3, exactly like main */}
+        {step >= 1 && step <= 3 && (
+          <ContinueBar
+            slots={slots}
+            totalPerPerson={totalPerPerson}
+            onSlotClick={(target) => {
+              if (target < step) setStep(target);
+              else if (target === step + 1 && !primaryDisabled) goNext();
+            }}
+            primaryLabel={primaryLabel}
+            primaryDisabled={primaryDisabled}
+            onPrimary={goNext}
+            skipLabel={skip?.label ?? null}
+            onSkip={skip?.action}
+          />
+        )}
+      </div>
+    </WizardContext.Provider>
   );
+}
+
+/** Cheapest category by site price (falls back to raw price), like main. */
+function cheapestCategory(
+  tickets: { category: string; price: number; site_price: number | null }[],
+): string | null {
+  if (tickets.length === 0) return null;
+  return tickets.reduce((min, t) =>
+    (t.site_price ?? t.price) < (min.site_price ?? min.price) ? t : min,
+  ).category;
 }

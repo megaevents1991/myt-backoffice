@@ -86,8 +86,13 @@ export interface BuilderEvent {
   type: EventType;
   /** Venue/seating map the customer site shows on the ticket step. */
   map_image_url: string | null;
+  /** Round event/artist photo the customer site shows in the order header. */
+  image_url: string | null;
   /** Customer-facing site price per traveler (cheapest category); null = sold out. */
   site_price: number | null;
+  /** Package-pricing baselines — the site shows component prices as ± deltas vs these. */
+  base_flight_price: number | null;
+  base_hotel_price: number | null;
   sold_out: boolean;
   locked_flight_id: number | null;
   def_date_depart: string | null;
@@ -112,6 +117,8 @@ type EventListRow = {
   type: string;
   tickets_and_rates: EventTicket[] | null;
   map_image_url?: string | null;
+  card_image_url?: string | null;
+  art_image_url?: string | null;
   tx_excluded_sections?: string[] | null;
   is_deleted?: string | null;
   base_flight_price: number | null;
@@ -127,7 +134,7 @@ type EventListRow = {
 };
 
 const EVENT_COLUMNS =
-  "id, name, date, location, type, tickets_and_rates, map_image_url, tx_excluded_sections, is_deleted, base_flight_price, base_hotel_price, " +
+  "id, name, date, location, type, tickets_and_rates, map_image_url, card_image_url, art_image_url, tx_excluded_sections, is_deleted, base_flight_price, base_hotel_price, " +
   "event_additional_markup, markup_ticket, markup_flight, markup_hotel, tags, locked_flight_id, " +
   "def_date_depart, def_date_return";
 
@@ -208,7 +215,10 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
       location_name: location.name ?? "",
       type: row.type as EventType,
       map_image_url: row.map_image_url ?? null,
+      image_url: row.card_image_url ?? row.art_image_url ?? null,
       site_price: soldOut ? null : computePackagePrice(row),
+      base_flight_price: row.base_flight_price ?? null,
+      base_hotel_price: row.base_hotel_price ?? null,
       sold_out: soldOut,
       locked_flight_id: row.locked_flight_id ?? null,
       def_date_depart: row.def_date_depart ?? null,
@@ -227,6 +237,31 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
   // and a shared link would land on a sold-out page. (Deleted and past events
   // are already excluded by the query itself.)
   return builderEvents.filter((event) => !event.sold_out);
+}
+
+export interface BuilderCommissionTerms {
+  /** partners.commission_type — "percent_of_sale" | "fixed_per_ticket" (default). */
+  type: string | null;
+  /** partners.commission — % of sale or $ per ticket, per the type. */
+  rate: number | null;
+}
+
+/**
+ * The signed-in partner's commission terms, so the wizard's summary can show
+ * an estimated commission next to the estimated package price (main shows the
+ * same line to partner sessions on the order summary).
+ */
+export async function getMyCommissionTerms(): Promise<BuilderCommissionTerms | null> {
+  const session = await requirePartner();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("partners")
+    .select("commission, commission_type")
+    .eq("partner_tracking_code", session.partner_code)
+    .maybeSingle();
+  if (error || !data) return null;
+  const row = data as { commission: number | null; commission_type: string | null };
+  return { type: row.commission_type ?? null, rate: row.commission ?? null };
 }
 
 export interface LiveTicketCategory {
