@@ -92,7 +92,7 @@ export interface PartnersOverview {
   producingPartners: number
   /** Marketing partners whose links brought at least one visitor in range. */
   producingTrafficPartners: number
-  /** (Commission + coupon discounts) per paid booking; null when none paid. */
+  /** (Commission + coupon discounts) per PAID ticket; null when none paid. */
   costPerConversionUsd: number | null
   totalReservations: number
   paidReservations: number
@@ -503,8 +503,8 @@ export async function getPartnersOverview(
       ([code, visitors]) => visitors > 0 && partnerByCode.has(code)
     ).length,
     costPerConversionUsd:
-      paid.length > 0
-        ? round2((totalCommission + couponDiscount) / paid.length)
+      paidTickets > 0
+        ? round2((totalCommission + couponDiscount) / paidTickets)
         : null,
     totalReservations: rows.length,
     paidReservations: paid.length,

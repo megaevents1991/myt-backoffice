@@ -38,6 +38,13 @@ const usd = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+const usdExact = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 export const INSIGHTS_RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
   { key: "today", label: "Today" },
   { key: "yesterday", label: "Yesterday" },
@@ -118,9 +125,9 @@ export function PartnersInsights({
       label: "Cost per conversion",
       value:
         overview.costPerConversionUsd != null
-          ? usd.format(overview.costPerConversionUsd)
+          ? usdExact.format(overview.costPerConversionUsd)
           : "—",
-      hint: "Commission + coupons per paid booking",
+      hint: "Commission + coupons per paid ticket",
       icon: Wallet,
     },
   ];
