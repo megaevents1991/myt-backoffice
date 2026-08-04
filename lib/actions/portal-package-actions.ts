@@ -83,6 +83,8 @@ export interface BuilderEvent {
   date: string;
   location_name: string;
   type: EventType;
+  /** Venue/seating map the customer site shows on the ticket step. */
+  map_image_url: string | null;
   /** Customer-facing site price per traveler (cheapest category); null = sold out. */
   site_price: number | null;
   sold_out: boolean;
@@ -106,6 +108,7 @@ type EventListRow = {
   location: { name?: string } | null;
   type: string;
   tickets_and_rates: EventTicket[] | null;
+  map_image_url?: string | null;
   is_deleted?: string | null;
   base_flight_price: number | null;
   base_hotel_price: number | null;
@@ -120,7 +123,7 @@ type EventListRow = {
 };
 
 const EVENT_COLUMNS =
-  "id, name, date, location, type, tickets_and_rates, is_deleted, base_flight_price, base_hotel_price, " +
+  "id, name, date, location, type, tickets_and_rates, map_image_url, is_deleted, base_flight_price, base_hotel_price, " +
   "event_additional_markup, markup_ticket, markup_flight, markup_hotel, tags, locked_flight_id, " +
   "def_date_depart, def_date_return";
 
@@ -200,6 +203,7 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
       date: row.date,
       location_name: location.name ?? "",
       type: row.type as EventType,
+      map_image_url: row.map_image_url ?? null,
       site_price: soldOut ? null : computePackagePrice(row),
       sold_out: soldOut,
       locked_flight_id: row.locked_flight_id ?? null,
@@ -222,6 +226,10 @@ export interface BuilderFlight {
   /** Per-traveler price in USD. */
   price: number;
   remaining: number;
+  /** Checked bag included in BOTH directions. */
+  bags_included: boolean;
+  checked_bag_kg: number | null;
+  cabin_bag_kg: number | null;
   outbound_departure_time: string;
   outbound_departure_airport: string;
   outbound_arrival_airport: string;
@@ -361,6 +369,9 @@ export async function getPackageBuilderInventory(eventId: number): Promise<Build
       airline_logo: f.metadata_logo,
       price: Number(f.price),
       remaining: (f.initial_quantity ?? 0) - (f.consumed_quantity ?? 0),
+      bags_included: f.outbound_check_bags_included && f.inbound_check_bags_included,
+      checked_bag_kg: f.checked_bag_kg ?? null,
+      cabin_bag_kg: f.cabin_bag_kg ?? null,
       outbound_departure_time: f.outbound_departure_time,
       outbound_departure_airport: f.outbound_departure_airport,
       outbound_arrival_airport: f.outbound_arrival_airport,
@@ -835,14 +846,22 @@ export async function searchLiveHotels(input: {
       // Main drops hotels without usable static info from its cards too.
       if (!entry?.metadata) continue;
 
-      const rates = (hotel.rates ?? [])
+      const priced = (hotel.rates ?? [])
         .filter((r) => r?.payment_options?.payment_types?.[0]?.show_amount)
         .sort(
           (a, b) =>
             Number(a.payment_options!.payment_types![0].show_amount) -
             Number(b.payment_options!.payment_types![0].show_amount),
-        )
-        .slice(0, 3);
+        );
+      const rates = priced.slice(0, 3);
+      // "Add breakfast" = offering the breakfast rate: when the three cheapest
+      // are all room-only, pull in the cheapest rate that includes a meal so
+      // the agent can pick it side by side.
+      const hasMeal = (r: WorldotaRate) => !!r.meal && r.meal !== "nomeal";
+      if (!rates.some(hasMeal)) {
+        const cheapestWithMeal = priced.find(hasMeal);
+        if (cheapestWithMeal) rates.push(cheapestWithMeal);
+      }
 
       for (const rate of rates) {
         const amount = Number(rate.payment_options!.payment_types![0].show_amount);

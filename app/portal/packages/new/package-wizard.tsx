@@ -113,6 +113,31 @@ function OptionCard({
 const MINT_CTA =
   "rounded-full bg-brand-mint px-5 font-semibold text-brand-forest transition-all duration-200 hover:bg-brand-mint/90 hover:shadow-mint-glow active:scale-[0.98]";
 
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+        active
+          ? "border-transparent bg-brand-forest text-primary-foreground"
+          : "bg-background hover:bg-muted",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 const dateFmt = (value: string | null | undefined) =>
   value ? new Date(value).toLocaleDateString("he-IL") : "";
 
@@ -162,6 +187,12 @@ export function PackageWizard({
   const [hsLoading, setHsLoading] = useState(false);
   const [hsError, setHsError] = useState<string | null>(null);
   const [hsResults, setHsResults] = useState<LiveHotelOption[] | null>(null);
+
+  // Display filters — narrow what's shown, never what's saved.
+  const [fsDirectOnly, setFsDirectOnly] = useState(false);
+  const [fsBagsOnly, setFsBagsOnly] = useState(false);
+  const [hsBreakfastOnly, setHsBreakfastOnly] = useState(false);
+  const [hsMinStars, setHsMinStars] = useState(0);
 
   // Party size drives both searches — a qty change invalidates old results.
   useEffect(() => {
@@ -261,6 +292,27 @@ export function PackageWizard({
     flightChoice.mode === "offline"
       ? flights.find((f) => f.id === flightChoice.flightId) ?? null
       : null;
+
+  const hasMeal = (meal: string | null | undefined) => !!meal && meal !== "nomeal";
+
+  const visibleOfflineFlights = flights.filter(
+    (f) =>
+      (!fsDirectOnly || (!f.outbound_stop_airport && !f.inbound_stop_airport)) &&
+      (!fsBagsOnly || f.bags_included),
+  );
+  const liveFlightMatches = (fsResults ?? []).filter(
+    (o) =>
+      (!fsDirectOnly || o.stops === 0) &&
+      (!fsBagsOnly || (o.outbound.checkBagsIncluded && o.inbound.checkBagsIncluded)),
+  );
+  const visibleHotelGroups = hsBreakfastOnly
+    ? hotelGroups
+        .map((group) => group.filter((room) => hasMeal(room.meal_plan)))
+        .filter((group) => group.length > 0)
+    : hotelGroups;
+  const liveHotelMatches = (hsResults ?? []).filter(
+    (o) => (!hsBreakfastOnly || hasMeal(o.meal)) && o.stars >= hsMinStars,
+  );
 
   const canContinueFromHotel =
     hotelChoice.mode !== "offline" || (Object.keys(selectedUnits).length > 0 && hotelCapacity >= qty);
@@ -475,6 +527,25 @@ export function PackageWizard({
             <span className="font-medium">{event.name}</span>
             <span className="text-muted-foreground"> · {dateFmt(event.date)}</span>
           </div>
+          {event.map_image_url && (
+            <details className="group rounded-xl border bg-card shadow-card" open>
+              <summary className="flex cursor-pointer items-center gap-2 p-3 text-sm font-medium">
+                <MapPin className="h-4 w-4 text-muted-foreground" />
+                מפת האולם והקטגוריות
+                <span className="text-xs font-normal text-muted-foreground group-open:hidden">
+                  (לחצו להצגה)
+                </span>
+              </summary>
+              <div className="border-t p-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={event.map_image_url}
+                  alt={`מפת האולם — ${event.name}`}
+                  className="mx-auto max-h-96 w-auto max-w-full rounded-lg object-contain"
+                />
+              </div>
+            </details>
+          )}
           <div className="grid gap-2 sm:grid-cols-2">
             {event.tickets.map((t) => (
               <OptionCard
@@ -525,6 +596,24 @@ export function PackageWizard({
               </Button>
             </div>
           </div>
+          {selectedTicket && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/30 p-3">
+              <span className="text-sm">
+                {qty} × {selectedTicket.category}
+                <span className="ms-2 text-xs text-muted-foreground">
+                  (שורת הכרטיסים: {usd(selectedTicket.price * qty)})
+                </span>
+              </span>
+              {selectedTicket.site_price != null && (
+                <span className="font-display text-lg font-bold tabular-nums">
+                  {usd(selectedTicket.site_price * qty)}
+                  <span className="ms-1 text-xs font-normal text-muted-foreground">
+                    לחבילה באתר · {usd(selectedTicket.site_price)} לנוסע
+                  </span>
+                </span>
+              )}
+            </div>
+          )}
         </section>
       )}
 
@@ -537,10 +626,23 @@ export function PackageWizard({
             </div>
           ) : (
             <>
-              {flights.length > 0 && (
+              {(flights.length > 0 || (fsResults?.length ?? 0) > 0) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">סינון:</span>
+                  <FilterChip active={fsDirectOnly} onClick={() => setFsDirectOnly((v) => !v)}>
+                    ישירות בלבד
+                  </FilterChip>
+                  <FilterChip active={fsBagsOnly} onClick={() => setFsBagsOnly((v) => !v)}>
+                    <span className="flex items-center gap-1">
+                      <Luggage className="h-3 w-3" /> עם כבודה
+                    </span>
+                  </FilterChip>
+                </div>
+              )}
+              {visibleOfflineFlights.length > 0 && (
                 <p className="text-sm font-semibold text-muted-foreground">מלאי מובטח שלנו</p>
               )}
-              {flights.map((f) => {
+              {visibleOfflineFlights.map((f) => {
                 const soldOutForQty = f.remaining < qty;
                 return (
                   <OptionCard
@@ -566,11 +668,20 @@ export function PackageWizard({
                             {f.inbound_departure_airport}→{f.inbound_arrival_airport}{" "}
                             {dateFmt(f.inbound_departure_time)} {timeFmt(f.inbound_departure_time)}
                           </p>
-                          {(f.outbound_stop_airport || f.inbound_stop_airport) && (
-                            <p className="text-xs text-muted-foreground">
-                              עצירה: {[f.outbound_stop_airport, f.inbound_stop_airport].filter(Boolean).join(", ")}
-                            </p>
-                          )}
+                          <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            {f.outbound_stop_airport || f.inbound_stop_airport
+                              ? `עצירה: ${[f.outbound_stop_airport, f.inbound_stop_airport].filter(Boolean).join(", ")}`
+                              : "ישירה"}
+                            {f.bags_included ? (
+                              <span className="flex items-center gap-1">
+                                <Luggage className="h-3 w-3" />
+                                כבודה כלולה
+                                {f.checked_bag_kg ? ` (${f.checked_bag_kg} ק"ג)` : ""}
+                              </span>
+                            ) : (
+                              <span>ללא כבודה רשומה</span>
+                            )}
+                          </p>
                         </div>
                       </div>
                       <div className="text-end">
@@ -627,9 +738,14 @@ export function PackageWizard({
                     </Button>
                   </div>
                   {fsError && <p className="mt-2 text-sm text-destructive">{fsError}</p>}
-                  {fsResults && fsResults.length > 0 && (
+                  {fsResults && fsResults.length > 0 && liveFlightMatches.length === 0 && (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      אין תוצאות שעוברות את הסינון — נקו את הפילטרים למעלה.
+                    </p>
+                  )}
+                  {liveFlightMatches.length > 0 && (
                     <ul className="mt-3 space-y-2">
-                      {fsResults.slice(0, 12).map((offer) => (
+                      {liveFlightMatches.slice(0, 30).map((offer) => (
                         <li key={offer.id}>
                           <OptionCard
                             selected={
@@ -724,10 +840,30 @@ export function PackageWizard({
             </div>
           ) : (
             <>
-              {hotelGroups.length > 0 && (
+              {(hotelGroups.length > 0 || (hsResults?.length ?? 0) > 0) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">סינון:</span>
+                  <FilterChip
+                    active={hsBreakfastOnly}
+                    onClick={() => setHsBreakfastOnly((v) => !v)}
+                  >
+                    עם ארוחת בוקר
+                  </FilterChip>
+                  {[0, 3, 4, 5].map((stars) => (
+                    <FilterChip
+                      key={stars}
+                      active={hsMinStars === stars}
+                      onClick={() => setHsMinStars(stars)}
+                    >
+                      {stars === 0 ? "כל הדירוגים" : `${stars}★ ומעלה`}
+                    </FilterChip>
+                  ))}
+                </div>
+              )}
+              {visibleHotelGroups.length > 0 && (
                 <p className="text-sm font-semibold text-muted-foreground">מלאי מובטח שלנו</p>
               )}
-              {hotelGroups.map((group) => {
+              {visibleHotelGroups.map((group) => {
                 const anchor = group[0];
                 const groupKey = `${anchor.hid ?? anchor.hotel_name}|${anchor.check_in}|${anchor.check_out}`;
                 const otherGroupSelected = selectedGroupKey !== null && selectedGroupKey !== groupKey;
@@ -871,9 +1007,14 @@ export function PackageWizard({
                   </Button>
                 </div>
                 {hsError && <p className="mt-2 text-sm text-destructive">{hsError}</p>}
-                {hsResults && hsResults.length > 0 && (
+                {hsResults && hsResults.length > 0 && liveHotelMatches.length === 0 && (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    אין מלונות שעוברים את הסינון — נקו את הפילטרים למעלה.
+                  </p>
+                )}
+                {liveHotelMatches.length > 0 && (
                   <ul className="mt-3 space-y-2">
-                    {hsResults.slice(0, 12).map((option) => (
+                    {liveHotelMatches.slice(0, 24).map((option) => (
                       <li key={option.key}>
                         <OptionCard
                           selected={
@@ -905,9 +1046,13 @@ export function PackageWizard({
                                   </span>
                                 )}
                               </p>
-                              <p className="truncate text-xs text-muted-foreground">
-                                {option.room_name}
-                                {option.meal && option.meal !== "nomeal" ? ` · ${option.meal}` : ""}
+                              <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                                <span className="truncate">{option.room_name}</span>
+                                {hasMeal(option.meal) && (
+                                  <Badge variant="secondary" className="shrink-0 font-normal">
+                                    כולל ארוחת בוקר
+                                  </Badge>
+                                )}
                               </p>
                               <p className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <MapPin className="h-3 w-3" />
