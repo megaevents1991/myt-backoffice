@@ -5,7 +5,6 @@ import {
   Flame,
   Handshake,
   Home,
-  Hourglass,
   Music,
   Package,
   Percent,
@@ -377,44 +376,17 @@ export function PartnersInsights({
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Hourglass className="h-4 w-4 text-muted-foreground" />
-              Live holds — leads in flight
-            </CardTitle>
+            <CardTitle>Top partners</CardTitle>
             <CardDescription>
-              24-hour price holds still inside their window, right now (not
-              period-filtered). These are customers deciding.
+              By paid sales in the selected period. Click through for the full
+              per-partner picture.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {overview.openHolds.count === 0 ? (
-              <p className="py-4 text-muted-foreground">No live holds at the moment.</p>
-            ) : (
-              <>
-                <p>
-                  <span className="text-2xl font-bold">{overview.openHolds.count}</span>{" "}
-                  holds · {usd.format(overview.openHolds.valueUsd)} potential sales
-                </p>
-                <div className="space-y-1 border-t pt-3">
-                  {overview.openHolds.top.map((row) => (
-                    <div key={row.code} className="flex items-baseline justify-between">
-                      <Link
-                        href={`/partners/${row.code}/view?range=${range}`}
-                        className="truncate hover:underline"
-                      >
-                        {row.name}
-                      </Link>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {row.count} · {usd.format(row.valueUsd)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
+          <CardContent>
+            <TopPartnersTable partners={overview.topPartners} range={range} />
           </CardContent>
         </Card>
 
@@ -463,18 +435,6 @@ export function PartnersInsights({
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Top partners</CardTitle>
-          <CardDescription>
-            By paid sales in the selected period. Click through for the full
-            per-partner picture.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <TopPartnersTable partners={overview.topPartners} range={range} />
-        </CardContent>
-      </Card>
     </div>
   );
 }

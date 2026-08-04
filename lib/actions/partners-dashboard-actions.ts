@@ -74,12 +74,6 @@ export interface HotEvent {
   conversionRate: number | null
 }
 
-export interface OpenHoldsSummary {
-  count: number
-  valueUsd: number
-  top: { code: string; name: string; count: number; valueUsd: number }[]
-}
-
 export interface PackagesSummary {
   created: number
   locked: number
@@ -157,8 +151,6 @@ export interface PartnersOverview {
   hotEvents: HotEvent[]
   /** Top 15 most-BOOKED events (paid) in the window, by tickets. */
   topBookedEvents: TopBookedEvent[]
-  /** Live 24h holds (status 24Save within its 25h window) — leads in flight. */
-  openHolds: OpenHoldsSummary
   /** Prepared-package links built in the window. */
   packages: PackagesSummary
 }
@@ -191,9 +183,6 @@ type ReservationRow = {
   hotel_price: number | string | null
   hotel_offline: boolean | null
 }
-
-const HOLD_STATUS = "24Save"
-const HOLD_WINDOW_MS = 25 * 60 * 60 * 1000
 
 /** One paged row of the entry-funnel fallback scan over affiliates_tracking. */
 type ScanRow = {
@@ -339,7 +328,6 @@ export async function getPartnersOverview(
     hotResult,
     hotPartnersResult,
     visitorsResult,
-    holdsResult,
     packagesResult,
   ] = await Promise.all([
     supabase
@@ -369,14 +357,6 @@ export async function getPartnersOverview(
     }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).rpc("partners_visitors_by_code", { p_from: from, p_to: to }),
-    // Live leads: 24h holds still inside their real 25h window — always "now",
-    // deliberately not range-filtered.
-    supabase
-      .from("reservations")
-      .select("created_at,user_shown_price,aff_partner_tracking_code")
-      .eq("status", HOLD_STATUS)
-      .not("aff_partner_tracking_code", "is", null)
-      .gte("created_at", new Date(Date.now() - HOLD_WINDOW_MS).toISOString()),
     fetchPaged<{
       id: number | string
       partner_tracking_code: string
@@ -407,7 +387,6 @@ export async function getPartnersOverview(
     ["hot", hotResult],
     ["hotPartners", hotPartnersResult],
     ["visitors", visitorsResult],
-    ["holds", holdsResult],
     ["packages", packagesResult],
   ] as const) {
     if (result.error) {
@@ -841,41 +820,6 @@ export async function getPartnersOverview(
       }
     })
 
-  // ---- Open holds (live leads) ----
-  const holdRows = (holdsResult.data ?? []) as {
-    created_at: string
-    user_shown_price: number | null
-    aff_partner_tracking_code: string | null
-  }[]
-  const holdsByPartner = new Map<string, { count: number; valueUsd: number }>()
-  let holdsValue = 0
-  for (const hold of holdRows) {
-    const code = hold.aff_partner_tracking_code
-    if (!code || !partnerByCode.has(code)) continue
-    const value = hold.user_shown_price ?? 0
-    holdsValue += value
-    const entry = holdsByPartner.get(code) ?? { count: 0, valueUsd: 0 }
-    entry.count += 1
-    entry.valueUsd += value
-    holdsByPartner.set(code, entry)
-  }
-  const openHolds: OpenHoldsSummary = {
-    count: [...holdsByPartner.values()].reduce((sum, h) => sum + h.count, 0),
-    valueUsd: round2(holdsValue),
-    top: [...holdsByPartner.entries()]
-      .map(([code, entry]) => ({
-        code,
-        name:
-          partnerByCode.get(code)?.name_hebrew ||
-          partnerByCode.get(code)?.email ||
-          code,
-        count: entry.count,
-        valueUsd: round2(entry.valueUsd),
-      }))
-      .sort((a, b) => b.valueUsd - a.valueUsd)
-      .slice(0, 5),
-  }
-
   // ---- Prepared packages built in the window ----
   const packageRows = packagesResult.rows.filter((row) =>
     partnerByCode.has(row.partner_tracking_code)
@@ -961,7 +905,6 @@ export async function getPartnersOverview(
       globalFunnel.totalVisitors > 0 ? paid.length / globalFunnel.totalVisitors : null,
     hotEvents,
     topBookedEvents,
-    openHolds,
     packages,
   }
 }
