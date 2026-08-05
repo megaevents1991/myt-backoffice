@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { computePackagePrice, type PackagePriceEvent } from "@/lib/package-price";
 import { round2, type CommissionTerms } from "@/lib/partner-commission";
+import { PUBLIC_SITE_URL } from "@/lib/site";
 import type { CommissionType } from "@/types/partner.types";
 
 export interface QuoteEventOption {
@@ -158,6 +159,8 @@ export async function createQuote(input: {
   package?: { qty: number; unit_price: number } | null;
   notes?: string | null;
   valid_until?: string | null;
+  /** Site order link rendered as the PDF's pay CTA; null/absent = info-only. */
+  payment_link?: string | null;
 }): Promise<{ ok: true; id: number } | { ok: false; error: string }> {
   const session = await requirePartner();
 
@@ -269,6 +272,21 @@ export async function createQuote(input: {
     }
   }
 
+  // The CTA link may only point at OUR site carrying THIS agent's code — a
+  // quote PDF must never route a customer through someone else's attribution
+  // (or off-site entirely).
+  let payment_link: string | null = null;
+  if (input.payment_link) {
+    const link = String(input.payment_link);
+    const carriesOwnCode =
+      link.startsWith(`${PUBLIC_SITE_URL}/`) &&
+      link.includes(`utm_source=${encodeURIComponent(session.partner_code ?? "")}`);
+    if (!carriesOwnCode || link.length > 500) {
+      return { ok: false, error: "לינק התשלום אינו תקין" };
+    }
+    payment_link = link;
+  }
+
   const row = {
     created_by: session.sub,
     partner_tracking_code: session.partner_code,
@@ -283,22 +301,31 @@ export async function createQuote(input: {
     status: "final",
   };
 
-  let { data, error } = await (supabase as any)
-    .from("quotes")
-    .insert({ ...row, base_unit_price })
-    .select("id")
-    .single();
-
-  // The migration adding this column and the deploy that writes it ship from
-  // the same merge, so there is a window where the column does not exist yet.
-  // A reporting field must not stop a partner creating quotes in that window.
-  if (error?.code === "PGRST204") {
-    console.error("createQuote: base_unit_price column missing, saving without it");
+  // The migrations adding these columns and the deploy that writes them ship
+  // from the same merge, so there is a window where a column does not exist
+  // yet. Optional fields must not stop a partner creating quotes then — try
+  // the fullest payload first and shed the newest columns on PGRST204.
+  // Until the payment_link column lands, the link degrades into the notes —
+  // still on the PDF, just as text instead of a styled CTA.
+  const notesWithLink = payment_link
+    ? [row.notes, `להזמנה ותשלום מאובטח: ${payment_link}`].filter(Boolean).join("\n\n")
+    : row.notes;
+  const payloads = [
+    { ...row, base_unit_price, payment_link },
+    { ...row, notes: notesWithLink, base_unit_price },
+    { ...row, notes: notesWithLink },
+  ];
+  let data = null;
+  let error = null;
+  for (const payload of payloads) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ({ data, error } = await (supabase as any)
       .from("quotes")
-      .insert(row)
+      .insert(payload)
       .select("id")
       .single());
+    if (error?.code !== "PGRST204") break;
+    console.error("createQuote: column missing, retrying with a slimmer payload");
   }
 
   if (error) {

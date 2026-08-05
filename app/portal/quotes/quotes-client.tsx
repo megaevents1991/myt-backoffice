@@ -47,7 +47,9 @@ export function QuotesClient({ initialQuotes }: { initialQuotes: PortalQuote[] }
         });
       };
       try {
-        const res = await fetch(`/api/quotes/${id}/pdf`, { method: "POST" });
+        // /portal-path alias — the partner session cookie is path-scoped to
+        // /portal and never reaches /api/* (multi-session).
+        const res = await fetch(`/portal/api/quotes/${id}/pdf`, { method: "POST" });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok) {
           fail();

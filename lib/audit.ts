@@ -19,12 +19,23 @@ export type AuditInput = {
 export async function logAudit(input: AuditInput): Promise<void> {
   try {
     let actor = input.actor;
+    let metadata = input.metadata ?? null;
     if (!actor) {
       const session = await getSession().catch(() => null);
       actor = session
         ? { id: session.sub, email: session.email, role: session.role }
         : { id: null, email: null, role: null };
+      // A superadmin acting AS a partner must stay attributable — without
+      // this, an impersonated write is indistinguishable from the partner's.
+      if (session?.impersonator) {
+        metadata = {
+          ...(metadata ?? {}),
+          impersonated_by: session.impersonator.email,
+          impersonated_by_id: session.impersonator.sub,
+        };
+      }
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any).from("audit_log").insert({
       actor_id: actor.id ?? null,
       actor_email: actor.email ?? null,
@@ -33,7 +44,7 @@ export async function logAudit(input: AuditInput): Promise<void> {
       entity_type: input.entityType ?? null,
       entity_id: input.entityId == null ? null : String(input.entityId),
       changes: input.changes ?? null,
-      metadata: input.metadata ?? null,
+      metadata,
       ip: input.ip ?? null,
     });
     if (error) console.error("logAudit insert failed:", JSON.stringify(error));
@@ -68,6 +79,7 @@ export async function fetchBefore(
   try {
     const columns = Object.keys(payload);
     if (columns.length === 0) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from(table)
       .select(columns.join(","))

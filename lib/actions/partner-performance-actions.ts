@@ -18,6 +18,17 @@ import {
   emptyTraffic,
   type PartnerTraffic,
 } from "@/lib/partner-funnel"
+import {
+  ENTRY_SCAN_LIMIT,
+  ENTRY_SCAN_SELECT,
+  buildEntryFunnels,
+  entryCountsFromRows,
+  matchPaidUsers,
+  paidCandidatesFrom,
+  type EntryFunnels,
+  type EntryScanRow,
+} from "@/lib/partner-entry-funnels"
+import { fetchPaged } from "@/lib/supabase-paged"
 import type { CommissionType } from "@/types/partner.types"
 import {
   getReservationEventOrderInfoPrimaryName,
@@ -45,8 +56,16 @@ export interface PartnerMonthlyPoint {
   commission_usd: number
 }
 
-/** Time window for the whole performance view. */
-export type InsightsRange = "7d" | "30d" | "90d" | "all"
+/** Time window for the whole performance view. Day-based options use
+ *  Asia/Jerusalem calendar days; the Nd options are rolling windows. */
+export type InsightsRange =
+  | "today"
+  | "yesterday"
+  | "3d"
+  | "7d"
+  | "30d"
+  | "90d"
+  | "all"
 
 export interface TopCount {
   label: string
@@ -96,13 +115,20 @@ export interface PartnerPerformance {
   pendingCommissionUsd: number
   activeCoupons: number
   couponUses: number
-  /** Paid bookings ÷ distinct visitors in the window; null when no visitors. */
+  /** Paid bookings ÷ trackedVisitors; null when no visitors. */
   conversionRate: number | null
+  /** Distinct tracked users across every entry — the SAME universe the three
+   *  entry-funnel cards count, so the conversion tile agrees with them. Falls
+   *  back to `traffic.totalVisitors` when the entry split has no data. */
+  trackedVisitors: number
   /** Sales ÷ paid bookings; null when nothing paid. */
   avgOrderValueUsd: number | null
   monthly: PartnerMonthlyPoint[]
   reservations: PartnerPerformanceReservation[]
   traffic: PartnerTraffic
+  /** The same three entry panels as the cross-partner Insights tab, scoped
+   *  to this partner's traffic. */
+  entryFunnels: EntryFunnels
   clickedEvents: PartnerClickedEvent[]
   mix: PartnerMix
 }
@@ -129,12 +155,47 @@ type ReservationRow = {
   } | null
 }
 
-export async function rangeStartISO(range: InsightsRange): Promise<string | null> {
-  if (range === "all") return null
-  const days = range === "7d" ? 7 : range === "30d" ? 30 : 90
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  return d.toISOString()
+const JLM_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" })
+const JLM_HOUR = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Jerusalem",
+  hour: "2-digit",
+  hour12: false,
+})
+
+/** UTC instant of Jerusalem midnight `daysAgo` calendar days back (DST-safe:
+ *  probes both +02/+03 offsets and keeps the one that lands on 00:00). */
+function jerusalemMidnight(daysAgo: number): string {
+  const dateStr = JLM_DATE.format(new Date(Date.now() - daysAgo * 86_400_000))
+  for (const offset of ["+03:00", "+02:00"]) {
+    const candidate = new Date(`${dateStr}T00:00:00${offset}`)
+    if (JLM_DATE.format(candidate) === dateStr && JLM_HOUR.format(candidate) === "00") {
+      return candidate.toISOString()
+    }
+  }
+  return new Date(`${dateStr}T00:00:00+03:00`).toISOString()
+}
+
+/** The [from, to) window a range means. Nulls = unbounded on that side. */
+export async function rangeWindowISO(
+  range: InsightsRange
+): Promise<{ from: string | null; to: string | null }> {
+  switch (range) {
+    case "today":
+      return { from: jerusalemMidnight(0), to: null }
+    case "yesterday":
+      return { from: jerusalemMidnight(1), to: jerusalemMidnight(0) }
+    case "3d":
+      // Last three calendar days, today included.
+      return { from: jerusalemMidnight(2), to: null }
+    case "all":
+      return { from: null, to: null }
+    default: {
+      const days = range === "7d" ? 7 : range === "30d" ? 30 : 90
+      const d = new Date()
+      d.setDate(d.getDate() - days)
+      return { from: d.toISOString(), to: null }
+    }
+  }
 }
 
 function topCounts(map: Map<string, number>, limit = 6): TopCount[] {
@@ -165,7 +226,7 @@ export async function getPartnerPerformance(
 ): Promise<PartnerPerformance> {
   await requireStaff()
 
-  const from = await rangeStartISO(range)
+  const { from, to } = await rangeWindowISO(range)
 
   let reservationsQuery = supabase
     .from("reservations")
@@ -175,9 +236,16 @@ export async function getPartnerPerformance(
     .eq("aff_partner_tracking_code", trackingCode)
     .order("created_at", { ascending: false })
   if (from) reservationsQuery = reservationsQuery.gte("created_at", from)
+  if (to) reservationsQuery = reservationsQuery.lt("created_at", to)
 
-  const [partnerResult, reservationsResult, couponsResult, trafficResult, clicksResult] =
-    await Promise.all([
+  const [
+    partnerResult,
+    reservationsResult,
+    couponsResult,
+    trafficResult,
+    clicksResult,
+    entryFunnelsResult,
+  ] = await Promise.all([
     supabase
       .from("partners")
       .select("commission,commission_type")
@@ -194,14 +262,20 @@ export async function getPartnerPerformance(
     (supabase as any).rpc("partner_funnel_counts_range", {
       p_tracking_code: trackingCode,
       p_from: from,
-      p_to: null,
+      p_to: to,
     }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).rpc("partner_clicked_events_range", {
       p_tracking_code: trackingCode,
       p_from: from,
-      p_to: null,
+      p_to: to,
       p_limit: 12,
+    }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).rpc("partner_entry_funnels_range", {
+      p_tracking_code: trackingCode,
+      p_from: from,
+      p_to: to,
     }),
   ])
 
@@ -298,6 +372,72 @@ export async function getPartnerPerformance(
         totalVisitors: stageCounts.get("VISIT") ?? 0,
         hasData: stageCounts.size > 0,
       }
+
+  // ---- Entry-segmented funnels — the same three panels as the cross-partner
+  // Insights tab, scoped to this partner's traffic. ----
+  let countsByEntry = new Map<string, Map<string, number>>()
+  let entryApproximate = false
+  if (!entryFunnelsResult.error) {
+    for (const row of (entryFunnelsResult.data ?? []) as {
+      entry: string
+      stage: string
+      visitors: number
+    }[]) {
+      const perStage = countsByEntry.get(row.entry) ?? new Map<string, number>()
+      perStage.set(row.stage, Number(row.visitors) || 0)
+      countsByEntry.set(row.entry, perStage)
+    }
+  } else {
+    // RPC not deployed yet (migration applies on merge to master) — degrade to
+    // a paged ascending scan of this partner's rows, aggregated identically.
+    console.error(
+      "getPartnerPerformance entry funnels:",
+      JSON.stringify(entryFunnelsResult.error)
+    )
+    const scanQuery = () => {
+      let q = supabase
+        .from("affiliates_tracking")
+        .select(ENTRY_SCAN_SELECT)
+        .eq("affiliate_id", trackingCode)
+        .not("user_id", "is", null)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+      if (from) q = q.gte("created_at", from)
+      if (to) q = q.lt("created_at", to)
+      return q
+    }
+    const scan = await fetchPaged<EntryScanRow>(scanQuery, ENTRY_SCAN_LIMIT)
+    if (scan.error) {
+      console.error("getPartnerPerformance entry scan:", JSON.stringify(scan.error))
+    }
+    if (scan.rows.length) {
+      entryApproximate = scan.truncated || scan.error != null
+      const paidUsers = matchPaidUsers(
+        scan.rows,
+        paidCandidatesFrom(
+          paid.map((r) => ({
+            aff_partner_tracking_code: trackingCode,
+            created_at: r.created_at,
+            event_order_info: r.event_order_info,
+          }))
+        )
+      )
+      countsByEntry = entryCountsFromRows(scan.rows, paidUsers)
+    }
+  }
+  const entryFunnels = buildEntryFunnels(countsByEntry, entryApproximate)
+
+  // The conversion tile must agree with the three entry-funnel cards below it,
+  // so it counts the same universe: every classified user across every entry.
+  // (traffic counts only users with a VISIT row — order deep-links had none
+  // before main's Aug 2026 fix.)
+  const entryVisitorsTotal =
+    entryFunnels.home.totalVisitors +
+    entryFunnels.artist.totalVisitors +
+    entryFunnels.event.totalVisitors +
+    entryFunnels.otherVisitors
+  const trackedVisitors =
+    entryVisitorsTotal > 0 ? entryVisitorsTotal : traffic.totalVisitors
 
   // Clicked events — event NAME + DATE + LOCATION level (tracking carries no
   // event id), cross-referenced against every event on every PAID booking so
@@ -397,12 +537,13 @@ export async function getPartnerPerformance(
     ),
     activeCoupons: coupons.filter((c) => c.is_active).length,
     couponUses: coupons.reduce((sum, c) => sum + (c.times_used ?? 0), 0),
-    conversionRate:
-      traffic.totalVisitors > 0 ? round2(paid.length / traffic.totalVisitors) : null,
+    conversionRate: trackedVisitors > 0 ? paid.length / trackedVisitors : null,
+    trackedVisitors,
     avgOrderValueUsd: paid.length > 0 ? round2(totalSalesUsd / paid.length) : null,
     monthly,
     reservations,
     traffic,
+    entryFunnels,
     clickedEvents,
     mix,
   }

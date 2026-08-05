@@ -22,10 +22,14 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const urlError = searchParams.get("error");
 
-  // Redirect if user is already logged in
+  // Redirect if user is already logged in. Partners home to /portal — their
+  // session cookie is /portal-scoped, so sending them to /dashboard would
+  // bounce back here forever (middleware never sees their cookie there).
   useEffect(() => {
     if (user) {
-      router.push("/dashboard");
+      router.push(
+        user.role === "agent" || user.role === "affiliate" ? "/portal" : "/dashboard"
+      );
     }
   }, [user, router]);
 
@@ -38,8 +42,12 @@ function LoginForm() {
       console.log("Submitting login form...");
       const result = await login(email, password);
 
-      if (result === true) {
-        console.log("Login successful, redirecting to dashboard");
+      if ("user" in result) {
+        const home =
+          result.user.role === "agent" || result.user.role === "affiliate"
+            ? "/portal"
+            : "/dashboard";
+        console.log("Login successful, redirecting to", home);
         toast({
           title: "Login successful",
           description: "Welcome to the backoffice dashboard.",
@@ -47,7 +55,7 @@ function LoginForm() {
 
         // Add a small delay before redirect to ensure cookie is set
         setTimeout(() => {
-          router.push("/dashboard");
+          router.push(home);
         }, 500);
       } else {
         console.log("Login failed");

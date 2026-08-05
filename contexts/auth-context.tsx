@@ -10,9 +10,11 @@ type User = SessionUser;
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
-  /** true on success; on failure returns the server's error message (or a
-   *  generic one) so the login page can distinguish rate-limit from bad creds. */
-  login: (email: string, password: string) => Promise<true | { error: string }>;
+  /** The signed-in user on success (so the login page can route by role —
+   *  partners home to /portal, staff to /dashboard); on failure the server's
+   *  error message (or a generic one) so rate-limit reads differently from
+   *  bad credentials. */
+  login: (email: string, password: string) => Promise<{ user: User } | { error: string }>;
   logout: () => Promise<void>;
 };
 
@@ -73,7 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (
     email: string,
     password: string
-  ): Promise<true | { error: string }> => {
+  ): Promise<{ user: User } | { error: string }> => {
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
@@ -86,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.ok && data.user) {
         setUser(data.user);
-        return true;
+        return { user: data.user as User };
       }
 
       // Pass the server's message through (429 "wait a minute" vs 401 invalid).

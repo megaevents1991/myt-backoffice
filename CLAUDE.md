@@ -211,6 +211,13 @@ NEXT_SECRET_REVALIDATION_SECRET=
 # Optional — customer-facing site the partner portal builds tracking links against.
 # Defaults to https://www.mega-events.co.il (lib/site.ts).
 NEXT_PUBLIC_MAIN_SITE_URL=
+# Session signing key. MUST equal myt-main's NEXT_SECRET_SESSION_SECRET — the
+# portal's "הזמנה עבור הלקוח" mints a short-lived token in main's
+# partner_session format (lib/auth/partner-handoff.ts) that main's
+# /api/partner-handoff verifies; different values silently break agent-mode
+# settlement (agent card / voucher) on main. Dashboard sessions fall back to
+# NEXT_SECRET_ADMIN_PASSWORD when unset, the handoff does not.
+NEXT_SECRET_SESSION_SECRET=
 # Absolute origin of this backoffice, used to build the form links that get emailed
 # out. Falls back to VERCEL_URL, then http://localhost:3000.
 NEXT_PUBLIC_APP_URL=

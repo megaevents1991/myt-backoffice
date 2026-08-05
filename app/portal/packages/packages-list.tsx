@@ -2,7 +2,17 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Check, Copy, Loader2, Package, Trash2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  FileText,
+  Loader2,
+  Lock,
+  LockOpen,
+  Package,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,8 +29,86 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import {
   deletePreparedPackage,
+  getAgentOrderHandoffLink,
+  setPackageAllowEdit,
   type PreparedPackageListItem,
 } from "@/lib/actions/portal-package-actions";
+
+/**
+ * "הזמנה עבור הלקוח" — opens main's order flow THROUGH the partner-handoff
+ * endpoint, so the agent arrives with a live session on main's domain and the
+ * agent-paid settlement methods (agent card / voucher) actually pass the
+ * server's requireAgent gate. The window opens synchronously (popup-blocker
+ * safe) and gets its URL once the short-lived token is minted.
+ */
+function OrderForCustomerButton({ pkg }: { pkg: PreparedPackageListItem }) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+
+  const handleClick = () => {
+    const win = window.open("about:blank", "_blank");
+    startTransition(async () => {
+      const result = await getAgentOrderHandoffLink(pkg.id);
+      if (!result.ok) {
+        win?.close();
+        toast({ title: result.error, variant: "destructive" });
+        return;
+      }
+      if (win) win.location.href = result.url;
+      else window.open(result.url, "_blank");
+    });
+  };
+
+  return (
+    <Button type="button" size="sm" variant="outline" onClick={handleClick} disabled={isPending}>
+      {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+      הזמנה עבור הלקוח
+    </Button>
+  );
+}
+
+/** Lock/unlock an existing package — a mistaken lock is no longer permanent. */
+function LockToggleButton({ pkg }: { pkg: PreparedPackageListItem }) {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const locked = !pkg.allow_edit;
+
+  const handleToggle = () => {
+    startTransition(async () => {
+      const result = await setPackageAllowEdit(pkg.id, locked);
+      if (!result.ok) {
+        toast({ title: result.error, variant: "destructive" });
+      } else {
+        toast({
+          title: locked ? "החבילה נפתחה לעריכה" : "החבילה ננעלה",
+          description: locked
+            ? "מי שיפתח את הלינק יוכל להחליף כרטיסים, טיסה ומלון."
+            : "מי שיפתח את הלינק ישלם על ההרכב שבניתם, בלי לשנות אותו.",
+        });
+      }
+    });
+  };
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      onClick={handleToggle}
+      disabled={isPending}
+      title={locked ? "פתיחת החבילה לעריכת הלקוח" : "נעילת ההרכב בפני שינויים"}
+    >
+      {isPending ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : locked ? (
+        <LockOpen className="h-4 w-4" />
+      ) : (
+        <Lock className="h-4 w-4" />
+      )}
+      {locked ? "פתיחה לעריכה" : "נעילה"}
+    </Button>
+  );
+}
 
 function CopyLinkButton({ link }: { link: string }) {
   const [copied, setCopied] = useState(false);
@@ -65,7 +153,14 @@ function PartBadge({
   return <Badge variant="outline" className="font-normal text-muted-foreground">ללא</Badge>;
 }
 
-export function PackagesList({ packages }: { packages: PreparedPackageListItem[] }) {
+export function PackagesList({
+  packages,
+  isAgent = false,
+}: {
+  packages: PreparedPackageListItem[];
+  /** Agents also get "send offer" and "order for the customer" per package. */
+  isAgent?: boolean;
+}) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -121,6 +216,7 @@ export function PackagesList({ packages }: { packages: PreparedPackageListItem[]
               <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
                 {!pkg.allow_edit && (
                   <Badge className="bg-brand-forest font-normal text-primary-foreground hover:bg-brand-forest">
+                    <Lock className="me-1 h-3 w-3" />
                     נעולה לעריכה
                   </Badge>
                 )}
@@ -130,7 +226,19 @@ export function PackagesList({ packages }: { packages: PreparedPackageListItem[]
                 <PartBadge mode={pkg.hotel} offlineLabel="מלון מוצמד" summary={pkg.hotel_summary} />
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {isAgent && (
+                <>
+                  <Button asChild type="button" size="sm" variant="outline">
+                    <Link href={`/portal/quotes/new?package=${pkg.id}`}>
+                      <FileText className="h-4 w-4" />
+                      שלח הצעה ללקוח
+                    </Link>
+                  </Button>
+                  <OrderForCustomerButton pkg={pkg} />
+                </>
+              )}
+              <LockToggleButton pkg={pkg} />
               <CopyLinkButton link={pkg.link} />
               <AlertDialog>
                 <AlertDialogTrigger asChild>

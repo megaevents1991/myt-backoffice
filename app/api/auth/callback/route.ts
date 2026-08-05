@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import {
   createSessionValue,
+  PORTAL_MEMBER_HINT_COOKIE,
+  PORTAL_SESSION_COOKIE,
   SESSION_COOKIE,
   SESSION_MAX_AGE,
 } from "@/lib/auth/session";
@@ -58,12 +60,13 @@ export async function GET(request: Request) {
       metadata: { provider: "google" },
     });
 
-    const home = ["agent", "affiliate"].includes(profile.role)
-      ? "/portal"
-      : "/dashboard";
+    const isPartner = ["agent", "affiliate"].includes(profile.role);
+    const home = isPartner ? "/portal" : "/dashboard";
     const redirect = NextResponse.redirect(new URL(home, request.url));
+    // Partners get the /portal-scoped cookie so their login coexists with a
+    // staff `session` in the same browser — same split as the password login.
     redirect.cookies.set(
-      SESSION_COOKIE,
+      isPartner ? PORTAL_SESSION_COOKIE : SESSION_COOKIE,
       await createSessionValue({
         sub: profile.id,
         email: profile.email,
@@ -75,9 +78,19 @@ export async function GET(request: Request) {
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
         maxAge: SESSION_MAX_AGE,
-        path: "/",
+        path: isPartner ? "/portal" : "/",
       }
     );
+    if (isPartner) {
+      // Routing hint (no auth value) — see the login route.
+      redirect.cookies.set(PORTAL_MEMBER_HINT_COOKIE, "1", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: SESSION_MAX_AGE,
+        path: "/",
+      });
+    }
     // Clear the temporary Supabase PKCE cookies.
     cookieStore.getAll().forEach(({ name }) => {
       if (name.startsWith("sb-")) redirect.cookies.delete(name);

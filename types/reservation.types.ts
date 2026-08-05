@@ -47,6 +47,7 @@ export type Reservation = {
   event_id: number
   status: string
   accounting_number: number
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   payment_info: any;
   comments: string
   final_purchase_price_ils: number;
@@ -64,7 +65,7 @@ export type Reservation = {
   // Set only for bookings an agent entered on a customer's behalf — see
   // myt-main's confirm-order/utils.ts (resolveAgentSettlement). Never shown
   // to the customer; staff-only context for why a Pending row is Pending.
-  partner_settlement_method?: "customer_card" | "agent_card" | "voucher" | null;
+  partner_settlement_method?: import("./app.types").SettlementMethod | null;
   // ILS subtracted from final_purchase_price_ils before charging, agent_card only.
   agent_card_discount_ils?: number | null;
 }

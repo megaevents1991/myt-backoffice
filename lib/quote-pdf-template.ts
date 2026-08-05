@@ -3,6 +3,9 @@
  * which the render route (`app/api/quotes/[id]/pdf/route.ts`) feeds to
  * chromium's `page.setContent()` to produce the downloadable PDF.
  *
+ * Styled in the main site's brand (forest `#0A1A14` / mint `#5BFF95`) — the
+ * customer receiving this offer knows the site it points at.
+ *
  * SECURITY: `quote`/`partner` fields originate from partner-submitted data
  * (see `lib/actions/quote-actions.ts` `createQuote`) and are rendered
  * server-side into raw HTML — every interpolated string MUST go through
@@ -25,6 +28,8 @@ export interface QuoteForPdf {
   total: number | null;
   notes: string | null;
   valid_until: string | null;
+  /** Partner-coded site order link → the "register & pay" CTA; null = info-only. */
+  payment_link?: string | null;
 }
 
 export interface PartnerBrandingForPdf {
@@ -90,16 +95,16 @@ export function renderQuoteHtml(args: {
     : computedTotal;
 
   const rowsHtml = lineItems
-    .map((item) => {
+    .map((item, i) => {
       const qty = Number.isFinite(item.qty) ? item.qty : 0;
       const unitPrice = Number.isFinite(item.unit_price) ? item.unit_price : 0;
       const lineTotal = qty * unitPrice;
       return `
-        <tr>
-          <td>${esc(item.label)}</td>
+        <tr class="${i % 2 === 0 ? "even" : "odd"}">
+          <td class="item-label">${esc(item.label)}</td>
           <td class="num">${esc(String(qty))}</td>
           <td class="num">${esc(fmtUSD(unitPrice))}</td>
-          <td class="num">${esc(fmtUSD(lineTotal))}</td>
+          <td class="num strong">${esc(fmtUSD(lineTotal))}</td>
         </tr>`;
     })
     .join("");
@@ -111,22 +116,33 @@ export function renderQuoteHtml(args: {
       ? partner.logo_url.trim()
       : null;
   const logoHtml = safeLogoUrl
-    ? `<img class="logo" src="${esc(safeLogoUrl)}" alt="" onerror="this.style.display='none'">`
+    ? `<div class="logo-card"><img class="logo" src="${esc(safeLogoUrl)}" alt="" onerror="this.parentNode.style.display='none'"></div>`
     : "";
 
   const contactParts = [partner.phone, partner.email].filter((v): v is string => !!v);
-  const contactHtml = contactParts.map((v) => esc(v)).join(" &middot; ");
-
-  const titleHtml = quote.title
-    ? `<div class="quote-subtitle">${esc(quote.title)}</div>`
-    : "";
+  const contactHtml = contactParts.map((v) => esc(v)).join("&nbsp;&nbsp;·&nbsp;&nbsp;");
 
   const notesHtml = quote.notes
     ? `
       <div class="notes">
-        <div class="notes-label">הערות</div>
+        <div class="notes-label">פרטי ההצעה</div>
         <div class="notes-body">${esc(quote.notes)}</div>
       </div>`
+    : "";
+
+  // href AND visible text both escaped; the action already restricted the URL
+  // to our own site carrying the agent's code.
+  const paymentHtml = quote.payment_link
+    ? `
+      <div class="pay-cta">
+        <a class="pay-btn" href="${esc(quote.payment_link)}">להרשמה ותשלום מאובטח באתר&nbsp;›</a>
+        <div class="pay-hint">הקישור פותח את החבילה בדיוק כפי שהורכבה עבורכם</div>
+        <div class="pay-url">${esc(quote.payment_link)}</div>
+      </div>`
+    : "";
+
+  const validityHtml = quote.valid_until
+    ? `<div class="chip"><div class="chip-label">בתוקף עד</div><div class="chip-value">${esc(fmtDate(quote.valid_until))}</div></div>`
     : "";
 
   return `<!DOCTYPE html>
@@ -135,80 +151,146 @@ export function renderQuoteHtml(args: {
 <meta charset="utf-8">
 <title>הצעת מחיר #${esc(String(quote.id))}</title>
 <style>
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    margin: 0;
-    padding: 0;
-    font-family: 'Segoe UI', Arial, 'Noto Sans Hebrew', sans-serif;
-    color: #1f2430;
+    font-family: 'Segoe UI', 'Assistant', Arial, 'Noto Sans Hebrew', sans-serif;
+    color: #17211c;
     background: #ffffff;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 13px;
+    line-height: 1.55;
   }
-  .page { padding: 8mm 4mm; }
-  .header {
+
+  .band {
+    background: #0A1A14;
+    color: #ffffff;
+    border-radius: 14px;
+    padding: 22px 24px;
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    border-bottom: 2px solid #1f2430;
-    padding-bottom: 12px;
-    margin-bottom: 20px;
+    align-items: center;
+    gap: 16px;
   }
-  .logo { max-height: 64px; max-width: 200px; object-fit: contain; }
-  .partner-info { text-align: left; }
-  .partner-name { font-size: 18px; font-weight: 700; }
-  .partner-contact { font-size: 12px; color: #555b66; margin-top: 4px; }
-  h1.title { font-size: 24px; margin: 0 0 4px; }
-  .quote-subtitle { font-size: 15px; color: #444a55; margin-bottom: 16px; }
-  .meta { margin-bottom: 20px; }
-  .meta-row { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid #eceef1; }
-  .meta-label { font-weight: 600; min-width: 100px; color: #555b66; }
-  .meta-value { flex: 1; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  .band-right { min-width: 0; }
+  .eyebrow {
+    display: inline-block;
+    color: #5BFF95;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+  .band h1 { font-size: 24px; font-weight: 800; line-height: 1.25; }
+  .band .partner-line { margin-top: 8px; font-size: 12px; color: rgba(255,255,255,0.85); }
+  .band .partner-line b { color: #ffffff; }
+  .logo-card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 10px 14px;
+    flex-shrink: 0;
+  }
+  .logo { max-height: 56px; max-width: 170px; object-fit: contain; display: block; }
+
+  .chips { display: flex; gap: 10px; margin: 16px 0 20px; }
+  .chip {
+    flex: 1;
+    border: 1px solid #e3e9e5;
+    border-radius: 10px;
+    padding: 10px 14px;
+    background: #fafcfa;
+  }
+  .chip-label { font-size: 10px; color: #6b7671; font-weight: 600; letter-spacing: 0.04em; }
+  .chip-value { font-size: 14px; font-weight: 700; margin-top: 2px; }
+
+  .items { border: 1px solid #e3e9e5; border-radius: 12px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
   thead th {
-    background: #1f2430;
-    color: #ffffff;
-    padding: 10px 8px;
+    background: #eefcf3;
+    color: #0A1A14;
+    padding: 11px 14px;
     text-align: right;
-    font-size: 13px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid #d9efe1;
   }
-  thead th.num, td.num { text-align: left; }
-  tbody td { padding: 8px; border-bottom: 1px solid #eceef1; font-size: 13px; }
-  tfoot td { padding: 10px 8px; font-weight: 700; font-size: 15px; border-top: 2px solid #1f2430; }
-  .notes { margin-bottom: 20px; padding: 10px 12px; background: #f7f8fa; border-radius: 6px; }
-  .notes-label { font-weight: 600; margin-bottom: 4px; }
-  .notes-body { white-space: pre-wrap; font-size: 13px; }
-  .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #eceef1; font-size: 11px; color: #888e99; text-align: center; }
+  thead th.num { text-align: left; }
+  tbody td { padding: 11px 14px; font-size: 13px; border-bottom: 1px solid #eef2ef; }
+  tbody tr.odd td { background: #fafcfa; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { text-align: left; direction: ltr; white-space: nowrap; }
+  td.strong { font-weight: 700; }
+  .item-label { font-weight: 600; }
+
+  .total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #0A1A14;
+    color: #ffffff;
+    border-radius: 0 0 11px 11px;
+    padding: 13px 14px;
+  }
+  .total-row .label { font-size: 13px; font-weight: 600; }
+  .total-row .value { font-size: 20px; font-weight: 800; color: #5BFF95; direction: ltr; }
+
+  .pay-cta { margin: 26px 0 6px; text-align: center; }
+  .pay-btn {
+    display: inline-block;
+    padding: 13px 34px;
+    border-radius: 999px;
+    background: #5BFF95;
+    color: #0A1A14;
+    font-weight: 800;
+    font-size: 15px;
+    text-decoration: none;
+  }
+  .pay-hint { margin-top: 8px; font-size: 11px; color: #6b7671; }
+  .pay-url { margin-top: 4px; font-size: 9px; color: #9aa39e; direction: ltr; word-break: break-all; }
+
+  .notes {
+    margin-top: 20px;
+    padding: 13px 16px;
+    background: #fafcfa;
+    border: 1px solid #e3e9e5;
+    border-right: 3px solid #5BFF95;
+    border-radius: 10px;
+  }
+  .notes-label { font-weight: 700; font-size: 11px; color: #0A1A14; margin-bottom: 5px; letter-spacing: 0.04em; }
+  .notes-body { white-space: pre-wrap; font-size: 12px; color: #33403a; }
+
+  .footer {
+    margin-top: 30px;
+    padding-top: 12px;
+    border-top: 1px solid #e3e9e5;
+    font-size: 10px;
+    color: #9aa39e;
+    text-align: center;
+    line-height: 1.7;
+  }
+  .footer b { color: #6b7671; }
 </style>
 </head>
 <body>
-  <div class="page">
-    <div class="header">
-      <div class="logo-wrap">${logoHtml}</div>
-      <div class="partner-info">
-        <div class="partner-name">${esc(partner.name_hebrew)}</div>
-        <div class="partner-contact">${contactHtml}</div>
+  <div class="band">
+    <div class="band-right">
+      <span class="eyebrow">הצעת מחיר · ${esc(String(quote.id))}</span>
+      <h1>${esc(quote.title || "הצעת מחיר")}</h1>
+      <div class="partner-line">
+        הוכן עבורכם על ידי <b>${esc(partner.name_hebrew || "")}</b>${
+          contactHtml ? ` &nbsp;·&nbsp; ${contactHtml}` : ""
+        }
       </div>
     </div>
+    ${logoHtml}
+  </div>
 
-    <h1 class="title">הצעת מחיר #${esc(String(quote.id))}</h1>
-    ${titleHtml}
+  <div class="chips">
+    <div class="chip"><div class="chip-label">לקוח</div><div class="chip-value">${esc(quote.customer_name || "-")}</div></div>
+    <div class="chip"><div class="chip-label">תאריך ההצעה</div><div class="chip-value">${esc(fmtDate(quote.created_at))}</div></div>
+    ${validityHtml}
+  </div>
 
-    <div class="meta">
-      <div class="meta-row">
-        <div class="meta-label">תאריך</div>
-        <div class="meta-value">${esc(fmtDate(quote.created_at))}</div>
-      </div>
-      <div class="meta-row">
-        <div class="meta-label">לקוח</div>
-        <div class="meta-value">${esc(quote.customer_name)}</div>
-      </div>
-      <div class="meta-row">
-        <div class="meta-label">בתוקף עד</div>
-        <div class="meta-value">${esc(fmtDate(quote.valid_until))}</div>
-      </div>
-    </div>
-
+  <div class="items">
     <table>
       <thead>
         <tr>
@@ -221,17 +303,19 @@ export function renderQuoteHtml(args: {
       <tbody>
         ${rowsHtml}
       </tbody>
-      <tfoot>
-        <tr>
-          <td colspan="3">סה"כ לתשלום</td>
-          <td class="num">${esc(fmtUSD(grandTotal))}</td>
-        </tr>
-      </tfoot>
     </table>
+    <div class="total-row">
+      <div class="label">סה"כ לתשלום</div>
+      <div class="value">${esc(fmtUSD(grandTotal))}</div>
+    </div>
+  </div>
 
-    ${notesHtml}
+  ${paymentHtml}
+  ${notesHtml}
 
-    <div class="footer">הצעה זו אינה מהווה התחייבות. המחירים בדולר ארה"ב.</div>
+  <div class="footer">
+    ${partner.name_hebrew ? `<b>${esc(partner.name_hebrew)}</b>${contactHtml ? ` · ${contactHtml}` : ""}<br>` : ""}
+    הצעה זו אינה מהווה התחייבות. המחירים בדולר ארה"ב וכפופים לזמינות בעת ההזמנה.
   </div>
 </body>
 </html>`;

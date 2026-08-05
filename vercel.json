@@ -54,6 +54,10 @@
       "memory": 1024,
       "maxDuration": 30
     },
+    "app/portal/api/quotes/[id]/pdf/route.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    },
     "app/api/sports-events/sync/route.ts": {
       "memory": 1024,
       "maxDuration": 60
