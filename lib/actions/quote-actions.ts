@@ -4,7 +4,7 @@ import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { computePackagePrice, type PackagePriceEvent } from "@/lib/package-price";
-import { round2, type CommissionTerms } from "@/lib/partner-commission";
+import { PAID_STATUS, round2, type CommissionTerms } from "@/lib/partner-commission";
 import { signQuoteLink } from "@/lib/quote-link-sig";
 import { PUBLIC_SITE_URL } from "@/lib/site";
 import type { CommissionType } from "@/types/partner.types";
@@ -33,6 +33,33 @@ export interface PortalQuote {
   status: string;
   pdf_storage_path: string | null;
   event_id: number | null;
+}
+
+/** A quote's lifecycle as the agent manages it. `final` = still open/sent;
+ *  the other two are set from the quotes list. Free-text column, no enum. */
+export type PartnerQuoteStatus = "final" | "closed" | "not_relevant";
+
+export interface PortalQuoteWithState extends PortalQuote {
+  /** A Paid order arrived through this quote's signed link — closed for real,
+   *  whatever the manual status says. */
+  closed_by_order: boolean;
+  /** valid_until has passed (and the quote isn't closed / not-relevant). */
+  expired: boolean;
+}
+
+/** The doc's summary numbers: closed / expired / not relevant / to chase. */
+export interface PortalQuoteStats {
+  total: number;
+  closed: number;
+  expired: number;
+  notRelevant: number;
+  /** Still open and in force — the ones the agent should follow up on. */
+  openForFollowUp: number;
+}
+
+export interface PortalQuotesOverview {
+  quotes: PortalQuoteWithState[];
+  stats: PortalQuoteStats;
 }
 
 type QuoteEventRow = PackagePriceEvent & {
@@ -149,6 +176,101 @@ export async function getPortalQuotes(): Promise<PortalQuote[]> {
     return [];
   }
   return (data as PortalQuote[]) ?? [];
+}
+
+/**
+ * The quotes list plus its summary numbers, in one action.
+ *
+ * "Closed" is a union of two facts: the agent marked it closed, or a Paid
+ * reservation arrived through the quote's signed link (reservations.quote_id —
+ * best-effort until that migration lands; a 42703 just turns auto-closing off).
+ */
+export async function getPortalQuotesOverview(): Promise<PortalQuotesOverview> {
+  const empty: PortalQuotesOverview = {
+    quotes: [],
+    stats: { total: 0, closed: 0, expired: 0, notRelevant: 0, openForFollowUp: 0 },
+  };
+  const session = await requirePartner();
+  if (session.role !== "agent") return empty;
+
+  const [quotes, linkedResult] = await Promise.all([
+    getPortalQuotes(),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("reservations")
+      .select("quote_id,status")
+      .eq("aff_partner_tracking_code", session.partner_code)
+      .not("quote_id", "is", null),
+  ]);
+
+  const paidQuoteIds = new Set<number>();
+  if (linkedResult.error) {
+    if (linkedResult.error.code !== "42703") {
+      console.error("getPortalQuotesOverview linked:", JSON.stringify(linkedResult.error));
+    }
+  } else {
+    for (const row of (linkedResult.data ?? []) as { quote_id: number | null; status: string | null }[]) {
+      if (row.quote_id != null && row.status === PAID_STATUS) paidQuoteIds.add(row.quote_id);
+    }
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const withState: PortalQuoteWithState[] = quotes.map((quote) => {
+    const closedByOrder = paidQuoteIds.has(quote.id);
+    const pastValidity =
+      !!quote.valid_until && quote.valid_until.slice(0, 10) < today;
+    return {
+      ...quote,
+      closed_by_order: closedByOrder,
+      expired:
+        pastValidity && !closedByOrder && quote.status !== "closed" && quote.status !== "not_relevant",
+    };
+  });
+
+  const stats = withState.reduce(
+    (acc, quote) => {
+      acc.total += 1;
+      if (quote.closed_by_order || quote.status === "closed") acc.closed += 1;
+      else if (quote.status === "not_relevant") acc.notRelevant += 1;
+      else if (quote.expired) acc.expired += 1;
+      else acc.openForFollowUp += 1;
+      return acc;
+    },
+    { total: 0, closed: 0, expired: 0, notRelevant: 0, openForFollowUp: 0 }
+  );
+
+  return { quotes: withState, stats };
+}
+
+/** The agent updates their OWN quote's lifecycle from the list. */
+export async function updateQuoteStatus(
+  quoteId: number,
+  status: PartnerQuoteStatus
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await requirePartner();
+  if (session.role !== "agent") {
+    return { ok: false, error: "הצעות מחיר זמינות לסוכנים בלבד" };
+  }
+  if (!Number.isInteger(quoteId) || quoteId <= 0) {
+    return { ok: false, error: "הצעה לא תקינה" };
+  }
+  if (!["final", "closed", "not_relevant"].includes(status)) {
+    return { ok: false, error: "סטטוס לא מוכר" };
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("quotes")
+    .update({ status })
+    .eq("id", quoteId)
+    .eq("partner_tracking_code", session.partner_code)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    console.error("updateQuoteStatus:", JSON.stringify(error));
+    return { ok: false, error: "העדכון נכשל. נסו שוב." };
+  }
+  if (!data) return { ok: false, error: "ההצעה לא נמצאה" };
+  return { ok: true };
 }
 
 export async function createQuote(input: {

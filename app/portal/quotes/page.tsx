@@ -1,5 +1,5 @@
 import { getSession } from "@/lib/auth/guards";
-import { getPortalQuotes } from "@/lib/actions/quote-actions";
+import { getPortalQuotesOverview } from "@/lib/actions/quote-actions";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { QuotesClient } from "./quotes-client";
 
@@ -9,7 +9,7 @@ export default async function PortalQuotesPage() {
   // Quotes are an agent tool; an influencer only promotes a link.
   if (!isPartner || session.role !== "agent") return null;
 
-  const quotes = await getPortalQuotes();
+  const { quotes, stats } = await getPortalQuotesOverview();
 
-  return <QuotesClient initialQuotes={quotes} />;
+  return <QuotesClient initialQuotes={quotes} stats={stats} />;
 }

@@ -1,10 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { FileDown, PlusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -14,7 +22,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import type { PortalQuote } from "@/lib/actions/quote-actions";
+import { updateQuoteStatus } from "@/lib/actions/quote-actions";
+import type {
+  PartnerQuoteStatus,
+  PortalQuoteStats,
+  PortalQuoteWithState,
+} from "@/lib/actions/quote-actions";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -22,15 +35,64 @@ const usd = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
-function statusBadgeVariant(status: string) {
-  if (status === "final") return "default" as const;
-  return "outline" as const;
+const STATUS_LABELS: Record<PartnerQuoteStatus, string> = {
+  final: "פתוחה",
+  closed: "נסגרה",
+  not_relevant: "לא רלוונטי",
+};
+
+/** Recompute the tile numbers after a local status change — same rules as the
+ *  server's getPortalQuotesOverview. */
+function computeStats(quotes: PortalQuoteWithState[]): PortalQuoteStats {
+  const today = new Date().toISOString().slice(0, 10);
+  return quotes.reduce(
+    (acc, quote) => {
+      const pastValidity = !!quote.valid_until && quote.valid_until.slice(0, 10) < today;
+      acc.total += 1;
+      if (quote.closed_by_order || quote.status === "closed") acc.closed += 1;
+      else if (quote.status === "not_relevant") acc.notRelevant += 1;
+      else if (pastValidity) acc.expired += 1;
+      else acc.openForFollowUp += 1;
+      return acc;
+    },
+    { total: 0, closed: 0, expired: 0, notRelevant: 0, openForFollowUp: 0 }
+  );
 }
 
-export function QuotesClient({ initialQuotes }: { initialQuotes: PortalQuote[] }) {
+const pct = (part: number, total: number) =>
+  total > 0 ? `${Math.round((part / total) * 100)}%` : "—";
+
+export function QuotesClient({
+  initialQuotes,
+  stats: initialStats,
+}: {
+  initialQuotes: PortalQuoteWithState[];
+  stats: PortalQuoteStats;
+}) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [quotes, setQuotes] = useState(initialQuotes);
+
+  const stats = useMemo(
+    () => (quotes === initialQuotes ? initialStats : computeStats(quotes)),
+    [quotes, initialQuotes, initialStats]
+  );
+
+  const handleStatusChange = (id: number, status: PartnerQuoteStatus) => {
+    const previous = quotes;
+    // Optimistic — the list is the agent's own data and the change is tiny.
+    setQuotes((current) =>
+      current.map((q) => (q.id === id ? { ...q, status } : q))
+    );
+    startTransition(async () => {
+      const result = await updateQuoteStatus(id, status);
+      if (!result.ok) {
+        setQuotes(previous);
+        toast({ variant: "destructive", title: "שגיאה", description: result.error });
+      }
+    });
+  };
 
   const handleDownloadPdf = (id: number) => {
     setDownloadingId(id);
@@ -76,6 +138,22 @@ export function QuotesClient({ initialQuotes }: { initialQuotes: PortalQuote[] }
     });
   };
 
+  const tiles = [
+    { label: "סה\"כ הצעות", value: String(stats.total), hint: null },
+    { label: "נסגרו", value: String(stats.closed), hint: pct(stats.closed, stats.total) },
+    { label: "פג תוקפן", value: String(stats.expired), hint: pct(stats.expired, stats.total) },
+    {
+      label: "לא רלוונטי",
+      value: String(stats.notRelevant),
+      hint: pct(stats.notRelevant, stats.total),
+    },
+    {
+      label: "ממתינות למעקב",
+      value: String(stats.openForFollowUp),
+      hint: pct(stats.openForFollowUp, stats.total),
+    },
+  ];
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -88,7 +166,29 @@ export function QuotesClient({ initialQuotes }: { initialQuotes: PortalQuote[] }
         </Button>
       </div>
 
-      {initialQuotes.length === 0 ? (
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {tiles.map((tile) => (
+          <Card key={tile.label} className="shadow-card">
+            <CardHeader className="space-y-0 pb-1">
+              <CardTitle className="text-xs font-medium text-muted-foreground">
+                {tile.label}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex items-baseline gap-2">
+              <span className="font-display text-2xl font-bold tabular-nums">
+                {tile.value}
+              </span>
+              {tile.hint && (
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {tile.hint}
+                </span>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {quotes.length === 0 ? (
         <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
           אין הצעות מחיר עדיין
         </div>
@@ -108,7 +208,7 @@ export function QuotesClient({ initialQuotes }: { initialQuotes: PortalQuote[] }
               </TableRow>
             </TableHeader>
             <TableBody>
-              {initialQuotes.map((quote) => (
+              {quotes.map((quote) => (
                 <TableRow key={quote.id}>
                   <TableCell className="font-medium">{quote.id}</TableCell>
                   <TableCell>
@@ -123,7 +223,42 @@ export function QuotesClient({ initialQuotes }: { initialQuotes: PortalQuote[] }
                       : "—"}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={statusBadgeVariant(quote.status)}>{quote.status}</Badge>
+                    {quote.closed_by_order ? (
+                      <Badge>נסגרה · הוזמן באתר</Badge>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <Select
+                          value={
+                            (["final", "closed", "not_relevant"] as const).includes(
+                              quote.status as PartnerQuoteStatus
+                            )
+                              ? quote.status
+                              : "final"
+                          }
+                          onValueChange={(v) =>
+                            handleStatusChange(quote.id, v as PartnerQuoteStatus)
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(Object.keys(STATUS_LABELS) as PartnerQuoteStatus[]).map(
+                              (value) => (
+                                <SelectItem key={value} value={value}>
+                                  {STATUS_LABELS[value]}
+                                </SelectItem>
+                              )
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {quote.expired && quote.status === "final" && (
+                          <Badge variant="destructive" className="whitespace-nowrap">
+                            פג תוקף
+                          </Badge>
+                        )}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Button
