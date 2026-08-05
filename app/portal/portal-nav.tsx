@@ -17,6 +17,7 @@ const navItems: NavItem[] = [
   // for a named customer. The server action enforces it too.
   { name: "הצעות מחיר", href: "/portal/quotes", agentOnly: true },
   { name: "עדכונים", href: "/portal/activity" },
+  { name: "הפרופיל שלי", href: "/portal/profile" },
 ];
 
 export function PortalNav({ role }: { role?: string | null }) {
