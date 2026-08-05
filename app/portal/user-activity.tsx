@@ -1,0 +1,155 @@
+"use client";
+
+import { useState } from "react";
+import { ChevronDown, ChevronLeft, UserRound } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import type { PortalUserActivity, UserSimulation } from "@/lib/actions/portal-activity-actions";
+
+/** Bottom-of-dashboard user log: one collapsible block per visitor code, one
+ *  row per SIMULATION (event explored) — not one row per click. */
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("he-IL", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
+function stepLabel(step: UserSimulation["flight"]): string {
+  if (step === "chosen") return "נבחרה";
+  if (step === "skipped") return "דילגו";
+  return "—";
+}
+
+function UserBlock({
+  userId,
+  lastSeen,
+  simulations,
+}: {
+  userId: string;
+  lastSeen: string;
+  simulations: UserSimulation[];
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-md border">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 px-4 py-2.5 text-right transition-colors hover:bg-muted/50"
+        aria-expanded={open}
+      >
+        {open ? (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+        )}
+        <UserRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 truncate font-mono text-sm" dir="ltr">
+          {userId}
+        </span>
+        <span className="ms-auto flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
+          <span>{simulations.length} סימולציות</span>
+          <span>נראה לאחרונה {formatDateTime(lastSeen)}</span>
+        </span>
+      </button>
+      {open && (
+        <div className="overflow-x-auto border-t">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>אירוע</TableHead>
+                <TableHead>תאריך אירוע</TableHead>
+                <TableHead>כרטיסים</TableHead>
+                <TableHead>טיסה</TableHead>
+                <TableHead>מלון</TableHead>
+                <TableHead>סטטוס</TableHead>
+                <TableHead>מתי</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {simulations.map((sim, index) => (
+                <TableRow key={index}>
+                  <TableCell className="max-w-[16rem]">
+                    <div className="truncate font-medium">
+                      {sim.event || "לא זוהה אירוע"}
+                    </div>
+                    {sim.event_location && (
+                      <div className="truncate text-xs text-muted-foreground">
+                        {sim.event_location}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-sm">
+                    {sim.event_date || "—"}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {sim.num_tickets || sim.tickets_type
+                      ? [
+                          sim.num_tickets ? `×${sim.num_tickets}` : null,
+                          sim.tickets_type,
+                        ]
+                          .filter(Boolean)
+                          .join(" ")
+                      : "—"}
+                  </TableCell>
+                  <TableCell className="text-sm">{stepLabel(sim.flight)}</TableCell>
+                  <TableCell className="text-sm">{stepLabel(sim.hotel)}</TableCell>
+                  <TableCell>
+                    {sim.confirmed ? (
+                      <Badge>הגיעו לתשלום</Badge>
+                    ) : (
+                      <Badge variant="outline">בדקו</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                    {formatDateTime(sim.last_seen)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function UserActivityLog({ activity }: { activity: PortalUserActivity }) {
+  if (activity.users.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>לוג פעילות משתמשים</CardTitle>
+        <CardDescription>
+          מה כל מבקר שהגיע דרך הלינקים שלכם בדק בפועל — כל סימולציה בשורה אחת.
+          {activity.truncated && " מוצגים המבקרים האחרונים בלבד."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {activity.users.map((user) => (
+          <UserBlock
+            key={user.user_id}
+            userId={user.user_id}
+            lastSeen={user.last_seen}
+            simulations={user.simulations}
+          />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}

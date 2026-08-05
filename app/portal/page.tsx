@@ -2,12 +2,14 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth/guards";
 import { getPortalDashboard } from "@/lib/actions/portal-dashboard-actions";
 import { getMyCredit } from "@/lib/actions/partner-credit-actions";
+import { getPortalUserActivity } from "@/lib/actions/portal-activity-actions";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { PortalEntryFunnels } from "./entry-funnels";
+import { UserActivityLog } from "./user-activity";
 import {
   ClipboardList,
   CheckCircle2,
@@ -60,9 +62,10 @@ export default async function PortalDashboardPage({
     : "all";
 
   const isAgent = session.role === "agent";
-  const [dashboard, credit] = await Promise.all([
+  const [dashboard, credit, userActivity] = await Promise.all([
     getPortalDashboard(range),
     getMyCredit(),
+    getPortalUserActivity(range),
   ]);
 
   const money = [
@@ -332,6 +335,8 @@ export default async function PortalDashboardPage({
           </div>
         </CardContent>
       </Card>
+
+      <UserActivityLog activity={userActivity} />
     </div>
   );
 }

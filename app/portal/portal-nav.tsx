@@ -16,6 +16,7 @@ const navItems: NavItem[] = [
   // Agents only — an influencer promotes a link and never prices a package
   // for a named customer. The server action enforces it too.
   { name: "הצעות מחיר", href: "/portal/quotes", agentOnly: true },
+  { name: "עדכונים", href: "/portal/activity" },
 ];
 
 export function PortalNav({ role }: { role?: string | null }) {
