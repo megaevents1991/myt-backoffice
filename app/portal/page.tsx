@@ -1,13 +1,18 @@
+import Link from "next/link";
 import { getSession } from "@/lib/auth/guards";
 import { getPortalDashboard } from "@/lib/actions/portal-dashboard-actions";
 import { getMyCredit } from "@/lib/actions/partner-credit-actions";
+import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { PortalEntryFunnels } from "./entry-funnels";
 import {
   ClipboardList,
   CheckCircle2,
   DollarSign,
+  Percent,
   Wallet,
   Ticket,
   CalendarClock,
@@ -25,7 +30,23 @@ const usdExact = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
-export default async function PortalDashboardPage() {
+/** The top filter — scopes every activity figure below it (the commission
+ *  money tiles stay whole-history, same fact the invoice bills on). */
+const RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
+  { key: "today", label: "היום" },
+  { key: "yesterday", label: "אתמול" },
+  { key: "3d", label: "3 ימים" },
+  { key: "7d", label: "7 ימים" },
+  { key: "30d", label: "30 יום" },
+  { key: "90d", label: "90 יום" },
+  { key: "all", label: "הכול" },
+];
+
+export default async function PortalDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string }>;
+}) {
   const session = await getSession();
   const isPartner = !!session && PARTNER_ROLES.includes(session.role);
 
@@ -33,7 +54,16 @@ export default async function PortalDashboardPage() {
   // actions for them (they throw for non-agent/affiliate roles).
   if (!isPartner) return null;
 
-  const [dashboard, credit] = await Promise.all([getPortalDashboard(), getMyCredit()]);
+  const { range: rawRange } = await searchParams;
+  const range: InsightsRange = RANGE_OPTIONS.some((o) => o.key === rawRange)
+    ? (rawRange as InsightsRange)
+    : "all";
+
+  const isAgent = session.role === "agent";
+  const [dashboard, credit] = await Promise.all([
+    getPortalDashboard(range),
+    getMyCredit(),
+  ]);
 
   const money = [
     {
@@ -69,17 +99,49 @@ export default async function PortalDashboardPage() {
     },
   ];
 
+  // The activity row follows the range filter. An influencer sees their
+  // follower discount instead of the revenue tile (הורד לבקשת אלון ודור).
   const activity = [
-    { label: "הזמנות ששולמו", value: dashboard.paidReservations, icon: CheckCircle2 },
-    { label: "סה\"כ הזמנות", value: dashboard.totalReservations, icon: ClipboardList },
-    { label: "כרטיסים ששולמו", value: dashboard.paidTickets, icon: Ticket },
-    { label: "סה\"כ מכירות", value: usd.format(dashboard.totalSalesUsd), icon: DollarSign },
+    { label: "הזמנות ששולמו", value: String(dashboard.paidReservations), icon: CheckCircle2 },
+    { label: "סה\"כ הזמנות", value: String(dashboard.totalReservations), icon: ClipboardList },
+    { label: "כרטיסים ששולמו", value: String(dashboard.paidTickets), icon: Ticket },
+    isAgent
+      ? {
+          label: "סה\"כ מכירות",
+          value: usd.format(dashboard.totalSalesUsd),
+          icon: DollarSign,
+        }
+      : {
+          label: "הנחה לעוקבים",
+          value: dashboard.userDiscountLabel,
+          icon: Percent,
+        },
   ];
 
   const topStage = Math.max(...dashboard.traffic.byStage.map((s) => s.visitors), 1);
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {RANGE_OPTIONS.map((option) => (
+          <Link
+            key={option.key}
+            href={option.key === "all" ? "/portal" : `/portal?range=${option.key}`}
+            className={cn(
+              "rounded-full border px-3 py-1 text-sm transition-colors",
+              option.key === range
+                ? "border-transparent bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted"
+            )}
+          >
+            {option.label}
+          </Link>
+        ))}
+        <span className="ms-2 text-xs text-muted-foreground">
+          הסינון חל על הפעילות, המשפכים והאירועים — לא על תיקי העמלה.
+        </span>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {money.map((card) => {
           const Icon = card.icon;
@@ -117,6 +179,57 @@ export default async function PortalDashboardPage() {
         })}
       </div>
 
+      {dashboard.newEvents.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>מה חדש?</CardTitle>
+            <CardDescription>
+              חבילות שעלו לאתר ב-30 הימים האחרונים — כל קישור כבר נושא את קוד
+              המעקב שלכם.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {dashboard.newEvents.map((event) => (
+                <a
+                  key={event.id}
+                  href={event.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-44 shrink-0 overflow-hidden rounded-lg border transition-colors hover:border-primary"
+                >
+                  {event.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={event.image_url}
+                      alt=""
+                      className="h-24 w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-24 w-full items-center justify-center bg-muted text-muted-foreground">
+                      <Ticket className="h-6 w-6" />
+                    </div>
+                  )}
+                  <div className="space-y-0.5 p-2">
+                    <p className="truncate text-sm font-medium">{event.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {[
+                        event.location,
+                        event.date
+                          ? new Date(event.date).toLocaleDateString("he-IL")
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                    </p>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -128,8 +241,8 @@ export default async function PortalDashboardPage() {
           <CardContent>
             {!dashboard.traffic.hasData ? (
               <p className="py-6 text-sm text-muted-foreground">
-                עדיין לא נרשמו כניסות. הנתונים מתחילים להיאסף ברגע שמישהו נכנס דרך לינק
-                שמכיל את הקוד שלכם.
+                עדיין לא נרשמו כניסות בתקופה הזו. הנתונים מתחילים להיאסף ברגע
+                שמישהו נכנס דרך לינק שמכיל את הקוד שלכם.
               </p>
             ) : (
               <div className="space-y-3">
@@ -157,17 +270,17 @@ export default async function PortalDashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>מה הקהל שלכם מחפש</CardTitle>
+            <CardTitle>WHAT&apos;S IN DEMAND · על מה הקהל שלכם מסתכל</CardTitle>
             <CardDescription>
-              האירועים שהכי נלחצו דרך הלינקים שלכם. מה שמסומן &quot;טרם הוזמן&quot; זה
-              קהל שגילה עניין ולא סגר.
+              האירועים שהכי נלחצו דרך הלינקים שלכם בתקופה שנבחרה. מה שמסומן
+              &quot;טרם הוזמן&quot; זה קהל שגילה עניין ולא סגר.
             </CardDescription>
           </CardHeader>
           <CardContent>
             {dashboard.clickedEvents.length === 0 ? (
               <p className="py-6 text-sm text-muted-foreground">
-                עדיין אין מספיק נתונים. הרשימה תתמלא ככל שיותר אנשים יקליקו על אירועים
-                דרך הלינקים שלכם.
+                עדיין אין מספיק נתונים בתקופה הזו. הרשימה תתמלא ככל שיותר אנשים
+                יקליקו על אירועים דרך הלינקים שלכם.
               </p>
             ) : (
               <ul className="space-y-3">
@@ -199,6 +312,10 @@ export default async function PortalDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {dashboard.entryFunnels && (
+        <PortalEntryFunnels entryFunnels={dashboard.entryFunnels} />
+      )}
 
       <Card>
         <CardHeader>

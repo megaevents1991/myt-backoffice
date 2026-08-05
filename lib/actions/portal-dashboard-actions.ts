@@ -17,6 +17,12 @@ import {
   emptyTraffic,
   type PartnerTraffic,
 } from "@/lib/partner-funnel"
+import { buildEntryFunnels, type EntryFunnels } from "@/lib/partner-entry-funnels"
+import {
+  rangeWindowISO,
+  type InsightsRange,
+} from "@/lib/actions/partner-performance-actions"
+import { partnerLink } from "@/lib/site"
 import { normalizeReservationEventOrderInfo } from "@/lib/utils"
 import type { CommissionType } from "@/types/partner.types"
 import type { ReservationEventOrderInfo } from "@/types/reservation.types"
@@ -24,11 +30,11 @@ import type { ReservationEventOrderInfo } from "@/types/reservation.types"
 /**
  * Everything the partner dashboard shows, in one round trip.
  *
- * Commission is split into pending and billed, both read from the same
- * `billed_at` flag the monthly report stamps. A calendar-month figure would be
- * computed on a different basis than the invoice, so the two would disagree
- * whenever a reservation was paid after the report went out — the kind of
- * ambiguity that turns into an argument about money.
+ * The activity tiles, funnel, entry funnels and clicked events are scoped to
+ * the requested time range (the top filter). The commission money tiles are
+ * deliberately NOT ranged: pending/billed are read from the same `billed_at`
+ * fact the monthly report bills on, and a windowed figure would disagree with
+ * the invoice — the kind of ambiguity that turns into an argument about money.
  */
 
 export interface PortalCommission {
@@ -56,16 +62,34 @@ export interface PortalClickedEvent {
   booked: boolean
 }
 
+/** A package that went live on the site in the last 30 days — the "מה חדש"
+ *  rail. `href` is the partner's own tracking link to it. */
+export interface PortalNewEvent {
+  id: number
+  name: string
+  date: string | null
+  location: string | null
+  image_url: string | null
+  href: string
+}
+
 export interface PortalDashboard {
+  range: InsightsRange
   totalReservations: number
   paidReservations: number
   paidTickets: number
   totalSalesUsd: number
   commission: PortalCommission
+  /** partners.user_discount, formatted for the influencer tile: 1–10 reads as
+   *  a percent, anything larger as $ per ticket (the main app's rule). */
+  userDiscountLabel: string
   activeCoupons: number
   couponUses: number
   traffic: PartnerTraffic
+  /** The three entry-segmented funnels; null when the RPC isn't available. */
+  entryFunnels: EntryFunnels | null
   clickedEvents: PortalClickedEvent[]
+  newEvents: PortalNewEvent[]
 }
 
 type ReservationRow = {
@@ -76,28 +100,74 @@ type ReservationRow = {
   billed_at: string | null
 }
 
-export async function getPortalDashboard(): Promise<PortalDashboard> {
+/** The main app's affiliate-discount rule: 1–10 is a percent of the package,
+ *  anything else (> 0) is absolute USD per ticket. */
+function describeUserDiscount(discount: number | null | undefined): string {
+  const value = Number(discount ?? 0)
+  if (!Number.isFinite(value) || value <= 0) return "לא מוגדרת"
+  return value >= 1 && value <= 10 ? `${value}%` : `$${value} לכרטיס`
+}
+
+export async function getPortalDashboard(
+  range: InsightsRange = "all"
+): Promise<PortalDashboard> {
   const session = await requirePartner()
   const code = session.partner_code
+  const { from, to } = await rangeWindowISO(range)
 
-  const [partnerResult, reservationsResult, couponsResult, funnelResult, clicksResult] =
-    await Promise.all([
-      supabase
-        .from("partners")
-        .select("commission,commission_type")
-        .eq("partner_tracking_code", code)
-        .maybeSingle(),
-      supabase
-        .from("reservations")
-        .select("created_at,status,user_shown_price,event_order_info,billed_at")
-        .eq("aff_partner_tracking_code", code),
-      supabase
-        .from("coupons")
-        .select("is_active,times_used")
-        .eq("partner_tracking_code", code),
-      supabase.rpc("partner_funnel_counts", { p_tracking_code: code }),
-      supabase.rpc("partner_clicked_events", { p_tracking_code: code, p_limit: 8 }),
-    ])
+  const today = new Date().toISOString().slice(0, 10)
+  const newSince = new Date(Date.now() - 30 * 86_400_000).toISOString()
+
+  const [
+    partnerResult,
+    reservationsResult,
+    couponsResult,
+    funnelResult,
+    clicksResult,
+    entryResult,
+    newEventsResult,
+  ] = await Promise.all([
+    supabase
+      .from("partners")
+      .select("commission,commission_type,user_discount")
+      .eq("partner_tracking_code", code)
+      .maybeSingle(),
+    supabase
+      .from("reservations")
+      .select("created_at,status,user_shown_price,event_order_info,billed_at")
+      .eq("aff_partner_tracking_code", code),
+    supabase
+      .from("coupons")
+      .select("is_active,times_used")
+      .eq("partner_tracking_code", code),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).rpc("partner_funnel_counts_range", {
+      p_tracking_code: code,
+      p_from: from,
+      p_to: to,
+    }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).rpc("partner_clicked_events_range", {
+      p_tracking_code: code,
+      p_from: from,
+      p_to: to,
+      p_limit: 8,
+    }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).rpc("partner_entry_funnels_range", {
+      p_tracking_code: code,
+      p_from: from,
+      p_to: to,
+    }),
+    supabase
+      .from("events")
+      .select("id,name,date,location,card_image_url,created_at")
+      .is("is_deleted", null)
+      .gte("date", today)
+      .gte("created_at", newSince)
+      .order("created_at", { ascending: false })
+      .limit(12),
+  ])
 
   if (partnerResult.error) throw partnerResult.error
   if (reservationsResult.error) throw reservationsResult.error
@@ -111,18 +181,32 @@ export async function getPortalDashboard(): Promise<PortalDashboard> {
   if (clicksResult.error) {
     console.error("getPortalDashboard clicks:", JSON.stringify(clicksResult.error))
   }
+  if (entryResult.error) {
+    console.error("getPortalDashboard entry funnels:", JSON.stringify(entryResult.error))
+  }
+  if (newEventsResult.error) {
+    console.error("getPortalDashboard new events:", JSON.stringify(newEventsResult.error))
+  }
 
   const partner = partnerResult.data as {
     commission: number
     commission_type: CommissionType | null
+    user_discount?: number | null
   } | null
   const terms: CommissionTerms = {
     type: partner?.commission_type ?? "fixed_per_ticket",
     rate: partner?.commission ?? 0,
   }
 
-  const rows = (reservationsResult.data ?? []) as unknown as ReservationRow[]
-  const paid = rows.filter(isPaid)
+  const allRows = (reservationsResult.data ?? []) as unknown as ReservationRow[]
+  // Money tiles bill on the whole history; the activity tiles follow the
+  // selected window. ISO strings compare correctly as strings.
+  const rangedRows = allRows.filter(
+    (r) =>
+      (!from || (r.created_at ?? "") >= from) && (!to || (r.created_at ?? "") < to)
+  )
+  const paidAll = allRows.filter(isPaid)
+  const paidRanged = rangedRows.filter(isPaid)
 
   const yearPrefix = String(new Date().getUTCFullYear())
 
@@ -137,7 +221,7 @@ export async function getPortalDashboard(): Promise<PortalDashboard> {
   // would otherwise mark its second event "never booked", inverting the exact
   // signal this list exists to give.
   const bookedNames = new Set(
-    paid
+    paidAll
       .flatMap((r) => normalizeReservationEventOrderInfo(r.event_order_info))
       .map((event) => event?.name)
       .filter((name): name is string => !!name)
@@ -179,36 +263,75 @@ export async function getPortalDashboard(): Promise<PortalDashboard> {
         hasData: stageCounts.size > 0,
       }
 
+  // Entry-segmented funnels — fold the RPC's (entry, stage, visitors) rows the
+  // same way the staff insights tab does.
+  let entryFunnels: EntryFunnels | null = null
+  if (!entryResult.error) {
+    const countsByEntry = new Map<string, Map<string, number>>()
+    for (const row of (entryResult.data ?? []) as {
+      entry: string
+      stage: string
+      visitors: number
+    }[]) {
+      const perStage = countsByEntry.get(row.entry) ?? new Map<string, number>()
+      perStage.set(row.stage, Number(row.visitors) || 0)
+      countsByEntry.set(row.entry, perStage)
+    }
+    entryFunnels = buildEntryFunnels(countsByEntry, false)
+  }
+
+  const newEvents: PortalNewEvent[] = newEventsResult.error
+    ? []
+    : (
+        (newEventsResult.data ?? []) as unknown as {
+          id: number
+          name: string
+          date: string | null
+          location: { name?: string } | null
+          card_image_url: string | null
+        }[]
+      ).map((event) => ({
+        id: event.id,
+        name: event.name,
+        date: event.date,
+        location: event.location?.name ?? null,
+        image_url: event.card_image_url,
+        href: partnerLink(code, event.id),
+      }))
+
   return {
-    totalReservations: rows.length,
-    paidReservations: paid.length,
-    paidTickets: countTickets(paid),
-    totalSalesUsd: sumSales(paid),
+    range,
+    totalReservations: rangedRows.length,
+    paidReservations: paidRanged.length,
+    paidTickets: countTickets(paidRanged),
+    totalSalesUsd: sumSales(paidRanged),
     commission: {
       label: describeCommission(terms),
       yearToDateUsd: round2(
         commissionForReservations(
-          paid.filter((r) => r.created_at?.startsWith(yearPrefix)),
+          paidAll.filter((r) => r.created_at?.startsWith(yearPrefix)),
           terms
         )
       ),
       pendingUsd: round2(
         commissionForReservations(
-          paid.filter((r) => !r.billed_at),
+          paidAll.filter((r) => !r.billed_at),
           terms
         )
       ),
       billedUsd: round2(
         commissionForReservations(
-          paid.filter((r) => !!r.billed_at),
+          paidAll.filter((r) => !!r.billed_at),
           terms
         )
       ),
     },
+    userDiscountLabel: describeUserDiscount(partner?.user_discount),
     activeCoupons: coupons.filter((c) => c.is_active).length,
     couponUses: coupons.reduce((sum, c) => sum + (c.times_used ?? 0), 0),
     traffic,
+    entryFunnels,
     clickedEvents,
+    newEvents,
   }
 }
-
