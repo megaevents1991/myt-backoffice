@@ -140,7 +140,12 @@ export interface PartnersOverview {
   globalFunnel: PartnerTraffic
   /** The same funnel split by entry page: home / artist / specific event. */
   entryFunnels: EntryFunnels
-  /** Paid partner bookings ÷ distinct visitors; null when no visitors. */
+  /** Distinct tracked users across every entry — the SAME universe the three
+   *  entry-funnel cards count (home + artist + event + other), so the
+   *  Conversion tile always agrees with the cards. Falls back to the global
+   *  funnel's VISIT count when the entry split has no data. */
+  trackedVisitors: number
+  /** Paid partner bookings ÷ trackedVisitors; null when no visitors. */
   globalConversionRate: number | null
   /** Hot right now: most-clicked events across every partner's audience. */
   hotEvents: HotEvent[]
@@ -710,6 +715,19 @@ export async function getPartnersOverview(
       .slice(0, 5),
   }
 
+  // The Conversion tile must agree with the three entry-funnel cards below it,
+  // so it counts the same universe: every classified user across every entry.
+  // (globalFunnel counts only users with a VISIT row — order deep-links had
+  // none before main's Aug 2026 fix — and pre-migration its RPC still includes
+  // refund-code browsing.)
+  const entryVisitorsTotal =
+    entryFunnels.home.totalVisitors +
+    entryFunnels.artist.totalVisitors +
+    entryFunnels.event.totalVisitors +
+    entryFunnels.otherVisitors
+  const trackedVisitors =
+    entryVisitorsTotal > 0 ? entryVisitorsTotal : globalFunnel.totalVisitors
+
   return {
     range,
     activeAgents: partners.filter((p) => p.type === "agent" && p.is_active !== false).length,
@@ -748,8 +766,8 @@ export async function getPartnersOverview(
       .slice(0, 10),
     globalFunnel,
     entryFunnels,
-    globalConversionRate:
-      globalFunnel.totalVisitors > 0 ? paid.length / globalFunnel.totalVisitors : null,
+    trackedVisitors,
+    globalConversionRate: trackedVisitors > 0 ? paid.length / trackedVisitors : null,
     hotEvents,
     topBookedEvents,
     packages,

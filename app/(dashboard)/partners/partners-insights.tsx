@@ -109,7 +109,7 @@ export function PartnersInsights({
         overview.globalConversionRate != null
           ? `${(overview.globalConversionRate * 100).toFixed(2)}%`
           : "—",
-      hint: `${overview.globalFunnel.totalVisitors} visitors → ${overview.paidReservations} paid`,
+      hint: `${overview.trackedVisitors} visitors → ${overview.paidReservations} paid`,
       icon: Percent,
     },
     {

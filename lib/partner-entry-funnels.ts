@@ -58,7 +58,9 @@ export const ENTRY_SCAN_SELECT =
 
 /** Mirror of the classification in partners_entry_funnels_all (SQL). A first
  *  row that is not a VISIT means the user surfaced inside the order flow —
- *  order pages carry no VISIT tracker, so that's a direct event landing. */
+ *  order pages fired no VISIT until main's Aug 2026 tracker fix, so that's a
+ *  direct event landing. Newer order landings arrive as VISIT + /order path
+ *  and classify the same way. */
 export function classifyEntry(stage: string | null, path: string | null): EntryKind {
   if (stage !== "VISIT") return "event"
   if (!path || path === "/") return "home"

@@ -115,8 +115,12 @@ export interface PartnerPerformance {
   pendingCommissionUsd: number
   activeCoupons: number
   couponUses: number
-  /** Paid bookings ÷ distinct visitors in the window; null when no visitors. */
+  /** Paid bookings ÷ trackedVisitors; null when no visitors. */
   conversionRate: number | null
+  /** Distinct tracked users across every entry — the SAME universe the three
+   *  entry-funnel cards count, so the conversion tile agrees with them. Falls
+   *  back to `traffic.totalVisitors` when the entry split has no data. */
+  trackedVisitors: number
   /** Sales ÷ paid bookings; null when nothing paid. */
   avgOrderValueUsd: number | null
   monthly: PartnerMonthlyPoint[]
@@ -423,6 +427,18 @@ export async function getPartnerPerformance(
   }
   const entryFunnels = buildEntryFunnels(countsByEntry, entryApproximate)
 
+  // The conversion tile must agree with the three entry-funnel cards below it,
+  // so it counts the same universe: every classified user across every entry.
+  // (traffic counts only users with a VISIT row — order deep-links had none
+  // before main's Aug 2026 fix.)
+  const entryVisitorsTotal =
+    entryFunnels.home.totalVisitors +
+    entryFunnels.artist.totalVisitors +
+    entryFunnels.event.totalVisitors +
+    entryFunnels.otherVisitors
+  const trackedVisitors =
+    entryVisitorsTotal > 0 ? entryVisitorsTotal : traffic.totalVisitors
+
   // Clicked events — event NAME + DATE + LOCATION level (tracking carries no
   // event id), cross-referenced against every event on every PAID booking so
   // "clicked, never booked" means exactly that.
@@ -521,8 +537,8 @@ export async function getPartnerPerformance(
     ),
     activeCoupons: coupons.filter((c) => c.is_active).length,
     couponUses: coupons.reduce((sum, c) => sum + (c.times_used ?? 0), 0),
-    conversionRate:
-      traffic.totalVisitors > 0 ? paid.length / traffic.totalVisitors : null,
+    conversionRate: trackedVisitors > 0 ? paid.length / trackedVisitors : null,
+    trackedVisitors,
     avgOrderValueUsd: paid.length > 0 ? round2(totalSalesUsd / paid.length) : null,
     monthly,
     reservations,

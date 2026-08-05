@@ -132,7 +132,7 @@ export default async function ViewPartnerPage({
         performance.conversionRate != null
           ? `${(performance.conversionRate * 100).toFixed(2)}%`
           : "—",
-      hint: `${performance.traffic.totalVisitors} distinct visitors → ${performance.paidReservations} paid`,
+      hint: `${performance.trackedVisitors} distinct visitors → ${performance.paidReservations} paid`,
       icon: Percent,
     },
     {

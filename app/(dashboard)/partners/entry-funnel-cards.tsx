@@ -62,15 +62,15 @@ const browseEntryRows = (
  * screen (see main's OrderForm nextStep): a ticket pick means moving on to
  * flights, a flight pick (chosen or skipped) moving on to the hotel, a hotel
  * pick reaching the order summary. Same counts, honest captions — plus one
- * caveat: /order pages fire no VISIT, so "Visited" only holds visitors who
- * advanced at least one screen; pure bounces are invisible until main tracks
- * order-page landings.
+ * caveat: /order pages fire VISIT only since main's Aug 5, 2026 tracker fix,
+ * so older windows count a deep-link visitor only once they advanced a
+ * screen. The grid's footnote spells this out.
  */
 const eventEntryRows = (funnel: PartnerTraffic, paid: number): EntryFunnelRow[] => [
   {
     key: "VISIT",
     label: "Visited",
-    note: "advanced at least one screen — landings aren't logged yet",
+    note: "landed on the order page — see the note below on older windows",
     visitors: funnel.totalVisitors,
   },
   {
@@ -208,14 +208,15 @@ export function EntryFunnelsGrid({ entryFunnels }: { entryFunnels: EntryFunnels 
           rows={eventEntryRows(entryFunnels.event, entryFunnels.paidByEntry.event)}
         />
       </div>
-      {(entryFunnels.otherVisitors > 0 || entryFunnels.approximate) && (
-        <p className="-mt-4 text-xs text-muted-foreground">
-          {entryFunnels.otherVisitors > 0 &&
-            `${entryFunnels.otherVisitors} more visitors entered on other pages (categories, blog…).`}
-          {entryFunnels.approximate &&
-            " Numbers are approximate until the entry-funnel DB function is deployed."}
-        </p>
-      )}
+      <p className="-mt-4 text-xs text-muted-foreground">
+        {entryFunnels.otherVisitors > 0 &&
+          `${entryFunnels.otherVisitors} more visitors entered on other pages (categories, blog…). `}
+        {entryFunnels.approximate &&
+          "Numbers are approximate until the entry-funnel DB function is deployed. "}
+        Order-page landings are tracked since Aug 5, 2026 — before that a
+        deep-link visitor is counted only once they advanced a screen, so
+        &quot;Visited&quot; runs low on windows reaching further back.
+      </p>
     </>
   );
 }
