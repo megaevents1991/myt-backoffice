@@ -512,47 +512,54 @@ export function FlightStep() {
         imageUrl={event.image_url}
       >
         {!isLocked && (
-          <div className="flex w-full flex-row flex-wrap items-center gap-2 text-xs lg:w-[60%] lg:justify-center">
-            <span className="hidden text-xl lg:block">כמה טסים?</span>
-            <select
-              value={w.qty}
-              onChange={(e) => w.setQty(Number(e.target.value))}
-              className="h-[40px] w-20 cursor-pointer appearance-none rounded-lg border border-border bg-card px-3 text-center text-lg text-foreground"
-            >
-              {[...new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, w.qty])]
-                .sort((a, b) => a - b)
-                .map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-            </select>
-            <span className="hidden text-xl lg:block">ובאיזה תאריכים?</span>
-            <Input
-              type="date"
-              dir="ltr"
-              aria-label="תאריך יציאה"
-              value={w.fsDepart}
-              onChange={(e) => w.setFsDepart(e.target.value)}
-              className="h-[40px] w-36 bg-card"
-            />
-            <Input
-              type="date"
-              dir="ltr"
-              aria-label="תאריך חזרה"
-              value={w.fsReturn}
-              onChange={(e) => w.setFsReturn(e.target.value)}
-              className="h-[40px] w-36 bg-card"
-            />
-            <button
-              type="button"
-              onClick={w.runFlightSearch}
-              disabled={w.fsLoading || !w.fsDepart || !w.fsReturn}
-              aria-label="חיפוש טיסות"
-              className="flex h-[40px] items-center justify-center rounded-lg bg-brand-forest px-4 text-white transition-opacity disabled:opacity-50 dark:bg-brand-mint dark:text-brand-forest"
-            >
-              {w.fsLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search size={22} />}
-            </button>
+          /* One compact search pill — never allowed to wrap into a second
+             row on desktop (the loose 60%-wide row used to drop the button). */
+          <div className="flex w-full items-center lg:w-auto lg:flex-1 lg:justify-end">
+            <div className="flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-border bg-card p-1.5 shadow-sm lg:w-auto lg:flex-nowrap">
+              <label className="flex shrink-0 items-center gap-1.5 ps-1.5 text-sm text-muted-foreground">
+                נוסעים
+                <select
+                  value={w.qty}
+                  onChange={(e) => w.setQty(Number(e.target.value))}
+                  className="h-9 w-14 cursor-pointer appearance-none rounded-lg border border-border bg-background text-center text-base font-semibold text-foreground"
+                >
+                  {[...new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, w.qty])]
+                    .sort((a, b) => a - b)
+                    .map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <span className="hidden h-6 w-px shrink-0 bg-border lg:block" />
+              <Input
+                type="date"
+                dir="ltr"
+                aria-label="תאריך יציאה"
+                value={w.fsDepart}
+                onChange={(e) => w.setFsDepart(e.target.value)}
+                className="h-9 w-[8.4rem] shrink-0 border-0 bg-background shadow-none"
+              />
+              <span className="shrink-0 text-muted-foreground">—</span>
+              <Input
+                type="date"
+                dir="ltr"
+                aria-label="תאריך חזרה"
+                value={w.fsReturn}
+                onChange={(e) => w.setFsReturn(e.target.value)}
+                className="h-9 w-[8.4rem] shrink-0 border-0 bg-background shadow-none"
+              />
+              <button
+                type="button"
+                onClick={w.runFlightSearch}
+                disabled={w.fsLoading || !w.fsDepart || !w.fsReturn}
+                aria-label="חיפוש טיסות"
+                className="flex h-9 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-forest text-white transition-opacity disabled:opacity-50 dark:bg-brand-mint dark:text-brand-forest"
+              >
+                {w.fsLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search size={18} />}
+              </button>
+            </div>
           </div>
         )}
       </EventBand>

@@ -112,6 +112,20 @@ export function TixstockDynamicMap({
     [ticketMatchesSection],
   );
 
+  // A section is worth highlighting only if SOMETHING there is purchasable —
+  // the same rule the base paint uses for "available". The wizard keeps a
+  // whole category permanently selected (main selects individual listings),
+  // so the category-wide glow used to repaint every no-listing section dark.
+  const sectionHasPurchasableTicket = useCallback(
+    (sectionId: string, categoryId: string | null) =>
+      tickets.some(
+        (ticket) =>
+          !disabledTicketIds?.has(ticket.id) &&
+          ticketMatchesSection(ticket, sectionId, categoryId),
+      ),
+    [tickets, disabledTicketIds, ticketMatchesSection],
+  );
+
   const findBestTicketForSection = useCallback(
     (sectionId: string, categoryId: string | null) => {
       const enabledTickets = tickets.filter(
@@ -262,7 +276,8 @@ export function TixstockDynamicMap({
 
           const match =
             !disabledTicketIds?.has(activeHoverTicket.id) &&
-            ticketCategoryOrSectionMatches(activeHoverTicket, sec, cat);
+            ticketCategoryOrSectionMatches(activeHoverTicket, sec, cat) &&
+            sectionHasPurchasableTicket(sec, cat);
 
           if (match) paintSection(el, "hover");
         });
@@ -281,7 +296,8 @@ export function TixstockDynamicMap({
 
             const match =
               !disabledTicketIds?.has(selTicket.id) &&
-              ticketCategoryOrSectionMatches(selTicket, sec, cat);
+              ticketCategoryOrSectionMatches(selTicket, sec, cat) &&
+              sectionHasPurchasableTicket(sec, cat);
 
             if (match) paintSection(el, "selected");
           });
@@ -300,6 +316,7 @@ export function TixstockDynamicMap({
     excludedSections,
     disabledTicketIds,
     ticketCategoryOrSectionMatches,
+    sectionHasPurchasableTicket,
   ]);
 
   // Self-heal: React re-applies `dangerouslySetInnerHTML` whenever `paintedSvg`

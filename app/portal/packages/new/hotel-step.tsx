@@ -150,51 +150,57 @@ export function HotelStep() {
         location={event.location_name}
         imageUrl={event.image_url}
       >
-        <div className="flex w-full flex-row flex-wrap items-center gap-2 text-xs lg:w-[60%] lg:justify-center">
-          <span className="hidden text-xl lg:block">כמה תהיו?</span>
-          <span className="flex h-[40px] items-center rounded-lg border border-border bg-card px-3 text-base">
-            {w.qty} אורחים
-          </span>
-          <Input
-            type="date"
-            dir="ltr"
-            aria-label="צ'ק-אין"
-            value={w.hsCheckin}
-            onChange={(e) => w.setHsCheckin(e.target.value)}
-            onFocus={() => {
-              if (!w.hsCheckin && !w.hsCheckout) {
-                const d = w.defaultHotelDates();
-                w.setHsCheckin(d.checkin);
-                w.setHsCheckout(d.checkout);
-              }
-            }}
-            className="h-[40px] w-36 bg-card"
-          />
-          <Input
-            type="date"
-            dir="ltr"
-            aria-label="צ'ק-אאוט"
-            value={w.hsCheckout}
-            onChange={(e) => w.setHsCheckout(e.target.value)}
-            className="h-[40px] w-36 bg-card"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (!w.hsCheckin || !w.hsCheckout) {
-                const d = w.defaultHotelDates();
-                w.setHsCheckin(d.checkin);
-                w.setHsCheckout(d.checkout);
-                if (!d.checkin || !d.checkout) return;
-              }
-              w.runHotelSearch();
-            }}
-            disabled={w.hsLoading}
-            aria-label="חיפוש מלונות"
-            className="flex h-[40px] items-center justify-center rounded-lg bg-brand-forest px-4 text-white transition-opacity disabled:opacity-50 dark:bg-brand-mint dark:text-brand-forest"
-          >
-            {w.hsLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search size={22} />}
-          </button>
+        {/* One compact search pill — matches the flight step's, never wraps
+            into a second row on desktop. */}
+        <div className="flex w-full items-center lg:w-auto lg:flex-1 lg:justify-end">
+          <div className="flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-border bg-card p-1.5 shadow-sm lg:w-auto lg:flex-nowrap">
+            <span className="flex h-9 shrink-0 items-center gap-1.5 ps-1.5 pe-2 text-sm text-muted-foreground">
+              אורחים
+              <span className="text-base font-semibold text-foreground">{w.qty}</span>
+            </span>
+            <span className="hidden h-6 w-px shrink-0 bg-border lg:block" />
+            <Input
+              type="date"
+              dir="ltr"
+              aria-label="צ'ק-אין"
+              value={w.hsCheckin}
+              onChange={(e) => w.setHsCheckin(e.target.value)}
+              onFocus={() => {
+                if (!w.hsCheckin && !w.hsCheckout) {
+                  const d = w.defaultHotelDates();
+                  w.setHsCheckin(d.checkin);
+                  w.setHsCheckout(d.checkout);
+                }
+              }}
+              className="h-9 w-[8.4rem] shrink-0 border-0 bg-background shadow-none"
+            />
+            <span className="shrink-0 text-muted-foreground">—</span>
+            <Input
+              type="date"
+              dir="ltr"
+              aria-label="צ'ק-אאוט"
+              value={w.hsCheckout}
+              onChange={(e) => w.setHsCheckout(e.target.value)}
+              className="h-9 w-[8.4rem] shrink-0 border-0 bg-background shadow-none"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (!w.hsCheckin || !w.hsCheckout) {
+                  const d = w.defaultHotelDates();
+                  w.setHsCheckin(d.checkin);
+                  w.setHsCheckout(d.checkout);
+                  if (!d.checkin || !d.checkout) return;
+                }
+                w.runHotelSearch();
+              }}
+              disabled={w.hsLoading}
+              aria-label="חיפוש מלונות"
+              className="flex h-9 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-forest text-white transition-opacity disabled:opacity-50 dark:bg-brand-mint dark:text-brand-forest"
+            >
+              {w.hsLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search size={18} />}
+            </button>
+          </div>
         </div>
       </EventBand>
 
