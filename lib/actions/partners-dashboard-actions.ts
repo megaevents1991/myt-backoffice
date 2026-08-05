@@ -153,6 +153,9 @@ export interface PartnersOverview {
   topBookedEvents: TopBookedEvent[]
   /** Prepared-package links built in the window. */
   packages: PackagesSummary
+  /** True when the reservation/package scan hit its row cap — every money and
+   *  order tile then under-counts and the UI must say so, not imply totals. */
+  truncated: boolean
 }
 
 type PartnerRow = {
@@ -668,7 +671,13 @@ export async function getPartnersOverview(
               }))
               .sort((a, b) => b.bookings - a.bookings || b.salesUsd - a.salesUsd)
           : [],
-        conversionRate: visitors > 0 ? paidBookings / visitors : null,
+        // Paid bookings are matched from ALL paid reservations (incl. package
+        // deep-links that never fire EVENT_SELECTED), while visitors count
+        // clickers only — the raw ratio can exceed 1 and read as "750%
+        // converted". More paid than visitors just means "everything tracked
+        // converted"; clamp instead of printing an impossible number.
+        conversionRate:
+          visitors > 0 ? Math.min(paidBookings / visitors, 1) : null,
       }
     })
 
@@ -759,7 +768,11 @@ export async function getPartnersOverview(
         return {
           ...top,
           visitors,
-          conversionRate: visitors > 0 ? top.paidReservations / visitors : null,
+          // Clamped for the same reason as hotEvents: paid reservations can
+          // out-number VISIT-stage visitors (package deep-links) — >100% is
+          // noise, not signal.
+          conversionRate:
+            visitors > 0 ? Math.min(top.paidReservations / visitors, 1) : null,
         }
       })
       .sort((a, b) => b.salesUsd - a.salesUsd)
@@ -771,5 +784,6 @@ export async function getPartnersOverview(
     hotEvents,
     topBookedEvents,
     packages,
+    truncated: !!reservationsResult.truncated || !!packagesResult.truncated,
   }
 }

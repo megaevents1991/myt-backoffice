@@ -128,25 +128,37 @@ export function paidCandidatesFrom(
 }
 
 /** Mirror of the RPCs' paid_users match: a CONFIRMED row against a now-Paid
- *  reservation of the same partner + event name within ±30min. */
+ *  reservation of the same partner + event name within ±30min.
+ *
+ *  One-to-one: a matched reservation is CONSUMED. Two visitors who both hit
+ *  the confirmation screen near one sale must not both count as Paid — one
+ *  reservation is one conversion, keeping the promised "undercount, never an
+ *  overcount". */
 export function matchPaidUsers(
   rows: Pick<EntryScanRow, "user_id" | "stage" | "created_at" | "affiliate_id" | "event_name">[],
   candidates: PaidMatchCandidate[]
 ): Set<string> {
   const paidUsers = new Set<string>()
+  const consumed = new Array(candidates.length).fill(false)
   for (const row of rows) {
     if (row.stage !== "CONFIRMED" || !row.event_name || paidUsers.has(row.user_id))
       continue
     const name = row.event_name.trim().toLowerCase()
     const time = new Date(row.created_at).getTime()
-    if (
-      candidates.some(
-        (r) =>
-          r.code === row.affiliate_id &&
-          Math.abs(r.time - time) <= PAID_MATCH_WINDOW_MS &&
-          r.names.has(name)
-      )
-    ) {
+    // Of the still-unconsumed matching reservations, take the closest in time.
+    let best = -1
+    let bestGap = Infinity
+    for (let i = 0; i < candidates.length; i++) {
+      if (consumed[i]) continue
+      const r = candidates[i]
+      const gap = Math.abs(r.time - time)
+      if (r.code === row.affiliate_id && gap <= PAID_MATCH_WINDOW_MS && r.names.has(name) && gap < bestGap) {
+        best = i
+        bestGap = gap
+      }
+    }
+    if (best !== -1) {
+      consumed[best] = true
       paidUsers.add(row.user_id)
     }
   }

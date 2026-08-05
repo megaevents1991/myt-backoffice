@@ -143,6 +143,13 @@ export function PartnersInsights({
         ))}
       </div>
 
+      {overview.truncated && (
+        <p className="rounded-md border border-dashed border-amber-400/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+          הטווח הזה עבר את תקרת הסריקה — המספרים מחושבים מהרשומות האחרונות בלבד
+          וסוכמים פחות מהאמת. צמצמו את הטווח לקבלת תמונה מלאה.
+        </p>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {tiles.map((tile) => {
           const Icon = tile.icon;
