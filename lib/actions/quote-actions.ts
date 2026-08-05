@@ -44,6 +44,7 @@ type QuoteEventRow = PackagePriceEvent & {
 
 export async function getQuoteEvents(): Promise<QuoteEventOption[]> {
   await requirePartner();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from("events")
     .select(
@@ -77,6 +78,7 @@ export async function getQuoteEvents(): Promise<QuoteEventOption[]> {
  */
 async function suggestedUnitPriceFor(eventId: number | null): Promise<number | null> {
   if (eventId == null) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from("events")
     .select(
@@ -100,6 +102,7 @@ async function suggestedUnitPriceFor(eventId: number | null): Promise<number | n
  * not here, so a legacy row still typed 'affiliate' does not block a real agent.
  */
 async function commissionTermsFor(trackingCode: string): Promise<CommissionTerms | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from("partners")
     .select("commission, commission_type")
@@ -133,6 +136,7 @@ export async function getPortalQuotes(): Promise<PortalQuote[]> {
   const session = await requirePartner();
   // Server gate, not just a hidden tab — the page guard and the nav are UI.
   if (session.role !== "agent") return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from("quotes")
     .select(
