@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { computePackagePrice, type PackagePriceEvent } from "@/lib/package-price";
 import { round2, type CommissionTerms } from "@/lib/partner-commission";
+import { signQuoteLink } from "@/lib/quote-link-sig";
 import { PUBLIC_SITE_URL } from "@/lib/site";
 import type { CommissionType } from "@/types/partner.types";
 
@@ -331,6 +332,29 @@ export async function createQuote(input: {
   if (error) {
     console.error("createQuote:", JSON.stringify(error));
     return { ok: false, error: "Failed to create quote" };
+  }
+
+  // Sign the quote INTO its pay link (`&quote={id}&qsig=…`): main's order page
+  // verifies the signature, shows the offer's line items and charges the
+  // agent's total — dearer than site price sends the delta to the agent,
+  // cheaper comes out of their commission. Needs the row id, hence the
+  // post-insert update; best-effort — the plain package link still works.
+  if (payment_link) {
+    try {
+      const signedLink = await signQuoteLink(payment_link, data.id, total);
+      if (signedLink !== payment_link) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: linkError } = await (supabase as any)
+          .from("quotes")
+          .update({ payment_link: signedLink })
+          .eq("id", data.id);
+        if (linkError && linkError.code !== "PGRST204") {
+          console.error("createQuote sign link:", JSON.stringify(linkError));
+        }
+      }
+    } catch (e) {
+      console.error("createQuote sign link:", e);
+    }
   }
 
   await logAudit({
