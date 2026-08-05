@@ -51,6 +51,9 @@ export interface PortalCoupon {
   event_id: number | null;
 }
 
+/** How the order arrived at the site — the portal's per-row source label. */
+export type PortalReservationSource = "voucher" | "package" | "quote" | "link";
+
 export interface PortalReservation {
   id: number;
   created_at: string;
@@ -78,6 +81,10 @@ export interface PortalReservation {
   is_hold: boolean;
   /** When the hold stops working. Null unless `is_hold`. */
   hold_expires_at: string | null;
+  /** How the order arrived: voucher settlement / package link / signed quote /
+   *  plain tracking link. Older rows (before the attribution columns) read
+   *  as "link". */
+  source: PortalReservationSource;
 }
 
 export interface PortalReservationsPage {
@@ -90,11 +97,13 @@ export async function getPortalProfile(): Promise<PortalProfile | null> {
   const session = await requirePartner();
   const [{ data: partner, error: pErr }, { data: profile, error: prErr }] =
     await Promise.all([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any)
         .from("partners")
         .select("name_hebrew,partner_tracking_code,commission")
         .eq("partner_tracking_code", session.partner_code)
         .maybeSingle(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any)
         .from("user_profiles")
         .select("logo_url,display_name,email")
@@ -128,14 +137,17 @@ export async function getPortalStats(): Promise<PortalStats> {
   };
 
   const [resResult, couponResult, partnerResult] = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from("reservations")
       .select("id,status,user_shown_price,event_order_info")
       .eq("aff_partner_tracking_code", session.partner_code),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from("coupons")
       .select("id,is_active,times_used")
       .eq("partner_tracking_code", session.partner_code),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from("partners")
       .select("commission,commission_type")
@@ -187,6 +199,7 @@ export async function getPortalStats(): Promise<PortalStats> {
 
 export async function getPortalCoupons(): Promise<PortalCoupon[]> {
   const session = await requirePartner();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from("coupons")
     .select(
@@ -236,23 +249,40 @@ function holdExpiry(createdAt: string): string | null {
 const PORTAL_RESERVATION_COLUMNS =
   "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_id,event_order_info,more_pax_info,booking_reference,confirmation_email_sent,billed_at";
 
+/** Source-attribution columns (migration 20260805170000 + the pre-existing
+ *  settlement marker). Selected separately so a not-yet-migrated DB can fall
+ *  back to the legacy select instead of blanking the whole page. */
+const PORTAL_RESERVATION_SOURCE_COLUMNS =
+  ",partner_settlement_method,source_share_token,quote_id";
+
 export async function getPortalReservations(): Promise<PortalReservationsPage> {
   const session = await requirePartner();
 
-  const [reservationsResult, partnerResult] = await Promise.all([
+  const fetchReservations = (columns: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from("reservations")
-      .select(PORTAL_RESERVATION_COLUMNS)
+      .select(columns)
       .eq("aff_partner_tracking_code", session.partner_code)
       .order("created_at", { ascending: false })
       // One more than the page, purely to detect that older rows exist.
-      .limit(RESERVATIONS_PAGE_SIZE + 1),
+      .limit(RESERVATIONS_PAGE_SIZE + 1);
+
+  const [initialReservationsResult, partnerResult] = await Promise.all([
+    fetchReservations(PORTAL_RESERVATION_COLUMNS + PORTAL_RESERVATION_SOURCE_COLUMNS),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from("partners")
       .select("commission,commission_type")
       .eq("partner_tracking_code", session.partner_code)
       .maybeSingle(),
   ]);
+  let reservationsResult = initialReservationsResult;
+
+  if (reservationsResult.error?.code === "42703") {
+    // Attribution columns not migrated yet — every row simply reads as "link".
+    reservationsResult = await fetchReservations(PORTAL_RESERVATION_COLUMNS);
+  }
 
   if (reservationsResult.error) {
     console.error("getPortalReservations:", JSON.stringify(reservationsResult.error));
@@ -281,6 +311,9 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
     booking_reference: string | null;
     confirmation_email_sent: boolean | null;
     billed_at: string | null;
+    partner_settlement_method?: string | null;
+    source_share_token?: string | null;
+    quote_id?: number | null;
   };
 
   const all = (reservationsResult.data ?? []) as Row[];
@@ -317,6 +350,16 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
       is_hold: r.status === HOLD_STATUS,
       hold_expires_at:
         r.status === HOLD_STATUS ? holdExpiry(r.created_at) : null,
+      // Priority: a voucher settlement outranks everything (it also overwrites
+      // coupon_code), then the signed quote, then the package link. A plain
+      // tracking link — and every pre-attribution row — reads "link".
+      source: (r.partner_settlement_method === "voucher"
+        ? "voucher"
+        : r.quote_id != null
+          ? "quote"
+          : r.source_share_token
+            ? "package"
+            : "link") as PortalReservationSource,
       // Deliberately NOT the customer's recovery link. Opening it loads the
       // saved order through the main app's find-order endpoint, which returns
       // the customer's phone, email and every passenger name — the exact data
