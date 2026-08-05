@@ -118,6 +118,7 @@ export type Flight = {
 };
 
 export type FlightSegment = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [x: string]: any;
   departureTime: string;
   arrivalTime: string;
@@ -360,4 +361,5 @@ export type Log = {
   data: Record<string, unknown> | string;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type FlightOffer = any; // Define this type if needed

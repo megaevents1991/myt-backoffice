@@ -35,6 +35,7 @@ export async function logAudit(input: AuditInput): Promise<void> {
         };
       }
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any).from("audit_log").insert({
       actor_id: actor.id ?? null,
       actor_email: actor.email ?? null,
@@ -78,6 +79,7 @@ export async function fetchBefore(
   try {
     const columns = Object.keys(payload);
     if (columns.length === 0) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from(table)
       .select(columns.join(","))
