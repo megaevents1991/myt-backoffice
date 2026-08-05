@@ -19,6 +19,7 @@ import {
   Minus,
   Plus,
   Search,
+  SlidersHorizontal,
   Star,
   Utensils,
 } from "lucide-react";
@@ -68,6 +69,7 @@ type DisplayHotel =
 export function HotelStep() {
   const w = useWizard();
   const [sort, setSort] = useState<HsSort>("price");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [breakfastOnly, setBreakfastOnly] = useState(false);
   const [minStars, setMinStars] = useState(0);
   const [nameQuery, setNameQuery] = useState("");
@@ -196,13 +198,35 @@ export function HotelStep() {
         </div>
       </EventBand>
 
-      <SortTabs options={sortOptions} active={sort} onChange={setSort} />
+      {/* Mobile: filter toggle beside the sort pills, like main's hotel step */}
+      <div className="flex items-stretch gap-1.5">
+        <button
+          type="button"
+          aria-label="סינון"
+          onClick={() => setFiltersOpen((v) => !v)}
+          className={cn(
+            "flex w-[38px] flex-shrink-0 items-center justify-center rounded-md border bg-card transition-colors lg:hidden",
+            filtersOpen ? "border-brand-forest" : "border-border hover:border-brand-forest",
+          )}
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <SortTabs options={sortOptions} active={sort} onChange={setSort} />
+        </div>
+      </div>
 
       {w.hsError && <p className="text-sm text-destructive">{w.hsError}</p>}
 
       <div className="flex w-full flex-col items-start gap-2 lg:flex-row lg:gap-4">
         {/* Filters sidebar */}
-        <div className="w-full space-y-4 rounded-lg border-2 border-border p-4 shadow-lg lg:sticky lg:top-0 lg:w-1/4" dir="rtl">
+        <div
+          className={cn(
+            "w-full space-y-4 rounded-lg border-2 border-border p-4 shadow-lg lg:sticky lg:top-0 lg:w-1/4",
+            !filtersOpen && "hidden lg:block",
+          )}
+          dir="rtl"
+        >
           <div className="px-1">
             <h3 className="mb-2 text-lg font-semibold">ארוחות בוקר</h3>
             <label htmlFor="hf-breakfast" className="flex cursor-pointer items-center gap-2 py-1 text-sm">

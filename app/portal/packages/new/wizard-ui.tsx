@@ -353,62 +353,64 @@ export function ContinueBar({
       <div dir="rtl" className="mx-auto w-full max-w-5xl px-0 py-2 sm:py-1.5">
         <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-[0_18px_44px_-24px_rgba(10,26,20,.35)]">
           <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3 sm:px-3 sm:py-2">
-            {/* Slot pills */}
-            <div className="flex gap-2 border-b border-border bg-muted/40 px-3 py-2 sm:min-w-0 sm:flex-1 sm:border-b-0 sm:bg-transparent sm:p-0">
-              {slots.map((slot) => {
-                const filled = slot.value != null;
-                const clickable = slot.target != null;
-                const Tag = clickable ? "button" : "div";
-                const Icon = slot.icon;
-                return (
-                  <Tag
-                    key={slot.key}
-                    type={clickable ? "button" : undefined}
-                    onClick={clickable ? () => onSlotClick(slot.target!) : undefined}
-                    className={cn(
-                      "flex min-w-0 flex-1 items-center gap-2 rounded-xl border-[1.5px] px-2.5 py-2 text-right transition-colors duration-300",
-                      filled
-                        ? "border-brand-forest/70 bg-brand-mint/[0.13] dark:border-brand-mint/60"
-                        : "border-dashed border-border bg-card",
-                      clickable &&
-                        "cursor-pointer hover:border-brand-forest hover:bg-brand-mint/[0.22] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] dark:hover:border-brand-mint",
-                    )}
-                  >
-                    <span className={cn("shrink-0", ACCENT_FG)}>
-                      <Icon size={17} strokeWidth={2} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span
-                        className={cn(
-                          "block text-[11px] font-semibold text-muted-foreground",
-                          filled && "text-[9.5px]",
+            {/* Slot pills (hidden entirely in edit-from-summary mode) */}
+            {slots.length > 0 && (
+              <div className="flex gap-2 border-b border-border bg-muted/40 px-3 py-2 sm:min-w-0 sm:flex-1 sm:border-b-0 sm:bg-transparent sm:p-0">
+                {slots.map((slot) => {
+                  const filled = slot.value != null;
+                  const clickable = slot.target != null;
+                  const Tag = clickable ? "button" : "div";
+                  const Icon = slot.icon;
+                  return (
+                    <Tag
+                      key={slot.key}
+                      type={clickable ? "button" : undefined}
+                      onClick={clickable ? () => onSlotClick(slot.target!) : undefined}
+                      className={cn(
+                        "flex min-w-0 flex-1 items-center gap-2 rounded-xl border-[1.5px] px-2.5 py-2 text-right transition-colors duration-300",
+                        filled
+                          ? "border-brand-forest/70 bg-brand-mint/[0.13] dark:border-brand-mint/60"
+                          : "border-dashed border-border bg-card",
+                        clickable &&
+                          "cursor-pointer hover:border-brand-forest hover:bg-brand-mint/[0.22] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] dark:hover:border-brand-mint",
+                      )}
+                    >
+                      <span className={cn("shrink-0", ACCENT_FG)}>
+                        <Icon size={17} strokeWidth={2} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span
+                          className={cn(
+                            "block text-[11px] font-semibold text-muted-foreground",
+                            filled && "text-[9.5px]",
+                          )}
+                        >
+                          {slot.label}
+                        </span>
+                        {filled && (
+                          <span className={cn("block truncate text-[11.5px] font-bold", ACCENT_FG)}>
+                            {slot.value}
+                            {slot.note && (
+                              <span className="mr-1 font-semibold text-muted-foreground">
+                                · {slot.note}
+                              </span>
+                            )}
+                          </span>
                         )}
-                      >
-                        {slot.label}
                       </span>
                       {filled && (
-                        <span className={cn("block truncate text-[11.5px] font-bold", ACCENT_FG)}>
-                          {slot.value}
-                          {slot.note && (
-                            <span className="mr-1 font-semibold text-muted-foreground">
-                              · {slot.note}
-                            </span>
-                          )}
+                        <span
+                          className={cn("mr-auto", ACCENT_FG)}
+                          style={{ animation: "ocb-pop .3s ease both" }}
+                        >
+                          <Check size={16} strokeWidth={2.6} />
                         </span>
                       )}
-                    </span>
-                    {filled && (
-                      <span
-                        className={cn("mr-auto", ACCENT_FG)}
-                        style={{ animation: "ocb-pop .3s ease both" }}
-                      >
-                        <Check size={16} strokeWidth={2.6} />
-                      </span>
-                    )}
-                  </Tag>
-                );
-              })}
-            </div>
+                    </Tag>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Price + actions */}
             <div className="flex flex-col gap-2 px-4 py-2.5 sm:contents">

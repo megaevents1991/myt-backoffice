@@ -191,15 +191,17 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
       );
     }
     if (w.hotelChoice.mode === "live-offer") {
+      // The option's own stay window — the search inputs may have been edited
+      // since this option was picked, but the snapshot keeps what was priced.
       const option = w.hotelChoice.option;
       return (
         <p>
           <span className="font-bold" dir="ltr">
             {option.room_name}
           </span>
-          {w.hsCheckin && w.hsCheckout && (
+          {option.checkin && option.checkout && (
             <span className="ms-2 text-muted-foreground" dir="ltr">
-              {dateOnly(w.hsCheckin)} → {dateOnly(w.hsCheckout)}
+              {dateOnly(option.checkin)} → {dateOnly(option.checkout)}
             </span>
           )}
         </p>

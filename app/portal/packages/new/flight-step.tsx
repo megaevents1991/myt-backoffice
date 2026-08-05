@@ -407,6 +407,7 @@ function FlightFiltersPanel({
 
 export function FlightStep() {
   const w = useWizard();
+  const flightChoice = w.flightChoice;
   const [sort, setSort] = useState<FsSort>("best");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<FlightFilters>({
@@ -421,10 +422,15 @@ export function FlightStep() {
   const { event } = w;
 
   const all = useMemo<DisplayFlight[]>(() => {
-    const offline = w.flights.map(fromOffline);
+    // A locked package sells exactly ONE flight — other inventory rows linked
+    // to the event must not be pinnable (the site never offers them for it).
+    const lockedId = event?.locked_flight_id ?? null;
+    const offline = w.flights
+      .filter((f) => lockedId == null || f.id === lockedId)
+      .map(fromOffline);
     const live = (w.fsResults ?? []).filter((o) => !o.isOffline).map(fromLive);
     return [...offline, ...live];
-  }, [w.flights, w.fsResults]);
+  }, [w.flights, w.fsResults, event?.locked_flight_id]);
 
   const airlineNames = useMemo(
     () => [...new Set(all.map((f) => f.airline).filter(Boolean))].sort(),
@@ -577,6 +583,17 @@ export function FlightStep() {
 
       {w.fsError && <p className="text-sm text-destructive">{w.fsError}</p>}
 
+      {flightChoice.mode === "offline" &&
+        (() => {
+          const chosen = w.flights.find((f) => f.id === flightChoice.flightId);
+          return chosen && chosen.remaining < w.qty ? (
+            <p className="text-sm text-destructive">
+              בטיסה שנבחרה נותרו {chosen.remaining} מקומות בלבד, אבל בחבילה {w.qty} נוסעים —
+              בחרו טיסה אחרת או הפחיתו נוסעים.
+            </p>
+          ) : null;
+        })()}
+
       <div className="flex w-full flex-col items-start gap-2 lg:flex-row lg:gap-4">
         {!isLocked && (
           <div className={cn("w-full lg:w-1/4", !filtersOpen && "hidden lg:block")}>
@@ -651,13 +668,19 @@ export function FlightStep() {
                 );
               })}
 
-              {visible.length === 0 && (w.flights.length > 0 || w.fsResults != null) && (
+              {isLocked && all.length === 0 && (
+                <IssueState
+                  title="הטיסה הקבועה של החבילה אינה זמינה כרגע"
+                  subtitle="לא ניתן להצמיד טיסה — אפשר להמשיך והלקוח יראה את הזמינות באתר"
+                />
+              )}
+              {!isLocked && visible.length === 0 && (all.length > 0 || w.fsResults != null) && (
                 <IssueState
                   title="לא מצאנו טיסות שמתאימות למסננים"
                   subtitle="נסו לנקות חלק מהסינון או לחפש תאריכים אחרים"
                 />
               )}
-              {w.flights.length === 0 && w.fsResults == null && !isLocked && (
+              {!isLocked && all.length === 0 && w.fsResults == null && (
                 <IssueState
                   title="חפשו טיסות לתאריכים שלכם"
                   subtitle="בחרו תאריכים למעלה ולחצו חיפוש — התוצאות מגיעות מהספקים בזמן אמת, בדיוק כמו באתר"

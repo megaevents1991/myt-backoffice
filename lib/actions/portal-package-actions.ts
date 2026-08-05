@@ -93,6 +93,15 @@ export interface BuilderEvent {
   /** Package-pricing baselines — the site shows component prices as ± deltas vs these. */
   base_flight_price: number | null;
   base_hotel_price: number | null;
+  /** Skip-aware pricing knobs (computePerPersonPackagePrice) — main's skip fees. */
+  event_additional_markup: number | null;
+  markup_ticket: number | null;
+  markup_flight: number | null;
+  markup_hotel: number | null;
+  skip_flight: boolean | null;
+  skip_flight_markup: number | null;
+  skip_hotel_markup: number | null;
+  ticket_only_markup: number | null;
   sold_out: boolean;
   locked_flight_id: number | null;
   def_date_depart: string | null;
@@ -127,6 +136,10 @@ type EventListRow = {
   markup_ticket?: number | null;
   markup_flight?: number | null;
   markup_hotel?: number | null;
+  skip_flight?: boolean | null;
+  skip_flight_markup?: number | null;
+  skip_hotel_markup?: number | null;
+  ticket_only_markup?: number | null;
   tags?: string | null;
   locked_flight_id?: number | null;
   def_date_depart?: string | null;
@@ -135,7 +148,7 @@ type EventListRow = {
 
 const EVENT_COLUMNS =
   "id, name, date, location, type, tickets_and_rates, map_image_url, card_image_url, art_image_url, tx_excluded_sections, is_deleted, base_flight_price, base_hotel_price, " +
-  "event_additional_markup, markup_ticket, markup_flight, markup_hotel, tags, locked_flight_id, " +
+  "event_additional_markup, markup_ticket, markup_flight, markup_hotel, skip_flight, skip_flight_markup, skip_hotel_markup, ticket_only_markup, tags, locked_flight_id, " +
   "def_date_depart, def_date_return";
 
 /**
@@ -219,6 +232,14 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
       site_price: soldOut ? null : computePackagePrice(row),
       base_flight_price: row.base_flight_price ?? null,
       base_hotel_price: row.base_hotel_price ?? null,
+      event_additional_markup: row.event_additional_markup ?? null,
+      markup_ticket: row.markup_ticket ?? null,
+      markup_flight: row.markup_flight ?? null,
+      markup_hotel: row.markup_hotel ?? null,
+      skip_flight: row.skip_flight ?? null,
+      skip_flight_markup: row.skip_flight_markup ?? null,
+      skip_hotel_markup: row.skip_hotel_markup ?? null,
+      ticket_only_markup: row.ticket_only_markup ?? null,
       sold_out: soldOut,
       locked_flight_id: row.locked_flight_id ?? null,
       def_date_depart: row.def_date_depart ?? null,
@@ -893,6 +914,9 @@ export interface LiveHotelOption {
   meal: string;
   /** Total stay price, USD (rate show_amount). */
   price: number;
+  /** The stay window this option was priced for (what the snapshot carries). */
+  checkin: string;
+  checkout: string;
   /** The full OrderHotel snapshot main round-trips — saved verbatim on pick. */
   snapshot: Record<string, unknown>;
 }
@@ -1066,6 +1090,8 @@ export async function searchLiveHotels(input: {
           room_name: roomName,
           meal: rate.meal ?? "nomeal",
           price: amount,
+          checkin,
+          checkout,
           snapshot,
         });
       }

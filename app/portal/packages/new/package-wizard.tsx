@@ -9,12 +9,13 @@
  * edit-from-summary (returnToSummary) keeps every selection — main's model.
  */
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { BedDouble, Check, Copy, Plane, Search, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { computePerPersonPackagePrice } from "@/lib/package-price";
 import {
   createPreparedPackage,
   getLiveTicketOffers,
@@ -155,11 +156,18 @@ export function PackageWizard({
   }, [event?.id, event?.type, event?.tix_event_id, qty]);
 
   // Party size drives both searches — a qty change invalidates old results.
+  // A dropped live-offer also cancels edit-from-summary (main clears the
+  // flight/hotel on a quantity change and walks the flow normally), so the
+  // agent re-decides on the affected step instead of silently losing the pick.
   useEffect(() => {
     setFsResults(null);
     setHsResults(null);
-    setFlightChoice((prev) => (prev.mode === "live-offer" ? { mode: "live" } : prev));
-    setHotelChoice((prev) => (prev.mode === "live-offer" ? { mode: "live" } : prev));
+    if (flightChoice.mode === "live-offer") setFlightChoice({ mode: "live" });
+    if (hotelChoice.mode === "live-offer") setHotelChoice({ mode: "live" });
+    if (flightChoice.mode === "live-offer" || hotelChoice.mode === "live-offer") {
+      setReturnToSummary(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qty]);
 
   // Main scrolls to the top on every step change (OrderForm.tsx).
@@ -179,7 +187,12 @@ export function PackageWizard({
       .slice(0, 8);
   }, [events, query]);
 
+  // Guards the inventory load against a quick event re-pick: only the LAST
+  // selected event's response may land (stale flights/hotels used to win).
+  const activeEventIdRef = useRef<number | null>(null);
+
   const selectEvent = (e: BuilderEvent) => {
+    activeEventIdRef.current = e.id;
     setEvent(e);
     setCategory(cheapestCategory(e.tickets));
     setFlightChoice({ mode: "live" });
@@ -197,14 +210,26 @@ export function PackageWizard({
     setInventoryLoading(true);
     getPackageBuilderInventory(e.id)
       .then((inv) => {
+        if (activeEventIdRef.current !== e.id) return;
         setFlights(inv.flights);
         setHotels(inv.hotels);
+        // A locked package sells exactly one flight — pin it up front, the way
+        // main's flight step auto-picks it. The seat guard on the flight step
+        // still blocks continuing if the party outgrows the seats left.
+        if (e.locked_flight_id != null) {
+          const locked = inv.flights.find((f) => f.id === e.locked_flight_id);
+          if (locked) setFlightChoice({ mode: "offline", flightId: locked.id });
+        }
       })
       .catch(() => {
+        if (activeEventIdRef.current !== e.id) return;
         setFlights([]);
         setHotels([]);
       })
-      .finally(() => setInventoryLoading(false));
+      .finally(() => {
+        if (activeEventIdRef.current !== e.id) return;
+        setInventoryLoading(false);
+      });
   };
 
   // ?event= deep entry: skip the search step when the event is buildable.
@@ -289,27 +314,36 @@ export function PackageWizard({
     return null;
   })();
 
-  // Main's continue-bar preview: base + max(0, ticket) + flight + hotel deltas.
+  // The price main really charges, per person — calculateBaseTotal's mirror.
+  // For a full package this equals base + ticket/flight/hotel deltas; skipped
+  // components drop their base and charge the skip fee instead (the additive
+  // preview used to overstate no-flight/no-hotel packages by the base price).
   const totalPerPerson = (() => {
-    if (basePerPerson == null) return null;
-    let total = basePerPerson + Math.max(0, ticketDelta ? deltaAmount(ticketDelta) : 0);
-    if (flightDelta) total += deltaAmount(flightDelta);
-    if (hotelDelta) total += deltaAmount(hotelDelta);
-    return total;
+    if (!event) return null;
+    if (!selectedTicket) return basePerPerson;
+    return computePerPersonPackagePrice(event, {
+      ticketPrice: selectedTicket.price,
+      flightSkipped: flightChoice.mode === "none",
+      hotelSkipped: hotelChoice.mode === "none",
+      flightDelta: flightDelta ? deltaAmount(flightDelta) : 0,
+      hotelDelta: hotelDelta ? deltaAmount(hotelDelta) : 0,
+    });
   })();
 
   // ------- live searches -------
   const runFlightSearch = () => {
     if (!event) return;
+    const forEventId = event.id;
     setFsLoading(true);
     setFsError(null);
     searchLiveFlights({
-      eventId: event.id,
+      eventId: forEventId,
       departureDate: fsDepart,
       returnDate: fsReturn,
       adults: qty,
     })
       .then((res) => {
+        if (activeEventIdRef.current !== forEventId) return;
         if (res.ok) {
           setFsResults(res.flights);
           if (res.flights.length === 0) setFsError("לא נמצאו טיסות לתאריכים האלה");
@@ -317,8 +351,14 @@ export function PackageWizard({
           setFsError(res.error);
         }
       })
-      .catch(() => setFsError("החיפוש נכשל. נסו שוב."))
-      .finally(() => setFsLoading(false));
+      .catch(() => {
+        if (activeEventIdRef.current !== forEventId) return;
+        setFsError("החיפוש נכשל. נסו שוב.");
+      })
+      .finally(() => {
+        if (activeEventIdRef.current !== forEventId) return;
+        setFsLoading(false);
+      });
   };
 
   const defaultHotelDates = (): { checkin: string; checkout: string } => {
@@ -342,15 +382,17 @@ export function PackageWizard({
 
   const runHotelSearch = () => {
     if (!event) return;
+    const forEventId = event.id;
     setHsLoading(true);
     setHsError(null);
     searchLiveHotels({
-      eventId: event.id,
+      eventId: forEventId,
       checkin: hsCheckin,
       checkout: hsCheckout,
       travelers: qty,
     })
       .then((res) => {
+        if (activeEventIdRef.current !== forEventId) return;
         if (res.ok) {
           setHsResults(res.options);
           if (res.options.length === 0) setHsError("לא נמצאו מלונות לתאריכים האלה");
@@ -358,15 +400,30 @@ export function PackageWizard({
           setHsError(res.error);
         }
       })
-      .catch(() => setHsError("החיפוש נכשל. נסו שוב."))
-      .finally(() => setHsLoading(false));
+      .catch(() => {
+        if (activeEventIdRef.current !== forEventId) return;
+        setHsError("החיפוש נכשל. נסו שוב.");
+      })
+      .finally(() => {
+        if (activeEventIdRef.current !== forEventId) return;
+        setHsLoading(false);
+      });
   };
 
   // ------- navigation -------
-  const flowComplete = !!event && !!selectedTicket;
+  // A pinned offline flight must still seat the whole party (qty can grow
+  // after the pick — offline choices deliberately survive a qty change).
+  const flightSeatsOk =
+    flightChoice.mode !== "offline" || (chosenFlight != null && chosenFlight.remaining >= qty);
+
+  // Edit-from-summary may shortcut back only while EVERY step is still
+  // satisfied — main's flowComplete check. A choice a qty change invalidated
+  // walks the flow normally so its step's guard can catch it.
+  const flowStillValid =
+    !!event && !!selectedTicket && flightSeatsOk && canContinueFromHotel;
 
   const goNext = () => {
-    if (returnToSummary && flowComplete) {
+    if (returnToSummary && flowStillValid) {
       setReturnToSummary(false);
       setStep(4);
       return;
@@ -449,7 +506,9 @@ export function PackageWizard({
   })();
 
   const primaryDisabled =
-    (step === 1 && !selectedTicket) || (step === 3 && !canContinueFromHotel);
+    (step === 1 && !selectedTicket) ||
+    (step === 2 && !flightSeatsOk) ||
+    (step === 3 && !canContinueFromHotel);
 
   const slotTarget = (target: number): number | null => {
     if (target === step) return null;
@@ -485,7 +544,9 @@ export function PackageWizard({
     },
   ];
 
-  const primaryLabel = returnToSummary
+  // "Save & return" only while the shortcut is really taken (main's
+  // editReturnActive) — an edit that invalidated a later step walks forward.
+  const primaryLabel = returnToSummary && flowStillValid
     ? "שמור וחזור לסיכום"
     : step === 1
       ? "בחר והמשך לטיסה"
@@ -494,7 +555,8 @@ export function PackageWizard({
         : "בחר והמשך לסיכום";
 
   const skip =
-    step === 2
+    // A locked package's flight is fixed — there is nothing to leave open.
+    step === 2 && event?.locked_flight_id == null
       ? {
           label: "דלג — הלקוח יבחר",
           action: () => {
@@ -704,7 +766,9 @@ export function PackageWizard({
         {/* Sticky continue bar — steps 1-3, exactly like main */}
         {step >= 1 && step <= 3 && (
           <ContinueBar
-            slots={slots}
+            // Edit-from-summary hides the flow pills — a focused "pick → save"
+            // task, exactly like main's OrderForm.
+            slots={returnToSummary ? [] : slots}
             totalPerPerson={totalPerPerson}
             onSlotClick={(target) => {
               if (target < step) setStep(target);
