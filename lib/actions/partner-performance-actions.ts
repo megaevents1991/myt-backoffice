@@ -28,6 +28,7 @@ import {
   type EntryFunnels,
   type EntryScanRow,
 } from "@/lib/partner-entry-funnels"
+import { fundedCouponCodesFor } from "@/lib/actions/portal-coupon-actions"
 import { fetchPaged } from "@/lib/supabase-paged"
 import type { CommissionType } from "@/types/partner.types"
 import {
@@ -153,6 +154,8 @@ type ReservationRow = {
     rate?: { meal?: string; meal_data?: { value?: string } }
     hotelInformation?: { hotelName?: string; stars?: number } | null
   } | null
+  coupon_code: string | null
+  coupon_discount_usd: number | null
 }
 
 const JLM_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" })
@@ -231,7 +234,7 @@ export async function getPartnerPerformance(
   let reservationsQuery = supabase
     .from("reservations")
     .select(
-      "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info,billed_at,flight_order_info,hotel_order_info"
+      "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info,billed_at,flight_order_info,hotel_order_info,coupon_code,coupon_discount_usd"
     )
     .eq("aff_partner_tracking_code", trackingCode)
     .order("created_at", { ascending: false })
@@ -245,6 +248,7 @@ export async function getPartnerPerformance(
     trafficResult,
     clicksResult,
     entryFunnelsResult,
+    fundedCodes,
   ] = await Promise.all([
     supabase
       .from("partners")
@@ -277,6 +281,7 @@ export async function getPartnerPerformance(
       p_from: from,
       p_to: to,
     }),
+    fundedCouponCodesFor(trackingCode),
   ])
 
   if (partnerResult.error) throw partnerResult.error
@@ -312,6 +317,9 @@ export async function getPartnerPerformance(
   const terms: CommissionTerms = {
     type: partnerRow?.commission_type ?? "fixed_per_ticket",
     rate: partnerRow?.commission ?? 0,
+    // Commission-funded coupons deduct from the row they were spent on — keep
+    // the staff view on the same figure the monthly report pays.
+    fundedCouponCodes: fundedCodes,
   }
   const rows = (reservationsResult.data ?? []) as unknown as ReservationRow[]
   const coupons = (couponsResult.data ?? []) as unknown as {

@@ -15,12 +15,33 @@ type ReservationLike = {
   status?: string | null
   user_shown_price?: number | null
   event_order_info?: ReservationEventOrderInfo | null
+  /** Needed only when terms carry fundedCouponCodes — the coupon spent on the
+   *  order and what it actually discounted. */
+  coupon_code?: string | null
+  coupon_discount_usd?: number | null
 }
 
 /** How a partner is paid. `rate` is `partners.commission`. */
 export type CommissionTerms = {
   type: CommissionType | null
   rate: number | null
+  /**
+   * UPPERCASED codes of this partner's commission-funded coupons
+   * (`coupons.funded_by_commission`). When present, the discount such a coupon
+   * put on a reservation is deducted from that reservation's commission —
+   * that's the deal the coupon was created under. Absent = gross, the
+   * behavior every pre-existing surface has.
+   */
+  fundedCouponCodes?: ReadonlySet<string>
+}
+
+/** Uppercase a coupon-code list into the set CommissionTerms carries. */
+export function fundedCodeSet(codes: (string | null | undefined)[]): Set<string> {
+  return new Set(
+    codes
+      .map((code) => (code ?? "").trim().toUpperCase())
+      .filter((code) => code.length > 0)
+  )
 }
 
 /** Tickets in one reservation, summed across every event in its order info. */
@@ -73,12 +94,25 @@ export function commissionForReservation(
 ): number {
   if (!isPaid(reservation)) return 0
   if (!isUsableRate(terms.rate)) return 0
-  if (terms.type === "percent_of_sale") {
-    return (saleValue(reservation) * terms.rate) / 100
+  const gross =
+    terms.type === "percent_of_sale"
+      ? (saleValue(reservation) * terms.rate) / 100
+      : // `fixed_per_ticket` is the default for every legacy row, so an unset or
+        // unrecognised type must land here — that is how the cron has always paid.
+        countReservationTickets(reservation) * terms.rate
+
+  // Commission-funded coupon: its recorded discount comes out of THIS
+  // reservation's commission, floored at zero (creation caps the coupon at the
+  // commission, so a negative can only mean drifted data — never a debt).
+  const codes = terms.fundedCouponCodes
+  const code = (reservation.coupon_code ?? "").trim().toUpperCase()
+  if (codes && code && codes.has(code)) {
+    const discount = Number(reservation.coupon_discount_usd ?? 0)
+    if (Number.isFinite(discount) && discount > 0) {
+      return Math.max(0, gross - discount)
+    }
   }
-  // `fixed_per_ticket` is the default for every legacy row, so an unset or
-  // unrecognised type must land here — that is how the cron has always paid.
-  return countReservationTickets(reservation) * terms.rate
+  return gross
 }
 
 /** Commission in USD earned by the paid reservations in the list. */

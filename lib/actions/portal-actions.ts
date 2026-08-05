@@ -13,6 +13,7 @@ import {
   sumSales,
   type CommissionTerms,
 } from "@/lib/partner-commission";
+import { fundedCouponCodesFor } from "@/lib/actions/portal-coupon-actions";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import type { CommissionType } from "@/types/partner.types";
 import type { ReservationEventOrderInfo } from "@/types/reservation.types";
@@ -49,6 +50,8 @@ export interface PortalCoupon {
   times_paid: number | null;
   is_active: boolean;
   event_id: number | null;
+  /** True for coupons whose discount comes out of the partner's commission. */
+  funded_by_commission?: boolean;
 }
 
 /** How the order arrived at the site — the portal's per-row source label. */
@@ -199,14 +202,23 @@ export async function getPortalStats(): Promise<PortalStats> {
 
 export async function getPortalCoupons(): Promise<PortalCoupon[]> {
   const session = await requirePartner();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("coupons")
-    .select(
+  const fetchCoupons = (columns: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("coupons")
+      .select(columns)
+      .eq("partner_tracking_code", session.partner_code)
+      .order("created_at", { ascending: false });
+
+  let { data, error } = await fetchCoupons(
+    "id,code,discount_type,discount_value,valid_until,max_uses,times_used,times_paid,is_active,event_id,funded_by_commission"
+  );
+  if (error?.code === "42703") {
+    // funded_by_commission not migrated yet — the badge simply doesn't show.
+    ({ data, error } = await fetchCoupons(
       "id,code,discount_type,discount_value,valid_until,max_uses,times_used,times_paid,is_active,event_id"
-    )
-    .eq("partner_tracking_code", session.partner_code)
-    .order("created_at", { ascending: false });
+    ));
+  }
   if (error) {
     console.error("getPortalCoupons:", JSON.stringify(error));
     return [];
@@ -247,7 +259,7 @@ function holdExpiry(createdAt: string): string | null {
  * `comments`, which is the staff's internal note field.
  */
 const PORTAL_RESERVATION_COLUMNS =
-  "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_id,event_order_info,more_pax_info,booking_reference,confirmation_email_sent,billed_at";
+  "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_id,event_order_info,more_pax_info,booking_reference,confirmation_email_sent,billed_at,coupon_code,coupon_discount_usd";
 
 /** Source-attribution columns (migration 20260805170000 + the pre-existing
  *  settlement marker). Selected separately so a not-yet-migrated DB can fall
@@ -268,7 +280,7 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
       // One more than the page, purely to detect that older rows exist.
       .limit(RESERVATIONS_PAGE_SIZE + 1);
 
-  const [initialReservationsResult, partnerResult] = await Promise.all([
+  const [initialReservationsResult, partnerResult, fundedCodes] = await Promise.all([
     fetchReservations(PORTAL_RESERVATION_COLUMNS + PORTAL_RESERVATION_SOURCE_COLUMNS),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
@@ -276,6 +288,7 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
       .select("commission,commission_type")
       .eq("partner_tracking_code", session.partner_code)
       .maybeSingle(),
+    fundedCouponCodesFor(session.partner_code),
   ]);
   let reservationsResult = initialReservationsResult;
 
@@ -296,6 +309,9 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
   const terms: CommissionTerms = {
     type: (partnerResult.data?.commission_type as CommissionType | null) ?? "fixed_per_ticket",
     rate: partnerResult.data?.commission ?? null,
+    // Commission-funded coupons deduct from the row they were spent on — the
+    // per-row figure here must match what the monthly report will pay.
+    fundedCouponCodes: fundedCodes,
   };
 
   type Row = {
@@ -311,6 +327,8 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
     booking_reference: string | null;
     confirmation_email_sent: boolean | null;
     billed_at: string | null;
+    coupon_code: string | null;
+    coupon_discount_usd: number | null;
     partner_settlement_method?: string | null;
     source_share_token?: string | null;
     quote_id?: number | null;

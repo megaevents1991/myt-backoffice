@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase-server";
 import nodemailer from "nodemailer";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { guardCronRoute } from "@/lib/auth/guards";
+import { fundedCouponCodesFor } from "@/lib/actions/portal-coupon-actions";
 import {
   PAID_STATUS,
   commissionForReservation,
@@ -15,12 +16,16 @@ import {
 
 interface Reservation {
   main_contact_first_name: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event_order_info: any;
   created_at: string;
   accounting_number: number;
   /** Both are needed to price a reservation — see lib/partner-commission.ts. */
   status: string;
   user_shown_price: number | null;
+  /** Commission-funded coupons deduct their discount from this row's payout. */
+  coupon_code?: string | null;
+  coupon_discount_usd?: number | null;
 }
 
 interface PartnerData {
@@ -151,7 +156,9 @@ export async function GET(req: Request) {
       // waiting longest goes out rather than an arbitrary slice.
       .order("created_at", { ascending: true })
       .limit(BILLING_BATCH_SIZE)) as {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       data: any[] | null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       error: any;
     };
 
@@ -197,6 +204,7 @@ export async function GET(req: Request) {
         // not an error. With .single() it raised PGRST116 and hit the `continue`
         // below without ever stamping, so those rows were re-selected on every
         // run for ever and ate into the batch cap.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .maybeSingle()) as { data: any | null; error: any };
       if (partnerError) {
         console.error(
@@ -234,11 +242,17 @@ export async function GET(req: Request) {
         continue;
       }
 
+      // Commission-funded coupons: their discount comes out of the commission
+      // of the reservation they were spent on. Empty set (= gross, today's
+      // behavior) until that migration lands.
+      const fundedCodes = await fundedCouponCodesFor(trackingCode);
+
       const result = await sendMonthlyReportEmail({
         partnerName: partnerData?.name_hebrew,
         terms: {
           type: partnerData?.commission_type ?? "fixed_per_ticket",
           rate: partnerData?.commission ?? null,
+          fundedCouponCodes: fundedCodes,
         },
         email: partnerData.email,
         reservations: partnerReservations as Reservation[],

@@ -18,6 +18,7 @@ import {
   type PartnerTraffic,
 } from "@/lib/partner-funnel"
 import { buildEntryFunnels, type EntryFunnels } from "@/lib/partner-entry-funnels"
+import { fundedCouponCodesFor } from "@/lib/actions/portal-coupon-actions"
 import {
   rangeWindowISO,
   type InsightsRange,
@@ -98,6 +99,8 @@ type ReservationRow = {
   user_shown_price: number | null
   event_order_info: ReservationEventOrderInfo | null
   billed_at: string | null
+  coupon_code: string | null
+  coupon_discount_usd: number | null
 }
 
 /** The main app's affiliate-discount rule: 1–10 is a percent of the package,
@@ -126,6 +129,7 @@ export async function getPortalDashboard(
     clicksResult,
     entryResult,
     newEventsResult,
+    fundedCodes,
   ] = await Promise.all([
     supabase
       .from("partners")
@@ -134,7 +138,9 @@ export async function getPortalDashboard(
       .maybeSingle(),
     supabase
       .from("reservations")
-      .select("created_at,status,user_shown_price,event_order_info,billed_at")
+      .select(
+        "created_at,status,user_shown_price,event_order_info,billed_at,coupon_code,coupon_discount_usd"
+      )
       .eq("aff_partner_tracking_code", code),
     supabase
       .from("coupons")
@@ -167,6 +173,7 @@ export async function getPortalDashboard(
       .gte("created_at", newSince)
       .order("created_at", { ascending: false })
       .limit(12),
+    fundedCouponCodesFor(code),
   ])
 
   if (partnerResult.error) throw partnerResult.error
@@ -196,6 +203,9 @@ export async function getPortalDashboard(
   const terms: CommissionTerms = {
     type: partner?.commission_type ?? "fixed_per_ticket",
     rate: partner?.commission ?? 0,
+    // Commission-funded coupons deduct their discount from the reservation
+    // they were spent on — the same terms the monthly report bills with.
+    fundedCouponCodes: fundedCodes,
   }
 
   const allRows = (reservationsResult.data ?? []) as unknown as ReservationRow[]

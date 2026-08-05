@@ -24,3 +24,10 @@ alter table public.partners
 
 alter table public.partners
   add column if not exists payment_card jsonb;
+
+-- 3. Commission-funded coupons — a partner may create a coupon capped at (and
+--    deducted from) their own commission. Only coupons carrying this flag ever
+--    deduct; every pre-existing coupon (including credit-conversion vouchers)
+--    keeps its current payout behavior.
+alter table public.coupons
+  add column if not exists funded_by_commission boolean default false not null;
