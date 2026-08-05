@@ -20,6 +20,16 @@
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-commit.js\""
           }
         ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-push.js\"",
+            "statusMessage": "Push gate"
+          }
+        ]
       }
     ],
     "PostToolUse": [
