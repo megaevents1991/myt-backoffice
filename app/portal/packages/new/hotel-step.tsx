@@ -321,8 +321,8 @@ export function HotelStep() {
                   icon={BedDouble}
                   title="הלקוח יבחר מלון באתר"
                   subtitle="הלינק יפתח את שלב המלונות עם ההיצע החי סביב האירוע"
-                  selected={w.hotelChoice.mode === "live"}
-                  onClick={() => w.setHotelChoice({ mode: "live" })}
+                  selected={w.hotelChoice.mode === "live" && !!w.hotelChoice.explicit}
+                  onClick={() => w.setHotelChoice({ mode: "live", explicit: true })}
                 />
                 <DashedOptionRow
                   icon={BedDouble}

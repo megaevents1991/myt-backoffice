@@ -490,7 +490,11 @@ export function PackageWizard({
       return flightChoice.offer.metadata?.name || flightChoice.offer.airline;
     }
     if (flightChoice.mode === "none") return "ללא טיסה";
-    return step > 2 || returnToSummary ? "הלקוח יבחר באתר" : null;
+    // "live": fills on an explicit pick right away; a silent default fills
+    // only once the flight step is behind us.
+    return flightChoice.explicit || step > 2 || returnToSummary
+      ? "הלקוח יבחר באתר"
+      : null;
   })();
   const hotelSlotValue = (() => {
     if (hotelChoice.mode === "offline") {
@@ -503,7 +507,7 @@ export function PackageWizard({
     }
     if (hotelChoice.mode === "live-offer") return hotelChoice.option.name;
     if (hotelChoice.mode === "none") return "ללא מלון";
-    return step > 3 ? "הלקוח יבחר באתר" : null;
+    return hotelChoice.explicit || step > 3 ? "הלקוח יבחר באתר" : null;
   })();
 
   const primaryDisabled =
@@ -561,7 +565,7 @@ export function PackageWizard({
   // Mid-edit (returnToSummary) a shortcut returns to the summary once the
   // rest of the flow is valid — same rule as goNext.
   const decideFlightShortcut = (mode: "live" | "none") => {
-    setFlightChoice({ mode });
+    setFlightChoice(mode === "live" ? { mode, explicit: true } : { mode });
     if (returnToSummary && !!event && !!selectedTicket && canContinueFromHotel) {
       setReturnToSummary(false);
       setStep(4);
@@ -570,7 +574,7 @@ export function PackageWizard({
     setStep(3);
   };
   const decideHotelShortcut = (mode: "live" | "none") => {
-    setHotelChoice({ mode });
+    setHotelChoice(mode === "live" ? { mode, explicit: true } : { mode });
     setStep(4); // the step-4 effect clears returnToSummary
   };
 

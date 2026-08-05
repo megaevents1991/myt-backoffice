@@ -22,13 +22,15 @@ import type { Delta } from "./wizard-ui";
 export type FlightChoice =
   | { mode: "offline"; flightId: number }
   | { mode: "live-offer"; offer: LiveFlightOffer }
-  | { mode: "live" }
+  /** "live" is BOTH the silent default and an explicit agent decision —
+   *  `explicit` tells them apart so the bar tab fills only once chosen. */
+  | { mode: "live"; explicit?: boolean }
   | { mode: "none" };
 
 export type HotelChoice =
   | { mode: "offline"; units: Record<number, number> }
   | { mode: "live-offer"; option: LiveHotelOption }
-  | { mode: "live" }
+  | { mode: "live"; explicit?: boolean }
   | { mode: "none" };
 
 export type TicketOption = {

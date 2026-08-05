@@ -700,8 +700,8 @@ export function FlightStep() {
                     icon={Plane}
                     title="הלקוח יבחר טיסה באתר"
                     subtitle="הלינק יפתח את שלב הטיסות והלקוח יבחר מהזמינות בזמן אמת"
-                    selected={w.flightChoice.mode === "live"}
-                    onClick={() => w.setFlightChoice({ mode: "live" })}
+                    selected={w.flightChoice.mode === "live" && !!w.flightChoice.explicit}
+                    onClick={() => w.setFlightChoice({ mode: "live", explicit: true })}
                   />
                   <DashedOptionRow
                     icon={Plane}
