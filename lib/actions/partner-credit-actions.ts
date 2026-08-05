@@ -208,7 +208,8 @@ async function loadCredit(trackingCode: string): Promise<PartnerCredit> {
   let couponStates: CouponStateRow[] = []
   if (codes.length > 0) {
     const [usageResult, stateResult] = await Promise.all([
-      supabase.rpc("partner_coupon_usage", { p_codes: codes }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any).rpc("partner_coupon_usage", { p_codes: codes }),
       supabase
         .from("coupons")
         .select("code,times_used,max_uses")
@@ -405,7 +406,8 @@ async function insertCoupon(
 ): Promise<{ ok: true; id: number; code: string } | { ok: false; error: string }> {
   let code = firstCode
   for (let attempt = 0; attempt < 3; attempt++) {
-    const { data, error } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any)
       .from("coupons")
       .insert({
         code,
@@ -480,7 +482,8 @@ async function convertFor(
   if (!coupon.ok) return { ok: false, error: coupon.error }
   const { id: couponId, code: finalCode } = coupon
 
-  const { data: ledgerData, error: ledgerError } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ledgerData, error: ledgerError } = await (supabase as any)
     .from("partner_credit_redemptions")
     .insert({
       partner_tracking_code: trackingCode,
@@ -537,7 +540,8 @@ async function convertFor(
   }
 
   // Safe to hand over now that the credit is recorded as spent.
-  const { error: activateError } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: activateError } = await (supabase as any)
     .from("coupons")
     .update({ is_active: true })
     .eq("id", couponId)

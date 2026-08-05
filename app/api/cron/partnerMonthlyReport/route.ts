@@ -72,7 +72,8 @@ async function markBilled(
   }
   if (ids.length === 0) return null;
 
-  const { error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
     .from("reservations")
     .update({ billed_at: new Date().toISOString() })
     .in("id", ids);
