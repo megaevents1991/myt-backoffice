@@ -116,6 +116,8 @@ export interface BuilderEvent {
   }[];
   /** tx_event only: TixStock event id (from any ticket's eid) → live pricing. */
   tix_event_id: string | null;
+  /** tx_event only: sections excluded from sale — the map greys and ignores them. */
+  tx_excluded_sections: string[] | null;
 }
 
 type EventListRow = {
@@ -251,6 +253,7 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
               (t) => t?.eid,
             )?.eid ?? null)
           : null,
+      tx_excluded_sections: row.tx_excluded_sections ?? null,
     };
   });
 

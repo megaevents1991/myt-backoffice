@@ -106,6 +106,7 @@ export function TicketStep() {
         hoveredTicket={cheapestListingOf(w.hoveredCat)}
         selectedTicketId={cheapestListingOf(w.category)?.id ?? null}
         onTicketSelect={onMapSelect}
+        excludedSections={event.tx_excluded_sections ?? undefined}
       />
     ) : (
       // eslint-disable-next-line @next/next/no-img-element
