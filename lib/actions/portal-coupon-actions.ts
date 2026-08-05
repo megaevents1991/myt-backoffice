@@ -3,6 +3,7 @@
 import { requirePartner } from "@/lib/auth/guards"
 import { supabase } from "@/lib/supabase-server"
 import { logAudit } from "@/lib/audit"
+import { fundedCodeSet } from "@/lib/partner-commission"
 import type { CommissionType } from "@/types/partner.types"
 
 /**
@@ -57,11 +58,7 @@ export async function fundedCouponCodesFor(trackingCode: string): Promise<Set<st
     }
     return new Set()
   }
-  return new Set(
-    ((data ?? []) as { code: string | null }[])
-      .map((row) => (row.code ?? "").trim().toUpperCase())
-      .filter(Boolean)
-  )
+  return fundedCodeSet(((data ?? []) as { code: string | null }[]).map((row) => row.code))
 }
 
 export type CreateCouponResult =
