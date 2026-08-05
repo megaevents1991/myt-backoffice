@@ -1,7 +1,11 @@
 import { getSession } from "@/lib/auth/guards";
-import { getMyCredit } from "@/lib/actions/partner-credit-actions";
+import {
+  getMyCredit,
+  getMyVoucherSettlement,
+} from "@/lib/actions/partner-credit-actions";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -25,7 +29,17 @@ export default async function PortalCreditPage() {
   // throws for any non-partner role.
   if (!isPartner) return null;
 
-  const credit = await getMyCredit();
+  const isAgent = session.role === "agent";
+  const [credit, settlement] = await Promise.all([
+    getMyCredit(),
+    // Voucher settlement is an agent-only flow; the action returns empty for
+    // influencers anyway — skip the call entirely for them.
+    isAgent ? getMyVoucherSettlement() : Promise.resolve(null),
+  ]);
+
+  const hasSettlement =
+    !!settlement &&
+    settlement.dueSoonCount + settlement.overdueCount + settlement.settledCount > 0;
 
   return (
     <div className="space-y-6">
@@ -57,6 +71,88 @@ export default async function PortalCreditPage() {
           </div>
         </CardContent>
       </Card>
+
+      {hasSettlement && settlement && (
+        <Card>
+          <CardHeader>
+            <CardTitle>התחשבנות שוברים מולנו</CardTitle>
+            <CardDescription>
+              הזמנות ששולמו בשובר: מה ממתין לגבייה, מה עבר את מועד הגבייה (30
+              יום) ומה כבר נפרע.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <p className="text-sm text-muted-foreground">לגבייה קרובה</p>
+                <p className="font-display text-2xl font-bold tabular-nums">
+                  {usd.format(settlement.dueSoonUsd)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {settlement.dueSoonCount} שוברים בתוך חלון הגבייה
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">עבר מועד הגבייה</p>
+                <p
+                  className={`font-display text-2xl font-bold tabular-nums ${
+                    settlement.overdueCount > 0 ? "text-destructive" : ""
+                  }`}
+                >
+                  {usd.format(settlement.overdueUsd)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {settlement.overdueCount} שוברים מעל 30 יום — טרם שולמו
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">נפרעו</p>
+                <p className="font-display text-2xl font-bold tabular-nums">
+                  {usd.format(settlement.settledUsd)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {settlement.settledCount} שוברים שנגבו ושולמו
+                </p>
+              </div>
+            </div>
+
+            {settlement.openRows.length > 0 && (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>הזמנה</TableHead>
+                    <TableHead>תאריך</TableHead>
+                    <TableHead>סכום</TableHead>
+                    <TableHead>ותק</TableHead>
+                    <TableHead>מצב</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {settlement.openRows.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-medium">{row.id}</TableCell>
+                      <TableCell>
+                        {new Date(row.created_at).toLocaleDateString("he-IL")}
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {usd.format(row.amount_usd)}
+                      </TableCell>
+                      <TableCell className="tabular-nums">{row.age_days} ימים</TableCell>
+                      <TableCell>
+                        {row.age_days > 30 ? (
+                          <Badge variant="destructive">עבר מועד</Badge>
+                        ) : (
+                          <Badge variant="outline">בהמתנה לגבייה</Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

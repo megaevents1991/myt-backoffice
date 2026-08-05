@@ -4,6 +4,7 @@ import { requirePartner, requireStaff } from "@/lib/auth/guards"
 import { supabase } from "@/lib/supabase-server"
 import { logAudit } from "@/lib/audit"
 import {
+  PAID_STATUS,
   countTickets,
   creditAccrued,
   isPaid,
@@ -243,6 +244,107 @@ async function loadCredit(trackingCode: string): Promise<PartnerCredit> {
 export async function getMyCredit(): Promise<PartnerCredit> {
   const session = await requirePartner()
   return loadCredit(session.partner_code)
+}
+
+/** One voucher-settled order in the agent's settlement view. */
+export interface VoucherSettlementRow {
+  id: number
+  created_at: string
+  status: string
+  amount_usd: number
+  /** Days since the order was placed — the age the buckets are cut on. */
+  age_days: number
+}
+
+/**
+ * The doc's "התחשבנות מולנו" buckets over voucher-settled orders.
+ *
+ * A voucher order is created WITHOUT a card charge and waits for the voucher
+ * to be collected — so "collected" is simply the order reaching Paid, and the
+ * open ones age from the day they were placed. 30 days is the collection
+ * window the buckets are cut on.
+ */
+export interface VoucherSettlement {
+  /** Open voucher orders inside the 30-day window — due for collection soon. */
+  dueSoonCount: number
+  dueSoonUsd: number
+  /** Open voucher orders past 30 days — collection is overdue. */
+  overdueCount: number
+  overdueUsd: number
+  /** Voucher orders already collected (Paid). */
+  settledCount: number
+  settledUsd: number
+  /** The open rows, oldest first, for the detail table. */
+  openRows: VoucherSettlementRow[]
+}
+
+const VOUCHER_COLLECTION_WINDOW_DAYS = 30
+
+/** Voucher-settlement aging for the signed-in agent. Empty for influencers —
+ *  the voucher settlement method is an agent-only flow. */
+export async function getMyVoucherSettlement(): Promise<VoucherSettlement> {
+  const session = await requirePartner()
+  const empty: VoucherSettlement = {
+    dueSoonCount: 0,
+    dueSoonUsd: 0,
+    overdueCount: 0,
+    overdueUsd: 0,
+    settledCount: 0,
+    settledUsd: 0,
+    openRows: [],
+  }
+  if (session.role !== "agent") return empty
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("reservations")
+    .select("id,created_at,status,user_shown_price")
+    .eq("aff_partner_tracking_code", session.partner_code)
+    .eq("partner_settlement_method", "voucher")
+    .order("created_at", { ascending: true })
+  if (error) {
+    console.error("getMyVoucherSettlement:", JSON.stringify(error))
+    return empty
+  }
+
+  const rows = (data ?? []) as {
+    id: number
+    created_at: string
+    status: string | null
+    user_shown_price: number | null
+  }[]
+
+  const now = Date.now()
+  const result: VoucherSettlement = { ...empty, openRows: [] }
+  for (const row of rows) {
+    const amount = Number(row.user_shown_price ?? 0)
+    const createdMs = Date.parse(row.created_at)
+    const ageDays = Number.isFinite(createdMs)
+      ? Math.floor((now - createdMs) / 86_400_000)
+      : 0
+    if (row.status === PAID_STATUS) {
+      result.settledCount += 1
+      result.settledUsd = round2(result.settledUsd + amount)
+      continue
+    }
+    // Cancelled/Lost voucher orders owe nothing and age nothing.
+    if (row.status === "Cancelled" || row.status === "Lost") continue
+    if (ageDays > VOUCHER_COLLECTION_WINDOW_DAYS) {
+      result.overdueCount += 1
+      result.overdueUsd = round2(result.overdueUsd + amount)
+    } else {
+      result.dueSoonCount += 1
+      result.dueSoonUsd = round2(result.dueSoonUsd + amount)
+    }
+    result.openRows.push({
+      id: row.id,
+      created_at: row.created_at,
+      status: row.status ?? "Pending",
+      amount_usd: round2(amount),
+      age_days: ageDays,
+    })
+  }
+  return result
 }
 
 /** Any partner's credit, for the staff performance screen. */
