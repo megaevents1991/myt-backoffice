@@ -46,6 +46,7 @@ import {
   dateFmt,
   usd,
   WizardStepper,
+  type ContinueSecondaryAction,
   type ContinueSlot,
   type Delta,
 } from "./wizard-ui";
@@ -554,24 +555,53 @@ export function PackageWizard({
         ? "בחר והמשך למלון"
         : "בחר והמשך לסיכום";
 
-  const skip =
-    // A locked package's flight is fixed — there is nothing to leave open.
-    step === 2 && event?.locked_flight_id == null
-      ? {
-          label: "דלג — הלקוח יבחר",
-          action: () => {
-            setFlightChoice({ mode: "live" });
-            goNext();
+  // Each step's compact shortcuts answer the NEXT step's question and skip
+  // straight past it: tickets decide the flight and land on hotels, flights
+  // decide the hotel and land on the summary; the hotel step has none.
+  // Mid-edit (returnToSummary) a shortcut returns to the summary once the
+  // rest of the flow is valid — same rule as goNext.
+  const decideFlightShortcut = (mode: "live" | "none") => {
+    setFlightChoice({ mode });
+    if (returnToSummary && !!event && !!selectedTicket && canContinueFromHotel) {
+      setReturnToSummary(false);
+      setStep(4);
+      return;
+    }
+    setStep(3);
+  };
+  const decideHotelShortcut = (mode: "live" | "none") => {
+    setHotelChoice({ mode });
+    setStep(4); // the step-4 effect clears returnToSummary
+  };
+
+  const secondaryActions: ContinueSecondaryAction[] | null =
+    // A locked package's flight is fixed — no flight shortcuts to offer.
+    step === 1 && event?.locked_flight_id == null
+      ? [
+          {
+            label: "הלקוח יבחר טיסה",
+            onClick: () => decideFlightShortcut("live"),
+            disabled: !selectedTicket,
           },
-        }
-      : step === 3
-        ? {
-            label: "דלג — הלקוח יבחר",
-            action: () => {
-              setHotelChoice({ mode: "live" });
-              goNext();
+          {
+            label: "ללא טיסה",
+            onClick: () => decideFlightShortcut("none"),
+            disabled: !selectedTicket,
+          },
+        ]
+      : step === 2
+        ? [
+            {
+              label: "הלקוח יבחר מלון",
+              onClick: () => decideHotelShortcut("live"),
+              disabled: !flightSeatsOk,
             },
-          }
+            {
+              label: "ללא מלון",
+              onClick: () => decideHotelShortcut("none"),
+              disabled: !flightSeatsOk,
+            },
+          ]
         : null;
 
   // ------- context value -------
@@ -777,8 +807,7 @@ export function PackageWizard({
             primaryLabel={primaryLabel}
             primaryDisabled={primaryDisabled}
             onPrimary={goNext}
-            skipLabel={skip?.label ?? null}
-            onSkip={skip?.action}
+            secondaryActions={secondaryActions}
           />
         )}
       </div>

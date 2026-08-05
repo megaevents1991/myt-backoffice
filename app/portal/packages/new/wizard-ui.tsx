@@ -314,6 +314,12 @@ export interface ContinueSlot {
   target: number | null;
 }
 
+export interface ContinueSecondaryAction {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}
+
 export function ContinueBar({
   slots,
   totalPerPerson,
@@ -321,8 +327,7 @@ export function ContinueBar({
   primaryLabel,
   primaryDisabled,
   onPrimary,
-  skipLabel,
-  onSkip,
+  secondaryActions,
   building,
 }: {
   slots: ContinueSlot[];
@@ -331,8 +336,9 @@ export function ContinueBar({
   primaryLabel: string;
   primaryDisabled?: boolean;
   onPrimary: () => void;
-  skipLabel?: string | null;
-  onSkip?: () => void;
+  /** Up to two compact shortcuts stacked one above the other beside the
+   *  primary CTA — each answers the NEXT step's question and skips past it. */
+  secondaryActions?: ContinueSecondaryAction[] | null;
   /** Final-step build animation (main's "מרכיבים את החבילה…"). */
   building?: boolean;
 }) {
@@ -439,22 +445,36 @@ export function ContinueBar({
                   </span>
                 </div>
               ) : (
-                <div className="flex gap-2 sm:shrink-0">
-                  {skipLabel && onSkip && (
-                    <button
-                      type="button"
-                      onClick={onSkip}
-                      className="flex-1 whitespace-nowrap rounded-xl border-[1.5px] border-brand-forest px-4 py-2.5 text-sm font-bold text-brand-forest transition-colors hover:bg-brand-forest/5 dark:border-brand-mint dark:text-brand-mint dark:hover:bg-brand-mint/10 sm:flex-none sm:px-3.5 sm:py-1.5 sm:text-[13px]"
-                    >
-                      {skipLabel}
-                    </button>
+                <div className="flex items-stretch gap-2 sm:shrink-0">
+                  {secondaryActions && secondaryActions.length > 0 && (
+                    <div className="flex flex-1 flex-col justify-center gap-1 sm:flex-none">
+                      {secondaryActions.map((action) => (
+                        <button
+                          key={action.label}
+                          type="button"
+                          disabled={action.disabled}
+                          onClick={action.onClick}
+                          className={cn(
+                            "whitespace-nowrap rounded-lg border-[1.5px] border-brand-forest px-3 py-1 text-[12px] font-bold leading-tight text-brand-forest transition-colors dark:border-brand-mint dark:text-brand-mint",
+                            action.disabled
+                              ? "cursor-not-allowed opacity-40"
+                              : "hover:bg-brand-forest/5 dark:hover:bg-brand-mint/10",
+                          )}
+                        >
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
                   )}
                   <button
                     type="button"
                     disabled={primaryDisabled}
                     onClick={onPrimary}
                     className={cn(
-                      "flex-[1.4] whitespace-nowrap rounded-md bg-brand-forest px-5 py-2.5 text-xs font-semibold text-white transition-all dark:bg-brand-mint dark:text-brand-forest sm:flex-none sm:px-4 sm:py-1.5",
+                      "flex-[1.4] whitespace-nowrap rounded-md bg-brand-forest px-5 py-2.5 text-xs font-semibold text-white transition-all dark:bg-brand-mint dark:text-brand-forest sm:flex-none sm:px-4",
+                      secondaryActions && secondaryActions.length > 0
+                        ? "sm:self-stretch"
+                        : "sm:py-1.5",
                       primaryDisabled
                         ? "cursor-not-allowed opacity-40"
                         : "hover:-translate-y-px hover:shadow-[0_12px_26px_-12px_rgba(10,26,20,.55)]",
