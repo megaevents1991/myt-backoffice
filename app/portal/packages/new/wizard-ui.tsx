@@ -323,6 +323,7 @@ export interface ContinueSecondaryAction {
 export function ContinueBar({
   slots,
   totalPerPerson,
+  qty,
   onSlotClick,
   primaryLabel,
   primaryDisabled,
@@ -332,6 +333,9 @@ export function ContinueBar({
 }: {
   slots: ContinueSlot[];
   totalPerPerson: number | null;
+  /** Travellers — the live number is the FULL payment (qty × per person),
+   *  exactly like main's order summary, with the per-person beside it. */
+  qty: number;
   onSlotClick: (target: number) => void;
   primaryLabel: string;
   primaryDisabled?: boolean;
@@ -342,7 +346,9 @@ export function ContinueBar({
   /** Final-step build animation (main's "מרכיבים את החבילה…"). */
   building?: boolean;
 }) {
-  const animated = useCountUp(Math.max(0, Math.ceil(totalPerPerson ?? 0)));
+  const totalPkg =
+    totalPerPerson != null ? totalPerPerson * Math.max(1, qty) : null;
+  const animated = useCountUp(Math.max(0, Math.ceil(totalPkg ?? 0)));
   const [buildDone, setBuildDone] = useState(false);
   useEffect(() => {
     if (!building) {
@@ -420,14 +426,23 @@ export function ContinueBar({
 
             {/* Price + actions */}
             <div className="flex flex-col gap-2 px-4 py-2.5 sm:contents">
-              {totalPerPerson != null && (
+              {totalPkg != null && (
                 <div className={cn("flex items-baseline gap-1 sm:shrink-0", ACCENT_FG)}>
                   <span className="text-[15px] font-bold">$</span>
                   <span className="text-[23px] font-extrabold leading-none tracking-tight tabular-nums">
                     {animated.toLocaleString("en-US")}
                   </span>
                   <span className="mr-1 text-xs font-semibold text-muted-foreground">
-                    סה&quot;כ לנוסע
+                    סה&quot;כ
+                    {qty > 1 && totalPerPerson != null && (
+                      <>
+                        {" "}
+                        <span dir="ltr" className="tabular-nums">
+                          (${Math.ceil(totalPerPerson).toLocaleString("en-US")}
+                        </span>{" "}
+                        לנוסע)
+                      </>
+                    )}
                   </span>
                 </div>
               )}

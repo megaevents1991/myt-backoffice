@@ -18,6 +18,30 @@ export const SESSION_COOKIE = "session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 1 week
 export const SESSION_MAX_AGE = MAX_AGE_SECONDS;
 
+/**
+ * A SECOND signed session cookie, scoped by the browser to `path=/portal` —
+ * only portal requests ever carry it, so it coexists with a staff `session`
+ * cookie in the same Chrome: an admin can stay signed in to the dashboard
+ * while another window/tab is signed in to the portal as a partner.
+ *
+ * Two producers, one cookie:
+ *  - a real partner login (app/api/auth/login) — week-long, like any session;
+ *  - superadmin "login as partner" (lib/actions/impersonate-actions.ts) —
+ *    2 hours.
+ * getSession() prefers it (partner roles only) wherever the browser sends it.
+ */
+export const PORTAL_SESSION_COOKIE = "portal_session";
+export const PORTAL_IMPERSONATION_MAX_AGE = 60 * 60 * 2; // 2 hours
+
+/**
+ * Routing hint only — carries NO auth value. Because the portal session is
+ * path-scoped, middleware on non-/portal paths can't tell a signed-in partner
+ * from a stranger; this site-wide flag lets it send a partner's stray
+ * /dashboard bookmark to /portal instead of the login page. Anyone could set
+ * it themselves and would simply reach the portal's own (real) auth wall.
+ */
+export const PORTAL_MEMBER_HINT_COOKIE = "portal_member";
+
 import type { Role } from "@/types/auth.types";
 
 export type SessionPayload = {
@@ -25,6 +49,8 @@ export type SessionPayload = {
   email: string;
   role: Role;
   partner_code: string | null; // partners.partner_tracking_code for agent/affiliate
+  /** Present only on superadmin-impersonated portal sessions. */
+  impersonator?: { sub: string; email: string };
   exp: number;          // ms epoch
 };
 
@@ -74,19 +100,32 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** Build a fresh signed session cookie value for a successful login. */
-export async function createSessionValue(user: {
-  sub: string;
-  email: string;
-  role: Role;
-  partner_code?: string | null;
-}): Promise<string> {
+/**
+ * Build a fresh signed session cookie value for a successful login.
+ *
+ * `ttlSeconds` bounds the SIGNED exp claim — the cookie's own maxAge only
+ * controls the browser, so a short-lived session (impersonation) MUST pass it
+ * or a copied cookie value stays replayable for the full week regardless of
+ * when the browser drops it.
+ */
+export async function createSessionValue(
+  user: {
+    sub: string;
+    email: string;
+    role: Role;
+    partner_code?: string | null;
+    /** Set on impersonated sessions — who is really acting. Audited. */
+    impersonator?: { sub: string; email: string };
+  },
+  ttlSeconds: number = MAX_AGE_SECONDS
+): Promise<string> {
   const payload: SessionPayload = {
     sub: user.sub,
     email: user.email,
     role: user.role,
     partner_code: user.partner_code ?? null,
-    exp: Date.now() + MAX_AGE_SECONDS * 1000,
+    ...(user.impersonator ? { impersonator: user.impersonator } : {}),
+    exp: Date.now() + ttlSeconds * 1000,
   };
   const body = toBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
   const sig = await hmac(body);

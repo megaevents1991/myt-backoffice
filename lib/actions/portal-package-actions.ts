@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { requirePartner } from "@/lib/auth/guards";
+import { mintPartnerHandoffToken } from "@/lib/auth/partner-handoff";
 import { supabase } from "@/lib/supabase-server";
-import { partnerLink } from "@/lib/site";
+import { partnerLink, PUBLIC_SITE_URL } from "@/lib/site";
 import { computePackagePrice, isEventSoldOut } from "@/lib/package-price";
 import type { TixStockListing } from "@/lib/tixstock.types";
 import type { EventTicket, EventType } from "@/types/app.types";
@@ -1516,4 +1517,112 @@ export async function deletePreparedPackage(id: number): Promise<DeletePackageRe
 
   revalidatePath(PORTAL_PACKAGES_PATH);
   return { ok: true };
+}
+
+export type SetPackageAllowEditResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Lock or unlock an existing package after creation. A lock chosen by mistake
+ * in the wizard was previously permanent — the customer link honored it and
+ * nothing anywhere could flip it back.
+ */
+export async function setPackageAllowEdit(
+  id: number,
+  allowEdit: boolean
+): Promise<SetPackageAllowEditResult> {
+  const session = await requirePartner();
+
+  const packageId = Number(id);
+  if (!Number.isFinite(packageId)) return { ok: false, error: "חבילה לא תקינה" };
+
+  // Scoped to the caller's own tracking code — same posture as delete.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from("prepared_packages")
+    .update({ allow_edit: allowEdit })
+    .eq("id", packageId)
+    .eq("partner_tracking_code", session.partner_code);
+
+  if (error) {
+    console.error("setPackageAllowEdit:", JSON.stringify(error));
+    return { ok: false, error: "עדכון הנעילה נכשל" };
+  }
+
+  revalidatePath(PORTAL_PACKAGES_PATH);
+  return { ok: true };
+}
+
+export type AgentOrderLinkResult = { ok: true; url: string } | { ok: false; error: string };
+
+/**
+ * "הזמנה עבור הלקוח" — the order link routed through main's partner-handoff
+ * endpoint, so the agent lands on the order flow with a live partner session
+ * on MAIN'S domain. Without it main's `requireAgent()` fails and both
+ * agent-paid settlement methods (agent card / voucher) are rejected server-side.
+ *
+ * Minted per click, not at list render: the token is a short-lived credential
+ * (see lib/auth/partner-handoff.ts) and must not sit for hours in the DOM of
+ * an open tab.
+ */
+export async function getAgentOrderHandoffLink(packageId: number): Promise<AgentOrderLinkResult> {
+  const session = await requirePartner();
+  // Ordering on a customer's behalf is an agent tool — mirrors main's requireAgent.
+  if (session.role !== "agent") return { ok: false, error: "זמין לסוכנים בלבד" };
+
+  const id = Number(packageId);
+  if (!Number.isFinite(id)) return { ok: false, error: "חבילה לא תקינה" };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("prepared_packages")
+    .select("event_id, share_token")
+    .eq("id", id)
+    .eq("partner_tracking_code", session.partner_code)
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.error("getAgentOrderHandoffLink:", JSON.stringify(error));
+    return { ok: false, error: "החבילה לא נמצאה" };
+  }
+
+  // Main re-verifies the token's sub against user_profiles — a partner with no
+  // portal user (possible under impersonation, where the session may carry the
+  // admin's own sub) would sail through minting and then die silently on
+  // main's side. Fail loudly here instead.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: profileRow } = await (supabase as any)
+    .from("user_profiles")
+    .select("id")
+    .eq("id", session.sub)
+    .in("role", ["agent", "affiliate"])
+    .maybeSingle();
+  if (!profileRow) {
+    return {
+      ok: false,
+      error: "לשותף אין משתמש פורטל מקושר — הזמנה בשם הלקוח דורשת חשבון שותף אמיתי",
+    };
+  }
+
+  let token: string;
+  try {
+    token = await mintPartnerHandoffToken({
+      sub: session.sub,
+      email: session.email,
+      role: "agent",
+      partner_code: session.partner_code,
+    });
+  } catch (e) {
+    // NEXT_SECRET_SESSION_SECRET missing — the plain link still works, the
+    // agent just won't get agent-mode settlement on main. Fail loudly here so
+    // the misconfiguration is visible instead of silently downgrading.
+    console.error("getAgentOrderHandoffLink mint:", e);
+    return { ok: false, error: "החתימה לא מוגדרת — פנו לתמיכה" };
+  }
+
+  const next = `/order/${data.event_id}?utm_source=${encodeURIComponent(
+    session.partner_code
+  )}&pkg=${encodeURIComponent(data.share_token)}`;
+  const url = `${PUBLIC_SITE_URL}/api/partner-handoff?token=${encodeURIComponent(
+    token
+  )}&next=${encodeURIComponent(next)}`;
+  return { ok: true, url };
 }

@@ -3,7 +3,15 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, Edit, Trash2, Eye, MoreHorizontal, Copy } from "lucide-react";
+import {
+  ArrowUpDown,
+  Edit,
+  Trash2,
+  Eye,
+  LogIn,
+  MoreHorizontal,
+  Copy,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/data-table";
@@ -22,6 +30,7 @@ import {
   type CustomerRefundPartners,
   type PartnerListItem,
 } from "@/lib/actions/partner-actions";
+import { impersonatePartner } from "@/lib/actions/impersonate-actions";
 import { describeCommission } from "@/lib/partner-commission";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import { useAuth } from "@/contexts/auth-context";
@@ -77,6 +86,34 @@ export function PartnersTable() {
   // that fail with "Unauthorized".
   const { user: me } = useAuth();
   const canManage = !!me && ADMIN_ROLES.includes(me.role);
+  const isSuperadmin = me?.role === "superadmin";
+
+  // Superadmin "login as partner": mint the /portal-scoped impersonation
+  // cookie, then open the portal in a fresh window — the dashboard session in
+  // this and every other tab is untouched (the cookie only rides on /portal).
+  const handleImpersonate = async (trackingCode: string) => {
+    // Open synchronously so popup blockers don't eat the window, navigate
+    // once the cookie is set.
+    const win = window.open("about:blank", "_blank");
+    try {
+      const result = await impersonatePartner(trackingCode);
+      if (!result.ok) {
+        win?.close();
+        toast({ variant: "destructive", title: "Error", description: result.error });
+        return;
+      }
+      if (win) win.location.href = "/portal";
+      else window.open("/portal", "_blank");
+    } catch (error) {
+      win?.close();
+      console.error("Error impersonating partner:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to open the portal as this partner.",
+      });
+    }
+  };
 
   useEffect(() => {
     async function fetchPartners() {
@@ -352,6 +389,7 @@ export function PartnersTable() {
       id: "actions",
       cell: ({ row }) => {
         const trackingCode = row.original.partner_tracking_code;
+        const type = partnerType(row.original);
 
         return (
           <AlertDialog>
@@ -377,6 +415,16 @@ export function PartnersTable() {
                       <Edit className="mr-2 h-4 w-4" />
                       <span>Edit</span>
                     </Link>
+                  </DropdownMenuItem>
+                )}
+                {/* Refund rows aren't partners — nothing to log into. */}
+                {isSuperadmin && type !== "customer_refund" && (
+                  <DropdownMenuItem
+                    className="flex items-center"
+                    onClick={() => handleImpersonate(trackingCode)}
+                  >
+                    <LogIn className="mr-2 h-4 w-4" />
+                    <span>Login as {type === "agent" ? "agent" : "affiliate"}</span>
                   </DropdownMenuItem>
                 )}
                 {canManage && (

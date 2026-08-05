@@ -126,6 +126,7 @@ export type FlightSegment = {
   stops: { iataCode: string; duration: number | null }[];
   duration: string;
   checkBagsIncluded: boolean;
+  cabinBagsIncluded: boolean;
   flightNumber?: string;
   // Offline flights only: the weight allowance behind checkBagsIncluded /
   // cabinBagsIncluded, when the supplier gave us one.
@@ -150,9 +151,29 @@ export type OrderHotel = {
   checkin: string;
   checkout: string;
   isOffline?: boolean;
+  // When isOffline: every offline_hotels.id consumed (one per room unit);
+  // offlineId kept as the first for legacy paths — mirrors main.
   offlineId?: number;
+  offlineIds?: number[];
   offlineRawPrice?: number;
+  // Display block main renders on the summary; the portal's package builder
+  // writes it too (buildHotelSnapshot).
+  hotelInformation?: {
+    hotelName: string;
+    roomName: string;
+    stars: number;
+    amenities: string[];
+    distance: number;
+  };
 };
+
+/**
+ * How an agent-entered booking gets settled — mirror of main's
+ * lib/app.types.ts (resolveAgentSettlement there). Stored on
+ * reservations.partner_settlement_method.
+ */
+export const SETTLEMENT_METHODS = ["customer_card", "agent_card", "voucher"] as const;
+export type SettlementMethod = (typeof SETTLEMENT_METHODS)[number];
 
 export type Order = {
   eventId: string;

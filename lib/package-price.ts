@@ -1,5 +1,22 @@
 import type { EventTicket } from "@/types/app.types";
 
+/**
+ * Main's pricing knobs, read from the SAME env names main uses
+ * (NEXT_PUBLIC_MARKUP, NEXT_PUBLIC_HOTEL_SKIP_MARKUP_LOW/HIGH — see myt-main
+ * lib/events/price.ts + app/order/hooks.tsx) with main's defaults. If those
+ * are ever set on main's Vercel, set them HERE too — otherwise every
+ * site_price the wizard shows silently diverges from checkout.
+ */
+const num = (raw: string | undefined, fallback: number): number => {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+};
+const GLOBAL_MARKUP = num(process.env.NEXT_PUBLIC_MARKUP, 175);
+const HOTEL_SKIP_MARKUP_LOW = num(process.env.NEXT_PUBLIC_HOTEL_SKIP_MARKUP_LOW, 100);
+const HOTEL_SKIP_MARKUP_HIGH = num(process.env.NEXT_PUBLIC_HOTEL_SKIP_MARKUP_HIGH, 150);
+/** Base-flight threshold separating LOW from HIGH hotel-skip fee (main hardcodes it). */
+const HOTEL_SKIP_FLIGHT_THRESHOLD = 550;
+
 export type PackagePriceEvent = {
   tickets_and_rates: EventTicket[] | null;
   base_flight_price: number | null;
@@ -31,7 +48,7 @@ export function computePackagePrice(
     event.markup_hotel != null;
   const markup = composed
     ? (event.markup_ticket ?? 0) + (event.markup_flight ?? 0) + (event.markup_hotel ?? 0)
-    : 175;
+    : GLOBAL_MARKUP;
   return Math.round(
     (event.base_flight_price ?? 0) +
       (event.base_hotel_price ?? 0) +
@@ -119,12 +136,18 @@ export function computePerPersonPackagePrice(
   const suppressHotelFee = event.skip_flight === true && flightSkipped && skipFlightMarkup > 0;
   const hotelSkipFee =
     hotelSkipped && !suppressHotelFee
-      ? (event.base_flight_price ?? 0) < 550
-        ? 100
-        : 150
+      ? (event.base_flight_price ?? 0) < HOTEL_SKIP_FLIGHT_THRESHOLD
+        ? HOTEL_SKIP_MARKUP_LOW
+        : HOTEL_SKIP_MARKUP_HIGH
       : 0;
   return Math.ceil(
-    ticketPrice + 175 + additional + flightComponent + hotelComponent + chargedSkipFlight + hotelSkipFee,
+    ticketPrice +
+      GLOBAL_MARKUP +
+      additional +
+      flightComponent +
+      hotelComponent +
+      chargedSkipFlight +
+      hotelSkipFee,
   );
 }
 

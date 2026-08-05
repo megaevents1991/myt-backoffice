@@ -10,12 +10,31 @@
 
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE, verifySessionValue, type SessionPayload } from "./session";
+import {
+  PORTAL_SESSION_COOKIE,
+  SESSION_COOKIE,
+  verifySessionValue,
+  type SessionPayload,
+} from "./session";
 import { STAFF_ROLES, type Role } from "@/types/auth.types";
 
-/** Verified session payload from the request cookie, or null. */
+/**
+ * Verified session payload from the request cookie, or null.
+ *
+ * The portal cookie wins when present: it is path-scoped to /portal (real
+ * partner logins and superadmin impersonation both mint it — see
+ * lib/auth/session.ts), so only portal pages and their server actions ever
+ * see it, and it coexists with a staff `session` cookie in the same browser.
+ * Restricted to partner roles so a forged/stale value can never ESCALATE
+ * above the real session.
+ */
 export async function getSession(): Promise<SessionPayload | null> {
-  const cookie = (await cookies()).get(SESSION_COOKIE);
+  const store = await cookies();
+  const portal = await verifySessionValue(store.get(PORTAL_SESSION_COOKIE)?.value);
+  if (portal && (portal.role === "agent" || portal.role === "affiliate")) {
+    return portal;
+  }
+  const cookie = store.get(SESSION_COOKIE);
   return verifySessionValue(cookie?.value);
 }
 

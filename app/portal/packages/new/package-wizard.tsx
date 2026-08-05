@@ -161,8 +161,13 @@ export function PackageWizard({
   // flight/hotel on a quantity change and walks the flow normally), so the
   // agent re-decides on the affected step instead of silently losing the pick.
   useEffect(() => {
+    searchQtyRef.current = qty;
     setFsResults(null);
     setHsResults(null);
+    // An in-flight search for the old qty will drop its response (stale
+    // guard), so its finally never runs — stop the spinners here.
+    setFsLoading(false);
+    setHsLoading(false);
     if (flightChoice.mode === "live-offer") setFlightChoice({ mode: "live" });
     if (hotelChoice.mode === "live-offer") setHotelChoice({ mode: "live" });
     if (flightChoice.mode === "live-offer" || hotelChoice.mode === "live-offer") {
@@ -191,6 +196,11 @@ export function PackageWizard({
   // Guards the inventory load against a quick event re-pick: only the LAST
   // selected event's response may land (stale flights/hotels used to win).
   const activeEventIdRef = useRef<number | null>(null);
+  // Same guard for party size: a live search issued for qty=2 must not land
+  // after the agent bumped to 4 mid-flight (Amadeus can take ~30s) — its
+  // offers are priced and seated for the old party, and the qty-change effect
+  // just cleared the lists on purpose.
+  const searchQtyRef = useRef<number>(2);
 
   const selectEvent = (e: BuilderEvent) => {
     activeEventIdRef.current = e.id;
@@ -335,8 +345,11 @@ export function PackageWizard({
   const runFlightSearch = () => {
     if (!event) return;
     const forEventId = event.id;
+    const forQty = qty;
     setFsLoading(true);
     setFsError(null);
+    const stale = () =>
+      activeEventIdRef.current !== forEventId || searchQtyRef.current !== forQty;
     searchLiveFlights({
       eventId: forEventId,
       departureDate: fsDepart,
@@ -344,7 +357,7 @@ export function PackageWizard({
       adults: qty,
     })
       .then((res) => {
-        if (activeEventIdRef.current !== forEventId) return;
+        if (stale()) return;
         if (res.ok) {
           setFsResults(res.flights);
           if (res.flights.length === 0) setFsError("לא נמצאו טיסות לתאריכים האלה");
@@ -353,11 +366,11 @@ export function PackageWizard({
         }
       })
       .catch(() => {
-        if (activeEventIdRef.current !== forEventId) return;
+        if (stale()) return;
         setFsError("החיפוש נכשל. נסו שוב.");
       })
       .finally(() => {
-        if (activeEventIdRef.current !== forEventId) return;
+        if (stale()) return;
         setFsLoading(false);
       });
   };
@@ -384,8 +397,11 @@ export function PackageWizard({
   const runHotelSearch = () => {
     if (!event) return;
     const forEventId = event.id;
+    const forQty = qty;
     setHsLoading(true);
     setHsError(null);
+    const stale = () =>
+      activeEventIdRef.current !== forEventId || searchQtyRef.current !== forQty;
     searchLiveHotels({
       eventId: forEventId,
       checkin: hsCheckin,
@@ -393,7 +409,7 @@ export function PackageWizard({
       travelers: qty,
     })
       .then((res) => {
-        if (activeEventIdRef.current !== forEventId) return;
+        if (stale()) return;
         if (res.ok) {
           setHsResults(res.options);
           if (res.options.length === 0) setHsError("לא נמצאו מלונות לתאריכים האלה");
@@ -402,11 +418,11 @@ export function PackageWizard({
         }
       })
       .catch(() => {
-        if (activeEventIdRef.current !== forEventId) return;
+        if (stale()) return;
         setHsError("החיפוש נכשל. נסו שוב.");
       })
       .finally(() => {
-        if (activeEventIdRef.current !== forEventId) return;
+        if (stale()) return;
         setHsLoading(false);
       });
   };
@@ -804,6 +820,7 @@ export function PackageWizard({
             // task, exactly like main's OrderForm.
             slots={returnToSummary ? [] : slots}
             totalPerPerson={totalPerPerson}
+            qty={qty}
             onSlotClick={(target) => {
               if (target < step) setStep(target);
               else if (target === step + 1 && !primaryDisabled) goNext();

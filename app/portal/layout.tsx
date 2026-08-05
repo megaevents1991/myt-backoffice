@@ -70,7 +70,7 @@ export default async function PortalLayout({
               </div>
             </div>
           </div>
-          <PortalNav />
+          <PortalNav role={session?.role ?? null} />
         </div>
       </header>
 

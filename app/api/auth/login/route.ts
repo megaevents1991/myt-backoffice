@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   createSessionValue,
+  PORTAL_MEMBER_HINT_COOKIE,
+  PORTAL_SESSION_COOKIE,
   SESSION_COOKIE,
   SESSION_MAX_AGE,
 } from "@/lib/auth/session";
@@ -26,22 +28,35 @@ async function respondWithSession(profile: UserProfile, request: Request) {
       display_name: profile.display_name,
     },
   });
-  response.cookies.set(
-    SESSION_COOKIE,
-    await createSessionValue({
-      sub: profile.id,
-      email: profile.email,
-      role: profile.role,
-      partner_code: profile.partner_tracking_code,
-    }),
-    {
+  const value = await createSessionValue({
+    sub: profile.id,
+    email: profile.email,
+    role: profile.role,
+    partner_code: profile.partner_tracking_code,
+  });
+  const isPartner = profile.role === "agent" || profile.role === "affiliate";
+  // Partners live in their own /portal-scoped cookie so a partner login in one
+  // tab never logs out a staff `session` in another (multi-session, same
+  // Chrome). Staff keep the site-wide cookie. See lib/auth/session.ts.
+  response.cookies.set(isPartner ? PORTAL_SESSION_COOKIE : SESSION_COOKIE, value, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: SESSION_MAX_AGE,
+    path: isPartner ? "/portal" : "/",
+  });
+  if (isPartner) {
+    // Site-wide ROUTING HINT (no auth value): lets middleware send a
+    // partner's stray /dashboard bookmark home to /portal — the path-scoped
+    // session cookie is invisible there.
+    response.cookies.set(PORTAL_MEMBER_HINT_COOKIE, "1", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       maxAge: SESSION_MAX_AGE,
       path: "/",
-    }
-  );
+    });
+  }
   return response;
 }
 

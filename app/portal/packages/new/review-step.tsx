@@ -6,13 +6,12 @@
  * ("סה"כ" + per-person, with the partner's expected commission where main
  * shows it), then a section per component with the exact עריכה chip that
  * jumps back to that step and returns straight here (returnToSummary).
- * Portal-specific tail: the allow-edit switch and the create-link CTA with
- * main's "מרכיבים את החבילה…" build animation.
+ * Portal-specific tail: the open-vs-locked radio choice and the create-link
+ * CTA with main's "מרכיבים את החבילה…" build animation.
  */
 
 import { useEffect, useState } from "react";
-import { BedDouble, Plane, Ticket, type LucideIcon } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
+import { BedDouble, Lock, Pencil, Plane, Ticket, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWizard } from "./wizard-context";
 import { dateFmt, dateOnly, deltaNote, usd, type Delta } from "./wizard-ui";
@@ -61,7 +60,7 @@ function SectionRow({
           </span>
         </span>
         <span className="shrink-0 rounded-lg border border-brand-forest px-2.5 py-1 text-[12px] font-bold text-brand-forest dark:border-brand-mint dark:text-brand-mint">
-          + לקיבוע
+          + להוספה
         </span>
       </button>
     );
@@ -342,17 +341,77 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
         </div>
       </div>
 
-      {/* Allow-edit switch — portal-specific */}
-      <div className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-card p-4 shadow-card">
-        <div>
-          <p className="text-sm font-medium">הלקוח יכול לערוך את החבילה</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {w.allowEdit
-              ? "הלקוח יוכל להחליף כרטיסים, טיסה ומלון לפני התשלום."
-              : "החבילה נעולה — הלקוח משלם על ההרכב שבניתם. רכיב שהשארתם לבחירה חיה או שהתיישן עדיין ייבחר על ידו."}
-          </p>
+      {/* Open-vs-locked choice — portal-specific. Two explicit radio cards
+          instead of a switch: the selected state is filled in the brand color
+          with a visible dot, so "which one is on" is never ambiguous. */}
+      <div
+        role="radiogroup"
+        aria-label="מה הלקוח יכול לעשות עם החבילה"
+        className="rounded-2xl border border-border bg-card p-4 shadow-card"
+      >
+        <p className="text-sm font-medium">מה הלקוח יכול לעשות עם החבילה?</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {[
+            {
+              value: true,
+              icon: Pencil,
+              title: "פתוחה לעריכה",
+              hint: "הלקוח יוכל להחליף כרטיסים, טיסה ומלון לפני התשלום.",
+            },
+            {
+              value: false,
+              icon: Lock,
+              title: "נעולה",
+              hint: "הלקוח משלם על ההרכב שבניתם. רכיב שהשארתם לבחירה חיה עדיין ייבחר על ידו.",
+            },
+          ].map((opt) => {
+            const selected = w.allowEdit === opt.value;
+            const Icon = opt.icon;
+            return (
+              <button
+                key={opt.title}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => w.setAllowEdit(opt.value)}
+                className={cn(
+                  "flex items-start gap-3 rounded-xl border-2 p-3 text-right transition-colors",
+                  selected
+                    ? "border-brand-forest bg-brand-forest/10 dark:border-brand-mint dark:bg-brand-mint/15"
+                    : "border-border hover:border-brand-forest/40 dark:hover:border-brand-mint/40",
+                )}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border-2",
+                    selected
+                      ? "border-brand-forest dark:border-brand-mint"
+                      : "border-muted-foreground/40",
+                  )}
+                >
+                  {selected && (
+                    <span className="size-2 rounded-full bg-brand-forest dark:bg-brand-mint" />
+                  )}
+                </span>
+                <span className="min-w-0">
+                  <span
+                    className={cn(
+                      "flex items-center gap-1.5 text-sm font-bold",
+                      selected
+                        ? "text-brand-forest dark:text-brand-mint"
+                        : "text-foreground",
+                    )}
+                  >
+                    <Icon className="size-3.5 shrink-0" />
+                    {opt.title}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">{opt.hint}</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
-        <Switch checked={w.allowEdit} onCheckedChange={w.setAllowEdit} />
       </div>
 
       <p className="text-xs text-muted-foreground">
