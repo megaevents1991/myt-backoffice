@@ -1,10 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { ImagePlus, Link as LinkIcon, X } from "lucide-react";
+import { removeBackground } from "@imgly/background-removal";
+import { ImagePlus, Link as LinkIcon, Loader2, Wand2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
 import { StorageImageBrowser } from "@/components/storage-image-browser";
+import { trimTransparent } from "@/components/art-blob-picker";
+import { getPublicUrl } from "@/lib/actions/storage-actions";
+import { uploadToBucket } from "@/lib/upload-helper";
 
 export function GalleryField({
   value,
@@ -13,8 +18,10 @@ export function GalleryField({
   value: string[];
   onChange: (urls: string[]) => void;
 }) {
+  const { toast } = useToast();
   const [showUrl, setShowUrl] = useState(false);
   const [url, setUrl] = useState("");
+  const [cutBusy, setCutBusy] = useState(false);
 
   const add = (urls: string[]) => {
     const merged = [...value];
@@ -25,6 +32,43 @@ export function GalleryField({
     onChange(merged);
   };
   const remove = (u: string) => onChange(value.filter((x) => x !== u));
+
+  // Same pipeline as ArtBlobPicker's "Upload + cut out": strip the background
+  // in-browser, trim the transparent margin, upload to `templates` (never the
+  // frozen legacy art_blobs bucket). Uploads that finished before a failure
+  // are still added to the gallery.
+  const handleCutFiles = async (files: File[]) => {
+    const urls: string[] = [];
+    setCutBusy(true);
+    try {
+      for (const file of files) {
+        const blob = await removeBackground(file, {
+          model: "isnet",
+          output: { format: "image/png", quality: 1 },
+        });
+        const { blob: tight } = await trimTransparent(blob);
+        const base = file.name.replace(/\.[^.]+$/, "");
+        const out = new File([tight], `${base}-cutout-${Date.now()}.png`, {
+          type: "image/png",
+        });
+        const storedPath = await uploadToBucket("templates", "", out);
+        urls.push(await getPublicUrl("templates", storedPath));
+      }
+      toast({
+        title: "Background removed",
+        description: `${urls.length} cut-out${urls.length > 1 ? "s" : ""} added to the gallery.`,
+      });
+    } catch (e: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't process image",
+        description: String((e as Error)?.message || e),
+      });
+    } finally {
+      if (urls.length) add(urls);
+      setCutBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -40,6 +84,28 @@ export function GalleryField({
             </Button>
           }
         />
+        <Button asChild variant="outline" size="sm" disabled={cutBusy} type="button">
+          <label className="cursor-pointer">
+            {cutBusy ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Wand2 className="h-4 w-4 mr-2" />
+            )}
+            {cutBusy ? "Processing…" : "Upload + cut out"}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              disabled={cutBusy}
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                e.target.value = "";
+                if (files.length) handleCutFiles(files);
+              }}
+            />
+          </label>
+        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -94,7 +160,7 @@ export function GalleryField({
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          No gallery images yet. Add from storage or by URL.
+          No gallery images yet. Add from storage, by URL, or upload + cut out.
         </p>
       )}
     </div>

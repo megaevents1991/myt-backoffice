@@ -346,7 +346,8 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
             <label className="text-sm font-medium">Gallery images</label>
             <GalleryField value={gallery} onChange={setGallery} />
             <p className="text-xs text-muted-foreground">
-              Pick multiple from any storage bucket, or paste an external URL.
+              Pick multiple from any storage bucket, paste an external URL, or
+              &quot;Upload + cut out&quot; to add a background-removed cut-out.
             </p>
           </div>
           <FormField control={form.control} name="videos" render={({ field }) => (

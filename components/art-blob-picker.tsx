@@ -97,7 +97,7 @@ const MIN_RUN = 0.002; // ≥0.2% of the row/column must be solid
 const MAX_EDGE = 2400; // long-edge cap — keeps cut-outs off the multi-MB range
 const WASTED_LIMIT = 0.1; // ≥10% empty canvas is worth a re-crop
 
-async function trimTransparent(blob: Blob): Promise<{ blob: Blob; trimmed: boolean }> {
+export async function trimTransparent(blob: Blob): Promise<{ blob: Blob; trimmed: boolean }> {
   const unchanged = { blob, trimmed: false };
   try {
     const bitmap = await createImageBitmap(blob);
@@ -289,11 +289,11 @@ export function ArtBlobPicker({
       const url = await getPublicUrl("templates", storedPath);
       onImage(url);
       toast({ title: "Background removed", description: "Cut-out uploaded." });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast({
         variant: "destructive",
         title: "Couldn't process image",
-        description: String(e?.message || e),
+        description: String((e as Error)?.message || e),
       });
     } finally {
       setBusy(false);
