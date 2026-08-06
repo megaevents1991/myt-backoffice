@@ -3,7 +3,12 @@
 import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
-import { computePackagePrice, type PackagePriceEvent } from "@/lib/package-price";
+import {
+  computePackagePrice,
+  computePerPersonPackagePrice,
+  type PackagePriceEvent,
+  type PerPersonPricingFields,
+} from "@/lib/package-price";
 import { PAID_STATUS, round2, type CommissionTerms } from "@/lib/partner-commission";
 import { signQuoteLink } from "@/lib/quote-link-sig";
 import { PUBLIC_SITE_URL } from "@/lib/site";
@@ -121,6 +126,76 @@ async function suggestedUnitPriceFor(eventId: number | null): Promise<number | n
     return null;
   }
   return data ? computePackagePrice(data as QuoteEventRow) : null;
+}
+
+/**
+ * Per-traveller price of a prepared package — the quote baseline when the
+ * quote starts from a package (מחיר היחידה חייב לשקף את ההרכבה, לא את מחיר
+ * האירוע הגנרי — a no-flight package priced $1,238 must not baseline $2,033).
+ *
+ * The stamp written at package creation wins; packages from before the stamp
+ * fall back to recomputing from the composition flags at event baselines
+ * (component upgrades unknown → delta 0). Null when the package is gone.
+ */
+async function packageBaselineFor(
+  trackingCode: string,
+  packageId: number
+): Promise<number | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("prepared_packages")
+    .select("event_id,event_order_info,flight_skipped,hotel_skipped")
+    .eq("id", packageId)
+    .eq("partner_tracking_code", trackingCode)
+    .maybeSingle();
+  if (error) {
+    console.error("packageBaselineFor:", JSON.stringify(error));
+    return null;
+  }
+  if (!data) return null;
+  const row = data as {
+    event_id: number;
+    event_order_info: {
+      price_per_person?: number;
+      price_per_ticket?: number;
+    } | null;
+    flight_skipped: boolean | null;
+    hotel_skipped: boolean | null;
+  };
+
+  const stamped = Number(row.event_order_info?.price_per_person);
+  if (Number.isFinite(stamped) && stamped > 0) return stamped;
+
+  const ticketPrice = Number(row.event_order_info?.price_per_ticket);
+  if (!Number.isFinite(ticketPrice) || ticketPrice <= 0) return null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: eventData, error: eventError } = await (supabase as any)
+    .from("events")
+    .select(
+      "base_flight_price,base_hotel_price,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,skip_flight_markup,skip_hotel_markup,ticket_only_markup"
+    )
+    .eq("id", row.event_id)
+    .maybeSingle();
+  if (eventError || !eventData) {
+    if (eventError) console.error("packageBaselineFor event:", JSON.stringify(eventError));
+    return null;
+  }
+  return computePerPersonPackagePrice(eventData as PerPersonPricingFields, {
+    ticketPrice,
+    flightSkipped: row.flight_skipped === true,
+    hotelSkipped: row.hotel_skipped === true,
+  });
+}
+
+/** The seeded unit price for the quote form's package prefill. */
+export async function getQuotePackageUnitPrice(
+  packageId: number
+): Promise<number | null> {
+  const session = await requirePartner();
+  const id = Number(packageId);
+  if (!Number.isFinite(id)) return null;
+  return packageBaselineFor(session.partner_code, id);
 }
 
 /**
@@ -284,6 +359,9 @@ export async function createQuote(input: {
    * against it, and guessing which row it is left the rule bypassable.
    */
   package?: { qty: number; unit_price: number } | null;
+  /** The prepared package the quote was seeded from — its composition price
+   *  becomes the discount baseline instead of the generic event price. */
+  package_id?: number | null;
   notes?: string | null;
   valid_until?: string | null;
   /** Site order link rendered as the PDF's pay CTA; null/absent = info-only. */
@@ -346,9 +424,16 @@ export async function createQuote(input: {
   }
 
   // Snapshot what the system would have charged per traveller, computed HERE
-  // from the event row — never taken from the client, which is the side being
-  // measured.
-  const base_unit_price = await suggestedUnitPriceFor(input.event_id ?? null);
+  // from the event/package rows — never taken from the client, which is the
+  // side being measured. A package-seeded quote baselines on the package's own
+  // composition price (H5: a no-flight package must not baseline the generic
+  // full-package figure).
+  const packageId = Number(input.package_id);
+  const packageBaseline = Number.isFinite(packageId)
+    ? await packageBaselineFor(session.partner_code, packageId)
+    : null;
+  const base_unit_price =
+    packageBaseline ?? (await suggestedUnitPriceFor(input.event_id ?? null));
 
   // An event-backed quote must carry its package row and a baseline, or the
   // discount rule has nothing to measure. Failing open here would make the cap

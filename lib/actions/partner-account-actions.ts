@@ -40,6 +40,11 @@ export interface PartnerAccountInput {
   /** Discount passed on to the partner's followers. */
   user_discount: number
   /**
+   * Agreement ceiling for commission-funded coupons, in the commission's unit.
+   * NULL = cap at the commission rate (portal-coupon-actions).
+   */
+  coupon_cap?: number | null
+  /**
    * Agent may settle a booking with a voucher instead of a card, per their
    * agreement. Meaningless for an influencer, who never books.
    */
@@ -77,6 +82,14 @@ function validate(input: PartnerAccountInput): string | null {
   if (!Number.isFinite(input.credit_per_ticket) || input.credit_per_ticket < 0) {
     return "Credit per ticket must be a non-negative number"
   }
+  if (input.coupon_cap != null) {
+    if (!Number.isFinite(input.coupon_cap) || input.coupon_cap < 0) {
+      return "Coupon cap must be a non-negative number"
+    }
+    if (input.commission_type === "percent_of_sale" && input.coupon_cap > 100) {
+      return "A percent coupon cap cannot exceed 100"
+    }
+  }
   if (input.supplier_number != null && !Number.isFinite(input.supplier_number)) {
     return "Company number (ח.פ) must be a number"
   }
@@ -91,6 +104,7 @@ function partnerRow(input: PartnerAccountInput) {
     commission: input.commission,
     commission_type: input.commission_type,
     credit_per_ticket: input.credit_per_ticket,
+    coupon_cap: input.coupon_cap ?? null,
     user_discount: input.user_discount,
     // Only an agent books, so this can never be true for an influencer.
     voucher_payment_allowed:
@@ -101,7 +115,13 @@ function partnerRow(input: PartnerAccountInput) {
   }
 }
 
+/** The coupon_cap column may not be migrated yet (PGRST204/42703). */
+function isMissingColumnError(error: { code?: string } | null | undefined): boolean {
+  return error?.code === "PGRST204" || error?.code === "42703"
+}
+
 async function findLinkedUser(trackingCode: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from("user_profiles")
     .select("id,email,role,is_active")
@@ -144,7 +164,7 @@ export async function createPartnerAccount(
     return { ok: false, error: `Tracking code "${trackingCode}" is already taken` }
   }
 
-  const { error: partnerError } = await supabase.from("partners").insert({
+  const insertRow = {
     ...partnerRow(input),
     partner_tracking_code: trackingCode,
     // Legacy plaintext column the main app reads for affiliate auth. The portal
@@ -152,7 +172,20 @@ export async function createPartnerAccount(
     // the real password, and never "" (which an equality check could match).
     password: `disabled-${crypto.randomUUID()}`,
     created_at: new Date().toISOString().slice(0, 10),
-  })
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let { error: partnerError } = await (supabase as any)
+    .from("partners")
+    .insert(insertRow)
+  if (isMissingColumnError(partnerError)) {
+    // coupon_cap not migrated yet — save the partner without it.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { coupon_cap: _skip, ...withoutCap } = insertRow
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;({ error: partnerError } = await (supabase as any)
+      .from("partners")
+      .insert(withoutCap))
+  }
   if (partnerError) {
     console.error("createPartnerAccount partner:", JSON.stringify(partnerError))
     return { ok: false, error: "Could not create the partner" }
@@ -231,10 +264,22 @@ export async function updatePartnerAccount(
     }
   }
 
-  const { error: partnerError } = await supabase
+  const updateRow = partnerRow(input)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let { error: partnerError } = await (supabase as any)
     .from("partners")
-    .update(partnerRow(input))
+    .update(updateRow)
     .eq("partner_tracking_code", trackingCode)
+  if (isMissingColumnError(partnerError)) {
+    // coupon_cap not migrated yet — update everything else.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { coupon_cap: _skip, ...withoutCap } = updateRow
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;({ error: partnerError } = await (supabase as any)
+      .from("partners")
+      .update(withoutCap)
+      .eq("partner_tracking_code", trackingCode))
+  }
   if (partnerError) {
     console.error("updatePartnerAccount partner:", JSON.stringify(partnerError))
     return { ok: false, error: "Could not update the partner" }
@@ -277,6 +322,7 @@ export async function updatePartnerAccount(
 
   // Keep the login in step: role follows the partner type, and a disabled
   // partner must not still be able to sign in.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: profileError } = await (supabase as any)
     .from("user_profiles")
     .update({
@@ -341,6 +387,7 @@ async function createPortalUser(args: {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: profileError } = await (supabase as any).from("user_profiles").insert({
     id: created.user.id,
     email: args.email,
@@ -389,13 +436,23 @@ export async function getPartnerAccount(
 ): Promise<PartnerAccount | null> {
   await requireAdmin()
 
-  const { data: partner, error } = await supabase
+  let { data: partner, error } = await supabase
     .from("partners")
     .select(
-      "partner_tracking_code,name_hebrew,email,commission,commission_type,credit_per_ticket,voucher_payment_allowed,user_discount,supplier_number,type,is_active"
+      "partner_tracking_code,name_hebrew,email,commission,commission_type,credit_per_ticket,coupon_cap,voucher_payment_allowed,user_discount,supplier_number,type,is_active"
     )
     .eq("partner_tracking_code", trackingCode)
     .maybeSingle()
+  // Migration race: coupon_cap may not exist yet.
+  if (error && error.code === "42703") {
+    ;({ data: partner, error } = await supabase
+      .from("partners")
+      .select(
+        "partner_tracking_code,name_hebrew,email,commission,commission_type,credit_per_ticket,voucher_payment_allowed,user_discount,supplier_number,type,is_active"
+      )
+      .eq("partner_tracking_code", trackingCode)
+      .maybeSingle())
+  }
   if (error) {
     console.error("getPartnerAccount:", JSON.stringify(error))
     throw error
@@ -409,6 +466,7 @@ export async function getPartnerAccount(
     commission: number
     commission_type: CommissionType | null
     credit_per_ticket: number | null
+    coupon_cap?: number | null
     voucher_payment_allowed: boolean | null
     user_discount: number
     supplier_number: number | null
@@ -416,6 +474,7 @@ export async function getPartnerAccount(
     is_active: boolean
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: profile } = await (supabase as any)
     .from("user_profiles")
     .select("id,email,phone,contract_url")
@@ -432,6 +491,7 @@ export async function getPartnerAccount(
     commission: row.commission ?? 0,
     commission_type: row.commission_type ?? "fixed_per_ticket",
     credit_per_ticket: row.credit_per_ticket ?? 0,
+    coupon_cap: row.coupon_cap ?? null,
     voucher_payment_allowed: row.voucher_payment_allowed ?? false,
     user_discount: row.user_discount ?? 0,
     supplier_number: row.supplier_number,

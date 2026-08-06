@@ -1,7 +1,7 @@
 "use server"
 
 import { cookies } from "next/headers"
-import { requireSuperadmin } from "@/lib/auth/guards"
+import { requireStaff, requireSuperadmin } from "@/lib/auth/guards"
 import {
   createSessionValue,
   PORTAL_SESSION_COOKIE,
@@ -96,5 +96,79 @@ export async function stopImpersonation(): Promise<ImpersonateResult> {
   await requireSuperadmin()
   const store = await cookies()
   store.set(PORTAL_SESSION_COOKIE, "", { maxAge: 0, path: "/portal" })
+  return { ok: true }
+}
+
+/**
+ * Dual-role self-switch (אופצייה למוד לשתי רולים כאדמין וכסוכן — 2026-08-06):
+ * a STAFF user whose own user_profiles row is linked to a partner code opens
+ * /portal as that partner. Unlike impersonatePartner this needs no superadmin —
+ * it only ever grants the caller their OWN linked partner identity. The
+ * dashboard session is untouched (path-scoped second cookie), so both modes
+ * live side by side in one browser.
+ */
+export async function switchToMyPartnerPortal(): Promise<ImpersonateResult> {
+  const staff = await requireStaff()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: profile, error: profileError } = await (supabase as any)
+    .from("user_profiles")
+    .select("partner_tracking_code")
+    .eq("id", staff.sub)
+    .maybeSingle()
+  if (profileError) {
+    console.error("switchToMyPartnerPortal profile:", JSON.stringify(profileError))
+    return { ok: false, error: "טעינת הפרופיל נכשלה" }
+  }
+  const code = (profile?.partner_tracking_code as string | null)?.trim()
+  if (!code) {
+    return {
+      ok: false,
+      error: "לחשבון הזה אין שותף מקושר. קשרו קוד שותף למשתמש במסך השותפים.",
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: partner, error } = await (supabase as any)
+    .from("partners")
+    .select("partner_tracking_code, type, is_active")
+    .eq("partner_tracking_code", code)
+    .maybeSingle()
+  if (error) {
+    console.error("switchToMyPartnerPortal partner:", JSON.stringify(error))
+    return { ok: false, error: "טעינת השותף נכשלה" }
+  }
+  if (!partner || partner.is_active === false) {
+    return { ok: false, error: "השותף המקושר אינו פעיל" }
+  }
+
+  const role = partner.type === "agent" ? "agent" : "affiliate"
+  const value = await createSessionValue(
+    {
+      sub: staff.sub,
+      email: staff.email,
+      role,
+      partner_code: code,
+    },
+    PORTAL_IMPERSONATION_MAX_AGE
+  )
+
+  const store = await cookies()
+  store.set(PORTAL_SESSION_COOKIE, value, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: PORTAL_IMPERSONATION_MAX_AGE,
+    path: "/portal",
+  })
+
+  await logAudit({
+    action: "partner.self_switch",
+    entityType: "partner",
+    entityId: code,
+    metadata: { role },
+    actor: { id: staff.sub, email: staff.email, role: staff.role },
+  })
+
   return { ok: true }
 }

@@ -21,24 +21,42 @@ import type { CommissionType } from "@/types/partner.types"
 export interface MyCouponTerms {
   type: CommissionType
   rate: number
+  /**
+   * The coupon ceiling actually enforced: the admin-set `partners.coupon_cap`
+   * (agreement semantics — discount+commission, e.g. 70 for Sagi) in the
+   * commission's unit, falling back to the commission rate when unset.
+   */
+  cap: number
 }
 
 export async function getMyCouponTerms(): Promise<MyCouponTerms | null> {
   const session = await requirePartner()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  let { data, error } = await (supabase as any)
     .from("partners")
-    .select("commission,commission_type")
+    .select("commission,commission_type,coupon_cap")
     .eq("partner_tracking_code", session.partner_code)
     .maybeSingle()
+  // Migration race: coupon_cap may not exist yet — the commission rate is the cap.
+  if (error && error.code === "42703") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;({ data, error } = await (supabase as any)
+      .from("partners")
+      .select("commission,commission_type")
+      .eq("partner_tracking_code", session.partner_code)
+      .maybeSingle())
+  }
   if (error) {
     console.error("getMyCouponTerms:", JSON.stringify(error))
     return null
   }
   if (!data) return null
+  const rate = Number(data.commission ?? 0)
+  const capRaw = Number((data as { coupon_cap?: number | null }).coupon_cap ?? NaN)
   return {
     type: (data.commission_type as CommissionType | null) ?? "fixed_per_ticket",
-    rate: Number(data.commission ?? 0),
+    rate,
+    cap: Number.isFinite(capRaw) && capRaw > 0 ? capRaw : rate,
   }
 }
 
@@ -105,7 +123,9 @@ export async function createPartnerCoupon(
   }
 
   // The cap: the coupon's unit must match the commission's unit, so the
-  // deduction can never exceed what the reservation earns.
+  // deduction stays in the same currency the reservation earns. The ceiling
+  // itself is terms.cap — the admin-set agreement cap (discount+commission,
+  // e.g. 70 for Sagi) when present, else the commission rate.
   if (terms.type === "percent_of_sale") {
     if (input.discount_type !== "percent") {
       return {
@@ -113,8 +133,8 @@ export async function createPartnerCoupon(
         error: "העמלה שלכם באחוזים — אפשר ליצור רק קופון באחוזים",
       }
     }
-    if (value > terms.rate) {
-      return { ok: false, error: `עד תקרת העמלה שלכם: ${terms.rate}%` }
+    if (value > terms.cap) {
+      return { ok: false, error: `עד התקרה שבהסכם שלכם: ${terms.cap}%` }
     }
   } else {
     if (input.discount_type !== "fixed") {
@@ -123,8 +143,8 @@ export async function createPartnerCoupon(
         error: "העמלה שלכם קבועה לכרטיס — אפשר ליצור רק קופון בסכום קבוע",
       }
     }
-    if (value > terms.rate) {
-      return { ok: false, error: `עד תקרת העמלה שלכם: $${terms.rate}` }
+    if (value > terms.cap) {
+      return { ok: false, error: `עד התקרה שבהסכם שלכם: $${terms.cap}` }
     }
   }
 

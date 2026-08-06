@@ -33,6 +33,14 @@ export interface PartnerCredit {
   returnedUsd: number
   /** What can be converted right now. */
   balanceUsd: number
+  /**
+   * How far redemptions exceed what is accrued today (0 when balanced).
+   * Happens when paid orders are re-marked Lost/Cancelled AFTER their credit
+   * was already converted — the balance floors at 0 and new accrual silently
+   * fills the hole. Surfaced so a partner sees WHY new credit "doesn't count"
+   * instead of concluding accrual is broken (אלון, 2026-08-06).
+   */
+  deficitUsd: number
   paidTickets: number
   history: PartnerCreditRedemption[]
 }
@@ -234,6 +242,7 @@ async function loadCredit(trackingCode: string): Promise<PartnerCredit> {
     redeemedUsd,
     returnedUsd,
     balanceUsd: Math.max(0, round2(accruedUsd + returnedUsd - redeemedUsd)),
+    deficitUsd: Math.max(0, round2(redeemedUsd - accruedUsd - returnedUsd)),
     // Tickets, not reservations — this sits next to the accrued amount, which
     // is priced per ticket, so a row count would contradict it.
     paidTickets: countTickets(reservations.filter(isPaid)),
@@ -255,6 +264,8 @@ export interface VoucherSettlementRow {
   amount_usd: number
   /** Days since the order was placed — the age the buckets are cut on. */
   age_days: number
+  /** Voucher lifecycle (backoffice-set): sent → received → collected; null = not sent yet. */
+  voucher_state: "sent" | "received" | "collected" | null
 }
 
 /**
@@ -297,12 +308,22 @@ export async function getMyVoucherSettlement(): Promise<VoucherSettlement> {
   if (session.role !== "agent") return empty
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  let { data, error } = await (supabase as any)
     .from("reservations")
-    .select("id,created_at,status,user_shown_price")
+    .select("id,created_at,status,user_shown_price,voucher_state")
     .eq("aff_partner_tracking_code", session.partner_code)
     .eq("partner_settlement_method", "voucher")
     .order("created_at", { ascending: true })
+  // Migration race: voucher_state may not exist yet — retry without it.
+  if (error && error.code === "42703") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;({ data, error } = await (supabase as any)
+      .from("reservations")
+      .select("id,created_at,status,user_shown_price")
+      .eq("aff_partner_tracking_code", session.partner_code)
+      .eq("partner_settlement_method", "voucher")
+      .order("created_at", { ascending: true }))
+  }
   if (error) {
     console.error("getMyVoucherSettlement:", JSON.stringify(error))
     return empty
@@ -313,6 +334,7 @@ export async function getMyVoucherSettlement(): Promise<VoucherSettlement> {
     created_at: string
     status: string | null
     user_shown_price: number | null
+    voucher_state?: "sent" | "received" | "collected" | null
   }[]
 
   const now = Date.now()
@@ -343,6 +365,7 @@ export async function getMyVoucherSettlement(): Promise<VoucherSettlement> {
       status: row.status ?? "Pending",
       amount_usd: round2(amount),
       age_days: ageDays,
+      voucher_state: row.voucher_state ?? null,
     })
   }
   return result

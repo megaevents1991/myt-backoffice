@@ -5,7 +5,11 @@ import { requirePartner } from "@/lib/auth/guards";
 import { mintPartnerHandoffToken } from "@/lib/auth/partner-handoff";
 import { supabase } from "@/lib/supabase-server";
 import { partnerLink, PUBLIC_SITE_URL } from "@/lib/site";
-import { computePackagePrice, isEventSoldOut } from "@/lib/package-price";
+import {
+  computePackagePrice,
+  computePerPersonPackagePrice,
+  isEventSoldOut,
+} from "@/lib/package-price";
 import type { TixStockListing } from "@/lib/tixstock.types";
 import type { EventTicket, EventType } from "@/types/app.types";
 
@@ -1142,7 +1146,12 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: eventData, error: eventError } = await (supabase as any)
     .from("events")
-    .select("id, name, date, location, type, tickets_and_rates, is_deleted")
+    .select(
+      "id, name, date, location, type, tickets_and_rates, is_deleted, " +
+        "base_flight_price, base_hotel_price, event_additional_markup, " +
+        "markup_ticket, markup_flight, markup_hotel, " +
+        "skip_flight, skip_flight_markup, skip_hotel_markup, ticket_only_markup",
+    )
     .eq("id", eventId)
     .maybeSingle();
 
@@ -1181,6 +1190,8 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
 
   // Flight
   let flightOrderInfo: object | null = null;
+  // Per-person component price, for the stored package price (quote baseline).
+  let flightPerPerson: number | null = null;
   const flightSkipped = input.flight.mode === "none";
   if (input.flight.mode === "live-offer") {
     // A live (Amadeus) offer has no cheap ground truth to re-verify against —
@@ -1212,6 +1223,9 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
       return { ok: false, error: "הטיסה שנבחרה אינה תקינה" };
     }
     flightOrderInfo = offer;
+    flightPerPerson =
+      Number(offer.price) /
+      Math.max(1, Number((offer as { numOfTravelers?: number }).numOfTravelers) || qty);
   }
   if (input.flight.mode === "offline") {
     const { data: flightRow, error: flightError } = await supabase
@@ -1236,10 +1250,12 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
       return { ok: false, error: "אין מספיק מקומות פנויים בטיסה שנבחרה" };
     }
     flightOrderInfo = buildFlightSnapshot(row, qty);
+    flightPerPerson = Number(row.price);
   }
 
   // Hotel
   let hotelOrderInfo: object | null = null;
+  let hotelPerPerson: number | null = null;
   const hotelSkipped = input.hotel.mode === "none";
   if (input.hotel.mode === "live-offer") {
     const offer = input.hotel.offer as {
@@ -1277,6 +1293,7 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
       return { ok: false, error: "המלון שנבחר אינו תקין" };
     }
     hotelOrderInfo = input.hotel.offer;
+    hotelPerPerson = Number(offer.price) / qty;
   }
   if (input.hotel.mode === "offline") {
     const requested = (input.hotel.units ?? []).filter((u) => u && u.count > 0);
@@ -1341,7 +1358,25 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
     }
 
     hotelOrderInfo = buildHotelSnapshot(units, meta, qty);
+    hotelPerPerson =
+      units.reduce((sum, { row, count }) => sum + Number(row.price) * count, 0) / qty;
   }
+
+  // What main will actually charge per traveller for THIS composition — the
+  // quote flow's baseline (מחיר היחידה חייב לשקף את החבילה, לא את האירוע).
+  // Deltas are the chosen component vs the event baseline, exactly like the
+  // wizard's preview; a live-picked component contributes no delta.
+  const pricePerPerson = computePerPersonPackagePrice(event, {
+    ticketPrice: Number(liveTicket.price) || 0,
+    flightSkipped,
+    hotelSkipped,
+    flightDelta:
+      flightPerPerson != null
+        ? flightPerPerson - (event.base_flight_price ?? 0)
+        : 0,
+    hotelDelta:
+      hotelPerPerson != null ? hotelPerPerson - (event.base_hotel_price ?? 0) : 0,
+  });
 
   // Opaque token — main looks packages up by this, never by the row id.
   const shareToken = crypto.randomUUID();
@@ -1351,7 +1386,7 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
     partner_tracking_code: session.partner_code,
     created_by: session.sub,
     event_id: event.id,
-    event_order_info: eventOrderInfo,
+    event_order_info: { ...eventOrderInfo, price_per_person: pricePerPerson },
     flight_order_info: flightOrderInfo,
     flight_skipped: flightSkipped,
     hotel_order_info: hotelOrderInfo,
@@ -1398,6 +1433,9 @@ export interface PreparedPackageListItem {
   category: string;
   qty: number;
   price_per_ticket: number;
+  /** Per-traveller site price of the composition (stamped at creation);
+   *  null for packages built before it existed. */
+  price_per_person: number | null;
   /** "offline" = a specific flight is attached, "live" = customer picks, "none" = no flight. */
   flight: "offline" | "live" | "none";
   flight_summary: string | null;
@@ -1419,6 +1457,8 @@ type PreparedPackageRow = {
     category?: string;
     number_of_ticket?: number;
     price_per_ticket?: number;
+    /** Per-traveller site price for THIS composition, stamped at creation. */
+    price_per_person?: number;
   } | null;
   flight_order_info: { airline?: string; outbound?: { departureTime?: string } } | null;
   flight_skipped: boolean;
@@ -1473,6 +1513,7 @@ export async function getMyPreparedPackages(): Promise<PreparedPackageListItem[]
       category: info.category ?? "",
       qty: info.number_of_ticket ?? row.num_travelers,
       price_per_ticket: info.price_per_ticket ?? 0,
+      price_per_person: info.price_per_person ?? null,
       flight: flightMode,
       flight_summary:
         flightMode === "offline"

@@ -4,7 +4,6 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Banknote,
-  CreditCard,
   FileText,
   KeyRound,
   Mail,
@@ -26,7 +25,6 @@ import {
   changeMyPassword,
   rebalanceMyCommissionSplit,
   updateMyBankDetails,
-  updateMyPaymentCard,
   updateMyPhone,
 } from "@/lib/actions/portal-profile-actions";
 import type { MyProfileDetails } from "@/lib/actions/portal-profile-actions";
@@ -48,12 +46,6 @@ export function ProfileClient({ details }: { details: MyProfileDetails }) {
     branch: details.bank_details?.branch ?? "",
     account_number: details.bank_details?.account_number ?? "",
     account_holder: details.bank_details?.account_holder ?? "",
-  });
-  const [card, setCard] = useState({
-    holder: details.payment_card?.holder ?? "",
-    brand: details.payment_card?.brand ?? "",
-    last4: details.payment_card?.last4 ?? "",
-    expiry: details.payment_card?.expiry ?? "",
   });
   const [split, setSplit] = useState({
     commission: String(details.commission),
@@ -314,56 +306,9 @@ export function ProfileClient({ details }: { details: MyProfileDetails }) {
         </CardContent>
       </Card>
 
-      {/* Payment card — masked only */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
-            כרטיס אשראי לתשלום
-          </CardTitle>
-          <CardDescription>
-            לזיהוי בלבד — 4 ספרות אחרונות. אנחנו לא שומרים מספר כרטיס מלא;
-            החיוב עצמו מתבצע מולנו טלפונית.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              placeholder="שם בעל הכרטיס"
-              value={card.holder}
-              onChange={(e) => setCard((c) => ({ ...c, holder: e.target.value }))}
-            />
-            <Input
-              placeholder="סוג (Visa / Mastercard…)"
-              value={card.brand}
-              onChange={(e) => setCard((c) => ({ ...c, brand: e.target.value }))}
-              dir="ltr"
-            />
-            <Input
-              placeholder="4 ספרות אחרונות"
-              value={card.last4}
-              maxLength={4}
-              onChange={(e) =>
-                setCard((c) => ({ ...c, last4: e.target.value.replace(/\D/g, "") }))
-              }
-              dir="ltr"
-            />
-            <Input
-              placeholder="תוקף MM/YY"
-              value={card.expiry}
-              maxLength={5}
-              onChange={(e) => setCard((c) => ({ ...c, expiry: e.target.value }))}
-              dir="ltr"
-            />
-          </div>
-          <Button
-            disabled={isPending}
-            onClick={() => run(() => updateMyPaymentCard(card), "פרטי הכרטיס נשמרו")}
-          >
-            שמרו פרטי כרטיס
-          </Button>
-        </CardContent>
-      </Card>
+      {/* כרטיס אשראי לתשלום הוסר לבקשת אלון ודור (2026-08-06) — אין תמיכה
+          בחיוב כרטיס של סוכן בשלב הזה. הפעולה updateMyPaymentCard נשארת
+          בצד השרת להחזרה קלה. */}
     </div>
   );
 }

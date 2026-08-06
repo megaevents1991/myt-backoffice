@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { Sidebar } from "@/components/sidebar";
+import { Sidebar } from "@/components/Sidebar";
 import { useToast } from "@/hooks/use-toast";
 
 export default function DashboardLayout({
@@ -14,8 +14,8 @@ export default function DashboardLayout({
 }) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
-  const [error, setError] = useState<Error | null>(null);
-  const pathname = usePathname();
+  // Error state is write-only on purpose — the handler toasts; nothing renders it.
+  const [, setError] = useState<Error | null>(null);
   const { toast } = useToast();
   const ignoredResourceErrors = useRef<Set<string>>(new Set());
 

@@ -143,7 +143,9 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                 <TableHead>מספר</TableHead>
                 <TableHead>תאריך</TableHead>
                 <TableHead>לקוח</TableHead>
-                <TableHead>אירוע</TableHead>
+                <TableHead>אמן / אירוע</TableHead>
+                <TableHead>יעד</TableHead>
+                <TableHead>תאריך האירוע</TableHead>
                 <TableHead className="text-center">כרטיסים</TableHead>
                 <TableHead className="text-center">נוסעים</TableHead>
                 <TableHead>סטטוס</TableHead>
@@ -163,19 +165,23 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                     {formatDate(reservation.created_at)}
                   </TableCell>
                   <TableCell>{reservation.customer_name || "—"}</TableCell>
-                  <TableCell className="max-w-[18rem]">
+                  <TableCell className="max-w-[14rem]">
                     <div className="truncate font-medium">
                       {reservation.event_title ?? `#${reservation.event_id}`}
                     </div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      {[
-                        reservation.event_location,
-                        reservation.event_date ? formatDate(reservation.event_date) : null,
-                        reservation.ticket_category,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
-                    </div>
+                    {reservation.ticket_category && (
+                      <div className="truncate text-xs text-muted-foreground">
+                        {reservation.ticket_category}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="max-w-[10rem]">
+                    <span className="block truncate">
+                      {reservation.event_location || "—"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {reservation.event_date ? formatDate(reservation.event_date) : "—"}
                   </TableCell>
                   <TableCell className="text-center tabular-nums">
                     {reservation.tickets || "—"}
@@ -184,9 +190,20 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                     {reservation.pax}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={isPaid(reservation) ? "default" : "outline"}>
-                      {reservation.status}
-                    </Badge>
+                    <span className="flex flex-wrap items-center gap-1">
+                      <Badge variant={isPaid(reservation) ? "default" : "outline"}>
+                        {reservation.status}
+                      </Badge>
+                      {reservation.voucher_state && (
+                        <Badge variant="secondary" className="whitespace-nowrap">
+                          {reservation.voucher_state === "sent"
+                            ? "שובר נשלח"
+                            : reservation.voucher_state === "received"
+                              ? "שובר נקלט"
+                              : "שובר נגבה"}
+                        </Badge>
+                      )}
+                    </span>
                   </TableCell>
                   <TableCell>
                     <Badge

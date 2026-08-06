@@ -35,7 +35,8 @@ export async function getReservation(id: number) {
 
 export async function createReservation(reservation: Omit<Reservation, "id" | "created_at">) {
   await requireStaff();
-  const { data, error } = await supabase.from("reservations").insert(reservation).select()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).from("reservations").insert(reservation).select()
 
   if (error) throw error
   const created = data[0] as Reservation
@@ -75,7 +76,8 @@ export async function updateReservation(id: number, reservation: Partial<Reserva
     if (prev && !RELEASED_STATUSES.has(prev.status)) toRelease = prev;
   }
 
-  const { data, error } = await supabase.from("reservations").update(reservation).eq("id", id).select()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).from("reservations").update(reservation).eq("id", id).select()
 
   if (error) throw error
   await logAudit({
@@ -86,6 +88,78 @@ export async function updateReservation(id: number, reservation: Partial<Reserva
   })
   if (toRelease) await releaseOfflineInventory(toRelease);
   return data[0] as Reservation
+}
+
+/**
+ * The voucher's own lifecycle, separate from `status` on purpose: main writes
+ * status and 'Paid' means "money collected"; the chain sent → received →
+ * collected is a backoffice-only fact (טאב התחשבנות שוברים, 2026-08-06).
+ */
+const VOUCHER_STATES = ["sent", "received", "collected"] as const;
+export type VoucherState = (typeof VOUCHER_STATES)[number];
+
+export async function setReservationVoucherState(
+  id: number,
+  state: VoucherState | null
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireStaff();
+  if (state !== null && !VOUCHER_STATES.includes(state)) {
+    return { ok: false, error: "מצב שובר לא מוכר" };
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from("reservations")
+    .update({ voucher_state: state })
+    .eq("id", id);
+  if (error) {
+    console.error("setReservationVoucherState:", JSON.stringify(error));
+    return {
+      ok: false,
+      error:
+        error.code === "42703" || error.code === "PGRST204"
+          ? "היכולת הזו תהיה זמינה אחרי עדכון המערכת"
+          : "עדכון מצב השובר נכשל",
+    };
+  }
+  await logAudit({
+    action: "update",
+    entityType: "reservation",
+    entityId: id,
+    metadata: { voucher_state: state },
+  });
+  revalidatePath(`/reservations/${id}`);
+  return { ok: true };
+}
+
+/** Staff stamp for "travel material sent to the customer" (חומר ללקוח). */
+export async function setTravelMaterialsSent(
+  id: number,
+  sent: boolean
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireStaff();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from("reservations")
+    .update({ travel_materials_sent_at: sent ? new Date().toISOString() : null })
+    .eq("id", id);
+  if (error) {
+    console.error("setTravelMaterialsSent:", JSON.stringify(error));
+    return {
+      ok: false,
+      error:
+        error.code === "42703" || error.code === "PGRST204"
+          ? "היכולת הזו תהיה זמינה אחרי עדכון המערכת"
+          : "עדכון סימון החומר נכשל",
+    };
+  }
+  await logAudit({
+    action: "update",
+    entityType: "reservation",
+    entityId: id,
+    metadata: { travel_materials_sent: sent },
+  });
+  revalidatePath(`/reservations/${id}`);
+  return { ok: true };
 }
 
 export async function updateReservationsStatus(ids: number[], status: string) {
@@ -103,7 +177,8 @@ export async function updateReservationsStatus(ids: number[], status: string) {
     );
   }
 
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
     .from("reservations")
     .update({ status })
     .in("id", ids)
@@ -135,7 +210,8 @@ export async function cancelReservation(id: number): Promise<Reservation> {
   const reservation = current as Reservation;
   if (RELEASED_STATUSES.has(reservation.status)) return reservation;
 
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
     .from("reservations")
     .update({ status: "Cancelled" })
     .eq("id", id)
@@ -164,12 +240,14 @@ async function releaseOfflineInventory(reservation: Reservation) {
       | undefined;
     const numOfTravelers = flightInfo?.numOfTravelers || 0;
     if (offlineFlightId && numOfTravelers > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: flightRow } = await (supabase as any)
         .from("flights")
         .select("consumed_quantity")
         .eq("id", offlineFlightId)
         .single();
       if (flightRow) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { error: flErr } = await (supabase as any)
           .from("flights")
           .update({
@@ -196,12 +274,14 @@ async function releaseOfflineInventory(reservation: Reservation) {
         counts.set(rowId, (counts.get(rowId) || 0) + 1);
       }
       for (const [rowId, count] of counts) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: hotelRow } = await (supabase as any)
           .from("offline_hotels")
           .select("consumed_rooms")
           .eq("id", rowId)
           .single();
         if (hotelRow) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (supabase as any)
             .from("offline_hotels")
             .update({
@@ -294,12 +374,14 @@ export async function reconcileFlightInventory(flightId: number): Promise<number
     consumed += typeof n === "number" && n > 0 ? n : 0;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: current } = await (supabase as any)
     .from("flights")
     .select("consumed_quantity")
     .eq("id", flightId)
     .single();
   if (current && current.consumed_quantity !== consumed) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: upErr } = await (supabase as any)
       .from("flights")
       .update({ consumed_quantity: consumed })
@@ -334,12 +416,14 @@ export async function reconcileHotelInventory(hotelId: number): Promise<number> 
     consumed += ids.filter((id) => id === hotelId).length;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: current } = await (supabase as any)
     .from("offline_hotels")
     .select("consumed_rooms")
     .eq("id", hotelId)
     .single();
   if (current && current.consumed_rooms !== consumed) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: upErr } = await (supabase as any)
       .from("offline_hotels")
       .update({ consumed_rooms: consumed })

@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth/guards";
 import { getPortalDashboard } from "@/lib/actions/portal-dashboard-actions";
-import { getMyCredit } from "@/lib/actions/partner-credit-actions";
+import {
+  getMyCredit,
+  getMyVoucherSettlement,
+  type VoucherSettlement,
+} from "@/lib/actions/partner-credit-actions";
 import { getPortalUserActivity } from "@/lib/actions/portal-activity-actions";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
 import { PARTNER_ROLES } from "@/types/auth.types";
@@ -62,10 +66,13 @@ export default async function PortalDashboardPage({
     : "all";
 
   const isAgent = session.role === "agent";
-  const [dashboard, credit, userActivity] = await Promise.all([
+  const [dashboard, credit, userActivity, settlement] = await Promise.all([
     getPortalDashboard(range),
     getMyCredit(),
     getPortalUserActivity(range),
+    // Agents see their open voucher settlement where the funnel card sits for
+    // influencers (הורד לבקשת אלון ודור — יש כבר שלושה משפכים למטה).
+    isAgent ? getMyVoucherSettlement() : Promise.resolve<VoucherSettlement | null>(null),
   ]);
 
   const money = [
@@ -234,42 +241,96 @@ export default async function PortalDashboardPage({
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>מהלינקים שלכם לאתר</CardTitle>
-            <CardDescription>
-              מבקרים שונים בכל שלב, מתוך מי שהגיע דרך הלינקים שלכם.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!dashboard.traffic.hasData ? (
-              <p className="py-6 text-sm text-muted-foreground">
-                עדיין לא נרשמו כניסות בתקופה הזו. הנתונים מתחילים להיאסף ברגע
-                שמישהו נכנס דרך לינק שמכיל את הקוד שלכם.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {dashboard.traffic.byStage.map((stage) => {
-                  const share = Math.round((stage.visitors / topStage) * 100);
-                  return (
-                    <div key={stage.stage} className="space-y-1">
-                      <div className="flex items-baseline justify-between text-sm">
-                        <span>{stage.label}</span>
-                        <span className="font-medium tabular-nums">{stage.visitors}</span>
-                      </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-brand-mint"
-                          style={{ width: `${share}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+        {isAgent && settlement ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>התחשבנות פתוחה</CardTitle>
+              <CardDescription>
+                שוברים לגבייה — אותם נתונים כמו בעמוד הצבירה.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">לגבייה הקרובה</p>
+                  <p className="font-display text-2xl font-bold tabular-nums">
+                    {settlement.dueSoonCount}
+                  </p>
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    {usd.format(settlement.dueSoonUsd)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-destructive/40 p-3">
+                  <p className="text-xs text-destructive">עבר מועד גבייה</p>
+                  <p className="font-display text-2xl font-bold tabular-nums text-destructive">
+                    {settlement.overdueCount}
+                  </p>
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    {usd.format(settlement.overdueUsd)}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">נפרעו</p>
+                  <p className="font-display text-2xl font-bold tabular-nums">
+                    {settlement.settledCount}
+                  </p>
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    {usd.format(settlement.settledUsd)}
+                  </p>
+                </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <Link
+                href="/portal/credit"
+                className="mt-3 inline-block text-sm text-primary underline-offset-4 hover:underline"
+              >
+                לפירוט המלא בעמוד הצבירה
+              </Link>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>מהלינקים שלכם לאתר</CardTitle>
+              <CardDescription>
+                כל המבקרים שהגיעו דרך הלינקים שלכם, לפי שלב.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!dashboard.traffic.hasData ? (
+                <p className="py-6 text-sm text-muted-foreground">
+                  עדיין לא נרשמו כניסות בתקופה הזו. הנתונים מתחילים להיאסף ברגע
+                  שמישהו נכנס דרך לינק שמכיל את הקוד שלכם.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-baseline justify-between rounded-lg border bg-muted/30 px-3 py-2">
+                    <span className="text-sm font-medium">סה&quot;כ מבקרים</span>
+                    <span className="font-display text-2xl font-bold tabular-nums">
+                      {dashboard.traffic.totalVisitors}
+                    </span>
+                  </div>
+                  {dashboard.traffic.byStage.map((stage) => {
+                    const share = Math.round((stage.visitors / topStage) * 100);
+                    return (
+                      <div key={stage.stage} className="space-y-1">
+                        <div className="flex items-baseline justify-between text-sm">
+                          <span>{stage.label}</span>
+                          <span className="font-medium tabular-nums">{stage.visitors}</span>
+                        </div>
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-brand-mint"
+                            style={{ width: `${share}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>

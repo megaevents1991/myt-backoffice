@@ -13,9 +13,21 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import type { Reservation } from "@/types/reservation.types";
-import { getReservation } from "@/lib/actions/reservation-actions";
+import {
+  getReservation,
+  setReservationVoucherState,
+  setTravelMaterialsSent,
+  type VoucherState,
+} from "@/lib/actions/reservation-actions";
 import {
   getOfflineHotelsByIds,
   type ReservationOfflineRoom,
@@ -320,6 +332,112 @@ export default function ReservationDetailsPage({
                   </p>
                 </div>
               )}
+
+              {reservation.partner_settlement_method === "voucher" && (
+                <div>
+                  <p className="text-sm font-medium">Voucher State</p>
+                  <Select
+                    value={reservation.voucher_state ?? "none"}
+                    onValueChange={async (value) => {
+                      const state =
+                        value === "none" ? null : (value as VoucherState);
+                      const result = await setReservationVoucherState(
+                        reservation.id,
+                        state
+                      );
+                      if (result.ok) {
+                        setReservation({ ...reservation, voucher_state: state });
+                        toast({ title: "מצב השובר עודכן" });
+                      } else {
+                        toast({
+                          variant: "destructive",
+                          title: "שגיאה",
+                          description: result.error,
+                        });
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="mt-1 w-56">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">לא נשלח</SelectItem>
+                      <SelectItem value="sent">שובר נשלח</SelectItem>
+                      <SelectItem value="received">שובר נקלט</SelectItem>
+                      <SelectItem value="collected">שובר נגבה</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    מצב השובר נפרד מסטטוס ההזמנה — ההזמנה נשארת לא-נפרעת עד
+                    שהשובר נגבה בפועל (ואז מסמנים Paid).
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <p className="text-sm font-medium">Travel Material (חומר ללקוח)</p>
+                {reservation.travel_materials_sent_at ? (
+                  <div className="mt-1 flex items-center gap-2">
+                    <p className="text-sm">
+                      נשלח ב-
+                      {new Date(
+                        reservation.travel_materials_sent_at
+                      ).toLocaleDateString("he-IL")}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        const result = await setTravelMaterialsSent(
+                          reservation.id,
+                          false
+                        );
+                        if (result.ok) {
+                          setReservation({
+                            ...reservation,
+                            travel_materials_sent_at: null,
+                          });
+                        } else {
+                          toast({
+                            variant: "destructive",
+                            title: "שגיאה",
+                            description: result.error,
+                          });
+                        }
+                      }}
+                    >
+                      בטל סימון
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-1"
+                    onClick={async () => {
+                      const result = await setTravelMaterialsSent(
+                        reservation.id,
+                        true
+                      );
+                      if (result.ok) {
+                        setReservation({
+                          ...reservation,
+                          travel_materials_sent_at: new Date().toISOString(),
+                        });
+                        toast({ title: "סומן שחומר הנסיעה נשלח" });
+                      } else {
+                        toast({
+                          variant: "destructive",
+                          title: "שגיאה",
+                          description: result.error,
+                        });
+                      }
+                    }}
+                  >
+                    סמן שחומר נשלח ללקוח
+                  </Button>
+                )}
+              </div>
             </div>
             <div>
               <p className="text-sm font-medium">Comments</p>
@@ -532,6 +650,7 @@ export default function ReservationDetailsPage({
                         ?.length > 0
                         ? reservation.flight_order_info.offer.travelerPricings[0].fareDetailsBySegment.some(
                             (segment: {
+                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
                               segmentId: any;
                               includedCabinBags: { quantity: number };
                             }) => segment.includedCabinBags.quantity > 0
@@ -587,6 +706,7 @@ export default function ReservationDetailsPage({
                         ?.length > 0
                         ? reservation.flight_order_info.offer.travelerPricings[0].fareDetailsBySegment.some(
                             (segment: {
+                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
                               segmentId: any;
                               includedCabinBags: { quantity: number };
                             }) => segment.includedCabinBags.quantity > 0
@@ -689,6 +809,7 @@ export default function ReservationDetailsPage({
                     <div className="space-y-2">
                       {reservation.hotel_order_info.guests.map(
                         (
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
                           room: { adults: number; children: any[] },
                           index: number
                         ) => (

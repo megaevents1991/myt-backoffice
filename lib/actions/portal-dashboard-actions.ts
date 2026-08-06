@@ -167,12 +167,12 @@ export async function getPortalDashboard(
     }),
     supabase
       .from("events")
-      .select("id,name,date,location,card_image_url,created_at")
+      .select("id,name,date,location,card_image_url,art_image_url,created_at")
       .is("is_deleted", null)
       .gte("date", today)
       .gte("created_at", newSince)
       .order("created_at", { ascending: false })
-      .limit(12),
+      .limit(24),
     fundedCouponCodesFor(code),
   ])
 
@@ -299,13 +299,14 @@ export async function getPortalDashboard(
           date: string | null
           location: { name?: string } | null
           card_image_url: string | null
+          art_image_url: string | null
         }[]
       ).map((event) => ({
         id: event.id,
         name: event.name,
         date: event.date,
         location: event.location?.name ?? null,
-        image_url: event.card_image_url,
+        image_url: event.card_image_url ?? event.art_image_url,
         href: partnerLink(code, event.id),
       }))
 

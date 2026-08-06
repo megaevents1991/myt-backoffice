@@ -56,6 +56,7 @@ type FormState = {
   commission: string;
   commission_type: CommissionType;
   credit_per_ticket: string;
+  coupon_cap: string;
   voucher_payment_allowed: boolean;
   user_discount: string;
   supplier_number: string;
@@ -72,6 +73,7 @@ const EMPTY_FORM: FormState = {
   commission: "10",
   commission_type: "fixed_per_ticket",
   credit_per_ticket: "0",
+  coupon_cap: "",
   voucher_payment_allowed: false,
   user_discount: "5",
   supplier_number: "",
@@ -127,6 +129,7 @@ export default function PartnerPage({
           commission: String(account.commission ?? 0),
           commission_type: account.commission_type,
           credit_per_ticket: String(account.credit_per_ticket ?? 0),
+          coupon_cap: account.coupon_cap == null ? "" : String(account.coupon_cap),
           voucher_payment_allowed: account.voucher_payment_allowed,
           user_discount: String(account.user_discount ?? 0),
           supplier_number: account.supplier_number?.toString() ?? "",
@@ -177,6 +180,7 @@ export default function PartnerPage({
         commission: Number(form.commission),
         commission_type: form.commission_type,
         credit_per_ticket: Number(form.credit_per_ticket),
+        coupon_cap: form.coupon_cap.trim() === "" ? null : Number(form.coupon_cap),
         voucher_payment_allowed: form.voucher_payment_allowed,
         user_discount: Number(form.user_discount),
         supplier_number: form.supplier_number ? Number(form.supplier_number) : null,
@@ -513,6 +517,26 @@ export default function PartnerPage({
                   Accrues per ticket on paid reservations, on top of the commission. The
                   partner converts the balance into a one-time coupon. 0 = not on this
                   agreement.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="coupon_cap">
+                  Coupon Cap ({form.commission_type === "percent_of_sale" ? "%" : "$"})
+                </Label>
+                <Input
+                  id="coupon_cap"
+                  name="coupon_cap"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.coupon_cap}
+                  onChange={handleChange}
+                  placeholder="Empty = commission rate"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Agreement ceiling for self-service funded coupons
+                  (discount+commission, e.g. 70). Empty caps at the commission
+                  rate. Same unit as the commission.
                 </p>
               </div>
               {/* Only an agent books on a customer's behalf, so only they can

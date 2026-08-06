@@ -29,10 +29,13 @@ import {
   Tag,
   Rss,
   ClipboardCheck,
+  ArrowLeftRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { switchToMyPartnerPortal } from "@/lib/actions/impersonate-actions";
 
 interface NavLink {
   name: string;
@@ -108,6 +111,7 @@ const navGroups: NavGroup[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
 
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
@@ -191,6 +195,27 @@ export function Sidebar() {
                 </p>
               </div>
             )}
+            {/* Dual-role: a staff user linked to a partner code opens /portal
+                as that partner in a new tab — the dashboard session stays. */}
+            <Button
+              variant="ghost"
+              className="w-full justify-start text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={async () => {
+                const result = await switchToMyPartnerPortal();
+                if (result.ok) {
+                  window.open("/portal", "_blank");
+                } else {
+                  toast({
+                    variant: "destructive",
+                    title: "מצב סוכן",
+                    description: result.error,
+                  });
+                }
+              }}
+            >
+              <ArrowLeftRight className="mr-3 h-5 w-5" />
+              מצב סוכן
+            </Button>
             <Button
               variant="ghost"
               className="w-full justify-start text-muted-foreground hover:bg-muted hover:text-foreground"

@@ -66,6 +66,14 @@ export default async function PortalCreditPage() {
                   <> · חזר לצבירה {usd.format(credit.returnedUsd)}</>
                 )}
               </p>
+              {credit.deficitUsd > 0 && (
+                <p className="mt-2 max-w-md rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  הומרו {usd.format(credit.redeemedUsd)} — יותר ממה שצבור היום,
+                  כי הזמנות ששולמו בעבר בוטלו אחרי ההמרה. צבירה חדשה מכסה קודם
+                  את הפער של {usd.format(credit.deficitUsd)}, ורק אחריו היתרה
+                  תתחיל לעלות.
+                </p>
+              )}
             </div>
             <ConvertCredit balanceUsd={credit.balanceUsd} />
           </div>
@@ -139,11 +147,22 @@ export default async function PortalCreditPage() {
                       </TableCell>
                       <TableCell className="tabular-nums">{row.age_days} ימים</TableCell>
                       <TableCell>
-                        {row.age_days > 30 ? (
-                          <Badge variant="destructive">עבר מועד</Badge>
-                        ) : (
-                          <Badge variant="outline">בהמתנה לגבייה</Badge>
-                        )}
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          {row.age_days > 30 ? (
+                            <Badge variant="destructive">עבר מועד</Badge>
+                          ) : (
+                            <Badge variant="outline">בהמתנה לגבייה</Badge>
+                          )}
+                          {row.voucher_state && (
+                            <Badge variant="secondary" className="whitespace-nowrap">
+                              {row.voucher_state === "sent"
+                                ? "שובר נשלח"
+                                : row.voucher_state === "received"
+                                  ? "שובר נקלט"
+                                  : "שובר נגבה"}
+                            </Badge>
+                          )}
+                        </span>
                       </TableCell>
                     </TableRow>
                   ))}

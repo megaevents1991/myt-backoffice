@@ -22,6 +22,7 @@ const WRITABLE_COLUMNS = [
   "commission_type",
   "user_discount",
   "credit_per_ticket",
+  "coupon_cap",
   "voucher_payment_allowed",
   "supplier_number",
   "type",
@@ -75,6 +76,12 @@ function toPartnerRow(input: Partial<PartnerInput>): Record<string, unknown> {
       case "supplier_number":
         row[column] =
           value === "" || value == null ? null : assertMoney("supplier_number", value)
+        break
+      // Nullable ceiling — empty means "no agreement cap, fall back to the
+      // commission rate" (portal-coupon-actions.getMyCouponTerms).
+      case "coupon_cap":
+        row[column] =
+          value === "" || value == null ? null : assertMoney("coupon_cap", value)
         break
       case "voucher_payment_allowed":
       case "is_active":
@@ -212,7 +219,8 @@ export async function createPartner(partner: PartnerInput & { partner_tracking_c
     partner_tracking_code: trackingCode,
     created_at: new Date().toISOString().slice(0, 10),
   }
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
     .from("partners")
     .insert(row)
     .select(LIST_COLUMNS)
@@ -234,7 +242,8 @@ export async function updatePartner(trackingCode: string, partner: Partial<Partn
   await requireStaff();
   const row = toPartnerRow(partner)
   const before = await fetchBefore("partners", "partner_tracking_code", trackingCode, row)
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
     .from("partners")
     .update(row)
     .eq("partner_tracking_code", trackingCode)
@@ -313,7 +322,8 @@ export async function duplicatePartner(trackingCode: string, opts?: { skipAudit?
     created_at: new Date().toISOString().slice(0, 10),
   }
 
-  const { data: insertedData, error: insertError } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: insertedData, error: insertError } = await (supabase as any)
     .from("partners")
     .insert(row)
     .select(LIST_COLUMNS)

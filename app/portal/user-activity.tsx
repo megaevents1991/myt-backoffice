@@ -83,7 +83,17 @@ function UserBlock({
             </TableHeader>
             <TableBody>
               {simulations.map((sim, index) => (
-                <TableRow key={index}>
+                <TableRow
+                  key={index}
+                  className={
+                    // הוזמנה ושולמה — ירוק; הוזמנה וממתינה — כחול בהיר.
+                    sim.order === "paid"
+                      ? "bg-emerald-100/70 hover:bg-emerald-100"
+                      : sim.order === "pending"
+                        ? "bg-sky-100/70 hover:bg-sky-100"
+                        : undefined
+                  }
+                >
                   <TableCell className="max-w-[16rem]">
                     <div className="truncate font-medium">
                       {sim.event || "לא זוהה אירוע"}
@@ -110,7 +120,15 @@ function UserBlock({
                   <TableCell className="text-sm">{stepLabel(sim.flight)}</TableCell>
                   <TableCell className="text-sm">{stepLabel(sim.hotel)}</TableCell>
                   <TableCell>
-                    {sim.confirmed ? (
+                    {sim.order === "paid" ? (
+                      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                        הוזמן · שולם
+                      </Badge>
+                    ) : sim.order === "pending" ? (
+                      <Badge className="bg-sky-500 text-white hover:bg-sky-500">
+                        הוזמן · ממתין
+                      </Badge>
+                    ) : sim.confirmed ? (
                       <Badge>הגיעו לתשלום</Badge>
                     ) : (
                       <Badge variant="outline">בדקו</Badge>

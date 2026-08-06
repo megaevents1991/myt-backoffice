@@ -158,6 +158,12 @@ export interface UserSimulation {
   flight: "chosen" | "skipped" | null
   hotel: "chosen" | "skipped" | null
   confirmed: boolean
+  /**
+   * A real reservation matched to this simulation (same partner, same event,
+   * created within 48h of it): paid → the row paints green, pending → light
+   * blue. Same attribution rule the funnels use — best effort, not a receipt.
+   */
+  order: "paid" | "pending" | null
   last_seen: string
 }
 
@@ -205,6 +211,7 @@ function foldSimulations(rows: TrackingRow[]): UserSimulation[] {
       flight: null,
       hotel: null,
       confirmed: false,
+      order: null,
       last_seen: row.created_at,
     }
     sims.push(sim)
@@ -255,6 +262,48 @@ function foldSimulations(rows: TrackingRow[]): UserSimulation[] {
   return sims.reverse() // newest simulation first
 }
 
+/** Reservation slice used to paint simulation rows that became real orders. */
+type OrderMatchRow = {
+  status: string | null
+  created_at: string | null
+  event_order_info: ReservationEventOrderInfo | null
+}
+
+const ORDER_MATCH_WINDOW_MS = 48 * 3_600_000
+
+/** Paint sims that turned into orders — same partner, same event, ±48h. */
+function annotateOrders(sims: UserSimulation[], orders: OrderMatchRow[]): void {
+  if (orders.length === 0) return
+  const parsed = orders
+    .map((order) => ({
+      status: order.status,
+      at: Date.parse(order.created_at ?? ""),
+      names: normalizeReservationEventOrderInfo(order.event_order_info)
+        .map((event) => (event?.name ?? "").trim().toLowerCase())
+        .filter(Boolean),
+    }))
+    .filter((order) => Number.isFinite(order.at) && order.names.length > 0)
+
+  for (const sim of sims) {
+    const simName = (sim.event ?? "").trim().toLowerCase()
+    if (!simName) continue
+    const simAt = Date.parse(sim.last_seen)
+    if (!Number.isFinite(simAt)) continue
+    for (const order of parsed) {
+      if (!order.names.includes(simName)) continue
+      if (Math.abs(order.at - simAt) > ORDER_MATCH_WINDOW_MS) continue
+      // Paid wins over pending when both match the same simulation.
+      if (order.status === PAID_STATUS) {
+        sim.order = "paid"
+        break
+      }
+      if (sim.order == null && order.status !== "Cancelled" && order.status !== "Lost") {
+        sim.order = "pending"
+      }
+    }
+  }
+}
+
 export async function getPortalUserActivity(
   range: InsightsRange = "30d"
 ): Promise<PortalUserActivity> {
@@ -277,11 +326,38 @@ export async function getPortalUserActivity(
   if (from) query = query.gte("created_at", from)
   if (to) query = query.lt("created_at", to)
 
-  const { data, error } = await query
+  // Orders are matched ±48h around a simulation, so widen the fetch window by
+  // that much on each side — a range-edge simulation still finds its order.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let ordersQuery = (supabase as any)
+    .from("reservations")
+    .select("status,created_at,event_order_info")
+    .eq("aff_partner_tracking_code", session.partner_code)
+    .order("created_at", { ascending: false })
+    .limit(500)
+  if (from) {
+    ordersQuery = ordersQuery.gte(
+      "created_at",
+      new Date(Date.parse(from) - ORDER_MATCH_WINDOW_MS).toISOString()
+    )
+  }
+  if (to) {
+    ordersQuery = ordersQuery.lt(
+      "created_at",
+      new Date(Date.parse(to) + ORDER_MATCH_WINDOW_MS).toISOString()
+    )
+  }
+
+  const [{ data, error }, ordersResult] = await Promise.all([query, ordersQuery])
   if (error) {
     console.error("getPortalUserActivity:", JSON.stringify(error))
     return { users: [], truncated: false }
   }
+  if (ordersResult.error) {
+    // Row painting is decoration — the log still renders without it.
+    console.error("getPortalUserActivity orders:", JSON.stringify(ordersResult.error))
+  }
+  const orderRows = (ordersResult.data ?? []) as OrderMatchRow[]
 
   const rows = (data ?? []) as TrackingRow[]
   const byUser = new Map<string, TrackingRow[]>()
@@ -296,6 +372,7 @@ export async function getPortalUserActivity(
   for (const [userId, userRows] of byUser) {
     const simulations = foldSimulations(userRows)
     if (simulations.length === 0) continue
+    annotateOrders(simulations, orderRows)
     users.push({
       user_id: userId,
       last_seen: userRows[userRows.length - 1].created_at,

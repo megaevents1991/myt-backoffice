@@ -55,11 +55,17 @@ type LineItemRow = {
 };
 
 export interface QuotePrefill {
+  /** The prepared package the quote is built from — its id rides to the
+   *  server so the discount baseline is the package price, not the event's. */
+  packageId: number;
   eventId: number;
   qty: number;
   note: string;
   /** The package's coded order link — offered as the PDF's pay CTA. */
   paymentLink: string;
+  /** Per-traveller price of the package composition (the seeded unit price
+   *  AND the baseline the discount is measured against). */
+  unitPrice: number | null;
 }
 
 export function QuoteForm({
@@ -110,7 +116,11 @@ export function QuoteForm({
           {
             label: `חבילה: ${prefillEvent.name}`,
             qty: String(prefill?.qty ?? 1),
-            unit_price: String(prefillEvent.suggested_price ?? 0),
+            // The package's own composition price when seeded from one — the
+            // generic event price overstated no-flight packages (H5).
+            unit_price: String(
+              prefill?.unitPrice ?? prefillEvent.suggested_price ?? 0,
+            ),
             _key: newKey(),
             fromEvent: true,
           },
@@ -178,9 +188,18 @@ export function QuoteForm({
   // margin.
   const packageRow = lineItems.find((item) => item.fromEvent);
   const packageQty = Number(packageRow?.qty);
+
+  // The prefill's package baseline holds only while its event stays selected —
+  // switching events falls back to that event's generic price.
+  const packagePrefillActive =
+    prefill != null && eventId === String(prefill.eventId);
+  const baseUnit = packagePrefillActive
+    ? (prefill.unitPrice ?? selectedEvent?.suggested_price ?? null)
+    : (selectedEvent?.suggested_price ?? null);
+
   const basePrice =
-    selectedEvent?.suggested_price != null && Number.isFinite(packageQty) && packageQty > 0
-      ? selectedEvent.suggested_price * packageQty
+    baseUnit != null && Number.isFinite(packageQty) && packageQty > 0
+      ? baseUnit * packageQty
       : null;
   const delta = basePrice == null ? null : Math.round((total - basePrice) * 100) / 100;
 
@@ -189,7 +208,6 @@ export function QuoteForm({
   // Per traveller, matching the server. For a percentage the commission is
   // paid on the DISCOUNTED price, so the largest legal discount d solves
   // d = (base - d) * r/100  →  d = base*r / (100 + r).
-  const baseUnit = selectedEvent?.suggested_price ?? null;
   const maxDiscountPerTraveller =
     baseUnit == null || !terms
       ? null
@@ -263,6 +281,9 @@ export function QuoteForm({
           packageRow && Number.isFinite(packageUnitPrice)
             ? { qty: Number(packageRow.qty) || 1, unit_price: packageUnitPrice }
             : null,
+        // The server re-derives the package's composition price as the
+        // baseline — the id is a pointer, never a price.
+        package_id: packagePrefillActive ? prefill.packageId : null,
         notes: notes.trim() || null,
         valid_until: validUntil || null,
         payment_link:

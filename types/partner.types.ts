@@ -70,6 +70,12 @@ export type Partner = {
    */
   credit_per_ticket: number
   user_discount: number
+  /**
+   * Agreement ceiling for commission-funded coupons, in the commission's unit
+   * (percent partners: %, fixed: $ per ticket). NULL = cap at the commission
+   * rate. Semantics: discount+commission from the agreement (e.g. 70 for Sagi).
+   */
+  coupon_cap?: number | null
   /** Agent may settle a booking with a voucher, per their agreement. */
   voucher_payment_allowed: boolean
   /** The partner's company/VAT number (ח.פ), printed on the monthly report. */

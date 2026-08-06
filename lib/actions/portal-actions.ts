@@ -74,8 +74,11 @@ export interface PortalReservation {
   pax: number;
   /** Ours to quote back at us — staff-entered, may be empty. */
   booking_reference: string | null;
-  /** Whether the customer's confirmation went out. */
+  /** Travel material sent — the staff stamp, falling back to the
+   *  confirmation-email flag for rows from before the stamp existed. */
   materials_sent: boolean;
+  /** Voucher lifecycle for voucher-settled orders (sent/received/collected). */
+  voucher_state: "sent" | "received" | "collected" | null;
   /** What this booking earns the partner. Zero until it is paid. */
   commission_usd: number;
   /** True once it has gone out in a monthly report. */
@@ -265,7 +268,7 @@ const PORTAL_RESERVATION_COLUMNS =
  *  settlement marker). Selected separately so a not-yet-migrated DB can fall
  *  back to the legacy select instead of blanking the whole page. */
 const PORTAL_RESERVATION_SOURCE_COLUMNS =
-  ",partner_settlement_method,source_share_token,quote_id";
+  ",partner_settlement_method,source_share_token,quote_id,voucher_state,travel_materials_sent_at";
 
 export async function getPortalReservations(): Promise<PortalReservationsPage> {
   const session = await requirePartner();
@@ -332,6 +335,8 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
     partner_settlement_method?: string | null;
     source_share_token?: string | null;
     quote_id?: number | null;
+    voucher_state?: "sent" | "received" | "collected" | null;
+    travel_materials_sent_at?: string | null;
   };
 
   const all = (reservationsResult.data ?? []) as Row[];
@@ -362,7 +367,11 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
       // booker. Every other pax count in this repo does the same.
       pax: 1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0),
       booking_reference: r.booking_reference,
-      materials_sent: r.confirmation_email_sent === true,
+      // Real staff stamp when set; the confirmation-email flag is the legacy
+      // stand-in (מאיפה המידע? — אלון, 2026-08-06).
+      materials_sent:
+        r.travel_materials_sent_at != null || r.confirmation_email_sent === true,
+      voucher_state: r.voucher_state ?? null,
       commission_usd: round2(commissionForReservation(r, terms)),
       billed: !!r.billed_at,
       is_hold: r.status === HOLD_STATUS,

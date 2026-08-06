@@ -29,9 +29,9 @@ export function CreateCoupon({ terms }: { terms: MyCouponTerms }) {
   const [maxUses, setMaxUses] = useState("1");
 
   const isPercent = terms.type === "percent_of_sale";
-  const capLabel = isPercent ? `${terms.rate}%` : `$${terms.rate}`;
+  const capLabel = isPercent ? `${terms.cap}%` : `$${terms.cap}`;
 
-  if (!Number.isFinite(terms.rate) || terms.rate <= 0) return null;
+  if (!Number.isFinite(terms.cap) || terms.cap <= 0) return null;
 
   const submit = () => {
     startTransition(async () => {
@@ -63,7 +63,7 @@ export function CreateCoupon({ terms }: { terms: MyCouponTerms }) {
           קופון הנחה על חשבון העמלה
         </CardTitle>
         <CardDescription>
-          תנו ללקוח הנחה נוספת כשהוא משלם באתר — עד תקרת העמלה שלכם ({capLabel}
+          תנו ללקוח הנחה נוספת כשהוא משלם באתר — עד התקרה שבהסכם שלכם ({capLabel}
           {isPercent ? "" : " לכרטיס"}).
         </CardDescription>
       </CardHeader>
@@ -79,10 +79,10 @@ export function CreateCoupon({ terms }: { terms: MyCouponTerms }) {
             <Input
               type="number"
               min={1}
-              max={terms.rate}
+              max={terms.cap}
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder={isPercent ? `עד ${terms.rate}` : `עד ${terms.rate}`}
+              placeholder={`עד ${terms.cap}`}
             />
           </label>
           <label className="space-y-1 text-sm">

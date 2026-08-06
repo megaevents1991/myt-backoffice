@@ -68,5 +68,9 @@ export type Reservation = {
   partner_settlement_method?: import("./app.types").SettlementMethod | null;
   // ILS subtracted from final_purchase_price_ils before charging, agent_card only.
   agent_card_discount_ils?: number | null;
+  // Voucher lifecycle, separate from `status` (backoffice-only): sent → received → collected.
+  voucher_state?: "sent" | "received" | "collected" | null;
+  // Staff stamp — travel material sent to the customer (חומר ללקוח in the portal).
+  travel_materials_sent_at?: string | null;
 }
 

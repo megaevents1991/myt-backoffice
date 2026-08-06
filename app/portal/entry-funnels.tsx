@@ -147,10 +147,10 @@ function EntryFunnelCard({
                         </span>
                       )}
                     </span>
-                    <span className="shrink-0 font-medium tabular-nums">
-                      {row.visitors ?? "—"}
+                    <span className="flex shrink-0 items-baseline gap-3 font-medium tabular-nums">
+                      <span>{row.visitors ?? "—"}</span>
                       {pct != null && row.key !== "VISIT" && (
-                        <span className="ms-2 text-xs text-muted-foreground">
+                        <span className="text-xs text-muted-foreground">
                           {row.precise ? preciseShare(pct) : Math.round(pct)}%
                         </span>
                       )}
