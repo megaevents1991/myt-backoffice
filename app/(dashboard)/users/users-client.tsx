@@ -115,10 +115,12 @@ function PartnerCombobox({
   value,
   onChange,
   partners,
+  clearable = false,
 }: {
   value: string;
   onChange: (code: string) => void;
   partners: PartnerListItem[];
+  clearable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const selected = partners.find((p) => p.partner_tracking_code === value);
@@ -141,6 +143,18 @@ function PartnerCombobox({
           <CommandList>
             <CommandEmpty>No partner found</CommandEmpty>
             <CommandGroup>
+              {clearable && value && (
+                <CommandItem
+                  value="__clear__"
+                  onSelect={() => {
+                    setOpen(false);
+                    onChange("");
+                  }}
+                >
+                  <Check className="mr-2 h-4 w-4 opacity-0" />
+                  — No partner —
+                </CommandItem>
+              )}
               {partners.map((p) => (
                 <CommandItem
                   key={p.partner_tracking_code}
@@ -255,10 +269,9 @@ export function UsersClient({
       return;
     }
 
-    // Only partner roles carry a partner link — never persist a stale code.
-    const partnerCode = PARTNER_ROLES.includes(form.role)
-      ? form.partner_tracking_code || null
-      : null;
+    // Partner roles REQUIRE a partner link; staff roles may carry one too —
+    // it lights up "מצב סוכן" in the sidebar (dual-role: admin + own portal).
+    const partnerCode = form.partner_tracking_code || null;
 
     startTransition(async () => {
       let targetId: string | null;
@@ -525,15 +538,9 @@ export function UsersClient({
               <Select
                 value={form.role}
                 onValueChange={(v) => {
-                  const role = v as Role;
-                  setForm({
-                    ...form,
-                    role,
-                    // Staff roles have no partner link — drop any stale code.
-                    partner_tracking_code: PARTNER_ROLES.includes(role)
-                      ? form.partner_tracking_code
-                      : "",
-                  });
+                  // The partner link survives role changes — staff roles keep
+                  // it as an optional dual-role link.
+                  setForm({ ...form, role: v as Role });
                 }}
               >
                 <SelectTrigger>
@@ -549,18 +556,23 @@ export function UsersClient({
               </Select>
             </div>
 
-            {needsPartner && (
-              <div className="space-y-1.5">
-                <Label>Partner</Label>
-                <PartnerCombobox
-                  value={form.partner_tracking_code}
-                  onChange={(code) =>
-                    setForm({ ...form, partner_tracking_code: code })
-                  }
-                  partners={partners}
-                />
-              </div>
-            )}
+            <div className="space-y-1.5">
+              <Label>{needsPartner ? "Partner" : "Partner (optional — dual-role)"}</Label>
+              <PartnerCombobox
+                value={form.partner_tracking_code}
+                onChange={(code) =>
+                  setForm({ ...form, partner_tracking_code: code })
+                }
+                partners={partners}
+                clearable={!needsPartner}
+              />
+              {!needsPartner && (
+                <p className="text-xs text-muted-foreground">
+                  קישור שותף למשתמש צוות מדליק לו את &quot;מצב סוכן&quot; בתפריט —
+                  הדשבורד נשאר, והפורטל נפתח כהשותף המקושר.
+                </p>
+              )}
+            </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="user-phone">Phone</Label>

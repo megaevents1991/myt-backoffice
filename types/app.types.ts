@@ -57,6 +57,9 @@ export type Event = {
   // the backoffice never sets it.
   locked_flight_sold_out?: boolean;
   is_deleted: string;
+  // QA-only events: main keeps them orderable by direct /order/{id} link but
+  // filters them from every listing, search, category and feed surface.
+  is_test?: boolean;
   tags: string;
   tx_excluded_sections?: string[];
   // Extra event-level markup (USD) added to this event.
