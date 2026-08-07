@@ -143,12 +143,26 @@ export async function switchToMyPartnerPortal(): Promise<ImpersonateResult> {
   }
 
   const role = partner.type === "agent" ? "agent" : "affiliate"
+
+  // Prefer the partner's real portal login identity when one exists — flows
+  // keyed on `sub` (main-site handoff, profile actions) then behave exactly as
+  // they do for the partner. Mirrors impersonatePartner; the staff user stays
+  // on the session as `impersonator` so the audit trail names the real actor.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: portalUser } = await (supabase as any)
+    .from("user_profiles")
+    .select("id, email")
+    .eq("partner_tracking_code", code)
+    .in("role", ["agent", "affiliate"])
+    .maybeSingle()
+
   const value = await createSessionValue(
     {
-      sub: staff.sub,
-      email: staff.email,
+      sub: (portalUser?.id as string) || staff.sub,
+      email: (portalUser?.email as string) || staff.email,
       role,
       partner_code: code,
+      impersonator: { sub: staff.sub, email: staff.email },
     },
     PORTAL_IMPERSONATION_MAX_AGE
   )
