@@ -333,7 +333,10 @@ export async function getPortalUserActivity(
         "flight:data->data->>flight,hotel:data->data->>hotel"
     )
     .eq("affiliate_id", session.partner_code)
-    .order("created_at", { ascending: true })
+    // NEWEST first — with a big history (שגיא) an ascending scan hit the
+    // 8000-row cap on ANCIENT rows and the log showed years-old users while
+    // this week's traffic (and its orders) never made it in (2026-08-09).
+    .order("created_at", { ascending: false })
     .limit(ACTIVITY_SCAN_LIMIT)
   if (from) query = query.gte("created_at", from)
   if (to) query = query.lt("created_at", to)
@@ -382,16 +385,29 @@ export async function getPortalUserActivity(
 
   const users: UserActivityGroup[] = []
   for (const [userId, userRows] of byUser) {
-    const simulations = foldSimulations(userRows)
+    // The scan is newest-first; folding walks a user's story chronologically.
+    const chronological = [...userRows].reverse()
+    const simulations = foldSimulations(chronological)
     if (simulations.length === 0) continue
     annotateOrders(simulations, orderRows)
     users.push({
       user_id: userId,
-      last_seen: userRows[userRows.length - 1].created_at,
+      last_seen: chronological[chronological.length - 1].created_at,
       simulations,
     })
   }
-  users.sort((a, b) => (a.last_seen < b.last_seen ? 1 : -1))
+  // Users who ORDERED float to the top (paid, then pending) — the green/blue
+  // rows are the whole point of the log, and buried below 40 recent browsers
+  // nobody ever saw them (אלון+דור, 2026-08-09). Recency breaks ties.
+  const tier = (user: UserActivityGroup) =>
+    user.simulations.some((sim) => sim.order === "paid")
+      ? 0
+      : user.simulations.some((sim) => sim.order === "pending")
+        ? 1
+        : 2
+  users.sort(
+    (a, b) => tier(a) - tier(b) || (a.last_seen < b.last_seen ? 1 : -1)
+  )
 
   return {
     users: users.slice(0, MAX_USERS),
