@@ -4,15 +4,18 @@ import type { PortalActivityType } from "@/lib/actions/portal-activity-actions";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  BadgePercent,
   CheckCircle2,
   ClipboardList,
   FileText,
   Link2,
+  TicketPercent,
   type LucideIcon,
 } from "lucide-react";
 
 /** The עדכונים tab — a derived feed of what happened around this partner:
- *  quote created, package link created, order entered, order paid. */
+ *  quote created, package link created, order entered, order paid, coupon
+ *  issued / redeemed. */
 
 const TYPE_META: Record<
   PortalActivityType,
@@ -22,6 +25,8 @@ const TYPE_META: Record<
   package_created: { icon: Link2, badgeClass: "bg-secondary/25 text-primary" },
   order_created: { icon: ClipboardList, badgeClass: "bg-muted text-muted-foreground" },
   order_paid: { icon: CheckCircle2, badgeClass: "bg-brand-mint/30 text-primary" },
+  coupon_created: { icon: TicketPercent, badgeClass: "bg-secondary/25 text-primary" },
+  coupon_redeemed: { icon: BadgePercent, badgeClass: "bg-brand-mint/30 text-primary" },
 };
 
 function formatDateTime(value: string): string {

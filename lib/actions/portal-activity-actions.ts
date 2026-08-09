@@ -30,6 +30,8 @@ export type PortalActivityType =
   | "package_created"
   | "order_created"
   | "order_paid"
+  | "coupon_created"
+  | "coupon_redeemed"
 
 export interface PortalActivityItem {
   type: PortalActivityType
@@ -44,36 +46,47 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
   const session = await requirePartner()
   const code = session.partner_code
 
-  const [quotesResult, packagesResult, reservationsResult] = await Promise.all([
-    session.role === "agent"
-      ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (supabase as any)
-          .from("quotes")
-          .select("id,created_at,customer_name,title")
-          .eq("partner_tracking_code", code)
-          .order("created_at", { ascending: false })
-          .limit(FEED_LIMIT)
-      : Promise.resolve({ data: [], error: null }),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
-      .from("prepared_packages")
-      .select("id,created_at,event_order_info")
-      .eq("partner_tracking_code", code)
-      .order("created_at", { ascending: false })
-      .limit(FEED_LIMIT),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
-      .from("reservations")
-      .select("id,created_at,status,main_contact_first_name,event_order_info,voucher_state")
-      .eq("aff_partner_tracking_code", code)
-      .order("created_at", { ascending: false })
-      .limit(FEED_LIMIT),
-  ])
+  const [quotesResult, packagesResult, reservationsResult, couponsResult] =
+    await Promise.all([
+      session.role === "agent"
+        ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (supabase as any)
+            .from("quotes")
+            .select("id,created_at,customer_name,title")
+            .eq("partner_tracking_code", code)
+            .order("created_at", { ascending: false })
+            .limit(FEED_LIMIT)
+        : Promise.resolve({ data: [], error: null }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from("prepared_packages")
+        .select("id,created_at,event_order_info")
+        .eq("partner_tracking_code", code)
+        .order("created_at", { ascending: false })
+        .limit(FEED_LIMIT),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from("reservations")
+        .select(
+          "id,created_at,status,main_contact_first_name,event_order_info,voucher_state,coupon_code"
+        )
+        .eq("aff_partner_tracking_code", code)
+        .order("created_at", { ascending: false })
+        .limit(FEED_LIMIT),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from("coupons")
+        .select("code,created_at,discount_type,discount_value,funded_by_commission")
+        .eq("partner_tracking_code", code)
+        .order("created_at", { ascending: false })
+        .limit(FEED_LIMIT),
+    ])
 
   for (const [label, result] of [
     ["quotes", quotesResult],
     ["packages", packagesResult],
     ["reservations", reservationsResult],
+    ["coupons", couponsResult],
   ] as const) {
     if (result.error) {
       console.error(`getPortalActivityFeed ${label}:`, JSON.stringify(result.error))
@@ -112,6 +125,33 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
     })
   }
 
+  // Coupon lifecycle: created here in the portal, redeemed when a customer's
+  // order carries the code (שובר הנחה — הונפק / בשימוש; דור, 2026-08-09).
+  const myCoupons = (couponsResult.data ?? []) as {
+    code: string | null
+    created_at: string | null
+    discount_type: string | null
+    discount_value: number | null
+    funded_by_commission?: boolean | null
+  }[]
+  const myCouponCodes = new Set(
+    myCoupons.map((coupon) => (coupon.code ?? "").trim().toUpperCase()).filter(Boolean)
+  )
+  for (const coupon of myCoupons) {
+    if (!coupon.code || !coupon.created_at) continue
+    const value =
+      coupon.discount_type === "percent"
+        ? `${coupon.discount_value ?? 0}% הנחה`
+        : `$${coupon.discount_value ?? 0} הנחה`
+    items.push({
+      type: "coupon_created",
+      at: coupon.created_at,
+      title: `קופון ${coupon.code} הונפק`,
+      subtitle:
+        value + (coupon.funded_by_commission ? " · במימון העמלה" : ""),
+    })
+  }
+
   for (const reservation of (reservationsResult.data ?? []) as {
     id: number
     created_at: string
@@ -119,6 +159,7 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
     main_contact_first_name: string | null
     event_order_info: ReservationEventOrderInfo | null
     voucher_state?: "sent" | "received" | "collected" | null
+    coupon_code?: string | null
   }[]) {
     const eventName =
       normalizeReservationEventOrderInfo(reservation.event_order_info)[0]?.name ?? null
@@ -148,6 +189,18 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
           : `הזמנה #${reservation.id} נכנסה`,
       subtitle,
     })
+
+    // One of THIS partner's coupons spent on the order — its own beat.
+    const usedCode = (reservation.coupon_code ?? "").trim().toUpperCase()
+    if (usedCode && myCouponCodes.has(usedCode)) {
+      items.push({
+        type: "coupon_redeemed",
+        at: reservation.created_at,
+        title: `קופון ${usedCode} מומש`,
+        subtitle:
+          [`הזמנה #${reservation.id}`, eventName].filter(Boolean).join(" · ") || null,
+      })
+    }
   }
 
   return items
@@ -283,9 +336,21 @@ type OrderMatchRow = {
 
 const ORDER_MATCH_WINDOW_MS = 48 * 3_600_000
 
-/** Paint sims that turned into orders — same partner, same event, ±48h. */
-function annotateOrders(sims: UserSimulation[], orders: OrderMatchRow[]): void {
-  if (orders.length === 0) return
+/**
+ * Paint sims that turned into orders — same partner, same event, ±48h — with
+ * each order claiming EXACTLY ONE simulation (the nearest in time).
+ *
+ * The tracking rows and reservations share no user key (gtmIdnts holds GA/FB
+ * ids, not the tracking uuid), so the match is heuristic. The first version
+ * let one paid order paint EVERY browser of that event green — שגיא's log
+ * showed 40 "שולם" rows off a couple of real orders (2026-08-09). Consuming
+ * one sim per order keeps the count honest: N orders → at most N painted rows.
+ */
+function assignOrdersOnce(
+  allSims: UserSimulation[],
+  orders: OrderMatchRow[]
+): void {
+  if (orders.length === 0 || allSims.length === 0) return
   const parsed = orders
     .map((order) => ({
       status: order.status,
@@ -296,22 +361,44 @@ function annotateOrders(sims: UserSimulation[], orders: OrderMatchRow[]): void {
     }))
     .filter((order) => Number.isFinite(order.at) && order.names.length > 0)
 
-  for (const sim of sims) {
-    const simName = (sim.event ?? "").trim().toLowerCase()
-    if (!simName) continue
-    const simAt = Date.parse(sim.last_seen)
-    if (!Number.isFinite(simAt)) continue
-    for (const order of parsed) {
-      if (!order.names.includes(simName)) continue
-      if (Math.abs(order.at - simAt) > ORDER_MATCH_WINDOW_MS) continue
-      // Paid wins over pending when both match the same simulation.
-      if (order.status === PAID_STATUS) {
-        sim.order = "paid"
-        break
+  const candidates = allSims
+    .map((sim) => ({
+      sim,
+      name: (sim.event ?? "").trim().toLowerCase(),
+      at: Date.parse(sim.last_seen),
+    }))
+    .filter((candidate) => candidate.name && Number.isFinite(candidate.at))
+
+  const claim = (
+    order: (typeof parsed)[number],
+    paint: "paid" | "pending"
+  ): void => {
+    let best: (typeof candidates)[number] | null = null
+    let bestDistance = Infinity
+    for (const candidate of candidates) {
+      if (candidate.sim.order != null) continue // already claimed
+      if (!order.names.includes(candidate.name)) continue
+      const distance = Math.abs(order.at - candidate.at)
+      if (distance > ORDER_MATCH_WINDOW_MS) continue
+      if (distance < bestDistance) {
+        best = candidate
+        bestDistance = distance
       }
-      if (sim.order == null && order.status !== "Cancelled" && order.status !== "Lost") {
-        sim.order = "pending"
-      }
+    }
+    if (best) best.sim.order = paint
+  }
+
+  // Paid orders claim first — green is the scarce, important signal.
+  for (const order of parsed) {
+    if (order.status === PAID_STATUS) claim(order, "paid")
+  }
+  for (const order of parsed) {
+    if (
+      order.status !== PAID_STATUS &&
+      order.status !== "Cancelled" &&
+      order.status !== "Lost"
+    ) {
+      claim(order, "pending")
     }
   }
 }
@@ -389,13 +476,17 @@ export async function getPortalUserActivity(
     const chronological = [...userRows].reverse()
     const simulations = foldSimulations(chronological)
     if (simulations.length === 0) continue
-    annotateOrders(simulations, orderRows)
     users.push({
       user_id: userId,
       last_seen: chronological[chronological.length - 1].created_at,
       simulations,
     })
   }
+  // Global one-order-one-row assignment across every user's simulations.
+  assignOrdersOnce(
+    users.flatMap((user) => user.simulations),
+    orderRows
+  )
   // Users who ORDERED float to the top (paid, then pending) — the green/blue
   // rows are the whole point of the log, and buried below 40 recent browsers
   // nobody ever saw them (אלון+דור, 2026-08-09). Recency breaks ties.
