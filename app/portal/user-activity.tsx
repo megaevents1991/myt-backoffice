@@ -45,12 +45,30 @@ function UserBlock({
   simulations: UserSimulation[];
 }) {
   const [open, setOpen] = useState(false);
+  // The order color belongs on the OUTER user row — the inner table row alone
+  // is invisible while collapsed (אלון, 2026-08-07, "תראה אצל שגיא").
+  const hasPaidOrder = simulations.some((sim) => sim.order === "paid");
+  const hasPendingOrder = simulations.some((sim) => sim.order === "pending");
   return (
-    <div className="rounded-md border">
+    <div
+      className={`rounded-md border ${
+        hasPaidOrder
+          ? "border-emerald-300 bg-emerald-50"
+          : hasPendingOrder
+            ? "border-sky-300 bg-sky-50"
+            : ""
+      }`}
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-3 px-4 py-2.5 text-right transition-colors hover:bg-muted/50"
+        className={`flex w-full items-center gap-3 px-4 py-2.5 text-right transition-colors ${
+          hasPaidOrder
+            ? "hover:bg-emerald-100/60"
+            : hasPendingOrder
+              ? "hover:bg-sky-100/60"
+              : "hover:bg-muted/50"
+        }`}
         aria-expanded={open}
       >
         {open ? (
@@ -62,6 +80,15 @@ function UserBlock({
         <span className="min-w-0 truncate font-mono text-sm" dir="ltr">
           {userId}
         </span>
+        {hasPaidOrder ? (
+          <Badge className="shrink-0 bg-emerald-600 text-white hover:bg-emerald-600">
+            הוזמן · שולם
+          </Badge>
+        ) : hasPendingOrder ? (
+          <Badge className="shrink-0 bg-sky-500 text-white hover:bg-sky-500">
+            הוזמן · ממתין
+          </Badge>
+        ) : null}
         <span className="ms-auto flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
           <span>{simulations.length} סימולציות</span>
           <span>נראה לאחרונה {formatDateTime(lastSeen)}</span>

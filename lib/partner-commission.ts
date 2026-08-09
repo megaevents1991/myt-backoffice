@@ -19,6 +19,9 @@ type ReservationLike = {
    *  order and what it actually discounted. */
   coupon_code?: string | null
   coupon_discount_usd?: number | null
+  /** Needed only when terms carry quoteUpliftById — the signed quote the
+   *  order settled (reservations.quote_id). */
+  quote_id?: number | null
 }
 
 /** How a partner is paid. `rate` is `partners.commission`. */
@@ -33,6 +36,14 @@ export type CommissionTerms = {
    * behavior every pre-existing surface has.
    */
   fundedCouponCodes?: ReadonlySet<string>
+  /**
+   * Quote-price uplift (USD) by quote id: what the agent priced ABOVE the
+   * system price when building the quote (unit − base_unit_price, × qty).
+   * That margin is the agent's on top of the base commission — a quote priced
+   * +$100/pax on 2 pax with a $20/ticket rate pays 100×2 + 20×2 = 240
+   * (אלון, 2026-08-07). Absent or unmatched = base commission only.
+   */
+  quoteUpliftById?: ReadonlyMap<number, number>
 }
 
 /** Uppercase a coupon-code list into the set CommissionTerms carries. */
@@ -94,12 +105,21 @@ export function commissionForReservation(
 ): number {
   if (!isPaid(reservation)) return 0
   if (!isUsableRate(terms.rate)) return 0
-  const gross =
+  let gross =
     terms.type === "percent_of_sale"
       ? (saleValue(reservation) * terms.rate) / 100
       : // `fixed_per_ticket` is the default for every legacy row, so an unset or
         // unrecognised type must land here — that is how the cron has always paid.
         countReservationTickets(reservation) * terms.rate
+
+  // Agent quote uplift: the margin the agent priced into the signed quote is
+  // theirs on top of the base rate.
+  if (terms.quoteUpliftById && reservation.quote_id != null) {
+    const uplift = terms.quoteUpliftById.get(reservation.quote_id)
+    if (uplift != null && Number.isFinite(uplift) && uplift > 0) {
+      gross += uplift
+    }
+  }
 
   // Commission-funded coupon: its recorded discount comes out of THIS
   // reservation's commission, floored at zero (creation caps the coupon at the

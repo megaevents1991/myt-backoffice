@@ -18,7 +18,7 @@ import {
   type PartnerTraffic,
 } from "@/lib/partner-funnel"
 import { buildEntryFunnels, type EntryFunnels } from "@/lib/partner-entry-funnels"
-import { fundedCouponCodesFor } from "@/lib/actions/portal-coupon-actions"
+import { fundedCouponCodesFor, quoteUpliftsFor } from "@/lib/actions/portal-coupon-actions"
 import {
   rangeWindowISO,
   type InsightsRange,
@@ -91,6 +91,13 @@ export interface PortalDashboard {
   entryFunnels: EntryFunnels | null
   clickedEvents: PortalClickedEvent[]
   newEvents: PortalNewEvent[]
+  /** Most-picked flight routes / hotels / ticket categories on this partner's
+   *  PAID bookings — the per-partner cut of the staff performance view. */
+  topPicks: {
+    flights: TopPick[]
+    hotels: TopPick[]
+    tickets: TopPick[]
+  }
 }
 
 type ReservationRow = {
@@ -98,9 +105,18 @@ type ReservationRow = {
   status: string | null
   user_shown_price: number | null
   event_order_info: ReservationEventOrderInfo | null
+  flight_order_info?: unknown
+  hotel_order_info?: unknown
+  quote_id?: number | null
   billed_at: string | null
   coupon_code: string | null
   coupon_discount_usd: number | null
+}
+
+/** One "most picked" line: a flight route / hotel / ticket category + count. */
+export interface TopPick {
+  label: string
+  count: number
 }
 
 /** The main app's affiliate-discount rule: 1–10 is a percent of the package,
@@ -130,6 +146,7 @@ export async function getPortalDashboard(
     entryResult,
     newEventsResult,
     fundedCodes,
+    quoteUplifts,
   ] = await Promise.all([
     supabase
       .from("partners")
@@ -139,7 +156,7 @@ export async function getPortalDashboard(
     supabase
       .from("reservations")
       .select(
-        "created_at,status,user_shown_price,event_order_info,billed_at,coupon_code,coupon_discount_usd"
+        "created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,billed_at,coupon_code,coupon_discount_usd"
       )
       .eq("aff_partner_tracking_code", code),
     supabase
@@ -174,10 +191,21 @@ export async function getPortalDashboard(
       .order("created_at", { ascending: false })
       .limit(24),
     fundedCouponCodesFor(code),
+    quoteUpliftsFor(code),
   ])
 
-  if (partnerResult.error) throw partnerResult.error
-  if (reservationsResult.error) throw reservationsResult.error
+  // A thrown error here used to take the WHOLE portal down with a bare
+  // "Application error" page. Log loudly and degrade instead — a dashboard of
+  // zeros with a working nav beats a dead portal.
+  if (partnerResult.error) {
+    console.error("getPortalDashboard partner:", JSON.stringify(partnerResult.error))
+  }
+  if (reservationsResult.error) {
+    console.error(
+      "getPortalDashboard reservations:",
+      JSON.stringify(reservationsResult.error)
+    )
+  }
   // The rest are decoration — never fail the whole dashboard over them.
   if (couponsResult.error) {
     console.error("getPortalDashboard coupons:", JSON.stringify(couponsResult.error))
@@ -206,6 +234,8 @@ export async function getPortalDashboard(
     // Commission-funded coupons deduct their discount from the reservation
     // they were spent on — the same terms the monthly report bills with.
     fundedCouponCodes: fundedCodes,
+    // Quote-priced margin belongs to the agent, on top of the base rate.
+    quoteUpliftById: quoteUplifts,
   }
 
   const allRows = (reservationsResult.data ?? []) as unknown as ReservationRow[]
@@ -290,6 +320,49 @@ export async function getPortalDashboard(
     entryFunnels = buildEntryFunnels(countsByEntry, false)
   }
 
+  // Most-picked picks across PAID bookings. Same permissive JSON reads as the
+  // reservations page: provider payloads vary, a missing key just doesn't count.
+  const flightCounts = new Map<string, number>()
+  const hotelCounts = new Map<string, number>()
+  const ticketCounts = new Map<string, number>()
+  const bump = (map: Map<string, number>, label: string | null | undefined) => {
+    const key = (label ?? "").trim()
+    if (key) map.set(key, (map.get(key) ?? 0) + 1)
+  }
+  for (const row of allRows) {
+    if (row.status !== "Paid") continue
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const offer = (row.flight_order_info as any)?.offer
+      const segs = offer?.itineraries?.[0]?.segments
+      if (Array.isArray(segs) && segs.length > 0) {
+        const from = segs[0]?.departure?.iataCode
+        const to = segs[segs.length - 1]?.arrival?.iataCode
+        bump(flightCounts, from && to ? `${from} → ${to}` : null)
+      }
+    } catch { /* skip row */ }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hotelInfo = row.hotel_order_info as any
+      bump(
+        hotelCounts,
+        hotelInfo?.hotel?.name ?? hotelInfo?.hotel_name ?? hotelInfo?.name ?? null
+      )
+    } catch { /* skip row */ }
+    const first = normalizeReservationEventOrderInfo(row.event_order_info)[0]
+    if (first) {
+      bump(
+        ticketCounts,
+        [first.name, first.category].filter(Boolean).join(" · ") || null
+      )
+    }
+  }
+  const topOf = (map: Map<string, number>): TopPick[] =>
+    [...map.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([label, count]) => ({ label, count }))
+
   const newEvents: PortalNewEvent[] = newEventsResult.error
     ? []
     : (
@@ -309,6 +382,42 @@ export async function getPortalDashboard(
         image_url: event.card_image_url ?? event.art_image_url,
         href: partnerLink(code, event.id),
       }))
+
+  // Freshly-synced events usually have no card image yet — borrow the artist
+  // template's image (the same blob the site's fallback uses) by name match,
+  // so the "מה חדש" rail isn't a wall of grey placeholders (אלון, 2026-08-07).
+  if (newEvents.some((event) => !event.image_url)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: artistRows, error: artistsError } = await (supabase as any)
+      .from("artists")
+      .select("name,name_english,image_url,art_image_url")
+      .eq("is_active", true)
+      .eq("is_deleted", false)
+      .limit(400)
+    if (artistsError) {
+      console.error("getPortalDashboard artists fallback:", JSON.stringify(artistsError))
+    } else {
+      const norm = (value: string | null | undefined) =>
+        (value ?? "").toLowerCase().replace(/[^a-z0-9֐-׾]+/g, " ").trim()
+      const artists = (artistRows ?? []) as {
+        name: string | null
+        name_english: string | null
+        image_url: string | null
+        art_image_url: string | null
+      }[]
+      for (const event of newEvents) {
+        if (event.image_url) continue
+        const eventName = norm(event.name)
+        if (!eventName) continue
+        const match = artists.find((artist) => {
+          const he = norm(artist.name)
+          const en = norm(artist.name_english)
+          return (he && eventName.includes(he)) || (en && eventName.includes(en))
+        })
+        event.image_url = match?.image_url ?? match?.art_image_url ?? null
+      }
+    }
+  }
 
   return {
     range,
@@ -344,5 +453,10 @@ export async function getPortalDashboard(
     entryFunnels,
     clickedEvents,
     newEvents,
+    topPicks: {
+      flights: topOf(flightCounts),
+      hotels: topOf(hotelCounts),
+      tickets: topOf(ticketCounts),
+    },
   }
 }

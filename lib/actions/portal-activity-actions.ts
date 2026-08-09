@@ -64,7 +64,7 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from("reservations")
-      .select("id,created_at,status,main_contact_first_name,event_order_info")
+      .select("id,created_at,status,main_contact_first_name,event_order_info,voucher_state")
       .eq("aff_partner_tracking_code", code)
       .order("created_at", { ascending: false })
       .limit(FEED_LIMIT),
@@ -118,12 +118,24 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
     status: string | null
     main_contact_first_name: string | null
     event_order_info: ReservationEventOrderInfo | null
+    voucher_state?: "sent" | "received" | "collected" | null
   }[]) {
     const eventName =
       normalizeReservationEventOrderInfo(reservation.event_order_info)[0]?.name ?? null
+    // Voucher orders narrate their settlement stage — נשלח/נקלט/נגבה is what
+    // the agent actually tracks on them (אלון, 2026-08-07).
+    const voucherLabel =
+      reservation.voucher_state === "sent"
+        ? "שובר נשלח"
+        : reservation.voucher_state === "received"
+          ? "שובר נקלט"
+          : reservation.voucher_state === "collected"
+            ? "שובר נגבה"
+            : null
     const subtitle =
-      [reservation.main_contact_first_name, eventName].filter(Boolean).join(" · ") ||
-      null
+      [reservation.main_contact_first_name, eventName, voucherLabel]
+        .filter(Boolean)
+        .join(" · ") || null
     // A paid order is worth two beats in the story ("נכנסה" ואז "שולמה"), but
     // reservations carry no payment timestamp — so it appears once, as its
     // strongest state.

@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase-server";
 import nodemailer from "nodemailer";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { guardCronRoute } from "@/lib/auth/guards";
-import { fundedCouponCodesFor } from "@/lib/actions/portal-coupon-actions";
+import { fundedCouponCodesFor, quoteUpliftsFor } from "@/lib/actions/portal-coupon-actions";
 import {
   PAID_STATUS,
   commissionForReservation,
@@ -245,8 +245,12 @@ export async function GET(req: Request) {
 
       // Commission-funded coupons: their discount comes out of the commission
       // of the reservation they were spent on. Empty set (= gross, today's
-      // behavior) until that migration lands.
-      const fundedCodes = await fundedCouponCodesFor(trackingCode);
+      // behavior) until that migration lands. Quote uplifts: the margin the
+      // agent priced into a signed quote is paid on top of the base rate.
+      const [fundedCodes, quoteUplifts] = await Promise.all([
+        fundedCouponCodesFor(trackingCode),
+        quoteUpliftsFor(trackingCode),
+      ]);
 
       const result = await sendMonthlyReportEmail({
         partnerName: partnerData?.name_hebrew,
@@ -254,6 +258,7 @@ export async function GET(req: Request) {
           type: partnerData?.commission_type ?? "fixed_per_ticket",
           rate: partnerData?.commission ?? null,
           fundedCouponCodes: fundedCodes,
+          quoteUpliftById: quoteUplifts,
         },
         email: partnerData.email,
         reservations: partnerReservations as Reservation[],

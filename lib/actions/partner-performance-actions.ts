@@ -28,7 +28,7 @@ import {
   type EntryFunnels,
   type EntryScanRow,
 } from "@/lib/partner-entry-funnels"
-import { fundedCouponCodesFor } from "@/lib/actions/portal-coupon-actions"
+import { fundedCouponCodesFor, quoteUpliftsFor } from "@/lib/actions/portal-coupon-actions"
 import { fetchPaged } from "@/lib/supabase-paged"
 import type { CommissionType } from "@/types/partner.types"
 import {
@@ -234,7 +234,7 @@ export async function getPartnerPerformance(
   let reservationsQuery = supabase
     .from("reservations")
     .select(
-      "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info,billed_at,flight_order_info,hotel_order_info,coupon_code,coupon_discount_usd"
+      "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info,billed_at,flight_order_info,hotel_order_info,coupon_code,coupon_discount_usd,quote_id"
     )
     .eq("aff_partner_tracking_code", trackingCode)
     .order("created_at", { ascending: false })
@@ -249,6 +249,7 @@ export async function getPartnerPerformance(
     clicksResult,
     entryFunnelsResult,
     fundedCodes,
+    quoteUplifts,
   ] = await Promise.all([
     supabase
       .from("partners")
@@ -282,6 +283,7 @@ export async function getPartnerPerformance(
       p_to: to,
     }),
     fundedCouponCodesFor(trackingCode),
+    quoteUpliftsFor(trackingCode),
   ])
 
   if (partnerResult.error) throw partnerResult.error
@@ -320,6 +322,8 @@ export async function getPartnerPerformance(
     // Commission-funded coupons deduct from the row they were spent on — keep
     // the staff view on the same figure the monthly report pays.
     fundedCouponCodes: fundedCodes,
+    // Quote-priced margin is the agent's, on top of the base rate.
+    quoteUpliftById: quoteUplifts,
   }
   const rows = (reservationsResult.data ?? []) as unknown as ReservationRow[]
   const coupons = (couponsResult.data ?? []) as unknown as {

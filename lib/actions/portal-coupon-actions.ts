@@ -79,6 +79,49 @@ export async function fundedCouponCodesFor(trackingCode: string): Promise<Set<st
   return fundedCodeSet(((data ?? []) as { code: string | null }[]).map((row) => row.code))
 }
 
+/**
+ * Quote-price uplift per quote id — what CommissionTerms.quoteUpliftById wants.
+ * uplift = quote total − base_unit_price × total qty, floored at 0. Free-form
+ * quotes (no stored baseline) contribute nothing: with no system price on
+ * record there is no provable margin.
+ */
+export async function quoteUpliftsFor(trackingCode: string): Promise<Map<number, number>> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("quotes")
+    .select("id,total,base_unit_price,line_items")
+    .eq("partner_tracking_code", trackingCode)
+    .not("base_unit_price", "is", null)
+  const uplifts = new Map<number, number>()
+  if (error) {
+    if (error.code !== "42703") {
+      console.error("quoteUpliftsFor:", JSON.stringify(error))
+    }
+    return uplifts
+  }
+  for (const row of (data ?? []) as {
+    id: number
+    total: number | null
+    base_unit_price: number | null
+    line_items: unknown
+  }[]) {
+    const base = Number(row.base_unit_price)
+    const total = Number(row.total)
+    if (!Number.isFinite(base) || !Number.isFinite(total)) continue
+    const qty = (Array.isArray(row.line_items) ? row.line_items : []).reduce(
+      (sum: number, item) => {
+        const q = Number((item as { qty?: number | string })?.qty)
+        return sum + (Number.isFinite(q) && q > 0 ? q : 0)
+      },
+      0
+    )
+    if (qty <= 0) continue
+    const uplift = total - base * qty
+    if (Number.isFinite(uplift) && uplift > 0) uplifts.set(row.id, uplift)
+  }
+  return uplifts
+}
+
 export type CreateCouponResult =
   | { ok: true; code: string }
   | { ok: false; error: string }

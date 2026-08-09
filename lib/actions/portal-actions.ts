@@ -13,7 +13,7 @@ import {
   sumSales,
   type CommissionTerms,
 } from "@/lib/partner-commission";
-import { fundedCouponCodesFor } from "@/lib/actions/portal-coupon-actions";
+import { fundedCouponCodesFor, quoteUpliftsFor } from "@/lib/actions/portal-coupon-actions";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import type { CommissionType } from "@/types/partner.types";
 import type { ReservationEventOrderInfo } from "@/types/reservation.types";
@@ -91,6 +91,68 @@ export interface PortalReservation {
    *  plain tracking link. Older rows (before the attribution columns) read
    *  as "link". */
   source: PortalReservationSource;
+  /** The customer's picks, for the expandable row. Null per part when the
+   *  customer skipped it (or the order predates the data). */
+  choices: ReservationChoices;
+}
+
+export interface ReservationChoices {
+  flight: {
+    route: string | null;
+    depart: string | null;
+    return: string | null;
+    airline: string | null;
+  } | null;
+  hotel: {
+    name: string | null;
+    nights: number | null;
+    meal: string | null;
+  } | null;
+  ticket: {
+    category: string | null;
+    quantity: number | null;
+  } | null;
+}
+
+/* Permissive extraction — provider payload shapes (Amadeus offer / RateHawk
+ * rate) vary and old rows may hold partial JSON. Missing keys render as "—",
+ * never throw. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractChoices(r: any): ReservationChoices {
+  const choices: ReservationChoices = { flight: null, hotel: null, ticket: null };
+  try {
+    const offer = r.flight_order_info?.offer;
+    const itineraries = Array.isArray(offer?.itineraries) ? offer.itineraries : [];
+    const outSegs = Array.isArray(itineraries[0]?.segments) ? itineraries[0].segments : [];
+    if (outSegs.length > 0) {
+      const from = outSegs[0]?.departure?.iataCode ?? null;
+      const to = outSegs[outSegs.length - 1]?.arrival?.iataCode ?? null;
+      const backSegs = Array.isArray(itineraries[1]?.segments) ? itineraries[1].segments : [];
+      choices.flight = {
+        route: from && to ? `${from} → ${to}` : null,
+        depart: outSegs[0]?.departure?.at ?? null,
+        return: backSegs[0]?.departure?.at ?? null,
+        airline: outSegs[0]?.operating?.carrierName ?? outSegs[0]?.carrierCode ?? null,
+      };
+    }
+  } catch { /* leave null */ }
+  try {
+    const hotelInfo = r.hotel_order_info;
+    if (hotelInfo && Object.keys(hotelInfo).length > 0) {
+      const rate = hotelInfo.rate;
+      const nights = Array.isArray(rate?.daily_prices) ? rate.daily_prices.length : null;
+      const name =
+        hotelInfo.hotel?.name ?? hotelInfo.hotel_name ?? hotelInfo.name ?? null;
+      const meal =
+        rate?.meal_data?.has_breakfast === true
+          ? "כולל ארוחת בוקר"
+          : rate?.meal === "nomeal"
+            ? "ללא ארוחות"
+            : (rate?.meal ?? null);
+      if (name || nights || meal) choices.hotel = { name, nights, meal };
+    }
+  } catch { /* leave null */ }
+  return choices;
 }
 
 export interface PortalReservationsPage {
@@ -262,7 +324,7 @@ function holdExpiry(createdAt: string): string | null {
  * `comments`, which is the staff's internal note field.
  */
 const PORTAL_RESERVATION_COLUMNS =
-  "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_id,event_order_info,more_pax_info,booking_reference,confirmation_email_sent,billed_at,coupon_code,coupon_discount_usd";
+  "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_id,event_order_info,flight_order_info,hotel_order_info,more_pax_info,booking_reference,confirmation_email_sent,billed_at,coupon_code,coupon_discount_usd";
 
 /** Source-attribution columns (migration 20260805170000 + the pre-existing
  *  settlement marker). Selected separately so a not-yet-migrated DB can fall
@@ -283,16 +345,18 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
       // One more than the page, purely to detect that older rows exist.
       .limit(RESERVATIONS_PAGE_SIZE + 1);
 
-  const [initialReservationsResult, partnerResult, fundedCodes] = await Promise.all([
-    fetchReservations(PORTAL_RESERVATION_COLUMNS + PORTAL_RESERVATION_SOURCE_COLUMNS),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
-      .from("partners")
-      .select("commission,commission_type")
-      .eq("partner_tracking_code", session.partner_code)
-      .maybeSingle(),
-    fundedCouponCodesFor(session.partner_code),
-  ]);
+  const [initialReservationsResult, partnerResult, fundedCodes, quoteUplifts] =
+    await Promise.all([
+      fetchReservations(PORTAL_RESERVATION_COLUMNS + PORTAL_RESERVATION_SOURCE_COLUMNS),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from("partners")
+        .select("commission,commission_type")
+        .eq("partner_tracking_code", session.partner_code)
+        .maybeSingle(),
+      fundedCouponCodesFor(session.partner_code),
+      quoteUpliftsFor(session.partner_code),
+    ]);
   let reservationsResult = initialReservationsResult;
 
   if (reservationsResult.error?.code === "42703") {
@@ -315,6 +379,8 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
     // Commission-funded coupons deduct from the row they were spent on — the
     // per-row figure here must match what the monthly report will pay.
     fundedCouponCodes: fundedCodes,
+    // Quote-priced margin is the agent's, on top of the base rate.
+    quoteUpliftById: quoteUplifts,
   };
 
   type Row = {
@@ -326,6 +392,8 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
     user_shown_price: number | null;
     event_id: number;
     event_order_info: ReservationEventOrderInfo | null;
+    flight_order_info: unknown;
+    hotel_order_info: unknown;
     more_pax_info: unknown;
     booking_reference: string | null;
     confirmation_email_sent: boolean | null;
@@ -367,11 +435,20 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
       // booker. Every other pax count in this repo does the same.
       pax: 1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0),
       booking_reference: r.booking_reference,
-      // Real staff stamp when set; the confirmation-email flag is the legacy
-      // stand-in (מאיפה המידע? — אלון, 2026-08-06).
-      materials_sent:
-        r.travel_materials_sent_at != null || r.confirmation_email_sent === true,
+      // The staff stamp ONLY. The confirmation-email flag used to back-fill
+      // here, but it made un-marking impossible — clearing the stamp left the
+      // legacy flag true and the row stuck on "נשלח" (אלון, 2026-08-07).
+      materials_sent: r.travel_materials_sent_at != null,
       voucher_state: r.voucher_state ?? null,
+      choices: {
+        ...extractChoices(r),
+        ticket: first
+          ? {
+              category: first.category ?? null,
+              quantity: Number(first.number_of_ticket) || null,
+            }
+          : null,
+      },
       commission_usd: round2(commissionForReservation(r, terms)),
       billed: !!r.billed_at,
       is_hold: r.status === HOLD_STATUS,

@@ -377,6 +377,53 @@ export default async function PortalDashboardPage({
         </Card>
       </div>
 
+      {(dashboard.topPicks.flights.length > 0 ||
+        dashboard.topPicks.hotels.length > 0 ||
+        dashboard.topPicks.tickets.length > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>הנבחרים ביותר · מה הלקוחות שלכם באמת קונים</CardTitle>
+            <CardDescription>
+              הטיסות, המלונות והכרטיסים שנבחרו הכי הרבה בהזמנות ששולמו דרככם.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-3">
+              {(
+                [
+                  ["כרטיסים", dashboard.topPicks.tickets],
+                  ["טיסות", dashboard.topPicks.flights],
+                  ["מלונות", dashboard.topPicks.hotels],
+                ] as const
+              ).map(([title, picks]) => (
+                <div key={title}>
+                  <p className="mb-2 text-sm font-semibold">{title}</p>
+                  {picks.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">אין עדיין נתונים</p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {picks.map((pick) => (
+                        <li
+                          key={pick.label}
+                          className="flex items-baseline justify-between gap-2 text-sm"
+                        >
+                          <span className="min-w-0 truncate" dir="auto">
+                            {pick.label}
+                          </span>
+                          <span className="shrink-0 tabular-nums text-muted-foreground">
+                            ×{pick.count}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {dashboard.entryFunnels && (
         <PortalEntryFunnels entryFunnels={dashboard.entryFunnels} />
       )}

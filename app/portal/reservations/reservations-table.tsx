@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
+import { ChevronDown, ChevronLeft, Hotel, Plane, Ticket } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -62,10 +63,82 @@ const STATUS_OPTIONS = [
 
 type SortKey = "created" | "event_date";
 
+function formatDateTimeShort(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("he-IL", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** The customer's picks, one line per part; parts the customer skipped say so. */
+function ChoicesPanel({ reservation }: { reservation: PortalReservation }) {
+  const { flight, hotel, ticket } = reservation.choices;
+  return (
+    <div className="grid gap-3 py-1 sm:grid-cols-3">
+      <div className="flex items-start gap-2">
+        <Ticket className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="text-sm">
+          <div className="font-medium">כרטיסים</div>
+          {ticket ? (
+            <div className="text-muted-foreground">
+              {[ticket.quantity ? `×${ticket.quantity}` : null, ticket.category]
+                .filter(Boolean)
+                .join(" · ") || "—"}
+            </div>
+          ) : (
+            <div className="text-muted-foreground">—</div>
+          )}
+        </div>
+      </div>
+      <div className="flex items-start gap-2">
+        <Plane className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="text-sm">
+          <div className="font-medium">טיסה</div>
+          {flight ? (
+            <div className="text-muted-foreground">
+              <span dir="ltr">{flight.route ?? "—"}</span>
+              {flight.airline ? ` · ${flight.airline}` : ""}
+              {flight.depart ? (
+                <div className="text-xs">
+                  הלוך {formatDateTimeShort(flight.depart)}
+                  {flight.return ? ` · חזור ${formatDateTimeShort(flight.return)}` : ""}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="text-muted-foreground">דילגו על טיסה</div>
+          )}
+        </div>
+      </div>
+      <div className="flex items-start gap-2">
+        <Hotel className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="text-sm">
+          <div className="font-medium">מלון</div>
+          {hotel ? (
+            <div className="text-muted-foreground">
+              {hotel.name ?? "מלון נבחר"}
+              {hotel.nights ? ` · ${hotel.nights} לילות` : ""}
+              {hotel.meal ? ` · ${hotel.meal}` : ""}
+            </div>
+          ) : (
+            <div className="text-muted-foreground">דילגו על מלון</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
   const [futureOnly, setFutureOnly] = useState(false);
   const [status, setStatus] = useState<string>("all");
   const [sort, setSort] = useState<SortKey>("created");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
     const today = new Date();
@@ -140,6 +213,7 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8" aria-label="פתיחת פירוט" />
                 <TableHead>מספר</TableHead>
                 <TableHead>תאריך</TableHead>
                 <TableHead>לקוח</TableHead>
@@ -157,7 +231,22 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
             </TableHeader>
             <TableBody>
               {filtered.map((reservation) => (
-                <TableRow key={reservation.id}>
+                <Fragment key={reservation.id}>
+                <TableRow
+                  className="cursor-pointer"
+                  onClick={() =>
+                    setExpandedId((current) =>
+                      current === reservation.id ? null : reservation.id
+                    )
+                  }
+                >
+                  <TableCell className="w-8 pe-0 text-muted-foreground">
+                    {expandedId === reservation.id ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronLeft className="h-4 w-4" />
+                    )}
+                  </TableCell>
                   <TableCell className="font-medium">
                     {reservation.booking_reference || reservation.id}
                   </TableCell>
@@ -238,6 +327,14 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                     )}
                   </TableCell>
                 </TableRow>
+                {expandedId === reservation.id && (
+                  <TableRow className="bg-muted/30 hover:bg-muted/30">
+                    <TableCell colSpan={14} className="px-6">
+                      <ChoicesPanel reservation={reservation} />
+                    </TableCell>
+                  </TableRow>
+                )}
+                </Fragment>
               ))}
             </TableBody>
           </Table>

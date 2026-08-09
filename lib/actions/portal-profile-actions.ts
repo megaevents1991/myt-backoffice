@@ -106,12 +106,26 @@ export async function getMyProfileDetails(): Promise<MyProfileDetails | null> {
     contract_url?: string | null
   }
 
+  // contract_url stores the storage PATH in a PRIVATE bucket — a raw href
+  // 404s (אלון, 2026-08-07). Mint a short-lived signed URL like the staff
+  // download does.
+  let contractSignedUrl: string | null = null
+  if (profile.contract_url) {
+    const { data: signed, error: signError } = await supabase.storage
+      .from("user-contracts")
+      .createSignedUrl(profile.contract_url, 60 * 10)
+    if (signError) {
+      console.error("getMyProfileDetails contract sign:", JSON.stringify(signError))
+    }
+    contractSignedUrl = signed?.signedUrl ?? null
+  }
+
   return {
     email: profile.email ?? session.email,
     display_name: profile.display_name ?? null,
     phone: profile.phone ?? null,
     logo_url: profile.logo_url ?? null,
-    contract_url: profile.contract_url ?? null,
+    contract_url: contractSignedUrl,
     role: session.role as "agent" | "affiliate",
     commission: Number(partner.commission ?? 0),
     commission_type: partner.commission_type ?? "fixed_per_ticket",
