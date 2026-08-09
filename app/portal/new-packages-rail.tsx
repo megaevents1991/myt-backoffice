@@ -11,7 +11,7 @@
  *   150-250ms transitions, RTL-aware chevrons.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, ExternalLink, Music2 } from "lucide-react";
 import type { PortalNewGroup } from "@/lib/actions/portal-dashboard-actions";
 
@@ -28,6 +28,18 @@ function formatDate(value: string | null): string {
 export function NewPackagesRail({ groups }: { groups: PortalNewGroup[] }) {
   const railRef = useRef<HTMLDivElement>(null);
   const [openKey, setOpenKey] = useState<string | null>(null);
+  // Arrows appear only when the strip actually overflows — with few artists
+  // everything is already visible and dead arrows just confuse.
+  const [overflowing, setOverflowing] = useState(false);
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const measure = () => setOverflowing(rail.scrollWidth > rail.clientWidth + 4);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(rail);
+    return () => observer.disconnect();
+  }, [groups.length]);
 
   if (groups.length === 0) {
     return (
@@ -51,6 +63,7 @@ export function NewPackagesRail({ groups }: { groups: PortalNewGroup[] }) {
       <div className="relative">
         <div
           ref={railRef}
+          data-new-rail
           className="flex gap-3 overflow-x-auto scroll-smooth pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {groups.map((group) => {
@@ -94,13 +107,15 @@ export function NewPackagesRail({ groups }: { groups: PortalNewGroup[] }) {
             );
           })}
         </div>
-        {groups.length > 3 && (
+        {overflowing && (
           <>
+            {/* RTL: the rail advances LEFTWARD — "next" sits on the LEFT edge
+                pointing left, "previous" on the RIGHT pointing right. */}
             <button
               type="button"
               aria-label="הצגת החבילות הבאות"
               onClick={() => page(1)}
-              className="absolute -start-2 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border bg-background/95 shadow-md transition-colors hover:bg-muted"
+              className="absolute -end-2 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border bg-background/95 shadow-md transition-colors hover:bg-muted"
             >
               <ChevronLeft className="h-5 w-5" aria-hidden />
             </button>
@@ -108,7 +123,7 @@ export function NewPackagesRail({ groups }: { groups: PortalNewGroup[] }) {
               type="button"
               aria-label="הצגת החבילות הקודמות"
               onClick={() => page(-1)}
-              className="absolute -end-2 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border bg-background/95 shadow-md transition-colors hover:bg-muted"
+              className="absolute -start-2 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border bg-background/95 shadow-md transition-colors hover:bg-muted"
             >
               <ChevronRight className="h-5 w-5" aria-hidden />
             </button>
