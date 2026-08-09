@@ -518,6 +518,77 @@ export async function getPortalDashboard(
     })
     groupsByKey.set(key, group)
   }
+  // Variety top-up: the 30-day window is often all music drops. When fewer
+  // than a handful of TEAM cards made it in, pull slightly older fixtures
+  // (30–90 days back, still future-dated) so sports is always represented
+  // (דור, 2026-08-09 — "שיהיה מגוון, גם אם ישנים מעט יותר").
+  const MIN_TEAM_CARDS = 4
+  const teamCardCount = () =>
+    [...groupsByKey.keys()].filter((key) => key.startsWith("team:")).length
+  if (teams.length > 0 && teamCardCount() < MIN_TEAM_CARDS) {
+    const olderSince = new Date(Date.now() - 90 * 86_400_000).toISOString()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: olderRows, error: olderError } = await (supabase as any)
+      .from("events")
+      .select("id,name,date,location,card_image_url,art_image_url,created_at")
+      .is("is_deleted", null)
+      .gte("date", today)
+      .gte("created_at", olderSince)
+      .lt("created_at", newSince)
+      .order("created_at", { ascending: false })
+      .limit(80)
+    if (olderError) {
+      console.error("getPortalDashboard sports top-up:", JSON.stringify(olderError))
+    } else {
+      for (const raw of (olderRows ?? []) as {
+        id: number
+        name: string
+        date: string | null
+        location: { name?: string } | null
+        card_image_url: string | null
+        art_image_url: string | null
+      }[]) {
+        if (teamCardCount() >= MIN_TEAM_CARDS) break
+        const eventName = norm(raw.name)
+        if (!eventName) continue
+        // Team-matched fixtures only — the top-up exists for sports variety.
+        const match = teams
+          .map((candidate) => {
+            const positions = [candidate.he, candidate.en]
+              .filter(Boolean)
+              .map((needle) => eventName.indexOf(needle))
+              .filter((position) => position >= 0)
+            return positions.length
+              ? {
+                  candidate,
+                  pos: Math.min(...positions),
+                  len: Math.max(candidate.he.length, candidate.en.length),
+                }
+              : null
+          })
+          .filter(Boolean)
+          .sort((a, b) => a!.pos - b!.pos || b!.len - a!.len)[0]?.candidate
+        if (!match) continue
+        const key = `team:${match.he || match.en}`
+        const group = groupsByKey.get(key) ?? {
+          key,
+          name: match.name || match.name_english || raw.name,
+          image_url:
+            match.image_url ?? match.art_image_url ?? match.logo_url ??
+            raw.card_image_url ?? raw.art_image_url ?? null,
+          events: [],
+        }
+        group.events.push({
+          id: raw.id,
+          date: raw.date,
+          location: raw.location?.name ?? null,
+          href: partnerLink(code, raw.id),
+        })
+        groupsByKey.set(key, group)
+      }
+    }
+  }
+
   const newGroups = [...groupsByKey.values()].map((group) => ({
     ...group,
     events: group.events.sort((a, b) => (a.date ?? "").localeCompare(b.date ?? "")),
