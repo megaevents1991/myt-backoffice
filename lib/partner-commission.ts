@@ -12,7 +12,8 @@ import type { ReservationEventOrderInfo } from "@/types/reservation.types"
  */
 
 type ReservationLike = {
-  id?: number
+  /** Loose on purpose — some staff surfaces type the id string|number. */
+  id?: number | string
   status?: string | null
   user_shown_price?: number | null
   event_order_info?: ReservationEventOrderInfo | null
@@ -124,7 +125,7 @@ export function commissionForReservation(
   // Agent quote uplift: the margin the agent priced into the signed quote is
   // theirs on top of the base rate.
   if (terms.upliftByReservationId && reservation.id != null) {
-    const uplift = terms.upliftByReservationId.get(reservation.id)
+    const uplift = terms.upliftByReservationId.get(Number(reservation.id))
     if (uplift != null && Number.isFinite(uplift) && uplift > 0) {
       gross += uplift
     }
