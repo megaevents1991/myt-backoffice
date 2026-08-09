@@ -40,7 +40,11 @@ const usdExact = new Intl.NumberFormat("en-US", {
 function formatDate(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("he-IL");
+  // Two-digit year: 14 columns must fit the card without clipping (אלון,
+  // 2026-08-08 — the wide table pushed סכום/עמלה out of view).
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
 
 /** How the customer arrived. An influencer has no voucher flow, so their rows
@@ -210,7 +214,8 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border bg-background">
-          <Table>
+          {/* Compact density — 14 columns have to fit a ~1100px card. */}
+          <Table className="text-sm [&_th]:h-10 [&_th]:whitespace-nowrap [&_th]:px-2 [&_td]:px-2 [&_td]:py-2">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8" aria-label="פתיחת פירוט" />
@@ -253,8 +258,12 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                   <TableCell className="whitespace-nowrap">
                     {formatDate(reservation.created_at)}
                   </TableCell>
-                  <TableCell>{reservation.customer_name || "—"}</TableCell>
-                  <TableCell className="max-w-[14rem]">
+                  <TableCell className="max-w-[7rem]">
+                    <span className="block truncate">
+                      {reservation.customer_name || "—"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="max-w-[10rem]">
                     <div className="truncate font-medium">
                       {reservation.event_title ?? `#${reservation.event_id}`}
                     </div>
@@ -264,7 +273,7 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className="max-w-[10rem]">
+                  <TableCell className="max-w-[7rem]">
                     <span className="block truncate">
                       {reservation.event_location || "—"}
                     </span>
@@ -313,7 +322,11 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                     {usd.format(reservation.user_shown_price)}
                   </TableCell>
                   <TableCell className="text-left tabular-nums">
-                    {reservation.commission_usd > 0 ? (
+                    {reservation.settled_at_charge ? (
+                      <span className="text-xs text-muted-foreground">
+                        קוזז בחיוב
+                      </span>
+                    ) : reservation.commission_usd > 0 ? (
                       <>
                         <span className="font-medium">
                           {usdExact.format(reservation.commission_usd)}

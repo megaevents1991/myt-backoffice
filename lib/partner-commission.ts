@@ -12,6 +12,7 @@ import type { ReservationEventOrderInfo } from "@/types/reservation.types"
  */
 
 type ReservationLike = {
+  id?: number
   status?: string | null
   user_shown_price?: number | null
   event_order_info?: ReservationEventOrderInfo | null
@@ -19,9 +20,10 @@ type ReservationLike = {
    *  order and what it actually discounted. */
   coupon_code?: string | null
   coupon_discount_usd?: number | null
-  /** Needed only when terms carry quoteUpliftById — the signed quote the
-   *  order settled (reservations.quote_id). */
+  /** Needed only when terms carry upliftByReservationId. */
   quote_id?: number | null
+  /** agent_card orders were netted at charge time — nothing left to pay out. */
+  partner_settlement_method?: string | null
 }
 
 /** How a partner is paid. `rate` is `partners.commission`. */
@@ -37,13 +39,14 @@ export type CommissionTerms = {
    */
   fundedCouponCodes?: ReadonlySet<string>
   /**
-   * Quote-price uplift (USD) by quote id: what the agent priced ABOVE the
-   * system price when building the quote (unit − base_unit_price, × qty).
-   * That margin is the agent's on top of the base commission — a quote priced
-   * +$100/pax on 2 pax with a $20/ticket rate pays 100×2 + 20×2 = 240
-   * (אלון, 2026-08-07). Absent or unmatched = base commission only.
+   * Quote-price uplift (USD) by RESERVATION id (see quoteUpliftsFor): what the
+   * agent priced ABOVE the system price when building the quote. That margin
+   * is the agent's on top of the base commission — a quote priced +$100/pax on
+   * 2 pax with a $20/ticket rate pays 100×2 + 20×2 = 240 (אלון, 2026-08-07).
+   * Keyed per reservation so a reused quote link pays its margin once.
+   * Absent or unmatched = base commission only.
    */
-  quoteUpliftById?: ReadonlyMap<number, number>
+  upliftByReservationId?: ReadonlyMap<number, number>
 }
 
 /** Uppercase a coupon-code list into the set CommissionTerms carries. */
@@ -105,6 +108,12 @@ export function commissionForReservation(
 ): number {
   if (!isPaid(reservation)) return 0
   if (!isUsableRate(terms.rate)) return 0
+
+  // agent_card: the commission (and any quote margin) was already deducted
+  // from the charge itself — showing it as payable again would double-pay
+  // (חייבתי אשראי סוכן וזה בכל מקרה הוסיף עמלה לתשלום — אלון, 2026-08-07).
+  if (reservation.partner_settlement_method === "agent_card") return 0
+
   let gross =
     terms.type === "percent_of_sale"
       ? (saleValue(reservation) * terms.rate) / 100
@@ -114,8 +123,8 @@ export function commissionForReservation(
 
   // Agent quote uplift: the margin the agent priced into the signed quote is
   // theirs on top of the base rate.
-  if (terms.quoteUpliftById && reservation.quote_id != null) {
-    const uplift = terms.quoteUpliftById.get(reservation.quote_id)
+  if (terms.upliftByReservationId && reservation.id != null) {
+    const uplift = terms.upliftByReservationId.get(reservation.id)
     if (uplift != null && Number.isFinite(uplift) && uplift > 0) {
       gross += uplift
     }

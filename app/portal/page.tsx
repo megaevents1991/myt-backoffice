@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { PortalEntryFunnels } from "./entry-funnels";
 import { UserActivityLog } from "./user-activity";
+import { NewPackagesRail } from "./new-packages-rail";
+import { PendingCommissionList } from "./pending-commission-list";
 import {
   ClipboardList,
   CheckCircle2,
@@ -166,6 +168,9 @@ export default async function PortalDashboardPage({
               <CardContent>
                 <div className="font-display text-2xl font-bold tabular-nums">{card.value}</div>
                 <p className="text-xs text-muted-foreground">{card.hint}</p>
+                {card.label === "עמלה לתשלום" && (
+                  <PendingCommissionList rows={dashboard.commission.pendingRows} />
+                )}
               </CardContent>
             </Card>
           );
@@ -189,53 +194,17 @@ export default async function PortalDashboardPage({
         })}
       </div>
 
-      {dashboard.newEvents.length > 0 && (
+      {dashboard.newGroups.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>מה חדש?</CardTitle>
             <CardDescription>
-              חבילות שעלו לאתר ב-30 הימים האחרונים — כל קישור כבר נושא את קוד
-              המעקב שלכם.
+              אמנים וחבילות שעלו לאתר ב-30 הימים האחרונים — לחיצה על כרטיס פותחת
+              את כל התאריכים שלו, וכל קישור כבר נושא את קוד המעקב שלכם.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-3 overflow-x-auto pb-2">
-              {dashboard.newEvents.map((event) => (
-                <a
-                  key={event.id}
-                  href={event.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-44 shrink-0 overflow-hidden rounded-lg border transition-colors hover:border-primary"
-                >
-                  {event.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={event.image_url}
-                      alt=""
-                      className="h-24 w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-24 w-full items-center justify-center bg-muted text-muted-foreground">
-                      <Ticket className="h-6 w-6" />
-                    </div>
-                  )}
-                  <div className="space-y-0.5 p-2">
-                    <p className="truncate text-sm font-medium">{event.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {[
-                        event.location,
-                        event.date
-                          ? new Date(event.date).toLocaleDateString("he-IL")
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
-                    </p>
-                  </div>
-                </a>
-              ))}
-            </div>
+            <NewPackagesRail groups={dashboard.newGroups} />
           </CardContent>
         </Card>
       )}

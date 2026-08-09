@@ -80,25 +80,33 @@ export async function fundedCouponCodesFor(trackingCode: string): Promise<Set<st
 }
 
 /**
- * Quote-price uplift per quote id — what CommissionTerms.quoteUpliftById wants.
+ * Quote-price uplift keyed by RESERVATION id — what
+ * CommissionTerms.upliftByReservationId wants.
+ *
  * uplift = quote total − base_unit_price × total qty, floored at 0. Free-form
  * quotes (no stored baseline) contribute nothing: with no system price on
  * record there is no provable margin.
+ *
+ * Keyed by reservation, not quote, so a quote link opened twice (two orders
+ * with the same quote_id) pays its margin ONCE — to the earliest PAID order
+ * settling it (earliest order at all when none is paid yet, so the portal
+ * still previews the figure).
  */
 export async function quoteUpliftsFor(trackingCode: string): Promise<Map<number, number>> {
+  const byReservation = new Map<number, number>()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from("quotes")
     .select("id,total,base_unit_price,line_items")
     .eq("partner_tracking_code", trackingCode)
     .not("base_unit_price", "is", null)
-  const uplifts = new Map<number, number>()
   if (error) {
     if (error.code !== "42703") {
       console.error("quoteUpliftsFor:", JSON.stringify(error))
     }
-    return uplifts
+    return byReservation
   }
+  const byQuote = new Map<number, number>()
   for (const row of (data ?? []) as {
     id: number
     total: number | null
@@ -117,9 +125,35 @@ export async function quoteUpliftsFor(trackingCode: string): Promise<Map<number,
     )
     if (qty <= 0) continue
     const uplift = total - base * qty
-    if (Number.isFinite(uplift) && uplift > 0) uplifts.set(row.id, uplift)
+    if (Number.isFinite(uplift) && uplift > 0) byQuote.set(row.id, uplift)
   }
-  return uplifts
+  if (byQuote.size === 0) return byReservation
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: settling, error: settlingError } = await (supabase as any)
+    .from("reservations")
+    .select("id,quote_id,status,created_at")
+    .eq("aff_partner_tracking_code", trackingCode)
+    .in("quote_id", [...byQuote.keys()])
+    .order("created_at", { ascending: true })
+  if (settlingError) {
+    if (settlingError.code !== "42703") {
+      console.error("quoteUpliftsFor reservations:", JSON.stringify(settlingError))
+    }
+    return byReservation
+  }
+  const rows = (settling ?? []) as {
+    id: number
+    quote_id: number | null
+    status: string | null
+  }[]
+  for (const quoteId of byQuote.keys()) {
+    const mine = rows.filter((r) => r.quote_id === quoteId)
+    if (mine.length === 0) continue
+    const winner = mine.find((r) => r.status === "Paid") ?? mine[0]
+    byReservation.set(winner.id, byQuote.get(quoteId) as number)
+  }
+  return byReservation
 }
 
 export type CreateCouponResult =

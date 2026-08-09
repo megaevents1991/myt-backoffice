@@ -258,7 +258,7 @@ export async function GET(req: Request) {
           type: partnerData?.commission_type ?? "fixed_per_ticket",
           rate: partnerData?.commission ?? null,
           fundedCouponCodes: fundedCodes,
-          quoteUpliftById: quoteUplifts,
+          upliftByReservationId: quoteUplifts,
         },
         email: partnerData.email,
         reservations: partnerReservations as Reservation[],

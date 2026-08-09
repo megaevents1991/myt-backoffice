@@ -234,7 +234,7 @@ export async function getPartnerPerformance(
   let reservationsQuery = supabase
     .from("reservations")
     .select(
-      "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info,billed_at,flight_order_info,hotel_order_info,coupon_code,coupon_discount_usd,quote_id"
+      "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info,billed_at,flight_order_info,hotel_order_info,coupon_code,coupon_discount_usd,quote_id,partner_settlement_method"
     )
     .eq("aff_partner_tracking_code", trackingCode)
     .order("created_at", { ascending: false })
@@ -323,7 +323,7 @@ export async function getPartnerPerformance(
     // the staff view on the same figure the monthly report pays.
     fundedCouponCodes: fundedCodes,
     // Quote-priced margin is the agent's, on top of the base rate.
-    quoteUpliftById: quoteUplifts,
+    upliftByReservationId: quoteUplifts,
   }
   const rows = (reservationsResult.data ?? []) as unknown as ReservationRow[]
   const coupons = (couponsResult.data ?? []) as unknown as {

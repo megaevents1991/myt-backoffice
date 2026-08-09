@@ -3,6 +3,7 @@
 import { requirePartner } from "@/lib/auth/guards"
 import { supabase } from "@/lib/supabase-server"
 import {
+  commissionForReservation,
   commissionForReservations,
   countTickets,
   describeCommission,
@@ -51,6 +52,15 @@ export interface PortalCommission {
   pendingUsd: number
   /** Already included in a monthly report. */
   billedUsd: number
+  /** The open orders behind pendingUsd — the drill-down the tile expands to
+   *  (סוכן ומשפיען רוצים לראות מה מרכיב את המספר — דור, 2026-08-08). */
+  pendingRows: PendingCommissionRow[]
+}
+
+export interface PendingCommissionRow {
+  id: number
+  event: string | null
+  amountUsd: number
 }
 
 export interface PortalClickedEvent {
@@ -91,6 +101,9 @@ export interface PortalDashboard {
   entryFunnels: EntryFunnels | null
   clickedEvents: PortalClickedEvent[]
   newEvents: PortalNewEvent[]
+  /** "מה חדש" grouped one-card-per-artist (artist blob image; events matching
+   *  no artist group under their own name). */
+  newGroups: PortalNewGroup[]
   /** Most-picked flight routes / hotels / ticket categories on this partner's
    *  PAID bookings — the per-partner cut of the staff performance view. */
   topPicks: {
@@ -104,10 +117,12 @@ type ReservationRow = {
   created_at: string
   status: string | null
   user_shown_price: number | null
+  id: number
   event_order_info: ReservationEventOrderInfo | null
   flight_order_info?: unknown
   hotel_order_info?: unknown
   quote_id?: number | null
+  partner_settlement_method?: string | null
   billed_at: string | null
   coupon_code: string | null
   coupon_discount_usd: number | null
@@ -117,6 +132,14 @@ type ReservationRow = {
 export interface TopPick {
   label: string
   count: number
+}
+
+/** One "מה חדש" card: an artist (or standalone event) + its upcoming dates. */
+export interface PortalNewGroup {
+  key: string
+  name: string
+  image_url: string | null
+  events: { id: number; date: string | null; location: string | null; href: string }[]
 }
 
 /** The main app's affiliate-discount rule: 1–10 is a percent of the package,
@@ -156,7 +179,7 @@ export async function getPortalDashboard(
     supabase
       .from("reservations")
       .select(
-        "created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,billed_at,coupon_code,coupon_discount_usd"
+        "id,created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,partner_settlement_method,billed_at,coupon_code,coupon_discount_usd"
       )
       .eq("aff_partner_tracking_code", code),
     supabase
@@ -235,7 +258,7 @@ export async function getPortalDashboard(
     // they were spent on — the same terms the monthly report bills with.
     fundedCouponCodes: fundedCodes,
     // Quote-priced margin belongs to the agent, on top of the base rate.
-    quoteUpliftById: quoteUplifts,
+    upliftByReservationId: quoteUplifts,
   }
 
   const allRows = (reservationsResult.data ?? []) as unknown as ReservationRow[]
@@ -336,9 +359,12 @@ export async function getPortalDashboard(
       const offer = (row.flight_order_info as any)?.offer
       const segs = offer?.itineraries?.[0]?.segments
       if (Array.isArray(segs) && segs.length > 0) {
-        const from = segs[0]?.departure?.iataCode
-        const to = segs[segs.length - 1]?.arrival?.iataCode
-        bump(flightCounts, from && to ? `${from} → ${to}` : null)
+        // The airline, not the airport pair — "תראה לי את חברת התעופה ולא את
+        // השדה" (דור, 2026-08-08).
+        bump(
+          flightCounts,
+          segs[0]?.operating?.carrierName ?? segs[0]?.carrierCode ?? null
+        )
       }
     } catch { /* skip row */ }
     try {
@@ -360,7 +386,7 @@ export async function getPortalDashboard(
   const topOf = (map: Map<string, number>): TopPick[] =>
     [...map.entries()]
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
+      .slice(0, 10)
       .map(([label, count]) => ({ label, count }))
 
   const newEvents: PortalNewEvent[] = newEventsResult.error
@@ -383,41 +409,64 @@ export async function getPortalDashboard(
         href: partnerLink(code, event.id),
       }))
 
-  // Freshly-synced events usually have no card image yet — borrow the artist
-  // template's image (the same blob the site's fallback uses) by name match,
-  // so the "מה חדש" rail isn't a wall of grey placeholders (אלון, 2026-08-07).
-  if (newEvents.some((event) => !event.image_url)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: artistRows, error: artistsError } = await (supabase as any)
-      .from("artists")
-      .select("name,name_english,image_url,art_image_url")
-      .eq("is_active", true)
-      .eq("is_deleted", false)
-      .limit(400)
-    if (artistsError) {
-      console.error("getPortalDashboard artists fallback:", JSON.stringify(artistsError))
-    } else {
-      const norm = (value: string | null | undefined) =>
-        (value ?? "").toLowerCase().replace(/[^a-z0-9֐-׾]+/g, " ").trim()
-      const artists = (artistRows ?? []) as {
-        name: string | null
-        name_english: string | null
-        image_url: string | null
-        art_image_url: string | null
-      }[]
-      for (const event of newEvents) {
-        if (event.image_url) continue
-        const eventName = norm(event.name)
-        if (!eventName) continue
-        const match = artists.find((artist) => {
-          const he = norm(artist.name)
-          const en = norm(artist.name_english)
-          return (he && eventName.includes(he)) || (en && eventName.includes(en))
-        })
-        event.image_url = match?.image_url ?? match?.art_image_url ?? null
-      }
-    }
+  // One card PER ARTIST, not per event — the rail was "הכל אותו אומן" and the
+  // artist template image (the site's own blob) is the card art. Events that
+  // match no artist group under their own event name (דור + אלון, 2026-08-08).
+  const norm = (value: string | null | undefined) =>
+    (value ?? "").toLowerCase().replace(/[^a-z0-9֐-׾]+/g, " ").trim()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: artistRows, error: artistsError } = await (supabase as any)
+    .from("artists")
+    .select("name,name_english,image_url,art_image_url")
+    .eq("is_active", true)
+    .eq("is_deleted", false)
+    .limit(400)
+  if (artistsError) {
+    console.error("getPortalDashboard artists:", JSON.stringify(artistsError))
   }
+  const artists = ((artistRows ?? []) as {
+    name: string | null
+    name_english: string | null
+    image_url: string | null
+    art_image_url: string | null
+  }[]).map((artist) => ({
+    ...artist,
+    he: norm(artist.name),
+    en: norm(artist.name_english),
+  }))
+
+  const groupsByKey = new Map<string, PortalNewGroup>()
+  for (const event of newEvents) {
+    const eventName = norm(event.name)
+    const artist = eventName
+      ? artists.find(
+          (candidate) =>
+            (candidate.he && eventName.includes(candidate.he)) ||
+            (candidate.en && eventName.includes(candidate.en))
+        )
+      : undefined
+    const key = artist ? `artist:${artist.he || artist.en}` : `event:${eventName || event.id}`
+    const group = groupsByKey.get(key) ?? {
+      key,
+      name: artist?.name || artist?.name_english || event.name,
+      image_url:
+        artist?.image_url ?? artist?.art_image_url ?? event.image_url ?? null,
+      events: [],
+    }
+    // Best available art wins: artist blob first, else first event image seen.
+    if (!group.image_url && event.image_url) group.image_url = event.image_url
+    group.events.push({
+      id: event.id,
+      date: event.date,
+      location: event.location,
+      href: event.href,
+    })
+    groupsByKey.set(key, group)
+  }
+  const newGroups = [...groupsByKey.values()].map((group) => ({
+    ...group,
+    events: group.events.sort((a, b) => (a.date ?? "").localeCompare(b.date ?? "")),
+  }))
 
   return {
     range,
@@ -445,6 +494,16 @@ export async function getPortalDashboard(
           terms
         )
       ),
+      // One line per open order, matching pendingUsd to the cent.
+      pendingRows: paidAll
+        .filter((r) => !r.billed_at)
+        .map((r) => ({
+          id: r.id,
+          event: normalizeReservationEventOrderInfo(r.event_order_info)[0]?.name ?? null,
+          amountUsd: round2(commissionForReservation(r, terms)),
+        }))
+        .filter((row) => row.amountUsd > 0)
+        .sort((a, b) => b.amountUsd - a.amountUsd),
     },
     userDiscountLabel: describeUserDiscount(partner?.user_discount),
     activeCoupons: coupons.filter((c) => c.is_active).length,
@@ -453,6 +512,7 @@ export async function getPortalDashboard(
     entryFunnels,
     clickedEvents,
     newEvents,
+    newGroups,
     topPicks: {
       flights: topOf(flightCounts),
       hotels: topOf(hotelCounts),

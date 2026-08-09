@@ -9,6 +9,7 @@ import {
   countTickets,
   describeCommission,
   isPaid,
+  PAID_STATUS,
   round2,
   sumSales,
   type CommissionTerms,
@@ -81,6 +82,9 @@ export interface PortalReservation {
   voucher_state: "sent" | "received" | "collected" | null;
   /** What this booking earns the partner. Zero until it is paid. */
   commission_usd: number;
+  /** agent_card orders: the commission was deducted from the charge itself —
+   *  nothing further to pay out (the cell says so instead of showing 0). */
+  settled_at_charge: boolean;
   /** True once it has gone out in a monthly report. */
   billed: boolean;
   /** A 24-hour price hold the customer saved but never paid for. */
@@ -380,7 +384,7 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
     // per-row figure here must match what the monthly report will pay.
     fundedCouponCodes: fundedCodes,
     // Quote-priced margin is the agent's, on top of the base rate.
-    quoteUpliftById: quoteUplifts,
+    upliftByReservationId: quoteUplifts,
   };
 
   type Row = {
@@ -450,6 +454,8 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
           : null,
       },
       commission_usd: round2(commissionForReservation(r, terms)),
+      settled_at_charge:
+        r.partner_settlement_method === "agent_card" && r.status === PAID_STATUS,
       billed: !!r.billed_at,
       is_hold: r.status === HOLD_STATUS,
       hold_expires_at:
