@@ -212,7 +212,9 @@ export async function getPortalDashboard(
       .gte("date", today)
       .gte("created_at", newSince)
       .order("created_at", { ascending: false })
-      .limit(24),
+      // High enough that one big artist drop doesn't crowd everyone else out
+      // of the rail — the cards group per artist anyway (גיוון — אלון).
+      .limit(60),
     fundedCouponCodesFor(code),
     quoteUpliftsFor(code),
   ])
@@ -322,7 +324,12 @@ export async function getPortalDashboard(
           label: FUNNEL_STAGE_LABELS_HE[stage],
           visitors: stageCounts.get(stage) ?? 0,
         })),
-        totalVisitors: stageCounts.get("VISIT") ?? 0,
+        // The GRAND total, not the VISIT stage: VISIT logging launched late,
+        // so long-time influencers have thousands of distinct users in later
+        // stages but a tiny VISIT count — "סה"כ מבקרים 59, בחרו כרטיסים 981"
+        // read as broken (שגיא; אלון+דור, 2026-08-09). Every stage is a
+        // distinct-user count, so the max is a floor for "everyone who came".
+        totalVisitors: Math.max(0, ...[...stageCounts.values()]),
         hasData: stageCounts.size > 0,
       }
 
@@ -409,35 +416,57 @@ export async function getPortalDashboard(
         href: partnerLink(code, event.id),
       }))
 
-  // One card PER ARTIST, not per event — the rail was "הכל אותו אומן" and the
-  // artist template image (the site's own blob) is the card art. Events that
-  // match no artist group under their own event name (דור + אלון, 2026-08-08).
+  // One card PER ARTIST/TEAM, not per event — the rail was "הכל אותו אומן"
+  // and the template image (the site's own blob) is the card art. Sports
+  // fixtures group under their HOME team — the earliest team name in the
+  // event title, longer name breaking ties ("Manchester United" beats
+  // "Manchester") — the same rule main uses. Events matching nothing group
+  // under their own event name (דור + אלון, 2026-08-09).
   const norm = (value: string | null | undefined) =>
     (value ?? "").toLowerCase().replace(/[^a-z0-9֐-׾]+/g, " ").trim()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: artistRows, error: artistsError } = await (supabase as any)
-    .from("artists")
-    .select("name,name_english,image_url,art_image_url")
-    .eq("is_active", true)
-    .eq("is_deleted", false)
-    .limit(400)
-  if (artistsError) {
-    console.error("getPortalDashboard artists:", JSON.stringify(artistsError))
+  const [artistsResult, teamsResult] = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("artists")
+      .select("name,name_english,image_url,art_image_url")
+      .eq("is_active", true)
+      .eq("is_deleted", false)
+      .limit(400),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("football_teams")
+      .select("name,name_english,image_url,art_image_url,logo_url")
+      .eq("is_active", true)
+      .eq("is_deleted", false)
+      .limit(400),
+  ])
+  if (artistsResult.error) {
+    console.error("getPortalDashboard artists:", JSON.stringify(artistsResult.error))
   }
-  const artists = ((artistRows ?? []) as {
+  if (teamsResult.error) {
+    console.error("getPortalDashboard teams:", JSON.stringify(teamsResult.error))
+  }
+  type TemplateRow = {
     name: string | null
     name_english: string | null
     image_url: string | null
     art_image_url: string | null
-  }[]).map((artist) => ({
-    ...artist,
-    he: norm(artist.name),
-    en: norm(artist.name_english),
-  }))
+    logo_url?: string | null
+  }
+  const normalized = (rows: TemplateRow[], kind: "artist" | "team") =>
+    rows.map((row) => ({
+      ...row,
+      kind,
+      he: norm(row.name),
+      en: norm(row.name_english),
+    }))
+  const artists = normalized((artistsResult.data ?? []) as TemplateRow[], "artist")
+  const teams = normalized((teamsResult.data ?? []) as TemplateRow[], "team")
 
   const groupsByKey = new Map<string, PortalNewGroup>()
   for (const event of newEvents) {
     const eventName = norm(event.name)
+    // Artists: substring hit. Teams: earliest position = home team.
     const artist = eventName
       ? artists.find(
           (candidate) =>
@@ -445,15 +474,41 @@ export async function getPortalDashboard(
             (candidate.en && eventName.includes(candidate.en))
         )
       : undefined
-    const key = artist ? `artist:${artist.he || artist.en}` : `event:${eventName || event.id}`
+    const team =
+      !artist && eventName
+        ? teams
+            .map((candidate) => {
+              const positions = [candidate.he, candidate.en]
+                .filter(Boolean)
+                .map((needle) => eventName.indexOf(needle))
+                .filter((position) => position >= 0)
+              return positions.length
+                ? {
+                    candidate,
+                    pos: Math.min(...positions),
+                    len: Math.max(candidate.he.length, candidate.en.length),
+                  }
+                : null
+            })
+            .filter(Boolean)
+            .sort((a, b) => a!.pos - b!.pos || b!.len - a!.len)[0]?.candidate
+        : undefined
+    const template = artist ?? team
+    const key = template
+      ? `${template.kind}:${template.he || template.en}`
+      : `event:${eventName || event.id}`
     const group = groupsByKey.get(key) ?? {
       key,
-      name: artist?.name || artist?.name_english || event.name,
+      name: template?.name || template?.name_english || event.name,
       image_url:
-        artist?.image_url ?? artist?.art_image_url ?? event.image_url ?? null,
+        template?.image_url ??
+        template?.art_image_url ??
+        template?.logo_url ??
+        event.image_url ??
+        null,
       events: [],
     }
-    // Best available art wins: artist blob first, else first event image seen.
+    // Best available art wins: template blob first, else first event image seen.
     if (!group.image_url && event.image_url) group.image_url = event.image_url
     group.events.push({
       id: event.id,
