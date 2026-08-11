@@ -302,6 +302,54 @@ function deleteFailureMessage(error: { code?: string; message?: string }): strin
   return "Failed to delete partner. Please try again."
 }
 
+/**
+ * Quick activate/deactivate — one code or a bulk selection, same path.
+ * Mirrors the portal login's is_active like updatePartnerAccount does: a
+ * deactivated partner must not still be able to sign in, and re-activating
+ * restores the login. Old-data cleanup runs through this instead of opening
+ * every partner's edit form.
+ */
+export async function setPartnersActive(
+  trackingCodes: string[],
+  active: boolean
+): Promise<DeletePartnersResult> {
+  await requireStaff();
+  if (trackingCodes.length === 0) return { ok: true }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from("partners")
+    .update({ is_active: active })
+    .in("partner_tracking_code", trackingCodes)
+  if (error) {
+    console.error("setPartnersActive partners:", JSON.stringify(error))
+    return { ok: false, error: "Could not update partner status" }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: profileError } = await (supabase as any)
+    .from("user_profiles")
+    .update({ is_active: active })
+    .in("partner_tracking_code", trackingCodes)
+  if (profileError) {
+    // Partners already flipped — say so instead of pretending nothing happened.
+    console.error("setPartnersActive profiles:", JSON.stringify(profileError))
+    return {
+      ok: false,
+      error: "Partner status saved, but the portal login state could not be synced",
+    }
+  }
+
+  await logAudit({
+    action: "update",
+    entityType: "partner",
+    entityId: trackingCodes.length === 1 ? trackingCodes[0] : null,
+    changes: { is_active: active },
+    metadata: { ids: trackingCodes, count: trackingCodes.length, bulk_status_toggle: true },
+  })
+  return { ok: true }
+}
+
 export async function deletePartner(trackingCode: string): Promise<DeletePartnersResult> {
   await requireStaff();
   const loginBlock = await deletePortalLogins([trackingCode])
