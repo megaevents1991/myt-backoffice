@@ -91,6 +91,7 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
         <TableHeader>
           <TableRow>
             <TableHead>Image</TableHead>
+            <TableHead>Gallery</TableHead>
             <TableHead>Name</TableHead>
             <TableHead>English</TableHead>
             <TableHead>Slug</TableHead>
@@ -108,6 +109,30 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
                     <Image src={r.image_url} alt={r.name} width={56} height={36} className="h-9 w-14 rounded object-cover" />
                   ) : (
                     <div className="h-9 w-14 rounded bg-muted" />
+                  )}
+                </TableCell>
+                <TableCell>
+                  {r.gallery?.length ? (
+                    <Link
+                      href={`${a.base}/${r.id}/edit`}
+                      title={`${r.gallery.length} gallery images — click to manage`}
+                      className="flex items-center gap-1"
+                    >
+                      <span className="flex -space-x-2">
+                        {r.gallery.slice(0, 3).map((u) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={u}
+                            src={u}
+                            alt=""
+                            className="h-8 w-8 rounded-full border-2 border-background object-cover"
+                          />
+                        ))}
+                      </span>
+                      <Badge variant="secondary">{r.gallery.length}</Badge>
+                    </Link>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
                   )}
                 </TableCell>
                 <TableCell className="font-medium">{r.name}</TableCell>
@@ -138,7 +163,7 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
               </TableRow>
             ))
           ) : (
-            <TableRow><TableCell colSpan={7} className="h-24 text-center">{query ? "No matches." : "Nothing yet."}</TableCell></TableRow>
+            <TableRow><TableCell colSpan={8} className="h-24 text-center">{query ? "No matches." : "Nothing yet."}</TableCell></TableRow>
           )}
         </TableBody>
       </Table>

@@ -118,6 +118,11 @@ export function CreativeForm({
   const [cardBg, setCardBg] = useState<string>("");
   const [blobColor, setBlobColor] = useState<string>("");
   const [blobShape, setBlobShape] = useState<string>("");
+  // Text layout ("" = classic). Hero (full-bleed photo) is derived, not a
+  // toggle: photo kind always, artist kind when the image is a regular photo
+  // — mirrors what the nightly campaign cron renders.
+  const [layoutVariant, setLayoutVariant] = useState<string>("");
+  const heroPhoto = kind === "photo" || (kind === "artist" && !artistIsCutout);
   // Designer sizing (rendered into the PNG): zoom in %, offsets in % of card.
   // Live values track the slider thumb; committed values (set on release)
   // drive the server-rendered preview so we don't re-render per tick.
@@ -206,12 +211,14 @@ export function CreativeForm({
     if (cardBg) q.set("bg", cardBg);
     if (blobColor) q.set("color", blobColor);
     if (blobShape) q.set("shape", blobShape);
+    if (layoutVariant) q.set("variant", layoutVariant);
+    if (heroPhoto) q.set("hero", "1");
     if (sizing.imgZoom !== 100) q.set("iscale", String(sizing.imgZoom / 100));
     if (sizing.imgX !== 0) q.set("ix", String(sizing.imgX));
     if (sizing.imgY !== 0) q.set("iy", String(sizing.imgY));
     if (sizing.bgZoom !== 100) q.set("bgscale", String(sizing.bgZoom / 100));
     return `/api/creative?${q.toString()}`;
-  }, [ready, kind, homeRef, awayRef, artistImg, artistName, artistIsCutout, photoImg, photoName, dateText, price, currency, mode, time, locationText, cardBg, blobColor, blobShape, sizing]);
+  }, [ready, kind, homeRef, awayRef, artistImg, artistName, artistIsCutout, photoImg, photoName, dateText, price, currency, mode, time, locationText, cardBg, blobColor, blobShape, layoutVariant, heroPhoto, sizing]);
 
   // Preview double-buffer: keep showing the last rendered image and swap only
   // when the next server render has fully loaded — no blank flashes.
@@ -282,6 +289,12 @@ export function CreativeForm({
         imgOffsetX: imgX !== 0 ? imgX : null,
         imgOffsetY: imgY !== 0 ? imgY : null,
         bgScale: bgZoom !== 100 ? bgZoom / 100 : null,
+        variant: (layoutVariant || undefined) as
+          | "classic"
+          | "name-top"
+          | "price-top"
+          | undefined,
+        heroPhoto,
         attachEventId: eventId && attach ? Number(eventId) : null,
       };
       const res = await generateCreative(
@@ -534,6 +547,24 @@ export function CreativeForm({
               </SelectContent>
             </Select>
           </div>
+        </div>
+
+        <div>
+          <Label>פריסת טקסט</Label>
+          <Select
+            value={layoutVariant || "classic"}
+            onValueChange={(v) => setLayoutVariant(v === "classic" ? "" : v)}
+          >
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="classic">קלאסי — שם מתחת לתמונה, מחיר למטה</SelectItem>
+              <SelectItem value="name-top">שם למעלה (כותרת גדולה)</SelectItem>
+              <SelectItem value="price-top">מחיר למעלה (מדבקה מוטה)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            הקרון הלילי תמיד משתמש בפריסה הקלאסית; הפריסות האחרות לשימוש ידני כאן.
+          </p>
         </div>
 
         {kind !== "photo" && (

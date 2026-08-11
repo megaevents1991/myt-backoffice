@@ -61,6 +61,9 @@ type PersonRow = {
   logo_url: string | null;
   art_image_url: string | null;
   image_url: string | null;
+  // artists.gallery (jsonb) — array of image URLs, empty for most rows.
+  // Only loaded for artists; football_teams/logos subjects leave it unset.
+  gallery?: string[] | null;
 };
 
 // PersonRow + where it came from, so a match maps back to a subject ref.
@@ -95,6 +98,45 @@ function matchPerson<R extends PersonRow>(part: string, rows: R[]): R | null {
     }
   }
   return best;
+}
+
+/** Artists table rows (deduped per batch run through `caches`). */
+async function loadArtistRows(caches?: CreativeLookupCaches): Promise<PersonRow[]> {
+  if (caches?.artists) return caches.artists;
+  const { data, error } = await supabase
+    .from("artists")
+    .select("id,name,name_english,art_image_url,image_url,gallery")
+    .eq("is_deleted", false);
+  if (error) console.error(JSON.stringify(error));
+  const rows: PersonRow[] = ((data || []) as Omit<PersonRow, "logo_url">[]).map(
+    (r) => ({ ...r, logo_url: null }),
+  );
+  if (caches) caches.artists = rows;
+  return rows;
+}
+
+/**
+ * Deterministic per-event pick from an artist's gallery (jsonb URL array).
+ * Plain modulo on the event id: same-artist events carry near-sequential ids,
+ * so this walks the gallery round-robin — maximum variety across the artist's
+ * events, stable for any single event across re-renders.
+ */
+export function pickGalleryImage(gallery: unknown, eventId: number): string | null {
+  const pool = Array.isArray(gallery)
+    ? gallery.filter((u): u is string => typeof u === "string" && u.length > 0)
+    : [];
+  if (pool.length === 0) return null;
+  return pool[eventId % pool.length];
+}
+
+/** The artist row an event's name matches (Hebrew first, English fallback). */
+export function matchArtistForEvent(
+  event: Pick<Event, "name" | "name_english">,
+  rows: PersonRow[],
+): PersonRow | null {
+  const hebName = (event.name ?? "").trim();
+  const engName = (event.name_english ?? "").trim();
+  return matchPerson(hebName, rows) ?? matchPerson(engName, rows);
 }
 
 /** DD.MM.YYYY + optional HH:MM from the stored event date, in UTC. */
@@ -191,27 +233,21 @@ export async function deriveCreativeDefaults(
     let artistImageUrl: string | null = event.art_image_url ?? null;
     let artistIsCutout = artistImageUrl != null;
     let artistName = displayName;
-    let rows: PersonRow[];
-    if (caches?.artists) {
-      rows = caches.artists;
-    } else {
-      const { data: artistRows, error: aErr } = await supabase
-        .from("artists")
-        .select("id,name,name_english,art_image_url,image_url")
-        .eq("is_deleted", false);
-      if (aErr) console.error(JSON.stringify(aErr));
-      rows = (artistRows || []).map((r) => ({
-        ...(r as Omit<PersonRow, "logo_url">),
-        logo_url: null,
-      }));
-      if (caches) caches.artists = rows;
-    }
+    const rows = await loadArtistRows(caches);
     // Hebrew first, English as the fallback — same reason as the probe above.
-    const match = matchPerson(hebName, rows) ?? matchPerson(engName, rows);
+    const match = matchArtistForEvent(event, rows);
     if (match) {
       artistName = match.name;
       if (!artistImageUrl) {
-        if (match.art_image_url) {
+        // Gallery first: a per-event rotating pick beats the one static
+        // artist image — that's what makes each product's creative (and so
+        // the Meta feed) look different per event of the same artist. Falls
+        // back to the artist cut-out/photo when the gallery is empty.
+        const galleryPick = pickGalleryImage(match.gallery, eventId);
+        if (galleryPick) {
+          artistImageUrl = galleryPick;
+          artistIsCutout = false;
+        } else if (match.art_image_url) {
           artistImageUrl = match.art_image_url;
           artistIsCutout = true;
         } else if (match.image_url) {
@@ -377,6 +413,12 @@ export type CampaignEventRow = Event & { campaign_input_hash?: string | null };
 // real wordmark logo (2026-07-19). v3: new tagline, "מחיר ממוצע לנוסע" pill
 // in brand mint at one size across both creatives, square subject cards,
 // thousands separator (2026-07-29).
+//
+// STILL "v3" on purpose (2026-08-11): the hero/name-top/price-top layouts
+// exist but are manual-designer-only until the creative team picks the new
+// template together — bump to "v4" when that lands, and the whole catalog
+// re-renders in the chosen look. Until then deploying this file changes
+// nothing about existing creatives.
 const RENDER_VERSION = "v3";
 
 /**
@@ -384,16 +426,25 @@ const RENDER_VERSION = "v3";
  * the event's own image fields (card_image_url, art_image_url): without
  * this, uploading a missing photo/cutout directly on the event doesn't
  * change its date/price/name, so a prior skip stayed checkpointed forever
- * even after the actual blocker was fixed. (Fixing a linked artists/
- * football_teams row's image instead of the event's own fields still needs
- * a manual recheck — that data isn't cheap to include here.)
+ * even after the actual blocker was fixed.
+ *
+ * `galleryUrl` is the deterministic artist-gallery pick for this event (see
+ * pickGalleryImage) — batch callers pass it so uploading/editing an artist's
+ * gallery regenerates that artist's creatives on the next run. (Fixing a
+ * linked row's plain art_image_url/image_url instead still needs a manual
+ * recheck — that data isn't in the hash.)
  */
-export function campaignInputHash(event: Event): string {
+export function campaignInputHash(event: Event, galleryUrl?: string | null): string {
   const { dateText } = eventDateTexts(event.date);
   const price = computePackagePrice(event);
+  // The gallery segment is appended ONLY when a pick exists: with every
+  // gallery still empty, hashes stay byte-identical to the pre-gallery
+  // format, so deploying this code re-renders nothing. The first images
+  // uploaded to an artist's gallery change only that artist's hashes.
+  const gallerySegment = galleryUrl ? `|${galleryUrl}` : "";
   return createHash("sha1")
     .update(
-      `${RENDER_VERSION}|${dateText}|${price ?? "none"}|${event.name}|${event.card_image_url ?? ""}|${event.art_image_url ?? ""}`,
+      `${RENDER_VERSION}|${dateText}|${price ?? "none"}|${event.name}|${event.card_image_url ?? ""}|${event.art_image_url ?? ""}${gallerySegment}`,
     )
     .digest("hex")
     .slice(0, 12);
@@ -430,7 +481,14 @@ export async function generateCampaignForEvent(
   event: CampaignEventRow,
   caches?: CreativeLookupCaches,
 ): Promise<CampaignResult> {
-  const hash = campaignInputHash(event);
+  // Gallery-aware hash: the picked gallery image is part of what gets
+  // rendered, so a gallery edit must produce a new hash (→ regenerate).
+  const artistRows = await loadArtistRows(caches);
+  const galleryMatch = matchArtistForEvent(event, artistRows);
+  const galleryUrl = galleryMatch
+    ? pickGalleryImage(galleryMatch.gallery, event.id)
+    : null;
+  const hash = campaignInputHash(event, galleryUrl);
   if (event.campaign_input_hash === hash) return { status: "current" };
 
   // Records the hash even on skip — otherwise an event whose derivation
@@ -470,6 +528,12 @@ export async function generateCampaignForEvent(
     mode: "package" as const,
   };
 
+  // The auto/campaign flow renders EXACTLY the v3 look for now: classic
+  // layout, no hero mode. The new layouts (hero / name-top / price-top,
+  // 2026-08-10) are manual-designer-only until the creative team picks the
+  // production template together — then wire the choice in here and bump
+  // RENDER_VERSION. Gallery picks still flow through artistImageUrl, so an
+  // artist with gallery images already gets per-event photo variety.
   let params: CreativeParams;
   if (defaults.warnings.length === 0 && defaults.kind === "artist") {
     // isCutout flows through to input.ts/MatchTemplate: even a "clean" match
@@ -609,9 +673,16 @@ export async function runCampaignCreatives(
   let processed = 0;
   // Shared per-run caches: artists/teams/logos tables load once, not per event.
   const caches: CreativeLookupCaches = {};
+  // The pre-check hash is gallery-aware, so the artists table loads up front —
+  // one query per run, same rows generateCampaignForEvent reuses via `caches`.
+  const artistRows = await loadArtistRows(caches);
   for (const event of events) {
     // Cheap pre-check so "current" events don't count against the batch.
-    if (event.campaign_input_hash === campaignInputHash(event)) {
+    const preMatch = matchArtistForEvent(event, artistRows);
+    const preGalleryUrl = preMatch
+      ? pickGalleryImage(preMatch.gallery, event.id)
+      : null;
+    if (event.campaign_input_hash === campaignInputHash(event, preGalleryUrl)) {
       summary.current++;
       continue;
     }

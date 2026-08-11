@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown, Plane, ExternalLink, BedDouble } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Card,
   CardContent,
@@ -33,6 +32,7 @@ import { airportsMatch } from "@/lib/airport-cities";
 import { ColorPicker } from "@/components/color-picker";
 import { ImageFilePicker } from "@/components/image-file-picker";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
+import { CampaignVideoField } from "@/components/campaign-video-field";
 import { v4 as uuidv4 } from "uuid";
 import { 
   searchFlightPrices, 
@@ -44,7 +44,7 @@ import { searchHotelPrices } from "@/lib/actions/hotel-actions";
 import { getTixStockTickets } from "@/lib/actions/tixstock-actions";
 import type { TixStockListing, TixStockEventDB } from "@/types/tixstock.types";
 import { tixstockToEvent } from "../../tixstock-events/batch/tixstock-to-event";
-import { exchangeRateClientService, type SupportedCurrency } from "@/lib/services/exchange-rate-client";
+import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
 import {
   getFlightsByEventId,
   getOfflineFlights,
@@ -194,6 +194,8 @@ export default function EventPage({
         });
       }
     })();
+    // toast (useToast) is a stable helper — intentionally not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNewEvent, unwrappedParams.id]);
 
   // Persist links; isolated so a taxonomy failure never masks a successful event
@@ -603,6 +605,9 @@ export default function EventPage({
     });
 
     return () => observer.disconnect();
+    // isTicketMatchingSectionOrCategory is recreated each render — depending
+    // on it would re-run the observer every render for nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [svgContent, hoveredTixTicket, selectedSection, selectedCategory, event?.tx_excluded_sections]);
 
   // Function to search for flight prices
@@ -991,6 +996,8 @@ export default function EventPage({
     }
 
     return allEntries;
+    // isTicketMatchingCategory is recreated each render — same reason as above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tixStockTickets, selectedSection, selectedCategory, mapCategoryIds]);
 
   const isSourceTicketAdded = (category: string) =>
@@ -1129,6 +1136,7 @@ export default function EventPage({
         if (ticket.id === ticketId) {
           if (!enabled) {
             // Remove vip field entirely when disabled
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { vip, ...ticketWithoutVip } = ticket;
             return ticketWithoutVip;
           }
@@ -1230,6 +1238,7 @@ export default function EventPage({
     const ev = batchEvents[index];
     if (!ev) return;
     const identity = tixstockToEvent(ev);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id: _carriedId, ...current } = event;
     let tickets: EventTicket[] = [];
     if (current.tickets_and_rates.length > 0) {
@@ -1272,6 +1281,7 @@ export default function EventPage({
     if (!event || batchEvents.length === 0) return;
     setSaving(true);
     try {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id: _savedId, ...current } = event; // tickets already carry this event's eid + live price
       const createdBatchEvent = await createEvent(current);
       // Selected categories/tags apply to EVERY batch step (like the shared
@@ -1317,6 +1327,7 @@ export default function EventPage({
     try {
       if (isNewEvent) {
         // For new events, remove the id and ensure proper field values
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { id, ...eventWithoutId } = event;
         const createdEvent = await createEvent({ ...eventWithoutId });
 
@@ -1699,7 +1710,7 @@ export default function EventPage({
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Click "Search Flights" to get current prices from TLV to your destination
+                  Click &quot;Search Flights&quot; to get current prices from TLV to your destination
                 </p>
               </div>
               <div className="space-y-2">
@@ -1757,7 +1768,7 @@ export default function EventPage({
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Click "Search Hotels" to get current prices near your event location
+                  Click &quot;Search Hotels&quot; to get current prices near your event location
                 </p>
               </div>
             </div>
@@ -2143,24 +2154,14 @@ export default function EventPage({
               allBuckets
             />
 
-            <div className="space-y-2">
-              <Label htmlFor="campaign_video_url">Campaign Video URL (Meta feed)</Label>
-              <Input
-                id="campaign_video_url"
-                value={event.campaign_video_url ?? ""}
-                placeholder="https://….supabase.co/storage/v1/object/public/campaign_videos/ariana-london.mp4"
-                onChange={(e) =>
-                  setEvent((prev) =>
-                    prev ? { ...prev, campaign_video_url: e.target.value } : prev
-                  )
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Direct link to a video FILE (.mp4, .mov, …), max 200 MB — upload it
-                to Storage and paste the public URL. YouTube/Instagram player links
-                do NOT work and are dropped from the feed.
-              </p>
-            </div>
+            <CampaignVideoField
+              value={event.campaign_video_url}
+              onChange={(url) =>
+                setEvent((prev) =>
+                  prev ? { ...prev, campaign_video_url: url } : prev
+                )
+              }
+            />
 
             <ArtBlobPicker
               imageUrl={event.art_image_url}
@@ -3039,8 +3040,8 @@ export default function EventPage({
           <CardContent>
             {event.tickets_and_rates.length === 0 ? (
               <div className="text-center py-4 text-muted-foreground">
-                No tickets added yet. Click "Add Ticket" to create a new ticket
-                category.
+                No tickets added yet. Click &quot;Add Ticket&quot; to create a new
+                ticket category.
               </div>
             ) : (
               <div className="space-y-6">

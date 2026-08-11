@@ -139,25 +139,38 @@ export function GalleryField({
       )}
 
       {value.length > 0 ? (
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-          {value.map((u) => (
-            <div
-              key={u}
-              className="group relative aspect-square overflow-hidden rounded-md border bg-muted"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={u} alt="" className="h-full w-full object-cover" />
-              <button
-                type="button"
-                onClick={() => remove(u)}
-                aria-label="Remove image"
-                className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition group-hover:opacity-100"
+        <>
+          <p className="text-xs text-muted-foreground">
+            {value.length} image{value.length > 1 ? "s" : ""} in the gallery — the
+            creative generator and the site rotate them per event. Click a photo
+            to open it full size; × removes it (saved on the next Save).
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {value.map((u, i) => (
+              <div
+                key={u}
+                className="group relative aspect-square overflow-hidden rounded-md border bg-muted"
               >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ))}
-        </div>
+                <a href={u} target="_blank" rel="noreferrer" title="Open full size">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={u} alt="" className="h-full w-full object-cover" />
+                </a>
+                <span className="absolute left-1.5 bottom-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                  #{i + 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => remove(u)}
+                  aria-label="Remove image"
+                  title="Remove from gallery"
+                  className="absolute right-1.5 top-1.5 rounded-full bg-black/70 p-1.5 text-white opacity-80 transition hover:bg-red-600 hover:opacity-100"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
       ) : (
         <p className="text-xs text-muted-foreground">
           No gallery images yet. Add from storage, by URL, or upload + cut out.
