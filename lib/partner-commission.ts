@@ -25,6 +25,14 @@ type ReservationLike = {
   quote_id?: number | null
   /** agent_card orders were netted at charge time — nothing left to pay out. */
   partner_settlement_method?: string | null
+  /**
+   * Per-reservation frozen terms (migration 20260811120000). Stamped onto a
+   * partner's existing rows at the moment their rate CHANGES, so the change
+   * applies from then on instead of repricing history. NULL/absent = no
+   * snapshot → the partner's current terms apply, exactly as before.
+   */
+  commission_type?: string | null
+  commission_rate?: number | null
 }
 
 /** How a partner is paid. `rate` is `partners.commission`. */
@@ -108,7 +116,18 @@ export function commissionForReservation(
   terms: CommissionTerms
 ): number {
   if (!isPaid(reservation)) return 0
-  if (!isUsableRate(terms.rate)) return 0
+
+  // A reservation carrying frozen terms (stamped when the partner's rate
+  // changed — see the ReservationLike note) is paid at THOSE terms; only
+  // snapshot-less rows read the partner's current rate. This is what makes a
+  // rate change apply from-now-on instead of repricing every open order.
+  const snapshotRate =
+    reservation.commission_rate != null && Number.isFinite(Number(reservation.commission_rate))
+      ? Number(reservation.commission_rate)
+      : null
+  const rate = snapshotRate ?? terms.rate
+  const type = snapshotRate != null ? reservation.commission_type ?? terms.type : terms.type
+  if (!isUsableRate(rate)) return 0
 
   // agent_card: the commission (and any quote margin) was already deducted
   // from the charge itself — showing it as payable again would double-pay
@@ -116,11 +135,11 @@ export function commissionForReservation(
   if (reservation.partner_settlement_method === "agent_card") return 0
 
   let gross =
-    terms.type === "percent_of_sale"
-      ? (saleValue(reservation) * terms.rate) / 100
+    type === "percent_of_sale"
+      ? (saleValue(reservation) * rate) / 100
       : // `fixed_per_ticket` is the default for every legacy row, so an unset or
         // unrecognised type must land here — that is how the cron has always paid.
-        countReservationTickets(reservation) * terms.rate
+        countReservationTickets(reservation) * rate
 
   // Agent quote uplift: the margin the agent priced into the signed quote is
   // theirs on top of the base rate.

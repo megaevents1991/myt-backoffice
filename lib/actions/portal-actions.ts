@@ -212,7 +212,7 @@ export async function getPortalStats(): Promise<PortalStats> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from("reservations")
-      .select("id,status,user_shown_price,event_order_info")
+      .select("id,status,user_shown_price,event_order_info,commission_type,commission_rate")
       .eq("aff_partner_tracking_code", session.partner_code),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
@@ -334,7 +334,7 @@ const PORTAL_RESERVATION_COLUMNS =
  *  settlement marker). Selected separately so a not-yet-migrated DB can fall
  *  back to the legacy select instead of blanking the whole page. */
 const PORTAL_RESERVATION_SOURCE_COLUMNS =
-  ",partner_settlement_method,source_share_token,quote_id,voucher_state,travel_materials_sent_at";
+  ",partner_settlement_method,source_share_token,quote_id,voucher_state,travel_materials_sent_at,commission_type,commission_rate";
 
 export async function getPortalReservations(): Promise<PortalReservationsPage> {
   const session = await requirePartner();

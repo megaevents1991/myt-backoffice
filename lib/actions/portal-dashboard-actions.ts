@@ -179,7 +179,7 @@ export async function getPortalDashboard(
     supabase
       .from("reservations")
       .select(
-        "id,created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,partner_settlement_method,billed_at,coupon_code,coupon_discount_usd"
+        "id,created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,partner_settlement_method,billed_at,coupon_code,coupon_discount_usd,commission_type,commission_rate"
       )
       .eq("aff_partner_tracking_code", code),
     supabase

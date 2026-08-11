@@ -234,7 +234,7 @@ export async function getPartnerPerformance(
   let reservationsQuery = supabase
     .from("reservations")
     .select(
-      "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info,billed_at,flight_order_info,hotel_order_info,coupon_code,coupon_discount_usd,quote_id,partner_settlement_method"
+      "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info,billed_at,flight_order_info,hotel_order_info,coupon_code,coupon_discount_usd,quote_id,partner_settlement_method,commission_type,commission_rate"
     )
     .eq("aff_partner_tracking_code", trackingCode)
     .order("created_at", { ascending: false })

@@ -4,6 +4,7 @@ import { requirePartner } from "@/lib/auth/guards"
 import { supabase } from "@/lib/supabase-server"
 import { verifyPassword } from "@/lib/auth/supabase-auth"
 import { logAudit } from "@/lib/audit"
+import { freezeCommissionOnExistingReservations } from "@/lib/partner-commission-freeze"
 
 /**
  * Partner self-service profile (פעולות על הפרופיל).
@@ -370,7 +371,7 @@ export async function rebalanceMyCommissionSplit(input: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from("partners")
-    .select("commission,user_discount")
+    .select("commission,commission_type,user_discount")
     .eq("partner_tracking_code", session.partner_code)
     .maybeSingle()
   if (error || !data) {
@@ -383,6 +384,20 @@ export async function rebalanceMyCommissionSplit(input: {
       ok: false,
       error: `הסכום הכולל חייב להישאר ${currentTotal} — אפשר רק לשנות את החלוקה`,
     }
+  }
+
+  // The new split applies FROM NOW ON: existing reservations keep earning at
+  // the rate they were booked under, so rebalancing never repriced history
+  // (the 2026-08-11 retro bug). Stamp first; on failure change nothing.
+  const frozen = await freezeCommissionOnExistingReservations({
+    trackingCode: session.partner_code,
+    previousType: data.commission_type ?? null,
+    previousRate: data.commission ?? null,
+    nextType: data.commission_type ?? "fixed_per_ticket",
+    nextRate: commission,
+  })
+  if (!frozen.ok) {
+    return { ok: false, error: "לא הצלחנו לקבע את התנאים על הזמנות קיימות — היחס לא שונה. נסו שוב." }
   }
 
   // Guarded update: only flips if the row still holds the values we validated
