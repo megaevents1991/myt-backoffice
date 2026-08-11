@@ -56,6 +56,13 @@ export async function GET(req: NextRequest) {
     bgParam === "blob" || bgParam === "football" || bgParam === "tennis" || bgParam === "cars"
       ? bgParam
       : undefined;
+  // Text layout + full-bleed hero photo mode (see MatchTemplate).
+  const variantParam = q.get("variant");
+  const variant =
+    variantParam === "classic" || variantParam === "name-top" || variantParam === "price-top"
+      ? variantParam
+      : undefined;
+  const heroPhoto = q.get("hero") === "1";
   const colorParam = q.get("color");
   const shapeParam = q.get("shape");
   // Designer sizing: iscale/bgscale = 0.5–2 zoom, ix/iy = −50..50 (% offset).
@@ -80,6 +87,8 @@ export async function GET(req: NextRequest) {
     imgOffsetX: numParam("ix"),
     imgOffsetY: numParam("iy"),
     bgScale: numParam("bgscale"),
+    variant,
+    heroPhoto,
   } as const;
 
   let params: CreativeParams;

@@ -3,6 +3,7 @@ import {
   buildPriceText,
   type CardBgKind,
   type CreativeInput,
+  type CreativeVariant,
 } from "@/components/creative/MatchTemplate";
 
 type BaseParams = {
@@ -23,6 +24,9 @@ type BaseParams = {
   imgOffsetX?: number | null;
   imgOffsetY?: number | null;
   bgScale?: number | null;
+  // Text layout + full-bleed photo mode (see MatchTemplate).
+  variant?: CreativeVariant;
+  heroPhoto?: boolean;
 };
 
 // A match side comes from one of two stores: "team:<id>" = football_teams
@@ -86,6 +90,8 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
     imgOffsetX: params.imgOffsetX ?? null,
     imgOffsetY: params.imgOffsetY ?? null,
     bgScale: params.bgScale ?? null,
+    variant: params.variant,
+    heroPhoto: params.heroPhoto ?? false,
   };
 
   if (params.kind === "artist") {

@@ -38,7 +38,7 @@ const CANVAS = "#070618";
 const INK = "#FAFAF5";
 const MINT = "#5BFF95";
 const AQUA = "#45E2FF";
-const VIOLET = "#BBA1FF";
+// (violet #BBA1FF lives in BLOB_HEX below)
 
 // Full brand neon palette (same order as the site's EVENT_ART_COLORS).
 export const BLOB_HEX = [
@@ -103,6 +103,13 @@ export const PHOTO_BG = {
 } as const;
 export type CardBgKind = "blob" | keyof typeof PHOTO_BG;
 
+// Text-layout variants (Meta-ad oriented): "classic" = name under the subject,
+// price pill bottom-center (the original look); "name-top" = the name as a big
+// headline right under the tagline; "price-top" = the price pill floats as a
+// rotated top-right badge and the footer keeps only date/location.
+export const CREATIVE_VARIANTS = ["classic", "name-top", "price-top"] as const;
+export type CreativeVariant = (typeof CREATIVE_VARIANTS)[number];
+
 export type CreativeInput = {
   // "match" = two subjects + VS; "artist" = single subject; "photo" = event's
   // own photo when nothing matched at all (no name pairs with it — always
@@ -145,6 +152,15 @@ export type CreativeInput = {
   imgOffsetX?: number | null;
   imgOffsetY?: number | null;
   bgScale?: number | null;
+  // Text layout (see CREATIVE_VARIANTS). Single-subject only for "name-top" —
+  // match creatives keep per-card names, so it falls back to classic there.
+  // Bare mode ignores the variant entirely (the name IS the centrepiece).
+  variant?: CreativeVariant;
+  // Full-bleed photo mode: the subject photo covers the whole canvas behind
+  // dark scrims instead of sitting in a card/avatar. Only honoured for
+  // regular photos (gallery images, event card photos) on single-subject
+  // kinds — a transparent cut-out stretched to full bleed looks broken.
+  heroPhoto?: boolean;
 };
 
 // Package price is already a per-traveler figure (same number the site's event
@@ -305,6 +321,7 @@ export function MatchTemplate({
   dateText, timeText, locationText, priceText, bare,
   bgKind, colorIndex, shapeIndex,
   imgScale, imgOffsetX, imgOffsetY, bgScale,
+  variant, heroPhoto,
   width, height, bgUrl,
 }: CreativeInput & { width: number; height: number; bgUrl: string }) {
   const isSquare = height > 700;
@@ -329,6 +346,14 @@ export function MatchTemplate({
   const homeIsCutout = kind === "photo" ? false : homeHasCutout ?? true;
   const awayIsCutout = awayHasCutout ?? true;
   const bothCutouts = homeIsCutout && awayIsCutout;
+
+  // Layout flags — bare ignores the variant (its name is already the
+  // centrepiece), "name-top" only means something for a single subject.
+  const layout: CreativeVariant = bare ? "classic" : variant ?? "classic";
+  const nameTop = layout === "name-top" && isSingleSubject && !bare;
+  const priceTop = layout === "price-top" && !bare;
+  // Full-bleed hero: regular photo covering the canvas behind dark scrims.
+  const isHero = !!heroPhoto && isSingleSubject && !bare && !!homeLogoUrl && !homeIsCutout;
 
   // Subject cards are 1:1 — same aspect the feed itself wants, and the site's
   // own event art. (Was 380×440 / 520×560 portrait.)
@@ -390,29 +415,79 @@ export function MatchTemplate({
         color: INK,
       }}
     >
-      {/* neon glows */}
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          width,
-          height,
-          background: `radial-gradient(${Math.round(width * 0.55)}px ${Math.round(height * 0.5)}px at 22% 40%, ${AQUA}33, transparent 70%)`,
-          display: "flex",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          width,
-          height,
-          background: `radial-gradient(${Math.round(width * 0.55)}px ${Math.round(height * 0.5)}px at 78% 45%, ${MINT}33, transparent 70%)`,
-          display: "flex",
-        }}
-      />
+      {isHero ? (
+        /* full-bleed hero photo + scrims (top for the wordmark, bottom for the
+           name/date/price block) — replaces the neon glows entirely */
+        <>
+          {/* Faces live in the TOP of artist photos, and satori ignores
+              objectPosition — so the image box is ~22% taller than the canvas
+              and pinned to the top: the visible slice is the photo's upper
+              part instead of a beheading center crop (worst on the banner). */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={homeLogoUrl}
+            width={Math.round(width * iScale)}
+            height={Math.round(height * 1.22 * iScale)}
+            alt=""
+            style={{
+              position: "absolute",
+              left: Math.round((width - width * iScale) / 2 + (iOffX / 100) * width),
+              top: Math.round((iOffY / 100) * height),
+              width: Math.round(width * iScale),
+              height: Math.round(height * 1.22 * iScale),
+              objectFit: "cover",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width,
+              height: Math.round(height * 0.34),
+              background: `linear-gradient(180deg, ${CANVAS}EE 0%, ${CANVAS}00 100%)`,
+              display: "flex",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: Math.round(height * 0.5),
+              width,
+              height: Math.round(height * 0.5),
+              background: `linear-gradient(0deg, ${CANVAS}F7 0%, ${CANVAS}99 55%, ${CANVAS}00 100%)`,
+              display: "flex",
+            }}
+          />
+        </>
+      ) : (
+        <>
+          {/* neon glows */}
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width,
+              height,
+              background: `radial-gradient(${Math.round(width * 0.55)}px ${Math.round(height * 0.5)}px at 22% 40%, ${AQUA}33, transparent 70%)`,
+              display: "flex",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width,
+              height,
+              background: `radial-gradient(${Math.round(width * 0.55)}px ${Math.round(height * 0.5)}px at 78% 45%, ${MINT}33, transparent 70%)`,
+              display: "flex",
+            }}
+          />
+        </>
+      )}
 
       {/* header: real wordmark logo + tagline */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: isSquare ? 44 : 22 }}>
@@ -422,8 +497,30 @@ export function MatchTemplate({
         </div>
       </div>
 
+      {/* "name-top" variant: the name as a big headline under the tagline */}
+      {nameTop && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            textAlign: "center",
+            padding: `0 ${isSquare ? 70 : 56}px`,
+            marginTop: isSquare ? 30 : 12,
+            fontSize: isSquare ? 76 : 44,
+            fontWeight: 700,
+            lineHeight: 1.1,
+            textShadow: "0 4px 24px rgba(0,0,0,0.75)",
+          }}
+        >
+          {bidiVisual(homeName)}
+        </div>
+      )}
+
       {/* main */}
-      {isSingleSubject ? (
+      {isHero ? (
+        /* hero photo carries the middle — the canvas-level image is the subject */
+        <div style={{ display: "flex", flex: 1 }} />
+      ) : isSingleSubject ? (
         <div style={{ display: "flex", flex: 1, flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           {bare ? (
             // No subject image at all — the event's own name carries the card.
@@ -456,8 +553,9 @@ export function MatchTemplate({
                og.tsx fallback for a person with only a regular photo). */
             <AvatarCircle img={homeLogoUrl} color={artistColor} size={avatarSize} imgScale={iScale} imgOffsetX={iOffX} imgOffsetY={iOffY} />
           )}
-          {/* bare already renders the name as the centrepiece above */}
-          {!bare && (
+          {/* bare already renders the name as the centrepiece above; name-top
+              moved it under the tagline */}
+          {!bare && !nameTop && (
             <div style={{ display: "flex", fontSize: isSquare ? 58 : 38, fontWeight: 700, marginTop: isSquare ? 24 : 12, textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}>
               {bidiVisual(homeName)}
             </div>
@@ -549,8 +647,41 @@ export function MatchTemplate({
         </div>
       )}
 
-      {/* footer: date/location + price pill */}
+      {/* footer: [hero name +] date/location + price pill */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: isSquare ? 48 : 34 }}>
+        {/* hero keeps the name in the bottom block (unless name-top already
+            placed it as the headline), with a mint accent bar under it.
+            One wrapper div, not a fragment — satori mis-stacks fragment
+            siblings inside a flex column. */}
+        {isHero && !nameTop && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                textAlign: "center",
+                padding: `0 ${isSquare ? 70 : 56}px`,
+                fontSize: isSquare ? 84 : 50,
+                fontWeight: 700,
+                lineHeight: 1.1,
+                textShadow: "0 4px 28px rgba(0,0,0,0.85)",
+              }}
+            >
+              {bidiVisual(homeName)}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                width: isSquare ? 130 : 96,
+                height: isSquare ? 7 : 5,
+                borderRadius: 4,
+                backgroundColor: MINT,
+                marginTop: isSquare ? 18 : 10,
+                marginBottom: isSquare ? 18 : 10,
+                boxShadow: `0 0 30px ${MINT}88`,
+              }}
+            />
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", fontSize: isSquare ? 34 : 23, color: "rgba(250,250,245,0.88)" }}>
           <div style={{ display: "flex" }}>{timeText ? `${dateText} | ${timeText}` : dateText}</div>
           {locationText ? (
@@ -559,23 +690,50 @@ export function MatchTemplate({
         </div>
         {/* Price/CTA pill — brand mint (the site's CTA green), and the SAME
             physical size on the banner as on the square so the two creatives
-            carry one button, not a big one and a small one. */}
+            carry one button, not a big one and a small one. "price-top" moves
+            it to the top-right badge instead. */}
+        {!priceTop && (
+          <div
+            style={{
+              display: "flex",
+              marginTop: isSquare ? 20 : 14,
+              padding: "14px 44px",
+              borderRadius: 999,
+              backgroundColor: MINT,
+              color: CANVAS,
+              fontSize: 44,
+              fontWeight: 700,
+              boxShadow: `0 0 60px ${MINT}55`,
+            }}
+          >
+            {bidiVisual(priceText)}
+          </div>
+        )}
+      </div>
+
+      {/* "price-top" variant: the pill as a slightly-rotated top-right badge */}
+      {priceTop && (
         <div
           style={{
             display: "flex",
-            marginTop: isSquare ? 20 : 14,
+            position: "absolute",
+            // Below the header band — a corner position collides with the
+            // centered wordmark once the pill text gets long.
+            top: isSquare ? 150 : 92,
+            right: isSquare ? 44 : 36,
             padding: "14px 44px",
             borderRadius: 999,
             backgroundColor: MINT,
             color: CANVAS,
             fontSize: 44,
             fontWeight: 700,
-            boxShadow: `0 0 60px ${MINT}55`,
+            boxShadow: `0 0 60px ${MINT}66, 0 10px 30px rgba(0,0,0,0.45)`,
+            transform: "rotate(-6deg)",
           }}
         >
           {bidiVisual(priceText)}
         </div>
-      </div>
+      )}
     </div>
   );
 }
