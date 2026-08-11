@@ -3,6 +3,7 @@
 import { requireAdmin } from "@/lib/auth/guards"
 import { supabase } from "@/lib/supabase-server"
 import { logAudit } from "@/lib/audit"
+import { freezeCommissionOnExistingReservations } from "@/lib/partner-commission-freeze"
 import {
   COMMISSION_TYPES,
   MARKETING_PARTNER_TYPES,
@@ -249,7 +250,7 @@ export async function updatePartnerAccount(
   // were typed — mint a portal login for a customer's refund record.
   const { data: current, error: currentError } = await supabase
     .from("partners")
-    .select("type,name_hebrew")
+    .select("type,name_hebrew,commission,commission_type")
     .eq("partner_tracking_code", trackingCode)
     .maybeSingle()
   if (currentError) {
@@ -262,6 +263,20 @@ export async function updatePartnerAccount(
       ok: false,
       error: "This is an automatic customer-refund record and cannot be edited as a partner",
     }
+  }
+
+  // Rate change applies FROM NOW ON: stamp the old terms onto the partner's
+  // existing reservations first, and stop if that fails — updating anyway
+  // would retroactively reprice every open reservation (the 2026-08-11 bug).
+  if (current) {
+    const frozen = await freezeCommissionOnExistingReservations({
+      trackingCode,
+      previousType: (current as { commission_type?: string | null }).commission_type ?? null,
+      previousRate: (current as { commission?: number | null }).commission ?? null,
+      nextType: input.commission_type,
+      nextRate: input.commission,
+    })
+    if (!frozen.ok) return { ok: false, error: frozen.error }
   }
 
   const updateRow = partnerRow(input)

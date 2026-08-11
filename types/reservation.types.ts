@@ -62,6 +62,11 @@ export type Reservation = {
   offline_hotel_id?: number | null;
   offline_hotel_ids?: number[] | null;
   offline_hotel_cost?: number | null;
+  // Frozen partner terms (migration 20260811120000): stamped onto existing
+  // rows when the partner's commission changes, so the change applies from
+  // then on. NULL = no snapshot → the partner's current rate applies.
+  commission_type?: string | null;
+  commission_rate?: number | null;
   // Set only for bookings an agent entered on a customer's behalf — see
   // myt-main's confirm-order/utils.ts (resolveAgentSettlement). Never shown
   // to the customer; staff-only context for why a Pending row is Pending.
