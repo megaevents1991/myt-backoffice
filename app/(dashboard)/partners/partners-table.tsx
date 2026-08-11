@@ -11,9 +11,12 @@ import {
   LogIn,
   MoreHorizontal,
   Copy,
+  Power,
+  PowerOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { DataTable } from "@/components/data-table";
 import {
   MARKETING_PARTNER_TYPES,
@@ -27,6 +30,7 @@ import {
   deletePartner,
   bulkDeletePartners,
   bulkDuplicatePartners,
+  setPartnersActive,
   type CustomerRefundPartners,
   type PartnerListItem,
 } from "@/lib/actions/partner-actions";
@@ -271,6 +275,38 @@ export function PartnersTable() {
     }
   };
 
+  // Row toggle and bulk buttons share this — old-data cleanup shouldn't need
+  // the edit form for every partner.
+  const handleSetActive = async (codes: string[], active: boolean) => {
+    setBusy(true);
+    try {
+      const result = await setPartnersActive(codes, active);
+      if (!result.ok) {
+        toast({ variant: "destructive", title: "Error", description: result.error });
+        return;
+      }
+      setPartners((prev) =>
+        prev.map((p) =>
+          codes.includes(p.partner_tracking_code) ? { ...p, is_active: active } : p
+        )
+      );
+      setRowSelection({});
+      toast({
+        title: active ? "Activated" : "Deactivated",
+        description: `${codes.length} partner${codes.length > 1 ? "s" : ""} ${active ? "activated" : "deactivated"}.`,
+      });
+    } catch (error) {
+      console.error("Error toggling partner status:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update partner status. Please try again.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleBulkDuplicate = async () => {
     if (selectedCodes.length === 0) return;
     setBusy(true);
@@ -376,8 +412,25 @@ export function PartnersTable() {
     {
       accessorKey: "is_active",
       header: "Status",
+      // Admins flip status inline (also syncs the portal login); read-only
+      // roles keep the badge. Note the default filter shows Active only, so a
+      // toggled-off row moves to the Inactive tab immediately — expected.
       cell: ({ row }) =>
-        row.original.is_active ? (
+        canManage ? (
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={row.original.is_active}
+              disabled={busy}
+              onCheckedChange={(v) =>
+                handleSetActive([row.original.partner_tracking_code], v === true)
+              }
+              aria-label="Toggle partner active"
+            />
+            <span className="text-xs text-muted-foreground">
+              {row.original.is_active ? "Active" : "Inactive"}
+            </span>
+          </div>
+        ) : row.original.is_active ? (
           <Badge variant="outline">Active</Badge>
         ) : (
           <Badge variant="destructive">Inactive</Badge>
@@ -503,6 +556,26 @@ export function PartnersTable() {
       bulkActions={
         !canManage ? undefined : (
         <div className="flex items-center gap-2">
+          {/* Bulk status flip — the old-data cleanup path. Refund rows have no
+              meaningful active state, same reason Duplicate skips that tab. */}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy || onRefundTab}
+            onClick={() => handleSetActive(selectedCodes, true)}
+          >
+            <Power className="mr-2 h-4 w-4" />
+            Activate ({selectedCodes.length})
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy || onRefundTab}
+            onClick={() => handleSetActive(selectedCodes, false)}
+          >
+            <PowerOff className="mr-2 h-4 w-4" />
+            Deactivate ({selectedCodes.length})
+          </Button>
           {/* Refund rows are opened per booking, never templated from — and a
               copy would land on a tab the user isn't looking at. */}
           <Button
