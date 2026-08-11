@@ -224,7 +224,14 @@ export function PartnersTable() {
 
   const handleDelete = async (trackingCode: string) => {
     try {
-      await deletePartner(trackingCode);
+      // Structured result — production masks thrown server-action messages,
+      // so the real reason (FK block, login removal failure) must come back
+      // as a value, not an exception.
+      const result = await deletePartner(trackingCode);
+      if (!result.ok) {
+        toast({ variant: "destructive", title: "Error", description: result.error });
+        return;
+      }
       forgetPartners([trackingCode]);
       toast({ title: "Partner deleted", description: "Partner has been deleted." });
     } catch (error) {
@@ -241,7 +248,11 @@ export function PartnersTable() {
     if (selectedCodes.length === 0) return;
     setBusy(true);
     try {
-      await bulkDeletePartners(selectedCodes);
+      const result = await bulkDeletePartners(selectedCodes);
+      if (!result.ok) {
+        toast({ variant: "destructive", title: "Error", description: result.error });
+        return;
+      }
       forgetPartners(selectedCodes);
       setRowSelection({});
       toast({

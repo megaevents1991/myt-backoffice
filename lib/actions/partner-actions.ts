@@ -260,27 +260,79 @@ export async function updatePartner(trackingCode: string, partner: Partial<Partn
   return data as unknown as PartnerListItem
 }
 
-export async function deletePartner(trackingCode: string) {
-  await requireStaff();
-  const { error } = await supabase.from("partners").delete().eq("partner_tracking_code", trackingCode)
+/**
+ * Structured result instead of a throw: production masks thrown server-action
+ * messages, so the client only ever saw the generic "Failed to delete
+ * partner" — never the actual reason (FK block, login in the way, …).
+ */
+export type DeletePartnersResult = { ok: true } | { ok: false; error: string }
 
-  if (error) throw error
-  await logAudit({ action: "delete", entityType: "partner", entityId: trackingCode })
-  return true
+/**
+ * A partner's portal login blocks the delete (user_profiles FK is RESTRICT on
+ * purpose). "Delete partner" means the whole account, so the login goes
+ * first: auth.users delete cascades the user_profiles row.
+ */
+async function deletePortalLogins(trackingCodes: string[]): Promise<string | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: profiles, error } = await (supabase as any)
+    .from("user_profiles")
+    .select("id,email")
+    .in("partner_tracking_code", trackingCodes)
+  if (error) {
+    console.error("deletePortalLogins lookup:", JSON.stringify(error))
+    return "Could not look up the partner's portal login"
+  }
+  for (const profile of (profiles ?? []) as { id: string; email: string }[]) {
+    const { error: authError } = await supabase.auth.admin.deleteUser(profile.id)
+    if (authError) {
+      console.error("deletePortalLogins auth:", JSON.stringify(authError))
+      return `Could not remove the portal login (${profile.email}) — partner not deleted`
+    }
+  }
+  return null
 }
 
-export async function bulkDeletePartners(trackingCodes: string[]) {
-  await requireStaff();
-  const { error } = await supabase.from("partners").delete().in("partner_tracking_code", trackingCodes)
+function deleteFailureMessage(error: { code?: string; message?: string }): string {
+  // 23503 = foreign_key_violation. After the login cleanup + the
+  // affiliates_tracking cascade (migration 20260811130000) this should not
+  // happen — surfacing the referencing table beats a generic "try again".
+  if (error.code === "23503") {
+    return `Linked records still reference this partner (${error.message ?? "foreign key"}). Set it to Inactive instead, or remove the linked records first.`
+  }
+  return "Failed to delete partner. Please try again."
+}
 
-  if (error) throw error
+export async function deletePartner(trackingCode: string): Promise<DeletePartnersResult> {
+  await requireStaff();
+  const loginBlock = await deletePortalLogins([trackingCode])
+  if (loginBlock) return { ok: false, error: loginBlock }
+
+  const { error } = await supabase.from("partners").delete().eq("partner_tracking_code", trackingCode)
+  if (error) {
+    console.error("deletePartner:", JSON.stringify(error))
+    return { ok: false, error: deleteFailureMessage(error) }
+  }
+  await logAudit({ action: "delete", entityType: "partner", entityId: trackingCode })
+  return { ok: true }
+}
+
+export async function bulkDeletePartners(trackingCodes: string[]): Promise<DeletePartnersResult> {
+  await requireStaff();
+  const loginBlock = await deletePortalLogins(trackingCodes)
+  if (loginBlock) return { ok: false, error: loginBlock }
+
+  const { error } = await supabase.from("partners").delete().in("partner_tracking_code", trackingCodes)
+  if (error) {
+    console.error("bulkDeletePartners:", JSON.stringify(error))
+    return { ok: false, error: deleteFailureMessage(error) }
+  }
   await logAudit({
     action: "delete",
     entityType: "partner",
     entityId: null,
     metadata: { ids: trackingCodes, count: trackingCodes.length },
   })
-  return true
+  return { ok: true }
 }
 
 /**
