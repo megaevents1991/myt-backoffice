@@ -84,6 +84,8 @@ const offlineHotelFormSchema = z.object({
 );
 
 type HotelFormData = z.infer<typeof offlineHotelFormSchema>;
+type RelevantEvent = Awaited<ReturnType<typeof getRelevantEventsForHotel>>[number];
+type RelevantFlight = Awaited<ReturnType<typeof getRelevantFlightsForHotel>>[number];
 
 interface EditOfflineHotelPageProps {
   params: Promise<{ id: string }>;
@@ -96,8 +98,8 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
   const [isPending, startTransition] = useTransition();
   const [isLoadingHotel, setIsLoadingHotel] = useState(true);
   const [hotelId, setHotelId] = useState<number | null>(null);
-  const [relevantEvents, setRelevantEvents] = useState<{ id: number; name: string; date: string }[]>([]);
-  const [relevantFlights, setRelevantFlights] = useState<any[]>([]);
+  const [relevantEvents, setRelevantEvents] = useState<RelevantEvent[]>([]);
+  const [relevantFlights, setRelevantFlights] = useState<RelevantFlight[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [isLoadingFlights, setIsLoadingFlights] = useState(false);
 
@@ -135,7 +137,7 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
         form.reset({
           hotel_name: hotel.hotel_name,
           city: hotel.city,
-          hid: hotel.hid ?? ("" as any),
+          hid: hotel.hid ?? "",
           check_in: hotel.check_in,
           check_out: hotel.check_out,
           price: Number(hotel.price),
@@ -144,8 +146,8 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
           meal_plan: hotel.meal_plan ?? "",
           notes: hotel.notes ?? "",
           last_cancellation_date: hotel.last_cancellation_date ?? "",
-          guest_rating: (hotel.guest_rating ?? "") as any,
-          guest_review_count: (hotel.guest_review_count ?? "") as any,
+          guest_rating: hotel.guest_rating ?? "",
+          guest_review_count: hotel.guest_review_count ?? "",
           event_ids: hotel.event_ids ?? [],
           flight_ids: hotel.flight_ids ?? [],
         });
@@ -201,13 +203,13 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
 
     setIsLoadingEvents(true);
     getRelevantEventsForHotel(city, checkIn, checkOut)
-      .then((e) => { if (!cancelled) setRelevantEvents(e as any); })
+      .then((e) => { if (!cancelled) setRelevantEvents(e); })
       .catch(console.error)
       .finally(() => { if (!cancelled) setIsLoadingEvents(false); });
 
     setIsLoadingFlights(true);
     getRelevantFlightsForHotel(city, checkIn, checkOut)
-      .then((f) => { if (!cancelled) setRelevantFlights(f as any); })
+      .then((f) => { if (!cancelled) setRelevantFlights(f); })
       .catch(console.error)
       .finally(() => { if (!cancelled) setIsLoadingFlights(false); });
 
@@ -297,7 +299,7 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
                               onSelect={() => {
                                 setLinkedHotel(h);
                                 form.setValue("hotel_name", h.name);
-                                form.setValue("hid", h.hid as any);
+                                form.setValue("hid", h.hid);
                                 // Extract city: "Street, City" → last part; "Street, PostalCode City, Country" → second-to-last
                                 const parts = h.address.split(",").map(p => p.trim());
                                 const cityRaw = parts.length >= 3 ? parts[parts.length - 2] : parts[parts.length - 1];
@@ -327,7 +329,7 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
                     className="text-red-500 hover:underline"
                     onClick={() => {
                       setLinkedHotel(null);
-                      form.setValue("hid", "" as any);
+                      form.setValue("hid", "");
                     }}
                   >
                     Remove
@@ -539,7 +541,7 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
                         <CommandEmpty>{checkIn && checkOut ? "No matching flights found." : "Fill in check-in and check-out dates first."}</CommandEmpty>
                       ) : (
                         <CommandGroup>
-                          {relevantFlights.map((flight: any) => (
+                          {relevantFlights.map((flight) => (
                             <CommandItem key={flight.id} onSelect={() => {
                               const current = field.value as number[];
                               field.onChange(current.includes(flight.id) ? current.filter((id) => id !== flight.id) : [...current, flight.id]);
