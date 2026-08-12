@@ -243,7 +243,10 @@ function BlobCard({
     <div
       style={{
         display: "flex",
-        alignItems: "flex-end",
+        // Blob card: the subject stands on the bottom edge (a cut-out person
+        // reads as standing). Photo card: the inset crest is centred in the
+        // scene instead of sinking to the bottom of the frame.
+        alignItems: photoUrl ? "center" : "flex-end",
         justifyContent: "center",
         width: w,
         height: h,
