@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { syncTixStockEvents } from '@/lib/services/tixstock-sync';
 import { guardAdminRoute } from '@/lib/auth/guards';
 import { logAudit } from '@/lib/audit';
 
-export async function POST(request: NextRequest) {
+// Full feed sweep (~540 pages) takes several minutes.
+export const maxDuration = 800;
+
+export async function POST() {
   const denied = await guardAdminRoute();
   if (denied) return denied;
   try {
@@ -14,10 +17,10 @@ export async function POST(request: NextRequest) {
       message: 'TixStock sync completed',
       result
     });
-  } catch (error: any) {
+  } catch (error) {
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: error instanceof Error ? error.message : String(error)
     }, { status: 500 });
   }
 }

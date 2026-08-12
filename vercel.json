@@ -90,6 +90,10 @@
       "memory": 1024,
       "maxDuration": 800
     },
+    "app/api/tixstock/sync/route.ts": {
+      "memory": 1024,
+      "maxDuration": 800
+    },
     "app/api/cron/nightlyCampaignCreatives/route.ts": {
       "memory": 1024,
       "maxDuration": 300

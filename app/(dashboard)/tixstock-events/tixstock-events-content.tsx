@@ -200,6 +200,8 @@ export function TixStockEventsContent() {
   const [eventSortBy, setEventSortBy] = useState<"name" | "date">("date");
   const [eventSortOrder, setEventSortOrder] = useState<"asc" | "desc">("asc");
   const [eventPage, setEventPage] = useState(1);
+  // Hide events whose nightly availability snapshot is 0 (null = unknown → kept).
+  const [hideNoTickets, setHideNoTickets] = useState(true);
   const eventPageSize = 10;
 
   const [ticketFilter, setTicketFilter] = useState("");
@@ -356,13 +358,17 @@ export function TixStockEventsContent() {
     return filteredPerformers.slice(start, start + performerPageSize);
   }, [filteredPerformers, performerPage]);
 
-  const filteredEvents = useMemo(() => {
-    let filtered = events.filter(e => {
+  const { filteredEvents, knownEmptyCount } = useMemo(() => {
+    const base = events.filter(e => {
       const matchesSearch = e.event_name.toLowerCase().includes(eventFilter.toLowerCase());
       const matchesCategory = selectedCategory ? e.category_name === selectedCategory : true;
       const matchesPerformer = selectedPerformer ? e.performers?.some(p => p.name === selectedPerformer) : true;
       return matchesSearch && matchesCategory && matchesPerformer;
     });
+
+    // Events the nightly sync measured as ticketless; null/undefined = unknown, kept.
+    const knownEmptyCount = base.filter(e => e.ticket_count === 0).length;
+    const filtered = hideNoTickets ? base.filter(e => e.ticket_count !== 0) : base;
 
     filtered.sort((a, b) => {
       let comparison = 0;
@@ -374,8 +380,8 @@ export function TixStockEventsContent() {
       return eventSortOrder === 'asc' ? comparison : -comparison;
     });
 
-    return filtered;
-  }, [events, eventFilter, selectedCategory, selectedPerformer, eventSortBy, eventSortOrder]);
+    return { filteredEvents: filtered, knownEmptyCount };
+  }, [events, eventFilter, selectedCategory, selectedPerformer, eventSortBy, eventSortOrder, hideNoTickets]);
 
   const paginatedEvents = useMemo(() => {
     const start = (eventPage - 1) * eventPageSize;
@@ -399,7 +405,7 @@ export function TixStockEventsContent() {
   );
 
   const filteredTickets = useMemo(() => {
-    let filtered = tickets.filter(t => {
+    const filtered = tickets.filter(t => {
       const matchesSearch = t.seat_details?.category?.toLowerCase().includes(ticketFilter.toLowerCase()) || 
                             t.seat_details?.section?.toLowerCase().includes(ticketFilter.toLowerCase());
       return matchesSearch;
@@ -426,7 +432,7 @@ export function TixStockEventsContent() {
   // Reset pagination when filters change
   useEffect(() => setCategoryPage(1), [categoryFilter]);
   useEffect(() => setPerformerPage(1), [performerFilter]);
-  useEffect(() => setEventPage(1), [eventFilter, selectedCategory, selectedPerformer]);
+  useEffect(() => setEventPage(1), [eventFilter, selectedCategory, selectedPerformer, hideNoTickets]);
   useEffect(() => setTicketPage(1), [ticketFilter, ticketSortBy, ticketSortOrder]);
 
   return (
@@ -607,6 +613,15 @@ export function TixStockEventsContent() {
                 placeholder="Search events..."
               />
 
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                <Checkbox
+                  checked={hideNoTickets}
+                  onCheckedChange={(v) => setHideNoTickets(v === true)}
+                />
+                Hide events without tickets
+                {knownEmptyCount > 0 && ` (${knownEmptyCount})`}
+              </label>
+
               <div className="space-y-4 mt-4">
                 {isLoading ? (
                   <div className="flex justify-center py-8">
@@ -626,16 +641,27 @@ export function TixStockEventsContent() {
                         />
                       </div>
                       <Card
-                        className={`cursor-pointer transition-colors ${selectedEvent?.event_id === event.event_id ? 'bg-accent border-primary' : 'hover:bg-accent/50'}`}
+                        className={`cursor-pointer transition-colors ${selectedEvent?.event_id === event.event_id ? 'bg-accent border-primary' : 'hover:bg-accent/50'} ${event.ticket_count === 0 ? 'opacity-50' : ''}`}
                         onClick={() => setSelectedEvent(event)}
                       >
                         <CardContent className="p-4 pl-9">
                           <div className="flex flex-col gap-2">
                             <div className="flex items-start justify-between">
                               <h3 className="font-semibold text-sm">{event.event_name}</h3>
-                              <Badge variant={event.is_active ? "default" : "secondary"} className="text-xs">
-                                {event.event_status}
-                              </Badge>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {event.ticket_count === 0 ? (
+                                  <Badge variant="outline" className="text-xs text-muted-foreground">
+                                    No tickets
+                                  </Badge>
+                                ) : typeof event.ticket_count === "number" ? (
+                                  <Badge variant="outline" className="text-xs">
+                                    {event.ticket_count} tix
+                                  </Badge>
+                                ) : null}
+                                <Badge variant={event.is_active ? "default" : "secondary"} className="text-xs">
+                                  {event.event_status}
+                                </Badge>
+                              </div>
                             </div>
                             
                             <div className="grid grid-cols-1 gap-1 text-xs text-muted-foreground">

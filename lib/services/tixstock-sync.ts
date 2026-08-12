@@ -22,7 +22,9 @@ async function fetchTixStockPage(page: number): Promise<TixStockFeedResponse> {
     throw new Error("TixStock API token is missing");
   }
 
-  const url = `${TIXSTOCK_API_URL}/feed?page=${page}&per_page=50&include_listings=false`;
+  // include_listings=true so each event carries its listings — used only to
+  // snapshot ticket availability (ticket_count); same page count as before.
+  const url = `${TIXSTOCK_API_URL}/feed?page=${page}&per_page=50&include_listings=true`;
   console.log(`Fetching TixStock feed page ${page}...`);
 
   const res = await fetch(url, {
@@ -56,10 +58,27 @@ function mapEventToDB(event: TixStockEvent): TixStockEventDB {
     venue_map_url: event.map_url,
     last_synced: new Date().toISOString(),
     is_active: event.status === "Active",
+    // null (not an array) = feed didn't return listings; keep unknown rather than 0.
+    ticket_count: Array.isArray(event.listings)
+      ? event.listings.reduce(
+          (sum, l) => sum + (l.number_of_tickets_for_sale?.quantity_available ?? 0),
+          0,
+        )
+      : null,
   };
 }
 
 const PARALLEL_BATCH_SIZE = 5;
+
+// Generated DB types predate ticket_count and type venue_data/sub_categories as
+// Json — narrow the builder to the shape we actually use instead of `any`.
+const tixstockTable = () =>
+  supabase.from("tixstock_events") as unknown as {
+    upsert: (
+      rows: TixStockEventDB[],
+      opts: { onConflict: string },
+    ) => PromiseLike<{ error: { message: string } | null }>;
+  };
 
 export async function syncTixStockEvents(): Promise<TixStockSyncResult> {
   const startedAt = new Date();
@@ -76,9 +95,9 @@ export async function syncTixStockEvents(): Promise<TixStockSyncResult> {
     // Process first page immediately
     const firstEvents = (firstResponse.data || []).map(mapEventToDB);
     if (firstEvents.length > 0) {
-      const { error } = await supabase
-        .from("tixstock_events")
-        .upsert(firstEvents as any, { onConflict: "event_id" });
+      const { error } = await tixstockTable().upsert(firstEvents, {
+        onConflict: "event_id",
+      });
       if (error) throw error;
       totalSynced += firstEvents.length;
     }
@@ -103,9 +122,9 @@ export async function syncTixStockEvents(): Promise<TixStockSyncResult> {
       );
 
       if (dbEvents.length > 0) {
-        const { error } = await supabase
-          .from("tixstock_events")
-          .upsert(dbEvents as any, { onConflict: "event_id" });
+        const { error } = await tixstockTable().upsert(dbEvents, {
+          onConflict: "event_id",
+        });
         if (error) {
           console.error("Error upserting TixStock events:", error);
           throw error;
@@ -128,7 +147,7 @@ export async function syncTixStockEvents(): Promise<TixStockSyncResult> {
       completedAt: completedAt.toISOString(),
       durationSeconds,
     };
-  } catch (error: any) {
+  } catch (error) {
     const completedAt = new Date();
     const durationSeconds = Math.round(
       (completedAt.getTime() - startedAt.getTime()) / 1000,
@@ -137,7 +156,7 @@ export async function syncTixStockEvents(): Promise<TixStockSyncResult> {
     return {
       count: 0,
       status: "error",
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
       startedAt: startedAt.toISOString(),
       completedAt: completedAt.toISOString(),
       durationSeconds,
