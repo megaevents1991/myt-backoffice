@@ -28,6 +28,12 @@ export type Event = {
   art_image_url?: string | null;
   art_color_index?: number | null;
   art_shape_index?: number | null;
+  // Match "logo VS logo" art - COMPUTED at read time by the MAIN APP's
+  // fallback-image enrichment (myt-main lib/events/fallbackImage.ts) when both
+  // sides of a fixture name resolve in the football_logos library. NOT
+  // database columns - never persisted; unused in the backoffice.
+  match_home_logo_url?: string | null;
+  match_away_logo_url?: string | null;
   // Zoom (1 = 100%): cut-out scale + background (blob/photo) scale.
   art_image_scale?: number | null;
   art_bg_scale?: number | null;
