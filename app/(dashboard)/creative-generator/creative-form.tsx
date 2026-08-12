@@ -621,7 +621,7 @@ export function CreativeForm({
             <p className="font-medium">Saved to storage:</p>
             <div className="flex gap-2">
               <Button asChild variant="outline" size="sm">
-                <a href={result.squareUrl} download target="_blank" rel="noreferrer">Download 1080×1080</a>
+                <a href={result.squareUrl} download target="_blank" rel="noreferrer">Download 1080×1350</a>
               </Button>
               <Button asChild variant="outline" size="sm">
                 <a href={result.bannerUrl} download target="_blank" rel="noreferrer">Download 1200×628</a>
@@ -633,14 +633,14 @@ export function CreativeForm({
 
       <div className="space-y-4">
         <div>
-          <Label>Preview (1080×1080)</Label>
+          <Label>Preview (1080×1350)</Label>
           {displayedUrl || previewLoading ? (
             <div className="relative w-full max-w-[540px] mt-2">
               {displayedUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={displayedUrl} alt="Creative preview" className="w-full border rounded-md" />
               ) : (
-                <div className="w-full aspect-square border rounded-md" />
+                <div className="w-full aspect-[4/5] border rounded-md" />
               )}
               {previewLoading && (
                 <div className="absolute inset-0 flex items-center justify-center rounded-md bg-background/40">
@@ -649,7 +649,7 @@ export function CreativeForm({
               )}
             </div>
           ) : (
-            <div className="w-full max-w-[540px] aspect-square border rounded-md mt-2 flex items-center justify-center text-muted-foreground">
+            <div className="w-full max-w-[540px] aspect-[4/5] border rounded-md mt-2 flex items-center justify-center text-muted-foreground">
               בחר אירוע - או מלא ידנית
             </div>
           )}

@@ -436,14 +436,12 @@ export type CampaignEventRow = Event & { campaign_input_hash?: string | null };
 // underlying event data hasn't changed. v2: no-cutout avatar treatment +
 // real wordmark logo (2026-07-19). v3: new tagline, "מחיר ממוצע לנוסע" pill
 // in brand mint at one size across both creatives, square subject cards,
-// thousands separator (2026-07-29).
-//
-// STILL "v3" on purpose (2026-08-11): the hero/name-top/price-top layouts
-// exist but are manual-designer-only until the creative team picks the new
-// template together - bump to "v4" when that lands, and the whole catalog
-// re-renders in the chosen look. Until then deploying this file changes
-// nothing about existing creatives.
-const RENDER_VERSION = "v3";
+// thousands separator (2026-07-29). v4: feed creative is 4:5 portrait
+// (1080×1350, Meta's ad-slot aspect) with bigger text/cards throughout and a
+// shorter pill label (dropped the leading word, 2026-08-12). The
+// hero/name-top/price-top layouts remain manual-designer-only - the auto
+// flow still renders the classic layout.
+const RENDER_VERSION = "v4";
 
 /**
  * Hash of everything printed on the creative - change → regenerate. Includes

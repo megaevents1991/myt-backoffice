@@ -8,7 +8,10 @@ import {
 } from "@/components/creative/MatchTemplate";
 
 export const SIZES = {
-  square: { width: 1080, height: 1080 },
+  // Meta feed main image is 4:5 portrait (was 1080×1080) - fills the whole
+  // ad slot instead of letterboxing a square. Key stays "square" so storage
+  // paths (<slug>-square.png) and campaign_image_url semantics don't churn.
+  square: { width: 1080, height: 1350 },
   banner: { width: 1200, height: 628 },
 } as const;
 export type CreativeSize = keyof typeof SIZES;

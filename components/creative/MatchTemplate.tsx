@@ -169,7 +169,29 @@ export type CreativeInput = {
 // (`toLocaleString("en-US")`); bidiVisual keeps "1,299" glued together.
 export function buildPriceText(mode: "package" | "ticket", price: number, currency: string): string {
   const amount = `${currency}${price.toLocaleString("en-US")}`;
-  return mode === "ticket" ? `כרטיסים החל מ-${amount}` : `מחיר ממוצע לנוסע ${amount}`;
+  // Package label dropped the leading "מחיר" (2026-08-12, Dor) - shorter pill
+  // text leaves room for the bigger font on the 4:5 feed creative.
+  return mode === "ticket" ? `כרטיסים החל מ-${amount}` : `ממוצע לנוסע ${amount}`;
+}
+
+// `locations.name` is always "City, Country" ("לונדון, בריטניה") - every row
+// in the table carries a city_iata, so these are cities, not venues. The
+// creative prints the CITY only (2026-08-12): the country is noise next to a
+// recognisable city name, and dropping it buys the line a bigger font. A name
+// with no comma is used as-is.
+function cityOf(location: string): string {
+  const comma = location.indexOf(",");
+  return comma === -1 ? location.trim() : location.slice(0, comma).trim();
+}
+
+// Hebrew names pass through bidiVisual's MANUAL character reversal, and
+// satori wraps lines AFTER that - a wrapped reversed string renders its lines
+// in the WRONG order (the name's end reads as line 1). There is no safe
+// wrapping without a real BiDi pass, so long names shrink to fit ONE line
+// instead: brand bold glyphs measure ≈0.52em average width.
+function fitOneLine(text: string, max: number, maxWidth: number): number {
+  const est = Math.floor(maxWidth / (Math.max(1, [...text].length) * 0.52));
+  return Math.min(max, Math.max(44, est));
 }
 
 // Deterministic string → positive int (same technique as render.tsx's blob
@@ -279,6 +301,11 @@ function AvatarCircle({
   imgOffsetY?: number;
 }) {
   const pw = Math.round(size * imgScale);
+  // Faces sit in the TOP of a portrait photo and satori ignores
+  // objectPosition, so a square cover box center-crops the head off. Same fix
+  // the full-bleed hero uses: an image box ~28% taller than the circle, pinned
+  // to its top - the visible slice is the photo's upper part.
+  const ph = Math.round(pw * 1.28);
   const ox = Math.round((imgOffsetX / 100) * size);
   const oy = Math.round((imgOffsetY / 100) * size);
   return (
@@ -300,14 +327,14 @@ function AvatarCircle({
       <img
         src={img}
         width={pw}
-        height={pw}
+        height={ph}
         alt=""
         style={{
-          position: "relative",
-          left: ox,
+          position: "absolute",
+          left: Math.round((size - pw) / 2) + ox,
           top: oy,
           width: pw,
-          height: pw,
+          height: ph,
           objectFit: "cover",
         }}
       />
@@ -324,7 +351,8 @@ export function MatchTemplate({
   variant, heroPhoto,
   width, height, bgUrl,
 }: CreativeInput & { width: number; height: number; bgUrl: string }) {
-  const isSquare = height > 700;
+  // 4:5 feed portrait (1350) vs the 628-high banner.
+  const isPortrait = height > 700;
   void bgUrl; // brand gradient canvas replaced the static background asset
 
   // Designer sizing controls - neutral unless overridden.
@@ -355,20 +383,25 @@ export function MatchTemplate({
   // Full-bleed hero: regular photo covering the canvas behind dark scrims.
   const isHero = !!heroPhoto && isSingleSubject && !bare && !!homeLogoUrl && !homeIsCutout;
 
-  // Subject cards are 1:1 - same aspect the feed itself wants, and the site's
-  // own event art. (Was 380×440 / 520×560 portrait.)
-  // Banner cards are a touch smaller than they were tall-wise: the pill now
-  // renders at full (square) size on the 628px-high banner too, so the middle
-  // band has less room to give.
-  const cardW = kind === "artist" ? (isSquare ? 520 : 300) : isSquare ? 380 : 235;
-  const cardH = cardW;
-  // No-cutout circular avatar diameter - reuses the same footprint as the
-  // card it replaces, so layouts don't jump between cutout/photo events.
-  const avatarSize = isSingleSubject ? (isSquare ? 460 : 300) : cardW;
+  // Portrait feed creative runs its subject card near full-bleed (2026-08-12,
+  // Dor: use all the area) - the artist card is a WIDE landscape panel that
+  // reaches both edges, not the old 1:1 square. The cut-out inside is
+  // objectFit:contain, so it's sized by the card's HEIGHT - a wider card adds
+  // brand-blob presence without stretching the subject. Everything else keeps
+  // the 1:1 card (the site's own event art); the banner is unchanged.
+  // Match cards: as wide as two of them plus the VS column fit, and tall
+  // enough to fill the band (portrait cards, not squares - a square pair left
+  // ~280px of empty canvas above and below).
+  const cardW = kind === "artist" ? (isPortrait ? width - 56 : 300) : isPortrait ? 443 : 235;
+  const cardH =
+    isPortrait && kind === "artist" ? 740 : isPortrait && kind === "match" ? 640 : cardW;
+  // No-cutout circular avatar diameter - a circle can't go full-bleed without
+  // dwarfing the text block, so it stays the largest square that fits.
+  const avatarSize = isSingleSubject ? (isPortrait ? 700 : 300) : cardW;
   // Wide stadium panel (photo-bg match mode): one panel, both logos inside.
-  const panelW = width - 2 * (isSquare ? 56 : 48);
-  const panelH = isSquare ? 560 : 340;
-  const panelLogo = isSquare ? 290 : 185;
+  const panelW = width - 2 * (isPortrait ? 28 : 48);
+  const panelH = isPortrait ? 860 : 340;
+  const panelLogo = isPortrait ? 400 : 185;
 
   // Card background: explicit choice wins; default = football photo for
   // matches, brand blob for artists. A stock category photo (stadium etc.)
@@ -383,6 +416,17 @@ export function MatchTemplate({
   // of every single one landing on the same fixed mint/aqua/violet + shape.
   // Stable across re-renders of the SAME event (deterministic on its name +
   // date), varied ACROSS different events.
+  // Date + city share one line, so they're measured together: "15.08.2026ˑ
+  // לונדון" renders at the full size, a long one ("ארלינגטון-דאלאס") shrinks
+  // instead of running into the margins.
+  const metaSize = isPortrait
+    ? fitOneLine(
+        locationText ? `${dateText} · ${cityOf(locationText)}` : dateText,
+        76,
+        width - 72,
+      )
+    : 23;
+
   const seed = hashSeed(
     kind === "match" ? `${homeName}|${awayName ?? ""}|${dateText}` : `${homeName}|${dateText}`,
   );
@@ -490,9 +534,9 @@ export function MatchTemplate({
       )}
 
       {/* header: real wordmark logo + tagline */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: isSquare ? 44 : 22 }}>
-        <Wordmark width={isSquare ? 300 : 220} />
-        <div style={{ display: "flex", fontSize: isSquare ? 24 : 17, color: "rgba(250,250,245,0.72)", marginTop: isSquare ? 14 : 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: isPortrait ? 28 : 22 }}>
+        <Wordmark width={isPortrait ? 460 : 220} />
+        <div style={{ display: "flex", fontSize: isPortrait ? 46 : 17, color: "rgba(250,250,245,0.72)", marginTop: isPortrait ? 14 : 10 }}>
           {bidiVisual(TAGLINE)}
         </div>
       </div>
@@ -504,9 +548,9 @@ export function MatchTemplate({
             display: "flex",
             justifyContent: "center",
             textAlign: "center",
-            padding: `0 ${isSquare ? 70 : 56}px`,
-            marginTop: isSquare ? 30 : 12,
-            fontSize: isSquare ? 76 : 44,
+            padding: `0 ${isPortrait ? 32 : 56}px`,
+            marginTop: isPortrait ? 24 : 12,
+            fontSize: isPortrait ? fitOneLine(homeName, 112, width - 64) : 44,
             fontWeight: 700,
             lineHeight: 1.1,
             textShadow: "0 4px 24px rgba(0,0,0,0.75)",
@@ -531,8 +575,8 @@ export function MatchTemplate({
               style={{
                 display: "flex",
                 textAlign: "center",
-                padding: `0 ${isSquare ? 80 : 60}px`,
-                fontSize: isSquare ? 88 : 56,
+                padding: `0 ${isPortrait ? 32 : 60}px`,
+                fontSize: isPortrait ? fitOneLine(homeName, 132, width - 64) : 56,
                 fontWeight: 700,
                 lineHeight: 1.15,
                 textShadow: "0 2px 16px rgba(0,0,0,0.7)",
@@ -546,7 +590,7 @@ export function MatchTemplate({
             // stadium) was explicitly requested - a contained photo sitting
             // on a matching realistic photo backdrop reads fine (unlike a
             // photo crammed onto an abstract colored blob, which doesn't).
-            <BlobCard img={homeLogoUrl} color={artistColor} shapeIndex={artistShape} w={cardW} h={cardH} radius={isSquare ? 76 : 54} photoUrl={photoUrl} {...sizing} />
+            <BlobCard img={homeLogoUrl} color={artistColor} shapeIndex={artistShape} w={cardW} h={cardH} radius={isPortrait ? 76 : 54} photoUrl={photoUrl} {...sizing} />
           ) : (
             /* No real cut-out and no stock photo background - plain circular
                avatar with a color glow, no blob shape (matches myt-main's
@@ -556,14 +600,14 @@ export function MatchTemplate({
           {/* bare already renders the name as the centrepiece above; name-top
               moved it under the tagline */}
           {!bare && !nameTop && (
-            <div style={{ display: "flex", fontSize: isSquare ? 58 : 38, fontWeight: 700, marginTop: isSquare ? 24 : 12, textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}>
+            <div style={{ display: "flex", fontSize: isPortrait ? fitOneLine(homeName, 104, width - 56) : 38, fontWeight: 700, marginTop: isPortrait ? 20 : 12, textShadow: "0 2px 12px rgba(0,0,0,0.7)" }}>
               {bidiVisual(homeName)}
             </div>
           )}
         </div>
       ) : photoUrl && !bare ? (
         /* photo background: ONE wide stadium panel holding both logos + VS */
-        <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", padding: `0 ${isSquare ? 56 : 48}px` }}>
+        <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", padding: `0 ${isPortrait ? 28 : 48}px` }}>
           <div
             style={{
               display: "flex",
@@ -571,12 +615,12 @@ export function MatchTemplate({
               justifyContent: "space-between",
               width: panelW,
               height: panelH,
-              borderRadius: isSquare ? 56 : 40,
+              borderRadius: isPortrait ? 56 : 40,
               overflow: "hidden",
               position: "relative",
               backgroundColor: "#0D0C1E",
               boxShadow: "0 24px 70px rgba(0,0,0,0.55)",
-              padding: `0 ${isSquare ? 56 : 44}px`,
+              padding: `0 ${isPortrait ? 56 : 44}px`,
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -597,24 +641,24 @@ export function MatchTemplate({
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={awayLogoUrl ?? ""} alt="" style={{ width: Math.round(panelLogo * iScale), height: Math.round(panelLogo * iScale), objectFit: "contain", position: "relative", left: Math.round((iOffX / 100) * panelLogo), top: Math.round((iOffY / 100) * panelLogo) }} />
-              <div style={{ display: "flex", fontSize: isSquare ? 38 : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 10px rgba(0,0,0,0.9)" }}>
+              <div style={{ display: "flex", fontSize: isPortrait ? fitOneLine(awayName ?? "", 68, 390) : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 10px rgba(0,0,0,0.9)" }}>
                 {bidiVisual(awayName ?? "")}
               </div>
             </div>
-            <div style={{ display: "flex", fontSize: isSquare ? 108 : 66, fontWeight: 700, color: INK, textShadow: `0 0 40px ${MINT}99, 0 4px 14px rgba(0,0,0,0.9)`, position: "relative" }}>
+            <div style={{ display: "flex", fontSize: isPortrait ? 116 : 66, fontWeight: 700, color: INK, textShadow: `0 0 40px ${MINT}99, 0 4px 14px rgba(0,0,0,0.9)`, position: "relative" }}>
               VS
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={homeLogoUrl} alt="" style={{ width: Math.round(panelLogo * iScale), height: Math.round(panelLogo * iScale), objectFit: "contain", position: "relative", left: Math.round((iOffX / 100) * panelLogo), top: Math.round((iOffY / 100) * panelLogo) }} />
-              <div style={{ display: "flex", fontSize: isSquare ? 38 : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 10px rgba(0,0,0,0.9)" }}>
+              <div style={{ display: "flex", fontSize: isPortrait ? fitOneLine(homeName, 68, 390) : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 10px rgba(0,0,0,0.9)" }}>
                 {bidiVisual(homeName)}
               </div>
             </div>
           </div>
         </div>
       ) : (
-        <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "space-between", padding: `0 ${isSquare ? 64 : 56}px` }}>
+        <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "space-between", padding: `0 ${isPortrait ? 32 : 56}px` }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: cardW }}>
             {bare ? (
               <div style={{ display: "flex", width: cardW, height: cardH }} />
@@ -623,12 +667,12 @@ export function MatchTemplate({
             ) : (
               <AvatarCircle img={awayLogoUrl ?? ""} color={awayColor} size={avatarSize} imgScale={iScale} imgOffsetX={iOffX} imgOffsetY={iOffY} />
             )}
-            <div style={{ display: "flex", fontSize: isSquare ? 38 : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 8px rgba(0,0,0,0.7)" }}>
+            <div style={{ display: "flex", fontSize: isPortrait ? fitOneLine(awayName ?? "", 68, cardW) : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 8px rgba(0,0,0,0.7)" }}>
               {bidiVisual(awayName ?? "")}
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <div style={{ display: "flex", fontSize: isSquare ? 108 : 66, fontWeight: 700, color: INK, textShadow: `0 0 40px ${MINT}99, 0 4px 14px rgba(0,0,0,0.8)` }}>
+            <div style={{ display: "flex", fontSize: isPortrait ? 116 : 66, fontWeight: 700, color: INK, textShadow: `0 0 40px ${MINT}99, 0 4px 14px rgba(0,0,0,0.8)` }}>
               VS
             </div>
           </div>
@@ -640,7 +684,7 @@ export function MatchTemplate({
             ) : (
               <AvatarCircle img={homeLogoUrl} color={homeColor} size={avatarSize} imgScale={iScale} imgOffsetX={iOffX} imgOffsetY={iOffY} />
             )}
-            <div style={{ display: "flex", fontSize: isSquare ? 38 : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 8px rgba(0,0,0,0.7)" }}>
+            <div style={{ display: "flex", fontSize: isPortrait ? fitOneLine(homeName, 68, cardW) : 25, fontWeight: 700, marginTop: 14, textShadow: "0 2px 8px rgba(0,0,0,0.7)" }}>
               {bidiVisual(homeName)}
             </div>
           </div>
@@ -648,7 +692,7 @@ export function MatchTemplate({
       )}
 
       {/* footer: [hero name +] date/location + price pill */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: isSquare ? 48 : 34 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: isPortrait ? 34 : 34 }}>
         {/* hero keeps the name in the bottom block (unless name-top already
             placed it as the headline), with a mint accent bar under it.
             One wrapper div, not a fragment - satori mis-stacks fragment
@@ -659,8 +703,8 @@ export function MatchTemplate({
               style={{
                 display: "flex",
                 textAlign: "center",
-                padding: `0 ${isSquare ? 70 : 56}px`,
-                fontSize: isSquare ? 84 : 50,
+                padding: `0 ${isPortrait ? 32 : 56}px`,
+                fontSize: isPortrait ? fitOneLine(homeName, 120, width - 64) : 50,
                 fontWeight: 700,
                 lineHeight: 1.1,
                 textShadow: "0 4px 28px rgba(0,0,0,0.85)",
@@ -671,37 +715,40 @@ export function MatchTemplate({
             <div
               style={{
                 display: "flex",
-                width: isSquare ? 130 : 96,
-                height: isSquare ? 7 : 5,
+                width: isPortrait ? 130 : 96,
+                height: isPortrait ? 7 : 5,
                 borderRadius: 4,
                 backgroundColor: MINT,
-                marginTop: isSquare ? 18 : 10,
-                marginBottom: isSquare ? 18 : 10,
+                marginTop: isPortrait ? 18 : 10,
+                marginBottom: isPortrait ? 18 : 10,
                 boxShadow: `0 0 30px ${MINT}88`,
               }}
             />
           </div>
         )}
-        <div style={{ display: "flex", alignItems: "center", fontSize: isSquare ? 34 : 23, color: "rgba(250,250,245,0.88)" }}>
-          <div style={{ display: "flex" }}>{timeText ? `${dateText} | ${timeText}` : dateText}</div>
+        {/* Time dropped from the creative (2026-08-12, Dor) - date + location
+            only, which frees width for the bigger font. timeText stays in the
+            input contract (hash/designer) but is not rendered. */}
+        <div style={{ display: "flex", alignItems: "center", fontSize: metaSize, color: "rgba(250,250,245,0.88)" }}>
+          <div style={{ display: "flex" }}>{dateText}</div>
           {locationText ? (
-            <div style={{ display: "flex", marginLeft: 18 }}>{`· ${bidiVisual(locationText)}`}</div>
+            <div style={{ display: "flex", marginLeft: 18 }}>{`· ${bidiVisual(cityOf(locationText))}`}</div>
           ) : null}
         </div>
-        {/* Price/CTA pill - brand mint (the site's CTA green), and the SAME
-            physical size on the banner as on the square so the two creatives
-            carry one button, not a big one and a small one. "price-top" moves
-            it to the top-right badge instead. */}
+        {/* Price/CTA pill - brand mint (the site's CTA green). Bigger on the
+            4:5 feed creative (the hero surface); the 628-high banner keeps the
+            previous size - a 58px pill eats a third of its height. "price-top"
+            moves it to the top-right badge instead. */}
         {!priceTop && (
           <div
             style={{
               display: "flex",
-              marginTop: isSquare ? 20 : 14,
-              padding: "14px 44px",
+              marginTop: isPortrait ? 22 : 14,
+              padding: isPortrait ? "26px 96px" : "14px 44px",
               borderRadius: 999,
               backgroundColor: MINT,
               color: CANVAS,
-              fontSize: 44,
+              fontSize: isPortrait ? 80 : 44,
               fontWeight: 700,
               boxShadow: `0 0 60px ${MINT}55`,
             }}
@@ -719,13 +766,13 @@ export function MatchTemplate({
             position: "absolute",
             // Below the header band - a corner position collides with the
             // centered wordmark once the pill text gets long.
-            top: isSquare ? 150 : 92,
-            right: isSquare ? 44 : 36,
-            padding: "14px 44px",
+            top: isPortrait ? 176 : 92,
+            right: isPortrait ? 44 : 36,
+            padding: isPortrait ? "26px 96px" : "14px 44px",
             borderRadius: 999,
             backgroundColor: MINT,
             color: CANVAS,
-            fontSize: 44,
+            fontSize: isPortrait ? 80 : 44,
             fontWeight: 700,
             boxShadow: `0 0 60px ${MINT}66, 0 10px 30px rgba(0,0,0,0.45)`,
             transform: "rotate(-6deg)",
