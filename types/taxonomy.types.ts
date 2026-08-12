@@ -38,4 +38,4 @@ export type EventTag = {
   updated_at: string;
 };
 
-export type AssignMode = "add" | "replace";
+export type AssignMode = "add" | "replace" | "remove";

@@ -22,7 +22,9 @@ import type {
  * `event_categories` node is gone - see the one_category_table migration.
  */
 
-// event_tags / category_tags aren't in the generated Supabase types yet.
+// event_tags / category_tags aren't in the generated Supabase types yet -
+// single untyped boundary; callers type the row shapes they read.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const tbl = (t: string) => (supabase as any).from(t);
 
 async function uniqueSlug(table: string, base: string): Promise<string> {
@@ -198,7 +200,7 @@ export async function getCategoryTagMap(): Promise<Record<number, number[]>> {
     await tbl("category_tags").select("category_id,tag_id");
   if (error) throw error;
   const map: Record<number, number[]> = {};
-  (data ?? []).forEach((r: any) => {
+  (data ?? []).forEach((r: { category_id: number; tag_id: number }) => {
     (map[r.category_id] ??= []).push(r.tag_id);
   });
   return map;
@@ -211,7 +213,7 @@ export async function getCategoryTagIds(categoryId: number): Promise<number[]> {
     .select("tag_id")
     .eq("category_id", categoryId);
   if (error) throw error;
-  return (data ?? []).map((r: any) => r.tag_id as number);
+  return (data ?? []).map((r: { tag_id: number }) => r.tag_id);
 }
 
 /** Save the tag composition from the Templates category form. */
@@ -239,7 +241,7 @@ export async function getEventTagIds(eventId: number): Promise<number[]> {
     .select("tag_id")
     .eq("event_id", eventId);
   if (error) throw error;
-  return (data ?? []).map((r: any) => r.tag_id as number);
+  return (data ?? []).map((r: { tag_id: number }) => r.tag_id);
 }
 
 export async function setEventTags(
@@ -265,6 +267,17 @@ export async function bulkAssignTags(
 ): Promise<void> {
   await requireStaff();
   if (!eventIds.length) return;
+  if (mode === "remove") {
+    // Strip only the selected tags; category membership follows automatically
+    // (event_category_links is a view over the tag links).
+    if (!tagIds.length) return;
+    const { error } = await tbl("event_tag_links")
+      .delete()
+      .in("event_id", eventIds)
+      .in("tag_id", tagIds);
+    if (error) throw error;
+    return;
+  }
   if (mode === "replace") {
     const { error } = await tbl("event_tag_links")
       .delete()
@@ -299,11 +312,11 @@ export async function getTaxonomyLinkMaps(): Promise<{
   if (catRes.error) throw catRes.error;
   if (tagRes.error) throw tagRes.error;
   const cats: Record<number, number[]> = {};
-  (catRes.data ?? []).forEach((r: any) => {
+  (catRes.data ?? []).forEach((r: { event_id: number; category_id: number }) => {
     (cats[r.event_id] ??= []).push(r.category_id);
   });
   const tags: Record<number, number[]> = {};
-  (tagRes.data ?? []).forEach((r: any) => {
+  (tagRes.data ?? []).forEach((r: { event_id: number; tag_id: number }) => {
     (tags[r.event_id] ??= []).push(r.tag_id);
   });
   return { cats, tags };
@@ -320,7 +333,7 @@ export async function getCategoryEventCounts(): Promise<
   );
   if (error) throw error;
   const counts: Record<number, number> = {};
-  (data ?? []).forEach((r: any) => {
+  (data ?? []).forEach((r: { category_id: number }) => {
     counts[r.category_id] = (counts[r.category_id] ?? 0) + 1;
   });
   return counts;
@@ -331,7 +344,7 @@ export async function getTagEventCounts(): Promise<Record<number, number>> {
   const { data, error } = await tbl("event_tag_links").select("tag_id");
   if (error) throw error;
   const counts: Record<number, number> = {};
-  (data ?? []).forEach((r: any) => {
+  (data ?? []).forEach((r: { tag_id: number }) => {
     counts[r.tag_id] = (counts[r.tag_id] ?? 0) + 1;
   });
   return counts;

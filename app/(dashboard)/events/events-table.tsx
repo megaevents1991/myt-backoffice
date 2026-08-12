@@ -465,6 +465,87 @@ function renderCompetitorPricingDescription(response: CompetitorPricingResponse)
   );
 }
 
+// Extracted from the usual_price column cell — hooks aren't allowed inside a
+// TanStack cell render function.
+function UsualPriceCell({
+  event,
+  price,
+  onCalculate,
+}: {
+  event: Event;
+  price: number;
+  onCalculate: () => Promise<void>;
+}) {
+  const [calculating, setCalculating] = useState(false);
+  const { toast } = useToast();
+  const comp = event.comp_pricing ?? null;
+  const compPrice = comp?.price ?? null;
+
+  let priceColor = "";
+  if (comp) {
+    if (comp.status === "no_result") {
+      priceColor = "text-blue-400";
+    } else if (comp.status === "date_mismatch" && comp.colorOverride) {
+      priceColor = comp.colorOverride === "green" ? "text-green-500"
+        : comp.colorOverride === "yellow" ? "text-yellow-500"
+        : comp.colorOverride === "blue" ? "text-blue-400"
+        : "text-red-500";
+    } else if (compPrice !== null && !isNaN(price)) {
+      priceColor = price < compPrice ? "text-green-500"
+        : price - compPrice <= 100 ? "text-yellow-500"
+        : "text-red-500";
+    }
+  }
+
+  const tooltipLines: string[] = [];
+  if (comp) {
+    if (comp.status === "no_result") {
+      tooltipLines.push(`${comp.name} has no package for this event`);
+    } else if (comp.status === "date_mismatch") {
+      tooltipLines.push(`${comp.name}: $${comp.price} (date mismatch)`);
+      if (comp.foundDate) tooltipLines.push(`Found: ${comp.foundDate} · Queried: ${comp.date}`);
+    } else {
+      tooltipLines.push(`${comp.name}: $${comp.price}`);
+    }
+    tooltipLines.push(`Checked: ${comp.date}`);
+  }
+  const tooltipText = tooltipLines.join("\n") || undefined;
+
+  const handleClick = async () => {
+    setCalculating(true);
+    try {
+      await onCalculate();
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Failed to calculate price." });
+    } finally {
+      setCalculating(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <span
+        className={priceColor}
+        title={tooltipText}
+      >
+        ${isNaN(price) ? "0.00" : price.toFixed(2)}
+      </span>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 shrink-0"
+        title="Auto-calculate: flight + hotel + cheapest ticket + $175"
+        disabled={calculating}
+        onClick={handleClick}
+      >
+        {calculating
+          ? <Loader2 className="h-3 w-3 animate-spin" />
+          : <RefreshCw className="h-3 w-3" />}
+      </Button>
+    </div>
+  );
+}
+
 export function EventsTable() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
@@ -550,7 +631,7 @@ export function EventsTable() {
     try {
       await bulkAssignTags(selectedIds, bulkTagIds, bulkTagMode);
       toast({
-        title: "Tags assigned",
+        title: bulkTagMode === "remove" ? "Tags removed" : "Tags assigned",
         description: `${selectedIds.length} event(s) (${bulkTagMode}).`,
       });
       setBulkTagOpen(false);
@@ -1516,77 +1597,15 @@ export function EventsTable() {
           </Button>
         );
       },
-      cell: ({ row }) => {
-        const [calculating, setCalculating] = useState(false);
-        const event = row.original;
-        const price = Number.parseFloat(row.getValue("usual_price"));
-        const comp = event.comp_pricing ?? null;
-        const compPrice = comp?.price ?? null;
-
-        let priceColor = "";
-        if (comp) {
-          if (comp.status === "no_result") {
-            priceColor = "text-blue-400";
-          } else if (comp.status === "date_mismatch" && comp.colorOverride) {
-            priceColor = comp.colorOverride === "green" ? "text-green-500"
-              : comp.colorOverride === "yellow" ? "text-yellow-500"
-              : comp.colorOverride === "blue" ? "text-blue-400"
-              : "text-red-500";
-          } else if (compPrice !== null && !isNaN(price)) {
-            priceColor = price < compPrice ? "text-green-500"
-              : price - compPrice <= 100 ? "text-yellow-500"
-              : "text-red-500";
-          }
-        }
-
-        const tooltipLines: string[] = [];
-        if (comp) {
-          if (comp.status === "no_result") {
-            tooltipLines.push(`${comp.name} has no package for this event`);
-          } else if (comp.status === "date_mismatch") {
-            tooltipLines.push(`${comp.name}: $${comp.price} (date mismatch)`);
-            if (comp.foundDate) tooltipLines.push(`Found: ${comp.foundDate} · Queried: ${comp.date}`);
-          } else {
-            tooltipLines.push(`${comp.name}: $${comp.price}`);
-          }
-          tooltipLines.push(`Checked: ${comp.date}`);
-        }
-        const tooltipText = tooltipLines.join("\n") || undefined;
-
-        const handleClick = async () => {
-          setCalculating(true);
-          try {
-            await handleAutoCalculatePrice(event.id);
-          } catch {
-            toast({ variant: "destructive", title: "Error", description: "Failed to calculate price." });
-          } finally {
-            setCalculating(false);
-          }
-        };
-
-        return (
-          <div className="flex items-center gap-1">
-            <span
-              className={priceColor}
-              title={tooltipText}
-            >
-              ${isNaN(price) ? "0.00" : price.toFixed(2)}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0"
-              title="Auto-calculate: flight + hotel + cheapest ticket + $175"
-              disabled={calculating}
-              onClick={handleClick}
-            >
-              {calculating
-                ? <Loader2 className="h-3 w-3 animate-spin" />
-                : <RefreshCw className="h-3 w-3" />}
-            </Button>
-          </div>
-        );
-      },
+      cell: ({ row }) => (
+        <UsualPriceCell
+          event={row.original}
+          price={Number.parseFloat(row.getValue("usual_price"))}
+          onCalculate={async () => {
+            await handleAutoCalculatePrice(row.original.id);
+          }}
+        />
+      ),
     },
     {
       accessorKey: "tags",
@@ -2033,7 +2052,7 @@ export function EventsTable() {
               setDateMismatchDialog(null);
               popMismatchQueue();
             }}>
-              Discard - don't save
+              Discard - don&apos;t save
               {mismatchQueue.length > 0 && ` (${mismatchQueue.length} more remaining)`}
             </Button>
           </div>
@@ -2272,7 +2291,8 @@ export function EventsTable() {
               </PopoverTrigger>
               <PopoverContent align="start" className="w-80 space-y-3">
                 <p className="text-sm font-medium">
-                  Assign tags to {selectedIds.length} event(s)
+                  {bulkTagMode === "remove" ? "Remove tags from" : "Assign tags to"}{" "}
+                  {selectedIds.length} event(s)
                 </p>
                 <EventTaxonomySelect
                   options={tagOptions}
@@ -2297,7 +2317,15 @@ export function EventsTable() {
                   </Button>
                   <Button
                     size="sm"
+                    variant={bulkTagMode === "remove" ? "destructive" : "outline"}
+                    onClick={() => setBulkTagMode("remove")}
+                  >
+                    Remove
+                  </Button>
+                  <Button
+                    size="sm"
                     className="ml-auto"
+                    variant={bulkTagMode === "remove" ? "destructive" : "default"}
                     onClick={handleBulkAssignTags}
                     disabled={bulkLoading || bulkTagIds.length === 0}
                   >
