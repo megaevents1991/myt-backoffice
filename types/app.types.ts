@@ -131,6 +131,10 @@ export type FlightSegment = {
   checkBagsIncluded: boolean;
   cabinBagsIncluded: boolean;
   flightNumber?: string;
+  // Codeshare disclosure: name of the airline actually flying this leg when
+  // it differs from the carrier shown on the card (e.g. an LY-marketed
+  // Saturday flight operated by Air France). Undefined when they match.
+  operatedBy?: string;
   // Offline flights only: the weight allowance behind checkBagsIncluded /
   // cabinBagsIncluded, when the supplier gave us one.
   checkedBagKg?: number | null;
