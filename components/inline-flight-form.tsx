@@ -52,7 +52,7 @@ export const inlineFlightSchema = z.object({
     .string()
     .regex(isoDurationPattern, "Invalid total duration (ISO 8601, e.g. PT8H30M).")
     .min(1, "Total duration is required."),
-  // See the note in the flight form schemas — connecting flights are valid.
+  // See the note in the flight form schemas - connecting flights are valid.
   stops: z.coerce.number().int().min(0).max(3),
 
   outbound_departure_airport: z
@@ -104,9 +104,9 @@ export type InlineFlightFormData = z.infer<typeof inlineFlightSchema>;
 export type StagedFlightData = Omit<OfflineFlight, "id" | "consumed_quantity" | "is_deleted">;
 
 interface InlineFlightFormProps {
-  /** Present when adding to an existing saved event — flight is created immediately. */
+  /** Present when adding to an existing saved event - flight is created immediately. */
   eventId?: number;
-  /** Present when adding during new event creation — flight data is staged, not yet saved. */
+  /** Present when adding during new event creation - flight data is staged, not yet saved. */
   onStage?: (data: StagedFlightData) => void;
   /** Called after the flight is created in the DB (existing event mode only). */
   onCreated?: (flight: OfflineFlight) => void;
@@ -224,7 +224,7 @@ export function InlineFlightForm({
     // Stage mode: new event hasn't been saved yet
     if (onStage) {
       onStage({ ...values, event_ids: [] });
-      toast.success("Flight staged — will be saved with the event.");
+      toast.success("Flight staged - will be saved with the event.");
       return;
     }
 
@@ -280,7 +280,7 @@ export function InlineFlightForm({
                     </Button>
                   </div>
                   {isValidated && (
-                    <p className="text-xs text-muted-foreground">{metadataName} — metadata auto-filled</p>
+                    <p className="text-xs text-muted-foreground">{metadataName} - metadata auto-filled</p>
                   )}
                   <FormMessage />
                 </FormItem>
@@ -380,7 +380,7 @@ export function InlineFlightForm({
             )} />
           </div>
 
-          {/* Metadata hidden fields — auto-filled by validate */}
+          {/* Metadata hidden fields - auto-filled by validate */}
           <FormField control={form.control} name="metadata_iata" render={({ field }) => <input type="hidden" {...field} />} />
           <FormField control={form.control} name="metadata_name" render={({ field }) => <input type="hidden" {...field} />} />
           <FormField control={form.control} name="metadata_logo" render={({ field }) => <input type="hidden" {...field} />} />

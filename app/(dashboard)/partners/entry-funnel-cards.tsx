@@ -12,9 +12,9 @@ import type { FunnelStage, PartnerTraffic } from "@/lib/partner-funnel";
 interface EntryFunnelRow {
   key: string;
   label: string;
-  /** null = the flow has this step but nothing tracks it yet — rendered as "—". */
+  /** null = the flow has this step but nothing tracks it yet - rendered as "-". */
   visitors: number | null;
-  /** Small print after the label — what this row really measures. */
+  /** Small print after the label - what this row really measures. */
   note?: string;
   /** Show the share un-rounded (Confirmed: 0.4% must not read as 0%). */
   precise?: boolean;
@@ -23,7 +23,7 @@ interface EntryFunnelRow {
 const stageVisitors = (funnel: PartnerTraffic, stage: FunnelStage) =>
   funnel.byStage.find((s) => s.stage === stage)?.visitors ?? 0;
 
-/** What each recorded stage really marks — the click LEAVING that screen. */
+/** What each recorded stage really marks - the click LEAVING that screen. */
 const BROWSE_STAGE_NOTES: Partial<Record<FunnelStage, string>> = {
   EVENT_SELECTED: "clicked into an event",
   TICKET_SELECTED: "moved on to flights",
@@ -32,7 +32,7 @@ const BROWSE_STAGE_NOTES: Partial<Record<FunnelStage, string>> = {
   CONFIRMED: "paid or asked for an agent",
 };
 
-const PAID_ROW_NOTE = "order now marked Paid — matched by partner, event & time";
+const PAID_ROW_NOTE = "order now marked Paid - matched by partner, event & time";
 
 /** Home/artist entries: the recorded funnel, captioned like the event card,
  *  with the same matched-Paid row at the bottom. */
@@ -61,7 +61,7 @@ const browseEntryRows = (
  * event" moment, and the wizard fires each stage on the click that LEAVES its
  * screen (see main's OrderForm nextStep): a ticket pick means moving on to
  * flights, a flight pick (chosen or skipped) moving on to the hotel, a hotel
- * pick reaching the order summary. Same counts, honest captions — plus one
+ * pick reaching the order summary. Same counts, honest captions - plus one
  * caveat: /order pages fire VISIT only since main's Aug 5, 2026 tracker fix,
  * so older windows count a deep-link visitor only once they advanced a
  * screen. The grid's footnote spells this out.
@@ -70,7 +70,7 @@ const eventEntryRows = (funnel: PartnerTraffic, paid: number): EntryFunnelRow[] 
   {
     key: "VISIT",
     label: "Visited",
-    note: "landed on the order page — see the note below on older windows",
+    note: "landed on the order page - see the note below on older windows",
     visitors: funnel.totalVisitors,
   },
   {
@@ -156,7 +156,7 @@ function EntryFunnelCard({
                       )}
                     </span>
                     <span className="shrink-0 font-medium tabular-nums">
-                      {row.visitors ?? "—"}
+                      {row.visitors ?? "-"}
                       {pct != null && row.key !== "VISIT" && (
                         <span className="ml-2 text-xs text-muted-foreground">
                           {row.precise ? preciseShare(pct) : Math.round(pct)}%
@@ -180,7 +180,7 @@ function EntryFunnelCard({
   );
 }
 
-/** The three entry funnels + their footnote — shared by the cross-partner
+/** The three entry funnels + their footnote - shared by the cross-partner
  *  Insights tab and the per-partner performance view. */
 export function EntryFunnelsGrid({ entryFunnels }: { entryFunnels: EntryFunnels }) {
   return (
@@ -203,7 +203,7 @@ export function EntryFunnelsGrid({ entryFunnels }: { entryFunnels: EntryFunnels 
         <EntryFunnelCard
           icon={Ticket}
           title="Entered on a specific event"
-          description="Landed straight inside the order flow — package deep-links included. Each step below marks moving one screen deeper."
+          description="Landed straight inside the order flow - package deep-links included. Each step below marks moving one screen deeper."
           hasData={entryFunnels.event.hasData}
           rows={eventEntryRows(entryFunnels.event, entryFunnels.paidByEntry.event)}
         />
@@ -213,7 +213,7 @@ export function EntryFunnelsGrid({ entryFunnels }: { entryFunnels: EntryFunnels 
           `${entryFunnels.otherVisitors} more visitors entered on other pages (categories, blog…). `}
         {entryFunnels.approximate &&
           "Numbers are approximate until the entry-funnel DB function is deployed. "}
-        Order-page landings are tracked since Aug 5, 2026 — before that a
+        Order-page landings are tracked since Aug 5, 2026 - before that a
         deep-link visitor is counted only once they advanced a screen, so
         &quot;Visited&quot; runs low on windows reaching further back.
       </p>

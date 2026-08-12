@@ -110,10 +110,10 @@ function ReservationCell({
         onValueChange={onChange}
       >
         <SelectTrigger className="h-8 min-w-[9rem]">
-          <SelectValue placeholder="—" />
+          <SelectValue placeholder="-" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={NONE}>— None —</SelectItem>
+          <SelectItem value={NONE}>- None -</SelectItem>
           {reservations.map((r) => (
             <SelectItem key={r.id} value={String(r.id)}>
               {reservationLabel(r)}
@@ -239,14 +239,14 @@ export function HotelRoomsTable({
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                       <div className="space-y-1">
                         <span className="text-xs font-medium text-muted-foreground">Meal</span>
-                        <p className="text-sm">{r.meal_plan ?? "—"}</p>
+                        <p className="text-sm">{r.meal_plan ?? "-"}</p>
                       </div>
                       <div className="space-y-1">
                         <span className="text-xs font-medium text-muted-foreground">Cancel by</span>
-                        <p className="text-sm">{r.last_cancellation_date ?? "—"}</p>
+                        <p className="text-sm">{r.last_cancellation_date ?? "-"}</p>
                       </div>
-                      <InlineField room={r} field="supplier" label="Supplier" placeholder="—" onSaved={onSaved} />
-                      <InlineField room={r} field="order_no" label="Order No" placeholder="—" onSaved={onSaved} />
+                      <InlineField room={r} field="supplier" label="Supplier" placeholder="-" onSaved={onSaved} />
+                      <InlineField room={r} field="order_no" label="Order No" placeholder="-" onSaved={onSaved} />
                       <InlineField room={r} field="acc_no" label="Acc No" placeholder="doket…" onSaved={onSaved} />
                     </div>
                   </TableCell>

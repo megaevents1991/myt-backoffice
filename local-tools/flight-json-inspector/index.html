@@ -27,17 +27,32 @@
         }
       }
 
-      * { box-sizing: border-box; }
+      * {
+        box-sizing: border-box;
+      }
       body {
         margin: 0;
-        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Helvetica,
+          Arial,
+          "Apple Color Emoji",
+          "Segoe UI Emoji";
         background: var(--bg);
         color: var(--text);
       }
       header {
         padding: 18px 18px 12px;
         border-bottom: 1px solid var(--border);
-        background: linear-gradient(180deg, rgba(122,162,255,0.08), rgba(0,0,0,0));
+        background: linear-gradient(
+          180deg,
+          rgba(122, 162, 255, 0.08),
+          rgba(0, 0, 0, 0)
+        );
       }
       header h1 {
         margin: 0;
@@ -81,7 +96,9 @@
         color: var(--muted);
         font-size: 12px;
       }
-      .panel .panel-body { padding: 12px; }
+      .panel .panel-body {
+        padding: 12px;
+      }
 
       .row {
         display: grid;
@@ -131,10 +148,13 @@
         cursor: pointer;
       }
       .btn.primary {
-        border-color: rgba(122,162,255,0.45);
-        background: rgba(122,162,255,0.12);
+        border-color: rgba(122, 162, 255, 0.45);
+        background: rgba(122, 162, 255, 0.12);
       }
-      .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
 
       .table-wrap {
         overflow: auto;
@@ -146,7 +166,8 @@
         font-size: 13px;
         min-width: 980px;
       }
-      th, td {
+      th,
+      td {
         text-align: left;
         padding: 10px 10px;
         border-bottom: 1px solid var(--border);
@@ -170,7 +191,7 @@
         gap: 6px;
       }
       tr:hover td {
-        background: rgba(122,162,255,0.06);
+        background: rgba(122, 162, 255, 0.06);
       }
 
       .badge {
@@ -187,7 +208,7 @@
       .details {
         padding: 12px;
         border-top: 1px solid var(--border);
-        background: rgba(0,0,0,0.03);
+        background: rgba(0, 0, 0, 0.03);
       }
       pre {
         margin: 0;
@@ -256,7 +277,8 @@
         border-collapse: collapse;
         min-width: 720px;
       }
-      .segments th, .segments td {
+      .segments th,
+      .segments td {
         padding: 10px 10px;
         border-bottom: 1px solid var(--border);
         white-space: nowrap;
@@ -264,26 +286,50 @@
       .segments th {
         color: var(--muted);
         font-weight: 600;
-        background: rgba(0,0,0,0.02);
+        background: rgba(0, 0, 0, 0.02);
         position: sticky;
         top: 0;
       }
 
       @media (min-width: 980px) {
-        .field.file { grid-column: span 6; }
-        .field.search { grid-column: span 6; }
+        .field.file {
+          grid-column: span 6;
+        }
+        .field.search {
+          grid-column: span 6;
+        }
 
-        .field.airline { grid-column: span 3; }
-        .field.currency { grid-column: span 2; }
-        .field.minPrice { grid-column: span 2; }
-        .field.maxPrice { grid-column: span 2; }
-        .field.minSeats { grid-column: span 2; }
-        .field.minOutDur { grid-column: span 2; }
-        .field.maxOutDur { grid-column: span 2; }
-        .field.minInDur { grid-column: span 2; }
-        .field.maxInDur { grid-column: span 2; }
+        .field.airline {
+          grid-column: span 3;
+        }
+        .field.currency {
+          grid-column: span 2;
+        }
+        .field.minPrice {
+          grid-column: span 2;
+        }
+        .field.maxPrice {
+          grid-column: span 2;
+        }
+        .field.minSeats {
+          grid-column: span 2;
+        }
+        .field.minOutDur {
+          grid-column: span 2;
+        }
+        .field.maxOutDur {
+          grid-column: span 2;
+        }
+        .field.minInDur {
+          grid-column: span 2;
+        }
+        .field.maxInDur {
+          grid-column: span 2;
+        }
 
-        .field.actions { grid-column: span 4; }
+        .field.actions {
+          grid-column: span 4;
+        }
       }
     </style>
   </head>
@@ -291,8 +337,9 @@
     <header>
       <h1>Flight JSON Inspector (Local)</h1>
       <p>
-        Loads a JSON file from disk, renders flight offers as a sortable table, and lets you filter.
-        Runs entirely in your browser (no server, no app integration).
+        Loads a JSON file from disk, renders flight offers as a sortable table,
+        and lets you filter. Runs entirely in your browser (no server, no app
+        integration).
       </p>
     </header>
 
@@ -301,10 +348,10 @@
         <div class="panel-header">
           <div class="meta">
             <span class="badge" id="statusBadge">No file loaded</span>
-            <span id="counts">—</span>
+            <span id="counts">-</span>
           </div>
           <div class="meta">
-            <span id="sortState">Sort: —</span>
+            <span id="sortState">Sort: -</span>
           </div>
         </div>
 
@@ -312,13 +359,24 @@
           <div class="row">
             <div class="field file">
               <label for="fileInput">JSON file</label>
-              <input id="fileInput" type="file" accept="application/json,.json" />
-              <div class="hint">Tip: select the <code>flights.json</code> you attached.</div>
+              <input
+                id="fileInput"
+                type="file"
+                accept="application/json,.json"
+              />
+              <div class="hint">
+                Tip: select the <code>flights.json</code> you attached.
+              </div>
             </div>
 
             <div class="field search">
               <label for="q">Search (id, airline, source, price, dates)</label>
-              <input id="q" type="text" placeholder="e.g. AF, LH, 1903, 2026-03" disabled />
+              <input
+                id="q"
+                type="text"
+                placeholder="e.g. AF, LH, 1903, 2026-03"
+                disabled
+              />
             </div>
 
             <div class="field airline">
@@ -337,68 +395,161 @@
 
             <div class="field minPrice">
               <label for="minPrice">Min price</label>
-              <input id="minPrice" type="number" inputmode="decimal" step="0.01" placeholder="0" disabled />
+              <input
+                id="minPrice"
+                type="number"
+                inputmode="decimal"
+                step="0.01"
+                placeholder="0"
+                disabled
+              />
             </div>
 
             <div class="field maxPrice">
               <label for="maxPrice">Max price</label>
-              <input id="maxPrice" type="number" inputmode="decimal" step="0.01" placeholder="99999" disabled />
+              <input
+                id="maxPrice"
+                type="number"
+                inputmode="decimal"
+                step="0.01"
+                placeholder="99999"
+                disabled
+              />
             </div>
 
             <div class="field minSeats">
               <label for="minSeats">Min seats</label>
-              <input id="minSeats" type="number" inputmode="numeric" step="1" placeholder="0" disabled />
+              <input
+                id="minSeats"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                placeholder="0"
+                disabled
+              />
             </div>
 
             <div class="field minOutDur">
               <label for="minOutDur">Min outbound duration (min)</label>
-              <input id="minOutDur" type="number" inputmode="numeric" step="1" placeholder="0" disabled />
+              <input
+                id="minOutDur"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                placeholder="0"
+                disabled
+              />
             </div>
 
             <div class="field maxOutDur">
               <label for="maxOutDur">Max outbound duration (min)</label>
-              <input id="maxOutDur" type="number" inputmode="numeric" step="1" placeholder="99999" disabled />
+              <input
+                id="maxOutDur"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                placeholder="99999"
+                disabled
+              />
             </div>
 
             <div class="field minInDur">
               <label for="minInDur">Min inbound duration (min)</label>
-              <input id="minInDur" type="number" inputmode="numeric" step="1" placeholder="0" disabled />
+              <input
+                id="minInDur"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                placeholder="0"
+                disabled
+              />
             </div>
 
             <div class="field maxInDur">
               <label for="maxInDur">Max inbound duration (min)</label>
-              <input id="maxInDur" type="number" inputmode="numeric" step="1" placeholder="99999" disabled />
+              <input
+                id="maxInDur"
+                type="number"
+                inputmode="numeric"
+                step="1"
+                placeholder="99999"
+                disabled
+              />
             </div>
 
             <div class="field actions">
               <label>&nbsp;</label>
-              <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <button class="btn primary" id="resetBtn" disabled>Reset filters</button>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap">
+                <button class="btn primary" id="resetBtn" disabled>
+                  Reset filters
+                </button>
               </div>
               <div class="hint">Click a table row to open the itinerary.</div>
             </div>
           </div>
 
-          <div id="error" class="error" style="margin-top:10px; display:none;"></div>
+          <div
+            id="error"
+            class="error"
+            style="margin-top: 10px; display: none"
+          ></div>
         </div>
 
         <div class="table-wrap">
           <table aria-label="Flight offers table">
             <thead>
               <tr>
-                <th><button type="button" data-key="id">id <span data-sort-indicator="id"></span></button></th>
-                <th><button type="button" data-key="grandTotal">price.grandTotal <span data-sort-indicator="grandTotal"></span></button></th>
-                <th><button type="button" data-key="currency">currency <span data-sort-indicator="currency"></span></button></th>
-                <th><button type="button" data-key="airlines">validatingAirlineCodes <span data-sort-indicator="airlines"></span></button></th>
-                <th><button type="button" data-key="seats">seats <span data-sort-indicator="seats"></span></button></th>
-                <th><button type="button" data-key="outboundMinutes">outbound duration <span data-sort-indicator="outboundMinutes"></span></button></th>
-                <th><button type="button" data-key="inboundMinutes">inbound duration <span data-sort-indicator="inboundMinutes"></span></button></th>
-                <th><button type="button" data-key="type">type <span data-sort-indicator="type"></span></button></th>
+                <th>
+                  <button type="button" data-key="id">
+                    id <span data-sort-indicator="id"></span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" data-key="grandTotal">
+                    price.grandTotal
+                    <span data-sort-indicator="grandTotal"></span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" data-key="currency">
+                    currency <span data-sort-indicator="currency"></span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" data-key="airlines">
+                    validatingAirlineCodes
+                    <span data-sort-indicator="airlines"></span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" data-key="seats">
+                    seats <span data-sort-indicator="seats"></span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" data-key="outboundMinutes">
+                    outbound duration
+                    <span data-sort-indicator="outboundMinutes"></span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" data-key="inboundMinutes">
+                    inbound duration
+                    <span data-sort-indicator="inboundMinutes"></span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" data-key="type">
+                    type <span data-sort-indicator="type"></span>
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody id="tbody">
               <tr>
-                <td colspan="7" style="color: var(--muted); padding: 14px 10px;">Load a JSON file to begin.</td>
+                <td colspan="7" style="color: var(--muted); padding: 14px 10px">
+                  Load a JSON file to begin.
+                </td>
               </tr>
             </tbody>
           </table>
@@ -406,12 +557,18 @@
       </section>
     </main>
 
-    <div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div
+      class="modal-overlay"
+      id="modalOverlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modalTitle"
+    >
       <div class="modal">
         <div class="modal-header">
           <div>
             <div class="modal-title" id="modalTitle">Itinerary</div>
-            <div class="meta" id="modalMeta" style="margin-top: 4px;"></div>
+            <div class="meta" id="modalMeta" style="margin-top: 4px"></div>
           </div>
           <button class="btn" id="modalCloseBtn" type="button">Close</button>
         </div>
@@ -423,27 +580,27 @@
       /** @typedef {{ raw:any, id:string, type:string, seats:number|null, currency:string|null, grandTotal:number|null, airlines:string[], outboundMinutes:number|null, inboundMinutes:number|null, itineraries:any[] }} OfferRow */
 
       const els = {
-        fileInput: document.getElementById('fileInput'),
-        q: document.getElementById('q'),
-        airline: document.getElementById('airline'),
-        currency: document.getElementById('currency'),
-        minPrice: document.getElementById('minPrice'),
-        maxPrice: document.getElementById('maxPrice'),
-        minSeats: document.getElementById('minSeats'),
-        minOutDur: document.getElementById('minOutDur'),
-        maxOutDur: document.getElementById('maxOutDur'),
-        minInDur: document.getElementById('minInDur'),
-        maxInDur: document.getElementById('maxInDur'),
-        resetBtn: document.getElementById('resetBtn'),
-        statusBadge: document.getElementById('statusBadge'),
-        counts: document.getElementById('counts'),
-        sortState: document.getElementById('sortState'),
-        error: document.getElementById('error'),
-        tbody: document.getElementById('tbody'),
-        modalOverlay: document.getElementById('modalOverlay'),
-        modalBody: document.getElementById('modalBody'),
-        modalMeta: document.getElementById('modalMeta'),
-        modalCloseBtn: document.getElementById('modalCloseBtn'),
+        fileInput: document.getElementById("fileInput"),
+        q: document.getElementById("q"),
+        airline: document.getElementById("airline"),
+        currency: document.getElementById("currency"),
+        minPrice: document.getElementById("minPrice"),
+        maxPrice: document.getElementById("maxPrice"),
+        minSeats: document.getElementById("minSeats"),
+        minOutDur: document.getElementById("minOutDur"),
+        maxOutDur: document.getElementById("maxOutDur"),
+        minInDur: document.getElementById("minInDur"),
+        maxInDur: document.getElementById("maxInDur"),
+        resetBtn: document.getElementById("resetBtn"),
+        statusBadge: document.getElementById("statusBadge"),
+        counts: document.getElementById("counts"),
+        sortState: document.getElementById("sortState"),
+        error: document.getElementById("error"),
+        tbody: document.getElementById("tbody"),
+        modalOverlay: document.getElementById("modalOverlay"),
+        modalBody: document.getElementById("modalBody"),
+        modalMeta: document.getElementById("modalMeta"),
+        modalCloseBtn: document.getElementById("modalCloseBtn"),
       };
 
       /** @type {OfferRow[]} */
@@ -453,47 +610,62 @@
       let filteredRows = [];
 
       /** @type {{ key: keyof OfferRow | null, dir: 'asc' | 'desc' }} */
-      let sort = { key: null, dir: 'asc' };
+      let sort = { key: null, dir: "asc" };
 
       /** @type {OfferRow | null} */
       let selected = null;
 
       function setError(message) {
         if (!message) {
-          els.error.style.display = 'none';
-          els.error.textContent = '';
+          els.error.style.display = "none";
+          els.error.textContent = "";
           return;
         }
-        els.error.style.display = 'block';
+        els.error.style.display = "block";
         els.error.textContent = message;
       }
 
       function enableControls(enabled) {
-        for (const key of ['q','airline','currency','minPrice','maxPrice','minSeats','minOutDur','maxOutDur','minInDur','maxInDur','resetBtn']) {
+        for (const key of [
+          "q",
+          "airline",
+          "currency",
+          "minPrice",
+          "maxPrice",
+          "minSeats",
+          "minOutDur",
+          "maxOutDur",
+          "minInDur",
+          "maxInDur",
+          "resetBtn",
+        ]) {
           els[key].disabled = !enabled;
         }
       }
 
       function parseISODurationToMinutes(iso) {
-        if (typeof iso !== 'string') return null;
+        if (typeof iso !== "string") return null;
         // Basic ISO-8601 duration parsing for PTxHxMxS; also supports days.
         // Examples: PT5H30M, PT45M, P1DT2H
-        const m = iso.match(/^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+        const m = iso.match(
+          /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/,
+        );
         if (!m) return null;
         const days = m[1] ? Number(m[1]) : 0;
         const hours = m[2] ? Number(m[2]) : 0;
         const mins = m[3] ? Number(m[3]) : 0;
         const secs = m[4] ? Number(m[4]) : 0;
-        const total = days * 24 * 60 + hours * 60 + mins + Math.floor(secs / 60);
+        const total =
+          days * 24 * 60 + hours * 60 + mins + Math.floor(secs / 60);
         return Number.isFinite(total) ? total : null;
       }
 
       function formatMinutes(mins) {
-        if (mins == null || !Number.isFinite(mins)) return '—';
+        if (mins == null || !Number.isFinite(mins)) return "-";
         const h = Math.floor(mins / 60);
         const m = Math.round(mins % 60);
         if (h <= 0) return `${m}m`;
-        return `${h}h ${String(m).padStart(2, '0')}m`;
+        return `${h}h ${String(m).padStart(2, "0")}m`;
       }
 
       function deriveItineraryMinutes(itineraries, index) {
@@ -519,25 +691,36 @@
 
       function normalizeOffer(offer) {
         const priceObj = offer?.price ?? null;
-        const currency = typeof priceObj?.currency === 'string' ? priceObj.currency : null;
+        const currency =
+          typeof priceObj?.currency === "string" ? priceObj.currency : null;
         const grandTotalRaw = priceObj?.grandTotal;
-        const grandTotal = grandTotalRaw != null && grandTotalRaw !== '' ? Number(grandTotalRaw) : null;
+        const grandTotal =
+          grandTotalRaw != null && grandTotalRaw !== ""
+            ? Number(grandTotalRaw)
+            : null;
 
         const airlines = Array.isArray(offer?.validatingAirlineCodes)
-          ? offer.validatingAirlineCodes.filter((x) => typeof x === 'string')
+          ? offer.validatingAirlineCodes.filter((x) => typeof x === "string")
           : [];
 
         const seatsRaw = offer?.numberOfBookableSeats;
-        const seats = typeof seatsRaw === 'number' ? seatsRaw : (seatsRaw != null ? Number(seatsRaw) : null);
+        const seats =
+          typeof seatsRaw === "number"
+            ? seatsRaw
+            : seatsRaw != null
+              ? Number(seatsRaw)
+              : null;
 
-        const itineraries = Array.isArray(offer?.itineraries) ? offer.itineraries : [];
+        const itineraries = Array.isArray(offer?.itineraries)
+          ? offer.itineraries
+          : [];
         const outboundMinutes = deriveItineraryMinutes(itineraries, 0);
         const inboundMinutes = deriveItineraryMinutes(itineraries, 1);
 
         return {
           raw: offer,
-          id: String(offer?.id ?? ''),
-          type: String(offer?.type ?? ''),
+          id: String(offer?.id ?? ""),
+          type: String(offer?.type ?? ""),
           seats: Number.isFinite(seats) ? seats : null,
           currency,
           grandTotal: Number.isFinite(grandTotal) ? grandTotal : null,
@@ -549,7 +732,7 @@
       }
 
       function toISODateOrNull(s) {
-        if (!s || typeof s !== 'string') return null;
+        if (!s || typeof s !== "string") return null;
         // Accept yyyy-mm-dd only
         if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
         return s;
@@ -560,24 +743,25 @@
         if (a == null) return 1;
         if (b == null) return -1;
 
-        if (typeof a === 'number' && typeof b === 'number') return a - b;
-        if (typeof a === 'boolean' && typeof b === 'boolean') return (a === b) ? 0 : (a ? 1 : -1);
+        if (typeof a === "number" && typeof b === "number") return a - b;
+        if (typeof a === "boolean" && typeof b === "boolean")
+          return a === b ? 0 : a ? 1 : -1;
         return String(a).localeCompare(String(b));
       }
 
       function applySort(rows) {
         if (!sort.key) return rows;
         const key = sort.key;
-        const dirMul = sort.dir === 'asc' ? 1 : -1;
+        const dirMul = sort.dir === "asc" ? 1 : -1;
 
         return [...rows].sort((r1, r2) => {
           let v1 = r1[key];
           let v2 = r2[key];
 
           // special handling for airlines array
-          if (key === 'airlines') {
-            v1 = r1.airlines.join(',');
-            v2 = r2.airlines.join(',');
+          if (key === "airlines") {
+            v1 = r1.airlines.join(",");
+            v2 = r2.airlines.join(",");
           }
 
           return compare(v1, v2) * dirMul;
@@ -589,13 +773,20 @@
         const airline = els.airline.value;
         const currency = els.currency.value;
 
-        const minPrice = els.minPrice.value !== '' ? Number(els.minPrice.value) : null;
-        const maxPrice = els.maxPrice.value !== '' ? Number(els.maxPrice.value) : null;
-        const minSeats = els.minSeats.value !== '' ? Number(els.minSeats.value) : null;
-        const minOutDur = els.minOutDur.value !== '' ? Number(els.minOutDur.value) : null;
-        const maxOutDur = els.maxOutDur.value !== '' ? Number(els.maxOutDur.value) : null;
-        const minInDur = els.minInDur.value !== '' ? Number(els.minInDur.value) : null;
-        const maxInDur = els.maxInDur.value !== '' ? Number(els.maxInDur.value) : null;
+        const minPrice =
+          els.minPrice.value !== "" ? Number(els.minPrice.value) : null;
+        const maxPrice =
+          els.maxPrice.value !== "" ? Number(els.maxPrice.value) : null;
+        const minSeats =
+          els.minSeats.value !== "" ? Number(els.minSeats.value) : null;
+        const minOutDur =
+          els.minOutDur.value !== "" ? Number(els.minOutDur.value) : null;
+        const maxOutDur =
+          els.maxOutDur.value !== "" ? Number(els.maxOutDur.value) : null;
+        const minInDur =
+          els.minInDur.value !== "" ? Number(els.minInDur.value) : null;
+        const maxInDur =
+          els.maxInDur.value !== "" ? Number(els.maxInDur.value) : null;
 
         if (airline && !row.airlines.includes(airline)) return false;
         if (currency && row.currency !== currency) return false;
@@ -611,29 +802,35 @@
         }
 
         if (minOutDur != null) {
-          if (row.outboundMinutes == null || row.outboundMinutes < minOutDur) return false;
+          if (row.outboundMinutes == null || row.outboundMinutes < minOutDur)
+            return false;
         }
         if (maxOutDur != null) {
-          if (row.outboundMinutes == null || row.outboundMinutes > maxOutDur) return false;
+          if (row.outboundMinutes == null || row.outboundMinutes > maxOutDur)
+            return false;
         }
         if (minInDur != null) {
-          if (row.inboundMinutes == null || row.inboundMinutes < minInDur) return false;
+          if (row.inboundMinutes == null || row.inboundMinutes < minInDur)
+            return false;
         }
         if (maxInDur != null) {
-          if (row.inboundMinutes == null || row.inboundMinutes > maxInDur) return false;
+          if (row.inboundMinutes == null || row.inboundMinutes > maxInDur)
+            return false;
         }
 
         if (q) {
           const hay = [
             row.id,
             row.type,
-            row.currency ?? '',
-            row.grandTotal != null ? String(row.grandTotal) : '',
-            row.airlines.join(','),
-            row.seats != null ? String(row.seats) : '',
-            row.outboundMinutes != null ? String(row.outboundMinutes) : '',
-            row.inboundMinutes != null ? String(row.inboundMinutes) : '',
-          ].join(' ').toLowerCase();
+            row.currency ?? "",
+            row.grandTotal != null ? String(row.grandTotal) : "",
+            row.airlines.join(","),
+            row.seats != null ? String(row.seats) : "",
+            row.outboundMinutes != null ? String(row.outboundMinutes) : "",
+            row.inboundMinutes != null ? String(row.inboundMinutes) : "",
+          ]
+            .join(" ")
+            .toLowerCase();
           if (!hay.includes(q)) return false;
         }
 
@@ -641,39 +838,42 @@
       }
 
       function renderTable() {
-        els.tbody.innerHTML = '';
+        els.tbody.innerHTML = "";
 
         if (filteredRows.length === 0) {
-          const tr = document.createElement('tr');
-          const td = document.createElement('td');
+          const tr = document.createElement("tr");
+          const td = document.createElement("td");
           td.colSpan = 7;
-          td.style.color = 'var(--muted)';
-          td.style.padding = '14px 10px';
-          td.textContent = allRows.length === 0 ? 'Load a JSON file to begin.' : 'No rows match the current filters.';
+          td.style.color = "var(--muted)";
+          td.style.padding = "14px 10px";
+          td.textContent =
+            allRows.length === 0
+              ? "Load a JSON file to begin."
+              : "No rows match the current filters.";
           tr.appendChild(td);
           els.tbody.appendChild(tr);
           return;
         }
 
         for (const row of filteredRows) {
-          const tr = document.createElement('tr');
-          tr.style.cursor = 'pointer';
+          const tr = document.createElement("tr");
+          tr.style.cursor = "pointer";
 
-          tr.addEventListener('click', () => openModal(row));
+          tr.addEventListener("click", () => openModal(row));
 
           const cells = [
             row.id,
-            row.grandTotal != null ? row.grandTotal.toFixed(2) : '—',
-            row.currency ?? '—',
-            row.airlines.length ? row.airlines.join(', ') : '—',
-            row.seats != null ? String(row.seats) : '—',
+            row.grandTotal != null ? row.grandTotal.toFixed(2) : "-",
+            row.currency ?? "-",
+            row.airlines.length ? row.airlines.join(", ") : "-",
+            row.seats != null ? String(row.seats) : "-",
             formatMinutes(row.outboundMinutes),
             formatMinutes(row.inboundMinutes),
-            row.type || '—',
+            row.type || "-",
           ];
 
           for (const v of cells) {
-            const td = document.createElement('td');
+            const td = document.createElement("td");
             td.textContent = v;
             tr.appendChild(td);
           }
@@ -683,39 +883,45 @@
       }
 
       function formatDateTime(iso) {
-        if (typeof iso !== 'string') return '—';
+        if (typeof iso !== "string") return "-";
         // Keep it simple & stable: show the raw ISO string, but shorten if possible
-        return iso.replace('T', ' ');
+        return iso.replace("T", " ");
       }
 
       function itineraryTitle(itineraryIndex) {
-        return itineraryIndex === 0 ? 'Outbound' : itineraryIndex === 1 ? 'Inbound' : `Itinerary ${itineraryIndex + 1}`;
+        return itineraryIndex === 0
+          ? "Outbound"
+          : itineraryIndex === 1
+            ? "Inbound"
+            : `Itinerary ${itineraryIndex + 1}`;
       }
 
       function renderItineraryTable(itinerary, itineraryIndex) {
-        const segs = Array.isArray(itinerary?.segments) ? itinerary.segments : [];
-        const wrapper = document.createElement('div');
-        wrapper.className = 'itinerary';
+        const segs = Array.isArray(itinerary?.segments)
+          ? itinerary.segments
+          : [];
+        const wrapper = document.createElement("div");
+        wrapper.className = "itinerary";
 
-        const h = document.createElement('h3');
+        const h = document.createElement("h3");
         const durMin = parseISODurationToMinutes(itinerary?.duration) ?? null;
-        h.textContent = `${itineraryTitle(itineraryIndex)}${durMin != null ? ` • ${formatMinutes(durMin)}` : ''}`;
+        h.textContent = `${itineraryTitle(itineraryIndex)}${durMin != null ? ` • ${formatMinutes(durMin)}` : ""}`;
         wrapper.appendChild(h);
 
-        const tableWrap = document.createElement('div');
-        tableWrap.style.overflow = 'auto';
+        const tableWrap = document.createElement("div");
+        tableWrap.style.overflow = "auto";
 
         if (segs.length === 0) {
-          const empty = document.createElement('div');
-          empty.style.padding = '12px';
-          empty.style.color = 'var(--muted)';
-          empty.textContent = 'No segments found for this itinerary.';
+          const empty = document.createElement("div");
+          empty.style.padding = "12px";
+          empty.style.color = "var(--muted)";
+          empty.textContent = "No segments found for this itinerary.";
           wrapper.appendChild(empty);
           return wrapper;
         }
 
-        const table = document.createElement('table');
-        table.className = 'segments';
+        const table = document.createElement("table");
+        table.className = "segments";
         table.innerHTML = `
           <thead>
             <tr>
@@ -733,30 +939,30 @@
           <tbody></tbody>
         `;
 
-        const tbody = table.querySelector('tbody');
+        const tbody = table.querySelector("tbody");
 
         segs.forEach((s, idx) => {
-          const tr = document.createElement('tr');
+          const tr = document.createElement("tr");
           const dep = s?.departure ?? {};
           const arr = s?.arrival ?? {};
           const segDur = parseISODurationToMinutes(s?.duration);
-          const flight = [s?.carrierCode, s?.number].filter(Boolean).join('');
-          const aircraft = s?.aircraft?.code ?? '—';
+          const flight = [s?.carrierCode, s?.number].filter(Boolean).join("");
+          const aircraft = s?.aircraft?.code ?? "-";
 
           const cells = [
             String(idx + 1),
-            dep?.iataCode ?? '—',
+            dep?.iataCode ?? "-",
             formatDateTime(dep?.at),
-            arr?.iataCode ?? '—',
+            arr?.iataCode ?? "-",
             formatDateTime(arr?.at),
-            s?.carrierCode ?? '—',
-            flight || '—',
+            s?.carrierCode ?? "-",
+            flight || "-",
             aircraft,
-            segDur != null ? formatMinutes(segDur) : '—',
+            segDur != null ? formatMinutes(segDur) : "-",
           ];
 
           for (const v of cells) {
-            const td = document.createElement('td');
+            const td = document.createElement("td");
             td.textContent = v;
             tr.appendChild(td);
           }
@@ -770,22 +976,30 @@
 
       function openModal(row) {
         selected = row;
-        els.modalBody.innerHTML = '';
-        els.modalMeta.innerHTML = '';
+        els.modalBody.innerHTML = "";
+        els.modalMeta.innerHTML = "";
 
         const metaParts = [];
-        if (row.grandTotal != null) metaParts.push(`Price: ${row.grandTotal.toFixed(2)} ${row.currency ?? ''}`.trim());
-        if (row.airlines.length) metaParts.push(`Airlines: ${row.airlines.join(', ')}`);
+        if (row.grandTotal != null)
+          metaParts.push(
+            `Price: ${row.grandTotal.toFixed(2)} ${row.currency ?? ""}`.trim(),
+          );
+        if (row.airlines.length)
+          metaParts.push(`Airlines: ${row.airlines.join(", ")}`);
         if (row.seats != null) metaParts.push(`Seats: ${row.seats}`);
-        if (row.outboundMinutes != null) metaParts.push(`Outbound: ${formatMinutes(row.outboundMinutes)}`);
-        if (row.inboundMinutes != null) metaParts.push(`Inbound: ${formatMinutes(row.inboundMinutes)}`);
-        els.modalMeta.textContent = metaParts.join(' • ');
+        if (row.outboundMinutes != null)
+          metaParts.push(`Outbound: ${formatMinutes(row.outboundMinutes)}`);
+        if (row.inboundMinutes != null)
+          metaParts.push(`Inbound: ${formatMinutes(row.inboundMinutes)}`);
+        els.modalMeta.textContent = metaParts.join(" • ");
 
-        const itineraries = Array.isArray(row.itineraries) ? row.itineraries : [];
+        const itineraries = Array.isArray(row.itineraries)
+          ? row.itineraries
+          : [];
         if (itineraries.length === 0) {
-          const p = document.createElement('div');
-          p.style.color = 'var(--muted)';
-          p.textContent = 'No itineraries found in this offer.';
+          const p = document.createElement("div");
+          p.style.color = "var(--muted)";
+          p.textContent = "No itineraries found in this offer.";
           els.modalBody.appendChild(p);
         } else {
           itineraries.forEach((itin, idx) => {
@@ -794,41 +1008,43 @@
         }
 
         // Raw JSON (keeps the tool useful for inspection)
-        const rawWrap = document.createElement('div');
-        rawWrap.className = 'itinerary';
-        const rawTitle = document.createElement('h3');
-        rawTitle.textContent = 'Raw offer JSON';
+        const rawWrap = document.createElement("div");
+        rawWrap.className = "itinerary";
+        const rawTitle = document.createElement("h3");
+        rawTitle.textContent = "Raw offer JSON";
         rawWrap.appendChild(rawTitle);
-        const pre = document.createElement('pre');
+        const pre = document.createElement("pre");
         pre.textContent = JSON.stringify(row.raw, null, 2);
-        pre.style.margin = '12px';
+        pre.style.margin = "12px";
         rawWrap.appendChild(pre);
         els.modalBody.appendChild(rawWrap);
 
-        els.modalOverlay.style.display = 'flex';
+        els.modalOverlay.style.display = "flex";
       }
 
       function closeModal() {
-        els.modalOverlay.style.display = 'none';
+        els.modalOverlay.style.display = "none";
       }
 
       function updateCounts() {
         const total = allRows.length;
         const shown = filteredRows.length;
-        els.counts.textContent = total ? `Showing ${shown} / ${total}` : '—';
+        els.counts.textContent = total ? `Showing ${shown} / ${total}` : "-";
       }
 
       function updateSortUI() {
-        const indicators = document.querySelectorAll('[data-sort-indicator]');
-        indicators.forEach((el) => (el.textContent = ''));
+        const indicators = document.querySelectorAll("[data-sort-indicator]");
+        indicators.forEach((el) => (el.textContent = ""));
 
         if (!sort.key) {
-          els.sortState.textContent = 'Sort: —';
+          els.sortState.textContent = "Sort: -";
           return;
         }
 
-        const ind = document.querySelector(`[data-sort-indicator="${sort.key}"]`);
-        if (ind) ind.textContent = sort.dir === 'asc' ? '▲' : '▼';
+        const ind = document.querySelector(
+          `[data-sort-indicator="${sort.key}"]`,
+        );
+        if (ind) ind.textContent = sort.dir === "asc" ? "▲" : "▼";
         els.sortState.textContent = `Sort: ${String(sort.key)} (${sort.dir})`;
       }
 
@@ -842,16 +1058,16 @@
       }
 
       function resetFilters() {
-        els.q.value = '';
-        els.airline.value = '';
-        els.currency.value = '';
-        els.minPrice.value = '';
-        els.maxPrice.value = '';
-        els.minSeats.value = '';
-        els.minOutDur.value = '';
-        els.maxOutDur.value = '';
-        els.minInDur.value = '';
-        els.maxInDur.value = '';
+        els.q.value = "";
+        els.airline.value = "";
+        els.currency.value = "";
+        els.minPrice.value = "";
+        els.maxPrice.value = "";
+        els.minSeats.value = "";
+        els.minOutDur.value = "";
+        els.maxOutDur.value = "";
+        els.minInDur.value = "";
+        els.maxInDur.value = "";
       }
 
       function populateFilterOptions(rows) {
@@ -868,7 +1084,7 @@
 
         els.airline.innerHTML = '<option value="">All</option>';
         for (const a of airlineList) {
-          const opt = document.createElement('option');
+          const opt = document.createElement("option");
           opt.value = a;
           opt.textContent = a;
           els.airline.appendChild(opt);
@@ -876,7 +1092,7 @@
 
         els.currency.innerHTML = '<option value="">All</option>';
         for (const c of currencyList) {
-          const opt = document.createElement('option');
+          const opt = document.createElement("option");
           opt.value = c;
           opt.textContent = c;
           els.currency.appendChild(opt);
@@ -884,17 +1100,17 @@
       }
 
       function wireSortHandlers() {
-        const thButtons = document.querySelectorAll('th button[data-key]');
+        const thButtons = document.querySelectorAll("th button[data-key]");
         thButtons.forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const key = btn.getAttribute('data-key');
+          btn.addEventListener("click", () => {
+            const key = btn.getAttribute("data-key");
             if (!key) return;
 
             if (sort.key === key) {
-              sort.dir = sort.dir === 'asc' ? 'desc' : 'asc';
+              sort.dir = sort.dir === "asc" ? "desc" : "asc";
             } else {
               sort.key = key;
-              sort.dir = 'asc';
+              sort.dir = "asc";
             }
 
             rebuildFilteredRows();
@@ -908,29 +1124,35 @@
         try {
           parsed = JSON.parse(text);
         } catch (e) {
-          throw new Error('Invalid JSON: ' + (e && e.message ? e.message : String(e)));
+          throw new Error(
+            "Invalid JSON: " + (e && e.message ? e.message : String(e)),
+          );
         }
 
         const data = parsed?.data;
         if (!Array.isArray(data)) {
-          throw new Error('Expected a JSON object with a top-level "data" array (Amadeus flight offers format).');
+          throw new Error(
+            'Expected a JSON object with a top-level "data" array (Amadeus flight offers format).',
+          );
         }
 
         const offers = data.map(normalizeOffer).filter((r) => r.id);
         if (offers.length === 0) {
-          throw new Error('No flight offers found in data[].');
+          throw new Error("No flight offers found in data[].");
         }
 
         return { offers, meta: parsed?.meta ?? null };
       }
 
       function setStatus(fileName) {
-        els.statusBadge.textContent = fileName ? `Loaded: ${fileName}` : 'No file loaded';
+        els.statusBadge.textContent = fileName
+          ? `Loaded: ${fileName}`
+          : "No file loaded";
       }
 
       // Event handlers
-      els.fileInput.addEventListener('change', async () => {
-        setError('');
+      els.fileInput.addEventListener("change", async () => {
+        setError("");
         selected = null;
         closeModal();
 
@@ -938,12 +1160,12 @@
         if (!file) return;
 
         enableControls(false);
-        setStatus('Loading…');
+        setStatus("Loading…");
 
         try {
           const { offers } = await loadJsonFromFile(file);
           allRows = offers;
-          sort = { key: 'grandTotal', dir: 'asc' };
+          sort = { key: "grandTotal", dir: "asc" };
 
           populateFilterOptions(allRows);
           resetFilters();
@@ -957,10 +1179,11 @@
           filteredRows = [];
           selected = null;
           enableControls(false);
-          setStatus('No file loaded');
+          setStatus("No file loaded");
 
           setError(e && e.message ? e.message : String(e));
-          els.tbody.innerHTML = '<tr><td colspan="7" style="color: var(--muted); padding: 14px 10px;">Load a JSON file to begin.</td></tr>';
+          els.tbody.innerHTML =
+            '<tr><td colspan="7" style="color: var(--muted); padding: 14px 10px;">Load a JSON file to begin.</td></tr>';
           updateCounts();
           updateSortUI();
         }
@@ -978,21 +1201,21 @@
         els.minInDur,
         els.maxInDur,
       ]) {
-        el.addEventListener('input', () => rebuildFilteredRows());
-        el.addEventListener('change', () => rebuildFilteredRows());
+        el.addEventListener("input", () => rebuildFilteredRows());
+        el.addEventListener("change", () => rebuildFilteredRows());
       }
 
-      els.resetBtn.addEventListener('click', () => {
+      els.resetBtn.addEventListener("click", () => {
         resetFilters();
         rebuildFilteredRows();
       });
 
-      els.modalCloseBtn.addEventListener('click', () => closeModal());
-      els.modalOverlay.addEventListener('click', (e) => {
+      els.modalCloseBtn.addEventListener("click", () => closeModal());
+      els.modalOverlay.addEventListener("click", (e) => {
         if (e.target === els.modalOverlay) closeModal();
       });
-      window.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeModal();
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeModal();
       });
 
       // Init

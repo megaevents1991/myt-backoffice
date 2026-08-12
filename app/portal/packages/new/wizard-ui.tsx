@@ -32,7 +32,7 @@ export const timeFmt = (value: string | null | undefined) =>
 
 export const dateOnly = (value: string | null | undefined) => (value ? value.slice(0, 10) : "");
 
-/** "PT4H5M" → "4h 05" — main's duration label. */
+/** "PT4H5M" → "4h 05" - main's duration label. */
 export const durationLabel = (value: string | null | undefined) => {
   const match = value?.match(/PT(\d+)H(\d*)M?/);
   if (!match) return "";
@@ -145,7 +145,7 @@ export function MobileDeltaPill({ delta, per, selected }: { delta: Delta; per: s
 }
 
 /* ------------------------------------------------------------------ */
-/*  CardWrapper — main's shared selectable card                        */
+/*  CardWrapper - main's shared selectable card                        */
 /* ------------------------------------------------------------------ */
 
 export function CardWrapper({
@@ -209,7 +209,7 @@ export function PromotedPill({ className }: { className?: string }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Stepper — main's top progress bar                                  */
+/*  Stepper - main's top progress bar                                  */
 /* ------------------------------------------------------------------ */
 
 export function WizardStepper({
@@ -220,7 +220,7 @@ export function WizardStepper({
 }: {
   steps: readonly string[];
   current: number;
-  /** Backward navigation only — like main's Stepper. */
+  /** Backward navigation only - like main's Stepper. */
   onStepClick: (index: number) => void;
   /** Edit-from-summary mode blocks stepper jumps (main's returnToSummary). */
   locked?: boolean;
@@ -275,7 +275,7 @@ export function WizardStepper({
 }
 
 /* ------------------------------------------------------------------ */
-/*  ContinueBar — main's sticky bottom bar                             */
+/*  ContinueBar - main's sticky bottom bar                             */
 /* ------------------------------------------------------------------ */
 
 /** rAF count-up with main's cubic ease-out (OrderContinueBar useCountUp). */
@@ -333,7 +333,7 @@ export function ContinueBar({
 }: {
   slots: ContinueSlot[];
   totalPerPerson: number | null;
-  /** Travellers — the live number is the FULL payment (qty × per person),
+  /** Travellers - the live number is the FULL payment (qty × per person),
    *  exactly like main's order summary, with the per-person beside it. */
   qty: number;
   onSlotClick: (target: number) => void;
@@ -341,7 +341,7 @@ export function ContinueBar({
   primaryDisabled?: boolean;
   onPrimary: () => void;
   /** Up to two compact shortcuts stacked one above the other beside the
-   *  primary CTA — each answers the NEXT step's question and skips past it. */
+   *  primary CTA - each answers the NEXT step's question and skips past it. */
   secondaryActions?: ContinueSecondaryAction[] | null;
   /** Final-step build animation (main's "מרכיבים את החבילה…"). */
   building?: boolean;
@@ -508,7 +508,7 @@ export function ContinueBar({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Sort tabs — main's 3-card (desktop) / 3-pill (mobile) sort row     */
+/*  Sort tabs - main's 3-card (desktop) / 3-pill (mobile) sort row     */
 /* ------------------------------------------------------------------ */
 
 export interface SortTabOption<K extends string> {
@@ -605,7 +605,7 @@ export function SortTabs<K extends string>({
 /*  Misc shared pieces                                                 */
 /* ------------------------------------------------------------------ */
 
-/** Event header band — main's EventDataHeader (round photo + name + date | location). */
+/** Event header band - main's EventDataHeader (round photo + name + date | location). */
 export function EventBand({
   name,
   date,
@@ -645,7 +645,7 @@ export function EventBand({
   );
 }
 
-/** Empty/error card — main's OrderIssueState, lite. */
+/** Empty/error card - main's OrderIssueState, lite. */
 export function IssueState({
   title,
   subtitle,
@@ -664,7 +664,7 @@ export function IssueState({
   );
 }
 
-/** Dashed "extra option" row — main's summary "+ להוספה" pattern. */
+/** Dashed "extra option" row - main's summary "+ להוספה" pattern. */
 export function DashedOptionRow({
   icon: Icon,
   title,

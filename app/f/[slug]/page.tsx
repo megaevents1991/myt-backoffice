@@ -7,7 +7,7 @@ import type { FormLang } from "@/types/form.types";
 import { FormRenderer } from "../form-renderer";
 import { FormMessage } from "../form-message";
 
-// Public, unauthenticated and always current — never cache a form page.
+// Public, unauthenticated and always current - never cache a form page.
 export const dynamic = "force-dynamic";
 
 type PageProps = {

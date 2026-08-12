@@ -152,7 +152,7 @@ function PartnerCombobox({
                   }}
                 >
                   <Check className="mr-2 h-4 w-4 opacity-0" />
-                  — No partner —
+                  - No partner -
                 </CommandItem>
               )}
               {partners.map((p) => (
@@ -193,7 +193,7 @@ export function UsersClient({
   const [isPending, startTransition] = useTransition();
 
   const isSuper = me?.role === "superadmin";
-  // Admins cannot assign or touch admin/superadmin accounts — superadmin only.
+  // Admins cannot assign or touch admin/superadmin accounts - superadmin only.
   const assignableRoles = isSuper
     ? ROLES
     : ROLES.filter((r) => !ADMIN_ROLES.includes(r));
@@ -264,12 +264,12 @@ export function UsersClient({
       toast({
         variant: "destructive",
         title: "Invalid phone number",
-        description: "Check the country and number — or leave the field empty.",
+        description: "Check the country and number - or leave the field empty.",
       });
       return;
     }
 
-    // Partner roles REQUIRE a partner link; staff roles may carry one too —
+    // Partner roles REQUIRE a partner link; staff roles may carry one too -
     // it lights up "מצב סוכן" in the sidebar (dual-role: admin + own portal).
     const partnerCode = form.partner_tracking_code || null;
 
@@ -307,7 +307,7 @@ export function UsersClient({
         return;
       }
 
-      // Contract uploads AFTER the profile save — the user exists either way,
+      // Contract uploads AFTER the profile save - the user exists either way,
       // so a failed upload only warns instead of failing the whole create.
       if (contractFile && targetId && PARTNER_ROLES.includes(form.role)) {
         const fd = new FormData();
@@ -317,7 +317,7 @@ export function UsersClient({
           toast({
             variant: "destructive",
             title: editing ? "Saved, but contract upload failed" : "User created, but contract upload failed",
-            description: `${upload.error} — open Edit and attach it again.`,
+            description: `${upload.error} - open Edit and attach it again.`,
           });
           setFormOpen(false);
           router.refresh();
@@ -442,11 +442,11 @@ export function UsersClient({
               users.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.email}</TableCell>
-                  <TableCell>{user.display_name || "—"}</TableCell>
+                  <TableCell>{user.display_name || "-"}</TableCell>
                   <TableCell>
                     <Badge variant={roleBadgeVariant(user.role)}>{user.role}</Badge>
                   </TableCell>
-                  <TableCell>{user.partner_tracking_code || "—"}</TableCell>
+                  <TableCell>{user.partner_tracking_code || "-"}</TableCell>
                   <TableCell>
                     <Switch
                       checked={user.is_active}
@@ -538,7 +538,7 @@ export function UsersClient({
               <Select
                 value={form.role}
                 onValueChange={(v) => {
-                  // The partner link survives role changes — staff roles keep
+                  // The partner link survives role changes - staff roles keep
                   // it as an optional dual-role link.
                   setForm({ ...form, role: v as Role });
                 }}
@@ -557,7 +557,7 @@ export function UsersClient({
             </div>
 
             <div className="space-y-1.5">
-              <Label>{needsPartner ? "Partner" : "Partner (optional — dual-role)"}</Label>
+              <Label>{needsPartner ? "Partner" : "Partner (optional - dual-role)"}</Label>
               <PartnerCombobox
                 value={form.partner_tracking_code}
                 onChange={(code) =>
@@ -568,7 +568,7 @@ export function UsersClient({
               />
               {!needsPartner && (
                 <p className="text-xs text-muted-foreground">
-                  קישור שותף למשתמש צוות מדליק לו את &quot;מצב סוכן&quot; בתפריט —
+                  קישור שותף למשתמש צוות מדליק לו את &quot;מצב סוכן&quot; בתפריט -
                   הדשבורד נשאר, והפורטל נפתח כהשותף המקושר.
                 </p>
               )}
@@ -594,7 +594,7 @@ export function UsersClient({
                       className="underline underline-offset-2 hover:text-primary"
                       onClick={() => handleDownloadContract(editing)}
                     >
-                      Contract on file — download
+                      Contract on file - download
                     </button>
                     <Button
                       type="button"
@@ -639,7 +639,7 @@ export function UsersClient({
       <Dialog open={resetOpen} onOpenChange={setResetOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Reset password{resetTarget ? ` — ${resetTarget.email}` : ""}</DialogTitle>
+            <DialogTitle>Reset password{resetTarget ? ` - ${resetTarget.email}` : ""}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-1.5">

@@ -13,7 +13,7 @@ const TEMPLATE_BUCKET = "templates";
 /**
  * Hero/banner image field for the Template forms (artists, football, blog,
  * categories). Uploads go straight from the browser to Supabase Storage via a
- * signed URL (uploadToBucket) — the old server-action upload died on any file
+ * signed URL (uploadToBucket) - the old server-action upload died on any file
  * over the 1 MB action body limit (4.5 MB on Vercel), which made existing
  * images impossible to replace. ImageFilePicker adds URL editing, browsing the
  * bucket, and clearing the field to remove the image.

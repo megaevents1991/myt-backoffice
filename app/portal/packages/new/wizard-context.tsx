@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Shared wizard state — the portal's equivalent of myt-main's OrderContext
+ * Shared wizard state - the portal's equivalent of myt-main's OrderContext
  * (app/order/layout.tsx there): one provider that never unmounts across steps,
  * so edit-from-summary keeps every selection.
  */
@@ -22,7 +22,7 @@ import type { Delta } from "./wizard-ui";
 export type FlightChoice =
   | { mode: "offline"; flightId: number }
   | { mode: "live-offer"; offer: LiveFlightOffer }
-  /** "live" is BOTH the silent default and an explicit agent decision —
+  /** "live" is BOTH the silent default and an explicit agent decision -
    *  `explicit` tells them apart so the bar tab fills only once chosen. */
   | { mode: "live"; explicit?: boolean }
   | { mode: "none" };
@@ -47,7 +47,7 @@ export interface WizardState {
   setStep: (step: number) => void;
   goNext: () => void;
   goBack: () => void;
-  /** Edit-from-summary flag — main's returnToSummary. */
+  /** Edit-from-summary flag - main's returnToSummary. */
   returnToSummary: boolean;
 
   /* event */

@@ -7,10 +7,10 @@
  *   the transcript). The repo carries pre-existing tsc/eslint errors and Dor's
  *   working tree stays dirty across sessions, so checking the whole repo (or
  *   the git delta) would block every stop on someone else's mess.
- * - tsc must run project-wide (types are global) — its findings are filtered
+ * - tsc must run project-wide (types are global) - its findings are filtered
  *   to the session's files. eslint runs on those files only (`next lint --file`).
  * - Windows: .cmd shims (npx/npm) can't be spawned without a shell on
- *   Node >= 21.7 (spawn EINVAL) — that's why the previous version of this hook
+ *   Node >= 21.7 (spawn EINVAL) - that's why the previous version of this hook
  *   silently never ran. Everything goes through the platform shell now.
  * - FAIL-OPEN on infrastructure problems (missing deps, spawn errors, empty
  *   output). Block (exit 2) only when a tool produced real diagnostics.
@@ -71,7 +71,9 @@ function sessionFiles(transcriptPath, root) {
       if (!/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(c.name || "")) continue;
       const fp = c.input?.file_path || c.input?.notebook_path;
       if (!fp) continue;
-      const rel = path.relative(root, path.resolve(String(fp))).replace(/\\/g, "/");
+      const rel = path
+        .relative(root, path.resolve(String(fp)))
+        .replace(/\\/g, "/");
       if (rel.startsWith("..") || !/\.(ts|tsx)$/.test(rel)) continue; // outside repo / not TS
       if (rel.startsWith(".next/")) continue;
       files.add(rel.toLowerCase());
@@ -113,16 +115,25 @@ function main() {
   const tsc = run("npx tsc --noEmit", root);
   if (tsc.status === "findings") {
     const own = filterTsc(tsc.out, files);
-    if (own) blocks.push(`[tsc --noEmit — files edited this session]\n${own.slice(-4000)}`);
+    if (own)
+      blocks.push(
+        `[tsc --noEmit - files edited this session]\n${own.slice(-4000)}`,
+      );
   }
 
   const fileArgs = [...files].map((f) => `--file "${f}"`).join(" ");
   const lint = run(`npx next lint ${fileArgs}`, root);
-  if (lint.status === "findings") blocks.push(`[next lint — files edited this session]\n${lint.out.slice(-4000)}`);
+  if (lint.status === "findings")
+    blocks.push(
+      `[next lint - files edited this session]\n${lint.out.slice(-4000)}`,
+    );
 
-  if (!blocks.length) process.exit(0); // pass or skipped — let the session stop
+  if (!blocks.length) process.exit(0); // pass or skipped - let the session stop
 
-  console.error("Pre-stop checks failed in files you edited — fix before wrapping up:\n\n" + blocks.join("\n\n"));
+  console.error(
+    "Pre-stop checks failed in files you edited - fix before wrapping up:\n\n" +
+      blocks.join("\n\n"),
+  );
   process.exit(2);
 }
 main();

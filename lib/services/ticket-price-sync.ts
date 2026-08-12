@@ -22,7 +22,7 @@ class MultiCurrencyExchangeRateService {
   private exchangeRates: ExchangeRates = {
     EUR: {
       rate: 1.15,
-      lastUpdated: new Date(0), // epoch — force refresh on first use
+      lastUpdated: new Date(0), // epoch - force refresh on first use
       source: "fallback",
     },
     ILS: {

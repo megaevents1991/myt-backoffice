@@ -1,7 +1,7 @@
 -- Paid matching becomes one-to-one: a Paid reservation is consumed by the
 -- SINGLE closest CONFIRMED row, never by every CONFIRMED row in its ±30min
 -- window. Two visitors who both reached the confirmation screen near one sale
--- previously BOTH counted as Paid — an overcount the original comment
+-- previously BOTH counted as Paid - an overcount the original comment
 -- explicitly promised could not happen. Mirrors matchPaidUsers in
 -- lib/partner-entry-funnels.ts (fixed in the same commit).
 --
@@ -59,7 +59,7 @@ as $$
   -- Reservations carry no tracking user id, so "became paid" is a MATCH, not
   -- proof: a CONFIRMED row against a now-Paid reservation of the same partner
   -- and event name within ±30 minutes. Each reservation is then awarded to
-  -- its single closest CONFIRMED row — one sale, one Paid visitor.
+  -- its single closest CONFIRMED row - one sale, one Paid visitor.
   paid_matches as (
     select r.id as reservation_id, w.user_id,
            abs(extract(epoch from (r.created_at - w.created_at))) as gap

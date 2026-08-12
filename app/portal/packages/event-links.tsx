@@ -12,7 +12,7 @@ const dateFmt = (value: string) => new Date(value).toLocaleDateString("he-IL");
 const usd = (value: number) => `$${Math.round(value).toLocaleString("en-US")}`;
 
 /**
- * Search every sellable event; each row hands the partner its two tools —
+ * Search every sellable event; each row hands the partner its two tools -
  * a ready-to-send coded link, or the package builder preloaded on the event.
  */
 export function EventLinks({
@@ -115,7 +115,7 @@ export function EventLinks({
       )}
       <p className="text-xs text-muted-foreground">
         הקישור נושא את קוד המעקב שלכם ומנחית את הלקוח ישר על עמוד ההזמנה של
-        האירוע — כל הזמנה שתגיע דרכו משויכת אליכם אוטומטית.
+        האירוע - כל הזמנה שתגיע דרכו משויכת אליכם אוטומטית.
       </p>
     </div>
   );

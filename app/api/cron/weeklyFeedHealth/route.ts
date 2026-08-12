@@ -4,11 +4,11 @@ import { guardCronRoute } from "@/lib/auth/guards";
 
 /**
  * Weekly health check for the Meta product-catalog feed the MAIN app serves.
- * Meta fetches that URL hourly — a broken/empty feed silently kills the whole
+ * Meta fetches that URL hourly - a broken/empty feed silently kills the whole
  * catalog, so this cron fetches it like Meta would (following the 307 to the
  * storage snapshot) and emails an alert ONLY when something is wrong:
  * non-200, zero items, no XML declaration, or a stale `<!-- generated -->`
- * stamp (publishMetaFeed runs twice a day — anything older than a day means
+ * stamp (publishMetaFeed runs twice a day - anything older than a day means
  * the publish pipeline is broken, like the 2026-07-20→22 freeze where the
  * cron silently republished its own snapshot). No content-type check: the
  * snapshot is deliberately served as application/octet-stream so Cloudflare
@@ -45,22 +45,29 @@ export async function GET(request: NextRequest) {
       const body = await res.text();
       itemCount = (body.match(/<item>/g) ?? []).length;
       if (itemCount === 0) problems.push("Feed contains 0 items");
-      if (!body.startsWith("<?xml")) problems.push("Body does not start with an XML declaration");
+      if (!body.startsWith("<?xml"))
+        problems.push("Body does not start with an XML declaration");
 
-      // Publish cron runs twice a day (06:00 + 15:00 UTC) — Dor's call
+      // Publish cron runs twice a day (06:00 + 15:00 UTC) - Dor's call
       // 2026-07-22, event data doesn't change enough for more. 26h = one
       // full missed run plus slack.
       const STALE_AFTER_MS = 26 * 60 * 60 * 1000;
       const stamp = body.match(/<!-- generated (\S+) -->/)?.[1];
       const stampMs = stamp ? Date.parse(stamp) : NaN;
       if (isNaN(stampMs)) {
-        problems.push("No parseable <!-- generated --> stamp — snapshot predates the freshness stamp or publish pipeline is broken");
+        problems.push(
+          "No parseable <!-- generated --> stamp - snapshot predates the freshness stamp or publish pipeline is broken",
+        );
       } else if (Date.now() - stampMs > STALE_AFTER_MS) {
-        problems.push(`Feed is STALE — generated ${stamp}, publish cron runs 06:00+15:00 UTC and should never be this old`);
+        problems.push(
+          `Feed is STALE - generated ${stamp}, publish cron runs 06:00+15:00 UTC and should never be this old`,
+        );
       }
     }
   } catch (e) {
-    problems.push(`Fetch failed: ${e instanceof Error ? e.message : String(e)}`);
+    problems.push(
+      `Fetch failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 
   if (problems.length > 0) {
@@ -74,7 +81,7 @@ export async function GET(request: NextRequest) {
           <p>URL: <a href="${FEED_URL}">${FEED_URL}</a></p>
           <ul>${problems.map((p) => `<li>${p}</li>`).join("")}</ul>
           <p>Items found: ${itemCount} · HTTP status: ${status || "n/a"}</p>
-          <p>Meta refetches hourly — until this is fixed the ad catalog may drop products.</p>
+          <p>Meta refetches hourly - until this is fixed the ad catalog may drop products.</p>
         `,
       });
     } catch (mailErr) {
@@ -83,10 +90,10 @@ export async function GET(request: NextRequest) {
     console.error("[feed-health] UNHEALTHY:", JSON.stringify(problems));
     return NextResponse.json(
       { healthy: false, problems, itemCount, status },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
-  console.log(`[feed-health] OK — ${itemCount} items`);
+  console.log(`[feed-health] OK - ${itemCount} items`);
   return NextResponse.json({ healthy: true, itemCount, status });
 }

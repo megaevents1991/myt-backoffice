@@ -1,22 +1,24 @@
 // lib/services/p1-events-sync.ts
-// Server-only sync service — called by cron/API routes. Deliberately NOT a
+// Server-only sync service - called by cron/API routes. Deliberately NOT a
 // Server Action ("use server" removed): exports must not be client-dispatchable.
 
-import { supabase } from '@/lib/supabase-server';
-import { P1Event, P1Ticket, P1EventDB } from '@/types/p1-events.types';
-import { XMLParser } from 'fast-xml-parser';
+import { supabase } from "@/lib/supabase-server";
+import { P1Event, P1Ticket, P1EventDB } from "@/types/p1-events.types";
+import { XMLParser } from "fast-xml-parser";
 
 // P1 XML Feed URLs
-const P1_EVENTS_FEED_URL = process.env.NEXT_SECRET_P1_EVENTS_FEED_URL || 
+const P1_EVENTS_FEED_URL =
+  process.env.NEXT_SECRET_P1_EVENTS_FEED_URL ||
   "https://travelware-backend-files-production.s3.eu-central-1.amazonaws.com/8n4477jwzxq0w15e77wnxmuf6183l6zf3ik4mk64zms7mln.xml";
 
-const P1_TICKETS_FEED_URL = process.env.NEXT_SECRET_P1_TICKETS_FEED_URL || 
+const P1_TICKETS_FEED_URL =
+  process.env.NEXT_SECRET_P1_TICKETS_FEED_URL ||
   "https://travelware-backend-files-production.s3.eu-central-1.amazonaws.com/udaics0gg9tl2jp7rrdnn6o0730jbz4z02f57y1nm199htg.xml";
 
 // Types for sync results
 export interface P1SyncResult {
   count: number;
-  status: 'success' | 'error';
+  status: "success" | "error";
   error?: string;
   details?: string;
 }
@@ -29,7 +31,7 @@ export interface P1SyncResults {
 // XML Parser configuration
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
-  attributeNamePrefix: '',
+  attributeNamePrefix: "",
   parseTagValue: true,
   parseAttributeValue: true,
   trimValues: true,
@@ -47,10 +49,10 @@ async function fetchXMLFeed<T>(url: string, rootKey: string): Promise<T[]> {
 
   try {
     const response = await fetch(url, {
-      cache: 'no-store',
+      cache: "no-store",
       headers: {
-        'Accept': 'application/xml, text/xml',
-      }
+        Accept: "application/xml, text/xml",
+      },
     });
 
     if (!response.ok) {
@@ -65,7 +67,7 @@ async function fetchXMLFeed<T>(url: string, rootKey: string): Promise<T[]> {
 
     // Handle different possible XML structures
     let items: T[] = [];
-    
+
     if (parsed[rootKey]) {
       // Direct access to events/tickets
       const root = parsed[rootKey];
@@ -91,8 +93,11 @@ async function fetchXMLFeed<T>(url: string, rootKey: string): Promise<T[]> {
 // Parse tags from XML (might be comma-separated string or array)
 function parseTags(tags: any): string[] {
   if (!tags) return [];
-  if (typeof tags === 'string') {
-    return tags.split(',').map(t => t.trim()).filter(Boolean);
+  if (typeof tags === "string") {
+    return tags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
   }
   if (tags.tag) {
     return normalizeArray(tags.tag);
@@ -103,7 +108,7 @@ function parseTags(tags: any): string[] {
 // Parse possible ticket types (JSON array string)
 function parseTicketTypes(types: any): string[] {
   if (!types) return [];
-  if (typeof types === 'string') {
+  if (typeof types === "string") {
     try {
       const parsed = JSON.parse(types);
       return Array.isArray(parsed) ? parsed : [];
@@ -118,30 +123,40 @@ function parseTicketTypes(types: any): string[] {
 // Normalize event data from XML
 function normalizeP1Event(rawEvent: any): P1Event {
   return {
-    event_id: String(rawEvent.event_id || ''),
-    checkout_link: String(rawEvent.checkout_link || ''),
-    title: String(rawEvent.title || ''),
-    category: String(rawEvent.category || 'OTHER').toUpperCase(),
-    compare_price_ticket_only: rawEvent.compare_price_ticket_only ? parseFloat(rawEvent.compare_price_ticket_only) : undefined,
-    compare_price_ticket_hotel: rawEvent.compare_price_ticket_hotel ? parseFloat(rawEvent.compare_price_ticket_hotel) : undefined,
-    series: rawEvent.series ? {
-      id: String(rawEvent.series.id || ''),
-      name: String(rawEvent.series.name || ''),
-    } : undefined,
-    has_available_tickets: rawEvent.has_available_tickets === true || rawEvent.has_available_tickets === 'true',
-    is_advertisable: rawEvent.is_advertisable === true || rawEvent.is_advertisable === 'true',
-    date_start: String(rawEvent.date_start || ''),
+    event_id: String(rawEvent.event_id || ""),
+    checkout_link: String(rawEvent.checkout_link || ""),
+    title: String(rawEvent.title || ""),
+    category: String(rawEvent.category || "OTHER").toUpperCase(),
+    compare_price_ticket_only: rawEvent.compare_price_ticket_only
+      ? parseFloat(rawEvent.compare_price_ticket_only)
+      : undefined,
+    compare_price_ticket_hotel: rawEvent.compare_price_ticket_hotel
+      ? parseFloat(rawEvent.compare_price_ticket_hotel)
+      : undefined,
+    series: rawEvent.series
+      ? {
+          id: String(rawEvent.series.id || ""),
+          name: String(rawEvent.series.name || ""),
+        }
+      : undefined,
+    has_available_tickets:
+      rawEvent.has_available_tickets === true ||
+      rawEvent.has_available_tickets === "true",
+    is_advertisable:
+      rawEvent.is_advertisable === true || rawEvent.is_advertisable === "true",
+    date_start: String(rawEvent.date_start || ""),
     date_end: rawEvent.date_end ? String(rawEvent.date_end) : undefined,
-    date_confirmed: rawEvent.date_confirmed === true || rawEvent.date_confirmed === 'true',
+    date_confirmed:
+      rawEvent.date_confirmed === true || rawEvent.date_confirmed === "true",
     stock: parseInt(String(rawEvent.stock || 0)),
     venue: {
-      name: String(rawEvent.venue?.name || ''),
+      name: String(rawEvent.venue?.name || ""),
       location: {
         lat: parseFloat(String(rawEvent.venue?.location?.lat || 0)),
         lng: parseFloat(String(rawEvent.venue?.location?.lng || 0)),
       },
-      country_code: String(rawEvent.venue?.country_code || ''),
-      city: String(rawEvent.venue?.city || ''),
+      country_code: String(rawEvent.venue?.country_code || ""),
+      city: String(rawEvent.venue?.city || ""),
     },
   };
 }
@@ -149,17 +164,27 @@ function normalizeP1Event(rawEvent: any): P1Event {
 // Normalize ticket data from XML
 function normalizeP1Ticket(rawTicket: any): P1Ticket {
   return {
-    checkout_link: String(rawTicket.checkout_link || ''),
-    id: String(rawTicket.id || ''),
-    event_id: String(rawTicket.event_id || ''),
+    checkout_link: String(rawTicket.checkout_link || ""),
+    id: String(rawTicket.id || ""),
+    event_id: String(rawTicket.event_id || ""),
     tags: parseTags(rawTicket.tags),
-    seatingplan_category_name: String(rawTicket.seatingplan_category_name || ''),
-    currency: String(rawTicket.currency || 'EUR'),
+    seatingplan_category_name: String(
+      rawTicket.seatingplan_category_name || "",
+    ),
+    currency: String(rawTicket.currency || "EUR"),
     price_ticket: parseFloat(String(rawTicket.price_ticket || 0)),
-    price_ticket_hotel: rawTicket.price_ticket_hotel ? parseFloat(String(rawTicket.price_ticket_hotel)) : undefined,
-    seatingplan_category_image: rawTicket.seatingplan_category_image ? String(rawTicket.seatingplan_category_image) : undefined,
-    seatingplan_category_description: rawTicket.seatingplan_category_description ? String(rawTicket.seatingplan_category_description) : undefined,
-    category: String(rawTicket.category || rawTicket.seatingplan_category_name || ''),
+    price_ticket_hotel: rawTicket.price_ticket_hotel
+      ? parseFloat(String(rawTicket.price_ticket_hotel))
+      : undefined,
+    seatingplan_category_image: rawTicket.seatingplan_category_image
+      ? String(rawTicket.seatingplan_category_image)
+      : undefined,
+    seatingplan_category_description: rawTicket.seatingplan_category_description
+      ? String(rawTicket.seatingplan_category_description)
+      : undefined,
+    category: String(
+      rawTicket.category || rawTicket.seatingplan_category_name || "",
+    ),
     stock: parseInt(String(rawTicket.stock || 0)),
     possible_ticket_types: parseTicketTypes(rawTicket.possible_ticket_types),
   };
@@ -168,15 +193,17 @@ function normalizeP1Ticket(rawTicket: any): P1Ticket {
 // Main sync function
 export async function syncP1Events(): Promise<P1SyncResult> {
   try {
-    console.log('🎫 Starting P1 events sync...');
+    console.log("🎫 Starting P1 events sync...");
 
     // Fetch events and tickets in parallel
     const [rawEvents, rawTickets] = await Promise.all([
-      fetchXMLFeed<any>(P1_EVENTS_FEED_URL, 'events'),
-      fetchXMLFeed<any>(P1_TICKETS_FEED_URL, 'tickets'),
+      fetchXMLFeed<any>(P1_EVENTS_FEED_URL, "events"),
+      fetchXMLFeed<any>(P1_TICKETS_FEED_URL, "tickets"),
     ]);
 
-    console.log(`📊 Fetched ${rawEvents.length} events and ${rawTickets.length} tickets`);
+    console.log(
+      `📊 Fetched ${rawEvents.length} events and ${rawTickets.length} tickets`,
+    );
 
     // Normalize events
     const events = rawEvents.map(normalizeP1Event);
@@ -186,7 +213,7 @@ export async function syncP1Events(): Promise<P1SyncResult> {
 
     // Group tickets by event_id
     const ticketsByEvent = new Map<string, P1Ticket[]>();
-    tickets.forEach(ticket => {
+    tickets.forEach((ticket) => {
       if (!ticketsByEvent.has(ticket.event_id)) {
         ticketsByEvent.set(ticket.event_id, []);
       }
@@ -198,17 +225,18 @@ export async function syncP1Events(): Promise<P1SyncResult> {
     // Filter: only future events with available tickets
     const now = new Date();
     const processedEvents = events
-      .filter(event => {
+      .filter((event) => {
         // Only future events
         const eventDate = new Date(event.date_start);
         if (eventDate <= now) return false;
 
         // Only advertisable events with available tickets
-        if (!event.is_advertisable || !event.has_available_tickets) return false;
+        if (!event.is_advertisable || !event.has_available_tickets)
+          return false;
 
         return true;
       })
-      .map(event => {
+      .map((event) => {
         const eventTickets = ticketsByEvent.get(event.event_id) || [];
 
         const dbEvent: P1EventDB = {
@@ -240,46 +268,53 @@ export async function syncP1Events(): Promise<P1SyncResult> {
         return dbEvent;
       });
 
-    console.log(`✅ Processed ${processedEvents.length} valid events for storage`);
+    console.log(
+      `✅ Processed ${processedEvents.length} valid events for storage`,
+    );
 
     // Upsert to database in batches
     if (processedEvents.length > 0) {
       const BATCH_SIZE = 500;
       const batches: P1EventDB[][] = [];
-      
+
       for (let i = 0; i < processedEvents.length; i += BATCH_SIZE) {
         batches.push(processedEvents.slice(i, i + BATCH_SIZE));
       }
 
-      console.log(`🗃️ Upserting ${processedEvents.length} events in ${batches.length} batches`);
+      console.log(
+        `🗃️ Upserting ${processedEvents.length} events in ${batches.length} batches`,
+      );
 
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
         const { error } = await supabase
-          .from('p1_events')
+          .from("p1_events")
           .upsert(batch as any, {
-            onConflict: 'event_id',
+            onConflict: "event_id",
             ignoreDuplicates: false,
           });
 
         if (error) {
-          throw new Error(`Batch ${i + 1}/${batches.length} upsert failed: ${error.message}`);
+          throw new Error(
+            `Batch ${i + 1}/${batches.length} upsert failed: ${error.message}`,
+          );
         }
-        console.log(`✅ Batch ${i + 1}/${batches.length} (${batch.length} events) upserted`);
+        console.log(
+          `✅ Batch ${i + 1}/${batches.length} (${batch.length} events) upserted`,
+        );
       }
     }
 
     console.log(`🎫 Successfully synced ${processedEvents.length} P1 events`);
     return {
       count: processedEvents.length,
-      status: 'success',
+      status: "success",
       details: `Synced ${processedEvents.length} events with ${tickets.length} total tickets`,
     };
-
   } catch (error) {
-    console.error('❌ Failed to sync P1 events:', error);
+    console.error("❌ Failed to sync P1 events:", error);
     return {
-      status: 'error',
+      status: "error",
       error: String(error),
       count: 0,
     };

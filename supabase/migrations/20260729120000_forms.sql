@@ -2,7 +2,7 @@
 --
 -- Backoffice-owned. The main app does not read these tables. A live form is read
 -- and its response inserted through the service-role client inside server actions
--- only (app/f/*) — the anon key never touches these tables, so no RLS policies,
+-- only (app/f/*) - the anon key never touches these tables, so no RLS policies,
 -- matching the other backoffice-owned tables (event_categories, coupons, ...).
 
 create table if not exists forms (

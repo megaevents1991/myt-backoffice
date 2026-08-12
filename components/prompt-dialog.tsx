@@ -27,7 +27,7 @@ type PromptDialogProps = {
 };
 
 /**
- * Single-input dialog built on shadcn Dialog — replaces the native
+ * Single-input dialog built on shadcn Dialog - replaces the native
  * `window.prompt` popup. Controlled via `open`/`onOpenChange`.
  */
 export function PromptDialog({

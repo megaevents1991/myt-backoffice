@@ -14,7 +14,7 @@ import {
  * user's real choice on first render instead of flashing the defaults while the
  * server round-trip is in flight. The server value wins as soon as it lands.
  *
- * Reusable — give any table a stable `tableKey` and its own shape.
+ * Reusable - give any table a stable `tableKey` and its own shape.
  */
 export function useTablePreferences<T>(
   tableKey: string,
@@ -24,7 +24,7 @@ export function useTablePreferences<T>(
   const [value, setValue] = useState<T>(fallback);
   const [isLoaded, setIsLoaded] = useState(false);
   // Guards against a slow server read overwriting a choice made while it was in
-  // flight — once the user has touched the control, their value wins.
+  // flight - once the user has touched the control, their value wins.
   const dirtyRef = useRef(false);
 
   useEffect(() => {
@@ -49,7 +49,9 @@ export function useTablePreferences<T>(
           /* private browsing */
         }
       })
-      .catch((error) => console.error("Failed to load table preferences:", error))
+      .catch((error) =>
+        console.error("Failed to load table preferences:", error),
+      )
       .finally(() => {
         if (!cancelled) setIsLoaded(true);
       });
@@ -67,7 +69,7 @@ export function useTablePreferences<T>(
       } catch {
         /* private browsing */
       }
-      // Cosmetic state — a failed write should log, never interrupt the user.
+      // Cosmetic state - a failed write should log, never interrupt the user.
       saveTablePreferences(tableKey, next as Record<string, unknown>).catch(
         (error) => console.error("Failed to save table preferences:", error),
       );

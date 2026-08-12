@@ -24,7 +24,7 @@ type ConfirmDialogProps = {
 };
 
 /**
- * Reusable confirmation dialog built on shadcn AlertDialog — replaces the
+ * Reusable confirmation dialog built on shadcn AlertDialog - replaces the
  * native `window.confirm` popup. Controlled via `open`/`onOpenChange`.
  */
 export function ConfirmDialog({

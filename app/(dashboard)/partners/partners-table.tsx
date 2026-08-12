@@ -63,7 +63,7 @@ const usd = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-/** "all" means all *marketing* partners — refund rows are their own tab. */
+/** "all" means all *marketing* partners - refund rows are their own tab. */
 type TypeFilter = PartnerType | "all";
 type StatusFilter = "all" | "active" | "inactive";
 
@@ -80,20 +80,20 @@ export function PartnersTable() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
-  // Refund rows live in their own tab and load on demand — there are thousands,
+  // Refund rows live in their own tab and load on demand - there are thousands,
   // and fetching them alongside the real partners is what truncated this list.
   const [refunds, setRefunds] = useState<CustomerRefundPartners | null>(null);
   const [refundsLoading, setRefundsLoading] = useState(false);
   const { toast } = useToast();
   // Editing a partner also creates/updates its portal login, which is an
-  // admin-only action — so editors get a read-only list rather than buttons
+  // admin-only action - so editors get a read-only list rather than buttons
   // that fail with "Unauthorized".
   const { user: me } = useAuth();
   const canManage = !!me && ADMIN_ROLES.includes(me.role);
   const isSuperadmin = me?.role === "superadmin";
 
   // Superadmin "login as partner": mint the /portal-scoped impersonation
-  // cookie, then open the portal in a fresh window — the dashboard session in
+  // cookie, then open the portal in a fresh window - the dashboard session in
   // this and every other tab is untouched (the cookie only rides on /portal).
   const handleImpersonate = async (trackingCode: string) => {
     // Open synchronously so popup blockers don't eat the window, navigate
@@ -141,7 +141,7 @@ export function PartnersTable() {
 
   // The "fetched already" flag is a ref, not state, and the deps list holds only
   // `typeFilter`: a state flag here would re-render, tear this effect down, and
-  // cancel its own in-flight request — leaving the tab loading forever.
+  // cancel its own in-flight request - leaving the tab loading forever.
   const refundsRequested = useRef(false);
 
   useEffect(() => {
@@ -184,16 +184,16 @@ export function PartnersTable() {
     const active = partners.filter((p) => p.is_active);
     const activeType = (t: PartnerType) =>
       active.filter((p) => partnerType(p) === t).length;
-    // Marketing counts are active-only, matching the default status filter — so
+    // Marketing counts are active-only, matching the default status filter - so
     // "All" always equals agent + affiliate and never overstates the rows shown.
     const marketing = active.filter((p) => partnerType(p) !== "customer_refund");
     return {
       all: marketing.length,
       agent: activeType("agent"),
       affiliate: activeType("affiliate"),
-      // Whole-table total from a count query — those rows aren't loaded here.
+      // Whole-table total from a count query - those rows aren't loaded here.
       customer_refund: refunds?.total ?? null,
-      // Scoped to the type tab in view — the status filter is orthogonal to it,
+      // Scoped to the type tab in view - the status filter is orthogonal to it,
       // so a global number would contradict the rows on the refund tab. On the
       // refund tab this counts the loaded page only, which is all we hold.
       inactive: (typeFilter === "customer_refund"
@@ -214,7 +214,7 @@ export function PartnersTable() {
     [rowSelection]
   );
 
-  /** Drop deleted rows from BOTH lists — the refund tab has its own copy. */
+  /** Drop deleted rows from BOTH lists - the refund tab has its own copy. */
   const forgetPartners = (codes: string[]) => {
     setPartners((prev) =>
       prev.filter((p) => !codes.includes(p.partner_tracking_code))
@@ -228,7 +228,7 @@ export function PartnersTable() {
 
   const handleDelete = async (trackingCode: string) => {
     try {
-      // Structured result — production masks thrown server-action messages,
+      // Structured result - production masks thrown server-action messages,
       // so the real reason (FK block, login removal failure) must come back
       // as a value, not an exception.
       const result = await deletePartner(trackingCode);
@@ -275,7 +275,7 @@ export function PartnersTable() {
     }
   };
 
-  // Row toggle and bulk buttons share this — old-data cleanup shouldn't need
+  // Row toggle and bulk buttons share this - old-data cleanup shouldn't need
   // the edit form for every partner.
   const handleSetActive = async (codes: string[], active: boolean) => {
     setBusy(true);
@@ -314,7 +314,7 @@ export function PartnersTable() {
       const created = await bulkDuplicatePartners(selectedCodes);
       setPartners((prev) => [...created, ...prev]);
       setRowSelection({});
-      // Copies are created inactive — show them, or they'd land outside the
+      // Copies are created inactive - show them, or they'd land outside the
       // default "active" filter and look like nothing happened.
       setStatusFilter("inactive");
       toast({
@@ -396,7 +396,7 @@ export function PartnersTable() {
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       ),
-      // The column carries no unit of its own — a percentage partner formatted
+      // The column carries no unit of its own - a percentage partner formatted
       // as currency reads as "$8" when they actually earn 8% of the sale.
       cell: ({ row }) =>
         describeCommission({
@@ -414,7 +414,7 @@ export function PartnersTable() {
       header: "Status",
       // Admins flip status inline (also syncs the portal login); read-only
       // roles keep the badge. Note the default filter shows Active only, so a
-      // toggled-off row moves to the Inactive tab immediately — expected.
+      // toggled-off row moves to the Inactive tab immediately - expected.
       cell: ({ row }) =>
         canManage ? (
           <div className="flex items-center gap-2">
@@ -481,7 +481,7 @@ export function PartnersTable() {
                     </Link>
                   </DropdownMenuItem>
                 )}
-                {/* Refund rows aren't partners — nothing to log into. */}
+                {/* Refund rows aren't partners - nothing to log into. */}
                 {isSuperadmin && type !== "customer_refund" && (
                   <DropdownMenuItem
                     className="flex items-center"
@@ -556,7 +556,7 @@ export function PartnersTable() {
       bulkActions={
         !canManage ? undefined : (
         <div className="flex items-center gap-2">
-          {/* Bulk status flip — the old-data cleanup path. Refund rows have no
+          {/* Bulk status flip - the old-data cleanup path. Refund rows have no
               meaningful active state, same reason Duplicate skips that tab. */}
           <Button
             variant="outline"
@@ -576,7 +576,7 @@ export function PartnersTable() {
             <PowerOff className="mr-2 h-4 w-4" />
             Deactivate ({selectedCodes.length})
           </Button>
-          {/* Refund rows are opened per booking, never templated from — and a
+          {/* Refund rows are opened per booking, never templated from - and a
               copy would land on a tab the user isn't looking at. */}
           <Button
             variant="outline"
@@ -678,7 +678,7 @@ function FilterGroup<T extends string>({
 }
 
 /**
- * A partner with a portal user can't be deleted — `user_profiles` references it
+ * A partner with a portal user can't be deleted - `user_profiles` references it
  * with no ON DELETE rule, so Postgres raises a foreign-key violation.
  */
 function deleteErrorMessage(error: unknown): string {

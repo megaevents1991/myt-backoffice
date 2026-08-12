@@ -1,15 +1,15 @@
 -- Customer-refund pseudo-partners must not count as partner TRAFFIC either.
 --
 -- The main app auto-creates a "partner" row (name marked "ניתן להתעלם") for
--- every order, and refunded customers browse with that personal code — so
+-- every order, and refunded customers browse with that personal code - so
 -- affiliates_tracking carries their sessions. Reservations/commission math
 -- already excludes those codes (see CUSTOMER_REFUND_NAME_MARKER); this brings
 -- the cross-partner tracking RPCs in line, so funnels, visitor counts and
 -- hot-events stop counting refund-credit browsing as partner marketing.
 -- (Found 2026-08-04: "9 partners" on a hot event were 6 real + 3 refund codes.)
 --
--- The name marker is the source of truth — `type` arrives unset on fresh rows
--- (see types/partner.types.ts) — but a correctly-typed row is excluded too.
+-- The name marker is the source of truth - `type` arrives unset on fresh rows
+-- (see types/partner.types.ts) - but a correctly-typed row is excluded too.
 
 create or replace function "public"."tracking_code_is_real_partner"("p_code" text)
 returns boolean
@@ -102,7 +102,7 @@ as $$
    group by t.affiliate_id;
 $$;
 
--- Per-partner slice of the hot-events aggregation — feeds the staff table's
+-- Per-partner slice of the hot-events aggregation - feeds the staff table's
 -- hover breakdown (who drove the clicks on each event, and how many).
 create or replace function "public"."partners_clicked_event_partners_all"(
   "p_from" timestamptz default null,
@@ -140,11 +140,11 @@ revoke all on function "public"."partners_clicked_event_partners_all"(timestampt
 grant execute on function "public"."partners_clicked_event_partners_all"(timestamptz, timestamptz) to service_role;
 
 comment on function "public"."partners_clicked_event_partners_all"(timestamptz, timestamptz) is
-  'Per-partner clicks/visitors on each event across real-partner traffic — the hover breakdown behind partners_clicked_events_all.';
+  'Per-partner clicks/visitors on each event across real-partner traffic - the hover breakdown behind partners_clicked_events_all.';
 
 comment on function "public"."partners_funnel_counts_all"(timestamptz, timestamptz) is
   'Funnel across ALL real partners (refund pseudo-codes excluded) in an optional created_at window. Distinct visitors per stage.';
 comment on function "public"."partners_clicked_events_all"(timestamptz, timestamptz, integer) is
   'Hot events across real-partner traffic (refund pseudo-codes excluded) in an optional window, incl. distinct partners driving clicks.';
 comment on function "public"."partners_visitors_by_code"(timestamptz, timestamptz) is
-  'Distinct VISIT visitors per real-partner tracking code (refund pseudo-codes excluded) — feeds per-partner conversion on the staff Insights tab.';
+  'Distinct VISIT visitors per real-partner tracking code (refund pseudo-codes excluded) - feeds per-partner conversion on the staff Insights tab.';

@@ -48,7 +48,7 @@ export const FLIGHT_FIELDS: FlightField[] = [
   { key: "outbound_duration", label: "Out duration", group: "Outbound", type: "duration", bulkEditable: false },
   { key: "outbound_check_bags_included", label: "Out checked bag", group: "Outbound", type: "boolean", bulkEditable: true },
   { key: "outbound_cabin_bags_included", label: "Out cabin bag", group: "Outbound", type: "boolean", bulkEditable: true },
-  // Setting the stopover airport is what makes a leg a connection — the legacy
+  // Setting the stopover airport is what makes a leg a connection - the legacy
   // round-trip `stops` count is derived from these two (`flights_derive_stops`),
   // so it is deliberately absent from this list: an editable copy of a derived
   // value can only ever disagree with it.
@@ -92,7 +92,7 @@ export const FLIGHT_FIELD_BY_KEY = new Map<string, FlightField>(
   FLIGHT_FIELDS.map((field) => [field.key, field]),
 );
 
-// What the list shows before the user touches the column picker — the columns
+// What the list shows before the user touches the column picker - the columns
 // the old table displayed, plus block status.
 export const DEFAULT_VISIBLE_COLUMNS: FlightWritableColumn[] = [
   "airline_code",
@@ -106,7 +106,7 @@ export const DEFAULT_VISIBLE_COLUMNS: FlightWritableColumn[] = [
 ];
 
 export function formatFlightValue(field: FlightField, value: unknown): string {
-  if (value == null || value === "") return "—";
+  if (value == null || value === "") return "-";
   switch (field.type) {
     case "money":
       return `$${Number(value).toFixed(2)}`;
@@ -119,7 +119,7 @@ export function formatFlightValue(field: FlightField, value: unknown): string {
   }
 }
 
-/** `datetime-local` inputs need "YYYY-MM-DDTHH:mm" — trim anything longer. */
+/** `datetime-local` inputs need "YYYY-MM-DDTHH:mm" - trim anything longer. */
 export function toInputValue(field: FlightField, value: unknown): string {
   if (value == null) return "";
   if (field.type === "datetime") return String(value).slice(0, 16);

@@ -44,10 +44,15 @@ export type CreativeParams =
   | (BaseParams & { kind: "match"; homeRef: string; awayRef: string })
   // isCutout: is imageUrl a real transparent cut-out, or a regular photo?
   // Determines blob-card vs plain circular-avatar rendering (see
-  // MatchTemplate) — default true (assume cut-out) so existing callers keep
+  // MatchTemplate) - default true (assume cut-out) so existing callers keep
   // today's look until they explicitly say otherwise.
-  | (BaseParams & { kind: "artist"; imageUrl: string; artistName: string; isCutout?: boolean })
-  // Fallback when no team/artist logo could be matched — plain circular
+  | (BaseParams & {
+      kind: "artist";
+      imageUrl: string;
+      artistName: string;
+      isCutout?: boolean;
+    })
+  // Fallback when no team/artist logo could be matched - plain circular
   // avatar using the event's own (regular, non-cutout) photo.
   | (BaseParams & { kind: "photo"; imageUrl: string; eventName: string });
 
@@ -75,7 +80,9 @@ export function teamImage(t: {
   return t.logo_url ?? t.art_image_url ?? t.image_url;
 }
 
-export async function buildCreativeInput(params: CreativeParams): Promise<CreativeInput> {
+export async function buildCreativeInput(
+  params: CreativeParams,
+): Promise<CreativeInput> {
   const priceText = buildPriceText(params.mode, params.price, params.currency);
   const base = {
     dateText: params.dateText,
@@ -136,7 +143,7 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
           .in("id", teamIds)
       : Promise.resolve({ data: [], error: null }),
     logoIds.length
-      ? // football_logos isn't in the generated DB types yet — cast like template-crud.
+      ? // football_logos isn't in the generated DB types yet - cast like template-crud.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any)
           .from("football_logos")
@@ -153,17 +160,24 @@ export async function buildCreativeInput(params: CreativeParams): Promise<Creati
 
   // isCutout: logo_url/art_image_url are real transparent cut-outs (the
   // football_logos library is ENTIRELY dedicated crests, always a cut-out);
-  // image_url is a regular photo fallback — not blob-safe (see MatchTemplate).
-  const resolve = (ref: SubjectRef): { name: string; img: string | null; isCutout: boolean } => {
+  // image_url is a regular photo fallback - not blob-safe (see MatchTemplate).
+  const resolve = (
+    ref: SubjectRef,
+  ): { name: string; img: string | null; isCutout: boolean } => {
     if (ref.source === "logo") {
       const l = logoRows.find((r) => r.id === ref.id);
       if (!l) throw new Error("Logo not found");
-      return { name: l.name_hebrew ?? l.name_english, img: l.logo_url, isCutout: true };
+      return {
+        name: l.name_hebrew ?? l.name_english,
+        img: l.logo_url,
+        isCutout: true,
+      };
     }
     const t = teams.find((r) => r.id === ref.id);
     if (!t) throw new Error("Team not found");
     if (t.logo_url) return { name: t.name, img: t.logo_url, isCutout: true };
-    if (t.art_image_url) return { name: t.name, img: t.art_image_url, isCutout: true };
+    if (t.art_image_url)
+      return { name: t.name, img: t.art_image_url, isCutout: true };
     return { name: t.name, img: t.image_url, isCutout: false };
   };
   const home = resolve(homeRef);

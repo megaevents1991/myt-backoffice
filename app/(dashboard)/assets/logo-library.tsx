@@ -186,7 +186,7 @@ export function LogoLibrary({ initialLogos }: { initialLogos: FootballLogo[] }) 
       {filtered.length === 0 ? (
         <div className="border rounded-md p-10 text-center text-muted-foreground">
           {logos.length === 0
-            ? "אין לוגואים עדיין — העלה את הראשון למעלה"
+            ? "אין לוגואים עדיין - העלה את הראשון למעלה"
             : "לא נמצאו לוגואים לחיפוש הזה"}
         </div>
       ) : (

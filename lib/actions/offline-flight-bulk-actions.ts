@@ -4,11 +4,14 @@ import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
-import { pickFlightColumns, assertFlightValues } from "./offline-flight-columns";
+import {
+  pickFlightColumns,
+  assertFlightValues,
+} from "./offline-flight-columns";
 import type { OfflineFlight } from "@/types/offline-flight.types";
 
 // The `flights` table is not in db.schema.sql so Supabase's generated types
-// don't include it — all .from("flights") calls are cast to bypass `never`.
+// don't include it - all .from("flights") calls are cast to bypass `never`.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const flightsTable = () => (supabase as any).from("flights");
 
@@ -20,7 +23,8 @@ export type PriceAdjustment = {
 type FlightIdEvents = { id: number; event_ids: number[] | null };
 
 function assertIds(ids: number[]): void {
-  if (!Array.isArray(ids) || ids.length === 0) throw new Error("No flights selected");
+  if (!Array.isArray(ids) || ids.length === 0)
+    throw new Error("No flights selected");
   if (ids.some((id) => !Number.isInteger(id) || id <= 0)) {
     throw new Error("Invalid flight id");
   }
@@ -115,7 +119,8 @@ export async function bulkSetEventLink(
 ): Promise<number> {
   await requireStaff();
   assertIds(ids);
-  if (!Number.isInteger(eventId) || eventId <= 0) throw new Error("Invalid event id");
+  if (!Number.isInteger(eventId) || eventId <= 0)
+    throw new Error("Invalid event id");
 
   const { data, error } = await flightsTable()
     .select("id, event_ids")
@@ -150,7 +155,10 @@ export async function bulkSetEventLink(
   return rows.length;
 }
 
-async function bulkSetDeleted(ids: number[], isDeleted: boolean): Promise<number> {
+async function bulkSetDeleted(
+  ids: number[],
+  isDeleted: boolean,
+): Promise<number> {
   await requireStaff();
   assertIds(ids);
   const { data, error } = await flightsTable()
@@ -171,11 +179,15 @@ async function bulkSetDeleted(ids: number[], isDeleted: boolean): Promise<number
   return ((data ?? []) as FlightIdEvents[]).length;
 }
 
-export async function bulkSoftDeleteOfflineFlights(ids: number[]): Promise<number> {
+export async function bulkSoftDeleteOfflineFlights(
+  ids: number[],
+): Promise<number> {
   return bulkSetDeleted(ids, true);
 }
 
-export async function bulkRestoreOfflineFlights(ids: number[]): Promise<number> {
+export async function bulkRestoreOfflineFlights(
+  ids: number[],
+): Promise<number> {
   return bulkSetDeleted(ids, false);
 }
 
@@ -191,7 +203,8 @@ export async function createOfflineFlightSeries(
   await requireStaff();
   if (!seriesName.trim()) throw new Error("Series name is required");
   if (drafts.length === 0) throw new Error("No flights to create");
-  if (drafts.length > 200) throw new Error("A series is limited to 200 flights");
+  if (drafts.length > 200)
+    throw new Error("A series is limited to 200 flights");
 
   const series_id = crypto.randomUUID();
   const rows = drafts.map((draft) => {
@@ -206,7 +219,9 @@ export async function createOfflineFlightSeries(
     };
   });
 
-  const { data, error } = await flightsTable().insert(rows).select("id, event_ids");
+  const { data, error } = await flightsTable()
+    .insert(rows)
+    .select("id, event_ids");
   if (error) throw error;
 
   await logAudit({

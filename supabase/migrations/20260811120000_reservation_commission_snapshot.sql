@@ -2,7 +2,7 @@
 -- commission applies FROM NOW ON instead of retroactively repricing every
 -- open (un-billed) reservation.
 --
--- NULL commission_rate = "no snapshot, use the partner's current rate" — the
+-- NULL commission_rate = "no snapshot, use the partner's current rate" - the
 -- behavior every existing row keeps until the partner's rate next changes.
 -- At that moment the backoffice stamps the OLD rate onto all of the partner's
 -- rows that have no snapshot yet (lib/partner-commission-freeze.ts), and the
@@ -17,4 +17,4 @@ alter table "public"."reservations"
 comment on column "public"."reservations"."commission_rate" is
   'Commission rate frozen for this reservation (unit per commission_type). NULL = use the partner''s current rate. Stamped by the backoffice when the partner''s rate changes.';
 comment on column "public"."reservations"."commission_type" is
-  'fixed_per_ticket | percent_of_sale — the unit commission_rate is read in. Only meaningful when commission_rate is set.';
+  'fixed_per_ticket | percent_of_sale - the unit commission_rate is read in. Only meaningful when commission_rate is set.';

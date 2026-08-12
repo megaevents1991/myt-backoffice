@@ -4,7 +4,7 @@
 -- existing rows and links keep working unchanged.
 --
 -- Locking never blocks a piece the customer HAS to choose anyway: a stale
--- (needs_repick) piece and a deliberately-left-live piece stay pickable —
+-- (needs_repick) piece and a deliberately-left-live piece stay pickable -
 -- myt-main's /api/package/[id] + order flow enforce that nuance.
 
 alter table "public"."prepared_packages"

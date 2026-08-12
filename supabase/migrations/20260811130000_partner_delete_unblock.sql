@@ -3,7 +3,7 @@
 -- (= RESTRICT), so every affiliate with any tracking history failed with a
 -- foreign-key violation ("Failed to delete partner" in the partners list).
 --
--- Click rows are meaningless without their partner — cascade them away with
+-- Click rows are meaningless without their partner - cascade them away with
 -- the delete. user_profiles' FK deliberately KEEPS its RESTRICT: the portal
 -- login must be removed first (deletePartner does that explicitly via the
 -- auth admin API), and the FK stays as the safety net if a future writer

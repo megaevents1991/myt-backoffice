@@ -13,7 +13,7 @@ import type {
 const BUCKET = "football-logos";
 // Assets page hosts the library UI; creative-generator serves the picker list.
 const REVALIDATE_PATHS = ["/assets", "/creative-generator"];
-const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2MB — logos are small assets
+const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2MB - logos are small assets
 const ALLOWED_TYPES: Record<string, string> = {
   "image/png": "png",
   "image/svg+xml": "svg",
@@ -21,12 +21,15 @@ const ALLOWED_TYPES: Record<string, string> = {
   "image/jpeg": "jpg",
 };
 
-// Tables aren't in Supabase generated types yet — cast like template-crud.
+// Tables aren't in Supabase generated types yet - cast like template-crud.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const logos = () => (supabase as any).from("football_logos");
 
 function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 export async function getFootballLogos(): Promise<FootballLogo[]> {
@@ -36,7 +39,7 @@ export async function getFootballLogos(): Promise<FootballLogo[]> {
     .order("name_english", { ascending: true });
   if (error) {
     // Don't take the whole creative-generator page down (e.g. migration not
-    // applied yet) — log and behave like an empty library.
+    // applied yet) - log and behave like an empty library.
     console.error(JSON.stringify(error));
     return [];
   }
@@ -44,7 +47,7 @@ export async function getFootballLogos(): Promise<FootballLogo[]> {
 }
 
 export async function createFootballLogo(
-  formData: FormData
+  formData: FormData,
 ): Promise<FootballLogo> {
   await requireStaff();
   const file = formData.get("file") as File | null;
@@ -57,7 +60,7 @@ export async function createFootballLogo(
   const ext = ALLOWED_TYPES[file.type];
   if (!ext) throw new Error("Only PNG, SVG, WebP or JPG files are allowed");
 
-  // Unique path per logo — random suffix avoids collisions and stale CDN
+  // Unique path per logo - random suffix avoids collisions and stale CDN
   // caches when a logo is re-uploaded under the same name.
   const path = `${slugify(nameEnglish) || "logo"}-${crypto
     .randomUUID()
@@ -72,8 +75,8 @@ export async function createFootballLogo(
     throw new Error("Logo upload failed");
   }
 
-  const logoUrl = supabase.storage.from(BUCKET).getPublicUrl(path).data
-    .publicUrl;
+  const logoUrl = supabase.storage.from(BUCKET).getPublicUrl(path)
+    .data.publicUrl;
 
   const { data, error } = await logos()
     .insert({
@@ -100,13 +103,13 @@ export async function createFootballLogo(
     changes: { name_english: nameEnglish, name_hebrew: nameHebrewRaw || null },
   });
   REVALIDATE_PATHS.forEach((p) => revalidatePath(p));
-  await revalidateMain(); // site reads the library at render — refresh its ISR too
+  await revalidateMain(); // site reads the library at render - refresh its ISR too
   return data as FootballLogo;
 }
 
 export async function updateFootballLogo(
   id: number,
-  update: UpdateFootballLogoData
+  update: UpdateFootballLogoData,
 ): Promise<FootballLogo> {
   await requireStaff();
   const nameEnglish = update.name_english?.trim();
@@ -137,7 +140,7 @@ export async function updateFootballLogo(
     changes: mapped,
   });
   REVALIDATE_PATHS.forEach((p) => revalidatePath(p));
-  await revalidateMain(); // site reads the library at render — refresh its ISR too
+  await revalidateMain(); // site reads the library at render - refresh its ISR too
   return data as FootballLogo;
 }
 
@@ -158,7 +161,7 @@ export async function deleteFootballLogo(id: number): Promise<void> {
     throw new Error("Failed to delete logo");
   }
 
-  // Best-effort storage cleanup — the row is the source of truth.
+  // Best-effort storage cleanup - the row is the source of truth.
   const url: string = (data as FootballLogo).logo_url;
   const marker = `/object/public/${BUCKET}/`;
   const idx = url.indexOf(marker);
@@ -176,5 +179,5 @@ export async function deleteFootballLogo(id: number): Promise<void> {
     entityId: id,
   });
   REVALIDATE_PATHS.forEach((p) => revalidatePath(p));
-  await revalidateMain(); // site reads the library at render — refresh its ISR too
+  await revalidateMain(); // site reads the library at render - refresh its ISR too
 }

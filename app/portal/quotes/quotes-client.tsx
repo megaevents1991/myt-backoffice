@@ -41,7 +41,7 @@ const STATUS_LABELS: Record<PartnerQuoteStatus, string> = {
   not_relevant: "לא רלוונטי",
 };
 
-/** Recompute the tile numbers after a local status change — same rules as the
+/** Recompute the tile numbers after a local status change - same rules as the
  *  server's getPortalQuotesOverview. */
 function computeStats(quotes: PortalQuoteWithState[]): PortalQuoteStats {
   const today = new Date().toISOString().slice(0, 10);
@@ -60,7 +60,7 @@ function computeStats(quotes: PortalQuoteWithState[]): PortalQuoteStats {
 }
 
 const pct = (part: number, total: number) =>
-  total > 0 ? `${Math.round((part / total) * 100)}%` : "—";
+  total > 0 ? `${Math.round((part / total) * 100)}%` : "-";
 
 export function QuotesClient({
   initialQuotes,
@@ -81,7 +81,7 @@ export function QuotesClient({
 
   const handleStatusChange = (id: number, status: PartnerQuoteStatus) => {
     const previous = quotes;
-    // Optimistic — the list is the agent's own data and the change is tiny.
+    // Optimistic - the list is the agent's own data and the change is tiny.
     setQuotes((current) =>
       current.map((q) => (q.id === id ? { ...q, status } : q))
     );
@@ -96,7 +96,7 @@ export function QuotesClient({
 
   const handleDownloadPdf = (id: number) => {
     setDownloadingId(id);
-    // Open the tab synchronously in the click handler — popup blockers
+    // Open the tab synchronously in the click handler - popup blockers
     // (Safari especially) kill window.open calls made after an await.
     const win = window.open("", "_blank");
     startTransition(async () => {
@@ -109,7 +109,7 @@ export function QuotesClient({
         });
       };
       try {
-        // /portal-path alias — the partner session cookie is path-scoped to
+        // /portal-path alias - the partner session cookie is path-scoped to
         // /portal and never reaches /api/* (multi-session).
         const res = await fetch(`/portal/api/quotes/${id}/pdf`, { method: "POST" });
         const data = await res.json().catch(() => null);
@@ -120,13 +120,13 @@ export function QuotesClient({
         if (win) {
           win.location.href = data.url;
         } else {
-          // Placeholder tab was blocked — try a direct open, and if that is
+          // Placeholder tab was blocked - try a direct open, and if that is
           // blocked too, surface the URL so the user can open it manually.
           const fallback = window.open(data.url, "_blank");
           if (!fallback) {
             toast({
               title: "ה-PDF מוכן",
-              description: `חסימת חלונות קופצים מנעה פתיחה אוטומטית — פתח ידנית: ${data.url}`,
+              description: `חסימת חלונות קופצים מנעה פתיחה אוטומטית - פתח ידנית: ${data.url}`,
             });
           }
         }
@@ -214,13 +214,13 @@ export function QuotesClient({
                   <TableCell>
                     {new Date(quote.created_at).toLocaleDateString("he-IL")}
                   </TableCell>
-                  <TableCell>{quote.customer_name || "—"}</TableCell>
-                  <TableCell>{quote.title || "—"}</TableCell>
-                  <TableCell>{quote.total != null ? usd.format(quote.total) : "—"}</TableCell>
+                  <TableCell>{quote.customer_name || "-"}</TableCell>
+                  <TableCell>{quote.title || "-"}</TableCell>
+                  <TableCell>{quote.total != null ? usd.format(quote.total) : "-"}</TableCell>
                   <TableCell>
                     {quote.valid_until
                       ? new Date(quote.valid_until).toLocaleDateString("he-IL")
-                      : "—"}
+                      : "-"}
                   </TableCell>
                   <TableCell>
                     {quote.closed_by_order ? (

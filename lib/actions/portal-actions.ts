@@ -14,7 +14,10 @@ import {
   sumSales,
   type CommissionTerms,
 } from "@/lib/partner-commission";
-import { fundedCouponCodesFor, quoteUpliftsFor } from "@/lib/actions/portal-coupon-actions";
+import {
+  fundedCouponCodesFor,
+  quoteUpliftsFor,
+} from "@/lib/actions/portal-coupon-actions";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import type { CommissionType } from "@/types/partner.types";
 import type { ReservationEventOrderInfo } from "@/types/reservation.types";
@@ -55,7 +58,7 @@ export interface PortalCoupon {
   funded_by_commission?: boolean;
 }
 
-/** How the order arrived at the site — the portal's per-row source label. */
+/** How the order arrived at the site - the portal's per-row source label. */
 export type PortalReservationSource = "voucher" | "package" | "quote" | "link";
 
 export interface PortalReservation {
@@ -73,16 +76,16 @@ export interface PortalReservation {
   tickets: number;
   /** Travellers on the booking, including the person who booked it. */
   pax: number;
-  /** Ours to quote back at us — staff-entered, may be empty. */
+  /** Ours to quote back at us - staff-entered, may be empty. */
   booking_reference: string | null;
-  /** Travel material sent — the staff stamp, falling back to the
+  /** Travel material sent - the staff stamp, falling back to the
    *  confirmation-email flag for rows from before the stamp existed. */
   materials_sent: boolean;
   /** Voucher lifecycle for voucher-settled orders (sent/received/collected). */
   voucher_state: "sent" | "received" | "collected" | null;
   /** What this booking earns the partner. Zero until it is paid. */
   commission_usd: number;
-  /** agent_card orders: the commission was deducted from the charge itself —
+  /** agent_card orders: the commission was deducted from the charge itself -
    *  nothing further to pay out (the cell says so instead of showing 0). */
   settled_at_charge: boolean;
   /** True once it has gone out in a monthly report. */
@@ -118,33 +121,48 @@ export interface ReservationChoices {
   } | null;
 }
 
-/* Permissive extraction — provider payload shapes (Amadeus offer / RateHawk
- * rate) vary and old rows may hold partial JSON. Missing keys render as "—",
+/* Permissive extraction - provider payload shapes (Amadeus offer / RateHawk
+ * rate) vary and old rows may hold partial JSON. Missing keys render as "-",
  * never throw. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractChoices(r: any): ReservationChoices {
-  const choices: ReservationChoices = { flight: null, hotel: null, ticket: null };
+  const choices: ReservationChoices = {
+    flight: null,
+    hotel: null,
+    ticket: null,
+  };
   try {
     const offer = r.flight_order_info?.offer;
-    const itineraries = Array.isArray(offer?.itineraries) ? offer.itineraries : [];
-    const outSegs = Array.isArray(itineraries[0]?.segments) ? itineraries[0].segments : [];
+    const itineraries = Array.isArray(offer?.itineraries)
+      ? offer.itineraries
+      : [];
+    const outSegs = Array.isArray(itineraries[0]?.segments)
+      ? itineraries[0].segments
+      : [];
     if (outSegs.length > 0) {
       const from = outSegs[0]?.departure?.iataCode ?? null;
       const to = outSegs[outSegs.length - 1]?.arrival?.iataCode ?? null;
-      const backSegs = Array.isArray(itineraries[1]?.segments) ? itineraries[1].segments : [];
+      const backSegs = Array.isArray(itineraries[1]?.segments)
+        ? itineraries[1].segments
+        : [];
       choices.flight = {
         route: from && to ? `${from} → ${to}` : null,
         depart: outSegs[0]?.departure?.at ?? null,
         return: backSegs[0]?.departure?.at ?? null,
-        airline: outSegs[0]?.operating?.carrierName ?? outSegs[0]?.carrierCode ?? null,
+        airline:
+          outSegs[0]?.operating?.carrierName ?? outSegs[0]?.carrierCode ?? null,
       };
     }
-  } catch { /* leave null */ }
+  } catch {
+    /* leave null */
+  }
   try {
     const hotelInfo = r.hotel_order_info;
     if (hotelInfo && Object.keys(hotelInfo).length > 0) {
       const rate = hotelInfo.rate;
-      const nights = Array.isArray(rate?.daily_prices) ? rate.daily_prices.length : null;
+      const nights = Array.isArray(rate?.daily_prices)
+        ? rate.daily_prices.length
+        : null;
       const name =
         hotelInfo.hotel?.name ?? hotelInfo.hotel_name ?? hotelInfo.name ?? null;
       const meal =
@@ -155,7 +173,9 @@ function extractChoices(r: any): ReservationChoices {
             : (rate?.meal ?? null);
       if (name || nights || meal) choices.hotel = { name, nights, meal };
     }
-  } catch { /* leave null */ }
+  } catch {
+    /* leave null */
+  }
   return choices;
 }
 
@@ -201,7 +221,7 @@ export async function getPortalStats(): Promise<PortalStats> {
     totalReservations: 0,
     paidReservations: 0,
     totalSalesUsd: 0,
-    commissionLabel: "—",
+    commissionLabel: "-",
     paidTickets: 0,
     estimatedCommissionUsd: 0,
     activeCoupons: 0,
@@ -212,7 +232,9 @@ export async function getPortalStats(): Promise<PortalStats> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from("reservations")
-      .select("id,status,user_shown_price,event_order_info,commission_type,commission_rate")
+      .select(
+        "id,status,user_shown_price,event_order_info,commission_type,commission_rate",
+      )
       .eq("aff_partner_tracking_code", session.partner_code),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
@@ -228,15 +250,24 @@ export async function getPortalStats(): Promise<PortalStats> {
   ]);
 
   if (resResult.error) {
-    console.error("getPortalStats reservations:", JSON.stringify(resResult.error));
+    console.error(
+      "getPortalStats reservations:",
+      JSON.stringify(resResult.error),
+    );
     return empty;
   }
   if (couponResult.error) {
-    console.error("getPortalStats coupons:", JSON.stringify(couponResult.error));
+    console.error(
+      "getPortalStats coupons:",
+      JSON.stringify(couponResult.error),
+    );
   }
   if (partnerResult.error) {
     // Don't fail the page, but never let a broken lookup quietly become "$0".
-    console.error("getPortalStats partner:", JSON.stringify(partnerResult.error));
+    console.error(
+      "getPortalStats partner:",
+      JSON.stringify(partnerResult.error),
+    );
   }
 
   const reservations = (resResult.data ?? []) as {
@@ -251,7 +282,9 @@ export async function getPortalStats(): Promise<PortalStats> {
     times_used: number | null;
   }[];
   const terms: CommissionTerms = {
-    type: (partnerResult.data?.commission_type as CommissionType | null) ?? "fixed_per_ticket",
+    type:
+      (partnerResult.data?.commission_type as CommissionType | null) ??
+      "fixed_per_ticket",
     rate: partnerResult.data?.commission ?? null,
   };
 
@@ -280,12 +313,12 @@ export async function getPortalCoupons(): Promise<PortalCoupon[]> {
       .order("created_at", { ascending: false });
 
   let { data, error } = await fetchCoupons(
-    "id,code,discount_type,discount_value,valid_until,max_uses,times_used,times_paid,is_active,event_id,funded_by_commission"
+    "id,code,discount_type,discount_value,valid_until,max_uses,times_used,times_paid,is_active,event_id,funded_by_commission",
   );
   if (error?.code === "42703") {
-    // funded_by_commission not migrated yet — the badge simply doesn't show.
+    // funded_by_commission not migrated yet - the badge simply doesn't show.
     ({ data, error } = await fetchCoupons(
-      "id,code,discount_type,discount_value,valid_until,max_uses,times_used,times_paid,is_active,event_id"
+      "id,code,discount_type,discount_value,valid_until,max_uses,times_used,times_paid,is_active,event_id",
     ));
   }
   if (error) {
@@ -304,7 +337,7 @@ const HOLD_STATUS = "24Save";
  * When a hold stops being resumable.
  *
  * The main app's recovery endpoint allows 25 hours, not the 24 it advertises.
- * The partner is shown the real cut-off — telling them 24 would have them chase
+ * The partner is shown the real cut-off - telling them 24 would have them chase
  * a customer whose link still works, or give up an hour early.
  */
 const HOLD_WINDOW_MS = 25 * 60 * 60 * 1000;
@@ -319,11 +352,11 @@ function holdExpiry(createdAt: string): string | null {
 /**
  * Columns a partner may see on their own bookings.
  *
- * Listed explicitly, never "everything except" — a column added to
+ * Listed explicitly, never "everything except" - a column added to
  * `reservations` later must not start leaking on its own. Deliberately absent:
  * `main_contact_phone_number` and `main_contact_email` (the customer is ours,
  * not the partner's), `payment_info`, `offline_flight_cost` /
- * `offline_hotel_cost` / `final_purchase_price_ils` (our cost — showing them
+ * `offline_hotel_cost` / `final_purchase_price_ils` (our cost - showing them
  * hands the partner our margin on every booking), `accounting_number`, and
  * `comments`, which is the staff's internal note field.
  */
@@ -351,7 +384,9 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
 
   const [initialReservationsResult, partnerResult, fundedCodes, quoteUplifts] =
     await Promise.all([
-      fetchReservations(PORTAL_RESERVATION_COLUMNS + PORTAL_RESERVATION_SOURCE_COLUMNS),
+      fetchReservations(
+        PORTAL_RESERVATION_COLUMNS + PORTAL_RESERVATION_SOURCE_COLUMNS,
+      ),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any)
         .from("partners")
@@ -364,23 +399,31 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
   let reservationsResult = initialReservationsResult;
 
   if (reservationsResult.error?.code === "42703") {
-    // Attribution columns not migrated yet — every row simply reads as "link".
+    // Attribution columns not migrated yet - every row simply reads as "link".
     reservationsResult = await fetchReservations(PORTAL_RESERVATION_COLUMNS);
   }
 
   if (reservationsResult.error) {
-    console.error("getPortalReservations:", JSON.stringify(reservationsResult.error));
+    console.error(
+      "getPortalReservations:",
+      JSON.stringify(reservationsResult.error),
+    );
     return { rows: [], truncated: false };
   }
   if (partnerResult.error) {
     // Never let a lookup failure quietly render every booking as $0 commission.
-    console.error("getPortalReservations partner:", JSON.stringify(partnerResult.error));
+    console.error(
+      "getPortalReservations partner:",
+      JSON.stringify(partnerResult.error),
+    );
   }
 
   const terms: CommissionTerms = {
-    type: (partnerResult.data?.commission_type as CommissionType | null) ?? "fixed_per_ticket",
+    type:
+      (partnerResult.data?.commission_type as CommissionType | null) ??
+      "fixed_per_ticket",
     rate: partnerResult.data?.commission ?? null,
-    // Commission-funded coupons deduct from the row they were spent on — the
+    // Commission-funded coupons deduct from the row they were spent on - the
     // per-row figure here must match what the monthly report will pay.
     fundedCouponCodes: fundedCodes,
     // Quote-priced margin is the agent's, on top of the base rate.
@@ -415,7 +458,7 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
   const truncated = all.length > RESERVATIONS_PAGE_SIZE;
   const rows = all.slice(0, RESERVATIONS_PAGE_SIZE).map((r) => {
     // The order-info JSON holds one item or { events: [...] }; the title field
-    // is `name`. Ticket counts and category are already in here — the portal
+    // is `name`. Ticket counts and category are already in here - the portal
     // used to fetch this and throw all but the title away.
     const events = normalizeReservationEventOrderInfo(r.event_order_info);
     const first = events[0];
@@ -434,13 +477,13 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
       event_location: first?.location_name ?? null,
       ticket_category: first?.category ?? null,
       tickets: countReservationTickets(r),
-      // `more_pax_info` is the ADDITIONAL passengers — the main contact is not
+      // `more_pax_info` is the ADDITIONAL passengers - the main contact is not
       // in it (the main app writes `passengers.slice(1)`), so the +1 is the
       // booker. Every other pax count in this repo does the same.
       pax: 1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0),
       booking_reference: r.booking_reference,
       // The staff stamp ONLY. The confirmation-email flag used to back-fill
-      // here, but it made un-marking impossible — clearing the stamp left the
+      // here, but it made un-marking impossible - clearing the stamp left the
       // legacy flag true and the row stuck on "נשלח" (אלון, 2026-08-07).
       materials_sent: r.travel_materials_sent_at != null,
       voucher_state: r.voucher_state ?? null,
@@ -455,14 +498,15 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
       },
       commission_usd: round2(commissionForReservation(r, terms)),
       settled_at_charge:
-        r.partner_settlement_method === "agent_card" && r.status === PAID_STATUS,
+        r.partner_settlement_method === "agent_card" &&
+        r.status === PAID_STATUS,
       billed: !!r.billed_at,
       is_hold: r.status === HOLD_STATUS,
       hold_expires_at:
         r.status === HOLD_STATUS ? holdExpiry(r.created_at) : null,
       // Priority: a voucher settlement outranks everything (it also overwrites
       // coupon_code), then the signed quote, then the package link. A plain
-      // tracking link — and every pre-attribution row — reads "link".
+      // tracking link - and every pre-attribution row - reads "link".
       source: (r.partner_settlement_method === "voucher"
         ? "voucher"
         : r.quote_id != null
@@ -472,7 +516,7 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
             : "link") as PortalReservationSource,
       // Deliberately NOT the customer's recovery link. Opening it loads the
       // saved order through the main app's find-order endpoint, which returns
-      // the customer's phone, email and every passenger name — the exact data
+      // the customer's phone, email and every passenger name - the exact data
       // PORTAL_RESERVATION_COLUMNS above refuses to select. The partner would
       // open it just to check it works. They already have the customer's name
       // and the event, which is what they need to make the call.

@@ -70,13 +70,13 @@ export function FlightAllocationsPanel({
       const ceiling = maxFor(row);
       if (seats > ceiling) {
         toast.error(
-          `Only ${ceiling} seat(s) available on this flight — the rest are allocated to other events`,
+          `Only ${ceiling} seat(s) available on this flight - the rest are allocated to other events`,
         );
         return;
       }
       if (seats < row.consumed_seats) {
         toast.error(
-          `This event has already sold ${row.consumed_seats} seat(s) — it cannot go below that`,
+          `This event has already sold ${row.consumed_seats} seat(s) - it cannot go below that`,
         );
         return;
       }
@@ -248,7 +248,7 @@ export function FlightAllocationsPanel({
         </span>
         {unallocated < 0 && (
           <span className="ml-2 text-red-600">
-            — allocations exceed the flight&apos;s seat count. Raise ORG or lower an
+            - allocations exceed the flight&apos;s seat count. Raise ORG or lower an
             allocation.
           </span>
         )}

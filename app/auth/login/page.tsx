@@ -22,7 +22,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const urlError = searchParams.get("error");
 
-  // Redirect if user is already logged in. Partners home to /portal — their
+  // Redirect if user is already logged in. Partners home to /portal - their
   // session cookie is /portal-scoped, so sending them to /dashboard would
   // bounce back here forever (middleware never sees their cookie there).
   useEffect(() => {
@@ -88,7 +88,7 @@ function LoginForm() {
         <CardContent>
           {urlError === "no-account" && (
             <p className="text-sm text-destructive">
-              No account for this Google email — contact an admin.
+              No account for this Google email - contact an admin.
             </p>
           )}
           {urlError === "oauth" && (

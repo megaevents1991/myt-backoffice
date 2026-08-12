@@ -24,7 +24,7 @@ export function RevalidateButton() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to revalidate pages");
       }
-      toast.success("Live site refreshed — pages revalidated.");
+      toast.success("Live site refreshed - pages revalidated.");
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Revalidation failed."

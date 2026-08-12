@@ -44,7 +44,7 @@ export default async function PortalPackagesPage() {
         <div>
           <h1 className="font-display text-xl font-bold">החבילות והלינקים שלי</h1>
           <p className="text-sm text-muted-foreground">
-            כל כלי ההפצה במקום אחד — קישור מהיר לכל אירוע, או חבילה מוכנה
+            כל כלי ההפצה במקום אחד - קישור מהיר לכל אירוע, או חבילה מוכנה
             שמנחיתה את הלקוח ישר על הרכב שבחרתם.
           </p>
         </div>
@@ -77,7 +77,7 @@ export default async function PortalPackagesPage() {
         <CardHeader>
           <CardTitle>הלינקים שלי</CardTitle>
           <CardDescription>
-            כל מי שנכנס דרך הלינקים האלה משויך אליכם — גם אם יזמין מאוחר יותר,
+            כל מי שנכנס דרך הלינקים האלה משויך אליכם - גם אם יזמין מאוחר יותר,
             וגם אם יעבור בינתיים בין עמודים באתר.
           </CardDescription>
         </CardHeader>

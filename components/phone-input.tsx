@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 
 /**
  * International phone input: country flag dropdown + auto-formatting.
- * Emits E.164 ("+9725...") or "" — store verbatim in user_profiles.phone.
+ * Emits E.164 ("+9725...") or "" - store verbatim in user_profiles.phone.
  * Validate on submit with isValidPhoneNumber from react-phone-number-input.
  */
 export function PhoneInput({

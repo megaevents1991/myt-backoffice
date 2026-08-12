@@ -1,4 +1,4 @@
--- 2026-07-02 — Card-art cut-out position. Percent of frame size, 0 = current
+-- 2026-07-02 - Card-art cut-out position. Percent of frame size, 0 = current
 -- default placement (bottom-center anchored). X positive = right, Y positive
 -- = down. Range used by the picker: -50..50. All nullable: null = 0.
 alter table public.events

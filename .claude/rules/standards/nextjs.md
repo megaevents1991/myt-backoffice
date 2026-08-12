@@ -1,25 +1,25 @@
-# Next.js 15 App Router Standard (always-on) — myt-backoffice
+# Next.js 15 App Router Standard (always-on) - myt-backoffice
 
 Non-negotiables for routes, dashboard pages, crons, middleware. Next 15.
 
 ## Next 15 breaking-change watch
-- **`params`/`searchParams` are Promises** — `const { id } = await params`. Never sync-read.
+- **`params`/`searchParams` are Promises** - `const { id } = await params`. Never sync-read.
 - **GET route handlers are NOT cached by default.** Add `export const dynamic = 'force-static'`
   only if a GET is genuinely static; admin/cron data is dynamic.
 
 ## API & cron routes
 - Named method exports; return `NextResponse.json(...)` with explicit status. Validate early → `400`.
-- **Cron routes MUST call `guardCronRoute(request)`** (`@/lib/auth/guards`) as the first line —
+- **Cron routes MUST call `guardCronRoute(request)`** (`@/lib/auth/guards`) as the first line -
   it accepts Vercel's `Authorization: Bearer $CRON_SECRET` header (legacy `?key` fallback) and
   returns 401 otherwise. **Admin-triggered** routes/actions MUST call `guardAdminRoute()` /
   `requireAdmin()` instead. Never hardcode a secret literal.
-- Cron schedule + path live in `vercel.json` — keep route and `vercel.json` entry in lockstep.
+- Cron schedule + path live in `vercel.json` - keep route and `vercel.json` entry in lockstep.
 - Wrap every provider/external call (XS2Event, P1, TixStock, exchange rate) in `try/catch`;
   log before a `500`. Long syncs export `export const maxDuration = ...`.
 - Business/sync logic in helpers/services, not inline in `route.ts`.
 
 ## Auth & middleware
-- Auth is **cookie-based** (`session` cookie) checked in `middleware.ts` — NOT Supabase SSR.
+- Auth is **cookie-based** (`session` cookie) checked in `middleware.ts` - NOT Supabase SSR.
   Don't add heavy logic/data-fetching to middleware (runs every request).
 
 ## Server Actions & env

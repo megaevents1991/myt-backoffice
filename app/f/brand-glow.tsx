@@ -8,7 +8,7 @@ import { BLOB_SHAPES, hexToRgb } from "@/lib/forms/brand";
  * the OG images and the creative generator use, so a client who booked on the
  * site recognises the surface they are filling in.
  *
- * Decorative only — hidden from assistive tech, and the drift stops under
+ * Decorative only - hidden from assistive tech, and the drift stops under
  * prefers-reduced-motion.
  */
 export function BrandGlow({ accent }: { accent: string }) {

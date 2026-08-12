@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 
 const LABELS: Record<string, { title: string; note: string; primary?: boolean }> = {
   "feeds/meta-activities-feed.csv": {
-    title: "Meta — Activities (הפיד הפעיל)",
+    title: "Meta - Activities (הפיד הפעיל)",
     note: "זה הקובץ שרשום במטא (Commerce Manager).",
     primary: true,
   },
@@ -64,7 +64,7 @@ export default async function MetaFeedPage() {
         <div>
           <h1 className="text-3xl font-bold">Meta Product Feed</h1>
           <p className="text-muted-foreground mt-1">
-            הפיד נבנה חי מהמערכת. הסנכרון מעתיק אותו לקובץ הסטטי שמטא קוראת —
+            הפיד נבנה חי מהמערכת. הסנכרון מעתיק אותו לקובץ הסטטי שמטא קוראת -
             רץ אוטומטית פעמיים ביום (09:00 ו־18:00 שעון ישראל).
           </p>
         </div>
@@ -75,7 +75,7 @@ export default async function MetaFeedPage() {
         <CardHeader>
           <CardTitle>בריאות הסנכרונים</CardTitle>
           <CardDescription>
-            מתי כל סנכרון כתב נתונים בפעם האחרונה. אם כולם אדומים — הקרונים של
+            מתי כל סנכרון כתב נתונים בפעם האחרונה. אם כולם אדומים - הקרונים של
             Vercel לא רצים (בדוק ש־<code dir="ltr">CRON_SECRET</code> מוגדר
             בפרויקט), והכפתור כאן מריץ את הכול ידנית.
           </CardDescription>
@@ -83,7 +83,7 @@ export default async function MetaFeedPage() {
         <CardContent className="space-y-4">
           {staleSyncs.length > 0 && (
             <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">
-              {staleSyncs.length} סנכרונים לא רצו בזמן — הנתונים בפיד עלולים
+              {staleSyncs.length} סנכרונים לא רצו בזמן - הנתונים בפיד עלולים
               להיות ישנים.
             </p>
           )}
@@ -151,7 +151,7 @@ export default async function MetaFeedPage() {
                 <span className="text-sm text-muted-foreground whitespace-nowrap">
                   {snap.sizeBytes != null
                     ? `${Math.round(snap.sizeBytes / 1024)} KB`
-                    : "—"}
+                    : "-"}
                 </span>
               </div>
             );

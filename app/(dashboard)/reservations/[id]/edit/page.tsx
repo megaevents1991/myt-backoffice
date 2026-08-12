@@ -304,7 +304,7 @@ export default function EditReservationPage({
             </div>
 
             {/* Passengers live in the edit form, not on the view page, and save
-                with everything else — one Save button for the whole screen.
+                with everything else - one Save button for the whole screen.
                 The airline needs passport, date of birth and gender to issue a
                 ticket; checkout only collects names, so staff complete the rest
                 here and the ticketing export reads it back out. */}
@@ -317,7 +317,7 @@ export default function EditReservationPage({
                   {reservation.main_contact_last_name}
                 </span>
                 <span className="ml-2 text-xs text-muted-foreground">
-                  main contact — edit the name fields above
+                  main contact - edit the name fields above
                 </span>
               </div>
 
@@ -376,7 +376,7 @@ export default function EditReservationPage({
                           handlePaxChange(index, "gender", e.target.value)
                         }
                       >
-                        <option value="">—</option>
+                        <option value="">-</option>
                         <option value="M">M</option>
                         <option value="F">F</option>
                         <option value="X">X</option>
@@ -418,7 +418,7 @@ export default function EditReservationPage({
                         <div>
                           <Label>Event Date</Label>
                           <p className="text-sm text-muted-foreground">
-                            {evt.date ? new Date(evt.date).toLocaleDateString() : "—"}
+                            {evt.date ? new Date(evt.date).toLocaleDateString() : "-"}
                           </p>
                         </div>
                         <div>

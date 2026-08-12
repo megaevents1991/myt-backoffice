@@ -1,6 +1,6 @@
 -- Partners can be paid a flat amount per ticket OR a percentage of the package
 -- price the customer paid. Until now the column carried no unit, and the portal
--- read it as a percentage while the monthly report cron paid it as $/ticket —
+-- read it as a percentage while the monthly report cron paid it as $/ticket -
 -- the same partner saw two different payouts for the same month.
 
 alter table "public"."partners"

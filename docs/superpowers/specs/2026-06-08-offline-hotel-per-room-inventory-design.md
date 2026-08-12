@@ -1,4 +1,4 @@
-# Offline Hotel — Per-Room Inventory (Phase 1)
+# Offline Hotel - Per-Room Inventory (Phase 1)
 
 **Date:** 2026-06-08
 **Project:** MYT-backoffice-app (sibling: ../myt---main)
@@ -15,19 +15,19 @@ recorded against that specific room.
 
 We need per-room detail in the DB + UI. The room↔reservation auto-link
 (a specific room pulled into a paid reservation, hotel showing which order took
-it) is **Phase 2** — Phase 1 builds the data structure, UI, and manual entry of
+it) is **Phase 2** - Phase 1 builds the data structure, UI, and manual entry of
 the post-booking fields.
 
 ## Decisions (locked)
 
-| Topic | Decision |
-|---|---|
-| DB model | New child table `offline_hotel_rooms`; parent keeps shared fields |
-| Scope | Phase 1: data + UI + manual order_no/acc_no/supplier. Auto-link = Phase 2 |
-| Price → event | Push **cheapest available** (unbooked) room price, recomputed |
-| Existing data | Backfill child rooms from batches; keep parent counters as derived mirror |
-| Room entry UX | Template + per-room override |
-| Post-book edit | Inline on the detail-page rooms table |
+| Topic          | Decision                                                                  |
+| -------------- | ------------------------------------------------------------------------- |
+| DB model       | New child table `offline_hotel_rooms`; parent keeps shared fields         |
+| Scope          | Phase 1: data + UI + manual order_no/acc_no/supplier. Auto-link = Phase 2 |
+| Price → event  | Push **cheapest available** (unbooked) room price, recomputed             |
+| Existing data  | Backfill child rooms from batches; keep parent counters as derived mirror |
+| Room entry UX  | Template + per-room override                                              |
+| Post-book edit | Inline on the detail-page rooms table                                     |
 
 ## Data Model
 
@@ -53,17 +53,18 @@ create table offline_hotel_rooms (
 create index on offline_hotel_rooms (hotel_id);
 ```
 
-`offline_hotel_rooms` is not in Supabase generated types — server actions cast
+`offline_hotel_rooms` is not in Supabase generated types - server actions cast
 via `(supabase as any).from("offline_hotel_rooms")`, matching the existing
 `offline_hotels` pattern.
 
-### Parent `offline_hotels` — unchanged columns
+### Parent `offline_hotels` - unchanged columns
 
 Shared fields stay on the parent: `hotel_name, city, check_in, check_out, hid,
 event_ids, flight_ids, guest_rating, guest_review_count, notes,
 last_cancellation_date, is_deleted, created_at`.
 
 `num_rooms` and `consumed_rooms` are **kept as a derived mirror**:
+
 - `num_rooms = COUNT(rooms for hotel)`
 - `consumed_rooms = COUNT(rooms where is_booked = true)`
 
@@ -71,32 +72,35 @@ Recomputed whenever rooms change. This keeps the existing reservation-consume
 logic (`reconcileHotelInventory`, status-release counters) and the main app
 working unchanged in Phase 1.
 
-The parent's own `room_type` / `price` / `meal_plan` columns become legacy —
+The parent's own `room_type` / `price` / `meal_plan` columns become legacy -
 no longer the source of truth. Left in place and untouched to avoid breaking
 any reader; the price→event push reads from rooms, not these columns.
 
 ## Migration
 
 For every existing non-deleted `offline_hotels` row:
+
 1. Insert `num_rooms` child rows into `offline_hotel_rooms`, each cloned from
    the parent's `room_type, price, meal_plan, last_cancellation_date`.
 2. Mark `consumed_rooms` of them `is_booked = true` (which specific ones is
-   arbitrary — counter parity is what matters in Phase 1).
+   arbitrary - counter parity is what matters in Phase 1).
 
 Idempotent guard: skip hotels that already have child rooms.
 
 ## Server Actions (`lib/actions/offline-hotel-actions.ts`)
 
 New:
+
 - `getOfflineHotelRooms(hotelId: number): Promise<OfflineHotelRoom[]>`
 - `createOfflineHotelRooms(hotelId, rooms: NewRoom[])`
-- `updateOfflineHotelRoom(roomId, patch: Partial<OfflineHotelRoom>)` — used by
+- `updateOfflineHotelRoom(roomId, patch: Partial<OfflineHotelRoom>)` - used by
   inline edits on the detail page (order_no / acc_no / supplier).
 - `deleteOfflineHotelRoom(roomId)`
-- internal `recomputeHotelMirror(hotelId)` — recounts rooms → updates parent
+- internal `recomputeHotelMirror(hotelId)` - recounts rooms → updates parent
   `num_rooms` / `consumed_rooms`, then runs the price→event push.
 
 Changed:
+
 - `createOfflineHotel` / `updateOfflineHotel` accept a `rooms[]` payload; write
   children, then `recomputeHotelMirror`.
 
@@ -127,7 +131,7 @@ guest rating) stays once at top. Then:
   prefilled from the template.
 - N collapsible **room cards**, each editable: room_type, price, meal_plan,
   last_cancellation_date, supplier. (order_no / acc_no / reservation_id are NOT
-  in create — they're post-booking, edited on the detail page.)
+  in create - they're post-booking, edited on the detail page.)
 - On submit, `rooms[]` goes to the server action.
 
 Validation mirrors the existing zod schema per room (price positive, room_type
@@ -137,8 +141,8 @@ required, cancel date format).
 
 Replace the single Room Type / Meal / Price rows with a **Rooms table**:
 
-| # | Room Type | Price | Meal | Cancel | Supplier | Status | Order No | Acc No |
-|---|-----------|-------|------|--------|----------|--------|----------|--------|
+| #   | Room Type | Price | Meal | Cancel | Supplier | Status | Order No | Acc No |
+| --- | --------- | ----- | ---- | ------ | -------- | ------ | -------- | ------ |
 
 - Status = `Booked` (red) / `Available` (green) from `is_booked`.
 - Inventory summary line above: `X available / N total · M booked` (derived
@@ -147,13 +151,14 @@ Replace the single Room Type / Meal / Price rows with a **Rooms table**:
   → save via `updateOfflineHotelRoom`). This is the "after Paid, update doket"
   flow.
 
-Reservations section (`ReservationsForInventory`) unchanged — it already
+Reservations section (`ReservationsForInventory`) unchanged - it already
 excludes `Lost` and `Cancelled` (`getReservationsForHotel` filters via
 `ACTIVE_RESERVATION_STATUSES_FILTER`), so lost reservations don't show.
 
 ## Types (`types/offline-hotel.types.ts`)
 
 Add:
+
 ```ts
 export interface OfflineHotelRoom {
   id: number;
@@ -171,14 +176,16 @@ export interface OfflineHotelRoom {
   created_at: string;
 }
 ```
+
 `OfflineHotel` unchanged.
 
 ## Cross-Project Impact
 
 **Zero main app (`../myt---main`) changes in Phase 1.**
-- Main app reads `events.base_hotel_price` — still pushed (now cheapest
+
+- Main app reads `events.base_hotel_price` - still pushed (now cheapest
   available room).
-- Main app reads parent `num_rooms` / `consumed_rooms` — still maintained as a
+- Main app reads parent `num_rooms` / `consumed_rooms` - still maintained as a
   mirror.
 - `offline_hotel_rooms` is backoffice-only.
 

@@ -91,7 +91,7 @@ export function ReservationsTable({
                       reservation.status === PAID_STATUS ? "default" : "secondary"
                     }
                   >
-                    {reservation.status || "—"}
+                    {reservation.status || "-"}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">{reservation.tickets}</TableCell>
@@ -101,7 +101,7 @@ export function ReservationsTable({
                 <TableCell className="text-right font-medium">
                   {reservation.commission_usd > 0
                     ? usd.format(reservation.commission_usd)
-                    : "—"}
+                    : "-"}
                 </TableCell>
               </TableRow>
             ))}

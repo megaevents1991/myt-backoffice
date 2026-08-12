@@ -375,7 +375,7 @@ export function P1EventsContent() {
   useEffect(() => {
     if (!selectedEvent) return;
     // Use embedded tickets when present (full row); slim list rows don't carry
-    // them — lazy-load for the selected event only.
+    // them - lazy-load for the selected event only.
     if (Array.isArray(selectedEvent.tickets) && selectedEvent.tickets.length) {
       setTickets(selectedEvent.tickets);
       return;
@@ -465,7 +465,7 @@ export function P1EventsContent() {
       // Update exchange rates first
       await exchangeRateClientService.updateAllExchangeRates();
 
-      // Get tickets for this event — slim list rows don't embed them, fetch on demand
+      // Get tickets for this event - slim list rows don't embed them, fetch on demand
       const eventTickets =
         Array.isArray(event.tickets) && event.tickets.length
           ? event.tickets

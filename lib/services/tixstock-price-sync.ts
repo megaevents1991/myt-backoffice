@@ -99,7 +99,7 @@ export async function syncTixStockPrices(): Promise<TixStockPriceSyncResult> {
         }
 
         console.log(
-          `Processing event ${event.id} (${event.name}) — TixStock ID: ${tixstockEventId}`,
+          `Processing event ${event.id} (${event.name}) - TixStock ID: ${tixstockEventId}`,
         );
 
         const sourceTickets = await fetchAllTicketsForEvent(tixstockEventId);
@@ -165,7 +165,7 @@ export async function syncTixStockPrices(): Promise<TixStockPriceSyncResult> {
                 "ILS",
               );
             } else {
-              // Already USD or unknown — apply flat markup
+              // Already USD or unknown - apply flat markup
               priceInUSD = rawPrice + 40;
             }
 

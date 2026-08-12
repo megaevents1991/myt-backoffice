@@ -21,14 +21,14 @@ export async function POST(request: Request) {
     // The portal's own logout button sends { scope: "portal" }: it must end
     // the partner (or impersonated) portal session WITHOUT killing a staff
     // `session` that may be signed in beside it in the same browser
-    // (multi-session — see lib/auth/session.ts). The dashboard logout sends
+    // (multi-session - see lib/auth/session.ts). The dashboard logout sends
     // no scope and clears everything.
     let portalOnly = false;
     try {
       const body = await request.json();
       portalOnly = body?.scope === "portal";
     } catch {
-      // No/invalid body — full logout.
+      // No/invalid body - full logout.
     }
 
     const response = NextResponse.json({ success: true });
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
 
     if (portalOnly) {
       // Legacy partner sessions predate the portal cookie and live in the
-      // site-wide cookie — those must still die on portal logout. A staff
+      // site-wide cookie - those must still die on portal logout. A staff
       // session beside the portal one stays.
       const legacy = await verifySessionValue(
         request.headers
@@ -54,21 +54,24 @@ export async function POST(request: Request) {
           .find((c) => c.trim().startsWith(`${SESSION_COOKIE}=`))
           ?.split("=")
           .slice(1)
-          .join("=")
+          .join("="),
       );
       if (legacy && (legacy.role === "agent" || legacy.role === "affiliate")) {
-        response.cookies.set(SESSION_COOKIE, "", { expires: new Date(0), path: "/" });
+        response.cookies.set(SESSION_COOKIE, "", {
+          expires: new Date(0),
+          path: "/",
+        });
       }
     } else {
-      response.cookies.set(SESSION_COOKIE, "", { expires: new Date(0), path: "/" });
+      response.cookies.set(SESSION_COOKIE, "", {
+        expires: new Date(0),
+        path: "/",
+      });
     }
 
     return response;
   } catch (error) {
     console.error("Logout error:", error);
-    return NextResponse.json(
-      { error: "Logout failed" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Logout failed" }, { status: 500 });
   }
 }

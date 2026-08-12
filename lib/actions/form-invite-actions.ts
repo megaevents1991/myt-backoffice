@@ -28,14 +28,14 @@ const EMAIL_COPY = {
     greeting: (name: string | null) => (name ? `Hi ${name},` : "Hi,"),
     body: "We'd love a few details about your trip so we can put together the right offer for you. It takes about two minutes.",
     cta: "Open the form",
-    signoff: "Thanks,<br/>MYT — Mega Events",
+    signoff: "Thanks,<br/>MYT - Mega Events",
   },
   he: {
     subject: (title: string) => `נשמח שתמלאו: ${title}`,
     greeting: (name: string | null) => (name ? `היי ${name},` : "היי,"),
     body: "נשמח לכמה פרטים על הטיול שלכם כדי שנוכל להרכיב עבורכם את ההצעה המתאימה. לוקח בערך שתי דקות.",
     cta: "למילוי הטופס",
-    signoff: "תודה,<br/>MYT — מגה אירועים",
+    signoff: "תודה,<br/>MYT - מגה אירועים",
   },
 } as const;
 
@@ -162,8 +162,14 @@ export async function createAndSendInvites(
       .select("id");
 
     if (error) {
-      console.error("createAndSendInvites insert failed:", JSON.stringify(error));
-      result.failed.push({ email: recipient.email, error: "Could not create invite" });
+      console.error(
+        "createAndSendInvites insert failed:",
+        JSON.stringify(error),
+      );
+      result.failed.push({
+        email: recipient.email,
+        error: "Could not create invite",
+      });
       continue;
     }
 
@@ -193,7 +199,9 @@ export async function createAndSendInvites(
       const message = e instanceof Error ? e.message : "Send failed";
       console.error(`invite send failed for ${recipient.email}:`, message);
       if (inviteId) {
-        await invitesTable().update({ send_error: message.slice(0, 300) }).eq("id", inviteId);
+        await invitesTable()
+          .update({ send_error: message.slice(0, 300) })
+          .eq("id", inviteId);
       }
       result.failed.push({ email: recipient.email, error: message });
     }
@@ -247,7 +255,9 @@ export async function resendInvite(inviteId: number): Promise<boolean> {
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Send failed";
-    await invitesTable().update({ send_error: message.slice(0, 300) }).eq("id", inviteId);
+    await invitesTable()
+      .update({ send_error: message.slice(0, 300) })
+      .eq("id", inviteId);
     throw new Error(message);
   }
 
@@ -259,7 +269,7 @@ export async function resendInvite(inviteId: number): Promise<boolean> {
   return true;
 }
 
-/** Create a link without emailing it — for sending over WhatsApp yourself. */
+/** Create a link without emailing it - for sending over WhatsApp yourself. */
 export async function createInviteLink(
   formId: number,
   recipient: { name: string | null; email: string | null; lang: FormLang },
@@ -289,11 +299,18 @@ export async function createInviteLink(
   };
 }
 
-export async function deleteInvite(inviteId: number, formId: number): Promise<boolean> {
+export async function deleteInvite(
+  inviteId: number,
+  formId: number,
+): Promise<boolean> {
   await requireStaff();
   const { error } = await invitesTable().delete().eq("id", inviteId);
   if (error) throw error;
-  await logAudit({ action: "delete", entityType: "form_invite", entityId: inviteId });
+  await logAudit({
+    action: "delete",
+    entityType: "form_invite",
+    entityId: inviteId,
+  });
   revalidatePath(`/forms/${formId}/invites`);
   return true;
 }

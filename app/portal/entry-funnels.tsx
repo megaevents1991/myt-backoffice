@@ -10,7 +10,7 @@ import type { EntryFunnels } from "@/lib/partner-entry-funnels";
 import type { FunnelStage, PartnerTraffic } from "@/lib/partner-funnel";
 
 /**
- * The three entry-segmented funnels, in Hebrew — the portal-facing port of the
+ * The three entry-segmented funnels, in Hebrew - the portal-facing port of the
  * staff insights grid (app/(dashboard)/partners/entry-funnel-cards.tsx). Same
  * data shape, same semantics; only the copy differs. Keep the row logic in
  * step with the staff component.
@@ -20,7 +20,7 @@ interface EntryFunnelRow {
   key: string;
   label: string;
   visitors: number | null;
-  /** Small print after the label — what this row really measures. */
+  /** Small print after the label - what this row really measures. */
   note?: string;
   /** Show the share un-rounded (a 0.4% Paid row must not read as 0%). */
   precise?: boolean;
@@ -29,7 +29,7 @@ interface EntryFunnelRow {
 const stageVisitors = (funnel: PartnerTraffic, stage: FunnelStage) =>
   funnel.byStage.find((s) => s.stage === stage)?.visitors ?? 0;
 
-/** What each recorded stage really marks — the click LEAVING that screen. */
+/** What each recorded stage really marks - the click LEAVING that screen. */
 const BROWSE_STAGE_NOTES: Partial<Record<FunnelStage, string>> = {
   EVENT_SELECTED: "לחצו על אירוע",
   TICKET_SELECTED: "המשיכו לטיסות",
@@ -47,7 +47,7 @@ const BROWSE_STAGE_LABELS: Record<FunnelStage, string> = {
   CONFIRMED: "הגיעו לתשלום",
 };
 
-const PAID_ROW_NOTE = "הזמנה ששולמה — משויכת לפי שותף, אירוע וזמן";
+const PAID_ROW_NOTE = "הזמנה ששולמה - משויכת לפי שותף, אירוע וזמן";
 
 const browseEntryRows = (
   funnel: PartnerTraffic,
@@ -63,7 +63,7 @@ const browseEntryRows = (
   { key: "PAID", label: "שילמו", note: PAID_ROW_NOTE, visitors: paid, precise: true },
 ];
 
-/** Event deep-links land inside the order flow — no "picked an event" moment;
+/** Event deep-links land inside the order flow - no "picked an event" moment;
  *  each stage marks the click that LEAVES its screen. */
 const eventEntryRows = (funnel: PartnerTraffic, paid: number): EntryFunnelRow[] => [
   {
@@ -148,7 +148,7 @@ function EntryFunnelCard({
                       )}
                     </span>
                     <span className="flex shrink-0 items-baseline gap-3 font-medium tabular-nums">
-                      <span>{row.visitors ?? "—"}</span>
+                      <span>{row.visitors ?? "-"}</span>
                       {pct != null && row.key !== "VISIT" && (
                         <span className="text-xs text-muted-foreground">
                           {row.precise ? preciseShare(pct) : Math.round(pct)}%
@@ -193,7 +193,7 @@ export function PortalEntryFunnels({ entryFunnels }: { entryFunnels: EntryFunnel
         <EntryFunnelCard
           icon={Ticket}
           title="נכנסו ישירות לאירוע"
-          description="נחתו ישר בתוך תהליך ההזמנה — כולל לינקים לחבילות מוכנות."
+          description="נחתו ישר בתוך תהליך ההזמנה - כולל לינקים לחבילות מוכנות."
           hasData={entryFunnels.event.hasData}
           rows={eventEntryRows(entryFunnels.event, entryFunnels.paidByEntry.event)}
         />
@@ -201,7 +201,7 @@ export function PortalEntryFunnels({ entryFunnels }: { entryFunnels: EntryFunnel
       <p className="-mt-2 text-xs text-muted-foreground">
         {entryFunnels.otherVisitors > 0 &&
           `${entryFunnels.otherVisitors} מבקרים נוספים נכנסו דרך עמודים אחרים (קטגוריות, בלוג…). `}
-        כניסות לעמוד ההזמנה נמדדות מ-5 באוגוסט 2026 — בטווחים ישנים יותר מבקר
+        כניסות לעמוד ההזמנה נמדדות מ-5 באוגוסט 2026 - בטווחים ישנים יותר מבקר
         בלינק ישיר נספר רק אחרי שהתקדם מסך.
       </p>
     </>

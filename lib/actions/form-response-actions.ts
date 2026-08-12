@@ -75,9 +75,11 @@ async function loadFields(formId: number): Promise<FormField[]> {
 
 /**
  * Public read of a form by its shared slug. Only `live`, non-deleted forms are
- * ever returned — the publish state is re-checked on submit too.
+ * ever returned - the publish state is re-checked on submit too.
  */
-export async function getPublicFormBySlug(slug: string): Promise<PublicFormLoad> {
+export async function getPublicFormBySlug(
+  slug: string,
+): Promise<PublicFormLoad> {
   const { data, error } = await formsTable()
     .select(PUBLIC_FORM_COLUMNS)
     .eq("slug", slug)
@@ -98,7 +100,11 @@ export async function getPublicFormBySlug(slug: string): Promise<PublicFormLoad>
     inviteToken: null,
     prefill: {},
     recipientName: null,
-    lang: resolveLang(data.languages, null, (data.default_lang as FormLang) ?? "en"),
+    lang: resolveLang(
+      data.languages,
+      null,
+      (data.default_lang as FormLang) ?? "en",
+    ),
   };
 }
 
@@ -106,9 +112,13 @@ export async function getPublicFormBySlug(slug: string): Promise<PublicFormLoad>
  * Public read of a form by invite token. Stamps `opened_at` the first time the
  * recipient opens the link.
  */
-export async function getPublicFormByToken(token: string): Promise<PublicFormLoad> {
+export async function getPublicFormByToken(
+  token: string,
+): Promise<PublicFormLoad> {
   const { data: invite, error } = await invitesTable()
-    .select("id,form_id,token,lang,prefill,recipient_name,submitted_at,opened_at")
+    .select(
+      "id,form_id,token,lang,prefill,recipient_name,submitted_at,opened_at",
+    )
     .eq("token", token)
     .maybeSingle();
 
@@ -126,7 +136,7 @@ export async function getPublicFormByToken(token: string): Promise<PublicFormLoa
 
   if (formError || !form) return { state: "not_found" };
 
-  // A single-language form ignores the invite's language — there is nothing else
+  // A single-language form ignores the invite's language - there is nothing else
   // to render it in.
   const lang = resolveLang(
     form.languages,
@@ -162,12 +172,12 @@ export type SubmitInput = {
   token?: string;
   answers: Record<string, unknown>;
   lang: FormLang;
-  /** Honeypot — must stay empty. */
+  /** Honeypot - must stay empty. */
   hp?: string;
 };
 
 /**
- * PUBLIC endpoint — reachable by anyone with a form link. Everything the client
+ * PUBLIC endpoint - reachable by anyone with a form link. Everything the client
  * sends is untrusted:
  *
  *  - `form_id` / `invite_id` are resolved here from the slug or token; the
@@ -178,7 +188,9 @@ export type SubmitInput = {
  *    that is not a field of this form is dropped.
  *  - Submissions per IP per form are capped per hour.
  */
-export async function submitFormResponse(input: SubmitInput): Promise<SubmitResult> {
+export async function submitFormResponse(
+  input: SubmitInput,
+): Promise<SubmitResult> {
   const lang: FormLang = input.lang === "he" ? "he" : "en";
   const t = strings(lang);
 
@@ -284,7 +296,8 @@ export async function submitFormResponse(input: SubmitInput): Promise<SubmitResu
     }
 
     revalidatePath(`/forms/${formId}/responses`);
-    const custom = lang === "he" ? thankYouHe || thankYouEn : thankYouEn || thankYouHe;
+    const custom =
+      lang === "he" ? thankYouHe || thankYouEn : thankYouEn || thankYouHe;
     return { ok: true, thankYou: custom?.trim() || t.thankYou };
   } catch (e) {
     console.error("submitFormResponse failed:", e);
@@ -293,11 +306,15 @@ export async function submitFormResponse(input: SubmitInput): Promise<SubmitResu
 }
 
 /** Admin: every response for a form, with the invite recipient when there is one. */
-export async function getFormResponses(formId: number): Promise<FormResponseRow[]> {
+export async function getFormResponses(
+  formId: number,
+): Promise<FormResponseRow[]> {
   await requireStaff();
 
   const { data, error } = await responsesTable()
-    .select("id,form_id,invite_id,answers,lang,submitted_at,form_invites(recipient_name,recipient_email)")
+    .select(
+      "id,form_id,invite_id,answers,lang,submitted_at,form_invites(recipient_name,recipient_email)",
+    )
     .eq("form_id", formId)
     .order("submitted_at", { ascending: false });
 
@@ -321,14 +338,21 @@ export async function getFormResponses(formId: number): Promise<FormResponseRow[
   }));
 }
 
-export async function deleteFormResponse(id: number, formId: number): Promise<boolean> {
+export async function deleteFormResponse(
+  id: number,
+  formId: number,
+): Promise<boolean> {
   await requireStaff();
   const { error } = await responsesTable().delete().eq("id", id);
   if (error) {
     console.error("deleteFormResponse failed:", JSON.stringify(error));
     throw error;
   }
-  await logAudit({ action: "delete", entityType: "form_response", entityId: id });
+  await logAudit({
+    action: "delete",
+    entityType: "form_response",
+    entityId: id,
+  });
   revalidatePath(`/forms/${formId}/responses`);
   return true;
 }

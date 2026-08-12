@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Tickets step — myt-main's TicketSelection, agent-side.
+ * Tickets step - myt-main's TicketSelection, agent-side.
  * Layout: `lg:flex-row-reverse` under dir=rtl ⇒ venue map LEFT (45%), category
- * list RIGHT (55%) on desktop; map first when stacked on mobile — like main.
+ * list RIGHT (55%) on desktop; map first when stacked on mobile - like main.
  * Category rows mirror EventTicketCard: accent strip, radio, big category name,
  * delta column ("כלול במחיר" for the cheapest), qty counter inside the selected
  * row ("אנחנו רוצים / כרטיסים לאירוע").
@@ -64,7 +64,7 @@ export function TicketStep() {
   const cheapestSite = sorted[0]?.site_price ?? null;
 
   // The map needs TixStock-shaped listings. Before live listings land (or if
-  // they fail), fall back to the catalog categories — category-only matching
+  // they fail), fall back to the catalog categories - category-only matching
   // still paints and matches sections, exactly like main pre-hydration.
   const mapListings: TixStockMatchableListing[] =
     w.tixListings.length > 0
@@ -112,7 +112,7 @@ export function TicketStep() {
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={event.map_image_url}
-        alt={`מפת האולם — ${event.name}`}
+        alt={`מפת האולם - ${event.name}`}
         className="h-auto w-full rounded-lg object-contain max-h-[45svh] lg:max-h-[calc(100vh-10rem)]"
       />
     )
@@ -128,7 +128,7 @@ export function TicketStep() {
       />
 
       <div className="text-lg">
-        בחרו כמות כרטיסים וקטגוריה מועדפת —{" "}
+        בחרו כמות כרטיסים וקטגוריה מועדפת -{" "}
         <span className="font-bold">כך בדיוק זה נראה ללקוח באתר.</span>
       </div>
 
@@ -146,7 +146,7 @@ export function TicketStep() {
       )}
 
       <div className="mt-2 flex flex-col gap-4 lg:flex-row-reverse">
-        {/* Map — left on desktop, top on mobile (main's split) */}
+        {/* Map - left on desktop, top on mobile (main's split) */}
         {mapBlock && (
           <>
             <div className="w-full lg:hidden">{mapBlock}</div>
@@ -220,7 +220,7 @@ export function TicketStep() {
                           <DeltaPrice delta={delta} per="כרטיס" />
                         )
                       ) : (
-                        <span className="text-sm text-muted-foreground">—</span>
+                        <span className="text-sm text-muted-foreground">-</span>
                       )}
                     </div>
                     {/* Desktop qty counter inside the selected row */}
@@ -244,7 +244,7 @@ export function TicketStep() {
 
           {w.isTx && w.liveTix && w.activeTickets.length === 0 && !w.tixLoading && (
             <p className="mt-3 text-sm text-muted-foreground">
-              אין כרטיסים חיים שמספיקים ל-{w.qty} נוסעים — נסו כמות אחרת.
+              אין כרטיסים חיים שמספיקים ל-{w.qty} נוסעים - נסו כמות אחרת.
             </p>
           )}
         </div>

@@ -1,4 +1,4 @@
--- 2026-06-24 — Blob card-art for CMS templates (artists, football_teams,
+-- 2026-06-24 - Blob card-art for CMS templates (artists, football_teams,
 -- categories, blog_posts). Mirrors the events art_* columns. All nullable:
 -- when art_image_url is null the site falls back to the plain image_url.
 alter table public.artists

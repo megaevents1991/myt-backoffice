@@ -3,12 +3,12 @@
  * which the render route (`app/api/quotes/[id]/pdf/route.ts`) feeds to
  * chromium's `page.setContent()` to produce the downloadable PDF.
  *
- * Styled in the main site's brand (forest `#0A1A14` / mint `#5BFF95`) — the
+ * Styled in the main site's brand (forest `#0A1A14` / mint `#5BFF95`) - the
  * customer receiving this offer knows the site it points at.
  *
  * SECURITY: `quote`/`partner` fields originate from partner-submitted data
  * (see `lib/actions/quote-actions.ts` `createQuote`) and are rendered
- * server-side into raw HTML — every interpolated string MUST go through
+ * server-side into raw HTML - every interpolated string MUST go through
  * `esc()`. Numbers are formatted here (server-side) rather than trusting
  * any client-supplied formatted string.
  */
@@ -87,12 +87,14 @@ export function renderQuoteHtml(args: {
 
   const lineItems = Array.isArray(quote.line_items) ? quote.line_items : [];
   const computedTotal = lineItems.reduce(
-    (sum, item) => sum + (Number(item.qty) || 0) * (Number(item.unit_price) || 0),
+    (sum, item) =>
+      sum + (Number(item.qty) || 0) * (Number(item.unit_price) || 0),
     0,
   );
-  const grandTotal = typeof quote.total === "number" && Number.isFinite(quote.total)
-    ? quote.total
-    : computedTotal;
+  const grandTotal =
+    typeof quote.total === "number" && Number.isFinite(quote.total)
+      ? quote.total
+      : computedTotal;
 
   const rowsHtml = lineItems
     .map((item, i) => {
@@ -109,7 +111,7 @@ export function renderQuoteHtml(args: {
     })
     .join("");
 
-  // http(s) only — the HTML is rendered by server-side Chromium, so any other
+  // http(s) only - the HTML is rendered by server-side Chromium, so any other
   // scheme (file:, data:, internal targets) is an SSRF vector.
   const safeLogoUrl =
     partner.logo_url && /^https?:\/\//i.test(partner.logo_url.trim())
@@ -119,8 +121,12 @@ export function renderQuoteHtml(args: {
     ? `<div class="logo-card"><img class="logo" src="${esc(safeLogoUrl)}" alt="" onerror="this.parentNode.style.display='none'"></div>`
     : "";
 
-  const contactParts = [partner.phone, partner.email].filter((v): v is string => !!v);
-  const contactHtml = contactParts.map((v) => esc(v)).join("&nbsp;&nbsp;·&nbsp;&nbsp;");
+  const contactParts = [partner.phone, partner.email].filter(
+    (v): v is string => !!v,
+  );
+  const contactHtml = contactParts
+    .map((v) => esc(v))
+    .join("&nbsp;&nbsp;·&nbsp;&nbsp;");
 
   const notesHtml = quote.notes
     ? `

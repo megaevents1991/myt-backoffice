@@ -26,7 +26,7 @@ async function loadBrandFont(): Promise<ArrayBuffer> {
   const res = await fetch(data.publicUrl);
   if (!res.ok) {
     throw new Error(
-      `Brand font missing — upload a TTF to creatives/${ASSETS.font} (status ${res.status})`,
+      `Brand font missing - upload a TTF to creatives/${ASSETS.font} (status ${res.status})`,
     );
   }
   fontCache = await res.arrayBuffer();
@@ -38,7 +38,7 @@ export function getBackgroundUrl(): string {
   return data.publicUrl;
 }
 
-// Standalone brand blob on a transparent canvas — a design asset for events
+// Standalone brand blob on a transparent canvas - a design asset for events
 // that don't have a cut-out image yet. Deterministic color/shape from `seed`
 // (same hash the site uses for card art), no font needed.
 export async function renderBlobPng(
@@ -49,7 +49,7 @@ export async function renderBlobPng(
   let h = 0;
   for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   const color = BLOB_HEX[h % BLOB_HEX.length];
-  // Unsigned shift — h can exceed 2^31-1 (still a valid uint32 from >>>0
+  // Unsigned shift - h can exceed 2^31-1 (still a valid uint32 from >>>0
   // above); a signed `>>` would ToInt32 that into a negative number and
   // produce a negative array index (undefined.w crash).
   const shape = BLOB_SHAPES[(h >>> 3) % BLOB_SHAPES.length];

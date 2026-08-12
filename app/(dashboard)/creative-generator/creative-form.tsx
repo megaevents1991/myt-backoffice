@@ -59,7 +59,7 @@ function SubjectCombobox({
               {subjects.map((s) => (
                 <CommandItem
                   key={s.ref}
-                  /* ref prefix keeps values unique — same team can exist in
+                  /* ref prefix keeps values unique - same team can exist in
                      both the logo library and football_teams. */
                   value={`${s.ref}|${s.searchText}`}
                   onSelect={() => {
@@ -95,10 +95,10 @@ export function CreativeForm({
   const [artistName, setArtistName] = useState("");
   const [artistImg, setArtistImg] = useState("");
   // Real transparent cut-out (blob-card) vs a regular photo (plain circular
-  // avatar, no blob/background — see MatchTemplate). Defaults true so a
+  // avatar, no blob/background - see MatchTemplate). Defaults true so a
   // manually-pasted cut-out URL keeps today's look unless told otherwise.
   const [artistIsCutout, setArtistIsCutout] = useState(true);
-  // "photo" kind: fallback for events with no matched team/artist logo — the
+  // "photo" kind: fallback for events with no matched team/artist logo - the
   // event's own (regular, non-cutout) photo, full-bleed. Same fields an
   // unmatched event would get auto-generated with by the nightly cron.
   const [photoName, setPhotoName] = useState("");
@@ -110,7 +110,7 @@ export function CreativeForm({
   const [currency, setCurrency] = useState("$");
   const [mode, setMode] = useState<"package" | "ticket">("package");
   // OFF by default: on it silently replaced the site's artist card with an ad
-  // creative (brand background + price text) on every generate — 9 events shipped
+  // creative (brand background + price text) on every generate - 9 events shipped
   // that way. Campaign creatives are for the Meta feed (campaign_image_url);
   // putting one on the site card is the exception, so it must be a deliberate tick.
   const [attach, setAttach] = useState(false);
@@ -120,7 +120,7 @@ export function CreativeForm({
   const [blobShape, setBlobShape] = useState<string>("");
   // Text layout ("" = classic). Hero (full-bleed photo) is derived, not a
   // toggle: photo kind always, artist kind when the image is a regular photo
-  // — mirrors what the nightly campaign cron renders.
+  // - mirrors what the nightly campaign cron renders.
   const [layoutVariant, setLayoutVariant] = useState<string>("");
   const heroPhoto = kind === "photo" || (kind === "artist" && !artistIsCutout);
   // Designer sizing (rendered into the PNG): zoom in %, offsets in % of card.
@@ -221,7 +221,7 @@ export function CreativeForm({
   }, [ready, kind, homeRef, awayRef, artistImg, artistName, artistIsCutout, photoImg, photoName, dateText, price, currency, mode, time, locationText, cardBg, blobColor, blobShape, layoutVariant, heroPhoto, sizing]);
 
   // Preview double-buffer: keep showing the last rendered image and swap only
-  // when the next server render has fully loaded — no blank flashes.
+  // when the next server render has fully loaded - no blank flashes.
   const [displayedUrl, setDisplayedUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   useEffect(() => {
@@ -247,11 +247,11 @@ export function CreativeForm({
     };
   }, [previewUrl]);
 
-  // Design-base download: full branded canvas WITHOUT blob/subject image —
+  // Design-base download: full branded canvas WITHOUT blob/subject image -
   // works even when the event has no cut-out image yet (that's the point).
   const bareUrl = useMemo(() => {
-    // "photo" kind has no blob/cutout to omit — the whole point is the full
-    // photo fills the panel — so the design-base download doesn't apply.
+    // "photo" kind has no blob/cutout to omit - the whole point is the full
+    // photo fills the panel - so the design-base download doesn't apply.
     if (kind === "photo") return null;
     const subjectOk =
       kind === "match" ? homeRef && awayRef && homeRef !== awayRef : artistName.trim();
@@ -316,7 +316,7 @@ export function CreativeForm({
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       <div className="space-y-4">
         <div className="border rounded-md p-4 bg-muted/30">
-          <Label>בחר אירוע — הכול יתמלא אוטומטית</Label>
+          <Label>בחר אירוע - הכול יתמלא אוטומטית</Label>
           <Popover open={eventOpen} onOpenChange={setEventOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -342,7 +342,7 @@ export function CreativeForm({
                     {events.map((e) => (
                       <CommandItem
                         key={e.id}
-                        /* id prefix keeps the value unique — duplicate values
+                        /* id prefix keeps the value unique - duplicate values
                            (e.g. same artist, same date) make cmdk treat two
                            rows as one and clicking the second does nothing. */
                         value={`${e.id}|${e.name} ${e.location} ${e.dateText}`}
@@ -382,7 +382,7 @@ export function CreativeForm({
             <div className="mt-3 border-t pt-3">
               <p className="text-sm font-medium mb-1">קבצי עזר למעצב</p>
               <p className="text-xs text-muted-foreground mb-2">
-                כשאין לאירוע תמונה חתוכה — מורידים בסיס, מלבישים עליו את התמונה, ומעלים חזרה.
+                כשאין לאירוע תמונה חתוכה - מורידים בסיס, מלבישים עליו את התמונה, ומעלים חזרה.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button asChild variant="outline" size="sm">
@@ -464,7 +464,7 @@ export function CreativeForm({
                 onCheckedChange={(v) => setArtistIsCutout(v === true)}
               />
               <Label htmlFor="cg-artist-cutout">
-                Real cut-out (transparent PNG) — uncheck for a regular photo
+                Real cut-out (transparent PNG) - uncheck for a regular photo
               </Label>
             </div>
           </>
@@ -488,7 +488,7 @@ export function CreativeForm({
                 placeholder="https://.../event-photo.jpg"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Full-bleed, regular (non-cutout) photo — same fallback the nightly campaign cron uses.
+                Full-bleed, regular (non-cutout) photo - same fallback the nightly campaign cron uses.
               </p>
             </div>
           </>
@@ -557,7 +557,7 @@ export function CreativeForm({
           >
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="classic">קלאסי — שם מתחת לתמונה, מחיר למטה</SelectItem>
+              <SelectItem value="classic">קלאסי - שם מתחת לתמונה, מחיר למטה</SelectItem>
               <SelectItem value="name-top">שם למעלה (כותרת גדולה)</SelectItem>
               <SelectItem value="price-top">מחיר למעלה (מדבקה מוטה)</SelectItem>
             </SelectContent>
@@ -650,7 +650,7 @@ export function CreativeForm({
             </div>
           ) : (
             <div className="w-full max-w-[540px] aspect-square border rounded-md mt-2 flex items-center justify-center text-muted-foreground">
-              בחר אירוע — או מלא ידנית
+              בחר אירוע - או מלא ידנית
             </div>
           )}
         </div>
@@ -665,7 +665,7 @@ export function CreativeForm({
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            גרור חופשי — התצוגה מתעדכנת כשמשחררים את הסליידר.
+            גרור חופשי - התצוגה מתעדכנת כשמשחררים את הסליידר.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
             <div>

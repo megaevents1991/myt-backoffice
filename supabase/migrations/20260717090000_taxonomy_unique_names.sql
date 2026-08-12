@@ -3,7 +3,7 @@
 -- same-name create), but a unique index closes any remaining race window.
 -- Case-insensitive; only live rows count (soft-deleted rows may keep names).
 -- Categories: the same name is allowed under DIFFERENT parents (e.g. "דרבי"
--- under two leagues) — uniqueness is per (name, parent), with NULL parent
+-- under two leagues) - uniqueness is per (name, parent), with NULL parent
 -- normalized so two roots can't share a name.
 
 create unique index if not exists uq_event_tags_name_live

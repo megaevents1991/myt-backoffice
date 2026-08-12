@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * PreToolUse hook for Bash/PowerShell — the PUSH GATE.
+ * PreToolUse hook for Bash/PowerShell - the PUSH GATE.
  *
- * Dor's rule: committing is fine, pushing is not — nothing leaves the machine
+ * Dor's rule: committing is fine, pushing is not - nothing leaves the machine
  * unless Dor asked for it. But when he HAS asked, the push should just run:
  * no permission prompt, no "are you sure".
  *
@@ -32,14 +32,15 @@ function decide(decision, reason) {
         permissionDecision: decision,
         permissionDecisionReason: reason,
       },
-    })
+    }),
   );
   process.exit(0);
 }
 
 /** Text of a real user message, or null for tool results / meta / subagent turns. */
 function userText(entry) {
-  if (!entry || entry.type !== "user" || entry.isSidechain || entry.isMeta) return null;
+  if (!entry || entry.type !== "user" || entry.isSidechain || entry.isMeta)
+    return null;
   const content = entry.message?.content;
   let text = "";
   if (typeof content === "string") text = content;
@@ -49,7 +50,10 @@ function userText(entry) {
       .map((c) => c.text)
       .join("\n");
   // Drop harness-injected blocks (system reminders, slash-command wrappers).
-  text = text.replace(/<(system-reminder|command-[a-z-]+|local-command-[a-z-]+)>[\s\S]*?<\/\1>/g, "");
+  text = text.replace(
+    /<(system-reminder|command-[a-z-]+|local-command-[a-z-]+)>[\s\S]*?<\/\1>/g,
+    "",
+  );
   text = text.replace(/<[a-z-]+>[\s\S]*$/g, (m) => (m.length > 200 ? "" : m));
   text = text.trim();
   return text || null;
@@ -76,7 +80,8 @@ function lastUserMessage(transcriptPath) {
 const PUSH_WORD =
   /(push|pushing|commit-push|ship it|דחוף|תדחוף|תדחף|לדחוף|פוש|דחיפה)/gi;
 // A mention that is negated ("don't push", "אל תדחוף") does NOT count as a request.
-const NEGATION = /(don'?t|do not|dont|never|without|no need to|instead of|אל |לא |בלי )\s*\S{0,12}\s*$/i;
+const NEGATION =
+  /(don'?t|do not|dont|never|without|no need to|instead of|אל |לא |בלי )\s*\S{0,12}\s*$/i;
 
 function asksForPush(message) {
   let match;
@@ -112,17 +117,17 @@ function main() {
     decide(
       "ask",
       "PUSH GATE: couldn't read the transcript to confirm Dor asked for this push. " +
-        "Approve only if he actually did."
+        "Approve only if he actually did.",
     );
   }
 
-  if (asksForPush(message)) process.exit(0); // he asked — push, no prompt
+  if (asksForPush(message)) process.exit(0); // he asked - push, no prompt
 
   decide(
     "deny",
     "PUSH GATE: Dor's last message did not ask for a push, and a push must never " +
       "ride along after a commit. Stop here, report what you committed, and let him " +
-      "say 'push' (or run /commit-push) when he's ready. Do not retry this command."
+      "say 'push' (or run /commit-push) when he's ready. Do not retry this command.",
   );
 }
 main();

@@ -1,6 +1,6 @@
-let userConfig = undefined
+let userConfig = undefined;
 try {
-  userConfig = await import('./v0-user-next.config')
+  userConfig = await import("./v0-user-next.config");
 } catch (e) {
   // ignore error
 }
@@ -15,7 +15,7 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
-    domains: ['www.doctorticket.com', 'doctorticket.com'],
+    domains: ["www.doctorticket.com", "doctorticket.com"],
   },
   experimental: {
     webpackBuildWorker: true,
@@ -23,7 +23,7 @@ const nextConfig = {
     parallelServerCompiles: true,
     serverActions: {
       // Next defaults to 1MB, which the partner logo upload exceeds while
-      // still being inside the 2MB the UI promises — and the framework
+      // still being inside the 2MB the UI promises - and the framework
       // rejects it before the action runs, so nothing gets to report why.
       bodySizeLimit: "3mb",
     },
@@ -33,32 +33,37 @@ const nextConfig = {
     // endless dev rebuild loop (log write -> rebuild -> new log line).
     config.watchOptions = {
       ...config.watchOptions,
-      ignored: ['**/node_modules/**', '**/.git/**', '**/.next/**', '**/.playwright-mcp/**'],
+      ignored: [
+        "**/node_modules/**",
+        "**/.git/**",
+        "**/.next/**",
+        "**/.playwright-mcp/**",
+      ],
     };
     return config;
   },
-}
+};
 
-mergeConfig(nextConfig, userConfig)
+mergeConfig(nextConfig, userConfig);
 
 function mergeConfig(nextConfig, userConfig) {
   if (!userConfig) {
-    return
+    return;
   }
 
   for (const key in userConfig) {
     if (
-      typeof nextConfig[key] === 'object' &&
+      typeof nextConfig[key] === "object" &&
       !Array.isArray(nextConfig[key])
     ) {
       nextConfig[key] = {
         ...nextConfig[key],
         ...userConfig[key],
-      }
+      };
     } else {
-      nextConfig[key] = userConfig[key]
+      nextConfig[key] = userConfig[key];
     }
   }
 }
 
-export default nextConfig
+export default nextConfig;

@@ -41,7 +41,7 @@ function formatEventDate(date: string | null): string {
   return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString("he-IL");
 }
 
-// qty/unit_price stay RAW STRINGS while typing (repo convention — cf.
+// qty/unit_price stay RAW STRINGS while typing (repo convention - cf.
 // creative-form.tsx `price`): coercing to number on every keystroke makes
 // decimals untypable ("199.99" → 19999). Parsed only for the running-total
 // display and once at submit.
@@ -50,18 +50,18 @@ type LineItemRow = {
   qty: string;
   unit_price: string;
   _key: number;
-  /** Seeded from the event's package price — the row the baseline applies to. */
+  /** Seeded from the event's package price - the row the baseline applies to. */
   fromEvent?: boolean;
 };
 
 export interface QuotePrefill {
-  /** The prepared package the quote is built from — its id rides to the
+  /** The prepared package the quote is built from - its id rides to the
    *  server so the discount baseline is the package price, not the event's. */
   packageId: number;
   eventId: number;
   qty: number;
   note: string;
-  /** The package's coded order link — offered as the PDF's pay CTA. */
+  /** The package's coded order link - offered as the PDF's pay CTA. */
   paymentLink: string;
   /** Per-traveller price of the package composition (the seeded unit price
    *  AND the baseline the discount is measured against). */
@@ -97,12 +97,12 @@ export function QuoteForm({
 
   const [customerName, setCustomerName] = useState("");
   const [title, setTitle] = useState(
-    prefillEvent ? `הצעת מחיר — ${prefillEvent.name}` : "",
+    prefillEvent ? `הצעת מחיר - ${prefillEvent.name}` : "",
   );
   const [titleTouched, setTitleTouched] = useState(false);
   const [notes, setNotes] = useState(prefill?.note ?? "");
   const [validUntil, setValidUntil] = useState("");
-  // Attach the package's order link to the PDF — the agent may switch the
+  // Attach the package's order link to the PDF - the agent may switch the
   // offer to information-only instead.
   const [includeLink, setIncludeLink] = useState(!!prefill?.paymentLink);
 
@@ -116,7 +116,7 @@ export function QuoteForm({
           {
             label: `חבילה: ${prefillEvent.name}`,
             qty: String(prefill?.qty ?? 1),
-            // The package's own composition price when seeded from one — the
+            // The package's own composition price when seeded from one - the
             // generic event price overstated no-flight packages (H5).
             unit_price: String(
               prefill?.unitPrice ?? prefillEvent.suggested_price ?? 0,
@@ -137,11 +137,11 @@ export function QuoteForm({
   const onEventSelect = (value: string) => {
     setEventId(value);
     setEventOpen(false);
-    if (!value) return; // "ללא אירוע" — leave title/line items as-is (free-form quote).
+    if (!value) return; // "ללא אירוע" - leave title/line items as-is (free-form quote).
     const event = events.find((e) => String(e.id) === value);
     if (!event) return;
     if (!titleTouched) {
-      setTitle(`הצעת מחיר — ${event.name}`);
+      setTitle(`הצעת מחיר - ${event.name}`);
     }
     setLineItems([
       {
@@ -180,7 +180,7 @@ export function QuoteForm({
 
   // What the partner is giving up or adding versus the system price. Shown
   // while they type, because under the agreement the difference comes out of
-  // their own commission — that is worth knowing before sending, not after.
+  // their own commission - that is worth knowing before sending, not after.
   //
   // The suggested price is PER TRAVELLER, so it is scaled by the package row's
   // quantity. Comparing it to the whole total would tell a partner quoting a
@@ -189,7 +189,7 @@ export function QuoteForm({
   const packageRow = lineItems.find((item) => item.fromEvent);
   const packageQty = Number(packageRow?.qty);
 
-  // The prefill's package baseline holds only while its event stays selected —
+  // The prefill's package baseline holds only while its event stays selected -
   // switching events falls back to that event's generic price.
   const packagePrefillActive =
     prefill != null && eventId === String(prefill.eventId);
@@ -204,7 +204,7 @@ export function QuoteForm({
   const delta = basePrice == null ? null : Math.round((total - basePrice) * 100) / 100;
 
   // An agent may give away their own commission and no more. Mirrors the
-  // server rule in createQuote — this copy is the warning, that one is the gate.
+  // server rule in createQuote - this copy is the warning, that one is the gate.
   // Per traveller, matching the server. For a percentage the commission is
   // paid on the DISCOUNTED price, so the largest legal discount d solves
   // d = (base - d) * r/100  →  d = base*r / (100 + r).
@@ -244,7 +244,7 @@ export function QuoteForm({
       return;
     }
 
-    // Parse the string row state into QuoteLineItem[] once, here — reject
+    // Parse the string row state into QuoteLineItem[] once, here - reject
     // invalid rows instead of silently clamping them.
     const parsedItems: QuoteLineItem[] = [];
     for (const item of lineItems) {
@@ -282,7 +282,7 @@ export function QuoteForm({
             ? { qty: Number(packageRow.qty) || 1, unit_price: packageUnitPrice }
             : null,
         // The server re-derives the package's composition price as the
-        // baseline — the id is a pointer, never a price.
+        // baseline - the id is a pointer, never a price.
         package_id: packagePrefillActive ? prefill.packageId : null,
         notes: notes.trim() || null,
         valid_until: validUntil || null,
@@ -396,7 +396,7 @@ export function QuoteForm({
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {includeLink
                   ? "ההצעה תכלול כפתור שמוביל את הלקוח ישר לחבילה באתר, על הקוד שלכם."
-                  : "הצעה למידע בלבד — בלי לינק תשלום."}
+                  : "הצעה למידע בלבד - בלי לינק תשלום."}
               </p>
             </div>
             <Switch checked={includeLink} onCheckedChange={setIncludeLink} />
@@ -488,11 +488,11 @@ export function QuoteForm({
               }`}
             >
               {delta < 0
-                ? `הורדתם ${usd.format(Math.abs(delta))} — הסכום יירד מהעמלה שלכם`
-                : `הוספתם ${usd.format(delta)} — הסכום יתווסף לעמלה שלכם`}
+                ? `הורדתם ${usd.format(Math.abs(delta))} - הסכום יירד מהעמלה שלכם`
+                : `הוספתם ${usd.format(delta)} - הסכום יתווסף לעמלה שלכם`}
             </div>
           )}
-          {/* The server refuses a discount larger than the commission — say so
+          {/* The server refuses a discount larger than the commission - say so
               here rather than letting them finish the quote and be rejected. */}
           {maxDiscountPerTraveller != null &&
             discountPerTraveller != null &&

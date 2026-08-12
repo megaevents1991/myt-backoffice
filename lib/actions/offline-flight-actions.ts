@@ -8,10 +8,13 @@ import type { Event } from "../../types/app.types";
 import { revalidatePath } from "next/cache";
 import { airportsInSameCity } from "@/lib/airport-cities";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
-import { pickFlightColumns, assertFlightValues } from "./offline-flight-columns";
+import {
+  pickFlightColumns,
+  assertFlightValues,
+} from "./offline-flight-columns";
 
 // The `flights` table is not in db.schema.sql so Supabase's generated types don't
-// include it — all .from("flights") calls are cast to bypass the `never` inference.
+// include it - all .from("flights") calls are cast to bypass the `never` inference.
 const flightsTable = () => (supabase as any).from("flights");
 
 export async function getOfflineFlights() {
@@ -108,7 +111,9 @@ export async function updateOfflineFlight(
     await Promise.all(
       Array.from(eventsNeedingPriceUpdate).map(async (eventId) => {
         const isNewlyAdded = addedEventIds.includes(eventId);
-        const eventUpdate: Record<string, unknown> = { base_flight_price: baseFlightPrice };
+        const eventUpdate: Record<string, unknown> = {
+          base_flight_price: baseFlightPrice,
+        };
         if (isNewlyAdded) {
           eventUpdate.def_date_depart = defDepart;
           eventUpdate.def_date_return = defReturn;
@@ -139,7 +144,11 @@ export async function softDeleteOfflineFlight(id: number) {
     .select();
 
   if (error) throw error;
-  await logAudit({ action: "delete", entityType: "offline_flight", entityId: id });
+  await logAudit({
+    action: "delete",
+    entityType: "offline_flight",
+    entityId: id,
+  });
   revalidatePath("/offline-flights");
   revalidatePath(`/offline-flights/${id}`);
   return data[0] as OfflineFlight;

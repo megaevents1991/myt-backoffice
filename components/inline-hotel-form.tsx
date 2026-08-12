@@ -40,9 +40,9 @@ type InlineHotelFormData = z.infer<typeof inlineHotelSchema>;
 export type StagedHotelData = Omit<OfflineHotel, "id" | "consumed_rooms" | "is_deleted" | "created_at">;
 
 interface InlineHotelFormProps {
-  /** Present when adding to an existing saved event — hotel is created immediately. */
+  /** Present when adding to an existing saved event - hotel is created immediately. */
   eventId?: number;
-  /** Present when adding during new event creation — hotel data is staged, not yet saved. */
+  /** Present when adding during new event creation - hotel data is staged, not yet saved. */
   onStage?: (data: StagedHotelData) => void;
   /** Called after the hotel is created in the DB (existing event mode only). */
   onCreated?: (hotel: OfflineHotel) => void;
@@ -92,7 +92,7 @@ export function InlineHotelForm({
     // Stage mode: new event not yet saved
     if (onStage) {
       onStage(hotelData);
-      toast.success("Hotel staged — will be saved with the event.");
+      toast.success("Hotel staged - will be saved with the event.");
       return;
     }
 

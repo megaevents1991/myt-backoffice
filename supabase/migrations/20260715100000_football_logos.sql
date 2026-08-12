@@ -1,5 +1,5 @@
 -- Football logo library: lightweight name→logo store for the creative
--- generator. Deliberately NOT football_teams — rows there generate public
+-- generator. Deliberately NOT football_teams - rows there generate public
 -- team pages in the main app; these are internal assets only.
 
 create table if not exists public.football_logos (

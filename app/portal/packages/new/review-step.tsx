@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Summary step — myt-main's OrderReview/OrderSummary, agent-side.
+ * Summary step - myt-main's OrderReview/OrderSummary, agent-side.
  * Same anatomy: one card with a dark title band, the grand-total row
  * ("סה"כ" + per-person, with the partner's expected commission where main
  * shows it), then a section per component with the exact עריכה chip that
@@ -128,7 +128,7 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
     if (terms.type === "percent_of_sale") {
       return totalPkg != null ? (totalPkg * terms.rate) / 100 : null;
     }
-    return w.qty * terms.rate; // fixed_per_ticket — the legacy default
+    return w.qty * terms.rate; // fixed_per_ticket - the legacy default
   })();
 
   /* flight section content */
@@ -190,7 +190,7 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
       );
     }
     if (w.hotelChoice.mode === "live-offer") {
-      // The option's own stay window — the search inputs may have been edited
+      // The option's own stay window - the search inputs may have been edited
       // since this option was picked, but the snapshot keeps what was priced.
       const option = w.hotelChoice.option;
       return (
@@ -262,7 +262,7 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
           </div>
         )}
 
-        {/* Sections — ticket → hotel → flight, like main */}
+        {/* Sections - ticket → hotel → flight, like main */}
         <div dir="rtl" className="space-y-3 px-6 py-4 text-right">
           <div className="text-center">
             <p className="text-2xl font-bold leading-tight">{event.name}</p>
@@ -297,7 +297,7 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
               primary={
                 w.hotelChoice.mode === "none"
                   ? "חבילה ללא מלון"
-                  : "מלון — הלקוח יבחר באתר"
+                  : "מלון - הלקוח יבחר באתר"
               }
               secondary={
                 w.hotelChoice.mode === "none"
@@ -326,7 +326,7 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
               primary={
                 w.flightChoice.mode === "none"
                   ? "חבילה ללא טיסה"
-                  : "טיסה — הלקוח יבחר באתר"
+                  : "טיסה - הלקוח יבחר באתר"
               }
               secondary={
                 w.flightChoice.mode === "none"
@@ -341,7 +341,7 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
         </div>
       </div>
 
-      {/* Open-vs-locked choice — portal-specific. Two explicit radio cards
+      {/* Open-vs-locked choice - portal-specific. Two explicit radio cards
           instead of a switch: the selected state is filled in the brand color
           with a visible dot, so "which one is on" is never ambiguous. */}
       <div

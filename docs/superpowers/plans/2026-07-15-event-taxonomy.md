@@ -4,7 +4,7 @@
 
 **Goal:** Give events a hierarchical category tree + a curated flat tag pool, assignable per-event and in bulk, with a Shopify-style inline-create multi-select, and expose them to the main app.
 
-**Architecture:** Approach A — four new additive Supabase tables (`event_categories` self-referencing tree, `event_category_links`, `event_tags`, `event_tag_links`). Backoffice writes via server actions; main app reads and builds the tree in memory. Legacy `events.tags` badge and existing `categories` marketing cards are untouched.
+**Architecture:** Approach A - four new additive Supabase tables (`event_categories` self-referencing tree, `event_category_links`, `event_tags`, `event_tag_links`). Backoffice writes via server actions; main app reads and builds the tree in memory. Legacy `events.tags` badge and existing `categories` marketing cards are untouched.
 
 **Tech Stack:** Next.js 15 App Router, React 19, TypeScript, Supabase (service-role server client), shadcn/ui (Command/Popover), Tailwind.
 
@@ -13,7 +13,7 @@
 - **No test suite** in this repo. Verification gate per task: `npx tsc --noEmit` passes for changed files + browser-preview check for UI. Never claim done without running the gate.
 - **No auto-commit** (Dor's rule). Each task ends by staging + reporting; Dor reviews and runs `/commit-push`. Commit-message lines shown are for Dor.
 - **No AI co-author line** in any commit.
-- **Soft-delete only** — `is_deleted boolean` on taxonomy tables (these are NEW tables, not `events`; boolean is fine here, matching `categories`). Never hard-delete.
+- **Soft-delete only** - `is_deleted boolean` on taxonomy tables (these are NEW tables, not `events`; boolean is fine here, matching `categories`). Never hard-delete.
 - **Supabase:** import shared `@/lib/supabase-server`; check `{ data, error }`; map columns explicitly; no `.select('*')` on hot paths (fine for small admin lists).
 - **Auth:** every server action starts with `await requireStaff()` (`@/lib/auth/guards`).
 - **FK type:** `events.id` is `bigint` → `event_id bigint`.
@@ -22,15 +22,17 @@
 
 ---
 
-## Phase 1 — Backoffice (shippable alone)
+## Phase 1 - Backoffice (shippable alone)
 
 ### Task 1: Migration + regenerated DB types
 
 **Files:**
+
 - Create: `supabase/migrations/<timestamp>_event_taxonomy.sql` (via `npm run db:new event_taxonomy`)
 - Modify (generated): `types/database.types.ts`
 
 **Interfaces:**
+
 - Produces tables: `event_categories`, `event_category_links`, `event_tags`, `event_tag_links`.
 
 - [ ] **Step 1: Create migration file**
@@ -112,10 +114,12 @@ Expected: no new errors.
 ### Task 2: Domain types + slug helper
 
 **Files:**
+
 - Create: `types/taxonomy.types.ts`
 - Create: `lib/slug.ts`
 
 **Interfaces:**
+
 - Produces: `EventCategory`, `EventCategoryNode` (with `children`), `EventTag`, `AssignMode`.
 - Produces: `slugify(input: string): string`.
 
@@ -154,7 +158,9 @@ export type EventCategory = {
 };
 
 // Built in memory from a flat EventCategory[] for tree UI + traversal.
-export type EventCategoryNode = EventCategory & { children: EventCategoryNode[] };
+export type EventCategoryNode = EventCategory & {
+  children: EventCategoryNode[];
+};
 
 export type EventTag = {
   id: number;
@@ -182,9 +188,11 @@ Expected: no errors.
 ### Task 3: Server actions
 
 **Files:**
+
 - Create: `lib/actions/event-taxonomy-actions.ts`
 
 **Interfaces:**
+
 - Consumes: `slugify` (Task 2), `EventCategory`/`EventTag`/`AssignMode` (Task 2), `requireStaff` (`@/lib/auth/guards`), `supabase` (`@/lib/supabase-server`).
 - Produces:
   - `listCategories(): Promise<EventCategory[]>`
@@ -210,15 +218,22 @@ Expected: no errors.
 import { supabase } from "@/lib/supabase-server";
 import { requireStaff } from "@/lib/auth/guards";
 import { slugify } from "@/lib/slug";
-import type { EventCategory, EventTag, AssignMode } from "@/types/taxonomy.types";
+import type {
+  EventCategory,
+  EventTag,
+  AssignMode,
+} from "@/types/taxonomy.types";
 
-// New tables aren't in generated types yet in some flows — cast the builder.
+// New tables aren't in generated types yet in some flows - cast the builder.
 const tbl = (t: string) => (supabase as any).from(t);
 
 async function uniqueSlug(table: string, base: string): Promise<string> {
   let slug = base;
   for (let i = 2; i < 50; i++) {
-    const { data, error } = await tbl(table).select("id").eq("slug", slug).maybeSingle();
+    const { data, error } = await tbl(table)
+      .select("id")
+      .eq("slug", slug)
+      .maybeSingle();
     if (error) throw error;
     if (!data) return slug;
     slug = `${base}-${i}`;
@@ -227,15 +242,23 @@ async function uniqueSlug(table: string, base: string): Promise<string> {
 }
 
 // Reject parent that is self or a descendant (cycle guard).
-async function assertNoCycle(id: number, parentId: number | null): Promise<void> {
+async function assertNoCycle(
+  id: number,
+  parentId: number | null,
+): Promise<void> {
   if (parentId == null) return;
   if (parentId === id) throw new Error("A category cannot be its own parent.");
-  const { data, error } = await tbl("event_categories").select("id,parent_id").eq("is_deleted", false);
+  const { data, error } = await tbl("event_categories")
+    .select("id,parent_id")
+    .eq("is_deleted", false);
   if (error) throw error;
-  const byId = new Map<number, number | null>((data ?? []).map((r: any) => [r.id, r.parent_id]));
+  const byId = new Map<number, number | null>(
+    (data ?? []).map((r: any) => [r.id, r.parent_id]),
+  );
   let cur: number | null = parentId;
   while (cur != null) {
-    if (cur === id) throw new Error("Cannot move a category under its own descendant.");
+    if (cur === id)
+      throw new Error("Cannot move a category under its own descendant.");
     cur = byId.get(cur) ?? null;
   }
 }
@@ -253,12 +276,18 @@ export async function listCategories(): Promise<EventCategory[]> {
 }
 
 export async function createCategory(input: {
-  name: string; name_english?: string; parent_id?: number | null;
-  image_url?: string; description?: string;
+  name: string;
+  name_english?: string;
+  parent_id?: number | null;
+  image_url?: string;
+  description?: string;
 }): Promise<EventCategory> {
   await requireStaff();
   if (!input.name?.trim()) throw new Error("Category name is required.");
-  const slug = await uniqueSlug("event_categories", slugify(input.name_english || input.name));
+  const slug = await uniqueSlug(
+    "event_categories",
+    slugify(input.name_english || input.name),
+  );
   const { data, error } = await tbl("event_categories")
     .insert({
       name: input.name.trim(),
@@ -278,8 +307,18 @@ export async function createCategory(input: {
 
 export async function updateCategory(
   id: number,
-  patch: Partial<Pick<EventCategory,
-    "name" | "name_english" | "parent_id" | "image_url" | "description" | "display_order" | "is_active">>
+  patch: Partial<
+    Pick<
+      EventCategory,
+      | "name"
+      | "name_english"
+      | "parent_id"
+      | "image_url"
+      | "description"
+      | "display_order"
+      | "is_active"
+    >
+  >,
 ): Promise<void> {
   await requireStaff();
   if ("parent_id" in patch) await assertNoCycle(id, patch.parent_id ?? null);
@@ -289,7 +328,8 @@ export async function updateCategory(
   if (patch.parent_id !== undefined) row.parent_id = patch.parent_id;
   if (patch.image_url !== undefined) row.image_url = patch.image_url;
   if (patch.description !== undefined) row.description = patch.description;
-  if (patch.display_order !== undefined) row.display_order = patch.display_order;
+  if (patch.display_order !== undefined)
+    row.display_order = patch.display_order;
   if (patch.is_active !== undefined) row.is_active = patch.is_active;
   const { error } = await tbl("event_categories").update(row).eq("id", id);
   if (error) throw error;
@@ -297,13 +337,21 @@ export async function updateCategory(
 
 export async function softDeleteCategory(id: number): Promise<void> {
   await requireStaff();
-  // Block if it has active children — force the user to move/delete them first.
+  // Block if it has active children - force the user to move/delete them first.
   const { data: kids, error: kErr } = await tbl("event_categories")
-    .select("id").eq("parent_id", id).eq("is_deleted", false).limit(1);
+    .select("id")
+    .eq("parent_id", id)
+    .eq("is_deleted", false)
+    .limit(1);
   if (kErr) throw kErr;
-  if (kids && kids.length) throw new Error("Move or delete child categories first.");
+  if (kids && kids.length)
+    throw new Error("Move or delete child categories first.");
   const { error } = await tbl("event_categories")
-    .update({ is_deleted: true, is_active: false, updated_at: new Date().toISOString() })
+    .update({
+      is_deleted: true,
+      is_active: false,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id);
   if (error) throw error;
 }
@@ -313,29 +361,40 @@ export async function softDeleteCategory(id: number): Promise<void> {
 export async function listTags(): Promise<EventTag[]> {
   await requireStaff();
   const { data, error } = await tbl("event_tags")
-    .select("*").eq("is_deleted", false).order("name", { ascending: true });
+    .select("*")
+    .eq("is_deleted", false)
+    .order("name", { ascending: true });
   if (error) throw error;
   return (data ?? []) as EventTag[];
 }
 
-export async function createTag(input: { name: string; name_english?: string }): Promise<EventTag> {
+export async function createTag(input: {
+  name: string;
+  name_english?: string;
+}): Promise<EventTag> {
   await requireStaff();
   if (!input.name?.trim()) throw new Error("Tag name is required.");
-  const slug = await uniqueSlug("event_tags", slugify(input.name_english || input.name));
+  const slug = await uniqueSlug(
+    "event_tags",
+    slugify(input.name_english || input.name),
+  );
   const { data, error } = await tbl("event_tags")
     .insert({
       name: input.name.trim(),
       name_english: input.name_english ?? null,
-      slug, is_active: true, is_deleted: false,
+      slug,
+      is_active: true,
+      is_deleted: false,
     })
-    .select().single();
+    .select()
+    .single();
   if (error) throw error;
   return data as EventTag;
 }
 
 export async function updateTag(
   id: number,
-  patch: Partial<Pick<EventTag, "name" | "name_english" | "is_active">>
+  patch: Partial<Pick<EventTag, "name" | "name_english" | "is_active">>,
 ): Promise<void> {
   await requireStaff();
   const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -349,7 +408,11 @@ export async function updateTag(
 export async function softDeleteTag(id: number): Promise<void> {
   await requireStaff();
   const { error } = await tbl("event_tags")
-    .update({ is_deleted: true, is_active: false, updated_at: new Date().toISOString() })
+    .update({
+      is_deleted: true,
+      is_active: false,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id);
   if (error) throw error;
 }
@@ -359,32 +422,48 @@ export async function softDeleteTag(id: number): Promise<void> {
 export async function getEventCategoryIds(eventId: number): Promise<number[]> {
   await requireStaff();
   const { data, error } = await tbl("event_category_links")
-    .select("category_id").eq("event_id", eventId);
+    .select("category_id")
+    .eq("event_id", eventId);
   if (error) throw error;
   return (data ?? []).map((r: any) => r.category_id as number);
 }
 
 export async function getEventTagIds(eventId: number): Promise<number[]> {
   await requireStaff();
-  const { data, error } = await tbl("event_tag_links").select("tag_id").eq("event_id", eventId);
+  const { data, error } = await tbl("event_tag_links")
+    .select("tag_id")
+    .eq("event_id", eventId);
   if (error) throw error;
   return (data ?? []).map((r: any) => r.tag_id as number);
 }
 
-export async function setEventCategories(eventId: number, categoryIds: number[]): Promise<void> {
+export async function setEventCategories(
+  eventId: number,
+  categoryIds: number[],
+): Promise<void> {
   await requireStaff();
-  const { error: delErr } = await tbl("event_category_links").delete().eq("event_id", eventId);
+  const { error: delErr } = await tbl("event_category_links")
+    .delete()
+    .eq("event_id", eventId);
   if (delErr) throw delErr;
   if (categoryIds.length) {
-    const rows = categoryIds.map((category_id) => ({ event_id: eventId, category_id }));
+    const rows = categoryIds.map((category_id) => ({
+      event_id: eventId,
+      category_id,
+    }));
     const { error } = await tbl("event_category_links").insert(rows);
     if (error) throw error;
   }
 }
 
-export async function setEventTags(eventId: number, tagIds: number[]): Promise<void> {
+export async function setEventTags(
+  eventId: number,
+  tagIds: number[],
+): Promise<void> {
   await requireStaff();
-  const { error: delErr } = await tbl("event_tag_links").delete().eq("event_id", eventId);
+  const { error: delErr } = await tbl("event_tag_links")
+    .delete()
+    .eq("event_id", eventId);
   if (delErr) throw delErr;
   if (tagIds.length) {
     const rows = tagIds.map((tag_id) => ({ event_id: eventId, tag_id }));
@@ -396,38 +475,56 @@ export async function setEventTags(eventId: number, tagIds: number[]): Promise<v
 /* ---------- bulk ---------- */
 
 export async function bulkAssignCategories(
-  eventIds: number[], categoryIds: number[], mode: AssignMode
+  eventIds: number[],
+  categoryIds: number[],
+  mode: AssignMode,
 ): Promise<void> {
   await requireStaff();
   if (!eventIds.length) return;
   if (mode === "replace") {
-    const { error } = await tbl("event_category_links").delete().in("event_id", eventIds);
+    const { error } = await tbl("event_category_links")
+      .delete()
+      .in("event_id", eventIds);
     if (error) throw error;
   }
   if (!categoryIds.length) return;
-  const rows = eventIds.flatMap((event_id) => categoryIds.map((category_id) => ({ event_id, category_id })));
+  const rows = eventIds.flatMap((event_id) =>
+    categoryIds.map((category_id) => ({ event_id, category_id })),
+  );
   // upsert to ignore existing (event_id, category_id) pairs on "add".
-  const { error } = await tbl("event_category_links").upsert(rows, { onConflict: "event_id,category_id", ignoreDuplicates: true });
+  const { error } = await tbl("event_category_links").upsert(rows, {
+    onConflict: "event_id,category_id",
+    ignoreDuplicates: true,
+  });
   if (error) throw error;
 }
 
 export async function bulkAssignTags(
-  eventIds: number[], tagIds: number[], mode: AssignMode
+  eventIds: number[],
+  tagIds: number[],
+  mode: AssignMode,
 ): Promise<void> {
   await requireStaff();
   if (!eventIds.length) return;
   if (mode === "replace") {
-    const { error } = await tbl("event_tag_links").delete().in("event_id", eventIds);
+    const { error } = await tbl("event_tag_links")
+      .delete()
+      .in("event_id", eventIds);
     if (error) throw error;
   }
   if (!tagIds.length) return;
-  const rows = eventIds.flatMap((event_id) => tagIds.map((tag_id) => ({ event_id, tag_id })));
-  const { error } = await tbl("event_tag_links").upsert(rows, { onConflict: "event_id,tag_id", ignoreDuplicates: true });
+  const rows = eventIds.flatMap((event_id) =>
+    tagIds.map((tag_id) => ({ event_id, tag_id })),
+  );
+  const { error } = await tbl("event_tag_links").upsert(rows, {
+    onConflict: "event_id,tag_id",
+    ignoreDuplicates: true,
+  });
   if (error) throw error;
 }
 ```
 
-- [ ] **Step 2: Type-check** — `npx tsc --noEmit` → no errors.
+- [ ] **Step 2: Type-check** - `npx tsc --noEmit` → no errors.
 - [ ] **Step 3: Stage + report** (commit msg: `feat(taxonomy): server actions for categories, tags, links, bulk`)
 
 ---
@@ -435,19 +532,22 @@ export async function bulkAssignTags(
 ### Task 4: `EventTaxonomySelect` combobox (Shopify-style, inline create)
 
 **Files:**
+
 - Create: `components/taxonomy/event-taxonomy-select.tsx`
 
 **Interfaces:**
+
 - Consumes: shadcn `Command`, `Popover`, `Badge`, `Button` (verify present in `components/ui/`); actions `createCategory`/`createTag` (Task 3); types from Task 2.
 - Produces: `EventTaxonomySelect` (client component).
 
 Props:
+
 ```ts
 type Option = { id: number; label: string };
 type EventTaxonomySelectProps = {
   kind: "category" | "tag";
-  options: Option[];                 // pool (category options are path-labelled)
-  value: number[];                   // selected ids
+  options: Option[]; // pool (category options are path-labelled)
+  value: number[]; // selected ids
   onChange: (ids: number[]) => void;
   onOptionCreated?: (opt: Option) => void; // parent adds new opt to its pool
 };
@@ -465,16 +565,34 @@ Expected: all exist. If `command.tsx` missing, run `npx shadcn@latest add comman
 
 import { useState } from "react";
 import { Check, Plus, X } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { createCategory, createTag } from "@/lib/actions/event-taxonomy-actions";
+import {
+  createCategory,
+  createTag,
+} from "@/lib/actions/event-taxonomy-actions";
 
 type Option = { id: number; label: string };
 
 export function EventTaxonomySelect({
-  kind, options, value, onChange, onOptionCreated,
+  kind,
+  options,
+  value,
+  onChange,
+  onOptionCreated,
 }: {
   kind: "category" | "tag";
   options: Option[];
@@ -488,7 +606,9 @@ export function EventTaxonomySelect({
 
   const selected = options.filter((o) => value.includes(o.id));
   const toggle = (id: number) =>
-    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+    onChange(
+      value.includes(id) ? value.filter((v) => v !== id) : [...value, id],
+    );
 
   const q = query.trim();
   const exists = options.some((o) => o.label.toLowerCase() === q.toLowerCase());
@@ -497,9 +617,10 @@ export function EventTaxonomySelect({
     if (!q || creating) return;
     setCreating(true);
     try {
-      const created = kind === "category"
-        ? await createCategory({ name: q })
-        : await createTag({ name: q });
+      const created =
+        kind === "category"
+          ? await createCategory({ name: q })
+          : await createTag({ name: q });
       const opt: Option = { id: created.id, label: created.name };
       onOptionCreated?.(opt);
       onChange([...value, created.id]);
@@ -512,11 +633,17 @@ export function EventTaxonomySelect({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1">
-        {selected.length === 0 && <span className="text-sm text-muted-foreground">None</span>}
+        {selected.length === 0 && (
+          <span className="text-sm text-muted-foreground">None</span>
+        )}
         {selected.map((o) => (
           <Badge key={o.id} variant="secondary" className="gap-1">
             {o.label}
-            <button type="button" onClick={() => toggle(o.id)} aria-label={`Remove ${o.label}`}>
+            <button
+              type="button"
+              onClick={() => toggle(o.id)}
+              aria-label={`Remove ${o.label}`}
+            >
               <X className="h-3 w-3" />
             </button>
           </Badge>
@@ -530,7 +657,11 @@ export function EventTaxonomySelect({
         </PopoverTrigger>
         <PopoverContent className="p-0 w-72" align="start">
           <Command shouldFilter>
-            <CommandInput placeholder={`Search ${kind}s...`} value={query} onValueChange={setQuery} />
+            <CommandInput
+              placeholder={`Search ${kind}s...`}
+              value={query}
+              onValueChange={setQuery}
+            />
             <CommandList>
               <CommandEmpty>
                 {q ? (
@@ -542,12 +673,20 @@ export function EventTaxonomySelect({
                   >
                     <Plus className="h-4 w-4" /> Create “{q}”
                   </button>
-                ) : "No results."}
+                ) : (
+                  "No results."
+                )}
               </CommandEmpty>
               <CommandGroup>
                 {options.map((o) => (
-                  <CommandItem key={o.id} value={o.label} onSelect={() => toggle(o.id)}>
-                    <Check className={`mr-2 h-4 w-4 ${value.includes(o.id) ? "opacity-100" : "opacity-0"}`} />
+                  <CommandItem
+                    key={o.id}
+                    value={o.label}
+                    onSelect={() => toggle(o.id)}
+                  >
+                    <Check
+                      className={`mr-2 h-4 w-4 ${value.includes(o.id) ? "opacity-100" : "opacity-0"}`}
+                    />
                     {o.label}
                   </CommandItem>
                 ))}
@@ -566,7 +705,7 @@ export function EventTaxonomySelect({
 }
 ```
 
-- [ ] **Step 3: Type-check** — `npx tsc --noEmit` → no errors.
+- [ ] **Step 3: Type-check** - `npx tsc --noEmit` → no errors.
 - [ ] **Step 4: Stage + report** (commit msg: `feat(taxonomy): shopify-style multi-select with inline create`)
 
 ---
@@ -574,12 +713,14 @@ export function EventTaxonomySelect({
 ### Task 5: Category-tree helper + Taxonomy manager page
 
 **Files:**
-- Create: `lib/taxonomy-tree.ts` (shared pure helpers — backoffice + main both use the same logic)
+
+- Create: `lib/taxonomy-tree.ts` (shared pure helpers - backoffice + main both use the same logic)
 - Create: `app/(dashboard)/event-taxonomy/page.tsx` (server: loads categories)
 - Create: `app/(dashboard)/event-taxonomy/taxonomy-manager.tsx` (client: tree CRUD)
-- Modify: `components/Sidebar.tsx` (add nav link) — confirm actual sidebar filename first.
+- Modify: `components/Sidebar.tsx` (add nav link) - confirm actual sidebar filename first.
 
 **Interfaces:**
+
 - Consumes: `listCategories`, `createCategory`, `updateCategory`, `softDeleteCategory` (Task 3); `EventCategory`, `EventCategoryNode` (Task 2).
 - Produces: `buildTree(cats: EventCategory[]): EventCategoryNode[]`, `flattenWithPath(cats: EventCategory[]): { id: number; path: string }[]`, `descendantIds(nodes, id)`.
 
@@ -600,7 +741,10 @@ export function buildTree(cats: EventCategory[]): EventCategoryNode[] {
     }
   });
   const sort = (ns: EventCategoryNode[]) => {
-    ns.sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name));
+    ns.sort(
+      (a, b) =>
+        a.display_order - b.display_order || a.name.localeCompare(b.name),
+    );
     ns.forEach((n) => sort(n.children));
   };
   sort(roots);
@@ -608,7 +752,9 @@ export function buildTree(cats: EventCategory[]): EventCategoryNode[] {
 }
 
 // "כדורגל › ליגה אנגלית" path label per category, for the multi-select.
-export function flattenWithPath(cats: EventCategory[]): { id: number; path: string }[] {
+export function flattenWithPath(
+  cats: EventCategory[],
+): { id: number; path: string }[] {
   const byId = new Map<number, EventCategory>(cats.map((c) => [c.id, c]));
   const pathOf = (c: EventCategory): string => {
     const parts: string[] = [c.name];
@@ -659,10 +805,19 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import {
-  listCategories, createCategory, updateCategory, softDeleteCategory,
+  listCategories,
+  createCategory,
+  updateCategory,
+  softDeleteCategory,
 } from "@/lib/actions/event-taxonomy-actions";
 import { buildTree } from "@/lib/taxonomy-tree";
 import type { EventCategory, EventCategoryNode } from "@/types/taxonomy.types";
@@ -672,36 +827,63 @@ export function TaxonomyManager({ initial }: { initial: EventCategory[] }) {
   const [cats, setCats] = useState<EventCategory[]>(initial);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<EventCategory | null>(null);
-  const [form, setForm] = useState({ name: "", name_english: "", parent_id: "" as string });
+  const [form, setForm] = useState({
+    name: "",
+    name_english: "",
+    parent_id: "" as string,
+  });
 
   const tree = buildTree(cats);
   const refresh = async () => setCats(await listCategories());
 
   const openNew = (parentId: number | null) => {
     setEditing(null);
-    setForm({ name: "", name_english: "", parent_id: parentId != null ? String(parentId) : "" });
+    setForm({
+      name: "",
+      name_english: "",
+      parent_id: parentId != null ? String(parentId) : "",
+    });
     setOpen(true);
   };
   const openEdit = (c: EventCategory) => {
     setEditing(c);
-    setForm({ name: c.name, name_english: c.name_english ?? "", parent_id: c.parent_id != null ? String(c.parent_id) : "" });
+    setForm({
+      name: c.name,
+      name_english: c.name_english ?? "",
+      parent_id: c.parent_id != null ? String(c.parent_id) : "",
+    });
     setOpen(true);
   };
 
   const save = async () => {
-    if (!form.name.trim()) { toast({ variant: "destructive", title: "Name required" }); return; }
+    if (!form.name.trim()) {
+      toast({ variant: "destructive", title: "Name required" });
+      return;
+    }
     const parent_id = form.parent_id ? Number(form.parent_id) : null;
     try {
       if (editing) {
-        await updateCategory(editing.id, { name: form.name, name_english: form.name_english || null, parent_id });
+        await updateCategory(editing.id, {
+          name: form.name,
+          name_english: form.name_english || null,
+          parent_id,
+        });
       } else {
-        await createCategory({ name: form.name, name_english: form.name_english || undefined, parent_id });
+        await createCategory({
+          name: form.name,
+          name_english: form.name_english || undefined,
+          parent_id,
+        });
       }
       setOpen(false);
       await refresh();
       toast({ title: "Saved" });
     } catch (e) {
-      toast({ variant: "destructive", title: "Error", description: e instanceof Error ? e.message : "Failed" });
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: e instanceof Error ? e.message : "Failed",
+      });
     }
   };
 
@@ -712,19 +894,42 @@ export function TaxonomyManager({ initial }: { initial: EventCategory[] }) {
       await refresh();
       toast({ title: "Deleted" });
     } catch (e) {
-      toast({ variant: "destructive", title: "Error", description: e instanceof Error ? e.message : "Failed" });
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: e instanceof Error ? e.message : "Failed",
+      });
     }
   };
 
   const Row = ({ node, depth }: { node: EventCategoryNode; depth: number }) => (
     <>
-      <div className="flex items-center gap-2 py-1 border-b" style={{ paddingInlineStart: depth * 20 }}>
-        <span className="flex-1">{node.name}{node.name_english ? <span className="text-muted-foreground"> · {node.name_english}</span> : null}</span>
-        <Button size="sm" variant="ghost" onClick={() => openNew(node.id)}>+ Sub</Button>
-        <Button size="sm" variant="ghost" onClick={() => openEdit(node)}>Edit</Button>
-        <Button size="sm" variant="ghost" onClick={() => remove(node)}>Delete</Button>
+      <div
+        className="flex items-center gap-2 py-1 border-b"
+        style={{ paddingInlineStart: depth * 20 }}
+      >
+        <span className="flex-1">
+          {node.name}
+          {node.name_english ? (
+            <span className="text-muted-foreground">
+              {" "}
+              · {node.name_english}
+            </span>
+          ) : null}
+        </span>
+        <Button size="sm" variant="ghost" onClick={() => openNew(node.id)}>
+          + Sub
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => openEdit(node)}>
+          Edit
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => remove(node)}>
+          Delete
+        </Button>
       </div>
-      {node.children.map((c) => <Row key={c.id} node={c} depth={depth + 1} />)}
+      {node.children.map((c) => (
+        <Row key={c.id} node={c} depth={depth + 1} />
+      ))}
     </>
   );
 
@@ -732,31 +937,65 @@ export function TaxonomyManager({ initial }: { initial: EventCategory[] }) {
     <div className="space-y-3">
       <Button onClick={() => openNew(null)}>+ Root category</Button>
       <div className="rounded-md border">
-        {tree.length === 0 && <div className="p-4 text-sm text-muted-foreground">No categories yet.</div>}
-        {tree.map((n) => <Row key={n.id} node={n} depth={0} />)}
+        {tree.length === 0 && (
+          <div className="p-4 text-sm text-muted-foreground">
+            No categories yet.
+          </div>
+        )}
+        {tree.map((n) => (
+          <Row key={n.id} node={n} depth={0} />
+        ))}
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{editing ? "Edit category" : "New category"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {editing ? "Edit category" : "New category"}
+            </DialogTitle>
+          </DialogHeader>
           <div className="space-y-3">
-            <div><Label>Name (Hebrew)</Label><Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></div>
-            <div><Label>Name (English)</Label><Input value={form.name_english} onChange={(e) => setForm((f) => ({ ...f, name_english: e.target.value }))} /></div>
+            <div>
+              <Label>Name (Hebrew)</Label>
+              <Input
+                value={form.name}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, name: e.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <Label>Name (English)</Label>
+              <Input
+                value={form.name_english}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, name_english: e.target.value }))
+                }
+              />
+            </div>
             <div>
               <Label>Parent</Label>
               <select
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 value={form.parent_id}
-                onChange={(e) => setForm((f) => ({ ...f, parent_id: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, parent_id: e.target.value }))
+                }
               >
-                <option value="">— Root —</option>
-                {cats.filter((c) => !editing || c.id !== editing.id).map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
+                <option value="">- Root -</option>
+                {cats
+                  .filter((c) => !editing || c.id !== editing.id)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
               </select>
             </div>
           </div>
-          <DialogFooter><Button onClick={save}>Save</Button></DialogFooter>
+          <DialogFooter>
+            <Button onClick={save}>Save</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -764,7 +1003,7 @@ export function TaxonomyManager({ initial }: { initial: EventCategory[] }) {
 }
 ```
 
-- [ ] **Step 4: Add sidebar nav link** — open the sidebar component (find with `ls components/ | grep -i sidebar`), add a link to `/event-taxonomy` labelled "Categories / קטגוריות" following the existing link pattern.
+- [ ] **Step 4: Add sidebar nav link** - open the sidebar component (find with `ls components/ | grep -i sidebar`), add a link to `/event-taxonomy` labelled "Categories / קטגוריות" following the existing link pattern.
 
 - [ ] **Step 5: Verify in browser**
 
@@ -777,16 +1016,18 @@ Start dev server (preview_start `{name}` from `.claude/launch.json`, or create i
 ### Task 6: Tags manager page
 
 **Files:**
+
 - Create: `app/(dashboard)/event-tags/page.tsx`
 - Create: `app/(dashboard)/event-tags/tags-manager.tsx`
 - Modify: sidebar (add link `/event-tags`)
 
 **Interfaces:**
+
 - Consumes: `listTags`, `createTag`, `updateTag`, `softDeleteTag` (Task 3); `EventTag` (Task 2).
 
-- [ ] **Step 1: Server page** — mirror Task 5 Step 2 but load `listTags()` and render `<TagsManager initial={tags} />`.
+- [ ] **Step 1: Server page** - mirror Task 5 Step 2 but load `listTags()` and render `<TagsManager initial={tags} />`.
 
-- [ ] **Step 2: Client `tags-manager.tsx`** — a flat list: input + "Add" creates a tag (`createTag`), each row has inline rename (`updateTag`) + delete (`softDeleteTag`). Refetch via `listTags` after each mutation. (Structure parallels Task 5 without the tree/parent.)
+- [ ] **Step 2: Client `tags-manager.tsx`** - a flat list: input + "Add" creates a tag (`createTag`), each row has inline rename (`updateTag`) + delete (`softDeleteTag`). Refetch via `listTags` after each mutation. (Structure parallels Task 5 without the tree/parent.)
 
 ```tsx
 "use client";
@@ -794,7 +1035,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
-import { listTags, createTag, softDeleteTag } from "@/lib/actions/event-taxonomy-actions";
+import {
+  listTags,
+  createTag,
+  softDeleteTag,
+} from "@/lib/actions/event-taxonomy-actions";
 import type { EventTag } from "@/types/taxonomy.types";
 
 export function TagsManager({ initial }: { initial: EventTag[] }) {
@@ -805,26 +1050,53 @@ export function TagsManager({ initial }: { initial: EventTag[] }) {
 
   const add = async () => {
     if (!name.trim()) return;
-    try { await createTag({ name }); setName(""); await refresh(); toast({ title: "Added" }); }
-    catch (e) { toast({ variant: "destructive", title: "Error", description: e instanceof Error ? e.message : "Failed" }); }
+    try {
+      await createTag({ name });
+      setName("");
+      await refresh();
+      toast({ title: "Added" });
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: e instanceof Error ? e.message : "Failed",
+      });
+    }
   };
   const remove = async (t: EventTag) => {
     if (!confirm(`Delete "${t.name}"?`)) return;
-    try { await softDeleteTag(t.id); await refresh(); } catch { toast({ variant: "destructive", title: "Error" }); }
+    try {
+      await softDeleteTag(t.id);
+      await refresh();
+    } catch {
+      toast({ variant: "destructive", title: "Error" });
+    }
   };
 
   return (
     <div className="space-y-3 max-w-md">
       <div className="flex gap-2">
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="New tag name" onKeyDown={(e) => e.key === "Enter" && add()} />
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="New tag name"
+          onKeyDown={(e) => e.key === "Enter" && add()}
+        />
         <Button onClick={add}>Add</Button>
       </div>
       <div className="rounded-md border">
-        {tags.length === 0 && <div className="p-4 text-sm text-muted-foreground">No tags yet.</div>}
+        {tags.length === 0 && (
+          <div className="p-4 text-sm text-muted-foreground">No tags yet.</div>
+        )}
         {tags.map((t) => (
-          <div key={t.id} className="flex items-center gap-2 py-1 px-2 border-b">
+          <div
+            key={t.id}
+            className="flex items-center gap-2 py-1 px-2 border-b"
+          >
             <span className="flex-1">{t.name}</span>
-            <Button size="sm" variant="ghost" onClick={() => remove(t)}>Delete</Button>
+            <Button size="sm" variant="ghost" onClick={() => remove(t)}>
+              Delete
+            </Button>
           </div>
         ))}
       </div>
@@ -840,9 +1112,11 @@ export function TagsManager({ initial }: { initial: EventTag[] }) {
 ### Task 7: Event editor + new-event flow integration
 
 **Files:**
-- Modify: `app/(dashboard)/events/[id]/page.tsx` (edit + new share this page — confirm the `[id] === "new"` branch it already has at lines ~210–248)
+
+- Modify: `app/(dashboard)/events/[id]/page.tsx` (edit + new share this page - confirm the `[id] === "new"` branch it already has at lines ~210–248)
 
 **Interfaces:**
+
 - Consumes: `EventTaxonomySelect` (Task 4); `listCategories`, `listTags`, `getEventCategoryIds`, `getEventTagIds`, `setEventCategories`, `setEventTags` (Task 3); `flattenWithPath` (Task 5).
 
 - [ ] **Step 1: Load pools + current selections**
@@ -877,13 +1151,15 @@ In the page's data-loading effect: fetch `listCategories()` + `listTags()` into 
 - [ ] **Step 3: Persist links on save**
 
 In the existing save handler, AFTER the event row is created/updated and its numeric id is known (`savedId`), call:
+
 ```tsx
 await setEventCategories(savedId, selectedCatIds);
 await setEventTags(savedId, selectedTagIds);
 ```
+
 For the "new" flow this runs after the insert returns the id. Wrap in the existing try/catch; on error show the existing error toast.
 
-- [ ] **Step 4: Browser verify** — edit an event: assign categories + tags, inline-create one of each, save, reload, confirm they persist (re-fetch shows them). Create a NEW event with categories/tags, save, confirm links written. Check console.
+- [ ] **Step 4: Browser verify** - edit an event: assign categories + tags, inline-create one of each, save, reload, confirm they persist (re-fetch shows them). Create a NEW event with categories/tags, save, confirm links written. Check console.
 
 - [ ] **Step 5: Type-check + stage + report** (commit msg: `feat(taxonomy): categories + tags on event editor and create flow`)
 
@@ -892,9 +1168,11 @@ For the "new" flow this runs after the insert returns the id. Wrap in the existi
 ### Task 8: Bulk assign on events table
 
 **Files:**
+
 - Modify: `app/(dashboard)/events/events-table.tsx`
 
 **Interfaces:**
+
 - Consumes: `bulkAssignCategories`, `bulkAssignTags` (Task 3); `EventTaxonomySelect` (Task 4); `listCategories`/`listTags` + `flattenWithPath`.
 
 - [ ] **Step 1: Load pools** into table state on mount (same mapping as Task 7).
@@ -902,13 +1180,15 @@ For the "new" flow this runs after the insert returns the id. Wrap in the existi
 - [ ] **Step 2: Add two toolbar buttons** shown when `selectedIds.length > 0` (beside the existing bulk markup/delete controls near lines 447–465): "Assign categories" / "Assign tags" → open a dialog.
 
 - [ ] **Step 3: Dialog** with an `EventTaxonomySelect` + a mode radio (`add` / `replace`) + Apply. Apply calls:
+
 ```tsx
 await bulkAssignCategories(selectedIds, chosenIds, mode); // or bulkAssignTags
 toast({ title: "Assigned", description: `${selectedIds.length} event(s).` });
 ```
-`selectedIds` already exists (line ~660). No local Event mutation needed (links aren't Event columns) — just toast + close.
 
-- [ ] **Step 4: Browser verify** — select several events, Assign categories (add), confirm no error; open one event editor and confirm the category is present. Test replace mode. Check console.
+`selectedIds` already exists (line ~660). No local Event mutation needed (links aren't Event columns) - just toast + close.
+
+- [ ] **Step 4: Browser verify** - select several events, Assign categories (add), confirm no error; open one event editor and confirm the category is present. Test replace mode. Check console.
 
 - [ ] **Step 5: Type-check + stage + report** (commit msg: `feat(taxonomy): bulk assign categories + tags on events table`)
 
@@ -917,6 +1197,7 @@ toast({ title: "Assigned", description: `${selectedIds.length} event(s).` });
 ### Task 9: Cross-project docs
 
 **Files:**
+
 - Modify: `CLAUDE.md` (shared-tables table + cross-project rule), `.claude/rules/cross-project.md`
 
 - [ ] **Step 1** Add the 4 tables to the shared-tables list: backoffice writes `event_categories`, `event_category_links`, `event_tags`, `event_tag_links`; main reads them. Note the new `types/taxonomy.types.ts` ↔ main `lib/taxonomy.types.ts` sync pair.
@@ -924,7 +1205,7 @@ toast({ title: "Assigned", description: `${selectedIds.length} event(s).` });
 
 ---
 
-## Phase 2 — Main app (`../myt-main`, separate session/PR)
+## Phase 2 - Main app (`../myt-main`, separate session/PR)
 
 Reads what Phase 1 writes. Own plan when Phase 1 is merged. Sketch:
 
@@ -938,6 +1219,7 @@ Reads what Phase 1 writes. Own plan when Phase 1 is merged. Sketch:
 ## Self-Review
 
 **Spec coverage:**
+
 - Tree table + junction → Task 1. ✓
 - Tag pool + junction → Task 1. ✓
 - Ancestor inference at query time → `buildTree`/`flattenWithPath` (Task 5), consumed by main (Phase 2). Backoffice stores direct links only (Task 3 `setEventCategories`). ✓
@@ -950,6 +1232,6 @@ Reads what Phase 1 writes. Own plan when Phase 1 is merged. Sketch:
 - Types + cross-project docs → Tasks 2/9. ✓
 - No RLS / no seed / legacy untouched → constraints + Task 1. ✓
 
-**Placeholder scan:** No TBD/TODO. Task 5 Step 4 and Task 7 reference existing files by content (sidebar filename, `[id]==="new"` branch) — execution confirms exact lines with grep first. Acceptable (integration into unknown existing code).
+**Placeholder scan:** No TBD/TODO. Task 5 Step 4 and Task 7 reference existing files by content (sidebar filename, `[id]==="new"` branch) - execution confirms exact lines with grep first. Acceptable (integration into unknown existing code).
 
 **Type consistency:** action names, `EventTaxonomySelect` prop shape, `Option`, `AssignMode` consistent across Tasks 3/4/7/8. `flattenWithPath` return `{id,path}` mapped to `{id,label}` at call sites. ✓

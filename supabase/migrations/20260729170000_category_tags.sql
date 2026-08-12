@@ -1,4 +1,4 @@
--- Tags COMPOSE categories — not the other way around.
+-- Tags COMPOSE categories - not the other way around.
 --
 -- Old model: an event was linked to categories AND tagged, by hand, twice
 -- (261 of 263 categorised events carried both). New model: you only ever tag
@@ -7,7 +7,7 @@
 -- many categories as its tags earn it.
 --
 -- event_category_links stays alive as a VIEW with the exact same shape
--- (event_id, category_id) so the main app keeps reading it untouched — both
+-- (event_id, category_id) so the main app keeps reading it untouched - both
 -- /c/[...slug] pages and the Meta feed's product_type. The old table is kept
 -- as _legacy for one release as a rollback net; nothing reads it.
 
@@ -33,13 +33,13 @@ from event_category_tags ect
 join event_tag_links etl on etl.tag_id = ect.tag_id;
 
 -- PostgREST reads as anon (main app) / authenticated; service_role for the
--- backoffice. The view is read-only by construction — writes now go to
+-- backoffice. The view is read-only by construction - writes now go to
 -- event_category_tags and event_tag_links.
 grant select on event_category_links to anon, authenticated, service_role;
 
 -- One editing surface: the Templates category card is where the team builds a
 -- category page, so that is where its tags are chosen too. The card needs to
--- know which taxonomy node holds them — until now the two were paired only by
+-- know which taxonomy node holds them - until now the two were paired only by
 -- the /c/<slug> link_url the auto-created card carried.
 alter table categories
   add column if not exists event_category_id bigint references event_categories(id) on delete set null;

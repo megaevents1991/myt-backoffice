@@ -365,7 +365,7 @@ export default function PartnerPage({
                   <span className="text-sm text-muted-foreground">
                     {form.is_active
                       ? "Active"
-                      : "Inactive — no portal access, no monthly report"}
+                      : "Inactive - no portal access, no monthly report"}
                   </span>
                 </div>
               </div>
@@ -422,7 +422,7 @@ export default function PartnerPage({
                 />
                 <p className="text-xs text-muted-foreground">
                   {isNewPartner
-                    ? "8+ characters. Give it to the partner — it is not shown again."
+                    ? "8+ characters. Give it to the partner - it is not shown again."
                     : userId
                       ? "Leave blank to keep the current password."
                       : "No portal login yet. Set a password to create one."}
@@ -559,7 +559,7 @@ export default function PartnerPage({
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Per their agreement. Off means they pay by card — their own or
+                    Per their agreement. Off means they pay by card - their own or
                     the customer&apos;s.
                   </p>
                 </div>
@@ -575,7 +575,7 @@ export default function PartnerPage({
                   onChange={handleChange}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Optional — printed on the monthly invoice-style report.
+                  Optional - printed on the monthly invoice-style report.
                 </p>
               </div>
             </div>
@@ -598,7 +598,7 @@ export default function PartnerPage({
                   className="underline underline-offset-2 hover:text-primary"
                   onClick={handleDownloadContract}
                 >
-                  Agreement on file — download
+                  Agreement on file - download
                 </button>
                 <Button
                   type="button"

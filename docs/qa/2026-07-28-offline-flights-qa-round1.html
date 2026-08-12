@@ -1,4 +1,4 @@
-<title>Offline Flights — QA Flows</title>
+<title>Offline Flights - QA Flows</title>
 
 <style>
   :root {
@@ -16,7 +16,9 @@
     --warn: #9a6212;
     --warn-soft: #fbf1de;
 
-    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+    --mono:
+      ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas,
+      monospace;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
     --gutter: 3.6rem;
@@ -72,7 +74,9 @@
     --warn-soft: #fbf1de;
   }
 
-  * { box-sizing: border-box; }
+  * {
+    box-sizing: border-box;
+  }
 
   body {
     margin: 0;
@@ -140,11 +144,21 @@
     letter-spacing: 0.04em;
   }
 
-  .progress .count { font-variant-numeric: tabular-nums; }
-  .progress .c-pass { color: var(--pass); }
-  .progress .c-fail { color: var(--fail); }
-  .progress .c-todo { color: var(--muted); }
-  .progress .spacer { flex: 1; }
+  .progress .count {
+    font-variant-numeric: tabular-nums;
+  }
+  .progress .c-pass {
+    color: var(--pass);
+  }
+  .progress .c-fail {
+    color: var(--fail);
+  }
+  .progress .c-todo {
+    color: var(--muted);
+  }
+  .progress .spacer {
+    flex: 1;
+  }
 
   button.act {
     font-family: var(--mono);
@@ -156,11 +170,19 @@
     color: var(--ink);
     border: 1px solid var(--rule);
     cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
+    transition:
+      background 0.15s,
+      border-color 0.15s;
   }
 
-  button.act:hover { background: var(--accent-soft); border-color: var(--accent); }
-  button.act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.act:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  button.act:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 
   /* ---------- setup ---------- */
 
@@ -204,14 +226,22 @@
     margin: 1.5rem 0 0;
   }
 
-  .caution p { margin: 0 0 0.5rem; }
-  .caution p:last-child { margin-bottom: 0; }
+  .caution p {
+    margin: 0 0 0.5rem;
+  }
+  .caution p:last-child {
+    margin-bottom: 0;
+  }
 
-  .caution strong { color: var(--warn); }
+  .caution strong {
+    color: var(--warn);
+  }
 
   /* ---------- flow sections ---------- */
 
-  section.flows { padding-top: 3rem; }
+  section.flows {
+    padding-top: 3rem;
+  }
 
   .section-head {
     display: flex;
@@ -245,8 +275,12 @@
     border-bottom: 1px dashed var(--rule);
   }
 
-  .flow[data-state="pass"] { background: linear-gradient(90deg, var(--accent-soft) 0, transparent 40%); }
-  .flow[data-state="fail"] { background: linear-gradient(90deg, var(--warn-soft) 0, transparent 40%); }
+  .flow[data-state="pass"] {
+    background: linear-gradient(90deg, var(--accent-soft) 0, transparent 40%);
+  }
+  .flow[data-state="fail"] {
+    background: linear-gradient(90deg, var(--warn-soft) 0, transparent 40%);
+  }
 
   .flow .code {
     font-family: var(--mono);
@@ -257,7 +291,9 @@
     padding-top: 0.1rem;
   }
 
-  .flow .body { min-width: 0; }
+  .flow .body {
+    min-width: 0;
+  }
 
   .flow h3 {
     font-family: var(--sans);
@@ -276,12 +312,15 @@
     margin: 0 0 0.9rem;
   }
 
-  .flow ol, .flow ul {
+  .flow ol,
+  .flow ul {
     margin: 0 0 0.9rem;
     padding-left: 1.15rem;
   }
 
-  .flow li { margin-bottom: 0.25rem; }
+  .flow li {
+    margin-bottom: 0.25rem;
+  }
 
   .expect {
     border-left: 2px solid var(--accent);
@@ -290,7 +329,10 @@
     color: var(--ink-soft);
   }
 
-  .expect b { color: var(--ink); font-weight: 600; }
+  .expect b {
+    color: var(--ink);
+    font-weight: 600;
+  }
 
   /* ---------- verdict controls ---------- */
 
@@ -301,7 +343,7 @@
     gap: 0.5rem;
   }
 
-  /* Scoped to :not(.act) so this never overrides the toolbar action buttons —
+  /* Scoped to :not(.act) so this never overrides the toolbar action buttons -
      same specificity as button.act, and it is declared later in the sheet. */
   .verdict button:not(.act) {
     font-family: var(--mono);
@@ -316,8 +358,14 @@
     transition: all 0.12s;
   }
 
-  .verdict button:not(.act):hover { border-color: var(--ink-soft); color: var(--ink); }
-  .verdict button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .verdict button:not(.act):hover {
+    border-color: var(--ink-soft);
+    color: var(--ink);
+  }
+  .verdict button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 
   .verdict button[aria-pressed="true"][data-v="pass"] {
     background: var(--pass);
@@ -346,10 +394,15 @@
     min-height: 4.5rem;
   }
 
-  textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  textarea:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
 
   .flow[data-state="fail"] textarea,
-  textarea.shown { display: block; }
+  textarea.shown {
+    display: block;
+  }
 
   /* ---------- report ---------- */
 
@@ -360,8 +413,14 @@
     border: 1px solid var(--rule);
   }
 
-  .report h2 { margin-bottom: 0.8rem; }
-  .report p { margin: 0 0 1rem; color: var(--ink-soft); max-width: 60ch; }
+  .report h2 {
+    margin-bottom: 0.8rem;
+  }
+  .report p {
+    margin: 0 0 1rem;
+    color: var(--ink-soft);
+    max-width: 60ch;
+  }
 
   #report-out {
     display: none;
@@ -369,7 +428,9 @@
     margin-top: 1rem;
   }
 
-  #report-out.shown { display: block; }
+  #report-out.shown {
+    display: block;
+  }
 
   footer.foot {
     margin-top: 3rem;
@@ -382,25 +443,33 @@
   }
 
   @media (max-width: 640px) {
-    :root { --gutter: 2.6rem; }
-    .flow { gap: 0 0.8rem; }
-    .progress { gap: 0.8rem; }
+    :root {
+      --gutter: 2.6rem;
+    }
+    .flow {
+      gap: 0 0.8rem;
+    }
+    .progress {
+      gap: 0.8rem;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    * { transition: none !important; }
+    * {
+      transition: none !important;
+    }
   }
 </style>
 
 <div class="wrap">
-
   <header class="masthead">
     <p class="eyebrow">MYT · Offline flights v2 · validation pass</p>
     <h1>19 flows to walk</h1>
     <p class="lede">
-      Every flow below maps to something that shipped. Mark each one, and drop a note on
-      anything that fails — then hit <b>Copy report</b> at the bottom and paste it back to me.
-      Your marks are saved in this browser, so you can stop and come back.
+      Every flow below maps to something that shipped. Mark each one, and drop a
+      note on anything that fails - then hit <b>Copy report</b> at the bottom
+      and paste it back to me. Your marks are saved in this browser, so you can
+      stop and come back.
     </p>
   </header>
 
@@ -415,29 +484,45 @@
   <section class="setup">
     <h2>Before you start</h2>
 
-    <p style="margin-top:0">Backoffice, on <code>master</code> — already has everything:</p>
-<pre>cd C:/Users/doraz/OneDrive/Desktop/Work/MegaEvent/MYT_Git_Shered/myt-backoffice
-npm run dev          # → http://localhost:3000</pre>
+    <p style="margin-top: 0">
+      Backoffice, on <code>master</code> - already has everything:
+    </p>
+    <pre>
+cd C:/Users/doraz/OneDrive/Desktop/Work/MegaEvent/MYT_Git_Shered/myt-backoffice
+npm run dev          # → http://localhost:3000</pre
+    >
 
-    <p>Main, on the feature branch — port 3001 so both run side by side:</p>
-<pre>cd C:/Users/doraz/OneDrive/Desktop/Work/MegaEvent/MYT_Git_Shered/myt-main
+    <p>Main, on the feature branch - port 3001 so both run side by side:</p>
+    <pre>
+cd C:/Users/doraz/OneDrive/Desktop/Work/MegaEvent/MYT_Git_Shered/myt-main
 git checkout feat/offline-flights-v2
-npm run dev -- -p 3001    # → http://localhost:3001</pre>
+npm run dev -- -p 3001    # → http://localhost:3001</pre
+    >
 
     <p>
-      All three migrations are applied — I verified the new <code>flights</code> columns,
-      <code>flight_event_allocations</code>, the <code>flight_event_consumed</code> view and
+      All three migrations are applied - I verified the new
+      <code>flights</code> columns, <code>flight_event_allocations</code>, the
+      <code>flight_event_consumed</code> view and
       <code>events.locked_flight_id</code> all answer live.
     </p>
 
     <div class="caution">
-      <p><strong>Both apps point at the production Supabase.</strong> Everything you create here is
-      real: real flights, real allocations, real price pushes onto linked events.</p>
-      <p>Pick <strong>one throwaway event</strong> and one or two flights and keep the whole pass
-      inside them. Flights soft-delete, so cleanup is a Delete click.</p>
-      <p><strong>Do not lock an event customers can actually buy</strong> (flow B11 / M5).
-      Production main has not merged the branch yet, so it would keep showing Amadeus flights for a
-      package you believe is locked. Lock only a test event until the PR is merged.</p>
+      <p>
+        <strong>Both apps point at the production Supabase.</strong> Everything
+        you create here is real: real flights, real allocations, real price
+        pushes onto linked events.
+      </p>
+      <p>
+        Pick <strong>one throwaway event</strong> and one or two flights and
+        keep the whole pass inside them. Flights soft-delete, so cleanup is a
+        Delete click.
+      </p>
+      <p>
+        <strong>Do not lock an event customers can actually buy</strong> (flow
+        B11 / M5). Production main has not merged the branch yet, so it would
+        keep showing Amadeus flights for a package you believe is locked. Lock
+        only a test event until the PR is merged.
+      </p>
     </div>
   </section>
 
@@ -451,15 +536,27 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">B1</div>
       <div class="body">
         <h3>The new operations fields save and stick</h3>
-        <p class="proves">Item 5 — fields from the flights Excel</p>
+        <p class="proves">Item 5 - fields from the flights Excel</p>
         <ol>
-          <li>Go to <code>/offline-flights</code>, click a flight's <b>ID</b> — a side drawer opens.</li>
-          <li>The drawer is grouped: Inventory, Airline, Outbound, Inbound, Supplier, Deadlines, Operations, Misc.</li>
-          <li>Fill Supplier, Cost price, Cost currency, PNR, Contract/group, Ticketing deadline, Cabin class, Checked bag kg, Block status, Notes, Handled by.</li>
+          <li>
+            Go to <code>/offline-flights</code>, click a flight's <b>ID</b> - a
+            side drawer opens.
+          </li>
+          <li>
+            The drawer is grouped: Inventory, Airline, Outbound, Inbound,
+            Supplier, Deadlines, Operations, Misc.
+          </li>
+          <li>
+            Fill Supplier, Cost price, Cost currency, PNR, Contract/group,
+            Ticketing deadline, Cabin class, Checked bag kg, Block status,
+            Notes, Handled by.
+          </li>
           <li>Close the drawer and reload the page.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> every value is still there. Cost price is stored separately from
-        the selling Price and never reaches the customer.</p>
+        <p class="expect">
+          <b>Expect:</b> every value is still there. Cost price is stored
+          separately from the selling Price and never reaches the customer.
+        </p>
         <div class="verdict" data-for="B1"></div>
       </div>
     </div>
@@ -468,13 +565,18 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">B2</div>
       <div class="body">
         <h3>Column picker remembers what you chose</h3>
-        <p class="proves">Item 2 — editing from outside</p>
+        <p class="proves">Item 2 - editing from outside</p>
         <ol>
-          <li>Hit <b>Columns</b> in the toolbar. Tick Supplier and Cost price; untick Airline name.</li>
+          <li>
+            Hit <b>Columns</b> in the toolbar. Tick Supplier and Cost price;
+            untick Airline name.
+          </li>
           <li>Reload the page.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> your column choice survives the reload. ORG / TAKEN / AVAILABLE
-        are fixed columns and always visible.</p>
+        <p class="expect">
+          <b>Expect:</b> your column choice survives the reload. ORG / TAKEN /
+          AVAILABLE are fixed columns and always visible.
+        </p>
         <div class="verdict" data-for="B2"></div>
       </div>
     </div>
@@ -483,15 +585,24 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">B3</div>
       <div class="body">
         <h3>Click any cell and edit it in place</h3>
-        <p class="proves">Item 2 — editing from outside</p>
+        <p class="proves">Item 2 - editing from outside</p>
         <ol>
-          <li>Click a <b>Price</b> cell — it becomes an input. Type a new value, press Enter.</li>
-          <li>Click a <b>Block status</b> cell — it becomes a dropdown. Pick a value.</li>
+          <li>
+            Click a <b>Price</b> cell - it becomes an input. Type a new value,
+            press Enter.
+          </li>
+          <li>
+            Click a <b>Block status</b> cell - it becomes a dropdown. Pick a
+            value.
+          </li>
           <li>Click a cell, change it, then press <b>Esc</b>.</li>
           <li>Reload.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> the first two persisted; the Esc one did not. If a save ever
-        fails you get a red toast and the cell snaps back to its old value rather than lying to you.</p>
+        <p class="expect">
+          <b>Expect:</b> the first two persisted; the Esc one did not. If a save
+          ever fails you get a red toast and the cell snaps back to its old
+          value rather than lying to you.
+        </p>
         <div class="verdict" data-for="B3"></div>
       </div>
     </div>
@@ -500,16 +611,30 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">B4</div>
       <div class="body">
         <h3>Change one field across many flights at once</h3>
-        <p class="proves">Item 2 — multi-edit</p>
+        <p class="proves">Item 2 - multi-edit</p>
         <ol>
           <li>Tick 2–3 rows. A bulk bar appears above the table.</li>
-          <li><b>Set field</b> → Block status → <code>option</code> → Apply. All selected rows change.</li>
-          <li><b>Price</b> → <code>± %</code> → <code>10</code> → Apply price.</li>
-          <li><b>Event</b> → pick your test event → <b>Link event</b>. Then <b>Unlink event</b>.</li>
-          <li>Select one row → <b>Delete</b> → confirm. Turn on <b>Filters → Show deleted</b> to see it, then <b>Restore</b>.</li>
+          <li>
+            <b>Set field</b> → Block status → <code>option</code> → Apply. All
+            selected rows change.
+          </li>
+          <li>
+            <b>Price</b> → <code>± %</code> → <code>10</code> → Apply price.
+          </li>
+          <li>
+            <b>Event</b> → pick your test event → <b>Link event</b>. Then
+            <b>Unlink event</b>.
+          </li>
+          <li>
+            Select one row → <b>Delete</b> → confirm. Turn on
+            <b>Filters → Show deleted</b> to see it, then <b>Restore</b>.
+          </li>
         </ol>
-        <p class="expect"><b>Expect:</b> the percentage lands on whole dollars (no <code>$412.4999</code>).
-        Selection clears after each bulk action. Deleted rows are hidden by default, never gone.</p>
+        <p class="expect">
+          <b>Expect:</b> the percentage lands on whole dollars (no
+          <code>$412.4999</code>). Selection clears after each bulk action.
+          Deleted rows are hidden by default, never gone.
+        </p>
         <div class="verdict" data-for="B4"></div>
       </div>
     </div>
@@ -518,20 +643,38 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">B5</div>
       <div class="body">
         <h3>Allocate seats per event, and watch it refuse bad numbers</h3>
-        <p class="proves">Items 3 + 4 — allocation, ORG / TAKEN / AVAILABLE</p>
+        <p class="proves">Items 3 + 4 - allocation, ORG / TAKEN / AVAILABLE</p>
         <ol>
-          <li>Find a flight linked to 2+ events with ORG around 20. Click the <b>chevron</b> on the left.</li>
-          <li>Each event starts as <b>global pool</b> — no allocation, behaves exactly as before.</li>
-          <li>Allocate 10 to the first event. The footer drops to <code>Unallocated: 10 of 20</code>.</li>
+          <li>
+            Find a flight linked to 2+ events with ORG around 20. Click the
+            <b>chevron</b> on the left.
+          </li>
+          <li>
+            Each event starts as <b>global pool</b> - no allocation, behaves
+            exactly as before.
+          </li>
+          <li>
+            Allocate 10 to the first event. The footer drops to
+            <code>Unallocated: 10 of 20</code>.
+          </li>
           <li>Now try to allocate <b>15</b> to the second event.</li>
-          <li>Allocate 10 instead. Footer reaches <code>Unallocated: 0 of 20</code>.</li>
-          <li>On an event that already has a live reservation on this flight, try allocating fewer seats than it has sold.</li>
+          <li>
+            Allocate 10 instead. Footer reaches
+            <code>Unallocated: 0 of 20</code>.
+          </li>
+          <li>
+            On an event that already has a live reservation on this flight, try
+            allocating fewer seats than it has sold.
+          </li>
           <li>Click the <b>×</b> to remove an allocation.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> step 4 is refused — <i>"only 10 of 20 remain unallocated"</i>.
-        Step 6 is refused — <i>"this event has already sold N"</i>. Step 7 returns that event to the
-        global pool rather than blocking it. TAKEN is read straight from live reservations, so it can
-        never drift out of sync.</p>
+        <p class="expect">
+          <b>Expect:</b> step 4 is refused -
+          <i>"only 10 of 20 remain unallocated"</i>. Step 6 is refused -
+          <i>"this event has already sold N"</i>. Step 7 returns that event to
+          the global pool rather than blocking it. TAKEN is read straight from
+          live reservations, so it can never drift out of sync.
+        </p>
         <div class="verdict" data-for="B5"></div>
       </div>
     </div>
@@ -540,14 +683,21 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">B6</div>
       <div class="body">
         <h3>A ticketing deadline that's about to bite gets flagged</h3>
-        <p class="proves">Item 5 — deadlines are actionable, not decoration</p>
+        <p class="proves">Item 5 - deadlines are actionable, not decoration</p>
         <ol>
-          <li>On a flight whose Block status is <b>not</b> <code>ticketed</code>, set Ticketing deadline to tomorrow.</li>
+          <li>
+            On a flight whose Block status is <b>not</b> <code>ticketed</code>,
+            set Ticketing deadline to tomorrow.
+          </li>
           <li>Look at the flight ID in the list; hover the marker.</li>
           <li>Now set Block status to <code>ticketed</code>.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> an amber dot beside the ID reading <i>"Ticketing deadline in 1 day(s)"</i>,
-        which disappears once the block is ticketed. Same treatment for an option that's about to expire.</p>
+        <p class="expect">
+          <b>Expect:</b> an amber dot beside the ID reading
+          <i>"Ticketing deadline in 1 day(s)"</i>, which disappears once the
+          block is ticketed. Same treatment for an option that's about to
+          expire.
+        </p>
         <div class="verdict" data-for="B6"></div>
       </div>
     </div>
@@ -556,18 +706,34 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">B7</div>
       <div class="body">
         <h3>Build a whole series in one pass</h3>
-        <p class="proves">Item 1 — series of flights</p>
+        <p class="proves">Item 1 - series of flights</p>
         <ol>
           <li><code>/offline-flights</code> → <b>New series</b>.</li>
-          <li><b>Step 1</b> — fill the shared template: series name, airline, route, times, price, seats. Everything except dates.</li>
-          <li><b>Step 2</b> — click 3 departure dates on the calendar, set <b>Number of days</b> to 4.</li>
-          <li><b>Step 3</b> — check the preview: each return date is exactly 4 days after its departure. Change one row's price. Untick one suggested event. Delete one row with the bin icon.</li>
+          <li>
+            <b>Step 1</b> - fill the shared template: series name, airline,
+            route, times, price, seats. Everything except dates.
+          </li>
+          <li>
+            <b>Step 2</b> - click 3 departure dates on the calendar, set
+            <b>Number of days</b> to 4.
+          </li>
+          <li>
+            <b>Step 3</b> - check the preview: each return date is exactly 4
+            days after its departure. Change one row's price. Untick one
+            suggested event. Delete one row with the bin icon.
+          </li>
           <li>Create.</li>
-          <li>Back on the list, open <b>Filters → Series</b> and pick your series name.</li>
+          <li>
+            Back on the list, open <b>Filters → Series</b> and pick your series
+            name.
+          </li>
         </ol>
-        <p class="expect"><b>Expect:</b> 2 flights created (you deleted one), the edited price on the right
-        one, and the events you left ticked linked to each. Relevant events are suggested automatically
-        from each flight's own date window and pre-ticked.</p>
+        <p class="expect">
+          <b>Expect:</b> 2 flights created (you deleted one), the edited price
+          on the right one, and the events you left ticked linked to each.
+          Relevant events are suggested automatically from each flight's own
+          date window and pre-ticked.
+        </p>
         <div class="verdict" data-for="B7"></div>
       </div>
     </div>
@@ -576,17 +742,23 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">B8</div>
       <div class="body">
         <h3>Two Excel files, one worksheet per airline</h3>
-        <p class="proves">Item 6 — export for ticketing</p>
+        <p class="proves">Item 6 - export for ticketing</p>
         <ol>
           <li>Toolbar → <b>Export inventory</b>. Open the file.</li>
           <li>Toolbar → <b>Export for ticketing</b>. Open that one too.</li>
-          <li>Now set a filter (one airline, or a date range), export again.</li>
+          <li>
+            Now set a filter (one airline, or a date range), export again.
+          </li>
           <li>Then tick a few rows and export again.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> a worksheet per airline, bold frozen header row, and
-        AVAILABLE = ORG − TAKEN on every line. The exports follow whatever you filtered or selected.
-        The ticketing file lists <b>one row per passenger</b> — main contact included, since they fly
-        too — with empty passport columns until B9. Cancelled and Lost bookings never appear.</p>
+        <p class="expect">
+          <b>Expect:</b> a worksheet per airline, bold frozen header row, and
+          AVAILABLE = ORG − TAKEN on every line. The exports follow whatever you
+          filtered or selected. The ticketing file lists
+          <b>one row per passenger</b> - main contact included, since they fly
+          too - with empty passport columns until B9. Cancelled and Lost
+          bookings never appear.
+        </p>
         <div class="verdict" data-for="B8"></div>
       </div>
     </div>
@@ -595,16 +767,26 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">B9</div>
       <div class="body">
         <h3>Passport details, and them reaching the manifest</h3>
-        <p class="proves">Item 6 — what an airline actually needs to issue a ticket</p>
+        <p class="proves">
+          Item 6 - what an airline actually needs to issue a ticket
+        </p>
         <ol>
-          <li>Open a reservation that has extra passengers and sits on an offline flight.</li>
-          <li>In the <b>Passengers</b> block, fill passport number, expiry, date of birth, gender, nationality.</li>
+          <li>
+            Open a reservation that has extra passengers and sits on an offline
+            flight.
+          </li>
+          <li>
+            In the <b>Passengers</b> block, fill passport number, expiry, date
+            of birth, gender, nationality.
+          </li>
           <li>Save, then reload.</li>
           <li>Go back and run <b>Export for ticketing</b> for that flight.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> the details persisted and the names were not clobbered, and
-        those passports now show up in the manifest. The customer never sees these fields — the site
-        still only asks for names at checkout.</p>
+        <p class="expect">
+          <b>Expect:</b> the details persisted and the names were not clobbered,
+          and those passports now show up in the manifest. The customer never
+          sees these fields - the site still only asks for names at checkout.
+        </p>
         <div class="verdict" data-for="B9"></div>
       </div>
     </div>
@@ -613,17 +795,22 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">B10</div>
       <div class="body">
         <h3>The event page has the same table, not a weaker copy</h3>
-        <p class="proves">Item 2 — "do it for every table that has flights"</p>
+        <p class="proves">Item 2 - "do it for every table that has flights"</p>
         <ol>
-          <li>Open an event with linked offline flights and scroll to the flights card.</li>
+          <li>
+            Open an event with linked offline flights and scroll to the flights
+            card.
+          </li>
           <li>Inline-edit a price there.</li>
           <li>Expand a flight's allocations.</li>
           <li>Check the toolbar.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> identical behaviour to <code>/offline-flights</code> — it is
-        literally one component. The Event filter is hidden (you're already inside an event), this
-        event's row is highlighted in the allocations panel, and the exports scope themselves to
-        this event.</p>
+        <p class="expect">
+          <b>Expect:</b> identical behaviour to <code>/offline-flights</code> -
+          it is literally one component. The Event filter is hidden (you're
+          already inside an event), this event's row is highlighted in the
+          allocations panel, and the exports scope themselves to this event.
+        </p>
         <div class="verdict" data-for="B10"></div>
       </div>
     </div>
@@ -632,24 +819,35 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">B11</div>
       <div class="body">
         <h3>Lock a package to one flight</h3>
-        <p class="proves">Item 7 — LOCKFLIGHT, backoffice half</p>
+        <p class="proves">Item 7 - LOCKFLIGHT, backoffice half</p>
         <ol>
           <li>On your <b>test</b> event, flip <b>Locked package</b> on.</li>
-          <li>Pick a flight from the dropdown — it lists only flights already linked to this event, and says how many seats each has allocated.</li>
-          <li>Hit Lock. Now check the event's default depart / return dates.</li>
+          <li>
+            Pick a flight from the dropdown - it lists only flights already
+            linked to this event, and says how many seats each has allocated.
+          </li>
+          <li>
+            Hit Lock. Now check the event's default depart / return dates.
+          </li>
           <li>Lock a flight that has no allocation for this event.</li>
           <li>Flip the switch off and confirm.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> an amber banner naming the locked flight; the event's dates
-        snap to the flight's (return = the return leg's takeoff, not the landing back home). Step 4
-        still locks but warns you it's drawing on the global pool. Unlock clears the banner.</p>
+        <p class="expect">
+          <b>Expect:</b> an amber banner naming the locked flight; the event's
+          dates snap to the flight's (return = the return leg's takeoff, not the
+          landing back home). Step 4 still locks but warns you it's drawing on
+          the global pool. Unlock clears the banner.
+        </p>
         <div class="verdict" data-for="B11"></div>
       </div>
     </div>
 
-    <div class="section-head" style="margin-top:3rem">
+    <div class="section-head" style="margin-top: 3rem">
       <h2>Main</h2>
-      <span class="where">localhost:3001 · branch feat/offline-flights-v2 · /order/&lt;eventId&gt;</span>
+      <span class="where"
+        >localhost:3001 · branch feat/offline-flights-v2 ·
+        /order/&lt;eventId&gt;</span
+      >
     </div>
 
     <div class="flow" data-id="M1">
@@ -658,12 +856,20 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
         <h3>Nothing changed for events you haven't touched</h3>
         <p class="proves">The regression that matters most</p>
         <ol>
-          <li>Pick an event with an offline flight and <b>no</b> allocation rows at all.</li>
-          <li>Open <code>/order/&lt;eventId&gt;</code> and go to the flight step.</li>
+          <li>
+            Pick an event with an offline flight and <b>no</b> allocation rows
+            at all.
+          </li>
+          <li>
+            Open <code>/order/&lt;eventId&gt;</code> and go to the flight step.
+          </li>
         </ol>
-        <p class="expect"><b>Expect:</b> the offline flight shows exactly as it does today, alongside
-        the Amadeus results. No allocation row means the old global seat check is still the only gate —
-        that's why there was no backfill and why nothing in production needed to change.</p>
+        <p class="expect">
+          <b>Expect:</b> the offline flight shows exactly as it does today,
+          alongside the Amadeus results. No allocation row means the old global
+          seat check is still the only gate - that's why there was no backfill
+          and why nothing in production needed to change.
+        </p>
         <div class="verdict" data-for="M1"></div>
       </div>
     </div>
@@ -672,15 +878,20 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">M2</div>
       <div class="body">
         <h3>The allocation is a hard ceiling</h3>
-        <p class="proves">Item 3 — seats per package</p>
+        <p class="proves">Item 3 - seats per package</p>
         <ol>
-          <li>In the backoffice, allocate <b>1</b> seat on that flight to that event.</li>
+          <li>
+            In the backoffice, allocate <b>1</b> seat on that flight to that
+            event.
+          </li>
           <li>Search the flight step for <b>2</b> travellers.</li>
           <li>Search again for <b>1</b> traveller.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> gone at 2, present at 1 — even though the flight still has
-        plenty of unallocated seats. That's the hard cap you chose: an event cannot eat into another
-        package's quota.</p>
+        <p class="expect">
+          <b>Expect:</b> gone at 2, present at 1 - even though the flight still
+          has plenty of unallocated seats. That's the hard cap you chose: an
+          event cannot eat into another package's quota.
+        </p>
         <div class="verdict" data-for="M2"></div>
       </div>
     </div>
@@ -689,14 +900,17 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">M3</div>
       <div class="body">
         <h3>Zero seats means zero</h3>
-        <p class="proves">Item 3 — exhausted quota</p>
+        <p class="proves">Item 3 - exhausted quota</p>
         <ol>
           <li>Set that event's allocation to <b>0</b>.</li>
           <li>Search for 1 traveller.</li>
           <li>Remove the allocation entirely and search again.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> invisible at 0 for any party size; back the moment the
-        allocation is removed, because that returns the event to the global pool.</p>
+        <p class="expect">
+          <b>Expect:</b> invisible at 0 for any party size; back the moment the
+          allocation is removed, because that returns the event to the global
+          pool.
+        </p>
         <div class="verdict" data-for="M3"></div>
       </div>
     </div>
@@ -705,15 +919,25 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">M4</div>
       <div class="body">
         <h3>A flight with a stopover stops saying "direct"</h3>
-        <p class="proves">Item 5 — the stops column that was previously forbidden</p>
+        <p class="proves">
+          Item 5 - the stops column that was previously forbidden
+        </p>
         <ol>
-          <li>On an offline flight, set <b>Out stopover</b> to e.g. <code>VIE</code>, <b>Out stop duration</b> to <code>PT2H</code>, and <b>stops</b> to 1.</li>
+          <li>
+            On an offline flight, set <b>Out stopover</b> to e.g.
+            <code>VIE</code>, <b>Out stop duration</b> to <code>PT2H</code>, and
+            <b>stops</b> to 1.
+          </li>
           <li>Also set Checked bag kg and Cabin bag kg.</li>
-          <li>Reload the flight step on the site and find that flight's card.</li>
+          <li>
+            Reload the flight step on the site and find that flight's card.
+          </li>
         </ol>
-        <p class="expect"><b>Expect:</b> the card shows one stop with the layover, not "direct".
-        Until now the database physically refused to store a connecting flight — the old constraint
-        pinned stops to 0. Amadeus results are untouched.</p>
+        <p class="expect">
+          <b>Expect:</b> the card shows one stop with the layover, not "direct".
+          Until now the database physically refused to store a connecting flight
+          - the old constraint pinned stops to 0. Amadeus results are untouched.
+        </p>
         <div class="verdict" data-for="M4"></div>
       </div>
     </div>
@@ -722,15 +946,18 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">M5</div>
       <div class="body">
         <h3>A locked package offers exactly one flight</h3>
-        <p class="proves">Item 7 — LOCKFLIGHT, customer half</p>
+        <p class="proves">Item 7 - LOCKFLIGHT, customer half</p>
         <ol>
           <li>Lock your test event to a flight that has seats (B11).</li>
           <li>Open the flight step on the site.</li>
           <li>Watch the network tab while it loads.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> that one flight and nothing else, no filter/sort sidebar —
-        there is nothing to choose between — and the dates fixed to the flight's. Amadeus is never
-        called at all, so a locked package is also a faster and cheaper page load.</p>
+        <p class="expect">
+          <b>Expect:</b> that one flight and nothing else, no filter/sort
+          sidebar - there is nothing to choose between - and the dates fixed to
+          the flight's. Amadeus is never called at all, so a locked package is
+          also a faster and cheaper page load.
+        </p>
         <div class="verdict" data-for="M5"></div>
       </div>
     </div>
@@ -739,15 +966,20 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">M6</div>
       <div class="body">
         <h3>When the locked flight sells out, the package sells out</h3>
-        <p class="proves">Item 7 — no silent re-pricing</p>
+        <p class="proves">Item 7 - no silent re-pricing</p>
         <ol>
-          <li>Keep the event locked, and set its allocation on that flight to <b>0</b>.</li>
+          <li>
+            Keep the event locked, and set its allocation on that flight to
+            <b>0</b>.
+          </li>
           <li>Reload the flight step.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> a clean <b>"החבילה אזלה"</b> panel — and crucially,
-        <b>no Amadeus results appear instead</b>. Falling back to a live search would quietly change
-        the price the customer was promised, which is the whole reason to lock a package. Sold out
-        means sold out.</p>
+        <p class="expect">
+          <b>Expect:</b> a clean <b>"החבילה אזלה"</b> panel - and crucially,
+          <b>no Amadeus results appear instead</b>. Falling back to a live
+          search would quietly change the price the customer was promised, which
+          is the whole reason to lock a package. Sold out means sold out.
+        </p>
         <div class="verdict" data-for="M6"></div>
       </div>
     </div>
@@ -756,14 +988,22 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       <div class="code">M7</div>
       <div class="body">
         <h3>"No flight, thanks" still works on a locked package</h3>
-        <p class="proves">Item 7 — the exception you asked for</p>
+        <p class="proves">Item 7 - the exception you asked for</p>
         <ol>
-          <li>On the locked test event, make sure <b>skip flight</b> is enabled in the backoffice.</li>
-          <li>Open the order flow — both with the flight available and while it's sold out.</li>
+          <li>
+            On the locked test event, make sure <b>skip flight</b> is enabled in
+            the backoffice.
+          </li>
+          <li>
+            Open the order flow - both with the flight available and while it's
+            sold out.
+          </li>
         </ol>
-        <p class="expect"><b>Expect:</b> the customer can still continue without a flight in both
-        states, and the ticket-only price is unaffected. Locking pins <i>which</i> flight is on offer;
-        it never forces someone to take one.</p>
+        <p class="expect">
+          <b>Expect:</b> the customer can still continue without a flight in
+          both states, and the ticket-only price is unaffected. Locking pins
+          <i>which</i> flight is on offer; it never forces someone to take one.
+        </p>
         <div class="verdict" data-for="M7"></div>
       </div>
     </div>
@@ -774,13 +1014,19 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
         <h3>A real booking still decrements correctly</h3>
         <p class="proves">The derived-consumed design, end to end</p>
         <ol>
-          <li>Take one allocated event through to a completed reservation on the offline flight.</li>
+          <li>
+            Take one allocated event through to a completed reservation on the
+            offline flight.
+          </li>
           <li>In the backoffice, expand that flight's allocations.</li>
           <li>Cancel the reservation, then look again.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> TAKEN rises for that event and AVAILABLE falls, without the
-        checkout code changing at all — consumption is read live from reservations, not tracked in a
-        second counter. Cancelling gives the seat straight back.</p>
+        <p class="expect">
+          <b>Expect:</b> TAKEN rises for that event and AVAILABLE falls, without
+          the checkout code changing at all - consumption is read live from
+          reservations, not tracked in a second counter. Cancelling gives the
+          seat straight back.
+        </p>
         <div class="verdict" data-for="M8"></div>
       </div>
     </div>
@@ -789,18 +1035,23 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
   <section class="report">
     <h2>When you're done</h2>
     <p>
-      This builds a short summary of everything you marked, including your notes on the failures.
-      Paste it straight back into our chat and I'll work through the list.
+      This builds a short summary of everything you marked, including your notes
+      on the failures. Paste it straight back into our chat and I'll work
+      through the list.
     </p>
     <div class="verdict">
       <button class="act" id="btn-report" type="button">Copy report</button>
-      <span id="copy-note" style="font-family:var(--mono);font-size:0.7rem;color:var(--pass)"></span>
+      <span
+        id="copy-note"
+        style="font-family: var(--mono); font-size: 0.7rem; color: var(--pass)"
+      ></span>
     </div>
     <pre id="report-out"></pre>
   </section>
 
   <footer class="foot">
-    Backoffice on master · main on feat/offline-flights-v2 · migrations applied 2026-07-29
+    Backoffice on master · main on feat/offline-flights-v2 · migrations applied
+    2026-07-29
   </footer>
 </div>
 
@@ -821,12 +1072,13 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       try {
         localStorage.setItem(KEY, JSON.stringify(state));
       } catch (e) {
-        /* private browsing — marks just won't persist */
+        /* private browsing - marks just won't persist */
       }
     }
 
     function tally() {
-      var pass = 0, fail = 0;
+      var pass = 0,
+        fail = 0;
       flows.forEach(function (f) {
         var v = (state[f.dataset.id] || {}).verdict;
         if (v === "pass") pass++;
@@ -834,7 +1086,8 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       });
       document.getElementById("n-pass").textContent = pass;
       document.getElementById("n-fail").textContent = fail;
-      document.getElementById("n-todo").textContent = flows.length - pass - fail;
+      document.getElementById("n-todo").textContent =
+        flows.length - pass - fail;
     }
 
     flows.forEach(function (flow) {
@@ -853,7 +1106,8 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       btnFail.textContent = "Broken";
 
       var note = document.createElement("textarea");
-      note.placeholder = "What went wrong? Be as specific as you like — exact wording, which step, what you expected.";
+      note.placeholder =
+        "What went wrong? Be as specific as you like - exact wording, which step, what you expected.";
       note.value = entry.note || "";
       note.setAttribute("aria-label", "Notes for flow " + id);
 
@@ -875,8 +1129,12 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
         if (cur.verdict === "fail") note.focus();
       }
 
-      btnPass.addEventListener("click", function () { mark("pass"); });
-      btnFail.addEventListener("click", function () { mark("fail"); });
+      btnPass.addEventListener("click", function () {
+        mark("pass");
+      });
+      btnFail.addEventListener("click", function () {
+        mark("fail");
+      });
 
       note.addEventListener("input", function () {
         var cur = state[id] || {};
@@ -900,49 +1158,63 @@ npm run dev -- -p 3001    # → http://localhost:3001</pre>
       location.reload();
     });
 
-    document.getElementById("btn-report").addEventListener("click", function () {
-      var lines = ["MYT offline flights v2 — QA results", ""];
-      var broken = [], ok = [], todo = [];
+    document
+      .getElementById("btn-report")
+      .addEventListener("click", function () {
+        var lines = ["MYT offline flights v2 - QA results", ""];
+        var broken = [],
+          ok = [],
+          todo = [];
 
-      flows.forEach(function (flow) {
-        var id = flow.dataset.id;
-        var title = flow.querySelector("h3").textContent.trim();
-        var entry = state[id] || {};
-        if (entry.verdict === "fail") {
-          broken.push("[" + id + "] " + title + (entry.note ? "\n    → " + entry.note.trim() : ""));
-        } else if (entry.verdict === "pass") {
-          ok.push(id);
+        flows.forEach(function (flow) {
+          var id = flow.dataset.id;
+          var title = flow.querySelector("h3").textContent.trim();
+          var entry = state[id] || {};
+          if (entry.verdict === "fail") {
+            broken.push(
+              "[" +
+                id +
+                "] " +
+                title +
+                (entry.note ? "\n    → " + entry.note.trim() : ""),
+            );
+          } else if (entry.verdict === "pass") {
+            ok.push(id);
+          } else {
+            todo.push(id);
+          }
+        });
+
+        if (broken.length) {
+          lines.push("BROKEN (" + broken.length + ")");
+          lines.push(broken.join("\n"));
+          lines.push("");
+        }
+        if (ok.length) {
+          lines.push("WORKS (" + ok.length + "): " + ok.join(", "));
+        }
+        if (todo.length) {
+          lines.push("NOT CHECKED (" + todo.length + "): " + todo.join(", "));
+        }
+
+        var text = lines.join("\n");
+        var out = document.getElementById("report-out");
+        out.textContent = text;
+        out.classList.add("shown");
+
+        var note = document.getElementById("copy-note");
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(
+            function () {
+              note.textContent = "Copied - paste it in chat.";
+            },
+            function () {
+              note.textContent = "Couldn't copy; select the text below.";
+            },
+          );
         } else {
-          todo.push(id);
+          note.textContent = "Select the text below and copy it.";
         }
       });
-
-      if (broken.length) {
-        lines.push("BROKEN (" + broken.length + ")");
-        lines.push(broken.join("\n"));
-        lines.push("");
-      }
-      if (ok.length) {
-        lines.push("WORKS (" + ok.length + "): " + ok.join(", "));
-      }
-      if (todo.length) {
-        lines.push("NOT CHECKED (" + todo.length + "): " + todo.join(", "));
-      }
-
-      var text = lines.join("\n");
-      var out = document.getElementById("report-out");
-      out.textContent = text;
-      out.classList.add("shown");
-
-      var note = document.getElementById("copy-note");
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(
-          function () { note.textContent = "Copied — paste it in chat."; },
-          function () { note.textContent = "Couldn't copy; select the text below."; }
-        );
-      } else {
-        note.textContent = "Select the text below and copy it.";
-      }
-    });
   })();
 </script>

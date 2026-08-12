@@ -1,6 +1,6 @@
 -- One category table.
 --
--- A category lived twice: `categories` (the Templates card the team builds —
+-- A category lived twice: `categories` (the Templates card the team builds -
 -- image, subtitle, blob art, member pages) and `event_categories` (the
 -- taxonomy node main read for /c/ pages and the feed's product_type). Every
 -- field but `parent_id` was duplicated, and since the Templates form became
@@ -8,7 +8,7 @@
 -- code. The tree moves onto the card and the shadow goes away.
 --
 -- The two tables map 1:1 by slug (sport, football, music, shows, tennis,
--- festivals, formula-1 — the node spelled "פרומולה 1" while the card spells it
+-- festivals, formula-1 - the node spelled "פרומולה 1" while the card spells it
 -- "פורמולה 1", but both slug to formula-1).
 
 -- 1. the tree moves onto the card
@@ -42,7 +42,7 @@ join categories c on c.slug = n.slug and c.is_deleted = false
 on conflict do nothing;
 
 -- 3. membership stays derived, now over the card's tags. Same view name and
---    shape (event_id, category_id) main already reads — only the id space
+--    shape (event_id, category_id) main already reads - only the id space
 --    changes, from node ids to card ids.
 drop view if exists event_category_links;
 create view event_category_links as

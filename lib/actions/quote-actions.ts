@@ -9,7 +9,11 @@ import {
   type PackagePriceEvent,
   type PerPersonPricingFields,
 } from "@/lib/package-price";
-import { PAID_STATUS, round2, type CommissionTerms } from "@/lib/partner-commission";
+import {
+  PAID_STATUS,
+  round2,
+  type CommissionTerms,
+} from "@/lib/partner-commission";
 import { signQuoteLink } from "@/lib/quote-link-sig";
 import { PUBLIC_SITE_URL } from "@/lib/site";
 import type { CommissionType } from "@/types/partner.types";
@@ -45,7 +49,7 @@ export interface PortalQuote {
 export type PartnerQuoteStatus = "final" | "closed" | "not_relevant";
 
 export interface PortalQuoteWithState extends PortalQuote {
-  /** A Paid order arrived through this quote's signed link — closed for real,
+  /** A Paid order arrived through this quote's signed link - closed for real,
    *  whatever the manual status says. */
   closed_by_order: boolean;
   /** valid_until has passed (and the quote isn't closed / not-relevant). */
@@ -58,7 +62,7 @@ export interface PortalQuoteStats {
   closed: number;
   expired: number;
   notRelevant: number;
-  /** Still open and in force — the ones the agent should follow up on. */
+  /** Still open and in force - the ones the agent should follow up on. */
   openForFollowUp: number;
 }
 
@@ -102,13 +106,15 @@ export async function getQuoteEvents(): Promise<QuoteEventOption[]> {
 /**
  * What the system would price ONE package at for this event, right now.
  *
- * Per traveller, matching computePackagePrice — the order flow multiplies it by
+ * Per traveller, matching computePackagePrice - the order flow multiplies it by
  * the number of travellers. Recomputed server-side rather than accepting a
  * number from the quote form: the whole point of storing it is to measure what
  * the partner did to the price, so the partner's browser cannot be the source
  * of the baseline.
  */
-async function suggestedUnitPriceFor(eventId: number | null): Promise<number | null> {
+async function suggestedUnitPriceFor(
+  eventId: number | null,
+): Promise<number | null> {
   if (eventId == null) return null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
@@ -120,7 +126,7 @@ async function suggestedUnitPriceFor(eventId: number | null): Promise<number | n
     .is("is_deleted", null)
     .maybeSingle();
   if (error) {
-    // A missing baseline is recorded as NULL rather than failing the quote —
+    // A missing baseline is recorded as NULL rather than failing the quote -
     // the partner's work is not lost over a reporting field.
     console.error("suggestedUnitPriceFor:", JSON.stringify(error));
     return null;
@@ -129,9 +135,9 @@ async function suggestedUnitPriceFor(eventId: number | null): Promise<number | n
 }
 
 /**
- * Per-traveller price of a prepared package — the quote baseline when the
+ * Per-traveller price of a prepared package - the quote baseline when the
  * quote starts from a package (מחיר היחידה חייב לשקף את ההרכבה, לא את מחיר
- * האירוע הגנרי — a no-flight package priced $1,238 must not baseline $2,033).
+ * האירוע הגנרי - a no-flight package priced $1,238 must not baseline $2,033).
  *
  * The stamp written at package creation wins; packages from before the stamp
  * fall back to recomputing from the composition flags at event baselines
@@ -139,7 +145,7 @@ async function suggestedUnitPriceFor(eventId: number | null): Promise<number | n
  */
 async function packageBaselineFor(
   trackingCode: string,
-  packageId: number
+  packageId: number,
 ): Promise<number | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
@@ -173,12 +179,13 @@ async function packageBaselineFor(
   const { data: eventData, error: eventError } = await (supabase as any)
     .from("events")
     .select(
-      "base_flight_price,base_hotel_price,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,skip_flight_markup,skip_hotel_markup,ticket_only_markup"
+      "base_flight_price,base_hotel_price,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,skip_flight_markup,skip_hotel_markup,ticket_only_markup",
     )
     .eq("id", row.event_id)
     .maybeSingle();
   if (eventError || !eventData) {
-    if (eventError) console.error("packageBaselineFor event:", JSON.stringify(eventError));
+    if (eventError)
+      console.error("packageBaselineFor event:", JSON.stringify(eventError));
     return null;
   }
   return computePerPersonPackagePrice(eventData as PerPersonPricingFields, {
@@ -190,7 +197,7 @@ async function packageBaselineFor(
 
 /** The seeded unit price for the quote form's package prefill. */
 export async function getQuotePackageUnitPrice(
-  packageId: number
+  packageId: number,
 ): Promise<number | null> {
   const session = await requirePartner();
   const id = Number(packageId);
@@ -200,10 +207,12 @@ export async function getQuotePackageUnitPrice(
 
 /**
  * The partner's commission terms. Null only when the row is missing or the
- * lookup failed — the agent/influencer decision is made on the session role,
+ * lookup failed - the agent/influencer decision is made on the session role,
  * not here, so a legacy row still typed 'affiliate' does not block a real agent.
  */
-async function commissionTermsFor(trackingCode: string): Promise<CommissionTerms | null> {
+async function commissionTermsFor(
+  trackingCode: string,
+): Promise<CommissionTerms | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from("partners")
@@ -236,7 +245,7 @@ export async function getMyAgentTerms(): Promise<{
 
 export async function getPortalQuotes(): Promise<PortalQuote[]> {
   const session = await requirePartner();
-  // Server gate, not just a hidden tab — the page guard and the nav are UI.
+  // Server gate, not just a hidden tab - the page guard and the nav are UI.
   if (session.role !== "agent") return [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
@@ -257,13 +266,19 @@ export async function getPortalQuotes(): Promise<PortalQuote[]> {
  * The quotes list plus its summary numbers, in one action.
  *
  * "Closed" is a union of two facts: the agent marked it closed, or a Paid
- * reservation arrived through the quote's signed link (reservations.quote_id —
+ * reservation arrived through the quote's signed link (reservations.quote_id -
  * best-effort until that migration lands; a 42703 just turns auto-closing off).
  */
 export async function getPortalQuotesOverview(): Promise<PortalQuotesOverview> {
   const empty: PortalQuotesOverview = {
     quotes: [],
-    stats: { total: 0, closed: 0, expired: 0, notRelevant: 0, openForFollowUp: 0 },
+    stats: {
+      total: 0,
+      closed: 0,
+      expired: 0,
+      notRelevant: 0,
+      openForFollowUp: 0,
+    },
   };
   const session = await requirePartner();
   if (session.role !== "agent") return empty;
@@ -281,11 +296,18 @@ export async function getPortalQuotesOverview(): Promise<PortalQuotesOverview> {
   const paidQuoteIds = new Set<number>();
   if (linkedResult.error) {
     if (linkedResult.error.code !== "42703") {
-      console.error("getPortalQuotesOverview linked:", JSON.stringify(linkedResult.error));
+      console.error(
+        "getPortalQuotesOverview linked:",
+        JSON.stringify(linkedResult.error),
+      );
     }
   } else {
-    for (const row of (linkedResult.data ?? []) as { quote_id: number | null; status: string | null }[]) {
-      if (row.quote_id != null && row.status === PAID_STATUS) paidQuoteIds.add(row.quote_id);
+    for (const row of (linkedResult.data ?? []) as {
+      quote_id: number | null;
+      status: string | null;
+    }[]) {
+      if (row.quote_id != null && row.status === PAID_STATUS)
+        paidQuoteIds.add(row.quote_id);
     }
   }
 
@@ -298,7 +320,10 @@ export async function getPortalQuotesOverview(): Promise<PortalQuotesOverview> {
       ...quote,
       closed_by_order: closedByOrder,
       expired:
-        pastValidity && !closedByOrder && quote.status !== "closed" && quote.status !== "not_relevant",
+        pastValidity &&
+        !closedByOrder &&
+        quote.status !== "closed" &&
+        quote.status !== "not_relevant",
     };
   });
 
@@ -311,7 +336,7 @@ export async function getPortalQuotesOverview(): Promise<PortalQuotesOverview> {
       else acc.openForFollowUp += 1;
       return acc;
     },
-    { total: 0, closed: 0, expired: 0, notRelevant: 0, openForFollowUp: 0 }
+    { total: 0, closed: 0, expired: 0, notRelevant: 0, openForFollowUp: 0 },
   );
 
   return { quotes: withState, stats };
@@ -320,7 +345,7 @@ export async function getPortalQuotesOverview(): Promise<PortalQuotesOverview> {
 /** The agent updates their OWN quote's lifecycle from the list. */
 export async function updateQuoteStatus(
   quoteId: number,
-  status: PartnerQuoteStatus
+  status: PartnerQuoteStatus,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = await requirePartner();
   if (session.role !== "agent") {
@@ -359,7 +384,7 @@ export async function createQuote(input: {
    * against it, and guessing which row it is left the rule bypassable.
    */
   package?: { qty: number; unit_price: number } | null;
-  /** The prepared package the quote was seeded from — its composition price
+  /** The prepared package the quote was seeded from - its composition price
    *  becomes the discount baseline instead of the generic event price. */
   package_id?: number | null;
   notes?: string | null;
@@ -374,7 +399,7 @@ export async function createQuote(input: {
   //
   // Gated on the user's ROLE, which is what the pages and nav gate on too.
   // Reading `partners.type` here instead would have rejected an agent whose
-  // partner row predates the type column and defaulted to 'affiliate' — after
+  // partner row predates the type column and defaulted to 'affiliate' - after
   // letting them fill in the whole quote.
   if (session.role !== "agent") {
     return { ok: false, error: "הצעות מחיר זמינות לסוכנים בלבד" };
@@ -424,7 +449,7 @@ export async function createQuote(input: {
   }
 
   // Snapshot what the system would have charged per traveller, computed HERE
-  // from the event/package rows — never taken from the client, which is the
+  // from the event/package rows - never taken from the client, which is the
   // side being measured. A package-seeded quote baselines on the package's own
   // composition price (H5: a no-flight package must not baseline the generic
   // full-package figure).
@@ -454,7 +479,7 @@ export async function createQuote(input: {
     }
   }
 
-  // An agent may give away their own commission, never more — below that they
+  // An agent may give away their own commission, never more - below that they
   // would owe us the difference on a sale we cannot collect it from.
   //
   // Measured PER TRAVELLER on the package row alone, which is what makes the
@@ -473,7 +498,7 @@ export async function createQuote(input: {
       const commissionPerTraveller = round2(
         terms.type === "percent_of_sale"
           ? (quoted * (terms.rate ?? 0)) / 100
-          : terms.rate ?? 0
+          : (terms.rate ?? 0),
       );
       if (discountPerTraveller > commissionPerTraveller + 0.001) {
         return {
@@ -484,7 +509,7 @@ export async function createQuote(input: {
     }
   }
 
-  // The CTA link may only point at OUR site carrying THIS agent's code — a
+  // The CTA link may only point at OUR site carrying THIS agent's code - a
   // quote PDF must never route a customer through someone else's attribution
   // (or off-site entirely).
   let payment_link: string | null = null;
@@ -492,7 +517,9 @@ export async function createQuote(input: {
     const link = String(input.payment_link);
     const carriesOwnCode =
       link.startsWith(`${PUBLIC_SITE_URL}/`) &&
-      link.includes(`utm_source=${encodeURIComponent(session.partner_code ?? "")}`);
+      link.includes(
+        `utm_source=${encodeURIComponent(session.partner_code ?? "")}`,
+      );
     if (!carriesOwnCode || link.length > 500) {
       return { ok: false, error: "לינק התשלום אינו תקין" };
     }
@@ -515,12 +542,14 @@ export async function createQuote(input: {
 
   // The migrations adding these columns and the deploy that writes them ship
   // from the same merge, so there is a window where a column does not exist
-  // yet. Optional fields must not stop a partner creating quotes then — try
+  // yet. Optional fields must not stop a partner creating quotes then - try
   // the fullest payload first and shed the newest columns on PGRST204.
-  // Until the payment_link column lands, the link degrades into the notes —
+  // Until the payment_link column lands, the link degrades into the notes -
   // still on the PDF, just as text instead of a styled CTA.
   const notesWithLink = payment_link
-    ? [row.notes, `להזמנה ותשלום מאובטח: ${payment_link}`].filter(Boolean).join("\n\n")
+    ? [row.notes, `להזמנה ותשלום מאובטח: ${payment_link}`]
+        .filter(Boolean)
+        .join("\n\n")
     : row.notes;
   const payloads = [
     { ...row, base_unit_price, payment_link },
@@ -537,7 +566,9 @@ export async function createQuote(input: {
       .select("id")
       .single());
     if (error?.code !== "PGRST204") break;
-    console.error("createQuote: column missing, retrying with a slimmer payload");
+    console.error(
+      "createQuote: column missing, retrying with a slimmer payload",
+    );
   }
 
   if (error) {
@@ -547,9 +578,9 @@ export async function createQuote(input: {
 
   // Sign the quote INTO its pay link (`&quote={id}&qsig=…`): main's order page
   // verifies the signature, shows the offer's line items and charges the
-  // agent's total — dearer than site price sends the delta to the agent,
+  // agent's total - dearer than site price sends the delta to the agent,
   // cheaper comes out of their commission. Needs the row id, hence the
-  // post-insert update; best-effort — the plain package link still works.
+  // post-insert update; best-effort - the plain package link still works.
   if (payment_link) {
     try {
       const signedLink = await signQuoteLink(payment_link, data.id, total);

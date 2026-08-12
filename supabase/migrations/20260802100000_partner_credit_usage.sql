@@ -37,7 +37,7 @@ comment on function "public"."partner_coupon_usage"(text[]) is
   'Per coupon code: total discount actually applied on Paid reservations, and how many. Used to return the unspent part of a partner-credit coupon to the balance.';
 
 -- Called only through the service-role key from the backoffice. The grant is
--- explicit rather than relying on schema default privileges — the caller treats
+-- explicit rather than relying on schema default privileges - the caller treats
 -- a failure as "no usage", so a silent permission error would look like
 -- "nothing was ever spent".
 revoke all on function "public"."partner_coupon_usage"(text[]) from public, anon, authenticated;

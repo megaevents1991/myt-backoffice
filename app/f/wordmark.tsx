@@ -4,7 +4,7 @@
  * The MegaΣvents wordmark.
  *
  * Exact Figma paths, lifted from components/creative/MatchTemplate.tsx (which in
- * turn mirrors myt-main's components/ui/myt.tsx) — NOT hand-typed text, which is
+ * turn mirrors myt-main's components/ui/myt.tsx) - NOT hand-typed text, which is
  * what the form used to fall back to. Letterforms inherit currentColor so they
  * follow the form theme; the trailing dot takes the form's accent.
  */

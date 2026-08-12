@@ -2,7 +2,7 @@
 --
 -- `24Save` is a saved basket: the customer has paid nothing and reserved
 -- nothing. The main app no longer consumes offline inventory for it at
--- checkout, and the backoffice reconcilers were updated to match — but this
+-- checkout, and the backoffice reconcilers were updated to match - but this
 -- view derives consumption independently, straight from reservations, and is
 -- what the customer-facing flight search reads to decide a locked package is
 -- sold out.

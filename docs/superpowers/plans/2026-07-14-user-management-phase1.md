@@ -2,33 +2,35 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the single hardcoded admin credential with Supabase-Auth-backed per-person users, four roles (admin/editor/agent/affiliate), role-aware guards + middleware, an admin `/users` management page, and a bootstrap script — on branch `fix/security-hardening`.
+**Goal:** Replace the single hardcoded admin credential with Supabase-Auth-backed per-person users, four roles (admin/editor/agent/affiliate), role-aware guards + middleware, an admin `/users` management page, and a bootstrap script - on branch `fix/security-hardening`.
 
 **Architecture:** Supabase Auth is the identity provider only (password verify, Google OAuth, admin user CRUD). Sessions remain the existing HMAC-signed `session` cookie with an extended payload `{sub, email, role, partner_code, exp}`. All DB access stays on the service-role client; authorization is app-level guards. Spec: `docs/superpowers/specs/2026-07-14-user-management-design.md`.
 
-**Tech Stack:** Next.js 15 App Router, Supabase (`@supabase/supabase-js` + `@supabase/ssr` — both already installed), shadcn/ui, TypeScript.
+**Tech Stack:** Next.js 15 App Router, Supabase (`@supabase/supabase-js` + `@supabase/ssr` - both already installed), shadcn/ui, TypeScript.
 
 ## Global Constraints
 
 - **No commits by agents.** Dor reviews and commits via `/commit-push`. Each task ends at a verification step, not a commit. (Overrides the usual per-task commit step.)
 - **No test suite exists.** Verification = `npx tsc --noEmit` (the real type gate; build ignores TS errors) + the manual check listed in each task.
 - Roles: exactly `'admin' | 'editor' | 'agent' | 'affiliate'`.
-- Cookie name stays `session`; max age stays 1 week; HMAC-SHA256 via Web Crypto (Edge-compatible — `lib/auth/session.ts` must not import Node-only or Supabase modules).
+- Cookie name stays `session`; max age stays 1 week; HMAC-SHA256 via Web Crypto (Edge-compatible - `lib/auth/session.ts` must not import Node-only or Supabase modules).
 - Service-role Supabase client = `import { supabase } from "@/lib/supabase-server"`. Never create clients inline (exception: the two dedicated auth clients created in Tasks 3–4).
 - New tables get `ENABLE ROW LEVEL SECURITY` with **no policies** → only the service-role key can touch them.
 - Soft-delete/cross-project rules: `partners` table is NOT altered.
 - Env vars available: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_SECRET_SUPABASE_SERVICE_ROLE_KEY`, `NEXT_SECRET_ADMIN_EMAIL`, `NEXT_SECRET_ADMIN_PASSWORD`, optional `NEXT_SECRET_SESSION_SECRET`.
-- Migration deploy is manual: GitHub Action "Apply DB Migrations" (workflow_dispatch) runs `supabase db push`. Local dev against prod DB — the migration must be applied (Dor triggers) before Tasks 9–11 can be manually verified.
+- Migration deploy is manual: GitHub Action "Apply DB Migrations" (workflow_dispatch) runs `supabase db push`. Local dev against prod DB - the migration must be applied (Dor triggers) before Tasks 9–11 can be manually verified.
 - Legacy env-credential login stays as a temporary fallback in the login route (marked `TODO(remove-after-bootstrap)`) so nobody is locked out before the first admin users exist.
 
 ---
 
-### Task 1: DB migration — `user_profiles`, `audit_log`, `quotes`, storage buckets
+### Task 1: DB migration - `user_profiles`, `audit_log`, `quotes`, storage buckets
 
 **Files:**
+
 - Create: `supabase/migrations/20260714090000_user_management.sql`
 
 **Interfaces:**
+
 - Produces: tables `public.user_profiles`, `public.audit_log`, `public.quotes`; storage buckets `partner-logos` (public), `quotes` (private). Later tasks read/write `user_profiles` via service-role client.
 
 - [ ] **Step 1: Write the migration file**
@@ -105,25 +107,27 @@ values ('quotes', 'quotes', false)
 on conflict (id) do nothing;
 ```
 
-**Note:** if `supabase db push` fails on the `references public.partners(partner_tracking_code)` line (no unique constraint on that column in some environments), drop the `references ...` clause and keep the column plain `text` — the link is app-enforced. The `coupons` table already has such an FK, so the unique constraint should exist.
+**Note:** if `supabase db push` fails on the `references public.partners(partner_tracking_code)` line (no unique constraint on that column in some environments), drop the `references ...` clause and keep the column plain `text` - the link is app-enforced. The `coupons` table already has such an FK, so the unique constraint should exist.
 
 - [ ] **Step 2: Verify SQL syntax locally (no DB needed)**
 
-Run: `npx tsc --noEmit` (unaffected — sanity) and visually re-read the SQL. If Docker + Supabase CLI local stack available: `supabase db lint`. Otherwise verification happens when Dor triggers the migration workflow.
+Run: `npx tsc --noEmit` (unaffected - sanity) and visually re-read the SQL. If Docker + Supabase CLI local stack available: `supabase db lint`. Otherwise verification happens when Dor triggers the migration workflow.
 
-- [ ] **Step 3: STOP — notify Dor**
+- [ ] **Step 3: STOP - notify Dor**
 
-Migration file ready. Dor: trigger GitHub Action **Apply DB Migrations** (workflow_dispatch on branch `fix/security-hardening` — or after this lands on master, per current workflow config it checks out default branch; if the Action only runs from master, apply manually with `supabase db push` locally). Tasks 9–11 manual verification needs these tables in the DB.
+Migration file ready. Dor: trigger GitHub Action **Apply DB Migrations** (workflow_dispatch on branch `fix/security-hardening` - or after this lands on master, per current workflow config it checks out default branch; if the Action only runs from master, apply manually with `supabase db push` locally). Tasks 9–11 manual verification needs these tables in the DB.
 
 ---
 
 ### Task 2: Shared auth types
 
 **Files:**
+
 - Create: `types/auth.types.ts`
 
 **Interfaces:**
-- Produces: `Role`, `UserProfile`, `SessionUser` — imported by session, guards, actions, and UI tasks.
+
+- Produces: `Role`, `UserProfile`, `SessionUser` - imported by session, guards, actions, and UI tasks.
 
 - [ ] **Step 1: Write the types file**
 
@@ -161,21 +165,23 @@ export interface SessionUser {
 
 - [ ] **Step 2: Verify**
 
-Run: `npx tsc --noEmit` — expect no new errors.
+Run: `npx tsc --noEmit` - expect no new errors.
 
 ---
 
 ### Task 3: Session payload v2 (`lib/auth/session.ts`)
 
 **Files:**
+
 - Modify: `lib/auth/session.ts` (lines 20, 69–106)
 
 **Interfaces:**
-- Consumes: `Role` from `types/auth.types` — **import type only** (keeps the module Edge-safe).
+
+- Consumes: `Role` from `types/auth.types` - **import type only** (keeps the module Edge-safe).
 - Produces:
   - `type SessionPayload = { sub: string; email: string; role: Role; partner_code: string | null; exp: number }`
   - `createSessionValue(user: { sub: string; email: string; role: Role; partner_code?: string | null }): Promise<string>`
-  - `verifySessionValue(value?: string | null): Promise<SessionPayload | null>` — **return type changes from boolean**. Callers updated in Tasks 4, 5.
+  - `verifySessionValue(value?: string | null): Promise<SessionPayload | null>` - **return type changes from boolean**. Callers updated in Tasks 4, 5.
 
 - [ ] **Step 1: Replace the payload type and the two functions**
 
@@ -185,11 +191,11 @@ Replace line 20:
 import type { Role } from "@/types/auth.types";
 
 export type SessionPayload = {
-  sub: string;          // auth.users uuid
+  sub: string; // auth.users uuid
   email: string;
   role: Role;
   partner_code: string | null; // partners.partner_tracking_code for agent/affiliate
-  exp: number;          // ms epoch
+  exp: number; // ms epoch
 };
 ```
 
@@ -216,12 +222,12 @@ export async function createSessionValue(user: {
 }
 ```
 
-Replace `verifySessionValue` (lines 79–106) — same logic, returns the payload:
+Replace `verifySessionValue` (lines 79–106) - same logic, returns the payload:
 
 ```ts
 /** The verified payload for a well-formed, correctly-signed, unexpired session; else null. */
 export async function verifySessionValue(
-  value?: string | null
+  value?: string | null,
 ): Promise<SessionPayload | null> {
   if (!value) return null;
   const dot = value.indexOf(".");
@@ -240,11 +246,13 @@ export async function verifySessionValue(
 
   try {
     const payload = JSON.parse(
-      new TextDecoder().decode(fromBase64Url(body))
+      new TextDecoder().decode(fromBase64Url(body)),
     ) as SessionPayload;
     if (typeof payload.sub !== "string" || !payload.sub) return null;
-    if (!["admin", "editor", "agent", "affiliate"].includes(payload.role)) return null;
-    if (typeof payload.exp !== "number" || Date.now() > payload.exp) return null;
+    if (!["admin", "editor", "agent", "affiliate"].includes(payload.role))
+      return null;
+    if (typeof payload.exp !== "number" || Date.now() > payload.exp)
+      return null;
     return payload;
   } catch {
     return null;
@@ -264,26 +272,32 @@ Expected: errors ONLY in `lib/auth/guards.ts`, `middleware.ts`, `app/api/auth/lo
 ### Task 4: Role-aware guards (`lib/auth/guards.ts`)
 
 **Files:**
+
 - Modify: `lib/auth/guards.ts`
 - Modify: `middleware.ts` (Task 5 does middleware; here only guards)
 
 **Interfaces:**
+
 - Consumes: `verifySessionValue` (payload-returning), `SESSION_COOKIE` from `./session`; `Role`, `STAFF_ROLES` from `@/types/auth.types`.
 - Produces (used by every action/route task after this):
   - `getSession(): Promise<SessionPayload | null>`
-  - `requireRole(...roles: Role[]): Promise<SessionPayload>` — throws `Error("Unauthorized")`
-  - `requireStaff(): Promise<SessionPayload>` — admin|editor
-  - `requireAdmin(): Promise<SessionPayload>` — admin only (signature: now returns payload; existing `await requireAdmin()` callers still typecheck)
-  - `requirePartner(): Promise<SessionPayload & { partner_code: string }>` — agent|affiliate with non-null partner_code
-  - `guardAdminRoute(): Promise<NextResponse | null>` — **now = staff check** (admin+editor). Route callers unchanged.
-  - `guardCronRoute(request)` — unchanged.
+  - `requireRole(...roles: Role[]): Promise<SessionPayload>` - throws `Error("Unauthorized")`
+  - `requireStaff(): Promise<SessionPayload>` - admin|editor
+  - `requireAdmin(): Promise<SessionPayload>` - admin only (signature: now returns payload; existing `await requireAdmin()` callers still typecheck)
+  - `requirePartner(): Promise<SessionPayload & { partner_code: string }>` - agent|affiliate with non-null partner_code
+  - `guardAdminRoute(): Promise<NextResponse | null>` - **now = staff check** (admin+editor). Route callers unchanged.
+  - `guardCronRoute(request)` - unchanged.
 
 - [ ] **Step 1: Rewrite guards (keep `guardCronRoute` as-is)**
 
 ```ts
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE, verifySessionValue, type SessionPayload } from "./session";
+import {
+  SESSION_COOKIE,
+  verifySessionValue,
+  type SessionPayload,
+} from "./session";
 import { STAFF_ROLES, type Role } from "@/types/auth.types";
 
 /** Verified session payload from the request cookie, or null. */
@@ -301,18 +315,20 @@ export async function requireRole(...roles: Role[]): Promise<SessionPayload> {
   return session;
 }
 
-/** admin or editor — the default guard for all dashboard mutations. */
+/** admin or editor - the default guard for all dashboard mutations. */
 export async function requireStaff(): Promise<SessionPayload> {
   return requireRole("admin", "editor");
 }
 
-/** admin only — user management. */
+/** admin only - user management. */
 export async function requireAdmin(): Promise<SessionPayload> {
   return requireRole("admin");
 }
 
-/** agent or affiliate with a linked partner code — portal actions. */
-export async function requirePartner(): Promise<SessionPayload & { partner_code: string }> {
+/** agent or affiliate with a linked partner code - portal actions. */
+export async function requirePartner(): Promise<
+  SessionPayload & { partner_code: string }
+> {
   const session = await requireRole("agent", "affiliate");
   if (!session.partner_code) throw new Error("Unauthorized");
   return session as SessionPayload & { partner_code: string };
@@ -330,7 +346,7 @@ export async function guardAdminRoute(): Promise<NextResponse | null> {
 }
 ```
 
-(Keep the file header comment, update wording: multi-role now. Delete old `isAdmin` — next step catches stray callers.)
+(Keep the file header comment, update wording: multi-role now. Delete old `isAdmin` - next step catches stray callers.)
 
 - [ ] **Step 2: Find stray `isAdmin` callers**
 
@@ -347,11 +363,13 @@ Expected: remaining errors only in `middleware.ts` + the three `app/api/auth/*` 
 ### Task 5: Middleware role map
 
 **Files:**
+
 - Modify: `middleware.ts`
 
 **Interfaces:**
+
 - Consumes: `verifySessionValue` payload.
-- Produces: route protection — `/users` admin-only; `/portal/*` all roles (partner home); all other dashboard pages staff-only; partners redirected to `/portal`.
+- Produces: route protection - `/users` admin-only; `/portal/*` all roles (partner home); all other dashboard pages staff-only; partners redirected to `/portal`.
 
 - [ ] **Step 1: Rewrite middleware body**
 
@@ -375,9 +393,12 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const session = await verifySessionValue(req.cookies.get(SESSION_COOKIE)?.value);
+  const session = await verifySessionValue(
+    req.cookies.get(SESSION_COOKIE)?.value,
+  );
   const isAuthPage = pathname.startsWith("/auth");
-  const home = session && PARTNER_ROLES.includes(session.role) ? "/portal" : "/dashboard";
+  const home =
+    session && PARTNER_ROLES.includes(session.role) ? "/portal" : "/dashboard";
 
   // Signed-in user hitting an auth page → send to their home.
   if (session && isAuthPage) {
@@ -391,7 +412,8 @@ export async function middleware(req: NextRequest) {
 
   if (session) {
     const isPortal = pathname === "/portal" || pathname.startsWith("/portal/");
-    const isUsersAdmin = pathname === "/users" || pathname.startsWith("/users/");
+    const isUsersAdmin =
+      pathname === "/users" || pathname.startsWith("/users/");
 
     // Partner roles may ONLY use /portal (staff may also enter /portal to debug).
     if (PARTNER_ROLES.includes(session.role) && !isPortal && pathname !== "/") {
@@ -421,13 +443,15 @@ Expected: errors only left in `app/api/auth/*` routes (fixed next).
 ### Task 6: Login / session / logout routes + Supabase auth client
 
 **Files:**
+
 - Create: `lib/auth/supabase-auth.ts`
 - Modify: `app/api/auth/login/route.ts`
 - Modify: `app/api/auth/session/route.ts`
-- Delete: `lib/actions/auth-actions.ts` (dead code, zero importers — verified)
-- (No change: `app/api/auth/logout/route.ts` — cookie clear still valid)
+- Delete: `lib/actions/auth-actions.ts` (dead code, zero importers - verified)
+- (No change: `app/api/auth/logout/route.ts` - cookie clear still valid)
 
 **Interfaces:**
+
 - Consumes: `createSessionValue(user)`, `verifySessionValue`, `UserProfile`.
 - Produces:
   - `verifyPassword(email, password): Promise<{ userId: string } | null>` (anon-key client, server-only)
@@ -440,7 +464,7 @@ Expected: errors only left in `app/api/auth/*` routes (fixed next).
 
 ```ts
 /**
- * Supabase Auth integration (server-only). Supabase is the IDENTITY provider —
+ * Supabase Auth integration (server-only). Supabase is the IDENTITY provider -
  * password verification, Google OAuth, admin user CRUD. Sessions stay our own
  * HMAC cookie (lib/auth/session.ts); Supabase sessions are never persisted.
  */
@@ -451,16 +475,19 @@ import type { UserProfile } from "@/types/auth.types";
 /** Verify email+password against Supabase Auth. Returns the auth user id, or null. */
 export async function verifyPassword(
   email: string,
-  password: string
+  password: string,
 ): Promise<{ userId: string } | null> {
   const anon = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { auth: { persistSession: false, autoRefreshToken: false } }
+    { auth: { persistSession: false, autoRefreshToken: false } },
   );
-  const { data, error } = await anon.auth.signInWithPassword({ email, password });
+  const { data, error } = await anon.auth.signInWithPassword({
+    email,
+    password,
+  });
   if (error || !data.user) return null;
-  // We never use the Supabase session — sign it out server-side immediately.
+  // We never use the Supabase session - sign it out server-side immediately.
   await anon.auth.signOut().catch(() => {});
   return { userId: data.user.id };
 }
@@ -469,7 +496,7 @@ export async function getProfile(userId: string): Promise<UserProfile | null> {
   const { data, error } = await (supabase as any)
     .from("user_profiles")
     .select(
-      "id,email,display_name,role,partner_tracking_code,logo_url,phone,is_active,created_at,created_by"
+      "id,email,display_name,role,partner_tracking_code,logo_url,phone,is_active,created_at,created_by",
     )
     .eq("id", userId)
     .maybeSingle();
@@ -480,11 +507,13 @@ export async function getProfile(userId: string): Promise<UserProfile | null> {
   return (data as UserProfile) ?? null;
 }
 
-export async function getProfileByEmail(email: string): Promise<UserProfile | null> {
+export async function getProfileByEmail(
+  email: string,
+): Promise<UserProfile | null> {
   const { data, error } = await (supabase as any)
     .from("user_profiles")
     .select(
-      "id,email,display_name,role,partner_tracking_code,logo_url,phone,is_active,created_at,created_by"
+      "id,email,display_name,role,partner_tracking_code,logo_url,phone,is_active,created_at,created_by",
     )
     .ilike("email", email)
     .maybeSingle();
@@ -496,7 +525,7 @@ export async function getProfileByEmail(email: string): Promise<UserProfile | nu
 }
 ```
 
-(`(supabase as any)` because `user_profiles` isn't in the generated `types/database.types.ts` yet — same pattern the repo used for `coupons`. After the migration is applied, `npm run db:types` regenerates and the casts can go.)
+(`(supabase as any)` because `user_profiles` isn't in the generated `types/database.types.ts` yet - same pattern the repo used for `coupons`. After the migration is applied, `npm run db:types` regenerates and the casts can go.)
 
 - [ ] **Step 2: Rewrite `app/api/auth/login/route.ts`**
 
@@ -539,7 +568,7 @@ async function respondWithSession(profile: UserProfile) {
       sameSite: "lax",
       maxAge: SESSION_MAX_AGE,
       path: "/",
-    }
+    },
   );
   return response;
 }
@@ -548,17 +577,23 @@ export async function POST(request: Request) {
   try {
     const { email, password } = await request.json();
     if (typeof email !== "string" || typeof password !== "string") {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Invalid credentials" },
+        { status: 401 },
+      );
     }
 
-    // Supabase Auth path — real users created by an admin.
+    // Supabase Auth path - real users created by an admin.
     const verified = await verifyPassword(email, password);
     if (verified) {
       const profile = await getProfile(verified.userId);
       if (profile && profile.is_active) {
         return respondWithSession(profile);
       }
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Invalid credentials" },
+        { status: 401 },
+      );
     }
 
     // TODO(remove-after-bootstrap): legacy env-credential fallback so the
@@ -589,7 +624,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   } catch (error) {
     console.error("Login error:", error);
-    return NextResponse.json({ error: "Authentication failed" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Authentication failed" },
+      { status: 500 },
+    );
   }
 }
 ```
@@ -624,7 +662,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ user: null });
   } catch (error) {
     console.error("Session check error:", error);
-    return NextResponse.json({ error: "Failed to check session" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to check session" },
+      { status: 500 },
+    );
   }
 }
 ```
@@ -645,11 +686,13 @@ Manual check: `npm run dev` → login with legacy env credentials still works �
 ### Task 7: Google SSO (OAuth initiate + callback)
 
 **Files:**
+
 - Create: `app/api/auth/google/route.ts`
 - Create: `app/api/auth/callback/route.ts`
 - Modify: `app/auth/login/page.tsx` (add Google button + error display)
 
 **Interfaces:**
+
 - Consumes: `getProfileByEmail`, `createSessionValue`, `SESSION_COOKIE`, `SESSION_MAX_AGE`.
 - Produces: `GET /api/auth/google` → 307 to Google; `GET /api/auth/callback?code=...` → sets session cookie, redirects to `/dashboard` or `/portal`; on unknown email redirects to `/auth/login?error=no-account`.
 
@@ -664,7 +707,9 @@ import { createServerClient } from "@supabase/ssr";
 
 export async function GET(request: Request) {
   const cookieStore = await cookies();
-  const response = { cookies: [] as { name: string; value: string; options: object }[] };
+  const response = {
+    cookies: [] as { name: string; value: string; options: object }[],
+  };
 
   const supabaseAuth = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -674,11 +719,11 @@ export async function GET(request: Request) {
         getAll: () => cookieStore.getAll(),
         setAll: (toSet) => {
           toSet.forEach(({ name, value, options }) =>
-            response.cookies.push({ name, value, options })
+            response.cookies.push({ name, value, options }),
           );
         },
       },
-    }
+    },
   );
 
   const origin = new URL(request.url).origin;
@@ -689,13 +734,19 @@ export async function GET(request: Request) {
 
   if (error || !data.url) {
     console.error("Google OAuth init error:", error);
-    return NextResponse.redirect(new URL("/auth/login?error=oauth", request.url));
+    return NextResponse.redirect(
+      new URL("/auth/login?error=oauth", request.url),
+    );
   }
 
   const redirect = NextResponse.redirect(data.url);
   // Persist the PKCE code-verifier cookies Supabase generated.
   response.cookies.forEach(({ name, value, options }) =>
-    redirect.cookies.set(name, value, options as Parameters<typeof redirect.cookies.set>[2])
+    redirect.cookies.set(
+      name,
+      value,
+      options as Parameters<typeof redirect.cookies.set>[2],
+    ),
   );
   return redirect;
 }
@@ -718,7 +769,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   if (!code) {
-    return NextResponse.redirect(new URL("/auth/login?error=oauth", request.url));
+    return NextResponse.redirect(
+      new URL("/auth/login?error=oauth", request.url),
+    );
   }
 
   try {
@@ -731,20 +784,23 @@ export async function GET(request: Request) {
           getAll: () => cookieStore.getAll(),
           setAll: () => {}, // we do not keep the Supabase session
         },
-      }
+      },
     );
 
-    const { data, error } = await supabaseAuth.auth.exchangeCodeForSession(code);
+    const { data, error } =
+      await supabaseAuth.auth.exchangeCodeForSession(code);
     if (error || !data.user?.email) {
       console.error("OAuth exchange error:", error);
-      return NextResponse.redirect(new URL("/auth/login?error=oauth", request.url));
+      return NextResponse.redirect(
+        new URL("/auth/login?error=oauth", request.url),
+      );
     }
 
-    // Only pre-created users may enter — no self-signup via Google.
+    // Only pre-created users may enter - no self-signup via Google.
     const profile = await getProfileByEmail(data.user.email);
     if (!profile || !profile.is_active) {
       return NextResponse.redirect(
-        new URL("/auth/login?error=no-account", request.url)
+        new URL("/auth/login?error=no-account", request.url),
       );
     }
 
@@ -766,7 +822,7 @@ export async function GET(request: Request) {
         sameSite: "lax",
         maxAge: SESSION_MAX_AGE,
         path: "/",
-      }
+      },
     );
     // Clear the temporary Supabase PKCE cookies.
     cookieStore.getAll().forEach(({ name }) => {
@@ -775,7 +831,9 @@ export async function GET(request: Request) {
     return redirect;
   } catch (error) {
     console.error("OAuth callback error:", error);
-    return NextResponse.redirect(new URL("/auth/login?error=oauth", request.url));
+    return NextResponse.redirect(
+      new URL("/auth/login?error=oauth", request.url),
+    );
   }
 }
 ```
@@ -817,33 +875,41 @@ const urlError = searchParams.get("error");
 Render above the form:
 
 ```tsx
-{urlError === "no-account" && (
-  <p className="text-sm text-destructive">
-    No account for this Google email — contact an admin.
-  </p>
-)}
-{urlError === "oauth" && (
-  <p className="text-sm text-destructive">Google sign-in failed. Try again.</p>
-)}
+{
+  urlError === "no-account" && (
+    <p className="text-sm text-destructive">
+      No account for this Google email - contact an admin.
+    </p>
+  );
+}
+{
+  urlError === "oauth" && (
+    <p className="text-sm text-destructive">
+      Google sign-in failed. Try again.
+    </p>
+  );
+}
 ```
 
 **Note:** `useSearchParams` in a client page requires a `<Suspense>` boundary in Next 15 builds. Wrap the page: export a default component that renders `<Suspense><LoginForm /></Suspense>` where `LoginForm` is the existing component body renamed.
 
 - [ ] **Step 4: Verify**
 
-Run: `npx tsc --noEmit` — zero errors.
-Manual (needs Dor's manual step done — Google provider enabled in Supabase): click "Continue with Google" → Google → back → `/dashboard` (known email) or `no-account` error (unknown email). Until the provider is enabled, verify the button redirects and Supabase returns an error → lands on `/auth/login?error=oauth`.
+Run: `npx tsc --noEmit` - zero errors.
+Manual (needs Dor's manual step done - Google provider enabled in Supabase): click "Continue with Google" → Google → back → `/dashboard` (known email) or `no-account` error (unknown email). Until the provider is enabled, verify the button redirects and Supabase returns an error → lands on `/auth/login?error=oauth`.
 
 ---
 
 ### Task 8: Auth context returns real user (role available to UI)
 
 **Files:**
+
 - Modify: `contexts/auth-context.tsx`
 
 **Interfaces:**
+
 - Consumes: `GET /api/auth/session` shape from Task 6.
-- Produces: `useAuth().user: SessionUser | null` — `role` and `partner_code` now real. Sidebar (Task 11) reads `user.role`.
+- Produces: `useAuth().user: SessionUser | null` - `role` and `partner_code` now real. Sidebar (Task 11) reads `user.role`.
 
 - [ ] **Step 1: Update the `User` type and strip debug logging**
 
@@ -855,22 +921,24 @@ import type { SessionUser } from "@/types/auth.types";
 type User = SessionUser;
 ```
 
-Remove all `console.log`/`console.error` debug lines in `checkSession` and `login` (keep `console.error` in `logout`'s catch). No logic changes — endpoints are the same.
+Remove all `console.log`/`console.error` debug lines in `checkSession` and `login` (keep `console.error` in `logout`'s catch). No logic changes - endpoints are the same.
 
 - [ ] **Step 2: Verify**
 
-Run: `npx tsc --noEmit` — zero errors. Manual: login → user menu still renders email.
+Run: `npx tsc --noEmit` - zero errors. Manual: login → user menu still renders email.
 
 ---
 
-### Task 9: Guard sweep — `requireAdmin()` → `requireStaff()` + coupon gap
+### Task 9: Guard sweep - `requireAdmin()` → `requireStaff()` + coupon gap
 
 **Files:**
+
 - Modify (14 files): `lib/actions/artist-actions.ts`, `blog-actions.ts`, `category-actions.ts`, `dashboard-actions.ts`, `event-actions.ts`, `football-actions.ts`, `location-actions.ts`, `map-actions.ts`, `offline-flight-actions.ts`, `offline-hotel-actions.ts`, `offline-hotel-room-actions.ts`, `partner-actions.ts`, `reservation-actions.ts`, `storage-actions.ts`
 - Modify: `lib/actions/coupon-actions.ts` (add missing guards)
 - Modify: `lib/actions/template-crud.ts` if it calls `requireAdmin` (check)
 
 **Interfaces:**
+
 - Consumes: `requireStaff` from `@/lib/auth/guards`.
 - Produces: every dashboard mutation requires admin|editor. `requireAdmin` remains ONLY in future `user-actions.ts` (Task 10).
 
@@ -883,21 +951,23 @@ Every hit in `lib/actions/*` gets replaced. Hits in `app/api/*` calling `guardAd
 
 - [ ] **Step 2: Add guards to coupon actions**
 
-In `lib/actions/coupon-actions.ts`: add `import { requireStaff } from "@/lib/auth/guards";` and `await requireStaff();` as the first line of every exported mutating/data function (`getCoupons`, `createCoupon`, `updateCoupon`, `deleteCoupon`, and any toggle/bulk functions present — add to ALL exported async functions in the file).
+In `lib/actions/coupon-actions.ts`: add `import { requireStaff } from "@/lib/auth/guards";` and `await requireStaff();` as the first line of every exported mutating/data function (`getCoupons`, `createCoupon`, `updateCoupon`, `deleteCoupon`, and any toggle/bulk functions present - add to ALL exported async functions in the file).
 
 - [ ] **Step 3: Verify nothing still imports requireAdmin outside user management**
 
 Run: `grep -rn "requireAdmin" lib app --include="*.ts"`
-Expected hits: only `lib/auth/guards.ts` (definition). Then: `npx tsc --noEmit` — zero errors.
+Expected hits: only `lib/auth/guards.ts` (definition). Then: `npx tsc --noEmit` - zero errors.
 
 ---
 
 ### Task 10: User management server actions (`lib/actions/user-actions.ts`)
 
 **Files:**
+
 - Create: `lib/actions/user-actions.ts`
 
 **Interfaces:**
+
 - Consumes: `requireAdmin` (returns actor payload), `supabase` service client, `UserProfile`, `Role`.
 - Produces (consumed by Task 11 UI):
   - `listUsers(): Promise<UserProfile[]>`
@@ -945,32 +1015,41 @@ export async function createUser(input: {
 
   const email = input.email?.trim().toLowerCase();
   if (!email || !input.password || input.password.length < 8) {
-    return { ok: false, error: "Email and a password of 8+ characters are required" };
+    return {
+      ok: false,
+      error: "Email and a password of 8+ characters are required",
+    };
   }
   if (PARTNER_ROLES.includes(input.role) && !input.partner_tracking_code) {
     return { ok: false, error: "Agent/affiliate users need a partner link" };
   }
 
-  const { data: created, error: authError } = await supabase.auth.admin.createUser({
-    email,
-    password: input.password,
-    email_confirm: true,
-  });
+  const { data: created, error: authError } =
+    await supabase.auth.admin.createUser({
+      email,
+      password: input.password,
+      email_confirm: true,
+    });
   if (authError || !created.user) {
     console.error("createUser auth:", JSON.stringify(authError));
-    return { ok: false, error: authError?.message ?? "Auth user creation failed" };
+    return {
+      ok: false,
+      error: authError?.message ?? "Auth user creation failed",
+    };
   }
 
-  const { error: profileError } = await (supabase as any).from("user_profiles").insert({
-    id: created.user.id,
-    email,
-    display_name: input.display_name || null,
-    role: input.role,
-    partner_tracking_code: input.partner_tracking_code || null,
-    phone: input.phone || null,
-    is_active: true,
-    created_by: actor.sub,
-  });
+  const { error: profileError } = await (supabase as any)
+    .from("user_profiles")
+    .insert({
+      id: created.user.id,
+      email,
+      display_name: input.display_name || null,
+      role: input.role,
+      partner_tracking_code: input.partner_tracking_code || null,
+      phone: input.phone || null,
+      is_active: true,
+      created_by: actor.sub,
+    });
   if (profileError) {
     console.error("createUser profile:", JSON.stringify(profileError));
     // Roll back the orphan auth user so the email isn't locked.
@@ -988,7 +1067,7 @@ export async function updateUser(
     partner_tracking_code?: string | null;
     phone?: string | null;
     is_active?: boolean;
-  }
+  },
 ): Promise<Result> {
   const actor = await requireAdmin();
   if (id === actor.sub && input.is_active === false) {
@@ -998,9 +1077,10 @@ export async function updateUser(
     return { ok: false, error: "You cannot demote your own account" };
   }
 
-  // Map columns explicitly — never spread client input.
+  // Map columns explicitly - never spread client input.
   const update: Record<string, unknown> = {};
-  if (input.display_name !== undefined) update.display_name = input.display_name;
+  if (input.display_name !== undefined)
+    update.display_name = input.display_name;
   if (input.role !== undefined) update.role = input.role;
   if (input.partner_tracking_code !== undefined)
     update.partner_tracking_code = input.partner_tracking_code;
@@ -1018,7 +1098,10 @@ export async function updateUser(
   return { ok: true };
 }
 
-export async function resetUserPassword(id: string, newPassword: string): Promise<Result> {
+export async function resetUserPassword(
+  id: string,
+  newPassword: string,
+): Promise<Result> {
   await requireAdmin();
   if (!newPassword || newPassword.length < 8) {
     return { ok: false, error: "Password must be 8+ characters" };
@@ -1036,18 +1119,20 @@ export async function resetUserPassword(id: string, newPassword: string): Promis
 
 - [ ] **Step 2: Verify**
 
-Run: `npx tsc --noEmit` — zero errors. (Manual verification of these actions happens through the UI in Task 11, after the migration is applied.)
+Run: `npx tsc --noEmit` - zero errors. (Manual verification of these actions happens through the UI in Task 11, after the migration is applied.)
 
 ---
 
 ### Task 11: `/users` admin page + sidebar links
 
 **Files:**
+
 - Create: `app/(dashboard)/users/page.tsx` (server component)
 - Create: `app/(dashboard)/users/users-client.tsx` (client component: table + dialogs)
-- Modify: `components/sidebar.tsx` (add Users link, admin-only; hide sidebar entries by role if the sidebar already maps items — follow its existing item-list pattern)
+- Modify: `components/sidebar.tsx` (add Users link, admin-only; hide sidebar entries by role if the sidebar already maps items - follow its existing item-list pattern)
 
 **Interfaces:**
+
 - Consumes: `listUsers`, `createUser`, `updateUser`, `resetUserPassword` from Task 10; `getPartners` from `lib/actions/partner-actions.ts` (existing) for the partner select; `useAuth().user.role` (Task 8) for sidebar visibility.
 - Produces: admin UI at `/users`.
 
@@ -1063,34 +1148,34 @@ export default async function UsersPage() {
   // Filter out per-customer refund placeholder partners from the link dropdown.
   const realPartners = (partners ?? []).filter(
     (p: { name_hebrew?: string | null }) =>
-      p.name_hebrew !== "החזר ללקוח ניתן להתעלם"
+      p.name_hebrew !== "החזר ללקוח ניתן להתעלם",
   );
   return <UsersClient users={users} partners={realPartners} />;
 }
 ```
 
-(Check `getPartners()` return shape when implementing; adapt the filter to the actual placeholder-detection used in `coupon-actions.ts:87-96` — reuse the same condition.)
+(Check `getPartners()` return shape when implementing; adapt the filter to the actual placeholder-detection used in `coupon-actions.ts:87-96` - reuse the same condition.)
 
 - [ ] **Step 2: Client component**
 
-`users-client.tsx` — shadcn `Table` listing: email, display name, role (Badge), partner code, active (Switch → `updateUser(id,{is_active})`), created. Header button "Add user" opens a `Dialog` with fields: email (`Input`), temp password (`Input type=password`), display name, role (`Select` over the 4 roles), partner (`Select` from `partners`, shown only when role is agent/affiliate), phone. Submit → `createUser(...)` → `router.refresh()` + toast on error. Row menu (`DropdownMenu`): "Edit" (same dialog prefilled → `updateUser`), "Reset password" (small dialog, one password field → `resetUserPassword`). Use `useState` for dialogs, `useTransition` for pending state. All shadcn primitives from `components/ui/` — no new UI libs. Follow the table/dialog style used in `app/(dashboard)/partners/` for consistency.
+`users-client.tsx` - shadcn `Table` listing: email, display name, role (Badge), partner code, active (Switch → `updateUser(id,{is_active})`), created. Header button "Add user" opens a `Dialog` with fields: email (`Input`), temp password (`Input type=password`), display name, role (`Select` over the 4 roles), partner (`Select` from `partners`, shown only when role is agent/affiliate), phone. Submit → `createUser(...)` → `router.refresh()` + toast on error. Row menu (`DropdownMenu`): "Edit" (same dialog prefilled → `updateUser`), "Reset password" (small dialog, one password field → `resetUserPassword`). Use `useState` for dialogs, `useTransition` for pending state. All shadcn primitives from `components/ui/` - no new UI libs. Follow the table/dialog style used in `app/(dashboard)/partners/` for consistency.
 
-(Full JSX left to the implementer BUT: every mutation call, field list, and visibility rule above is exact. No other features — no delete button; disabling is the only deactivation path.)
+(Full JSX left to the implementer BUT: every mutation call, field list, and visibility rule above is exact. No other features - no delete button; disabling is the only deactivation path.)
 
 - [ ] **Step 3: Sidebar link**
 
-In `components/sidebar.tsx`, find the nav-items structure and add a `Users` item (lucide `Users` icon, href `/users`). Visibility: the sidebar is a client component using `useAuth()` — render the item only when `user?.role === "admin"`. If the sidebar is currently static, wrap the items list in a role filter:
+In `components/sidebar.tsx`, find the nav-items structure and add a `Users` item (lucide `Users` icon, href `/users`). Visibility: the sidebar is a client component using `useAuth()` - render the item only when `user?.role === "admin"`. If the sidebar is currently static, wrap the items list in a role filter:
 
 ```tsx
 const { user } = useAuth();
 const visibleItems = items.filter(
-  (item) => item.href !== "/users" || user?.role === "admin"
+  (item) => item.href !== "/users" || user?.role === "admin",
 );
 ```
 
 - [ ] **Step 4: Verify (requires migration applied + bootstrap or manual profile row)**
 
-Run: `npx tsc --noEmit` — zero errors.
+Run: `npx tsc --noEmit` - zero errors.
 Manual: login as admin → `/users` → create an `editor` user → logout → login as editor → `/users` redirects away (middleware) + sidebar hides the link → editor can still open `/events` and save an edit (guard sweep works).
 
 ---
@@ -1098,9 +1183,11 @@ Manual: login as admin → `/users` → create an `editor` user → logout → l
 ### Task 12: Bootstrap script for first admins
 
 **Files:**
+
 - Create: `scripts/bootstrap-admins.mjs`
 
 **Interfaces:**
+
 - Consumes: `.env.local` (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_SECRET_SUPABASE_SERVICE_ROLE_KEY`).
 - Produces: auth users + admin `user_profiles` rows for Dor + Alon.
 
@@ -1116,26 +1203,32 @@ const env = Object.fromEntries(
   readFileSync(new URL("../.env.local", import.meta.url), "utf8")
     .split("\n")
     .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
-    .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
+    .map((l) => [
+      l.slice(0, l.indexOf("=")).trim(),
+      l.slice(l.indexOf("=") + 1).trim(),
+    ]),
 );
 
 const [email, password, displayName] = process.argv.slice(2);
 if (!email || !password) {
-  console.error("Usage: node scripts/bootstrap-admins.mjs <email> <password> [display_name]");
+  console.error(
+    "Usage: node scripts/bootstrap-admins.mjs <email> <password> [display_name]",
+  );
   process.exit(1);
 }
 
 const supabase = createClient(
   env.NEXT_PUBLIC_SUPABASE_URL,
   env.NEXT_SECRET_SUPABASE_SERVICE_ROLE_KEY,
-  { auth: { persistSession: false } }
+  { auth: { persistSession: false } },
 );
 
-const { data: created, error: authError } = await supabase.auth.admin.createUser({
-  email,
-  password,
-  email_confirm: true,
-});
+const { data: created, error: authError } =
+  await supabase.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
 if (authError) {
   console.error("Auth user creation failed:", authError.message);
   process.exit(1);
@@ -1168,11 +1261,11 @@ Expected output: `Admin created: ... (uuid)`. Then login via the login page with
 
 ## Phase 1 acceptance checklist
 
-- [ ] `npx tsc --noEmit` — zero errors
+- [ ] `npx tsc --noEmit` - zero errors
 - [ ] Legacy env login works pre-migration; Supabase login works post-bootstrap
 - [ ] Old (pre-change) session cookies rejected → re-login forced
 - [ ] Editor: full dashboard, blocked from `/users` (middleware + hidden sidebar + `requireAdmin` in actions)
-- [ ] Agent/affiliate user: any dashboard URL redirects to `/portal` (404 page until Phase 3 — expected; middleware rule verified)
+- [ ] Agent/affiliate user: any dashboard URL redirects to `/portal` (404 page until Phase 3 - expected; middleware rule verified)
 - [ ] Google SSO: known email → in; unknown email → `no-account` error
 - [ ] Coupon actions now guarded
 - [ ] Dor manual steps done: Google provider configured, `NEXT_SECRET_SESSION_SECRET` set in Vercel, migration applied, bootstrap run
@@ -1181,6 +1274,7 @@ Expected output: `Admin created: ... (uuid)`. Then login via the login page with
 ## Phases 2–4
 
 Separate plans, written after Phase 1 review:
+
 - Phase 2: `lib/audit.ts` + wiring into all mutations/auth events + `/audit-log` UI
 - Phase 3: `app/portal/` layout, dashboard, coupons, reservations (uses `requirePartner()` from Task 4)
 - Phase 4: quotes form + Hebrew RTL PDF via existing `@sparticuz/chromium` infra + `quotes` bucket

@@ -1,8 +1,8 @@
-# Cross-Project Rule (always-on) — myt-backoffice
+# Cross-Project Rule (always-on) - myt-backoffice
 
 This backoffice writes the Supabase data `../myt-main` reads, and calls some of its APIs.
 
-## Types — keep in sync
+## Types - keep in sync
 - `types/app.types.ts` ↔ main `lib/app.types.ts`: `Event, EventType, Flight, FlightSegment,
   Order, OrderHotel, OrderTicket, FlightSearchOptions, TimeRange, AffiliateTracking, VipConfig,
   EventTicket`.

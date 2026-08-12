@@ -8,12 +8,12 @@ You audit type-sync between `myt-backoffice` `types/app.types.ts` and `../myt-ma
 `lib/app.types.ts`.
 
 ## Steps
-1. Read both files (locate main — try `../myt-main/lib/app.types.ts`; if missing, search siblings).
+1. Read both files (locate main - try `../myt-main/lib/app.types.ts`; if missing, search siblings).
 2. Compare shared types: `Event, EventType, Flight, FlightSegment, Order, OrderHotel, OrderTicket,
    FlightSearchOptions, TimeRange, AffiliateTracking, VipConfig, EventTicket`.
 3. Classify each diff as **DRIFT** (fix) or **INTENTIONAL**:
-   - backoffice `EventType` extra `sports_live_event_dynamic` — intentional
-   - backoffice `Flight` simplified airline metadata — intentional
+   - backoffice `EventType` extra `sports_live_event_dynamic` - intentional
+   - backoffice `Flight` simplified airline metadata - intentional
 
 ## Output
 - Per shared type: IN SYNC / DRIFT / INTENTIONAL DIFF.

@@ -1,4 +1,4 @@
-<title>Offline Flights — QA Round 3</title>
+<title>Offline Flights - QA Round 3</title>
 
 <style>
   :root {
@@ -15,7 +15,9 @@
     --warn: #9a6212;
     --warn-soft: #fbf1de;
 
-    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+    --mono:
+      ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas,
+      monospace;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
     --gutter: 3.6rem;
@@ -23,193 +25,420 @@
 
   @media (prefers-color-scheme: dark) {
     :root {
-      --paper: #111819; --panel: #161f20; --ink: #e2e9e8; --ink-soft: #a7b6b6;
-      --muted: #7d8e8f; --rule: #26302f; --accent: #4aa8ba; --accent-soft: #16302f;
-      --pass: #63b083; --fail: #e2735c; --warn: #d0a052; --warn-soft: #2a2317;
+      --paper: #111819;
+      --panel: #161f20;
+      --ink: #e2e9e8;
+      --ink-soft: #a7b6b6;
+      --muted: #7d8e8f;
+      --rule: #26302f;
+      --accent: #4aa8ba;
+      --accent-soft: #16302f;
+      --pass: #63b083;
+      --fail: #e2735c;
+      --warn: #d0a052;
+      --warn-soft: #2a2317;
     }
   }
 
   :root[data-theme="dark"] {
-    --paper: #111819; --panel: #161f20; --ink: #e2e9e8; --ink-soft: #a7b6b6;
-    --muted: #7d8e8f; --rule: #26302f; --accent: #4aa8ba; --accent-soft: #16302f;
-    --pass: #63b083; --fail: #e2735c; --warn: #d0a052; --warn-soft: #2a2317;
+    --paper: #111819;
+    --panel: #161f20;
+    --ink: #e2e9e8;
+    --ink-soft: #a7b6b6;
+    --muted: #7d8e8f;
+    --rule: #26302f;
+    --accent: #4aa8ba;
+    --accent-soft: #16302f;
+    --pass: #63b083;
+    --fail: #e2735c;
+    --warn: #d0a052;
+    --warn-soft: #2a2317;
   }
 
   :root[data-theme="light"] {
-    --paper: #f1f4f3; --panel: #ffffff; --ink: #0d1517; --ink-soft: #46585a;
-    --muted: #6f8082; --rule: #cbd4d3; --accent: #10606e; --accent-soft: #e2eeef;
-    --pass: #2e7d4f; --fail: #b0331f; --warn: #9a6212; --warn-soft: #fbf1de;
+    --paper: #f1f4f3;
+    --panel: #ffffff;
+    --ink: #0d1517;
+    --ink-soft: #46585a;
+    --muted: #6f8082;
+    --rule: #cbd4d3;
+    --accent: #10606e;
+    --accent-soft: #e2eeef;
+    --pass: #2e7d4f;
+    --fail: #b0331f;
+    --warn: #9a6212;
+    --warn-soft: #fbf1de;
   }
 
-  * { box-sizing: border-box; }
+  * {
+    box-sizing: border-box;
+  }
 
   body {
-    margin: 0; background: var(--paper); color: var(--ink);
-    font-family: var(--sans); font-size: 15px; line-height: 1.6;
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
   }
 
-  .wrap { max-width: 62rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+  .wrap {
+    max-width: 62rem;
+    margin: 0 auto;
+    padding: 0 1.5rem 6rem;
+  }
 
-  header.masthead { padding: 3.5rem 0 2rem; border-bottom: 2px solid var(--ink); }
+  header.masthead {
+    padding: 3.5rem 0 2rem;
+    border-bottom: 2px solid var(--ink);
+  }
 
   .eyebrow {
-    font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.16em;
-    text-transform: uppercase; color: var(--accent); margin: 0 0 0.9rem;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.9rem;
   }
 
   h1 {
-    font-family: var(--mono); font-size: clamp(1.7rem, 4.5vw, 2.6rem);
-    letter-spacing: -0.02em; line-height: 1.1; margin: 0 0 0.8rem;
+    font-family: var(--mono);
+    font-size: clamp(1.7rem, 4.5vw, 2.6rem);
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    margin: 0 0 0.8rem;
     text-wrap: balance;
   }
 
-  .lede { margin: 0; max-width: 62ch; color: var(--ink-soft); }
+  .lede {
+    margin: 0;
+    max-width: 62ch;
+    color: var(--ink-soft);
+  }
 
   .progress {
-    position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap;
-    align-items: center; gap: 1.25rem; padding: 0.85rem 1.5rem;
-    margin: 2.5rem -1.5rem; background: var(--panel);
-    border-bottom: 1px solid var(--rule); font-family: var(--mono);
-    font-size: 0.78rem; letter-spacing: 0.04em;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 0.85rem 1.5rem;
+    margin: 2.5rem -1.5rem;
+    background: var(--panel);
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
   }
 
-  .progress .count { font-variant-numeric: tabular-nums; }
-  .progress .c-pass { color: var(--pass); }
-  .progress .c-fail { color: var(--fail); }
-  .progress .c-todo { color: var(--muted); }
-  .progress .spacer { flex: 1; }
+  .progress .count {
+    font-variant-numeric: tabular-nums;
+  }
+  .progress .c-pass {
+    color: var(--pass);
+  }
+  .progress .c-fail {
+    color: var(--fail);
+  }
+  .progress .c-todo {
+    color: var(--muted);
+  }
+  .progress .spacer {
+    flex: 1;
+  }
 
   button.act {
-    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em;
-    text-transform: uppercase; padding: 0.45rem 0.85rem; background: transparent;
-    color: var(--ink); border: 1px solid var(--rule); cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.45rem 0.85rem;
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--rule);
+    cursor: pointer;
+    transition:
+      background 0.15s,
+      border-color 0.15s;
   }
 
-  button.act:hover { background: var(--accent-soft); border-color: var(--accent); }
-  button.act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.act:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  button.act:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 
   h2 {
-    font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.18em;
-    text-transform: uppercase; margin: 0;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin: 0;
   }
 
   .section-head {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.9rem;
-    margin-top: 3rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--rule);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.9rem;
+    margin-top: 3rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--rule);
   }
 
-  .section-head .note { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+  .section-head .note {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
 
-  code { font-family: var(--mono); font-size: 0.86em; background: var(--accent-soft); padding: 0.1em 0.35em; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--accent-soft);
+    padding: 0.1em 0.35em;
+  }
 
   .caution {
-    border-left: 3px solid var(--warn); background: var(--warn-soft);
-    padding: 0.85rem 1rem; margin: 1.5rem 0 0;
+    border-left: 3px solid var(--warn);
+    background: var(--warn-soft);
+    padding: 0.85rem 1rem;
+    margin: 1.5rem 0 0;
   }
 
-  .caution p { margin: 0 0 0.5rem; }
-  .caution p:last-child { margin-bottom: 0; }
-  .caution strong { color: var(--warn); }
+  .caution p {
+    margin: 0 0 0.5rem;
+  }
+  .caution p:last-child {
+    margin-bottom: 0;
+  }
+  .caution strong {
+    color: var(--warn);
+  }
 
   .flow {
-    display: grid; grid-template-columns: var(--gutter) 1fr; gap: 0 1.2rem;
-    padding: 1.6rem 0; border-bottom: 1px dashed var(--rule);
+    display: grid;
+    grid-template-columns: var(--gutter) 1fr;
+    gap: 0 1.2rem;
+    padding: 1.6rem 0;
+    border-bottom: 1px dashed var(--rule);
   }
 
-  .flow[data-state="pass"] { background: linear-gradient(90deg, var(--accent-soft) 0, transparent 40%); }
-  .flow[data-state="fail"] { background: linear-gradient(90deg, var(--warn-soft) 0, transparent 40%); }
+  .flow[data-state="pass"] {
+    background: linear-gradient(90deg, var(--accent-soft) 0, transparent 40%);
+  }
+  .flow[data-state="fail"] {
+    background: linear-gradient(90deg, var(--warn-soft) 0, transparent 40%);
+  }
 
   .flow .code {
-    font-family: var(--mono); font-size: 0.95rem; font-weight: 700;
-    color: var(--accent); padding-top: 0.1rem;
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--accent);
+    padding-top: 0.1rem;
   }
 
-  .flow .body { min-width: 0; }
-  .flow h3 { font-family: var(--sans); font-size: 1.02rem; font-weight: 600; margin: 0 0 0.15rem; text-wrap: balance; }
+  .flow .body {
+    min-width: 0;
+  }
+  .flow h3 {
+    font-family: var(--sans);
+    font-size: 1.02rem;
+    font-weight: 600;
+    margin: 0 0 0.15rem;
+    text-wrap: balance;
+  }
 
   .flow .proves {
-    font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--muted); margin: 0 0 0.9rem;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 0.9rem;
   }
 
   .flow .said {
-    border-left: 2px solid var(--rule); padding-left: 0.85rem;
-    margin: 0 0 0.9rem; color: var(--muted); font-style: italic;
+    border-left: 2px solid var(--rule);
+    padding-left: 0.85rem;
+    margin: 0 0 0.9rem;
+    color: var(--muted);
+    font-style: italic;
   }
 
   .cause {
-    background: var(--panel); border: 1px solid var(--rule);
-    padding: 0.8rem 1rem; margin: 0 0 1rem;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    padding: 0.8rem 1rem;
+    margin: 0 0 1rem;
   }
 
-  .cause p { margin: 0 0 0.4rem; font-size: 0.92rem; }
-  .cause p:last-child { margin-bottom: 0; }
+  .cause p {
+    margin: 0 0 0.4rem;
+    font-size: 0.92rem;
+  }
+  .cause p:last-child {
+    margin-bottom: 0;
+  }
 
   .cause .label {
-    font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.12em;
-    text-transform: uppercase; color: var(--muted); display: block;
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: block;
     margin-bottom: 0.4rem;
   }
 
-  .flow ol, .flow ul { margin: 0 0 0.9rem; padding-left: 1.15rem; }
-  .flow li { margin-bottom: 0.25rem; }
-
-  .expect {
-    border-left: 2px solid var(--accent); padding: 0.15rem 0 0.15rem 0.85rem;
-    margin: 0 0 1rem; color: var(--ink-soft);
+  .flow ol,
+  .flow ul {
+    margin: 0 0 0.9rem;
+    padding-left: 1.15rem;
+  }
+  .flow li {
+    margin-bottom: 0.25rem;
   }
 
-  .expect b { color: var(--ink); font-weight: 600; }
+  .expect {
+    border-left: 2px solid var(--accent);
+    padding: 0.15rem 0 0.15rem 0.85rem;
+    margin: 0 0 1rem;
+    color: var(--ink-soft);
+  }
 
-  .verdict { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .expect b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .verdict {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
 
   .verdict button:not(.act) {
-    font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em;
-    text-transform: uppercase; padding: 0.38rem 0.8rem; background: transparent;
-    color: var(--muted); border: 1px solid var(--rule); cursor: pointer;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.38rem 0.8rem;
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--rule);
+    cursor: pointer;
     transition: all 0.12s;
   }
 
-  .verdict button:not(.act):hover { border-color: var(--ink-soft); color: var(--ink); }
-  .verdict button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .verdict button[aria-pressed="true"][data-v="pass"] { background: var(--pass); border-color: var(--pass); color: #fff; }
-  .verdict button[aria-pressed="true"][data-v="fail"] { background: var(--fail); border-color: var(--fail); color: #fff; }
+  .verdict button:not(.act):hover {
+    border-color: var(--ink-soft);
+    color: var(--ink);
+  }
+  .verdict button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .verdict button[aria-pressed="true"][data-v="pass"] {
+    background: var(--pass);
+    border-color: var(--pass);
+    color: #fff;
+  }
+  .verdict button[aria-pressed="true"][data-v="fail"] {
+    background: var(--fail);
+    border-color: var(--fail);
+    color: #fff;
+  }
 
   textarea {
-    display: none; width: 100%; margin-top: 0.7rem; padding: 0.6rem 0.7rem;
-    font-family: var(--sans); font-size: 0.9rem; line-height: 1.5;
-    color: var(--ink); background: var(--panel); border: 1px solid var(--rule);
-    resize: vertical; min-height: 4.5rem;
+    display: none;
+    width: 100%;
+    margin-top: 0.7rem;
+    padding: 0.6rem 0.7rem;
+    font-family: var(--sans);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    resize: vertical;
+    min-height: 4.5rem;
   }
 
-  textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .flow[data-state="fail"] textarea, textarea.shown { display: block; }
+  textarea:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .flow[data-state="fail"] textarea,
+  textarea.shown {
+    display: block;
+  }
 
-  .report { margin-top: 3rem; padding: 1.5rem; background: var(--panel); border: 1px solid var(--rule); }
-  .report p { margin: 0 0 1rem; color: var(--ink-soft); max-width: 60ch; }
-  #report-out { display: none; white-space: pre-wrap; margin-top: 1rem; font-family: var(--mono); font-size: 0.78rem; }
-  #report-out.shown { display: block; }
+  .report {
+    margin-top: 3rem;
+    padding: 1.5rem;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+  }
+  .report p {
+    margin: 0 0 1rem;
+    color: var(--ink-soft);
+    max-width: 60ch;
+  }
+  #report-out {
+    display: none;
+    white-space: pre-wrap;
+    margin-top: 1rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+  }
+  #report-out.shown {
+    display: block;
+  }
 
   footer.foot {
-    margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--rule);
-    font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.06em; color: var(--muted);
+    margin-top: 3rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    color: var(--muted);
   }
 
-  @media (max-width: 640px) { :root { --gutter: 2.6rem; } .flow { gap: 0 0.8rem; } }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (max-width: 640px) {
+    :root {
+      --gutter: 2.6rem;
+    }
+    .flow {
+      gap: 0 0.8rem;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      transition: none !important;
+    }
+  }
 </style>
 
 <div class="wrap">
-
   <header class="masthead">
     <p class="eyebrow">MYT · Offline flights v2 · round 3</p>
     <h1>The four that were broken</h1>
     <p class="lede">
       Everything you marked BROKEN in round 2 is fixed and live on
       <code>master</code>. Both root causes turned out to be worse than the
-      symptoms you saw — each one is written up below the flow it broke, so you
+      symptoms you saw - each one is written up below the flow it broke, so you
       know what you're actually re-testing.
     </p>
   </header>
@@ -224,13 +453,20 @@
 
   <section>
     <div class="caution">
-      <p><strong>M5 and M6 need a locked event that reaches the flight step.</strong>
-      Last time we looked there wasn't one: 571 is locked with 45 free seats but its
-      ticket step comes back empty, and 585 reaches the flight step but is unlocked
-      with a full flight. Sort that first or those two stay unverifiable.</p>
-      <p>Everything writes to <strong>production</strong>. Keep locks and allocation
-      changes on a test event — locking now takes effect for real customers
-      immediately.</p>
+      <p>
+        <strong
+          >M5 and M6 need a locked event that reaches the flight step.</strong
+        >
+        Last time we looked there wasn't one: 571 is locked with 45 free seats
+        but its ticket step comes back empty, and 585 reaches the flight step
+        but is unlocked with a full flight. Sort that first or those two stay
+        unverifiable.
+      </p>
+      <p>
+        Everything writes to <strong>production</strong>. Keep locks and
+        allocation changes on a test event - locking now takes effect for real
+        customers immediately.
+      </p>
     </div>
   </section>
 
@@ -249,32 +485,46 @@
 
         <div class="cause">
           <span class="label">What was actually wrong</span>
-          <p>You were right, and my first fix was incomplete. <code>stops</code> was
-          pinned in <b>four</b> places; adding it to the drawer's field list opened
-          only one of them:</p>
-          <p>· <code>z.literal(0)</code> in all three flight schemas — Zod rejected any
-          connecting flight outright<br>
-          · the Stops input was <code>readOnly</code> on both the new and edit pages<br>
-          · the edit form reset <code>stops</code> to a hardcoded <code>0</code>, so
-          editing a connecting flight <b>flattened it back to direct on save</b></p>
-          <p>That last one was the trap: you could set a stopover in the drawer, then
-          lose it just by opening the edit page and saving. I confirmed the database
-          itself accepts <code>stops = 1</code> before touching any UI, so the
-          constraint was never the problem.</p>
+          <p>
+            You were right, and my first fix was incomplete.
+            <code>stops</code> was pinned in <b>four</b> places; adding it to
+            the drawer's field list opened only one of them:
+          </p>
+          <p>
+            · <code>z.literal(0)</code> in all three flight schemas - Zod
+            rejected any connecting flight outright<br />
+            · the Stops input was <code>readOnly</code> on both the new and edit
+            pages<br />
+            · the edit form reset <code>stops</code> to a hardcoded
+            <code>0</code>, so editing a connecting flight
+            <b>flattened it back to direct on save</b>
+          </p>
+          <p>
+            That last one was the trap: you could set a stopover in the drawer,
+            then lose it just by opening the edit page and saving. I confirmed
+            the database itself accepts <code>stops = 1</code> before touching
+            any UI, so the constraint was never the problem.
+          </p>
         </div>
 
         <ol>
           <li>Open a flight's edit page. Set <b>Stops</b> to 1 and save.</li>
-          <li>Reopen the edit page — is it still 1?</li>
-          <li>From the flights list, click the row id to open the drawer. Set
-          <b>Out stopover</b> to e.g. <code>VIE</code> and <b>Out stop duration</b>
-          to <code>PT2H</code>.</li>
-          <li>Go back to the edit page and save again without changing anything.</li>
+          <li>Reopen the edit page - is it still 1?</li>
+          <li>
+            From the flights list, click the row id to open the drawer. Set
+            <b>Out stopover</b> to e.g. <code>VIE</code> and
+            <b>Out stop duration</b> to <code>PT2H</code>.
+          </li>
+          <li>
+            Go back to the edit page and save again without changing anything.
+          </li>
           <li>Check the flight card on the live site.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> stops sticks at 1 through both saves, the
-        stopover survives step 4, and the card shows one stop rather than direct.
-        Step 4 is the regression that used to eat it.</p>
+        <p class="expect">
+          <b>Expect:</b> stops sticks at 1 through both saves, the stopover
+          survives step 4, and the card shows one stop rather than direct. Step
+          4 is the regression that used to eat it.
+        </p>
         <div class="verdict" data-for="M4"></div>
       </div>
     </div>
@@ -284,29 +534,45 @@
       <div class="body">
         <h3>A locked package offers exactly one flight</h3>
         <p class="proves">Was: the lock didn't save</p>
-        <p class="said">"when i save lock flight and then go out of event it is not really saved"</p>
+        <p class="said">
+          "when i save lock flight and then go out of event it is not really
+          saved"
+        </p>
 
         <div class="cause">
           <span class="label">What was actually wrong</span>
-          <p>The lock <i>was</i> written — and then the event's own Save wiped it.
-          <code>lockEventFlight</code> writes <code>locked_flight_id</code> straight
-          to the database, but the page never folded the new value into its own copy
-          of the event. So saving the event wrote back the value loaded when the page
-          opened — <code>null</code> — silently unlocking the package.</p>
-          <p>The form now withholds <code>locked_flight_id</code> entirely, since the
-          lock actions own that column, and the panel reports the new value back so
-          local state stays honest.</p>
+          <p>
+            The lock <i>was</i> written - and then the event's own Save wiped
+            it. <code>lockEventFlight</code> writes
+            <code>locked_flight_id</code> straight to the database, but the page
+            never folded the new value into its own copy of the event. So saving
+            the event wrote back the value loaded when the page opened -
+            <code>null</code> - silently unlocking the package.
+          </p>
+          <p>
+            The form now withholds <code>locked_flight_id</code> entirely, since
+            the lock actions own that column, and the panel reports the new
+            value back so local state stays honest.
+          </p>
         </div>
 
         <ol>
-          <li>On a test event, lock the package to a flight with free seats.</li>
+          <li>
+            On a test event, lock the package to a flight with free seats.
+          </li>
           <li><b>Save the event</b>, leave the page, come back.</li>
-          <li>Now lock it, edit something unrelated on the event (the name), and save.</li>
+          <li>
+            Now lock it, edit something unrelated on the event (the name), and
+            save.
+          </li>
           <li>Open the flight step for that event on the live site.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> the lock survives both steps 2 and 3 — step 3
-        is the exact case that used to break it. On the site: that one flight only, no
-        sort tabs, no filter sidebar, dates fixed, and Amadeus never called.</p>
+        <p class="expect">
+          <b>Expect:</b> the lock survives both steps 2 and 3 - step 3 is the
+          exact case that used to break it. On the site: that one flight only,
+          no sort tabs, no filter sidebar, dates fixed, and Amadeus never
+          called.
+        </p>
         <div class="verdict" data-for="M5"></div>
       </div>
     </div>
@@ -317,12 +583,17 @@
         <h3>Locked and sold out means sold out</h3>
         <p class="proves">Was: blocked by M5</p>
         <ol>
-          <li>Keep the event locked; set its allocation on that flight to <b>0</b>.</li>
+          <li>
+            Keep the event locked; set its allocation on that flight to
+            <b>0</b>.
+          </li>
           <li>Reload the flight step.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> the <b>"החבילה אזלה"</b> panel, and critically
-        <b>no Amadeus results in its place</b>. A fallback would silently re-price the
-        package the customer was promised.</p>
+        <p class="expect">
+          <b>Expect:</b> the <b>"החבילה אזלה"</b> panel, and critically
+          <b>no Amadeus results in its place</b>. A fallback would silently
+          re-price the package the customer was promised.
+        </p>
         <div class="verdict" data-for="M6"></div>
       </div>
     </div>
@@ -333,21 +604,28 @@
         <h3>The lock panel</h3>
         <p class="proves">Was: blocked by the same save bug</p>
         <ol>
-          <li>Open a test event's flights card and flip <b>Locked package</b> on.</li>
+          <li>
+            Open a test event's flights card and flip <b>Locked package</b> on.
+          </li>
           <li>Look at the list of linked flights, then lock one.</li>
           <li>Flip it off again.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> one bordered panel — header with lock state
-        and switch, an inline list of linked flights each with its own <b>Lock to
-        this</b> button and allocation badge, and once locked a footer naming the
-        flight and its fixed dates. Per your call, still one flight per lock.</p>
+        <p class="expect">
+          <b>Expect:</b> one bordered panel - header with lock state and switch,
+          an inline list of linked flights each with its own
+          <b>Lock to this</b> button and allocation badge, and once locked a
+          footer naming the flight and its fixed dates. Per your call, still one
+          flight per lock.
+        </p>
         <div class="verdict" data-for="B11"></div>
       </div>
     </div>
 
     <div class="section-head">
       <h2>Spot-check</h2>
-      <span class="note">I changed three form schemas — these paths need a smoke test</span>
+      <span class="note"
+        >I changed three form schemas - these paths need a smoke test</span
+      >
     </div>
 
     <div class="flow" data-id="R4">
@@ -356,14 +634,22 @@
         <h3>Creating a flight still works</h3>
         <p class="proves">The new-flight schema changed</p>
         <ol>
-          <li><code>/offline-flights</code> → new flight. Fill it in with <b>Stops</b> left at 0.</li>
+          <li>
+            <code>/offline-flights</code> → new flight. Fill it in with
+            <b>Stops</b> left at 0.
+          </li>
           <li>Save.</li>
-          <li>Try once more with a deliberately silly Stops value like <code>9</code>.</li>
+          <li>
+            Try once more with a deliberately silly Stops value like
+            <code>9</code>.
+          </li>
         </ol>
-        <p class="expect"><b>Expect:</b> a normal direct flight saves exactly as before.
-        Step 3 is refused — more than 3 stops is almost certainly a typo, and the old
-        rule that caught it was the same one blocking every legitimate connecting
-        flight.</p>
+        <p class="expect">
+          <b>Expect:</b> a normal direct flight saves exactly as before. Step 3
+          is refused - more than 3 stops is almost certainly a typo, and the old
+          rule that caught it was the same one blocking every legitimate
+          connecting flight.
+        </p>
         <div class="verdict" data-for="R4"></div>
       </div>
     </div>
@@ -378,26 +664,35 @@
           <li>Change the price, a flight number and a time. Save.</li>
           <li>Reopen and confirm all three stuck.</li>
         </ol>
-        <p class="expect"><b>Expect:</b> unchanged behaviour. I only touched how
-        <code>stops</code> is loaded, but that runs in the same reset as every other
-        field, so it's worth one pass.</p>
+        <p class="expect">
+          <b>Expect:</b> unchanged behaviour. I only touched how
+          <code>stops</code> is loaded, but that runs in the same reset as every
+          other field, so it's worth one pass.
+        </p>
         <div class="verdict" data-for="R5"></div>
       </div>
     </div>
   </section>
 
   <section class="report">
-    <h2 style="margin-bottom:0.8rem">When you're done</h2>
-    <p>Builds a summary of what you marked, with your notes on anything broken. Paste it back to me.</p>
+    <h2 style="margin-bottom: 0.8rem">When you're done</h2>
+    <p>
+      Builds a summary of what you marked, with your notes on anything broken.
+      Paste it back to me.
+    </p>
     <div class="verdict">
       <button class="act" id="btn-report" type="button">Copy report</button>
-      <span id="copy-note" style="font-family:var(--mono);font-size:0.7rem;color:var(--pass)"></span>
+      <span
+        id="copy-note"
+        style="font-family: var(--mono); font-size: 0.7rem; color: var(--pass)"
+      ></span>
     </div>
     <pre id="report-out"></pre>
   </section>
 
   <footer class="foot">
-    Round 3 · backoffice master 59d2c80 · main up to date, no change needed · 2026-07-30
+    Round 3 · backoffice master 59d2c80 · main up to date, no change needed ·
+    2026-07-30
   </footer>
 </div>
 
@@ -406,16 +701,25 @@
     var KEY = "myt-offline-flights-qa-r3";
     var state = {};
 
-    try { state = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { state = {}; }
+    try {
+      state = JSON.parse(localStorage.getItem(KEY) || "{}");
+    } catch (e) {
+      state = {};
+    }
 
     var flows = Array.prototype.slice.call(document.querySelectorAll(".flow"));
 
     function save() {
-      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* private browsing */ }
+      try {
+        localStorage.setItem(KEY, JSON.stringify(state));
+      } catch (e) {
+        /* private browsing */
+      }
     }
 
     function tally() {
-      var pass = 0, fail = 0;
+      var pass = 0,
+        fail = 0;
       flows.forEach(function (f) {
         var v = (state[f.dataset.id] || {}).verdict;
         if (v === "pass") pass++;
@@ -423,7 +727,8 @@
       });
       document.getElementById("n-pass").textContent = pass;
       document.getElementById("n-fail").textContent = fail;
-      document.getElementById("n-todo").textContent = flows.length - pass - fail;
+      document.getElementById("n-todo").textContent =
+        flows.length - pass - fail;
     }
 
     flows.forEach(function (flow) {
@@ -442,7 +747,8 @@
       btnFail.textContent = "Broken";
 
       var note = document.createElement("textarea");
-      note.placeholder = "What went wrong? Which step, what you saw, what you expected.";
+      note.placeholder =
+        "What went wrong? Which step, what you saw, what you expected.";
       note.value = entry.note || "";
       note.setAttribute("aria-label", "Notes for flow " + id);
 
@@ -458,12 +764,18 @@
         var cur = state[id] || {};
         cur.verdict = cur.verdict === v ? "" : v;
         state[id] = cur;
-        save(); render(); tally();
+        save();
+        render();
+        tally();
         if (cur.verdict === "fail") note.focus();
       }
 
-      btnPass.addEventListener("click", function () { mark("pass"); });
-      btnFail.addEventListener("click", function () { mark("fail"); });
+      btnPass.addEventListener("click", function () {
+        mark("pass");
+      });
+      btnFail.addEventListener("click", function () {
+        mark("fail");
+      });
       note.addEventListener("input", function () {
         var cur = state[id] || {};
         cur.note = note.value;
@@ -486,45 +798,61 @@
       location.reload();
     });
 
-    document.getElementById("btn-report").addEventListener("click", function () {
-      var lines = ["MYT offline flights v2 — QA round 3", ""];
-      var broken = [], ok = [], todo = [];
+    document
+      .getElementById("btn-report")
+      .addEventListener("click", function () {
+        var lines = ["MYT offline flights v2 - QA round 3", ""];
+        var broken = [],
+          ok = [],
+          todo = [];
 
-      flows.forEach(function (flow) {
-        var id = flow.dataset.id;
-        var title = flow.querySelector("h3").textContent.trim();
-        var entry = state[id] || {};
-        if (entry.verdict === "fail") {
-          broken.push("[" + id + "] " + title + (entry.note ? "\n    → " + entry.note.trim() : ""));
-        } else if (entry.verdict === "pass") {
-          ok.push(id);
+        flows.forEach(function (flow) {
+          var id = flow.dataset.id;
+          var title = flow.querySelector("h3").textContent.trim();
+          var entry = state[id] || {};
+          if (entry.verdict === "fail") {
+            broken.push(
+              "[" +
+                id +
+                "] " +
+                title +
+                (entry.note ? "\n    → " + entry.note.trim() : ""),
+            );
+          } else if (entry.verdict === "pass") {
+            ok.push(id);
+          } else {
+            todo.push(id);
+          }
+        });
+
+        if (broken.length) {
+          lines.push("BROKEN (" + broken.length + ")");
+          lines.push(broken.join("\n"));
+          lines.push("");
+        }
+        if (ok.length)
+          lines.push("WORKS (" + ok.length + "): " + ok.join(", "));
+        if (todo.length)
+          lines.push("NOT CHECKED (" + todo.length + "): " + todo.join(", "));
+
+        var text = lines.join("\n");
+        var out = document.getElementById("report-out");
+        out.textContent = text;
+        out.classList.add("shown");
+
+        var note = document.getElementById("copy-note");
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(
+            function () {
+              note.textContent = "Copied - paste it in chat.";
+            },
+            function () {
+              note.textContent = "Couldn't copy; select the text below.";
+            },
+          );
         } else {
-          todo.push(id);
+          note.textContent = "Select the text below and copy it.";
         }
       });
-
-      if (broken.length) {
-        lines.push("BROKEN (" + broken.length + ")");
-        lines.push(broken.join("\n"));
-        lines.push("");
-      }
-      if (ok.length) lines.push("WORKS (" + ok.length + "): " + ok.join(", "));
-      if (todo.length) lines.push("NOT CHECKED (" + todo.length + "): " + todo.join(", "));
-
-      var text = lines.join("\n");
-      var out = document.getElementById("report-out");
-      out.textContent = text;
-      out.classList.add("shown");
-
-      var note = document.getElementById("copy-note");
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(
-          function () { note.textContent = "Copied — paste it in chat."; },
-          function () { note.textContent = "Couldn't copy; select the text below."; }
-        );
-      } else {
-        note.textContent = "Select the text below and copy it.";
-      }
-    });
   })();
 </script>

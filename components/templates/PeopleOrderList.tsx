@@ -76,7 +76,7 @@ export function PeopleOrderList({ kind }: { kind: PersonKind }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Drag rows (or use the arrows) — top of the list shows first in the
+          Drag rows (or use the arrows) - top of the list shows first in the
           homepage carousel. People with an available event always jump ahead,
           keeping this relative order.
         </p>

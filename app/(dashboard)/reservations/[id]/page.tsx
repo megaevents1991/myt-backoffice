@@ -206,7 +206,7 @@ export default function ReservationDetailsPage({
               </div>
             </div>
 
-            {/* Read-only here by design — passengers are edited on the edit
+            {/* Read-only here by design - passengers are edited on the edit
                 screen, so this page never writes. */}
             <div className="space-y-2">
               <p className="text-sm font-medium">Passengers</p>
@@ -319,10 +319,10 @@ export default function ReservationDetailsPage({
                   <p className="text-lg">
                     {reservation.partner_settlement_method === "voucher" ? (
                       <span className="font-bold text-amber-600">
-                        Awaiting voucher — do not call customer for payment
+                        Awaiting voucher - do not call customer for payment
                       </span>
                     ) : reservation.partner_settlement_method === "agent_card" ? (
-                      `Agent's own card — charged ₪${(
+                      `Agent's own card - charged ₪${(
                         reservation.final_purchase_price_ils -
                         (reservation.agent_card_discount_ils || 0)
                       ).toLocaleString()} of ₪${reservation.final_purchase_price_ils.toLocaleString()} (net of commission)`
@@ -368,7 +368,7 @@ export default function ReservationDetailsPage({
                     </SelectContent>
                   </Select>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    מצב השובר נפרד מסטטוס ההזמנה — ההזמנה נשארת לא-נפרעת עד
+                    מצב השובר נפרד מסטטוס ההזמנה - ההזמנה נשארת לא-נפרעת עד
                     שהשובר נגבה בפועל (ואז מסמנים Paid).
                   </p>
                 </div>
@@ -473,7 +473,7 @@ export default function ReservationDetailsPage({
                     <div>
                       <p className="text-sm font-medium">Event Date</p>
                       <p className="text-lg">
-                        {evt.date ? new Date(evt.date).toLocaleDateString() : "—"}
+                        {evt.date ? new Date(evt.date).toLocaleDateString() : "-"}
                       </p>
                     </div>
 
@@ -588,7 +588,7 @@ export default function ReservationDetailsPage({
                         ? reservation.flight_order_info.virtualOfferType === true
                           ? "Yes"
                           : "No"
-                        : "—"}
+                        : "-"}
                     </p>
                   </div>
                   <div>
@@ -851,16 +851,16 @@ export default function ReservationDetailsPage({
                     return (
                       <div key={room.id} className="text-sm">
                         <span className="font-medium">{room.hotel_name}</span>
-                        {" — "}
+                        {" - "}
                         {room.room_type}
                         {count > 1 ? ` × ${count}` : ""}
                         {" ("}
                         {new Date(room.check_in).toLocaleDateString()}
                         {" → "}
                         {new Date(room.check_out).toLocaleDateString()}
-                        {") — $"}
+                        {") - $"}
                         {Number(room.price).toFixed(2)} / room
-                        {room.meal_plan ? ` — ${room.meal_plan}` : ""}
+                        {room.meal_plan ? ` - ${room.meal_plan}` : ""}
                       </div>
                     );
                   })}
@@ -886,23 +886,23 @@ export default function ReservationDetailsPage({
                       </div>
                       <div>
                         <span className="text-xs text-muted-foreground block">Meal</span>
-                        {room.meal_plan ?? "—"}
+                        {room.meal_plan ?? "-"}
                       </div>
                       <div>
                         <span className="text-xs text-muted-foreground block">Cancel by</span>
-                        {room.last_cancellation_date ?? "—"}
+                        {room.last_cancellation_date ?? "-"}
                       </div>
                       <div>
                         <span className="text-xs text-muted-foreground block">Supplier</span>
-                        {room.supplier ?? "—"}
+                        {room.supplier ?? "-"}
                       </div>
                       <div>
                         <span className="text-xs text-muted-foreground block">Order No</span>
-                        {room.order_no ?? "—"}
+                        {room.order_no ?? "-"}
                       </div>
                       <div>
                         <span className="text-xs text-muted-foreground block">Acc No</span>
-                        {room.acc_no ?? "—"}
+                        {room.acc_no ?? "-"}
                       </div>
                     </div>
                   ))}

@@ -17,7 +17,7 @@ function hoursLeft(expiresAt: string | null): number | null {
 export function OpenHolds({ holds }: { holds: PortalReservation[] }) {
   // Computed after mount, not during render: a client component is still
   // server-rendered, so reading the clock in render ships the server's time and
-  // then hydrates with the browser's — a mismatch right on an hour boundary.
+  // then hydrates with the browser's - a mismatch right on an hour boundary.
   const [live, setLive] = useState<{ hold: PortalReservation; left: number }[]>([]);
 
   useEffect(() => {
@@ -38,7 +38,7 @@ export function OpenHolds({ holds }: { holds: PortalReservation[] }) {
         <CardTitle className="text-base">הצעות פתוחות</CardTitle>
         <CardDescription>
           לקוחות ששמרו חבילה ולא השלימו תשלום. הקישור להמשך ההזמנה נשלח אליהם במייל
-          — שווה להזכיר להם לפני שהזמן נגמר. השמירה לא מבטיחה מלאי, אז מה שאזל
+          - שווה להזכיר להם לפני שהזמן נגמר. השמירה לא מבטיחה מלאי, אז מה שאזל
           יוצע להם מחדש.
         </CardDescription>
       </CardHeader>
@@ -57,7 +57,7 @@ export function OpenHolds({ holds }: { holds: PortalReservation[] }) {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              {/* Floor means a hold with 40 minutes left reads as 0 — say
+              {/* Floor means a hold with 40 minutes left reads as 0 - say
                   "under an hour", not "expired", on the most urgent one. */}
               <Badge variant={left <= 6 ? "destructive" : "secondary"}>
                 {left === 0 ? "נותרה פחות משעה" : `נותרו ${left} שעות`}

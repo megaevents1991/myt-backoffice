@@ -33,10 +33,10 @@ export function EventTaxonomySelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
-  // Synchronous re-entry guard — the `creating` STATE updates async, so a
+  // Synchronous re-entry guard - the `creating` STATE updates async, so a
   // double-tap fires handleCreate twice before the re-render (duplicate rows).
   const creatingRef = useRef(false);
-  // English name for an inline-created tag — required (it becomes the feed slug).
+  // English name for an inline-created tag - required (it becomes the feed slug).
   const [createEnglish, setCreateEnglish] = useState("");
 
   const sorted = [...options].sort((a, b) => a.label.localeCompare(b.label));
@@ -53,7 +53,7 @@ export function EventTaxonomySelect({
       toast({
         variant: "destructive",
         title: "English name required",
-        description: "Fill the English name below — it becomes the feed slug.",
+        description: "Fill the English name below - it becomes the feed slug.",
       });
       return;
     }
@@ -62,7 +62,7 @@ export function EventTaxonomySelect({
     try {
       const created = await createTag({ name: q, name_english: createEnglish.trim() });
       const opt: TaxonomyOption = { id: created.id, label: created.name };
-      // Idempotent server create can return an existing row — don't double-add.
+      // Idempotent server create can return an existing row - don't double-add.
       if (!options.some((o) => o.id === created.id)) onOptionCreated?.(opt);
       if (!value.includes(created.id)) onChange([...value, created.id]);
       setQuery("");
@@ -143,7 +143,7 @@ export function EventTaxonomySelect({
             {q && !exists && (
               <div className="border-t p-2 space-y-1">
                 <p className="text-xs text-muted-foreground">
-                  English name for “{q}” (required — feed slug)
+                  English name for “{q}” (required - feed slug)
                 </p>
                 <input
                   className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"

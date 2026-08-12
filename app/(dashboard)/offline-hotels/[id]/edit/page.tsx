@@ -340,7 +340,7 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
               <FormItem className="md:col-span-2">
                 <FormLabel>Hotel Name</FormLabel>
                 <FormControl><Input placeholder="e.g., Grand Hyatt Amsterdam" {...field} /></FormControl>
-                <FormDescription>Auto-filled from search above — edit if needed.</FormDescription>
+                <FormDescription>Auto-filled from search above - edit if needed.</FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
@@ -401,7 +401,19 @@ export default function EditOfflineHotelPage({ params }: EditOfflineHotelPagePro
             <FormField control={form.control} name="num_rooms" render={({ field }) => (
               <FormItem>
                 <FormLabel>Number of Rooms</FormLabel>
-                <FormControl><Input type="number" placeholder="e.g., 10" {...field} /></FormControl>
+                {/* Read-only in edit: the count mirrors the actual room rows below. */}
+                <FormControl>
+                  <Input
+                    type="number"
+                    disabled
+                    {...field}
+                    value={rooms.length > 0 ? rooms.length : field.value}
+                  />
+                </FormControl>
+                <FormDescription>
+                  Locked after creation - the count follows the Rooms list below.
+                  To reduce it, delete the specific room you want to remove.
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )} />

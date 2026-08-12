@@ -89,7 +89,7 @@ function SortHeader({
 }
 
 const dateLabel = (value: string | null) =>
-  value ? new Date(value).toLocaleDateString() : "—";
+  value ? new Date(value).toLocaleDateString() : "-";
 
 /** Left card: the period's most-booked events, sortable on every column. */
 export function TopEventsTable({ events }: { events: TopBookedEvent[] }) {
@@ -164,7 +164,7 @@ export function TopEventsTable({ events }: { events: TopBookedEvent[] }) {
   );
 }
 
-/** Bottom card: top partners by paid sales — sortable on every column. */
+/** Bottom card: top partners by paid sales - sortable on every column. */
 export function TopPartnersTable({
   partners,
   range,
@@ -262,7 +262,7 @@ export function TopPartnersTable({
               </Badge>
             </TableCell>
             <TableCell className="text-right tabular-nums">
-              {partner.visitors || "—"}
+              {partner.visitors || "-"}
             </TableCell>
             <TableCell className="text-right tabular-nums">
               {partner.paidReservations}
@@ -270,7 +270,7 @@ export function TopPartnersTable({
             <TableCell className="text-right tabular-nums">
               {partner.conversionRate != null
                 ? `${(partner.conversionRate * 100).toFixed(2)}%`
-                : "—"}
+                : "-"}
             </TableCell>
             <TableCell className="text-right tabular-nums">{partner.tickets}</TableCell>
             <TableCell className="text-right tabular-nums">
@@ -289,7 +289,7 @@ export function TopPartnersTable({
   );
 }
 
-/** Right card: hot events — sortable columns, per-partner hover breakdown. */
+/** Right card: hot events - sortable columns, per-partner hover breakdown. */
 export function HotEventsTable({ events }: { events: HotEvent[] }) {
   const { sorted, sort, toggle } = useSortedRows(
     events,
@@ -359,7 +359,7 @@ export function HotEventsTable({ events }: { events: HotEvent[] }) {
             </TableCell>
             <TableCell>{dateLabel(event.date)}</TableCell>
             <TableCell className="max-w-[12rem] truncate">
-              {event.location ?? "—"}
+              {event.location ?? "-"}
             </TableCell>
             <TableCell className="text-right tabular-nums">{event.visitors}</TableCell>
             <TableCell className="text-right tabular-nums">{event.clicks}</TableCell>

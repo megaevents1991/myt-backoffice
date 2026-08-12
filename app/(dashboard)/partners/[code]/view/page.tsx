@@ -79,7 +79,7 @@ export default async function ViewPartnerPage({
     ? (rangeParam as InsightsRange)
     : "all";
 
-  // Let auth/DB errors reach the error boundary — only a missing row is a 404.
+  // Let auth/DB errors reach the error boundary - only a missing row is a 404.
   const partner = await getPartner(code).catch((error: unknown) => {
     if (isRowNotFound(error)) return null;
     throw error;
@@ -131,7 +131,7 @@ export default async function ViewPartnerPage({
       value:
         performance.conversionRate != null
           ? `${(performance.conversionRate * 100).toFixed(2)}%`
-          : "—",
+          : "-",
       hint: `${performance.trackedVisitors} distinct visitors → ${performance.paidReservations} paid`,
       icon: Percent,
     },
@@ -140,8 +140,8 @@ export default async function ViewPartnerPage({
       value:
         performance.avgOrderValueUsd != null
           ? usd.format(performance.avgOrderValueUsd)
-          : "—",
-      hint: `${performance.mix.avgPartySize || "—"} tickets per booking`,
+          : "-",
+      hint: `${performance.mix.avgPartySize || "-"} tickets per booking`,
       icon: TrendingUp,
     },
   ];
@@ -187,7 +187,7 @@ export default async function ViewPartnerPage({
         </Link>
       </div>
 
-      {/* Time window — plain links so the whole server page re-renders scoped. */}
+      {/* Time window - plain links so the whole server page re-renders scoped. */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-muted-foreground">Period:</span>
         {RANGE_OPTIONS.map((option) => (
@@ -251,7 +251,7 @@ export default async function ViewPartnerPage({
             <Detail label="User discount" value={usd.format(partner.user_discount)} />
             <Detail
               label="Supplier number"
-              value={partner.supplier_number?.toString() ?? "—"}
+              value={partner.supplier_number?.toString() ?? "-"}
             />
             <Detail
               label="Site credit"
@@ -301,7 +301,7 @@ export default async function ViewPartnerPage({
           ) : (
             <div className="space-y-3">
               {performance.traffic.byStage.map((stage) => {
-                // Widest stage, not VISIT — if a later stage were ever recorded
+                // Widest stage, not VISIT - if a later stage were ever recorded
                 // without one, dividing by VISIT would give bars over 100%.
                 const top = Math.max(
                   ...performance.traffic.byStage.map((s) => s.visitors),
@@ -345,7 +345,7 @@ export default async function ViewPartnerPage({
           <CardTitle>What&apos;s in demand</CardTitle>
           <CardDescription>
             The exact events (name, date, location) this partner&apos;s audience clicked.
-            &quot;Never booked&quot; is interest they haven&apos;t converted yet — that&apos;s
+            &quot;Never booked&quot; is interest they haven&apos;t converted yet - that&apos;s
             the list marketing should act on.
           </CardDescription>
         </CardHeader>
@@ -373,10 +373,10 @@ export default async function ViewPartnerPage({
                       {event.name}
                     </TableCell>
                     <TableCell>
-                      {event.date ? new Date(event.date).toLocaleDateString() : "—"}
+                      {event.date ? new Date(event.date).toLocaleDateString() : "-"}
                     </TableCell>
                     <TableCell className="max-w-[12rem] truncate">
-                      {event.location ?? "—"}
+                      {event.location ?? "-"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{event.visitors}</TableCell>
                     <TableCell className="text-right tabular-nums">{event.clicks}</TableCell>
@@ -450,7 +450,7 @@ export default async function ViewPartnerPage({
               emptyText="No tickets sold yet."
             />
             <p className="border-t pt-3 text-xs text-muted-foreground">
-              Average group size: {performance.mix.avgPartySize || "—"} tickets per booking
+              Average group size: {performance.mix.avgPartySize || "-"} tickets per booking
             </p>
           </CardContent>
         </Card>

@@ -11,7 +11,7 @@ import {
   type CreativeParams,
 } from "@/lib/creative/input";
 
-// middleware.ts skips /api/* — auth enforced here via the session cookie.
+// middleware.ts skips /api/* - auth enforced here via the session cookie.
 export async function GET(req: NextRequest) {
   if (!req.cookies.get("session")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -44,7 +44,8 @@ export async function GET(req: NextRequest) {
   }
 
   const kindParam = q.get("kind");
-  const kind = kindParam === "artist" || kindParam === "photo" ? kindParam : "match";
+  const kind =
+    kindParam === "artist" || kindParam === "photo" ? kindParam : "match";
   const dateText = q.get("date") ?? "";
   const price = Number(q.get("price"));
   const size = (q.get("size") ?? "square") as CreativeSize;
@@ -53,13 +54,18 @@ export async function GET(req: NextRequest) {
   const bare = q.get("bare") === "1";
   const bgParam = q.get("bg");
   const bgKind =
-    bgParam === "blob" || bgParam === "football" || bgParam === "tennis" || bgParam === "cars"
+    bgParam === "blob" ||
+    bgParam === "football" ||
+    bgParam === "tennis" ||
+    bgParam === "cars"
       ? bgParam
       : undefined;
   // Text layout + full-bleed hero photo mode (see MatchTemplate).
   const variantParam = q.get("variant");
   const variant =
-    variantParam === "classic" || variantParam === "name-top" || variantParam === "price-top"
+    variantParam === "classic" ||
+    variantParam === "name-top" ||
+    variantParam === "price-top"
       ? variantParam
       : undefined;
   const heroPhoto = q.get("hero") === "1";
@@ -81,8 +87,10 @@ export async function GET(req: NextRequest) {
     mode,
     bare,
     bgKind,
-    colorIndex: colorParam !== null && colorParam !== "" ? Number(colorParam) : null,
-    shapeIndex: shapeParam !== null && shapeParam !== "" ? Number(shapeParam) : null,
+    colorIndex:
+      colorParam !== null && colorParam !== "" ? Number(colorParam) : null,
+    shapeIndex:
+      shapeParam !== null && shapeParam !== "" ? Number(shapeParam) : null,
     imgScale: numParam("iscale"),
     imgOffsetX: numParam("ix"),
     imgOffsetY: numParam("iy"),
@@ -95,9 +103,18 @@ export async function GET(req: NextRequest) {
   if (kind === "artist") {
     const imageUrl = q.get("img") ?? "";
     const artistName = q.get("name") ?? "";
-    if ((!imageUrl && !bare) || !artistName || !dateText || !price || !(size in SIZES)) {
+    if (
+      (!imageUrl && !bare) ||
+      !artistName ||
+      !dateText ||
+      !price ||
+      !(size in SIZES)
+    ) {
       return NextResponse.json(
-        { error: "Artist creative requires: img (unless bare=1), name, date, price; optional: time, loc, cur, mode, size" },
+        {
+          error:
+            "Artist creative requires: img (unless bare=1), name, date, price; optional: time, loc, cur, mode, size",
+        },
         { status: 400 },
       );
     }
@@ -108,9 +125,18 @@ export async function GET(req: NextRequest) {
   } else if (kind === "photo") {
     const imageUrl = q.get("img") ?? "";
     const eventName = q.get("name") ?? "";
-    if ((!imageUrl && !bare) || !eventName || !dateText || !price || !(size in SIZES)) {
+    if (
+      (!imageUrl && !bare) ||
+      !eventName ||
+      !dateText ||
+      !price ||
+      !(size in SIZES)
+    ) {
       return NextResponse.json(
-        { error: "Photo creative requires: img (unless bare=1), name, date, price; optional: time, loc, cur, mode, size" },
+        {
+          error:
+            "Photo creative requires: img (unless bare=1), name, date, price; optional: time, loc, cur, mode, size",
+        },
         { status: 400 },
       );
     }
@@ -127,7 +153,10 @@ export async function GET(req: NextRequest) {
       !(size in SIZES)
     ) {
       return NextResponse.json(
-        { error: "Match creative requires: home, away (team:<id> or logo:<id>), date, price; optional: time, loc, cur, mode, size" },
+        {
+          error:
+            "Match creative requires: home, away (team:<id> or logo:<id>), date, price; optional: time, loc, cur, mode, size",
+        },
         { status: 400 },
       );
     }

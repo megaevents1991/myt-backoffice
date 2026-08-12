@@ -102,7 +102,7 @@ export function BlogTable() {
                   )}
                 </TableCell>
                 <TableCell className="font-medium">{r.title ?? r.name}</TableCell>
-                <TableCell className="text-muted-foreground">{r.by_who ?? "—"}</TableCell>
+                <TableCell className="text-muted-foreground">{r.by_who ?? "-"}</TableCell>
                 <TableCell className="text-muted-foreground text-xs">{r.slug}</TableCell>
                 <TableCell>
                   <Badge variant={r.is_active ? "outline" : "destructive"}>

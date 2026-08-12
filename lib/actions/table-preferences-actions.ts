@@ -3,7 +3,7 @@
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 
-// Not in the generated types yet — cast at the call site like the other
+// Not in the generated types yet - cast at the call site like the other
 // post-baseline tables in this codebase.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const prefsTable = () => (supabase as any).from("user_table_preferences");
@@ -13,7 +13,7 @@ export type TablePreferences = Record<string, unknown>;
 /**
  * Per-user UI state for one backoffice table. Generic by design: pass a stable
  * `tableKey` ("offline-flights", "reservations", …) and store whatever that
- * table needs — visible columns, sort, page size.
+ * table needs - visible columns, sort, page size.
  */
 export async function getTablePreferences(
   tableKey: string,
@@ -29,7 +29,7 @@ export async function getTablePreferences(
 
   if (error) {
     console.error("Failed to read table preferences:", JSON.stringify(error));
-    // Preferences are cosmetic — a read failure must never break the page.
+    // Preferences are cosmetic - a read failure must never break the page.
     return null;
   }
   return (data?.preferences as TablePreferences | undefined) ?? null;

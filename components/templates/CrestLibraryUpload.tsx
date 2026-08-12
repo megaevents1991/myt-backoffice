@@ -13,7 +13,7 @@ import {
 import type { FootballLogo } from "@/types/football-logo.types";
 
 // Light copy of the site's clubNamesMatch (myt-main lib/eventNameMatch.ts):
-// identifying tokens equal, qualifiers ignored — "Tottenham Hotspur FC" finds
+// identifying tokens equal, qualifiers ignored - "Tottenham Hotspur FC" finds
 // the library's "Tottenham Hotspur". Keep the token list in sync.
 const GENERIC_TOKENS = new Set([
   "fc", "afc", "cf", "cfc", "sc", "ac", "as", "ss", "ssc", "us", "ud",
@@ -30,7 +30,7 @@ const tokensEqual = (a: string[], b: string[]): boolean =>
 
 /**
  * Inline "upload straight to the football_logos library" widget for the team
- * form — saves the trip to Assets → Football logos. Shows the library crest
+ * form - saves the trip to Assets → Football logos. Shows the library crest
  * the site will resolve for this team (exact english / exact hebrew / token
  * match), or an upload button that files the crest under the team's names.
  * The library is the site's PRIMARY crest source; per-team art is only a
@@ -71,7 +71,7 @@ export function CrestLibraryUpload({
       fd.set("name_hebrew", he);
       const created = await createFootballLogo(fd);
       setLogos((prev) => [...(prev ?? []), created]);
-      toast.success("Crest uploaded to the library — the site updates automatically.");
+      toast.success("Crest uploaded to the library - the site updates automatically.");
     } catch (error) {
       toast.error((error as Error)?.message || "Upload failed.");
     } finally {
@@ -82,7 +82,7 @@ export function CrestLibraryUpload({
 
   return (
     <div className="space-y-2 rounded-lg border p-4">
-      <Label>Crest — football logos library (what the site actually shows)</Label>
+      <Label>Crest - football logos library (what the site actually shows)</Label>
       {match ? (
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -92,7 +92,7 @@ export function CrestLibraryUpload({
             className="h-12 w-12 object-contain"
           />
           <p className="text-sm text-muted-foreground">
-            In the library as <span className="font-medium">{match.name_english}</span> —
+            In the library as <span className="font-medium">{match.name_english}</span> -
             the site renders this crest at the standard size. Replace it in{" "}
             <a href="/assets" className="underline">Assets → Football logos</a>.
           </p>
@@ -128,8 +128,8 @@ export function CrestLibraryUpload({
             {logos === null
               ? "Checking the library…"
               : en || he
-                ? "No library crest for this team yet. Transparent tight-cropped PNG, up to 2MB — files under the team's names; no zoom/position needed."
-                : "Fill the team names first — the crest files under them."}
+                ? "No library crest for this team yet. Transparent tight-cropped PNG, up to 2MB - files under the team's names; no zoom/position needed."
+                : "Fill the team names first - the crest files under them."}
           </p>
         </div>
       )}

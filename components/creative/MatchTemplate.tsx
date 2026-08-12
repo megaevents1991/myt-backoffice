@@ -1,11 +1,11 @@
-// Satori has no BiDi algorithm — Hebrew renders in logical (i.e. reversed) order.
+// Satori has no BiDi algorithm - Hebrew renders in logical (i.e. reversed) order.
 // Convert to visual order: split into strong-LTR runs (Latin/digits/currency) vs
 // RTL-or-neutral runs, reverse the characters of RTL runs, then reverse run order.
 const RTL_CHAR = /[֐-׿]/;
 const LTR_CHAR = /[A-Za-z0-9€$₪]/; // Latin, digits, €, $, ₪
 // Digit group/decimal separators. Neutral on their own (a comma inside Hebrew
 // prose must stay neutral so the whole sentence reverses as one run), but
-// LTR when they sit BETWEEN digits — otherwise "$1,299" splits into
+// LTR when they sit BETWEEN digits - otherwise "$1,299" splits into
 // "$1" / "," / "299" and the run reversal renders it as "299,$1".
 const NUM_SEP = /[.,]/;
 const DIGIT = /[0-9]/;
@@ -30,7 +30,7 @@ export function bidiVisual(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Brand language — mirrors myt-main lib/og.tsx (dark canvas, neon palette,
+// Brand language - mirrors myt-main lib/og.tsx (dark canvas, neon palette,
 // the site's real Figma blob shapes, MegaΣvents. wordmark).
 // ---------------------------------------------------------------------------
 
@@ -71,7 +71,7 @@ export const BLOB_SHAPES: { d: string; w: number; h: number }[] = [
 const TAGLINE = "טיסות, מלון, כרטיסים - הרכיבו בעצמכם";
 
 // The real "MegaΣvents." logotype (exact paths from myt-main's
-// components/ui/myt.tsx MYT component, exported from the Figma brand book) —
+// components/ui/myt.tsx MYT component, exported from the Figma brand book) -
 // NOT hand-typed text. currentColor letterforms → INK; the accent dot stays
 // brand mint (hsl(var(--brand-mint)) in the source; satori can't read CSS
 // vars, so it's the literal hex here).
@@ -112,7 +112,7 @@ export type CreativeVariant = (typeof CREATIVE_VARIANTS)[number];
 
 export type CreativeInput = {
   // "match" = two subjects + VS; "artist" = single subject; "photo" = event's
-  // own photo when nothing matched at all (no name pairs with it — always
+  // own photo when nothing matched at all (no name pairs with it - always
   // rendered like a no-cutout subject, see hasCutout below).
   kind: "match" | "artist" | "photo";
   homeLogoUrl: string;       // match: home image; artist: artist image; photo: event photo
@@ -123,7 +123,7 @@ export type CreativeInput = {
   // logo/art_image_url) vs a regular photo (image_url/card_image_url).
   // Mirrors myt-main's lib/og.tsx personOgImage: a real cut-out sits inside a
   // blob/photo-bg card; a regular photo instead gets a plain circular avatar
-  // with a color glow — no blob shape, no forced background, since a
+  // with a color glow - no blob shape, no forced background, since a
   // rectangular photo crammed onto a blob shape (or a stock stadium photo
   // behind a snapshot) looks wrong. "photo" kind is always non-cutout by
   // definition. Missing/undefined defaults to true (assume a real cutout) so
@@ -135,7 +135,7 @@ export type CreativeInput = {
   locationText: string;      // "Santiago Bernabéu, Madrid"
   priceText: string;         // "החל מ-€499" / "כרטיסים החל מ-€99"
   // Design-base mode: render the full branded canvas (glows, wordmark, names,
-  // date/price) but WITHOUT blob cards and subject images — a background the
+  // date/price) but WITHOUT blob cards and subject images - a background the
   // designer drops a not-yet-cut photo onto.
   bare?: boolean;
   // Card background: brand blob (default for artists) or a category photo
@@ -152,19 +152,19 @@ export type CreativeInput = {
   imgOffsetX?: number | null;
   imgOffsetY?: number | null;
   bgScale?: number | null;
-  // Text layout (see CREATIVE_VARIANTS). Single-subject only for "name-top" —
+  // Text layout (see CREATIVE_VARIANTS). Single-subject only for "name-top" -
   // match creatives keep per-card names, so it falls back to classic there.
   // Bare mode ignores the variant entirely (the name IS the centrepiece).
   variant?: CreativeVariant;
   // Full-bleed photo mode: the subject photo covers the whole canvas behind
   // dark scrims instead of sitting in a card/avatar. Only honoured for
   // regular photos (gallery images, event card photos) on single-subject
-  // kinds — a transparent cut-out stretched to full bleed looks broken.
+  // kinds - a transparent cut-out stretched to full bleed looks broken.
   heroPhoto?: boolean;
 };
 
 // Package price is already a per-traveler figure (same number the site's event
-// card prints under "לנוסע · כולל טיסה, מלון וכרטיס") — so the pill says what
+// card prints under "לנוסע · כולל טיסה, מלון וכרטיס") - so the pill says what
 // it is instead of "starting from". Thousands separator matches the site
 // (`toLocaleString("en-US")`); bidiVisual keeps "1,299" glued together.
 export function buildPriceText(mode: "package" | "ticket", price: number, currency: string): string {
@@ -173,7 +173,7 @@ export function buildPriceText(mode: "package" | "ticket", price: number, curren
 }
 
 // Deterministic string → positive int (same technique as render.tsx's blob
-// seed) — used to pick a stable-per-subject, varied-across-subjects
+// seed) - used to pick a stable-per-subject, varied-across-subjects
 // color/shape when the designer hasn't explicitly overridden either.
 function hashSeed(s: string): number {
   let h = 0;
@@ -265,7 +265,7 @@ function BlobCard({
 
 // No-cutout fallback (mirrors myt-main's lib/og.tsx personOgImage): a plain
 // circular avatar, the photo cropped to fill it, ringed by a brand-color
-// glow — no blob shape, no card, no forced category background. Used for any
+// glow - no blob shape, no card, no forced category background. Used for any
 // subject whose only available image is a regular photo, not a transparent
 // cut-out.
 function AvatarCircle({
@@ -327,7 +327,7 @@ export function MatchTemplate({
   const isSquare = height > 700;
   void bgUrl; // brand gradient canvas replaced the static background asset
 
-  // Designer sizing controls — neutral unless overridden.
+  // Designer sizing controls - neutral unless overridden.
   const iScale = imgScale ?? 1;
   const iOffX = imgOffsetX ?? 0;
   const iOffY = imgOffsetY ?? 0;
@@ -347,7 +347,7 @@ export function MatchTemplate({
   const awayIsCutout = awayHasCutout ?? true;
   const bothCutouts = homeIsCutout && awayIsCutout;
 
-  // Layout flags — bare ignores the variant (its name is already the
+  // Layout flags - bare ignores the variant (its name is already the
   // centrepiece), "name-top" only means something for a single subject.
   const layout: CreativeVariant = bare ? "classic" : variant ?? "classic";
   const nameTop = layout === "name-top" && isSingleSubject && !bare;
@@ -355,14 +355,14 @@ export function MatchTemplate({
   // Full-bleed hero: regular photo covering the canvas behind dark scrims.
   const isHero = !!heroPhoto && isSingleSubject && !bare && !!homeLogoUrl && !homeIsCutout;
 
-  // Subject cards are 1:1 — same aspect the feed itself wants, and the site's
+  // Subject cards are 1:1 - same aspect the feed itself wants, and the site's
   // own event art. (Was 380×440 / 520×560 portrait.)
   // Banner cards are a touch smaller than they were tall-wise: the pill now
   // renders at full (square) size on the 628px-high banner too, so the middle
   // band has less room to give.
   const cardW = kind === "artist" ? (isSquare ? 520 : 300) : isSquare ? 380 : 235;
   const cardH = cardW;
-  // No-cutout circular avatar diameter — reuses the same footprint as the
+  // No-cutout circular avatar diameter - reuses the same footprint as the
   // card it replaces, so layouts don't jump between cutout/photo events.
   const avatarSize = isSingleSubject ? (isSquare ? 460 : 300) : cardW;
   // Wide stadium panel (photo-bg match mode): one panel, both logos inside.
@@ -372,7 +372,7 @@ export function MatchTemplate({
 
   // Card background: explicit choice wins; default = football photo for
   // matches, brand blob for artists. A stock category photo (stadium etc.)
-  // only makes sense behind REAL logos — skip it (plain canvas instead) when
+  // only makes sense behind REAL logos - skip it (plain canvas instead) when
   // either match side is a regular photo, not a cut-out.
   const effectiveBg: CardBgKind = bgKind ?? (kind === "match" ? "football" : "blob");
   const photoUrl =
@@ -387,7 +387,7 @@ export function MatchTemplate({
     kind === "match" ? `${homeName}|${awayName ?? ""}|${dateText}` : `${homeName}|${dateText}`,
   );
   const seedColor = seed % BLOB_HEX.length;
-  // Unsigned shift — seed can exceed 2^31-1 (still valid from >>>0 in
+  // Unsigned shift - seed can exceed 2^31-1 (still valid from >>>0 in
   // hashSeed); a signed `>>` would ToInt32 that negative and produce a
   // negative shape index (undefined.d crash in BlobCard's <path>).
   const seedShape = (seed >>> 3) % BLOB_SHAPES.length;
@@ -417,10 +417,10 @@ export function MatchTemplate({
     >
       {isHero ? (
         /* full-bleed hero photo + scrims (top for the wordmark, bottom for the
-           name/date/price block) — replaces the neon glows entirely */
+           name/date/price block) - replaces the neon glows entirely */
         <>
           {/* Faces live in the TOP of artist photos, and satori ignores
-              objectPosition — so the image box is ~22% taller than the canvas
+              objectPosition - so the image box is ~22% taller than the canvas
               and pinned to the top: the visible slice is the photo's upper
               part instead of a beheading center crop (worst on the banner). */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -518,12 +518,12 @@ export function MatchTemplate({
 
       {/* main */}
       {isHero ? (
-        /* hero photo carries the middle — the canvas-level image is the subject */
+        /* hero photo carries the middle - the canvas-level image is the subject */
         <div style={{ display: "flex", flex: 1 }} />
       ) : isSingleSubject ? (
         <div style={{ display: "flex", flex: 1, flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           {bare ? (
-            // No subject image at all — the event's own name carries the card.
+            // No subject image at all - the event's own name carries the card.
             // Used as the last-resort feed creative (every priced event must
             // reach Meta branded) and as the designer's drop-art-on-top base;
             // a centred wordmark beats a phantom gap in both.
@@ -543,12 +543,12 @@ export function MatchTemplate({
           ) : homeIsCutout || photoUrl ? (
             // A real cut-out always gets the blob/photo-bg card; a regular
             // photo ALSO gets it when a stock category photo (e.g. football
-            // stadium) was explicitly requested — a contained photo sitting
+            // stadium) was explicitly requested - a contained photo sitting
             // on a matching realistic photo backdrop reads fine (unlike a
             // photo crammed onto an abstract colored blob, which doesn't).
             <BlobCard img={homeLogoUrl} color={artistColor} shapeIndex={artistShape} w={cardW} h={cardH} radius={isSquare ? 76 : 54} photoUrl={photoUrl} {...sizing} />
           ) : (
-            /* No real cut-out and no stock photo background — plain circular
+            /* No real cut-out and no stock photo background - plain circular
                avatar with a color glow, no blob shape (matches myt-main's
                og.tsx fallback for a person with only a regular photo). */
             <AvatarCircle img={homeLogoUrl} color={artistColor} size={avatarSize} imgScale={iScale} imgOffsetX={iOffX} imgOffsetY={iOffY} />
@@ -651,7 +651,7 @@ export function MatchTemplate({
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: isSquare ? 48 : 34 }}>
         {/* hero keeps the name in the bottom block (unless name-top already
             placed it as the headline), with a mint accent bar under it.
-            One wrapper div, not a fragment — satori mis-stacks fragment
+            One wrapper div, not a fragment - satori mis-stacks fragment
             siblings inside a flex column. */}
         {isHero && !nameTop && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -688,7 +688,7 @@ export function MatchTemplate({
             <div style={{ display: "flex", marginLeft: 18 }}>{`· ${bidiVisual(locationText)}`}</div>
           ) : null}
         </div>
-        {/* Price/CTA pill — brand mint (the site's CTA green), and the SAME
+        {/* Price/CTA pill - brand mint (the site's CTA green), and the SAME
             physical size on the banner as on the square so the two creatives
             carry one button, not a big one and a small one. "price-top" moves
             it to the top-right badge instead. */}
@@ -717,7 +717,7 @@ export function MatchTemplate({
           style={{
             display: "flex",
             position: "absolute",
-            // Below the header band — a corner position collides with the
+            // Below the header band - a corner position collides with the
             // centered wordmark once the pill text gets long.
             top: isSquare ? 150 : 92,
             right: isSquare ? 44 : 36,

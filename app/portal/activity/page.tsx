@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-/** The עדכונים tab — a derived feed of what happened around this partner:
+/** The עדכונים tab - a derived feed of what happened around this partner:
  *  quote created, package link created, order entered, order paid, coupon
  *  issued / redeemed. */
 

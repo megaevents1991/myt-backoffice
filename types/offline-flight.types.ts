@@ -37,7 +37,7 @@ export interface OfflineFlight {
   event_ids: number[]; // integer[] NOT NULL DEFAULT '{}'
 
   // --- supplier / commercial (backoffice-only, never in the customer price chain)
-  cost_price?: number | null; // NUMERIC(10,2) — what we pay the supplier
+  cost_price?: number | null; // NUMERIC(10,2) - what we pay the supplier
   cost_currency?: string | null; // VARCHAR(3)
   supplier?: string | null;
   pnr?: string | null;
@@ -71,7 +71,7 @@ export interface OfflineFlight {
   inbound_stop_duration?: string | null;
 }
 
-/** One flight↔event seat quota. Consumed seats are never stored here — they
+/** One flight↔event seat quota. Consumed seats are never stored here - they
  *  come from the `flight_event_consumed` view over active reservations. */
 export interface FlightEventAllocation {
   id: number;

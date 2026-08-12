@@ -1,6 +1,6 @@
 /**
  * Audit trail. Fire-and-forget: logAudit NEVER throws and never fails the
- * calling mutation — failures are console.error'd only. Rows go to
+ * calling mutation - failures are console.error'd only. Rows go to
  * public.audit_log (RLS-locked, service-role only).
  */
 import { supabase } from "@/lib/supabase-server";
@@ -25,7 +25,7 @@ export async function logAudit(input: AuditInput): Promise<void> {
       actor = session
         ? { id: session.sub, email: session.email, role: session.role }
         : { id: null, email: null, role: null };
-      // A superadmin acting AS a partner must stay attributable — without
+      // A superadmin acting AS a partner must stay attributable - without
       // this, an impersonated write is indistinguishable from the partner's.
       if (session?.impersonator) {
         metadata = {
@@ -56,14 +56,17 @@ export async function logAudit(input: AuditInput): Promise<void> {
 /** Changed-fields diff: only keys present in `after` that differ from `before`. */
 export function diffChanges(
   before: Record<string, unknown> | null,
-  after: Record<string, unknown>
+  after: Record<string, unknown>,
 ): Record<string, { from: unknown; to: unknown }> {
   const diff: Record<string, { from: unknown; to: unknown }> = {};
   for (const key of Object.keys(after)) {
     const from = before ? before[key] : undefined;
     const to = after[key];
     if (JSON.stringify(from) !== JSON.stringify(to)) {
-      diff[key] = { from: from === undefined ? null : from, to: to === undefined ? null : to };
+      diff[key] = {
+        from: from === undefined ? null : from,
+        to: to === undefined ? null : to,
+      };
     }
   }
   return diff;
@@ -74,7 +77,7 @@ export async function fetchBefore(
   table: string,
   idColumn: string,
   idValue: string | number,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
   try {
     const columns = Object.keys(payload);

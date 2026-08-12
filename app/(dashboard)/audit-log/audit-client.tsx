@@ -226,7 +226,7 @@ export function AuditClient({ initialRows }: { initialRows: AuditRow[] }) {
                     <TableCell>{new Date(row.created_at).toLocaleString()}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <span>{row.actor_email || "—"}</span>
+                        <span>{row.actor_email || "-"}</span>
                         {row.actor_role && (
                           <Badge variant="outline">{row.actor_role}</Badge>
                         )}
@@ -236,10 +236,10 @@ export function AuditClient({ initialRows }: { initialRows: AuditRow[] }) {
                       <Badge variant={actionBadgeVariant(row.action)}>{row.action}</Badge>
                     </TableCell>
                     <TableCell>
-                      {row.entity_type || "—"}
+                      {row.entity_type || "-"}
                       {row.entity_id ? ` #${row.entity_id}` : ""}
                     </TableCell>
-                    <TableCell>{row.ip || "—"}</TableCell>
+                    <TableCell>{row.ip || "-"}</TableCell>
                   </TableRow>
                   {expandedId === row.id && (
                     <TableRow key={`${row.id}-details`}>

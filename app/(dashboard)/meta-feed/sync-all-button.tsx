@@ -8,8 +8,8 @@ import { Check, Loader2, RefreshCcw, X } from "lucide-react";
 import { SYNC_STEPS, type SyncStepId } from "@/lib/sync-steps";
 
 /**
- * Runs the whole nightly pipeline on demand — providers, prices, creatives,
- * feed publish — one request per step so no single call hits a function
+ * Runs the whole nightly pipeline on demand - providers, prices, creatives,
+ * feed publish - one request per step so no single call hits a function
  * duration limit. The creatives step reports how many stale events it didn't
  * reach; we simply call it again until that's zero, so a backlog of any size
  * drains in one click.
@@ -63,7 +63,7 @@ export function SyncAllButton() {
           setStep(step.id, { status: "running", note: `נותרו ${last.remaining}` });
           const next = await runStep(step.id);
           if (next.remaining >= last.remaining) {
-            // No progress — stop instead of looping on a stuck backlog.
+            // No progress - stop instead of looping on a stuck backlog.
             last = next;
             break;
           }

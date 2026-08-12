@@ -1,4 +1,4 @@
-// Amadeus REST client (Enterprise APIs) — backoffice copy.
+// Amadeus REST client (Enterprise APIs) - backoffice copy.
 //
 // The official `amadeus` npm SDK only supports the (now-deprecated) Self-Service
 // APIs and cannot be repointed at an Enterprise gateway. This module is a thin
@@ -38,7 +38,8 @@ const API_HOST =
 // NEW_ prefix (mirrors myt-main's NEW_AMADEUS_*) so the new Enterprise keys can
 // coexist on Vercel with the legacy NEXT_SECRET_AMADEUS_* self-service pair.
 const CLIENT_ID = process.env.NEW_NEXT_SECRET_AMADEUS_CLIENT_ID as string;
-const CLIENT_SECRET = process.env.NEW_NEXT_SECRET_AMADEUS_CLIENT_SECRET as string;
+const CLIENT_SECRET = process.env
+  .NEW_NEXT_SECRET_AMADEUS_CLIENT_SECRET as string;
 
 // ---------------------------------------------------------------------------
 // OAuth2 token manager (client_credentials grant, cached in module scope)
@@ -85,7 +86,7 @@ async function getToken(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Error shaping — match the SDK's ResponseError so callers keep working
+// Error shaping - match the SDK's ResponseError so callers keep working
 // ---------------------------------------------------------------------------
 
 interface AmadeusLikeError extends Error {
@@ -97,18 +98,20 @@ interface AmadeusLikeError extends Error {
 }
 
 function buildError(statusCode: number, result: unknown): AmadeusLikeError {
-  const err = new Error(`Amadeus API error (${statusCode})`) as AmadeusLikeError;
+  const err = new Error(
+    `Amadeus API error (${statusCode})`,
+  ) as AmadeusLikeError;
   err.response = { statusCode, result, data: result };
   return err;
 }
 
 // ---------------------------------------------------------------------------
-// Core request helper — returns the SDK-style { data, result, body } envelope
+// Core request helper - returns the SDK-style { data, result, body } envelope
 // ---------------------------------------------------------------------------
 
 function authHeaders(token: string): Record<string, string> {
   // The office/PCC is bound to the OAuth credential on Amadeus's side, so the
-  // bearer token alone carries the right context — no X-Amadeus-Office-Id header
+  // bearer token alone carries the right context - no X-Amadeus-Office-Id header
   // is needed (sending one actually trips error 2668 on this gateway).
   return {
     Authorization: `Bearer ${token}`,
@@ -129,7 +132,7 @@ async function request(
     // support can trace each call. Required by the production-certification
     // checklist.
     clientRef?: string;
-  } = {}
+  } = {},
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<{ data: any; result: any; body: string }> {
   const token = await getToken();
@@ -153,7 +156,9 @@ async function request(
     method,
     headers,
     body:
-      method === "POST" && body !== undefined ? JSON.stringify(body) : undefined,
+      method === "POST" && body !== undefined
+        ? JSON.stringify(body)
+        : undefined,
   });
 
   const text = await res.text();
@@ -189,7 +194,10 @@ export const amadeus = {
     },
     flightOffers: {
       pricing: {
-        post: (body: unknown, opts?: { include?: string[]; clientRef?: string }) =>
+        post: (
+          body: unknown,
+          opts?: { include?: string[]; clientRef?: string },
+        ) =>
           request("POST", "/v1/shopping/flight-offers/pricing", {
             query: opts?.include?.length
               ? { include: opts.include.join(",") }

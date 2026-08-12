@@ -2,7 +2,7 @@
  * Shared outbound email (ZeptoMail SMTP).
  *
  * The same transport was previously constructed inline in each cron route that
- * sends mail; new senders should use this helper. Server-only — the credentials
+ * sends mail; new senders should use this helper. Server-only - the credentials
  * are secrets.
  */
 
@@ -58,6 +58,7 @@ export function appOrigin(): string {
   const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (explicit) return explicit.replace(/\/+$/, "");
   const vercel = process.env.VERCEL_URL?.trim();
-  if (vercel) return `https://${vercel.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
+  if (vercel)
+    return `https://${vercel.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
   return "http://localhost:3000";
 }

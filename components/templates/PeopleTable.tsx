@@ -115,7 +115,7 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
                   {r.gallery?.length ? (
                     <Link
                       href={`${a.base}/${r.id}/edit`}
-                      title={`${r.gallery.length} gallery images — click to manage`}
+                      title={`${r.gallery.length} gallery images - click to manage`}
                       className="flex items-center gap-1"
                     >
                       <span className="flex -space-x-2">
@@ -132,13 +132,13 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
                       <Badge variant="secondary">{r.gallery.length}</Badge>
                     </Link>
                   ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
+                    <span className="text-xs text-muted-foreground">-</span>
                   )}
                 </TableCell>
                 <TableCell className="font-medium">{r.name}</TableCell>
-                <TableCell className="text-muted-foreground">{r.name_english ?? "—"}</TableCell>
+                <TableCell className="text-muted-foreground">{r.name_english ?? "-"}</TableCell>
                 <TableCell className="text-muted-foreground text-xs">{r.slug}</TableCell>
-                <TableCell>{r.featured_order ?? "—"}</TableCell>
+                <TableCell>{r.featured_order ?? "-"}</TableCell>
                 <TableCell>
                   <Badge variant={r.is_active ? "outline" : "destructive"}>
                     {r.is_active ? "Active" : "Hidden"}

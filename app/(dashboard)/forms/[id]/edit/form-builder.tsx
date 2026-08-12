@@ -210,7 +210,7 @@ export function FormBuilder({ form, initialFields }: Props) {
   // Next draft field gets the next negative id; the server treats those as inserts.
   const nextDraftId = useRef(-1);
 
-  // Warn before losing unsaved edits — external browser state, so an effect.
+  // Warn before losing unsaved edits - external browser state, so an effect.
   useEffect(() => {
     if (!dirty) return;
     const handler = (event: BeforeUnloadEvent) => event.preventDefault();
@@ -313,7 +313,7 @@ export function FormBuilder({ form, initialFields }: Props) {
   );
 
   function handleSave() {
-    // Either language will do — a Hebrew-only form is legitimate, and the
+    // Either language will do - a Hebrew-only form is legitimate, and the
     // renderer falls back to whichever string was filled in.
     if (!hasAnyLang(titleEn, titleHe)) {
       toast({ title: "Give the form a title", variant: "destructive" });
@@ -375,7 +375,7 @@ export function FormBuilder({ form, initialFields }: Props) {
         toast({
           title:
             next === "live"
-              ? "Form is live — the public link now works"
+              ? "Form is live - the public link now works"
               : `Form set to ${next}`,
         });
       } catch {
@@ -512,7 +512,7 @@ export function FormBuilder({ form, initialFields }: Props) {
                   <SelectContent>
                     <SelectItem value="en">English only</SelectItem>
                     <SelectItem value="he">עברית בלבד</SelectItem>
-                    <SelectItem value="both">Both — client can switch</SelectItem>
+                    <SelectItem value="both">Both - client can switch</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

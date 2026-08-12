@@ -2,7 +2,7 @@
 
 /**
  * "עמלה לתשלום" drill-down: what makes up the number, one line per open
- * order — the tile alone kept confusing everyone (240+40 read as "440?!").
+ * order - the tile alone kept confusing everyone (240+40 read as "440?!").
  * Capped list, no inner scrolling; the full picture lives in ההזמנות שלי.
  */
 

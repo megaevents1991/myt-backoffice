@@ -2,14 +2,14 @@ name: Repair DB Migration History
 
 # When the remote migration history and the files on master disagree, every
 # `db push` fails and nothing can be applied until a human runs
-# `supabase migration repair` — which needs credentials only CI has.
+# `supabase migration repair` - which needs credentials only CI has.
 #
 # That state is reachable without anyone doing something silly: a run that
 # records a version and then fails before applying its SQL leaves the history
 # claiming a migration that never ran (2026-07-29, 20260729200000).
 #
 # Marks the given versions as reverted, then pushes again. Repairing does NOT
-# touch schema — it only rewrites the bookkeeping table, so the migration it
+# touch schema - it only rewrites the bookkeeping table, so the migration it
 # frees must be safe to re-run (ours are `if not exists` / `drop if exists`).
 on:
   workflow_dispatch:
@@ -35,7 +35,7 @@ jobs:
       - name: Refuse to run off master
         if: github.ref != 'refs/heads/master'
         run: |
-          echo "::error::Repair rewrites the history of the SHARED PRODUCTION database — master only."
+          echo "::error::Repair rewrites the history of the SHARED PRODUCTION database - master only."
           exit 1
 
       - uses: actions/checkout@v4

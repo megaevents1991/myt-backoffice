@@ -15,7 +15,7 @@ import {
 import type { PortalUserActivity, UserSimulation } from "@/lib/actions/portal-activity-actions";
 
 /** Bottom-of-dashboard user log: one collapsible block per visitor code, one
- *  row per SIMULATION (event explored) — not one row per click. */
+ *  row per SIMULATION (event explored) - not one row per click. */
 
 function formatDateTime(value: string): string {
   const date = new Date(value);
@@ -32,7 +32,7 @@ function formatDateTime(value: string): string {
 function stepLabel(step: UserSimulation["flight"]): string {
   if (step === "chosen") return "נבחרה";
   if (step === "skipped") return "דילגו";
-  return "—";
+  return "-";
 }
 
 function UserBlock({
@@ -45,7 +45,7 @@ function UserBlock({
   simulations: UserSimulation[];
 }) {
   const [open, setOpen] = useState(false);
-  // The order color belongs on the OUTER user row — the inner table row alone
+  // The order color belongs on the OUTER user row - the inner table row alone
   // is invisible while collapsed (אלון, 2026-08-07, "תראה אצל שגיא").
   const hasPaidOrder = simulations.some((sim) => sim.order === "paid");
   const hasPendingOrder = simulations.some((sim) => sim.order === "pending");
@@ -113,7 +113,7 @@ function UserBlock({
                 <TableRow
                   key={index}
                   className={
-                    // הוזמנה ושולמה — ירוק; הוזמנה וממתינה — כחול בהיר.
+                    // הוזמנה ושולמה - ירוק; הוזמנה וממתינה - כחול בהיר.
                     sim.order === "paid"
                       ? "bg-emerald-100/70 hover:bg-emerald-100"
                       : sim.order === "pending"
@@ -132,7 +132,7 @@ function UserBlock({
                     )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm">
-                    {sim.event_date || "—"}
+                    {sim.event_date || "-"}
                   </TableCell>
                   <TableCell className="text-sm">
                     {sim.num_tickets || sim.tickets_type
@@ -142,7 +142,7 @@ function UserBlock({
                         ]
                           .filter(Boolean)
                           .join(" ")
-                      : "—"}
+                      : "-"}
                   </TableCell>
                   <TableCell className="text-sm">{stepLabel(sim.flight)}</TableCell>
                   <TableCell className="text-sm">{stepLabel(sim.hotel)}</TableCell>
@@ -181,7 +181,7 @@ export function UserActivityLog({ activity }: { activity: PortalUserActivity }) 
       <CardHeader>
         <CardTitle>לוג פעילות משתמשים</CardTitle>
         <CardDescription>
-          מה כל מבקר שהגיע דרך הלינקים שלכם בדק בפועל — כל סימולציה בשורה אחת.
+          מה כל מבקר שהגיע דרך הלינקים שלכם בדק בפועל - כל סימולציה בשורה אחת.
           {activity.truncated && " מוצגים המבקרים האחרונים בלבד."}
         </CardDescription>
       </CardHeader>

@@ -25,7 +25,7 @@ const usd = new Intl.NumberFormat("en-US", {
 export default async function PortalCreditPage() {
   const session = await getSession();
   const isPartner = !!session && PARTNER_ROLES.includes(session.role);
-  // Staff opening the portal to debug see the layout notice only — getMyCredit
+  // Staff opening the portal to debug see the layout notice only - getMyCredit
   // throws for any non-partner role.
   if (!isPartner) return null;
 
@@ -33,7 +33,7 @@ export default async function PortalCreditPage() {
   const [credit, settlement] = await Promise.all([
     getMyCredit(),
     // Voucher settlement is an agent-only flow; the action returns empty for
-    // influencers anyway — skip the call entirely for them.
+    // influencers anyway - skip the call entirely for them.
     isAgent ? getMyVoucherSettlement() : Promise.resolve(null),
   ]);
 
@@ -68,7 +68,7 @@ export default async function PortalCreditPage() {
               </p>
               {credit.deficitUsd > 0 && (
                 <p className="mt-2 max-w-md rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                  הומרו {usd.format(credit.redeemedUsd)} — יותר ממה שצבור היום,
+                  הומרו {usd.format(credit.redeemedUsd)} - יותר ממה שצבור היום,
                   כי הזמנות ששולמו בעבר בוטלו אחרי ההמרה. צבירה חדשה מכסה קודם
                   את הפער של {usd.format(credit.deficitUsd)}, ורק אחריו היתרה
                   תתחיל לעלות.
@@ -110,7 +110,7 @@ export default async function PortalCreditPage() {
                   {usd.format(settlement.overdueUsd)}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {settlement.overdueCount} שוברים מעל 30 יום — טרם שולמו
+                  {settlement.overdueCount} שוברים מעל 30 יום - טרם שולמו
                 </p>
               </div>
               <div>

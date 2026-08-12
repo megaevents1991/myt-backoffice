@@ -3,7 +3,7 @@
 -- The quote builder seeds a line item from the event's package price and then
 -- lets the partner type over it. Only the final number was stored, so there was
 -- no way to tell afterwards whether a partner had discounted $200 or added a
--- $200 service — and no way to re-derive it either, because the seed is
+-- $200 service - and no way to re-derive it either, because the seed is
 -- recomputed live from `events` columns that change.
 --
 -- Under the agreed rule the partner absorbs the difference, so the difference
@@ -24,6 +24,6 @@ comment on column "public"."quotes"."base_unit_price" is
 create index if not exists "quotes_partner_created_idx"
   on "public"."quotes" ("partner_tracking_code", "created_at" desc);
 
--- Redundant once the composite above exists — a leading-column prefix serves
+-- Redundant once the composite above exists - a leading-column prefix serves
 -- every query the single-column index did.
 drop index if exists "public"."quotes_partner_idx";

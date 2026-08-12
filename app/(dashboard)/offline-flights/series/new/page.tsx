@@ -303,12 +303,12 @@ export default function NewOfflineFlightSeriesPage() {
           price: Number(row.price),
           initial_quantity: Number.parseInt(row.initial_quantity, 10),
           // Derived from the template's stopover airports, same rule the DB
-          // trigger applies — a hardcoded 0 sold every connecting series as direct.
+          // trigger applies - a hardcoded 0 sold every connecting series as direct.
           ...toStopoverColumns(template),
           duration: addIsoDurations(outboundDuration, inboundDuration),
           outbound_departure_airport: template.outbound_departure_airport,
           outbound_arrival_airport: template.outbound_arrival_airport,
-          // `timestamp without time zone` columns — pure string composition,
+          // `timestamp without time zone` columns - pure string composition,
           // no timezone or DST maths.
           outbound_departure_time: `${row.departDate}T${row.outboundDepartureTime}:00`,
           outbound_arrival_time: `${outArrivalDate}T${row.outboundArrivalTime}:00`,
@@ -362,7 +362,7 @@ export default function NewOfflineFlightSeriesPage() {
         <div>
           <h1 className="text-2xl font-semibold">New flight series</h1>
           <p className="text-sm text-muted-foreground">
-            Step {step} of 3 — build one template, pick the departure dates, then
+            Step {step} of 3 - build one template, pick the departure dates, then
             fine-tune each flight before creating them all.
           </p>
         </div>

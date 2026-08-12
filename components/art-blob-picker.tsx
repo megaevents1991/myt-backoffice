@@ -37,7 +37,7 @@ const SHAPES = [
   ...BASE_SHAPES.map((s) => ({ ...s, mirror: false })),
   ...BASE_SHAPES.map((s) => ({ ...s, mirror: true })),
 ];
-// Photo backgrounds — shape indices 6-8 (after the 6 blobs). Additive: the same
+// Photo backgrounds - shape indices 6-8 (after the 6 blobs). Additive: the same
 // cut-out sits on a photo instead of a neon blob. Files duplicated in
 // myt-main public/art-backgrounds (same convention as the blob constants).
 const BACKGROUNDS = [
@@ -81,11 +81,11 @@ const Blob = ({
  * canvas, so a press shot with headroom yields a cut-out where the subject
  * fills only part of the frame. The site contain-fits the whole canvas, empty
  * pixels included, so that padding renders as a small artist floating in the
- * card — the Backstreet Boys / Deep Purple / Noah Kahan bug. Trimming here
+ * card - the Backstreet Boys / Deep Purple / Noah Kahan bug. Trimming here
  * means a padded cut-out can't reach the site in the first place.
  *
  * Returns the original blob unchanged on any failure or when there is nothing
- * to trim — never blocks an upload.
+ * to trim - never blocks an upload.
  */
 // Matting leaves a veil of near-invisible pixels far outside the subject, so a
 // plain "alpha > 0" bounding box can span the whole canvas and trim nothing
@@ -94,7 +94,7 @@ const Blob = ({
 // speck of them to count.
 const ALPHA_SOLID = 200;
 const MIN_RUN = 0.002; // ≥0.2% of the row/column must be solid
-const MAX_EDGE = 2400; // long-edge cap — keeps cut-outs off the multi-MB range
+const MAX_EDGE = 2400; // long-edge cap - keeps cut-outs off the multi-MB range
 const WASTED_LIMIT = 0.1; // ≥10% empty canvas is worth a re-crop
 
 export async function trimTransparent(blob: Blob): Promise<{ blob: Blob; trimmed: boolean }> {
@@ -132,7 +132,7 @@ export async function trimTransparent(blob: Blob): Promise<{ blob: Blob; trimmed
     };
     const [top, bottom] = firstLast(rowHits, width);
     const [left, right] = firstLast(colHits, height);
-    if (right < 0 || bottom < 0) return unchanged; // nothing solid — leave it alone
+    if (right < 0 || bottom < 0) return unchanged; // nothing solid - leave it alone
 
     const cropW = right - left + 1;
     const cropH = bottom - top + 1;
@@ -165,7 +165,7 @@ export async function trimTransparent(blob: Blob): Promise<{ blob: Blob; trimmed
  * IMPORTANT: never upload NEW files into `art_blobs`. The main app treats
  * that bucket as the frozen legacy padded-cutout set (custom sizing, dial
  * ignored); everything else gets the uniform crest standard. A new image
- * landing in art_blobs rendered full-bleed on the site — this broke Inter,
+ * landing in art_blobs rendered full-bleed on the site - this broke Inter,
  * Bayern/Roma, then PSG. Browsing/reusing EXISTING art_blobs cutouts is fine.
  */
 export function ArtBlobPicker({
@@ -176,7 +176,7 @@ export function ArtBlobPicker({
   bgScale,
   imageOffsetX,
   imageOffsetY,
-  label = "Card art — cut-out + blob",
+  label = "Card art - cut-out + blob",
   autoTrim = true,
   onImage,
   onColor,
@@ -199,7 +199,7 @@ export function ArtBlobPicker({
   label?: string;
   /**
    * Crop empty margin off any image assigned here (default). Turn OFF for
-   * football CRESTS: their margin is deliberate — myt-main sizes them with
+   * football CRESTS: their margin is deliberate - myt-main sizes them with
    * FOOTBALL_CREST_ART on the stadium background, and tightening a crest is
    * what broke Inter, Bayern/Roma and PSG.
    */
@@ -222,7 +222,7 @@ export function ArtBlobPicker({
   const offY = imageOffsetY ?? 0;
 
   /**
-   * Every path that sets the cut-out URL funnels through here — the file
+   * Every path that sets the cut-out URL funnels through here - the file
    * upload above already trims, this covers the OTHER two: pasting a URL and
    * browsing storage. Without it a padded PNG dropped straight into a bucket
    * sailed past the trim and rendered as a small subject floating in the card.
@@ -232,7 +232,7 @@ export function ArtBlobPicker({
    */
   const handlePickedUrl = async (url: string) => {
     // A photo background (shapeIndex ≥ 6) IS the crest card configuration, so
-    // treat that image as a crest wherever this picker is used — the events
+    // treat that image as a crest wherever this picker is used - the events
     // form has no artist/team flag to pass.
     const crestCard = si >= SHAPES.length;
     if (!autoTrim || crestCard || !/^https?:\/\//i.test(url)) {
@@ -257,11 +257,11 @@ export function ArtBlobPicker({
         description: "Empty margin cropped so the artist fills the card.",
       });
     } catch (e: unknown) {
-      // Never block the pick — a cross-origin image just can't be measured.
+      // Never block the pick - a cross-origin image just can't be measured.
       toast({
         title: "Couldn't check this image",
         description:
-          "Using it as-is. If it has empty space around the subject it will render small — re-upload it with \"Upload + cut out\".",
+          "Using it as-is. If it has empty space around the subject it will render small - re-upload it with \"Upload + cut out\".",
       });
       console.error("art trim check failed:", e);
     } finally {
@@ -310,7 +310,7 @@ export function ArtBlobPicker({
         style={{ background: BG }}
       >
         {si >= SHAPES.length ? (
-          // object-contain: the whole photo stays visible while zooming — no
+          // object-contain: the whole photo stays visible while zooming - no
           // corner ever cropped until the user zooms past the frame on purpose.
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -395,7 +395,7 @@ export function ArtBlobPicker({
           </div>
         )}
         <div>
-          <Label className="text-xs">Background — blob / photo</Label>
+          <Label className="text-xs">Background - blob / photo</Label>
           <div className="mt-1 flex flex-wrap gap-1.5">
             {SHAPES.map((_, i) => (
               <button

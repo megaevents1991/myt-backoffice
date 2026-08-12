@@ -154,7 +154,7 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
     const blocks: any[] = (doc as any).content ?? [];
 
     // First <h1> becomes the post title (the page renders the title as the h1
-    // already — keeping it in the body would double it).
+    // already - keeping it in the body would double it).
     const h1Index = blocks.findIndex((b) => b.nodeType === "heading-1");
     if (h1Index !== -1) {
       const title = nodeText(blocks[h1Index]).trim();
@@ -176,7 +176,7 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
 
     setBodyHtml(richDocToHtml(doc));
     setPasteHtml("");
-    toast.success("Fields filled from HTML — review and save.");
+    toast.success("Fields filled from HTML - review and save.");
   };
 
   function onSubmit(values: FormData) {
@@ -285,7 +285,7 @@ export function BlogForm({ initial }: { initial?: BlogPost }) {
 
         <div className="rounded-lg border p-4">
           <ArtBlobPicker
-            label="Post art — cut-out + blob (optional)"
+            label="Post art - cut-out + blob (optional)"
             imageUrl={artImageUrl}
             colorIndex={artColorIndex}
             shapeIndex={artShapeIndex}

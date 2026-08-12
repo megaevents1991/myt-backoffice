@@ -14,7 +14,7 @@ const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
 
 /**
  * events.campaign_video_url editor: paste a direct file URL, or upload a
- * video straight to the `campaign_videos` bucket (signed-URL client upload —
+ * video straight to the `campaign_videos` bucket (signed-URL client upload -
  * bytes skip the Vercel 4.5 MB body limit) and get the public URL filled in.
  */
 export function CampaignVideoField({
@@ -31,7 +31,7 @@ export function CampaignVideoField({
   const onFile = async (file: File | undefined) => {
     if (!file) return;
     if (file.size > MAX_VIDEO_BYTES) {
-      setError("הקובץ גדול מ-200MB — מטא דוחה וידאו כזה בפיד");
+      setError("הקובץ גדול מ-200MB - מטא דוחה וידאו כזה בפיד");
       return;
     }
     setBusy(true);
@@ -97,7 +97,7 @@ export function CampaignVideoField({
       </div>
       {error && <p className="text-xs text-destructive">{error}</p>}
       <p className="text-xs text-muted-foreground">
-        Direct link to a video FILE (.mp4, .mov, …), max 200 MB — upload here (goes
+        Direct link to a video FILE (.mp4, .mov, …), max 200 MB - upload here (goes
         to the campaign_videos bucket) or paste a public URL. YouTube/Instagram
         player links do NOT work and are dropped from the feed.
       </p>

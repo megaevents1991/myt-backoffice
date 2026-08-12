@@ -7,7 +7,7 @@
 -- Order pages historically carry no VISIT tracker (ClientTracker is mounted
 -- on home/artist/football/category pages only), so a visitor who lands
 -- directly on an event deep-link shows up first at a non-VISIT stage. That
--- first-row-is-not-VISIT shape therefore classifies as an 'event' entry —
+-- first-row-is-not-VISIT shape therefore classifies as an 'event' entry -
 -- and per-segment "Visited" counts every classified user, not VISIT rows,
 -- so those direct landings are not undercounted.
 
@@ -63,7 +63,7 @@ as $$
   -- Reservations carry no tracking user id, so "became paid" is a MATCH, not
   -- proof (same stance as prepared-package matching): a user's CONFIRMED row
   -- against a now-Paid reservation of the same partner and event name created
-  -- within ±30 minutes. Old CONFIRMED rows without an eventName never match —
+  -- within ±30 minutes. Old CONFIRMED rows without an eventName never match -
   -- an undercount, never an overcount.
   paid_users as (
     select distinct w.user_id

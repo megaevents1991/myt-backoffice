@@ -35,7 +35,7 @@ import {
 } from "@/lib/actions/portal-package-actions";
 
 /**
- * "הזמנה עבור הלקוח" — opens main's order flow THROUGH the partner-handoff
+ * "הזמנה עבור הלקוח" - opens main's order flow THROUGH the partner-handoff
  * endpoint, so the agent arrives with a live session on main's domain and the
  * agent-paid settlement methods (agent card / voucher) actually pass the
  * server's requireAgent gate. The window opens synchronously (popup-blocker
@@ -67,7 +67,7 @@ function OrderForCustomerButton({ pkg }: { pkg: PreparedPackageListItem }) {
   );
 }
 
-/** Lock/unlock an existing package — a mistaken lock is no longer permanent. */
+/** Lock/unlock an existing package - a mistaken lock is no longer permanent. */
 function LockToggleButton({ pkg }: { pkg: PreparedPackageListItem }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -260,7 +260,7 @@ export function PackagesList({
                   <AlertDialogHeader>
                     <AlertDialogTitle>למחוק את החבילה?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      הלינק יפסיק לעבוד — מי שיפתח אותו יגיע לעמוד ההזמנה הרגיל של
+                      הלינק יפסיק לעבוד - מי שיפתח אותו יגיע לעמוד ההזמנה הרגיל של
                       האירוע, בלי הרכב שבחרתם.
                     </AlertDialogDescription>
                   </AlertDialogHeader>

@@ -1,4 +1,4 @@
-# Cross-Bucket Image Picker + Template Gallery — Design
+# Cross-Bucket Image Picker + Template Gallery - Design
 
 **Date:** 2026-07-01
 **Project:** myt-backoffice
@@ -14,7 +14,7 @@ Two related gaps in image management:
    URL, then paste it in.
 2. **Hero / event upload-and-cut.** The shared `ImageFilePicker` "Select File" tab is locked to
    a single Supabase bucket (`bucketName` prop). When adding a hero image or running the
-   background-removal "cut" (`ArtBlobPicker`), the admin can only browse that one bucket — not
+   background-removal "cut" (`ArtBlobPicker`), the admin can only browse that one bucket - not
    the other storages where usable images already live.
 
 Both reduce to one missing capability: **browse and search images across all Supabase Storage
@@ -31,27 +31,27 @@ buckets, and (for the gallery) select many at once.**
 
 Extend the existing shared `ImageFilePicker` (rather than fork a new component), backed by one
 new server action that enumerates images across all buckets. Load all buckets once when the
-picker opens, cache client-side, then filter by bucket + search in the browser — so cross-bucket
+picker opens, cache client-side, then filter by bucket + search in the browser - so cross-bucket
 search costs zero per-keystroke server round-trips. This keeps every existing caller working and
 matches repo conventions (Server-Actions-first, shadcn, reuse-don't-reinvent).
 
 ## Design
 
-### 1. Server layer — `lib/actions/storage-actions.ts`
+### 1. Server layer - `lib/actions/storage-actions.ts`
 
 New action:
 
 ```ts
 export type StorageImage = {
   bucket: string;
-  path: string;        // path within the bucket
-  name: string;        // file name only
-  url: string;         // public or signed URL
+  path: string; // path within the bucket
+  name: string; // file name only
+  url: string; // public or signed URL
   size: number | null;
   updatedAt: string | null;
 };
 
-export async function listAllBucketImages(): Promise<StorageImage[]>
+export async function listAllBucketImages(): Promise<StorageImage[]>;
 ```
 
 Behavior:
@@ -62,18 +62,18 @@ Behavior:
 - Map each hit → `StorageImage`. URL resolution: public bucket → `getPublicUrl`; private bucket
   → `createSignedUrl` (long expiry).
 - Run per-bucket listings in parallel (`Promise.all`).
-- **Resilient:** a failed bucket does not fail the whole call — `console.error(JSON.stringify(error))`,
+- **Resilient:** a failed bucket does not fail the whole call - `console.error(JSON.stringify(error))`,
   skip that bucket, continue. Return the merged flat array.
 
 This action is server-only (uses the service-role client already imported in the file).
 
-### 2. Component — upgrade `components/image-file-picker.tsx`
+### 2. Component - upgrade `components/image-file-picker.tsx`
 
 New props, **backward compatible** (existing callers pass neither and behave exactly as today):
 
 ```ts
-multiple?: boolean      // default false — multi-select for gallery
-allBuckets?: boolean    // default false — enable the "All storages" browse mode
+multiple?: boolean      // default false - multi-select for gallery
+allBuckets?: boolean    // default false - enable the "All storages" browse mode
 value?: string | string[]
 onChange: (value: string | string[]) => void
 ```
@@ -100,7 +100,7 @@ focused (single vs multi + all-buckets logic would otherwise bloat one file).
 **Upload New tab:** unchanged. Uploads land in the `bucketName` prop (destination bucket); the
 uploaded file becomes immediately selectable.
 
-### 3. Gallery wiring — `components/templates/PersonForm.tsx` (artists + football)
+### 3. Gallery wiring - `components/templates/PersonForm.tsx` (artists + football)
 
 - Replace the gallery `Textarea` (currently ~lines 296–303) with:
 
@@ -108,7 +108,7 @@ uploaded file becomes immediately selectable.
   <ImageFilePicker
     multiple
     allBuckets
-    bucketName="templates"          // upload destination for new files
+    bucketName="templates" // upload destination for new files
     value={galleryArray}
     onChange={setGalleryArray}
     label="Gallery images"
@@ -116,7 +116,7 @@ uploaded file becomes immediately selectable.
   ```
 
 - Below the picker: a thumbnail strip of the selected gallery images, each with a remove (×) button.
-- Keep a small **collapsed "add by URL" input** as an escape hatch for external URLs — the old
+- Keep a small **collapsed "add by URL" input** as an escape hatch for external URLs - the old
   flow was manual URLs and existing rows already hold external links; don't lose that.
 - Form submission: `gallery` is already `string[]` in the DB (JSONB). Drop the `lines()` textarea
   split; pass the array through directly.
@@ -169,9 +169,9 @@ TS/ESLint errors per `next.config.mjs`). Manual verification checklist:
 
 ## Affected files (anticipated)
 
-- `lib/actions/storage-actions.ts` — new `listAllBucketImages` action + `StorageImage` type (or in `types/`).
-- `components/image-file-picker.tsx` — new props, bucket dropdown, search, multi-select, `<ImageGrid>` extraction.
-- `components/templates/PersonForm.tsx` — gallery picker + thumbnail strip + add-by-URL.
-- `components/art-blob-picker.tsx` — thread `allBuckets` through.
-- `app/(dashboard)/events/[id]/page.tsx` — pass `allBuckets` to card/map pickers.
-- `types/storage.types.ts` — new (optional home for `StorageImage`).
+- `lib/actions/storage-actions.ts` - new `listAllBucketImages` action + `StorageImage` type (or in `types/`).
+- `components/image-file-picker.tsx` - new props, bucket dropdown, search, multi-select, `<ImageGrid>` extraction.
+- `components/templates/PersonForm.tsx` - gallery picker + thumbnail strip + add-by-URL.
+- `components/art-blob-picker.tsx` - thread `allBuckets` through.
+- `app/(dashboard)/events/[id]/page.tsx` - pass `allBuckets` to card/map pickers.
+- `types/storage.types.ts` - new (optional home for `StorageImage`).

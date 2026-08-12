@@ -2,9 +2,15 @@
  * Roles for backoffice users.
  * superadmin/admin/editor = staff; agent/affiliate = partner-linked.
  * Hierarchy: superadmin manages everyone (incl. admins); admin manages
- * editor/agent/affiliate only — an admin can never touch admin/superadmin accounts.
+ * editor/agent/affiliate only - an admin can never touch admin/superadmin accounts.
  */
-export const ROLES = ["superadmin", "admin", "editor", "agent", "affiliate"] as const;
+export const ROLES = [
+  "superadmin",
+  "admin",
+  "editor",
+  "agent",
+  "affiliate",
+] as const;
 export type Role = (typeof ROLES)[number];
 
 export const STAFF_ROLES: Role[] = ["superadmin", "admin", "editor"];

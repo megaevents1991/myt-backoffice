@@ -3,22 +3,24 @@
  * shape stored in `bio` / `main_content`. The customer site renders these via
  * `documentToReactComponents`, so admin-edited content must stay a valid doc.
  * (Migrated entries keep their original formatting; admin edits become plain
- * paragraphs — good enough until a full rich-text editor is added.)
+ * paragraphs - good enough until a full rich-text editor is added.)
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function richDocToText(doc: any): string {
   if (!doc || !Array.isArray(doc.content)) return "";
-  return doc.content
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((node: any) =>
-      Array.isArray(node.content)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ? node.content.map((c: any) => c.value || "").join("")
-        : ""
-    )
-    .join("\n\n")
-    .trim();
+  return (
+    doc.content
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((node: any) =>
+        Array.isArray(node.content)
+          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            node.content.map((c: any) => c.value || "").join("")
+          : "",
+      )
+      .join("\n\n")
+      .trim()
+  );
 }
 
 export function textToRichDoc(text: string) {
@@ -41,7 +43,7 @@ export function textToRichDoc(text: string) {
 // HTML <-> Contentful rich-text doc. Supported set (everything the existing
 // blog posts use, verified against the DB): heading-1..3, paragraph,
 // unordered-list, ordered-list, list-item, blockquote, hyperlink + marks
-// bold/italic. DOM-free on purpose — same code runs in the browser (BlogForm)
+// bold/italic. DOM-free on purpose - same code runs in the browser (BlogForm)
 // and in node (round-trip tests).
 // ---------------------------------------------------------------------------
 
@@ -61,7 +63,9 @@ const escapeAttr = (s: string) => escapeHtml(s).replace(/"/g, "&quot;");
 
 const decodeEntities = (s: string) =>
   s
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) =>
+      String.fromCodePoint(parseInt(h, 16)),
+    )
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
     .replace(/&nbsp;/g, " ")
     .replace(/&quot;/g, '"')
@@ -127,7 +131,7 @@ export function richDocToHtml(doc: any): string {
     if (n.nodeType === "blockquote")
       return `<blockquote>\n${kids.map(block).join("\n")}\n</blockquote>`;
     if (tag) return `<${tag}>${inline(kids)}</${tag}>`;
-    // unknown block (hr, embedded-*) — keep its text so nothing is lost silently
+    // unknown block (hr, embedded-*) - keep its text so nothing is lost silently
     const text = inline(kids);
     return text ? `<p>${text}</p>` : "";
   };
@@ -140,10 +144,46 @@ export function richDocToHtml(doc: any): string {
 type HtmlEl = { tag: string; href?: string; children: (HtmlEl | string)[] };
 
 /** Tags whose entire content is dropped. */
-const DROP_WITH_CONTENT = ["script", "style", "iframe", "head", "title", "noscript", "svg"];
-/** Void tags (no closing tag) — none map to our node set. */
-const VOID_TAGS = ["br", "img", "hr", "meta", "link", "input", "source", "col", "area", "base", "embed", "track", "wbr"];
-const KNOWN_TAGS = ["h1", "h2", "h3", "p", "ul", "ol", "li", "blockquote", "a", "strong", "b", "em", "i"];
+const DROP_WITH_CONTENT = [
+  "script",
+  "style",
+  "iframe",
+  "head",
+  "title",
+  "noscript",
+  "svg",
+];
+/** Void tags (no closing tag) - none map to our node set. */
+const VOID_TAGS = [
+  "br",
+  "img",
+  "hr",
+  "meta",
+  "link",
+  "input",
+  "source",
+  "col",
+  "area",
+  "base",
+  "embed",
+  "track",
+  "wbr",
+];
+const KNOWN_TAGS = [
+  "h1",
+  "h2",
+  "h3",
+  "p",
+  "ul",
+  "ol",
+  "li",
+  "blockquote",
+  "a",
+  "strong",
+  "b",
+  "em",
+  "i",
+];
 
 /** Minimal forgiving HTML parser: whitelist tree, unknown tags unwrapped. */
 function parseHtml(html: string): HtmlEl {
@@ -164,7 +204,8 @@ function parseHtml(html: string): HtmlEl {
       continue;
     }
     const close = /^<\s*\//.test(tok);
-    const name = (tok.match(/^<\s*\/?\s*([a-zA-Z][a-zA-Z0-9]*)/) || [])[1]?.toLowerCase();
+    const name = (tok.match(/^<\s*\/?\s*([a-zA-Z][a-zA-Z0-9]*)/) ||
+      [])[1]?.toLowerCase();
     if (!name) continue;
     if (VOID_TAGS.includes(name)) {
       if (name === "br") top().children.push(" ");
@@ -182,7 +223,8 @@ function parseHtml(html: string): HtmlEl {
     }
     const el: HtmlEl = { tag: name, children: [] };
     if (name === "a") {
-      const href = (tok.match(/href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i) || [])[2] ??
+      const href =
+        (tok.match(/href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i) || [])[2] ??
         (tok.match(/href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i) || [])[3] ??
         (tok.match(/href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i) || [])[4];
       el.href = href ? decodeEntities(href) : "";
@@ -215,16 +257,26 @@ export function htmlToRichDoc(html: string): RichNode {
         continue;
       }
       if (k.tag === "strong" || k.tag === "b")
-        out.push(...inline(k.children, marks.includes("bold") ? marks : [...marks, "bold"]));
+        out.push(
+          ...inline(
+            k.children,
+            marks.includes("bold") ? marks : [...marks, "bold"],
+          ),
+        );
       else if (k.tag === "em" || k.tag === "i")
-        out.push(...inline(k.children, marks.includes("italic") ? marks : [...marks, "italic"]));
+        out.push(
+          ...inline(
+            k.children,
+            marks.includes("italic") ? marks : [...marks, "italic"],
+          ),
+        );
       else if (k.tag === "a")
         out.push({
           nodeType: "hyperlink",
           data: { uri: k.href ?? "" },
           content: inline(k.children, marks),
         });
-      else out.push(...inline(k.children, marks)); // block tag misnested inline — keep text
+      else out.push(...inline(k.children, marks)); // block tag misnested inline - keep text
     }
     return out;
   };
@@ -243,15 +295,21 @@ export function htmlToRichDoc(html: string): RichNode {
       else merged.push(n);
     }
     const first = merged[0];
-    if (first?.nodeType === "text") first.value = (first.value ?? "").replace(/^\s+/, "");
+    if (first?.nodeType === "text")
+      first.value = (first.value ?? "").replace(/^\s+/, "");
     const last = merged[merged.length - 1];
-    if (last?.nodeType === "text") last.value = (last.value ?? "").replace(/\s+$/, "");
-    return merged.filter((n) => n.nodeType !== "text" || (n.value ?? "") !== "");
+    if (last?.nodeType === "text")
+      last.value = (last.value ?? "").replace(/\s+$/, "");
+    return merged.filter(
+      (n) => n.nodeType !== "text" || (n.value ?? "") !== "",
+    );
   };
 
   const hasText = (nodes: RichNode[]): boolean =>
     nodes.some((n) =>
-      n.nodeType === "text" ? (n.value ?? "").trim() !== "" : hasText(n.content || [])
+      n.nodeType === "text"
+        ? (n.value ?? "").trim() !== ""
+        : hasText(n.content || []),
     );
 
   /** Children of a block container -> block nodes (loose inline runs → paragraphs). */

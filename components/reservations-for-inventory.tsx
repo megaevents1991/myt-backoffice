@@ -71,7 +71,7 @@ export function ReservationsForInventory({
                       </Link>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {r.created_at ? new Date(r.created_at).toLocaleDateString() : "—"}
+                      {r.created_at ? new Date(r.created_at).toLocaleDateString() : "-"}
                     </TableCell>
                     <TableCell>
                       {r.main_contact_first_name} {r.main_contact_last_name}
@@ -84,7 +84,7 @@ export function ReservationsForInventory({
                         {(() => {
                           const linked = roomsByReservation?.[r.id] ?? [];
                           if (linked.length === 0)
-                            return <span className="text-muted-foreground">—</span>;
+                            return <span className="text-muted-foreground">-</span>;
                           return (
                             <div className="flex flex-wrap gap-1">
                               {linked.map((room) => (
@@ -104,7 +104,7 @@ export function ReservationsForInventory({
                       </TableCell>
                     )}
                     <TableCell>
-                      <Badge variant={statusVariant(r.status)}>{r.status || "—"}</Badge>
+                      <Badge variant={statusVariant(r.status)}>{r.status || "-"}</Badge>
                     </TableCell>
                   </TableRow>
                 );

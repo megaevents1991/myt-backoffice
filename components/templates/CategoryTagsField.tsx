@@ -10,7 +10,7 @@ import {
 /**
  * The category's membership rule, on the Templates form where the page is
  * built: tags compose a category, never the other way round. Every event
- * carrying ONE of these tags is pulled in automatically — events are only ever
+ * carrying ONE of these tags is pulled in automatically - events are only ever
  * tagged, never assigned to a category by hand.
  *
  * New tags can be created right here (the picker asks for the English name it
@@ -46,7 +46,7 @@ export function CategoryTagsField({
       </div>
       {failed ? (
         <p className="text-sm text-destructive">
-          טעינת התגיות נכשלה — רענן את העמוד כדי לערוך אותן.
+          טעינת התגיות נכשלה - רענן את העמוד כדי לערוך אותן.
         </p>
       ) : (
         <EventTaxonomySelect
@@ -58,7 +58,7 @@ export function CategoryTagsField({
       )}
       {value.length === 0 && !failed && (
         <p className="text-xs text-amber-600">
-          בלי תגיות הקטגוריה תישאר ריקה — לא ייכנסו אליה אירועים.
+          בלי תגיות הקטגוריה תישאר ריקה - לא ייכנסו אליה אירועים.
         </p>
       )}
     </div>

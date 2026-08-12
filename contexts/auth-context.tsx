@@ -10,7 +10,7 @@ type User = SessionUser;
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
-  /** The signed-in user on success (so the login page can route by role —
+  /** The signed-in user on success (so the login page can route by role -
    *  partners home to /portal, staff to /dashboard); on failure the server's
    *  error message (or a generic one) so rate-limit reads differently from
    *  bad credentials. */
@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Check for existing session on client-side
   useEffect(() => {
     // One fetch attempt. Returns "retry" ONLY for transient failures (network
-    // throw / 5xx) — a definitive { user: null } answer must NOT be retried.
+    // throw / 5xx) - a definitive { user: null } answer must NOT be retried.
     const attempt = async (): Promise<"retry" | User | null> => {
       try {
         // Add cache busting to prevent stale responses
@@ -94,7 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Pass the server's message through (429 "wait a minute" vs 401 invalid).
       return { error: data.error || "Invalid email or password" };
     } catch {
-      return { error: "Network error — check your connection and try again" };
+      return { error: "Network error - check your connection and try again" };
     }
   };
 

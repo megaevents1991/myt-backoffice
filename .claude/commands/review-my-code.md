@@ -1,4 +1,4 @@
-Project-specific review of YOUR recent (uncommitted) changes before pushing — myt-backoffice.
+Project-specific review of YOUR recent (uncommitted) changes before pushing - myt-backoffice.
 
 1. `git diff` (staged + unstaged) to find changes. Scope to $ARGUMENTS if named.
 2. Audit changed files against `.claude/rules/` (standards + pricing/data-model/cross-project/

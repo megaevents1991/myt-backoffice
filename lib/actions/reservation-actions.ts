@@ -1,52 +1,64 @@
-"use server"
+"use server";
 
 import { requireStaff } from "@/lib/auth/guards";
-import { supabase } from "@/lib/supabase-server"
-import type { Reservation } from "@/types/reservation.types"
-import { revalidatePath } from "next/cache"
-import { logAudit, diffChanges, fetchBefore } from "@/lib/audit"
+import { supabase } from "@/lib/supabase-server";
+import type { Reservation } from "@/types/reservation.types";
+import { revalidatePath } from "next/cache";
+import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 
 export async function getReservations() {
   await requireStaff();
-  const { data, error } = await supabase.from("reservations").select("*").order("created_at", { ascending: false })
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-  if (error) throw error
-  return data as Reservation[]
+  if (error) throw error;
+  return data as Reservation[];
 }
 
-/** Row count only (head request, no payload) — for the new-reservations poll. */
+/** Row count only (head request, no payload) - for the new-reservations poll. */
 export async function getReservationsCount() {
   await requireStaff();
   const { count, error } = await supabase
     .from("reservations")
-    .select("id", { count: "exact", head: true })
+    .select("id", { count: "exact", head: true });
 
-  if (error) throw error
-  return count ?? 0
+  if (error) throw error;
+  return count ?? 0;
 }
 
 export async function getReservation(id: number) {
   await requireStaff();
-  const { data, error } = await supabase.from("reservations").select("*").eq("id", id).single()
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("*")
+    .eq("id", id)
+    .single();
 
-  if (error) throw error
-  return data as Reservation
+  if (error) throw error;
+  return data as Reservation;
 }
 
-export async function createReservation(reservation: Omit<Reservation, "id" | "created_at">) {
+export async function createReservation(
+  reservation: Omit<Reservation, "id" | "created_at">,
+) {
   await requireStaff();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any).from("reservations").insert(reservation).select()
+  const { data, error } = await (supabase as any)
+    .from("reservations")
+    .insert(reservation)
+    .select();
 
-  if (error) throw error
-  const created = data[0] as Reservation
+  if (error) throw error;
+  const created = data[0] as Reservation;
   await logAudit({
     action: "create",
     entityType: "reservation",
     entityId: created.id,
     changes: reservation,
-  })
-  return created
+  });
+  return created;
 }
 
 /**
@@ -55,13 +67,16 @@ export async function createReservation(reservation: Omit<Reservation, "id" | "c
  * `24Save` is a 24-hour price hold, not a booking: the customer has paid
  * nothing, reserved nothing, and may never return. The main app stopped
  * consuming seats for it at checkout, so anything that recomputes consumption
- * from reservations has to agree — otherwise the counters here would write the
+ * from reservations has to agree - otherwise the counters here would write the
  * seats straight back, and the customer's own hold would then read as sold out
  * when they came back through their recovery link.
  */
 const RELEASED_STATUSES = new Set(["Cancelled", "Lost", "24Save"]);
 
-export async function updateReservation(id: number, reservation: Partial<Reservation>) {
+export async function updateReservation(
+  id: number,
+  reservation: Partial<Reservation>,
+) {
   await requireStaff();
   const auditBefore = await fetchBefore("reservations", "id", id, reservation);
   // Detect transition into a released status so we can return inventory
@@ -77,17 +92,21 @@ export async function updateReservation(id: number, reservation: Partial<Reserva
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any).from("reservations").update(reservation).eq("id", id).select()
+  const { data, error } = await (supabase as any)
+    .from("reservations")
+    .update(reservation)
+    .eq("id", id)
+    .select();
 
-  if (error) throw error
+  if (error) throw error;
   await logAudit({
     action: "update",
     entityType: "reservation",
     entityId: id,
     changes: diffChanges(auditBefore, reservation),
-  })
+  });
   if (toRelease) await releaseOfflineInventory(toRelease);
-  return data[0] as Reservation
+  return data[0] as Reservation;
 }
 
 /**
@@ -100,7 +119,7 @@ export type VoucherState = (typeof VOUCHER_STATES)[number];
 
 export async function setReservationVoucherState(
   id: number,
-  state: VoucherState | null
+  state: VoucherState | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireStaff();
   if (state !== null && !VOUCHER_STATES.includes(state)) {
@@ -134,13 +153,15 @@ export async function setReservationVoucherState(
 /** Staff stamp for "travel material sent to the customer" (חומר ללקוח). */
 export async function setTravelMaterialsSent(
   id: number,
-  sent: boolean
+  sent: boolean,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireStaff();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from("reservations")
-    .update({ travel_materials_sent_at: sent ? new Date().toISOString() : null })
+    .update({
+      travel_materials_sent_at: sent ? new Date().toISOString() : null,
+    })
     .eq("id", id);
   if (error) {
     console.error("setTravelMaterialsSent:", JSON.stringify(error));
@@ -173,7 +194,7 @@ export async function updateReservationsStatus(ids: number[], status: string) {
       .select("*")
       .in("id", ids);
     toRelease = ((current ?? []) as Reservation[]).filter(
-      (r) => !RELEASED_STATUSES.has(r.status)
+      (r) => !RELEASED_STATUSES.has(r.status),
     );
   }
 
@@ -253,7 +274,7 @@ async function releaseOfflineInventory(reservation: Reservation) {
           .update({
             consumed_quantity: Math.max(
               0,
-              (flightRow.consumed_quantity || 0) - numOfTravelers
+              (flightRow.consumed_quantity || 0) - numOfTravelers,
             ),
           })
           .eq("id", offlineFlightId);
@@ -265,8 +286,8 @@ async function releaseOfflineInventory(reservation: Reservation) {
       reservation.offline_hotel_ids && reservation.offline_hotel_ids.length > 0
         ? reservation.offline_hotel_ids
         : reservation.offline_hotel_id
-        ? [reservation.offline_hotel_id]
-        : [];
+          ? [reservation.offline_hotel_id]
+          : [];
 
     if (offlineHotelIds.length > 0) {
       const counts = new Map<number, number>();
@@ -285,7 +306,10 @@ async function releaseOfflineInventory(reservation: Reservation) {
           await (supabase as any)
             .from("offline_hotels")
             .update({
-              consumed_rooms: Math.max(0, (hotelRow.consumed_rooms || 0) - count),
+              consumed_rooms: Math.max(
+                0,
+                (hotelRow.consumed_rooms || 0) - count,
+              ),
             })
             .eq("id", rowId);
         }
@@ -324,15 +348,17 @@ const ACTIVE_RESERVATION_STATUSES_FILTER = "Cancelled,Lost,24Save";
 // against RELEASED_STATUSES, normalized, so released reservations never show in
 // an inventory view or passenger manifest.
 const RELEASED_STATUSES_LOWER = new Set(
-  Array.from(RELEASED_STATUSES, (s) => s.toLowerCase())
+  Array.from(RELEASED_STATUSES, (s) => s.toLowerCase()),
 );
 function dropReleased(rows: InventoryReservation[]): InventoryReservation[] {
   return rows.filter(
-    (r) => !RELEASED_STATUSES_LOWER.has((r.status ?? "").trim().toLowerCase())
+    (r) => !RELEASED_STATUSES_LOWER.has((r.status ?? "").trim().toLowerCase()),
   );
 }
 
-export async function getReservationsForFlight(flightId: number): Promise<InventoryReservation[]> {
+export async function getReservationsForFlight(
+  flightId: number,
+): Promise<InventoryReservation[]> {
   await requireStaff();
   const { data, error } = await supabase
     .from("reservations")
@@ -344,7 +370,9 @@ export async function getReservationsForFlight(flightId: number): Promise<Invent
   return dropReleased((data ?? []) as unknown as InventoryReservation[]);
 }
 
-export async function getReservationsForHotel(hotelId: number): Promise<InventoryReservation[]> {
+export async function getReservationsForHotel(
+  hotelId: number,
+): Promise<InventoryReservation[]> {
   await requireStaff();
   const { data, error } = await supabase
     .from("reservations")
@@ -358,8 +386,10 @@ export async function getReservationsForHotel(hotelId: number): Promise<Inventor
 
 // Recomputes consumed_quantity for an offline flight from active reservations.
 // Each reservation counts its `flight_order_info.numOfTravelers` (default 1).
-// Idempotent — safe to run on every page view.
-export async function reconcileFlightInventory(flightId: number): Promise<number> {
+// Idempotent - safe to run on every page view.
+export async function reconcileFlightInventory(
+  flightId: number,
+): Promise<number> {
   await requireStaff();
   const { data: rows, error } = await supabase
     .from("reservations")
@@ -369,7 +399,9 @@ export async function reconcileFlightInventory(flightId: number): Promise<number
   if (error) throw error;
 
   let consumed = 0;
-  for (const r of (rows ?? []) as { flight_order_info: { numOfTravelers?: number } | null }[]) {
+  for (const r of (rows ?? []) as {
+    flight_order_info: { numOfTravelers?: number } | null;
+  }[]) {
     const n = r?.flight_order_info?.numOfTravelers;
     consumed += typeof n === "number" && n > 0 ? n : 0;
   }
@@ -394,7 +426,9 @@ export async function reconcileFlightInventory(flightId: number): Promise<number
 // Recomputes consumed_rooms for an offline hotel from active reservations.
 // Each occurrence of the hotel id in `offline_hotel_ids` (or `offline_hotel_id`
 // fallback) counts as one room.
-export async function reconcileHotelInventory(hotelId: number): Promise<number> {
+export async function reconcileHotelInventory(
+  hotelId: number,
+): Promise<number> {
   await requireStaff();
   const { data: rows, error } = await supabase
     .from("reservations")
@@ -408,11 +442,12 @@ export async function reconcileHotelInventory(hotelId: number): Promise<number> 
     offline_hotel_id: number | null;
     offline_hotel_ids: number[] | null;
   }[]) {
-    const ids = r.offline_hotel_ids && r.offline_hotel_ids.length > 0
-      ? r.offline_hotel_ids
-      : r.offline_hotel_id != null
-      ? [r.offline_hotel_id]
-      : [];
+    const ids =
+      r.offline_hotel_ids && r.offline_hotel_ids.length > 0
+        ? r.offline_hotel_ids
+        : r.offline_hotel_id != null
+          ? [r.offline_hotel_id]
+          : [];
     consumed += ids.filter((id) => id === hotelId).length;
   }
 
@@ -432,5 +467,3 @@ export async function reconcileHotelInventory(hotelId: number): Promise<number> 
   }
   return consumed;
 }
-
-

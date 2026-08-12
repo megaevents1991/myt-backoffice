@@ -8,7 +8,7 @@ export default function ArtistsOrderPage() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <Link href="/templates/artists" className="text-sm text-muted-foreground hover:underline">← Artists</Link>
-          <h1 className="text-3xl font-bold">Homepage Order — אמנים מובילים</h1>
+          <h1 className="text-3xl font-bold">Homepage Order - אמנים מובילים</h1>
         </div>
         <RevalidateButton />
       </div>

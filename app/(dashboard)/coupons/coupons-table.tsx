@@ -185,7 +185,7 @@ export function CouponsTable() {
   };
 
   const handleToggleActive = async (coupon: Coupon, isActive: boolean) => {
-    // Optimistic — revert on failure.
+    // Optimistic - revert on failure.
     setCoupons((prev) =>
       prev.map((c) => (c.id === coupon.id ? { ...c, is_active: isActive } : c))
     );
@@ -287,7 +287,7 @@ export function CouponsTable() {
       header: "Affiliate",
       cell: ({ row }) => {
         const code = row.original.partner_tracking_code;
-        if (!code) return <span className="text-muted-foreground">—</span>;
+        if (!code) return <span className="text-muted-foreground">-</span>;
         const partner = partners.find((p) => p.partner_tracking_code === code);
         return (
           <span className="max-w-[180px] truncate inline-block">
@@ -467,7 +467,7 @@ export function CouponsTable() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Orders redeeming this coupon are credited to the partner —
+                Orders redeeming this coupon are credited to the partner -
                 unless the order already has its own affiliate.
               </p>
             </div>

@@ -26,7 +26,7 @@ export type SyncMetaFeedResult =
   | { ok: false; error: string };
 
 /**
- * Republishes all three feed snapshots right now — same code path as the
+ * Republishes all three feed snapshots right now - same code path as the
  * twice-daily cron. Use after editing events when the CMO needs Meta to see
  * the change before the next scheduled run.
  */
@@ -72,16 +72,19 @@ export type SyncHealth = {
  * Freshness of every scheduled sync, read straight off the data each one
  * writes. This is the check that was missing when all the Vercel crons
  * silently started 401'ing on 2026-07-15 (the cron auth guard shipped without
- * CRON_SECRET being set) and nothing synced for two weeks — the dashboard
+ * CRON_SECRET being set) and nothing synced for two weeks - the dashboard
  * looked fine because nothing surfaces "last run".
  */
 export async function getSyncHealth(): Promise<SyncHealth> {
   await requireStaff();
 
-  // Provider tables aren't in the generated DB types — cast like template-crud.
+  // Provider tables aren't in the generated DB types - cast like template-crud.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
-  const newest = async (table: string, column: string): Promise<string | null> => {
+  const newest = async (
+    table: string,
+    column: string,
+  ): Promise<string | null> => {
     const { data, error } = await db
       .from(table)
       .select(column)
@@ -122,10 +125,30 @@ export async function getSyncHealth(): Promise<SyncHealth> {
 
   return {
     rows: [
-      { key: "sports-events", label: "אירועי ספורט (XS2Event)", lastRun: sportsEvents, staleAfterHours: 26 },
-      { key: "live-events", label: "אירועי LIVE", lastRun: liveEvents, staleAfterHours: 26 },
-      { key: "tixstock-events", label: "אירועי TixStock", lastRun: tixstockEvents, staleAfterHours: 26 },
-      { key: "campaign-creatives", label: "קריאטיבים לפיד", lastRun: creatives, staleAfterHours: 26 },
+      {
+        key: "sports-events",
+        label: "אירועי ספורט (XS2Event)",
+        lastRun: sportsEvents,
+        staleAfterHours: 26,
+      },
+      {
+        key: "live-events",
+        label: "אירועי LIVE",
+        lastRun: liveEvents,
+        staleAfterHours: 26,
+      },
+      {
+        key: "tixstock-events",
+        label: "אירועי TixStock",
+        lastRun: tixstockEvents,
+        staleAfterHours: 26,
+      },
+      {
+        key: "campaign-creatives",
+        label: "קריאטיבים לפיד",
+        lastRun: creatives,
+        staleAfterHours: 26,
+      },
     ],
     eventsInFeedWindow: inWindow.count ?? 0,
     eventsWithCreative: withCreative.count ?? 0,
@@ -137,11 +160,13 @@ export async function getMetaFeedSnapshots(): Promise<MetaFeedSnapshot[]> {
   await requireStaff();
   const paths = [STORAGE_PATH_ACTIVITIES, STORAGE_PATH_CSV, STORAGE_PATH_XML];
 
-  // Storage has no "stat one object" call — list the folder once and match.
+  // Storage has no "stat one object" call - list the folder once and match.
   const folder = paths[0].split("/")[0];
-  const { data, error } = await supabase.storage.from(STORAGE_BUCKET).list(folder, {
-    limit: 100,
-  });
+  const { data, error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .list(folder, {
+      limit: 100,
+    });
   if (error) {
     console.error("[meta-feed] snapshot list failed:", JSON.stringify(error));
   }
@@ -152,7 +177,8 @@ export async function getMetaFeedSnapshots(): Promise<MetaFeedSnapshot[]> {
     const size = (file?.metadata as { size?: number } | undefined)?.size;
     return {
       path,
-      publicUrl: supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path).data.publicUrl,
+      publicUrl: supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path).data
+        .publicUrl,
       updatedAt: file?.updated_at ?? null,
       sizeBytes: typeof size === "number" ? size : null,
     };

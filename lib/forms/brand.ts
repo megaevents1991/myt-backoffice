@@ -8,7 +8,7 @@
  * If the brand palette changes, change it in all three places.
  */
 
-/** Deep indigo, not black — the blue cast is the point. */
+/** Deep indigo, not black - the blue cast is the point. */
 export const CANVAS = "#070618";
 export const INK = "#FAFAF5";
 

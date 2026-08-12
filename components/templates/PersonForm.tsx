@@ -160,7 +160,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
       gallery,
     }) !== initialExtras;
 
-  // Logo must be a .png — satori (creative generator) cannot render SVG logos.
+  // Logo must be a .png - satori (creative generator) cannot render SVG logos.
   const logoInvalid = !!logoUrl && !logoUrl.toLowerCase().endsWith(".png");
 
   const resetExtras = () => {
@@ -194,7 +194,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           art_bg_scale: artImageUrl ? artBgScale : null,
           art_image_offset_x: artImageUrl ? artImageOffsetX : null,
           art_image_offset_y: artImageUrl ? artImageOffsetY : null,
-          // artists table has no logo_url column (PGRST204 on save) — football only
+          // artists table has no logo_url column (PGRST204 on save) - football only
           ...(kind === "football_teams" ? { logo_url: logoUrl || null } : {}),
           bio: values.bio ? textToRichDoc(values.bio) : null,
           seo_title: values.seo_title || null,
@@ -280,7 +280,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
 
         <div className="rounded-lg border p-4">
           <ArtBlobPicker
-            label="Card art — cut-out + blob (optional)"
+            label="Card art - cut-out + blob (optional)"
             // Crest margin is deliberate (FOOTBALL_CREST_ART sizes it); only
             // people must be trimmed tight.
             autoTrim={kind !== "football_teams"}
@@ -310,7 +310,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
 
         {kind === "football_teams" && (
           <div className="space-y-2">
-            <Label htmlFor="logo_url">Logo URL (transparent PNG — creative generator)</Label>
+            <Label htmlFor="logo_url">Logo URL (transparent PNG - creative generator)</Label>
             <Input
               id="logo_url"
               value={logoUrl}
@@ -323,7 +323,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           </div>
         )}
 
-        {/* Page extras — artist/team page enrichments (doc 19b/20/21/24) */}
+        {/* Page extras - artist/team page enrichments (doc 19b/20/21/24) */}
         <div className="space-y-4 rounded-lg border p-4">
           <p className="text-sm font-semibold">Page extras (artist / team page)</p>
           <FormField control={form.control} name="hero_video_url" render={({ field }) => (

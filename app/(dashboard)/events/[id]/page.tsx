@@ -132,7 +132,7 @@ export default function EventPage({
   const isNewEvent = unwrappedParams.id === "new";
   const isBatchCreate = isNewEvent && searchParams.get("batch") === "1";
 
-  // Taxonomy: an event is ONLY ever tagged. Its categories are derived — a
+  // Taxonomy: an event is ONLY ever tagged. Its categories are derived - a
   // category declares which tags compose it (Templates → category form), and
   // every event carrying one of them is pulled in. The category list below is
   // therefore read-only, computed from the tags selected right here.
@@ -190,11 +190,11 @@ export default function EventPage({
         toast({
           variant: "destructive",
           title: "Categories/tags failed to load",
-          description: "Editing them is disabled for this event — reload the page to retry.",
+          description: "Editing them is disabled for this event - reload the page to retry.",
         });
       }
     })();
-    // toast (useToast) is a stable helper — intentionally not a dependency.
+    // toast (useToast) is a stable helper - intentionally not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNewEvent, unwrappedParams.id]);
 
@@ -203,11 +203,11 @@ export default function EventPage({
   // event (incl. every batch step): write whenever anything is selected, and do
   // NOT move the baseline (batch reuses the same selections for the next step).
   const persistTaxonomy = async (eventId: number, isNewRow: boolean) => {
-    if (taxonomyLoadFailed) return; // no baseline — writing would wipe real links
+    if (taxonomyLoadFailed) return; // no baseline - writing would wipe real links
     if (isNewRow) {
       if (!selectedTagIds.length) return;
     } else if (!taxonomyDirty) {
-      return; // unchanged — skip the delete+insert round trip
+      return; // unchanged - skip the delete+insert round trip
     }
     try {
       await setEventTags(eventId, selectedTagIds);
@@ -605,7 +605,7 @@ export default function EventPage({
     });
 
     return () => observer.disconnect();
-    // isTicketMatchingSectionOrCategory is recreated each render — depending
+    // isTicketMatchingSectionOrCategory is recreated each render - depending
     // on it would re-run the observer every render for nothing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [svgContent, hoveredTixTicket, selectedSection, selectedCategory, event?.tx_excluded_sections]);
@@ -870,7 +870,7 @@ export default function EventPage({
   }, [event]);
 
   // Capture the baseline once the event has loaded and any automatic
-  // normalization (tx ticket colors) has settled — so we don't flag dirty
+  // normalization (tx ticket colors) has settled - so we don't flag dirty
   // for changes the user didn't make.
   useEffect(() => {
     if (loading || !event) return;
@@ -906,7 +906,7 @@ export default function EventPage({
   //
   // Editing a flight's price also rewrites the event's base_flight_price (and,
   // on a fresh link, its default dates) server-side. Those columns must be
-  // folded into BOTH the local event and the dirty baseline — otherwise the
+  // folded into BOTH the local event and the dirty baseline - otherwise the
   // sticky Save bar appears the moment you touch a flight, offering to save a
   // change the user never made.
   const reloadLinkedFlights = useCallback(() => {
@@ -961,7 +961,7 @@ export default function EventPage({
       return true;
     });
 
-    // Group by category only — one row per category, cheapest price (qty>=2), count sections & qty
+    // Group by category only - one row per category, cheapest price (qty>=2), count sections & qty
     const categoryMap = new Map<string, { ticket: TixStockListing; sectionCount: number; totalQty: number }>();
     for (const ticket of filtered) {
       const key = (ticket.seat_details?.category || "").toLowerCase().trim();
@@ -996,7 +996,7 @@ export default function EventPage({
     }
 
     return allEntries;
-    // isTicketMatchingCategory is recreated each render — same reason as above.
+    // isTicketMatchingCategory is recreated each render - same reason as above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tixStockTickets, selectedSection, selectedCategory, mapCategoryIds]);
 
@@ -1045,7 +1045,7 @@ export default function EventPage({
       } else if (currency === "ILS") {
         priceInUSD = await exchangeRateClientService.convertToUSD(rawPrice + 150, "ILS");
       } else {
-        // Already USD or unknown — apply flat markup
+        // Already USD or unknown - apply flat markup
         priceInUSD = rawPrice + 40;
       }
     } catch (err) {
@@ -1183,7 +1183,7 @@ export default function EventPage({
       }
     }
 
-    // Batch wizard: no confirm dialog — the per-event review IS the confirmation.
+    // Batch wizard: no confirm dialog - the per-event review IS the confirmation.
     if (isBatchCreate) {
       await handleBatchStepSave();
       return;
@@ -1257,7 +1257,7 @@ export default function EventPage({
     }
     setEvent({
       id: 0,
-      // `...current` carries the shared config forward INCLUDING location + map_image_url —
+      // `...current` carries the shared config forward INCLUDING location + map_image_url -
       // a team's home games share the venue, so the location you set/selected persists and
       // you don't re-pick it each step. Only the per-event identity below is swapped.
       // (If a venue genuinely differs, edit the Location fields on that step.)
@@ -1285,7 +1285,7 @@ export default function EventPage({
       const { id: _savedId, ...current } = event; // tickets already carry this event's eid + live price
       const createdBatchEvent = await createEvent(current);
       // Selected categories/tags apply to EVERY batch step (like the shared
-      // location) — persist them for each created event.
+      // location) - persist them for each created event.
       await persistTaxonomy(createdBatchEvent.id, true);
       const next = batchIndex + 1;
       if (next >= batchEvents.length) {
@@ -1341,7 +1341,7 @@ export default function EventPage({
         ]);
 
         // Persist category/tag links now that the new event id exists
-        // (isolated — a link failure never masks the successful create).
+        // (isolated - a link failure never masks the successful create).
         await persistTaxonomy(createdEvent.id, true);
 
         const extras = [];
@@ -1375,9 +1375,9 @@ export default function EventPage({
         const { locked_flight_id, ...eventWithoutLock } = event;
         await updateEvent(event.id, eventWithoutLock);
         // Links: only when actually changed, never on a failed baseline load
-        // (isolated — a link failure never reports the event save as failed).
+        // (isolated - a link failure never reports the event save as failed).
         await persistTaxonomy(event.id, false);
-        // Stay on the page (no redirect) — re-baseline so the sticky save
+        // Stay on the page (no redirect) - re-baseline so the sticky save
         // bar clears. Taxonomy baselines are moved inside persistTaxonomy.
         initialEventRef.current = JSON.stringify(event);
         toast({
@@ -1468,7 +1468,7 @@ export default function EventPage({
     checkIn: f.outbound_departure_time.slice(0, 10),
     checkOut: f.inbound_arrival_time.slice(0, 10),
   }));
-  // All non-deleted, non-linked hotels — date-matching ones sorted first
+  // All non-deleted, non-linked hotels - date-matching ones sorted first
   const availableHotels = allHotels
     .filter((h) =>
       !h.is_deleted &&
@@ -1529,11 +1529,11 @@ export default function EventPage({
         {isBatchCreate && (
           <div className="rounded-md border border-blue-300 bg-blue-50 p-4 dark:bg-blue-950/30">
             <p className="font-semibold text-blue-900 dark:text-blue-200">
-              Batch mode — reviewing event {batchIndex + 1} of {batchEvents.length}
+              Batch mode - reviewing event {batchIndex + 1} of {batchEvents.length}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
               Review this event, then <strong>Save &amp; Next</strong> creates it and loads the next.
-              Everything you set carries over (incl. <strong>location/venue</strong> — home games
+              Everything you set carries over (incl. <strong>location/venue</strong> - home games
               share it); only the <strong>name &amp; date</strong> swap per event, and ticket
               {" "}<strong>categories</strong> are re-priced live from each event&apos;s own listings.
               {" "}Add categories from the Source Tickets list. If a venue differs, just edit the
@@ -1551,7 +1551,7 @@ export default function EventPage({
                         : ""
                   }
                 >
-                  {ev.event_name} — {new Date(ev.show_date).toLocaleDateString()}
+                  {ev.event_name} - {new Date(ev.show_date).toLocaleDateString()}
                   {i < batchIndex ? " (done)" : i === batchIndex ? " (now)" : ""}
                 </li>
               ))}
@@ -1894,7 +1894,7 @@ export default function EventPage({
                   />
                   <p className="text-xs text-muted-foreground">
                     When the customer skips BOTH flight and hotel, the price is
-                    exactly ticket cost + this amount — no site markup, no
+                    exactly ticket cost + this amount - no site markup, no
                     additions, nothing else. Only affects the ticket-only case;
                     every other combination is unchanged. Can be 0.
                   </p>
@@ -1977,7 +1977,7 @@ export default function EventPage({
 
             {taxonomyLoadFailed ? (
               <p className="text-sm text-destructive">
-                Tags failed to load — reload the page to edit them.
+                Tags failed to load - reload the page to edit them.
               </p>
             ) : (
               <>
@@ -2241,7 +2241,7 @@ export default function EventPage({
                     {excludeSectionsMode && (
                       <span className="text-xs text-muted-foreground">
                         Click sections on the map to exclude/include them. Note: some venues repeat
-                        the same section letter on several sides of the map — TixStock tickets only
+                        the same section letter on several sides of the map - TixStock tickets only
                         carry ring+letter, so excluding one wedge excludes ALL wedges with that
                         letter (the mirrored highlight is the real ticket filter).
                       </span>
@@ -2959,7 +2959,7 @@ export default function EventPage({
                               const newHotelPrice = Math.round(
                                 Number(hotel.price) / getOfflineRoomCapacity(hotel.room_type)
                               );
-                              // Flight wins over hotel for def dates — only set hotel dates if no flight linked yet
+                              // Flight wins over hotel for def dates - only set hotel dates if no flight linked yet
                               const hasFlight = linkedFlights.length > 0;
                               const eventUpdate: Partial<Event> = {};
                               let priceUpdated = true;
@@ -2970,7 +2970,7 @@ export default function EventPage({
                                 eventUpdate.base_hotel_price = newHotelPrice;
                               } else {
                                 // Dates owned by the flight. Only push the price if the hotel stay
-                                // matches the event's default dates — otherwise the hotel won't show
+                                // matches the event's default dates - otherwise the hotel won't show
                                 // in the customer flow and the price would be a lie.
                                 const datesMatch =
                                   (event.def_date_depart ?? "").slice(0, 10) === hotel.check_in &&
@@ -2995,7 +2995,7 @@ export default function EventPage({
                                     }
                                   : {
                                       variant: "destructive",
-                                      title: "Hotel linked — price NOT updated",
+                                      title: "Hotel linked - price NOT updated",
                                       description: `Hotel stay ${hotel.check_in} → ${hotel.check_out} doesn't match event dates ${(event.def_date_depart ?? "").slice(0, 10)} → ${(event.def_date_return ?? "").slice(0, 10)}. base_hotel_price left unchanged so the hotel still shows in the customer flow.`,
                                     }
                               );

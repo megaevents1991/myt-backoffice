@@ -40,7 +40,7 @@ export function TagsManager({
   const [editing, setEditing] = useState<EventTag | null>(null);
   const [editForm, setEditForm] = useState({ name: "", name_english: "", is_active: true });
   const [savingEdit, setSavingEdit] = useState(false);
-  // Synchronous re-entry guards — the state flags update async, so a
+  // Synchronous re-entry guards - the state flags update async, so a
   // double-tap / Enter+click fires the handler twice before the re-render.
   const addingRef = useRef(false);
   const savingEditRef = useRef(false);
@@ -64,7 +64,7 @@ export function TagsManager({
       !(await confirm({
         title: `Delete ${selected.size} tag(s)?`,
         description: links
-          ? `They are assigned to ${links} event link(s) — those links will be removed.`
+          ? `They are assigned to ${links} event link(s) - those links will be removed.`
           : undefined,
         confirmLabel: "Delete",
         destructive: true,
@@ -90,7 +90,7 @@ export function TagsManager({
 
   const add = async () => {
     if (!name.trim() || addingRef.current) return;
-    // Feed labels are slug-keyed — force a real latin English name up front.
+    // Feed labels are slug-keyed - force a real latin English name up front.
     if (!/[a-z]/i.test(nameEnglish)) {
       toast({
         variant: "destructive",
@@ -159,7 +159,7 @@ export function TagsManager({
       !(await confirm({
         title: `Delete "${t.name}"?`,
         description: n
-          ? `It is assigned to ${n} event(s) — those links will be removed.`
+          ? `It is assigned to ${n} event(s) - those links will be removed.`
           : undefined,
         confirmLabel: "Delete",
         destructive: true,
@@ -259,7 +259,7 @@ export function TagsManager({
               />
             </div>
             <div>
-              <Label>Name (English — used for the URL slug)</Label>
+              <Label>Name (English - used for the URL slug)</Label>
               <Input
                 value={editForm.name_english}
                 onChange={(e) => setEditForm((f) => ({ ...f, name_english: e.target.value }))}

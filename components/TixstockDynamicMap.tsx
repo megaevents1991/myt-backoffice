@@ -36,7 +36,7 @@ type Props = {
   hoveredTicket: TixStockMatchableListing | null;
   /** The currently-selected ticket (from the ticket list) */
   selectedTicketId: string | null;
-  /** Callback when the user clicks a section — receives the best matching ticket ID */
+  /** Callback when the user clicks a section - receives the best matching ticket ID */
   onTicketSelect?: (ticketId: string) => void;
   /** Called with the set of ticket IDs that have a map match */
   onMatchedTicketIds?: (ids: Set<string>) => void;
@@ -66,7 +66,7 @@ export function TixstockDynamicMap({
   const [hoveredMapTicket, setHoveredMapTicket] =
     useState<TixStockMatchableListing | null>(null);
   // Hover preview only on true hover devices (desktop mouse). On touch, a tap
-  // fires mouseover before click and the hover paint sticks on the section —
+  // fires mouseover before click and the hover paint sticks on the section -
   // so hover highlighting is disabled entirely on mobile.
   const [canHover, setCanHover] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -112,7 +112,7 @@ export function TixstockDynamicMap({
     [ticketMatchesSection],
   );
 
-  // A section is worth highlighting only if SOMETHING there is purchasable —
+  // A section is worth highlighting only if SOMETHING there is purchasable -
   // the same rule the base paint uses for "available". The wizard keeps a
   // whole category permanently selected (main selects individual listings),
   // so the category-wide glow used to repaint every no-listing section dark.
@@ -203,7 +203,7 @@ export function TixstockDynamicMap({
 
   // Pre-paint the SVG string with ticket availability so the map is
   // correctly styled from the moment it enters the DOM.  This runs as
-  // a pure computation (useMemo) — no dependency on effects or refs.
+  // a pure computation (useMemo) - no dependency on effects or refs.
   const paintedSvg = useMemo(
     () =>
       svgContent
@@ -267,7 +267,7 @@ export function TixstockDynamicMap({
         ? hoveredTicket ?? hoveredMapTicket
         : null;
 
-      // Hover highlight — light glow preview on the hovered category.
+      // Hover highlight - light glow preview on the hovered category.
       if (activeHoverTicket) {
         sectionEls.forEach((el) => {
           const sec = el.getAttribute("data-section") || "";
@@ -321,7 +321,7 @@ export function TixstockDynamicMap({
 
   // Self-heal: React re-applies `dangerouslySetInnerHTML` whenever `paintedSvg`
   // recomputes (live listings landing, quantity changes…), replacing the SVG
-  // children and WIPING every runtime style repaint applied — including the
+  // children and WIPING every runtime style repaint applied - including the
   // dark-green selected section. When that replacement lands after the last
   // repaint (verified with a MutationObserver trace), the initial selection
   // stayed unpainted until the next interaction. Watch for child replacements
@@ -467,7 +467,7 @@ export function TixstockDynamicMap({
 
   return (
     <div className="w-full" dir="ltr">
-      {/* Map always sits on a white panel — the venue SVG (stage, outlines) is
+      {/* Map always sits on a white panel - the venue SVG (stage, outlines) is
           authored for a light background, so keep it white in dark mode too. */}
       <div
         ref={setContainerRef}

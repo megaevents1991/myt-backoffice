@@ -13,7 +13,7 @@ const navItems: NavItem[] = [
   { name: "הצבירה שלי", href: "/portal/credit" },
   { name: "הקופונים שלי", href: "/portal/coupons" },
   { name: "ההזמנות שלי", href: "/portal/reservations" },
-  // Agents only — an influencer promotes a link and never prices a package
+  // Agents only - an influencer promotes a link and never prices a package
   // for a named customer. The server action enforces it too.
   { name: "הצעות מחיר", href: "/portal/quotes", agentOnly: true },
   { name: "עדכונים", href: "/portal/activity" },
@@ -25,14 +25,14 @@ export function PortalNav({ role }: { role?: string | null }) {
   const router = useRouter();
   // Role comes from the LAYOUT's server session, not the client auth context:
   // the portal session lives in a /portal-scoped cookie the context's
-  // /api/auth/session endpoint never receives (multi-session — a staff
+  // /api/auth/session endpoint never receives (multi-session - a staff
   // session may be signed in beside it), so the context would report the
   // wrong identity here.
   const isAgent = role === "agent";
 
   const handleLogout = async () => {
     try {
-      // scope: "portal" ends ONLY the portal session — a staff `session`
+      // scope: "portal" ends ONLY the portal session - a staff `session`
       // signed in beside it in the same browser survives.
       await fetch("/api/auth/logout", {
         method: "POST",
@@ -40,7 +40,7 @@ export function PortalNav({ role }: { role?: string | null }) {
         body: JSON.stringify({ scope: "portal" }),
       });
     } catch {
-      // Network hiccup — still leave the page; the cookie dies on its own.
+      // Network hiccup - still leave the page; the cookie dies on its own.
     }
     router.push("/auth/login");
     router.refresh();

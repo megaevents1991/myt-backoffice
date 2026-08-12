@@ -22,7 +22,12 @@ export async function createBucket(name: string, isPublic = false) {
   });
 
   if (error) throw error;
-  await logAudit({ action: "create", entityType: "storage", entityId: name, metadata: { public: isPublic } });
+  await logAudit({
+    action: "create",
+    entityType: "storage",
+    entityId: name,
+    metadata: { public: isPublic },
+  });
   revalidatePath("/storage");
   return data;
 }
@@ -56,7 +61,11 @@ export async function deleteFile(bucket: string, path: string) {
   const { error } = await supabase.storage.from(bucket).remove([path]);
 
   if (error) throw error;
-  await logAudit({ action: "delete", entityType: "storage", entityId: `${bucket}/${path}` });
+  await logAudit({
+    action: "delete",
+    entityType: "storage",
+    entityId: `${bucket}/${path}`,
+  });
   revalidatePath("/storage");
   return true;
 }
@@ -97,7 +106,11 @@ export async function createFolder(bucket: string, path: string) {
     });
 
   if (error) throw error;
-  await logAudit({ action: "create", entityType: "storage", entityId: `${bucket}/${folderPath}` });
+  await logAudit({
+    action: "create",
+    entityType: "storage",
+    entityId: `${bucket}/${folderPath}`,
+  });
   revalidatePath("/storage");
   return true;
 }
@@ -132,7 +145,11 @@ export async function uploadFile(formData: FormData) {
     .upload(filePath, buffer, { contentType: file.type, upsert: false });
 
   if (error) throw error;
-  await logAudit({ action: "create", entityType: "storage", entityId: `${bucket}/${filePath}` });
+  await logAudit({
+    action: "create",
+    entityType: "storage",
+    entityId: `${bucket}/${filePath}`,
+  });
   revalidatePath("/storage");
   return { success: true, path: filePath };
 }
@@ -160,7 +177,12 @@ export async function uploadImageFromUrl(
 
     if (error) throw error;
 
-    await logAudit({ action: "create", entityType: "storage", entityId: `${bucket}/${fileName}`, metadata: { source: "url" } });
+    await logAudit({
+      action: "create",
+      entityType: "storage",
+      entityId: `${bucket}/${fileName}`,
+      metadata: { source: "url" },
+    });
 
     const { data: publicUrlData } = supabase.storage
       .from(bucket)
@@ -186,7 +208,7 @@ const IMAGE_EXT_RE = /\.(jpg|jpeg|png|gif|webp|svg)$/i;
 // List image files in one PUBLIC bucket, recursing into virtual folders (cap depth ~2).
 // Only public buckets are browsed on purpose: the picked URL is persisted verbatim
 // (gallery / card_image_url / map_image_url / art_image_url, all read by the main app
-// as plain URLs), so it must be a permanent public URL — never an expiring signed URL.
+// as plain URLs), so it must be a permanent public URL - never an expiring signed URL.
 // A failed listing logs and returns [] so one bad bucket never fails the sweep.
 async function listImagesInBucket(
   bucket: string,
@@ -231,7 +253,7 @@ async function listImagesInBucket(
 }
 
 // Enumerate image files across every PUBLIC bucket, in parallel, merged flat.
-// Private buckets are skipped — their signed URLs expire and would rot once persisted.
+// Private buckets are skipped - their signed URLs expire and would rot once persisted.
 export async function listAllBucketImages(): Promise<StorageImage[]> {
   await requireStaff();
   const { data: buckets, error } = await supabase.storage.listBuckets();
@@ -240,7 +262,9 @@ export async function listAllBucketImages(): Promise<StorageImage[]> {
     return [];
   }
   const perBucket = await Promise.all(
-    (buckets ?? []).filter((b) => b.public).map((b) => listImagesInBucket(b.name)),
+    (buckets ?? [])
+      .filter((b) => b.public)
+      .map((b) => listImagesInBucket(b.name)),
   );
   return perBucket.flat();
 }

@@ -48,7 +48,7 @@ export default async function NewPortalQuotePage({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">הצעת מחיר חדשה</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            הצעה נבנית מתוך חבילה — כך המחיר, הלינק לתשלום והמעקב מגיעים מוכנים.
+            הצעה נבנית מתוך חבילה - כך המחיר, הלינק לתשלום והמעקב מגיעים מוכנים.
           </p>
         </div>
 
@@ -59,7 +59,7 @@ export default async function NewPortalQuotePage({
               בחרו חבילה קיימת
             </CardTitle>
             <CardDescription>
-              החבילות שבניתם — ההצעה תישא את ההרכבה והמחיר שלהן.
+              החבילות שבניתם - ההצעה תישא את ההרכבה והמחיר שלהן.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -131,7 +131,7 @@ export default async function NewPortalQuotePage({
     getMyAgentTerms(),
   ]);
 
-  // "שלח הצעה ללקוח" on a prepared package lands here with ?package= — seed
+  // "שלח הצעה ללקוח" on a prepared package lands here with ?package= - seed
   // the quote from that package: its composition PRICE (not the generic event
   // price), its coded order link for the PDF, and its story in the notes.
   let prefill: QuotePrefill | null = null;

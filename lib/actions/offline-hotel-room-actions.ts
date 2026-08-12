@@ -4,7 +4,10 @@ import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
 import { revalidatePath } from "next/cache";
-import type { OfflineHotelRoom, NewOfflineHotelRoom } from "@/types/offline-hotel.types";
+import type {
+  OfflineHotelRoom,
+  NewOfflineHotelRoom,
+} from "@/types/offline-hotel.types";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 
 // Neither offline_hotels nor offline_hotel_rooms is in Supabase generated types.
@@ -12,7 +15,9 @@ const roomsTable = () => (supabase as any).from("offline_hotel_rooms");
 const hotelsTable = () => (supabase as any).from("offline_hotels");
 
 // Child rooms linked to a specific reservation (manual link in phase 1).
-export async function getRoomsByReservationId(reservationId: number): Promise<OfflineHotelRoom[]> {
+export async function getRoomsByReservationId(
+  reservationId: number,
+): Promise<OfflineHotelRoom[]> {
   await requireStaff();
   const { data, error } = await roomsTable()
     .select("*")
@@ -22,7 +27,9 @@ export async function getRoomsByReservationId(reservationId: number): Promise<Of
   return (data ?? []) as OfflineHotelRoom[];
 }
 
-export async function getOfflineHotelRooms(hotelId: number): Promise<OfflineHotelRoom[]> {
+export async function getOfflineHotelRooms(
+  hotelId: number,
+): Promise<OfflineHotelRoom[]> {
   await requireStaff();
   const { data, error } = await roomsTable()
     .select("*")
@@ -33,11 +40,11 @@ export async function getOfflineHotelRooms(hotelId: number): Promise<OfflineHote
 }
 
 // Replace ALL rooms for a hotel with the supplied set, preserving booked rooms.
-// Booked rooms (is_booked=true) are NOT deleted — they may be tied to a paid
+// Booked rooms (is_booked=true) are NOT deleted - they may be tied to a paid
 // reservation. Only unbooked rooms are swapped out for the new list.
 export async function replaceOfflineHotelRooms(
   hotelId: number,
-  rooms: NewOfflineHotelRoom[]
+  rooms: NewOfflineHotelRoom[],
 ): Promise<void> {
   await requireStaff();
   // Delete only the unbooked rooms; keep booked ones intact.
@@ -74,12 +81,29 @@ export async function replaceOfflineHotelRooms(
 // Patch one room (used by inline edit of order_no / acc_no / supplier / is_booked).
 export async function updateOfflineHotelRoom(
   roomId: number,
-  patch: Partial<Pick<OfflineHotelRoom,
-    "room_type" | "price" | "meal_plan" | "last_cancellation_date" |
-    "supplier" | "is_booked" | "order_no" | "acc_no" | "reservation_id" | "notes">>
+  patch: Partial<
+    Pick<
+      OfflineHotelRoom,
+      | "room_type"
+      | "price"
+      | "meal_plan"
+      | "last_cancellation_date"
+      | "supplier"
+      | "is_booked"
+      | "order_no"
+      | "acc_no"
+      | "reservation_id"
+      | "notes"
+    >
+  >,
 ): Promise<OfflineHotelRoom> {
   await requireStaff();
-  const auditBefore = await fetchBefore("offline_hotel_rooms", "id", roomId, patch);
+  const auditBefore = await fetchBefore(
+    "offline_hotel_rooms",
+    "id",
+    roomId,
+    patch,
+  );
   const { data, error } = await roomsTable()
     .update(patch)
     .eq("id", roomId)
@@ -101,11 +125,18 @@ export async function updateOfflineHotelRoom(
 
 export async function deleteOfflineHotelRoom(roomId: number): Promise<void> {
   await requireStaff();
-  const { data: room } = await roomsTable().select("hotel_id, is_booked").eq("id", roomId).single();
+  const { data: room } = await roomsTable()
+    .select("hotel_id, is_booked")
+    .eq("id", roomId)
+    .single();
   if (room?.is_booked) throw new Error("Cannot delete a booked room.");
   const { error } = await roomsTable().delete().eq("id", roomId);
   if (error) throw error;
-  await logAudit({ action: "delete", entityType: "offline_hotel_room", entityId: roomId });
+  await logAudit({
+    action: "delete",
+    entityType: "offline_hotel_room",
+    entityId: roomId,
+  });
   if (room?.hotel_id) {
     await recomputeHotelMirror(room.hotel_id);
     revalidatePath(`/offline-hotels/${room.hotel_id}`);
@@ -121,18 +152,23 @@ export async function recomputeHotelMirror(hotelId: number): Promise<void> {
     .eq("hotel_id", hotelId);
   if (error) throw error;
 
-  const list = (rooms ?? []) as Pick<OfflineHotelRoom, "price" | "room_type" | "is_booked">[];
+  const list = (rooms ?? []) as Pick<
+    OfflineHotelRoom,
+    "price" | "room_type" | "is_booked"
+  >[];
   const numRooms = list.length;
   const consumed = list.filter((r) => r.is_booked).length;
 
-  await hotelsTable().update({ num_rooms: numRooms, consumed_rooms: consumed }).eq("id", hotelId);
+  await hotelsTable()
+    .update({ num_rooms: numRooms, consumed_rooms: consumed })
+    .eq("id", hotelId);
 
   // Cheapest available room → per-person price → base_hotel_price on linked events.
   const available = list.filter((r) => !r.is_booked);
   if (available.length === 0) return; // keep existing event price; don't zero it
 
-  const perPersonPrices = available.map((r) =>
-    Number(r.price) / getOfflineRoomCapacity(r.room_type)
+  const perPersonPrices = available.map(
+    (r) => Number(r.price) / getOfflineRoomCapacity(r.room_type),
   );
   const baseHotelPrice = Math.round(Math.min(...perPersonPrices));
 
@@ -162,7 +198,7 @@ export async function recomputeHotelMirror(hotelId: number): Promise<void> {
         .update({ base_hotel_price: baseHotelPrice })
         .eq("id", eventId);
       if (evErr) throw evErr;
-    })
+    }),
   );
 
   revalidatePath("/offline-hotels");

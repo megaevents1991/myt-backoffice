@@ -445,7 +445,7 @@ export default function EditOfflineFlightPage({
     // console.log for values can be removed or kept
     startTransition(async () => {
       try {
-        // `*_has_stop` drives the form only — the row carries the airports, and
+        // `*_has_stop` drives the form only - the row carries the airports, and
         // `stops` is derived from them (here and by the DB trigger).
         const {
           outbound_has_stop: _outboundHasStop,

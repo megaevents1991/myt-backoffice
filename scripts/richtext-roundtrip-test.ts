@@ -27,9 +27,10 @@ const normalize = (n: any): any => {
     return out;
   }
   if (n.content) out.content = normalize(n.content);
-  // empty paragraphs are Contentful-migration spacer leftovers — render as
+  // empty paragraphs are Contentful-migration spacer leftovers - render as
   // nothing; the converter intentionally drops them, so comparison does too.
-  if (n.nodeType === "paragraph" && (out.content?.length ?? 0) === 0) return null;
+  if (n.nodeType === "paragraph" && (out.content?.length ?? 0) === 0)
+    return null;
   return out;
 };
 
@@ -56,11 +57,11 @@ const mergeText = (n: any): any => {
 const canon = (doc: any) => JSON.stringify(mergeText(normalize(doc)));
 
 const SAMPLE = `<h1>אריאנה גרנדה הופעות 2026</h1>
-<p>אריאנה גרנדה היא אחת מאמניות הפופ הגדולות בעולם — <strong>מדריך מלא</strong> לישראלים.</p>
+<p>אריאנה גרנדה היא אחת מאמניות הפופ הגדולות בעולם - <strong>מדריך מלא</strong> לישראלים.</p>
 <p>עיינו ב<a href="https://www.mega-events.co.il/artists">כל האמנים</a> באתר.</p>
 <h2>איך לדעת ראשונים</h2>
 <ul>
-  <li><strong>הירשמו לעדכונים</strong> — מהאתר הרשמי.</li>
+  <li><strong>הירשמו לעדכונים</strong> - מהאתר הרשמי.</li>
   <li>עקבו אחרי <em>הרשתות החברתיות</em>.</li>
 </ul>
 <ol>
@@ -75,7 +76,7 @@ async function main() {
   // -- 1. real posts round-trip ---------------------------------------------
   const sb = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_SECRET_SUPABASE_SERVICE_ROLE_KEY!
+    process.env.NEXT_SECRET_SUPABASE_SERVICE_ROLE_KEY!,
   );
   const { data: posts, error } = await sb
     .from("blog_posts")
@@ -118,7 +119,7 @@ async function main() {
 
   // -- 3. hostile input ------------------------------------------------------
   const dirty = htmlToRichDoc(
-    `<p>שלום</p><script>alert(1)</script><style>p{}</style><iframe src="x"></iframe><p onclick="x()">עולם <span>בפנים</span></p>`
+    `<p>שלום</p><script>alert(1)</script><style>p{}</style><iframe src="x"></iframe><p onclick="x()">עולם <span>בפנים</span></p>`,
   );
   const dirtyHtml = richDocToHtml(dirty);
   const clean =

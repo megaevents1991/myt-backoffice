@@ -7,7 +7,7 @@ import type { FormLang } from "@/types/form.types";
 import { FormRenderer } from "../../form-renderer";
 import { FormMessage } from "../../form-message";
 
-// Personal link — never cached, never indexed.
+// Personal link - never cached, never indexed.
 export const dynamic = "force-dynamic";
 
 type PageProps = {

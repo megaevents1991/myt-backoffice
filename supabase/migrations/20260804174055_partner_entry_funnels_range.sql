@@ -1,4 +1,4 @@
--- Per-partner entry-segmented funnels for the staff performance view —
+-- Per-partner entry-segmented funnels for the staff performance view -
 -- the partner-scoped twin of partners_entry_funnels_all (same classification,
 -- same PAID matching), so "how do MY visitors enter and how far do they get"
 -- reads exactly like the cross-partner Insights tab.

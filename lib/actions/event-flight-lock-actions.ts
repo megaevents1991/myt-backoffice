@@ -36,9 +36,9 @@ export async function getLockableFlights(
   if (allocError) throw allocError;
 
   const allocated = new Map<number, number>(
-    ((allocations ?? []) as { flight_id: number; allocated_seats: number }[]).map(
-      (a) => [a.flight_id, a.allocated_seats],
-    ),
+    (
+      (allocations ?? []) as { flight_id: number; allocated_seats: number }[]
+    ).map((a) => [a.flight_id, a.allocated_seats]),
   );
 
   return ((flights ?? []) as OfflineFlight[]).map((f) => ({
@@ -52,7 +52,7 @@ export async function getLockableFlights(
  * Locks an event to one offline flight and pins the package dates to it.
  *
  * Returns a warning (rather than failing) when the event has no seat allocation
- * on that flight: legal — it then draws on the flight's global pool — but rarely
+ * on that flight: legal - it then draws on the flight's global pool - but rarely
  * what you want for a package you are calling "locked".
  */
 export async function lockEventFlight(
@@ -60,12 +60,16 @@ export async function lockEventFlight(
   flightId: number,
 ): Promise<{ warning: string | null }> {
   await requireStaff();
-  if (!Number.isInteger(eventId) || eventId <= 0) throw new Error("Invalid event id");
-  if (!Number.isInteger(flightId) || flightId <= 0) throw new Error("Invalid flight id");
+  if (!Number.isInteger(eventId) || eventId <= 0)
+    throw new Error("Invalid event id");
+  if (!Number.isInteger(flightId) || flightId <= 0)
+    throw new Error("Invalid flight id");
 
   const { data: flight, error: flightError } = await db()
     .from("flights")
-    .select("id, event_ids, is_deleted, outbound_departure_time, inbound_departure_time")
+    .select(
+      "id, event_ids, is_deleted, outbound_departure_time, inbound_departure_time",
+    )
     .eq("id", flightId)
     .single();
   if (flightError) throw flightError;
@@ -74,7 +78,7 @@ export async function lockEventFlight(
     throw new Error("Link the flight to this event before locking it");
   }
 
-  // Return date = takeoff of the return leg, NOT the landing-back time —
+  // Return date = takeoff of the return leg, NOT the landing-back time -
   // same rule as updateOfflineFlight.
   const { error: updateError } = await db()
     .from("events")
@@ -106,7 +110,7 @@ export async function lockEventFlight(
   return {
     warning: allocation
       ? null
-      : "This event has no seat allocation on the locked flight — it draws on the flight's global pool.",
+      : "This event has no seat allocation on the locked flight - it draws on the flight's global pool.",
   };
 }
 

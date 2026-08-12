@@ -6,7 +6,7 @@
  * Stepper on top, main's step screens (ticket-step / flight-step / hotel-step /
  * review-step), and the sticky ContinueBar with slot pills + running
  * per-person total. State lives here and never unmounts across steps, so
- * edit-from-summary (returnToSummary) keeps every selection — main's model.
+ * edit-from-summary (returnToSummary) keeps every selection - main's model.
  */
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -66,7 +66,7 @@ export function PackageWizard({
   commissionTerms,
 }: {
   events: BuilderEvent[];
-  /** Deep entry from the unified packages page — lands straight on tickets. */
+  /** Deep entry from the unified packages page - lands straight on tickets. */
   initialEventId?: number;
   commissionTerms?: BuilderCommissionTerms | null;
 }) {
@@ -101,7 +101,7 @@ export function PackageWizard({
   const [hsError, setHsError] = useState<string | null>(null);
   const [hsResults, setHsResults] = useState<LiveHotelOption[] | null>(null);
 
-  // tx_event live pricing + dynamic map — mirrors main's ticket step.
+  // tx_event live pricing + dynamic map - mirrors main's ticket step.
   const [liveTix, setLiveTix] = useState<LiveTicketCategory[] | null>(null);
   const [tixListings, setTixListings] = useState<TixStockMatchableListing[]>([]);
   const [tixLoading, setTixLoading] = useState(false);
@@ -156,7 +156,7 @@ export function PackageWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?.id, event?.type, event?.tix_event_id, qty]);
 
-  // Party size drives both searches — a qty change invalidates old results.
+  // Party size drives both searches - a qty change invalidates old results.
   // A dropped live-offer also cancels edit-from-summary (main clears the
   // flight/hotel on a quantity change and walks the flow normally), so the
   // agent re-decides on the affected step instead of silently losing the pick.
@@ -165,7 +165,7 @@ export function PackageWizard({
     setFsResults(null);
     setHsResults(null);
     // An in-flight search for the old qty will drop its response (stale
-    // guard), so its finally never runs — stop the spinners here.
+    // guard), so its finally never runs - stop the spinners here.
     setFsLoading(false);
     setHsLoading(false);
     if (flightChoice.mode === "live-offer") setFlightChoice({ mode: "live" });
@@ -197,7 +197,7 @@ export function PackageWizard({
   // selected event's response may land (stale flights/hotels used to win).
   const activeEventIdRef = useRef<number | null>(null);
   // Same guard for party size: a live search issued for qty=2 must not land
-  // after the agent bumped to 4 mid-flight (Amadeus can take ~30s) — its
+  // after the agent bumped to 4 mid-flight (Amadeus can take ~30s) - its
   // offers are priced and seated for the old party, and the qty-change effect
   // just cleared the lists on purpose.
   const searchQtyRef = useRef<number>(2);
@@ -224,7 +224,7 @@ export function PackageWizard({
         if (activeEventIdRef.current !== e.id) return;
         setFlights(inv.flights);
         setHotels(inv.hotels);
-        // A locked package sells exactly one flight — pin it up front, the way
+        // A locked package sells exactly one flight - pin it up front, the way
         // main's flight step auto-picks it. The seat guard on the flight step
         // still blocks continuing if the party outgrows the seats left.
         if (e.locked_flight_id != null) {
@@ -244,7 +244,7 @@ export function PackageWizard({
   };
 
   // ?event= deep entry: skip the search step when the event is buildable.
-  // Runs once — a later manual "build another" must not snap back here.
+  // Runs once - a later manual "build another" must not snap back here.
   useEffect(() => {
     if (!initialEventId) return;
     const preselected = events.find((e) => e.id === initialEventId);
@@ -325,7 +325,7 @@ export function PackageWizard({
     return null;
   })();
 
-  // The price main really charges, per person — calculateBaseTotal's mirror.
+  // The price main really charges, per person - calculateBaseTotal's mirror.
   // For a full package this equals base + ticket/flight/hotel deltas; skipped
   // components drop their base and charge the skip fee instead (the additive
   // preview used to overstate no-flight/no-hotel packages by the base price).
@@ -429,12 +429,12 @@ export function PackageWizard({
 
   // ------- navigation -------
   // A pinned offline flight must still seat the whole party (qty can grow
-  // after the pick — offline choices deliberately survive a qty change).
+  // after the pick - offline choices deliberately survive a qty change).
   const flightSeatsOk =
     flightChoice.mode !== "offline" || (chosenFlight != null && chosenFlight.remaining >= qty);
 
   // Edit-from-summary may shortcut back only while EVERY step is still
-  // satisfied — main's flowComplete check. A choice a qty change invalidated
+  // satisfied - main's flowComplete check. A choice a qty change invalidated
   // walks the flow normally so its step's guard can catch it.
   const flowStillValid =
     !!event && !!selectedTicket && flightSeatsOk && canContinueFromHotel;
@@ -566,7 +566,7 @@ export function PackageWizard({
   ];
 
   // "Save & return" only while the shortcut is really taken (main's
-  // editReturnActive) — an edit that invalidated a later step walks forward.
+  // editReturnActive) - an edit that invalidated a later step walks forward.
   const primaryLabel = returnToSummary && flowStillValid
     ? "שמור וחזור לסיכום"
     : step === 1
@@ -579,7 +579,7 @@ export function PackageWizard({
   // straight past it: tickets decide the flight and land on hotels, flights
   // decide the hotel and land on the summary; the hotel step has none.
   // Mid-edit (returnToSummary) a shortcut returns to the summary once the
-  // rest of the flow is valid — same rule as goNext.
+  // rest of the flow is valid - same rule as goNext.
   const decideFlightShortcut = (mode: "live" | "none") => {
     setFlightChoice(mode === "live" ? { mode, explicit: true } : { mode });
     if (returnToSummary && !!event && !!selectedTicket && canContinueFromHotel) {
@@ -595,7 +595,7 @@ export function PackageWizard({
   };
 
   const secondaryActions: ContinueSecondaryAction[] | null =
-    // A locked package's flight is fixed — no flight shortcuts to offer.
+    // A locked package's flight is fixed - no flight shortcuts to offer.
     step === 1 && event?.locked_flight_id == null
       ? [
           {
@@ -697,7 +697,7 @@ export function PackageWizard({
         </div>
         <h2 className="mt-4 font-display text-lg font-bold">החבילה מוכנה!</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          שתפו את הלינק — הלקוח ינחת ישר על ההרכב שבחרתם.
+          שתפו את הלינק - הלקוח ינחת ישר על ההרכב שבחרתם.
         </p>
         <div className="mt-5 flex items-center gap-2">
           <input
@@ -743,7 +743,7 @@ export function PackageWizard({
           onStepClick={(i) => setStep(i)}
         />
 
-        {/* Step 0 — event picker */}
+        {/* Step 0 - event picker */}
         {step === 0 && (
           <section className="space-y-3">
             <div className="relative max-w-md">
@@ -813,10 +813,10 @@ export function PackageWizard({
         {step === 3 && <HotelStep />}
         {step === 4 && <ReviewStep editStep={editStep} />}
 
-        {/* Sticky continue bar — steps 1-3, exactly like main */}
+        {/* Sticky continue bar - steps 1-3, exactly like main */}
         {step >= 1 && step <= 3 && (
           <ContinueBar
-            // Edit-from-summary hides the flow pills — a focused "pick → save"
+            // Edit-from-summary hides the flow pills - a focused "pick → save"
             // task, exactly like main's OrderForm.
             slots={returnToSummary ? [] : slots}
             totalPerPerson={totalPerPerson}

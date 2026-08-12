@@ -41,7 +41,7 @@ export function optionLabel(
  * Whichever language was actually filled in, English first.
  *
  * A form may be authored in Hebrew only, so admin-facing surfaces that are not
- * language-aware — the forms list, results table headers, the xlsx export — must
+ * language-aware - the forms list, results table headers, the xlsx export - must
  * never assume the English string exists.
  */
 export function adminLabel(

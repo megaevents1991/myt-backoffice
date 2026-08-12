@@ -7,11 +7,11 @@
  * Old cookies fail the `sub` check → forced re-login (intended).
  *
  * Signing key: `NEXT_SECRET_SESSION_SECRET` if set, else the existing
- * `NEXT_SECRET_ADMIN_PASSWORD` (always present — the login check requires it), so
+ * `NEXT_SECRET_ADMIN_PASSWORD` (always present - the login check requires it), so
  * this works on deploy with no new env var. Rotating either invalidates all
  * outstanding sessions. Uses Web Crypto (works in both the Node runtime for
  * routes/actions and the Edge runtime for middleware). Never import from a
- * client component — it reads server-only secrets.
+ * client component - it reads server-only secrets.
  */
 
 export const SESSION_COOKIE = "session";
@@ -19,14 +19,14 @@ const MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 1 week
 export const SESSION_MAX_AGE = MAX_AGE_SECONDS;
 
 /**
- * A SECOND signed session cookie, scoped by the browser to `path=/portal` —
+ * A SECOND signed session cookie, scoped by the browser to `path=/portal` -
  * only portal requests ever carry it, so it coexists with a staff `session`
  * cookie in the same Chrome: an admin can stay signed in to the dashboard
  * while another window/tab is signed in to the portal as a partner.
  *
  * Two producers, one cookie:
- *  - a real partner login (app/api/auth/login) — week-long, like any session;
- *  - superadmin "login as partner" (lib/actions/impersonate-actions.ts) —
+ *  - a real partner login (app/api/auth/login) - week-long, like any session;
+ *  - superadmin "login as partner" (lib/actions/impersonate-actions.ts) -
  *    2 hours.
  * getSession() prefers it (partner roles only) wherever the browser sends it.
  */
@@ -34,7 +34,7 @@ export const PORTAL_SESSION_COOKIE = "portal_session";
 export const PORTAL_IMPERSONATION_MAX_AGE = 60 * 60 * 2; // 2 hours
 
 /**
- * Routing hint only — carries NO auth value. Because the portal session is
+ * Routing hint only - carries NO auth value. Because the portal session is
  * path-scoped, middleware on non-/portal paths can't tell a signed-in partner
  * from a stranger; this site-wide flag lets it send a partner's stray
  * /dashboard bookmark to /portal instead of the login page. Anyone could set
@@ -45,13 +45,13 @@ export const PORTAL_MEMBER_HINT_COOKIE = "portal_member";
 import type { Role } from "@/types/auth.types";
 
 export type SessionPayload = {
-  sub: string;          // auth.users uuid
+  sub: string; // auth.users uuid
   email: string;
   role: Role;
   partner_code: string | null; // partners.partner_tracking_code for agent/affiliate
   /** Present only on superadmin-impersonated portal sessions. */
   impersonator?: { sub: string; email: string };
-  exp: number;          // ms epoch
+  exp: number; // ms epoch
 };
 
 function signingKey(): string {
@@ -60,7 +60,7 @@ function signingKey(): string {
     process.env.NEXT_SECRET_ADMIN_PASSWORD;
   if (!key) {
     throw new Error(
-      "Missing session signing secret: set NEXT_SECRET_SESSION_SECRET or NEXT_SECRET_ADMIN_PASSWORD"
+      "Missing session signing secret: set NEXT_SECRET_SESSION_SECRET or NEXT_SECRET_ADMIN_PASSWORD",
     );
   }
   return key;
@@ -86,9 +86,13 @@ async function hmac(data: string): Promise<string> {
     new TextEncoder().encode(signingKey()),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign"],
   );
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(data),
+  );
   return toBase64Url(new Uint8Array(sig));
 }
 
@@ -103,7 +107,7 @@ function timingSafeEqual(a: string, b: string): boolean {
 /**
  * Build a fresh signed session cookie value for a successful login.
  *
- * `ttlSeconds` bounds the SIGNED exp claim — the cookie's own maxAge only
+ * `ttlSeconds` bounds the SIGNED exp claim - the cookie's own maxAge only
  * controls the browser, so a short-lived session (impersonation) MUST pass it
  * or a copied cookie value stays replayable for the full week regardless of
  * when the browser drops it.
@@ -114,10 +118,10 @@ export async function createSessionValue(
     email: string;
     role: Role;
     partner_code?: string | null;
-    /** Set on impersonated sessions — who is really acting. Audited. */
+    /** Set on impersonated sessions - who is really acting. Audited. */
     impersonator?: { sub: string; email: string };
   },
-  ttlSeconds: number = MAX_AGE_SECONDS
+  ttlSeconds: number = MAX_AGE_SECONDS,
 ): Promise<string> {
   const payload: SessionPayload = {
     sub: user.sub,
@@ -134,7 +138,7 @@ export async function createSessionValue(
 
 /** The verified payload for a well-formed, correctly-signed, unexpired session; else null. */
 export async function verifySessionValue(
-  value?: string | null
+  value?: string | null,
 ): Promise<SessionPayload | null> {
   if (!value) return null;
   const dot = value.indexOf(".");
@@ -153,11 +157,17 @@ export async function verifySessionValue(
 
   try {
     const payload = JSON.parse(
-      new TextDecoder().decode(fromBase64Url(body))
+      new TextDecoder().decode(fromBase64Url(body)),
     ) as SessionPayload;
     if (typeof payload.sub !== "string" || !payload.sub) return null;
-    if (!["superadmin", "admin", "editor", "agent", "affiliate"].includes(payload.role)) return null;
-    if (typeof payload.exp !== "number" || Date.now() > payload.exp) return null;
+    if (
+      !["superadmin", "admin", "editor", "agent", "affiliate"].includes(
+        payload.role,
+      )
+    )
+      return null;
+    if (typeof payload.exp !== "number" || Date.now() > payload.exp)
+      return null;
     return payload;
   } catch {
     return null;

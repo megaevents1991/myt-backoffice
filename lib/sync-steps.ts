@@ -2,7 +2,7 @@
  * The manual "sync everything" pipeline behind the button on /meta-feed.
  *
  * Same work the Vercel crons do nightly, in the same order (providers →
- * prices → creatives → publish), but triggered by a human. Pure data — shared
+ * prices → creatives → publish), but triggered by a human. Pure data - shared
  * by the client button and the `/api/admin-sync/[step]` route so the two can
  * never drift.
  *
@@ -23,7 +23,7 @@ export const SYNC_STEPS = [
   {
     id: "tixstock-events",
     label: "אירועי TixStock",
-    note: "סנכרון הפיד המלא — הצעד הארוך ביותר",
+    note: "סנכרון הפיד המלא - הצעד הארוך ביותר",
   },
   {
     id: "tixstock-prices",
@@ -49,7 +49,9 @@ export const SYNC_STEPS = [
 
 export type SyncStepId = (typeof SYNC_STEPS)[number]["id"];
 
-export const SYNC_STEP_IDS = SYNC_STEPS.map((s) => s.id) as readonly SyncStepId[];
+export const SYNC_STEP_IDS = SYNC_STEPS.map(
+  (s) => s.id,
+) as readonly SyncStepId[];
 
 export function isSyncStepId(value: string): value is SyncStepId {
   return (SYNC_STEP_IDS as readonly string[]).includes(value);
@@ -60,7 +62,7 @@ export type SyncStepResult = {
   /** One-line Hebrew summary for the UI. */
   summary: string;
   /**
-   * Stale items the step didn't get to (creatives only) — the client re-runs
+   * Stale items the step didn't get to (creatives only) - the client re-runs
    * the step until this hits 0, so a backlog of any size drains.
    */
   remaining?: number;

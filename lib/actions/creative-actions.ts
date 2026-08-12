@@ -1,6 +1,9 @@
 "use server";
 
-import { renderAndUploadCreative, deriveCreativeDefaults } from "@/lib/creative/auto";
+import {
+  renderAndUploadCreative,
+  deriveCreativeDefaults,
+} from "@/lib/creative/auto";
 import { buildCreativeInput, type CreativeParams } from "@/lib/creative/input";
 import { SIZES } from "@/lib/creative/render";
 import { updateEvent } from "./event-actions";
@@ -14,16 +17,18 @@ import { revalidateMain } from "@/lib/revalidate-main";
 export type { CreativeDefaults } from "@/lib/creative/auto";
 
 function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
-
 
 export async function generateCreative(
   params: CreativeParams & { attachEventId?: number | null },
 ): Promise<{ squareUrl: string; bannerUrl: string }> {
   await requireStaff();
   const input = await buildCreativeInput(params);
-  // Hebrew names slugify to "" — fall back to ids/date so files never collide.
+  // Hebrew names slugify to "" - fall back to ids/date so files never collide.
   const dateSlug = params.dateText.replace(/\./g, "-");
   const slug =
     params.kind === "artist"

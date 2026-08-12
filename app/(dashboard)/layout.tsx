@@ -14,7 +14,7 @@ export default function DashboardLayout({
 }) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
-  // Error state is write-only on purpose — the handler toasts; nothing renders it.
+  // Error state is write-only on purpose - the handler toasts; nothing renders it.
   const [, setError] = useState<Error | null>(null);
   const { toast } = useToast();
   const ignoredResourceErrors = useRef<Set<string>>(new Set());

@@ -83,7 +83,7 @@ const navGroups: NavGroup[] = [
     label: "Content",
     items: [
       { name: "Templates (תבניות)", href: "/templates", icon: LayoutTemplate },
-      // Categories live under Templates now — one screen builds the page,
+      // Categories live under Templates now - one screen builds the page,
       // picks the tags that fill it and places it in the tree.
       { name: "Categories (קטגוריות)", href: "/templates/categories", icon: FolderTree },
       { name: "Tags (תגיות)", href: "/event-tags", icon: Tag },
@@ -119,7 +119,7 @@ export function Sidebar() {
 
   // Only the MOST SPECIFIC matching item lights up. A plain prefix test marks
   // every ancestor active too, so on /templates/categories both "Templates"
-  // and "Categories" looked selected — which reads as a stuck button.
+  // and "Categories" looked selected - which reads as a stuck button.
   const activeHref = visibleGroups
     .flatMap((group) => group.items.map((item) => item.href))
     .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
@@ -196,7 +196,7 @@ export function Sidebar() {
               </div>
             )}
             {/* Dual-role: a staff user linked to a partner code opens /portal
-                as that partner in a new tab — the dashboard session stays. */}
+                as that partner in a new tab - the dashboard session stays. */}
             <Button
               variant="ghost"
               className="w-full justify-start text-muted-foreground hover:bg-muted hover:text-foreground"

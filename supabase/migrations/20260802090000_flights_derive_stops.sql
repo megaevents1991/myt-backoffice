@@ -3,7 +3,7 @@
 -- Nothing kept the two in step, so a flight could carry a stopover airport and
 -- still sell itself as direct, or claim a stop it had no airport for. A
 -- direction holds at most one stopover airport, so the count is fully derivable
--- — derive it instead of asking four different write paths to remember.
+-- - derive it instead of asking four different write paths to remember.
 --
 -- A trigger rather than a generated column: `stops` is NOT NULL and is written
 -- by every existing insert path (both flight forms, the series builder, bulk

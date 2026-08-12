@@ -17,7 +17,7 @@ on:
     paths:
       - "supabase/migrations/**"
 
-# One migration run at a time — this writes to the database the live app uses.
+# One migration run at a time - this writes to the database the live app uses.
 # A merge landing while a dispatch is mid-push would interleave two `db push`
 # runs against the same migration history.
 concurrency:
@@ -42,7 +42,7 @@ jobs:
         if: github.ref != 'refs/heads/master' && inputs.allow_non_master != true
         run: |
           echo "::error::Apply DB Migrations must run on master. You selected '${{ github.ref_name }}'."
-          echo "Merge the migration to master — this workflow then runs on its own."
+          echo "Merge the migration to master - this workflow then runs on its own."
           echo "If you genuinely must apply from a branch, re-run with allow_non_master checked,"
           echo "and be ready to copy the migration files onto master straight afterwards."
           exit 1
@@ -52,7 +52,7 @@ jobs:
       # Supabase identifies a migration by its 14-digit version prefix ALONE, not
       # by filename. Two branches that stamp the same second produce files that
       # look distinct but collide: applying one marks the other's version as done,
-      # so it is skipped forever — no error, green run, missing column. That has
+      # so it is skipped forever - no error, green run, missing column. That has
       # already happened here, so it is checked before anything is applied.
       #
       # No `inputs` in this step on purpose: it must hold for the push trigger
@@ -79,7 +79,7 @@ jobs:
       - uses: supabase/setup-cli@v1
         env:
           # "version: latest" resolves the release via the GitHub API; without a
-          # token that call is anonymous and rate-limited per runner IP — it
+          # token that call is anonymous and rate-limited per runner IP - it
           # failed twice on 2026-08-03 with "rate limit exceeded".
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -89,7 +89,7 @@ jobs:
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
       # Local vs remote side by side, so the log records which versions were
-      # pending before the push — worth having when reading a failed run later.
+      # pending before the push - worth having when reading a failed run later.
       - name: List migrations
         run: supabase migration list --linked
 

@@ -26,11 +26,16 @@ export async function getFootballTeam(id: number): Promise<Person> {
   await requireStaff();
   return getRow<Person>(TABLE, id);
 }
-export async function createFootballTeam(data: CreatePersonData): Promise<Person> {
+export async function createFootballTeam(
+  data: CreatePersonData,
+): Promise<Person> {
   await requireStaff();
   return createRow<Person>(TABLE, data, REVALIDATE);
 }
-export async function updateFootballTeam(id: number, data: UpdatePersonData): Promise<Person> {
+export async function updateFootballTeam(
+  id: number,
+  data: UpdatePersonData,
+): Promise<Person> {
   await requireStaff();
   return updateRow<Person>(TABLE, id, data, REVALIDATE);
 }
@@ -38,8 +43,10 @@ export async function softDeleteFootballTeam(id: number): Promise<Person> {
   await requireStaff();
   return softDeleteRow<Person>(TABLE, id, REVALIDATE);
 }
-/** Homepage "כדורגל" carousel order — index in the array = position. */
-export async function saveFootballTeamsOrder(orderedIds: number[]): Promise<void> {
+/** Homepage "כדורגל" carousel order - index in the array = position. */
+export async function saveFootballTeamsOrder(
+  orderedIds: number[],
+): Promise<void> {
   await requireStaff();
   return saveRowOrder(TABLE, orderedIds, REVALIDATE);
 }

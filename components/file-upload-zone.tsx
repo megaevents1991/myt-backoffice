@@ -54,7 +54,7 @@ export function FileUploadZone({
     }
   };
 
-  // Upload a file directly to Supabase Storage (signed URL — no 4.5 MB
+  // Upload a file directly to Supabase Storage (signed URL - no 4.5 MB
   // Vercel function body limit, so large images no longer fail at the edge).
   const uploadFileToServer = async (file: File): Promise<{ success: boolean; error?: string }> => {
     try {

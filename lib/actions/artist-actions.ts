@@ -30,7 +30,10 @@ export async function createArtist(data: CreatePersonData): Promise<Person> {
   await requireStaff();
   return createRow<Person>(TABLE, data, REVALIDATE);
 }
-export async function updateArtist(id: number, data: UpdatePersonData): Promise<Person> {
+export async function updateArtist(
+  id: number,
+  data: UpdatePersonData,
+): Promise<Person> {
   await requireStaff();
   return updateRow<Person>(TABLE, id, data, REVALIDATE);
 }
@@ -38,7 +41,7 @@ export async function softDeleteArtist(id: number): Promise<Person> {
   await requireStaff();
   return softDeleteRow<Person>(TABLE, id, REVALIDATE);
 }
-/** Homepage "אמנים מובילים" carousel order — index in the array = position. */
+/** Homepage "אמנים מובילים" carousel order - index in the array = position. */
 export async function saveArtistsOrder(orderedIds: number[]): Promise<void> {
   await requireStaff();
   return saveRowOrder(TABLE, orderedIds, REVALIDATE);

@@ -1,7 +1,7 @@
-"use server"
+"use server";
 
-import { requireStaff } from "@/lib/auth/guards"
-import { supabase } from "@/lib/supabase-server"
+import { requireStaff } from "@/lib/auth/guards";
+import { supabase } from "@/lib/supabase-server";
 import {
   commissionForReservation,
   commissionForReservations,
@@ -11,13 +11,13 @@ import {
   round2,
   sumSales,
   type CommissionTerms,
-} from "@/lib/partner-commission"
+} from "@/lib/partner-commission";
 import {
   FUNNEL_STAGES,
   FUNNEL_STAGE_LABELS,
   emptyTraffic,
   type PartnerTraffic,
-} from "@/lib/partner-funnel"
+} from "@/lib/partner-funnel";
 import {
   ENTRY_SCAN_LIMIT,
   ENTRY_SCAN_SELECT,
@@ -27,34 +27,37 @@ import {
   paidCandidatesFrom,
   type EntryFunnels,
   type EntryScanRow,
-} from "@/lib/partner-entry-funnels"
-import { fundedCouponCodesFor, quoteUpliftsFor } from "@/lib/actions/portal-coupon-actions"
-import { fetchPaged } from "@/lib/supabase-paged"
-import type { CommissionType } from "@/types/partner.types"
+} from "@/lib/partner-entry-funnels";
+import {
+  fundedCouponCodesFor,
+  quoteUpliftsFor,
+} from "@/lib/actions/portal-coupon-actions";
+import { fetchPaged } from "@/lib/supabase-paged";
+import type { CommissionType } from "@/types/partner.types";
 import {
   getReservationEventOrderInfoPrimaryName,
   normalizeReservationEventOrderInfo,
-} from "@/lib/utils"
-import type { ReservationEventOrderInfo } from "@/types/reservation.types"
+} from "@/lib/utils";
+import type { ReservationEventOrderInfo } from "@/types/reservation.types";
 
 export interface PartnerPerformanceReservation {
-  id: number
-  created_at: string
-  customer_name: string
-  status: string
-  event_title: string
-  tickets: number
-  sales_usd: number
-  commission_usd: number
+  id: number;
+  created_at: string;
+  customer_name: string;
+  status: string;
+  event_title: string;
+  tickets: number;
+  sales_usd: number;
+  commission_usd: number;
 }
 
 export interface PartnerMonthlyPoint {
   /** `YYYY-MM`, ascending. */
-  month: string
-  reservations: number
-  tickets: number
-  sales_usd: number
-  commission_usd: number
+  month: string;
+  reservations: number;
+  tickets: number;
+  sales_usd: number;
+  commission_usd: number;
 }
 
 /** Time window for the whole performance view. Day-based options use
@@ -66,137 +69,142 @@ export type InsightsRange =
   | "7d"
   | "30d"
   | "90d"
-  | "all"
+  | "all";
 
 export interface TopCount {
-  label: string
-  count: number
+  label: string;
+  count: number;
 }
 
-/** What this partner's PAYING customers actually chose — for marketing. */
+/** What this partner's PAYING customers actually chose - for marketing. */
 export interface PartnerMix {
   /** Airlines on paid bookings (display name), most-booked first. */
-  airlines: TopCount[]
-  offlineFlights: number
-  liveFlights: number
-  flightSkipped: number
+  airlines: TopCount[];
+  offlineFlights: number;
+  liveFlights: number;
+  flightSkipped: number;
   /** Star levels on paid bookings ("5", "4"… / "לא ידוע"). */
-  hotelStars: TopCount[]
-  hotelNames: TopCount[]
-  meals: TopCount[]
-  hotelSkipped: number
+  hotelStars: TopCount[];
+  hotelNames: TopCount[];
+  meals: TopCount[];
+  hotelSkipped: number;
   /** Ticket categories weighted by ticket count. */
-  ticketCategories: TopCount[]
+  ticketCategories: TopCount[];
   /** Average tickets per paid booking. */
-  avgPartySize: number
+  avgPartySize: number;
 }
 
 export interface PartnerClickedEvent {
-  name: string
-  date: string | null
-  location: string | null
-  clicks: number
-  visitors: number
+  name: string;
+  date: string | null;
+  location: string | null;
+  clicks: number;
+  visitors: number;
   /** Someone who clicked this event went on to a PAID booking of it. */
-  booked: boolean
+  booked: boolean;
 }
 
 export interface PartnerPerformance {
-  range: InsightsRange
-  /** `partners.commission` — read as $/ticket or % per `commissionType`. */
-  commissionRate: number
-  commissionType: CommissionType
-  totalReservations: number
-  paidReservations: number
-  paidTickets: number
-  totalSalesUsd: number
-  commissionUsd: number
-  /** Commission owed but not yet in a monthly report — the same `billed_at`
+  range: InsightsRange;
+  /** `partners.commission` - read as $/ticket or % per `commissionType`. */
+  commissionRate: number;
+  commissionType: CommissionType;
+  totalReservations: number;
+  paidReservations: number;
+  paidTickets: number;
+  totalSalesUsd: number;
+  commissionUsd: number;
+  /** Commission owed but not yet in a monthly report - the same `billed_at`
    *  fact the cron bills on, so staff and the partner never see two numbers. */
-  pendingCommissionUsd: number
-  activeCoupons: number
-  couponUses: number
+  pendingCommissionUsd: number;
+  activeCoupons: number;
+  couponUses: number;
   /** Paid bookings ÷ trackedVisitors; null when no visitors. */
-  conversionRate: number | null
-  /** Distinct tracked users across every entry — the SAME universe the three
+  conversionRate: number | null;
+  /** Distinct tracked users across every entry - the SAME universe the three
    *  entry-funnel cards count, so the conversion tile agrees with them. Falls
    *  back to `traffic.totalVisitors` when the entry split has no data. */
-  trackedVisitors: number
+  trackedVisitors: number;
   /** Sales ÷ paid bookings; null when nothing paid. */
-  avgOrderValueUsd: number | null
-  monthly: PartnerMonthlyPoint[]
-  reservations: PartnerPerformanceReservation[]
-  traffic: PartnerTraffic
+  avgOrderValueUsd: number | null;
+  monthly: PartnerMonthlyPoint[];
+  reservations: PartnerPerformanceReservation[];
+  traffic: PartnerTraffic;
   /** The same three entry panels as the cross-partner Insights tab, scoped
    *  to this partner's traffic. */
-  entryFunnels: EntryFunnels
-  clickedEvents: PartnerClickedEvent[]
-  mix: PartnerMix
+  entryFunnels: EntryFunnels;
+  clickedEvents: PartnerClickedEvent[];
+  mix: PartnerMix;
 }
 
 type ReservationRow = {
-  id: number
-  created_at: string
-  main_contact_first_name: string | null
-  main_contact_last_name: string | null
-  status: string | null
-  user_shown_price: number | null
-  event_order_info: ReservationEventOrderInfo | null
-  billed_at: string | null
+  id: number;
+  created_at: string;
+  main_contact_first_name: string | null;
+  main_contact_last_name: string | null;
+  status: string | null;
+  user_shown_price: number | null;
+  event_order_info: ReservationEventOrderInfo | null;
+  billed_at: string | null;
   flight_order_info: {
-    airline?: string
-    metadata?: { name?: string } | string
-    isOffline?: boolean
-  } | null
+    airline?: string;
+    metadata?: { name?: string } | string;
+    isOffline?: boolean;
+  } | null;
   hotel_order_info: {
-    name?: string
-    isOffline?: boolean
-    rate?: { meal?: string; meal_data?: { value?: string } }
-    hotelInformation?: { hotelName?: string; stars?: number } | null
-  } | null
-  coupon_code: string | null
-  coupon_discount_usd: number | null
-}
+    name?: string;
+    isOffline?: boolean;
+    rate?: { meal?: string; meal_data?: { value?: string } };
+    hotelInformation?: { hotelName?: string; stars?: number } | null;
+  } | null;
+  coupon_code: string | null;
+  coupon_discount_usd: number | null;
+};
 
-const JLM_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" })
+const JLM_DATE = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Jerusalem",
+});
 const JLM_HOUR = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Asia/Jerusalem",
   hour: "2-digit",
   hour12: false,
-})
+});
 
 /** UTC instant of Jerusalem midnight `daysAgo` calendar days back (DST-safe:
  *  probes both +02/+03 offsets and keeps the one that lands on 00:00). */
 function jerusalemMidnight(daysAgo: number): string {
-  const dateStr = JLM_DATE.format(new Date(Date.now() - daysAgo * 86_400_000))
+  const dateStr = JLM_DATE.format(new Date(Date.now() - daysAgo * 86_400_000));
   for (const offset of ["+03:00", "+02:00"]) {
-    const candidate = new Date(`${dateStr}T00:00:00${offset}`)
-    if (JLM_DATE.format(candidate) === dateStr && JLM_HOUR.format(candidate) === "00") {
-      return candidate.toISOString()
+    const candidate = new Date(`${dateStr}T00:00:00${offset}`);
+    if (
+      JLM_DATE.format(candidate) === dateStr &&
+      JLM_HOUR.format(candidate) === "00"
+    ) {
+      return candidate.toISOString();
     }
   }
-  return new Date(`${dateStr}T00:00:00+03:00`).toISOString()
+  return new Date(`${dateStr}T00:00:00+03:00`).toISOString();
 }
 
 /** The [from, to) window a range means. Nulls = unbounded on that side. */
 export async function rangeWindowISO(
-  range: InsightsRange
+  range: InsightsRange,
 ): Promise<{ from: string | null; to: string | null }> {
   switch (range) {
     case "today":
-      return { from: jerusalemMidnight(0), to: null }
+      return { from: jerusalemMidnight(0), to: null };
     case "yesterday":
-      return { from: jerusalemMidnight(1), to: jerusalemMidnight(0) }
+      return { from: jerusalemMidnight(1), to: jerusalemMidnight(0) };
     case "3d":
       // Last three calendar days, today included.
-      return { from: jerusalemMidnight(2), to: null }
+      return { from: jerusalemMidnight(2), to: null };
     case "all":
-      return { from: null, to: null }
+      return { from: null, to: null };
     default: {
-      const days = range === "7d" ? 7 : range === "30d" ? 30 : 90
-      const d = new Date()
-      d.setDate(d.getDate() - days)
-      return { from: d.toISOString(), to: null }
+      const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
+      const d = new Date();
+      d.setDate(d.getDate() - days);
+      return { from: d.toISOString(), to: null };
     }
   }
 }
@@ -205,41 +213,45 @@ function topCounts(map: Map<string, number>, limit = 6): TopCount[] {
   return [...map.entries()]
     .map(([label, count]) => ({ label, count }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, limit)
+    .slice(0, limit);
 }
 
-function bump(map: Map<string, number>, label: string | null | undefined, by = 1) {
-  const key = (label ?? "").trim()
-  if (!key) return
-  map.set(key, (map.get(key) ?? 0) + by)
+function bump(
+  map: Map<string, number>,
+  label: string | null | undefined,
+  by = 1,
+) {
+  const key = (label ?? "").trim();
+  if (!key) return;
+  map.set(key, (map.get(key) ?? 0) + by);
 }
 
 const hasContent = (value: object | null | undefined): boolean =>
-  !!value && Object.keys(value).length > 0
+  !!value && Object.keys(value).length > 0;
 
 /**
- * Staff-side view of what a partner earned — now windowed and with the
+ * Staff-side view of what a partner earned - now windowed and with the
  * marketing mix. Deliberately shares `lib/partner-commission` with the partner
  * portal so the number staff sees and the number the partner sees can never
  * drift apart again.
  */
 export async function getPartnerPerformance(
   trackingCode: string,
-  range: InsightsRange = "all"
+  range: InsightsRange = "all",
 ): Promise<PartnerPerformance> {
-  await requireStaff()
+  await requireStaff();
 
-  const { from, to } = await rangeWindowISO(range)
+  const { from, to } = await rangeWindowISO(range);
 
   let reservationsQuery = supabase
     .from("reservations")
     .select(
-      "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info,billed_at,flight_order_info,hotel_order_info,coupon_code,coupon_discount_usd,quote_id,partner_settlement_method,commission_type,commission_rate"
+      "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info,billed_at,flight_order_info,hotel_order_info,coupon_code,coupon_discount_usd,quote_id,partner_settlement_method,commission_type,commission_rate",
     )
     .eq("aff_partner_tracking_code", trackingCode)
-    .order("created_at", { ascending: false })
-  if (from) reservationsQuery = reservationsQuery.gte("created_at", from)
-  if (to) reservationsQuery = reservationsQuery.lt("created_at", to)
+    .order("created_at", { ascending: false });
+  if (from) reservationsQuery = reservationsQuery.gte("created_at", from);
+  if (to) reservationsQuery = reservationsQuery.lt("created_at", to);
 
   const [
     partnerResult,
@@ -261,7 +273,7 @@ export async function getPartnerPerformance(
       .from("coupons")
       .select("id,is_active,times_used")
       .eq("partner_tracking_code", trackingCode),
-    // Aggregated in the DB — see partner_funnel_counts_range. Selecting the
+    // Aggregated in the DB - see partner_funnel_counts_range. Selecting the
     // raw rows would pull the partner's whole visit history on every view.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).rpc("partner_funnel_counts_range", {
@@ -284,93 +296,111 @@ export async function getPartnerPerformance(
     }),
     fundedCouponCodesFor(trackingCode),
     quoteUpliftsFor(trackingCode),
-  ])
+  ]);
 
-  if (partnerResult.error) throw partnerResult.error
-  if (reservationsResult.error) throw reservationsResult.error
+  if (partnerResult.error) throw partnerResult.error;
+  if (reservationsResult.error) throw reservationsResult.error;
   if (couponsResult.error) {
-    console.error("getPartnerPerformance coupons:", JSON.stringify(couponsResult.error))
+    console.error(
+      "getPartnerPerformance coupons:",
+      JSON.stringify(couponsResult.error),
+    );
   }
 
   // The *_range RPCs ship with this feature's migration. Until it lands (or
   // on any transient failure) fall back to the legacy all-time RPC rather
-  // than blanking the section — same never-fail-the-page policy as before.
-  let trafficData = trafficResult.data as { stage: string; visitors: number }[] | null
-  let trafficFailed = !!trafficResult.error
+  // than blanking the section - same never-fail-the-page policy as before.
+  let trafficData = trafficResult.data as
+    | { stage: string; visitors: number }[]
+    | null;
+  let trafficFailed = !!trafficResult.error;
   if (trafficResult.error) {
-    console.error("getPartnerPerformance traffic:", JSON.stringify(trafficResult.error))
+    console.error(
+      "getPartnerPerformance traffic:",
+      JSON.stringify(trafficResult.error),
+    );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const legacy = await (supabase as any).rpc("partner_funnel_counts", {
       p_tracking_code: trackingCode,
-    })
+    });
     if (!legacy.error) {
-      trafficData = legacy.data as { stage: string; visitors: number }[]
-      trafficFailed = false
+      trafficData = legacy.data as { stage: string; visitors: number }[];
+      trafficFailed = false;
     }
   }
   if (clicksResult.error) {
-    console.error("getPartnerPerformance clicks:", JSON.stringify(clicksResult.error))
+    console.error(
+      "getPartnerPerformance clicks:",
+      JSON.stringify(clicksResult.error),
+    );
   }
 
   const partnerRow = partnerResult.data as {
-    commission: number
-    commission_type: CommissionType | null
-  } | null
+    commission: number;
+    commission_type: CommissionType | null;
+  } | null;
   const terms: CommissionTerms = {
     type: partnerRow?.commission_type ?? "fixed_per_ticket",
     rate: partnerRow?.commission ?? 0,
-    // Commission-funded coupons deduct from the row they were spent on — keep
+    // Commission-funded coupons deduct from the row they were spent on - keep
     // the staff view on the same figure the monthly report pays.
     fundedCouponCodes: fundedCodes,
     // Quote-priced margin is the agent's, on top of the base rate.
     upliftByReservationId: quoteUplifts,
-  }
-  const rows = (reservationsResult.data ?? []) as unknown as ReservationRow[]
+  };
+  const rows = (reservationsResult.data ?? []) as unknown as ReservationRow[];
   const coupons = (couponsResult.data ?? []) as unknown as {
-    is_active: boolean
-    times_used: number | null
-  }[]
+    is_active: boolean;
+    times_used: number | null;
+  }[];
 
   const reservations: PartnerPerformanceReservation[] = rows.map((r) => {
-    const tickets = countReservationTickets(r)
+    const tickets = countReservationTickets(r);
     return {
       id: r.id,
       created_at: r.created_at,
       customer_name:
-        [r.main_contact_first_name, r.main_contact_last_name].filter(Boolean).join(" ") ||
-        "—",
+        [r.main_contact_first_name, r.main_contact_last_name]
+          .filter(Boolean)
+          .join(" ") || "-",
       status: r.status ?? "",
       event_title: getReservationEventOrderInfoPrimaryName(r.event_order_info),
       tickets,
       sales_usd: r.user_shown_price ?? 0,
-      // Only paid reservations earn — commissionForReservation enforces that.
+      // Only paid reservations earn - commissionForReservation enforces that.
       commission_usd: commissionForReservation(r, terms),
-    }
-  })
+    };
+  });
 
-  const paid = rows.filter(isPaid)
-  const paidTickets = countTickets(paid)
+  const paid = rows.filter(isPaid);
+  const paidTickets = countTickets(paid);
 
-  const byMonth = new Map<string, PartnerMonthlyPoint>()
+  const byMonth = new Map<string, PartnerMonthlyPoint>();
   for (const r of paid) {
-    const month = r.created_at.slice(0, 7)
-    const point =
-      byMonth.get(month) ??
-      { month, reservations: 0, tickets: 0, sales_usd: 0, commission_usd: 0 }
-    const tickets = countReservationTickets(r)
-    point.reservations += 1
-    point.tickets += tickets
-    point.sales_usd += r.user_shown_price ?? 0
-    point.commission_usd += commissionForReservation(r, terms)
-    byMonth.set(month, point)
+    const month = r.created_at.slice(0, 7);
+    const point = byMonth.get(month) ?? {
+      month,
+      reservations: 0,
+      tickets: 0,
+      sales_usd: 0,
+      commission_usd: 0,
+    };
+    const tickets = countReservationTickets(r);
+    point.reservations += 1;
+    point.tickets += tickets;
+    point.sales_usd += r.user_shown_price ?? 0;
+    point.commission_usd += commissionForReservation(r, terms);
+    byMonth.set(month, point);
   }
-  const monthly = [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month))
+  const monthly = [...byMonth.values()].sort((a, b) =>
+    a.month.localeCompare(b.month),
+  );
 
   // The RPC returns one row per stage with a DISTINCT visitor count, so a
   // person who browsed five events counts once, not five times.
-  const stageCounts = new Map<string, number>()
+  const stageCounts = new Map<string, number>();
   for (const row of trafficData ?? []) {
-    stageCounts.set(row.stage, Number(row.visitors) || 0)
+    stageCounts.set(row.stage, Number(row.visitors) || 0);
   }
   const traffic: PartnerTraffic = trafficFailed
     ? emptyTraffic()
@@ -383,29 +413,30 @@ export async function getPartnerPerformance(
         // Everyone is recorded at VISIT first, so that stage is the total.
         totalVisitors: stageCounts.get("VISIT") ?? 0,
         hasData: stageCounts.size > 0,
-      }
+      };
 
-  // ---- Entry-segmented funnels — the same three panels as the cross-partner
+  // ---- Entry-segmented funnels - the same three panels as the cross-partner
   // Insights tab, scoped to this partner's traffic. ----
-  let countsByEntry = new Map<string, Map<string, number>>()
-  let entryApproximate = false
+  let countsByEntry = new Map<string, Map<string, number>>();
+  let entryApproximate = false;
   if (!entryFunnelsResult.error) {
     for (const row of (entryFunnelsResult.data ?? []) as {
-      entry: string
-      stage: string
-      visitors: number
+      entry: string;
+      stage: string;
+      visitors: number;
     }[]) {
-      const perStage = countsByEntry.get(row.entry) ?? new Map<string, number>()
-      perStage.set(row.stage, Number(row.visitors) || 0)
-      countsByEntry.set(row.entry, perStage)
+      const perStage =
+        countsByEntry.get(row.entry) ?? new Map<string, number>();
+      perStage.set(row.stage, Number(row.visitors) || 0);
+      countsByEntry.set(row.entry, perStage);
     }
   } else {
-    // RPC not deployed yet (migration applies on merge to master) — degrade to
+    // RPC not deployed yet (migration applies on merge to master) - degrade to
     // a paged ascending scan of this partner's rows, aggregated identically.
     console.error(
       "getPartnerPerformance entry funnels:",
-      JSON.stringify(entryFunnelsResult.error)
-    )
+      JSON.stringify(entryFunnelsResult.error),
+    );
     const scanQuery = () => {
       let q = supabase
         .from("affiliates_tracking")
@@ -413,17 +444,20 @@ export async function getPartnerPerformance(
         .eq("affiliate_id", trackingCode)
         .not("user_id", "is", null)
         .order("created_at", { ascending: true })
-        .order("id", { ascending: true })
-      if (from) q = q.gte("created_at", from)
-      if (to) q = q.lt("created_at", to)
-      return q
-    }
-    const scan = await fetchPaged<EntryScanRow>(scanQuery, ENTRY_SCAN_LIMIT)
+        .order("id", { ascending: true });
+      if (from) q = q.gte("created_at", from);
+      if (to) q = q.lt("created_at", to);
+      return q;
+    };
+    const scan = await fetchPaged<EntryScanRow>(scanQuery, ENTRY_SCAN_LIMIT);
     if (scan.error) {
-      console.error("getPartnerPerformance entry scan:", JSON.stringify(scan.error))
+      console.error(
+        "getPartnerPerformance entry scan:",
+        JSON.stringify(scan.error),
+      );
     }
     if (scan.rows.length) {
-      entryApproximate = scan.truncated || scan.error != null
+      entryApproximate = scan.truncated || scan.error != null;
       const paidUsers = matchPaidUsers(
         scan.rows,
         paidCandidatesFrom(
@@ -431,27 +465,27 @@ export async function getPartnerPerformance(
             aff_partner_tracking_code: trackingCode,
             created_at: r.created_at,
             event_order_info: r.event_order_info,
-          }))
-        )
-      )
-      countsByEntry = entryCountsFromRows(scan.rows, paidUsers)
+          })),
+        ),
+      );
+      countsByEntry = entryCountsFromRows(scan.rows, paidUsers);
     }
   }
-  const entryFunnels = buildEntryFunnels(countsByEntry, entryApproximate)
+  const entryFunnels = buildEntryFunnels(countsByEntry, entryApproximate);
 
   // The conversion tile must agree with the three entry-funnel cards below it,
   // so it counts the same universe: every classified user across every entry.
-  // (traffic counts only users with a VISIT row — order deep-links had none
+  // (traffic counts only users with a VISIT row - order deep-links had none
   // before main's Aug 2026 fix.)
   const entryVisitorsTotal =
     entryFunnels.home.totalVisitors +
     entryFunnels.artist.totalVisitors +
     entryFunnels.event.totalVisitors +
-    entryFunnels.otherVisitors
+    entryFunnels.otherVisitors;
   const trackedVisitors =
-    entryVisitorsTotal > 0 ? entryVisitorsTotal : traffic.totalVisitors
+    entryVisitorsTotal > 0 ? entryVisitorsTotal : traffic.totalVisitors;
 
-  // Clicked events — event NAME + DATE + LOCATION level (tracking carries no
+  // Clicked events - event NAME + DATE + LOCATION level (tracking carries no
   // event id), cross-referenced against every event on every PAID booking so
   // "clicked, never booked" means exactly that.
   const bookedNames = new Set(
@@ -459,15 +493,15 @@ export async function getPartnerPerformance(
       .flatMap((r) => normalizeReservationEventOrderInfo(r.event_order_info))
       .map((event) => event?.name)
       .filter((name): name is string => !!name)
-      .map((name) => name.trim().toLowerCase())
-  )
+      .map((name) => name.trim().toLowerCase()),
+  );
   const clickedEvents: PartnerClickedEvent[] = (
     (clicksResult.data ?? []) as unknown as {
-      event_name: string | null
-      event_date: string | null
-      event_location: string | null
-      clicks: number | null
-      visitors: number | null
+      event_name: string | null;
+      event_date: string | null;
+      event_location: string | null;
+      clicks: number | null;
+      visitors: number | null;
     }[]
   )
     .filter((row) => !!row.event_name)
@@ -478,45 +512,50 @@ export async function getPartnerPerformance(
       clicks: Number(row.clicks ?? 0),
       visitors: Number(row.visitors ?? 0),
       booked: bookedNames.has((row.event_name as string).trim().toLowerCase()),
-    }))
+    }));
 
   // ---- Marketing mix, over PAID bookings only (money talks) ----
-  const airlines = new Map<string, number>()
-  const hotelStars = new Map<string, number>()
-  const hotelNames = new Map<string, number>()
-  const meals = new Map<string, number>()
-  const ticketCategories = new Map<string, number>()
-  let offlineFlights = 0
-  let liveFlights = 0
-  let flightSkipped = 0
-  let hotelSkipped = 0
+  const airlines = new Map<string, number>();
+  const hotelStars = new Map<string, number>();
+  const hotelNames = new Map<string, number>();
+  const meals = new Map<string, number>();
+  const ticketCategories = new Map<string, number>();
+  let offlineFlights = 0;
+  let liveFlights = 0;
+  let flightSkipped = 0;
+  let hotelSkipped = 0;
 
   for (const r of paid) {
-    const flight = r.flight_order_info
+    const flight = r.flight_order_info;
     if (!hasContent(flight)) {
-      flightSkipped += 1
+      flightSkipped += 1;
     } else {
       // main writes metadata as an Airline object; older rows may carry a
       // string. The two-letter code is the last resort.
       const metaName =
-        typeof flight?.metadata === "object" ? flight.metadata?.name : undefined
-      bump(airlines, metaName || flight?.airline)
-      if (flight?.isOffline) offlineFlights += 1
-      else liveFlights += 1
+        typeof flight?.metadata === "object"
+          ? flight.metadata?.name
+          : undefined;
+      bump(airlines, metaName || flight?.airline);
+      if (flight?.isOffline) offlineFlights += 1;
+      else liveFlights += 1;
     }
 
-    const hotel = r.hotel_order_info
+    const hotel = r.hotel_order_info;
     if (!hasContent(hotel)) {
-      hotelSkipped += 1
+      hotelSkipped += 1;
     } else {
-      const stars = hotel?.hotelInformation?.stars
-      bump(hotelStars, stars && stars > 0 ? `${stars}★` : "Unknown")
-      bump(hotelNames, hotel?.hotelInformation?.hotelName || hotel?.name)
-      bump(meals, hotel?.rate?.meal_data?.value || hotel?.rate?.meal || "nomeal")
+      const stars = hotel?.hotelInformation?.stars;
+      bump(hotelStars, stars && stars > 0 ? `${stars}★` : "Unknown");
+      bump(hotelNames, hotel?.hotelInformation?.hotelName || hotel?.name);
+      bump(
+        meals,
+        hotel?.rate?.meal_data?.value || hotel?.rate?.meal || "nomeal",
+      );
     }
 
     for (const item of normalizeReservationEventOrderInfo(r.event_order_info)) {
-      bump(ticketCategories, item?.category, item?.number_of_ticket ?? 1)
+      bump(ticketCategories, item?.category, item?.number_of_ticket ?? 1);
     }
   }
 
@@ -531,9 +570,9 @@ export async function getPartnerPerformance(
     hotelSkipped,
     ticketCategories: topCounts(ticketCategories),
     avgPartySize: paid.length > 0 ? round2(paidTickets / paid.length) : 0,
-  }
+  };
 
-  const totalSalesUsd = sumSales(paid)
+  const totalSalesUsd = sumSales(paid);
 
   return {
     range,
@@ -545,18 +584,22 @@ export async function getPartnerPerformance(
     totalSalesUsd,
     commissionUsd: commissionForReservations(paid, terms),
     pendingCommissionUsd: round2(
-      commissionForReservations(paid.filter((r) => !r.billed_at), terms)
+      commissionForReservations(
+        paid.filter((r) => !r.billed_at),
+        terms,
+      ),
     ),
     activeCoupons: coupons.filter((c) => c.is_active).length,
     couponUses: coupons.reduce((sum, c) => sum + (c.times_used ?? 0), 0),
     conversionRate: trackedVisitors > 0 ? paid.length / trackedVisitors : null,
     trackedVisitors,
-    avgOrderValueUsd: paid.length > 0 ? round2(totalSalesUsd / paid.length) : null,
+    avgOrderValueUsd:
+      paid.length > 0 ? round2(totalSalesUsd / paid.length) : null,
     monthly,
     reservations,
     traffic,
     entryFunnels,
     clickedEvents,
     mix,
-  }
+  };
 }

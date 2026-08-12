@@ -24,7 +24,7 @@ export type StopToggleField = "outbound_has_stop" | "inbound_has_stop";
 
 /**
  * Stops for ONE leg. Outbound and inbound each get their own copy, because a
- * package can fly out direct and come back through a connection — or connect
+ * package can fly out direct and come back through a connection - or connect
  * through a different airport in each direction.
  *
  * Picking "1 stop" is what reveals the airport and layover inputs, and the
@@ -74,7 +74,7 @@ export function FlightStopoverFields({
               </SelectContent>
             </Select>
             <FormDescription>
-              Set per direction — this leg can connect while the other flies
+              Set per direction - this leg can connect while the other flies
               direct.
             </FormDescription>
             <FormMessage />
@@ -102,7 +102,7 @@ export function FlightStopoverFields({
                   />
                 </FormControl>
                 <FormDescription>
-                  Where this leg connects. Required — without it the flight saves
+                  Where this leg connects. Required - without it the flight saves
                   as direct.
                 </FormDescription>
                 <FormMessage />

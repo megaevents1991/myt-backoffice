@@ -2,7 +2,7 @@
 --
 -- A locked package sells exactly one offline flight and never queries Amadeus.
 -- ON DELETE SET NULL: hard-deleting a flight row must not take the event with
--- it — the event simply reverts to a normal, searchable package.
+-- it - the event simply reverts to a normal, searchable package.
 
 alter table "public"."events"
   add column "locked_flight_id" bigint

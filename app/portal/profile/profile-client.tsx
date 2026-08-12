@@ -94,7 +94,7 @@ export function ProfileClient({ details }: { details: MyProfileDetails }) {
         </CardContent>
       </Card>
 
-      {/* Commission ↔ discount split — influencers only */}
+      {/* Commission ↔ discount split - influencers only */}
       {details.role === "affiliate" && (
         <Card>
           <CardHeader>
@@ -104,7 +104,7 @@ export function ProfileClient({ details }: { details: MyProfileDetails }) {
             </CardTitle>
             <CardDescription>
               הסכום הכולל ({splitTotal}
-              {splitUnit}) נשאר קבוע — אתם בוחרים כמה ממנו הופך להנחה לעוקבים.
+              {splitUnit}) נשאר קבוע - אתם בוחרים כמה ממנו הופך להנחה לעוקבים.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -228,7 +228,7 @@ export function ProfileClient({ details }: { details: MyProfileDetails }) {
                 });
                 if (result.ok) setEmailPw("");
                 return result;
-              }, "המייל עודכן — בכניסה הבאה מתחברים איתו")
+              }, "המייל עודכן - בכניסה הבאה מתחברים איתו")
             }
           >
             עדכנו מייל
@@ -306,7 +306,7 @@ export function ProfileClient({ details }: { details: MyProfileDetails }) {
         </CardContent>
       </Card>
 
-      {/* כרטיס אשראי לתשלום הוסר לבקשת אלון ודור (2026-08-06) — אין תמיכה
+      {/* כרטיס אשראי לתשלום הוסר לבקשת אלון ודור (2026-08-06) - אין תמיכה
           בחיוב כרטיס של סוכן בשלב הזה. הפעולה updateMyPaymentCard נשארת
           בצד השרת להחזרה קלה. */}
     </div>

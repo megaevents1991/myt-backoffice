@@ -29,7 +29,7 @@ export default async function PortalCouponsPage() {
   const session = await getSession();
   const isPartner = !!session && PARTNER_ROLES.includes(session.role);
 
-  // Staff visiting /portal see the layout's notice only — never call partner
+  // Staff visiting /portal see the layout's notice only - never call partner
   // actions for them (getPortalCoupons throws for non-agent/affiliate roles).
   if (!isPartner) return null;
 
@@ -75,7 +75,7 @@ export default async function PortalCouponsPage() {
                         על חשבון העמלה
                       </Badge>
                     ) : (
-                      <span className="text-sm text-muted-foreground">—</span>
+                      <span className="text-sm text-muted-foreground">-</span>
                     )}
                   </TableCell>
                   <TableCell>{formatUsage(coupon.times_used, coupon.max_uses)}</TableCell>
@@ -83,7 +83,7 @@ export default async function PortalCouponsPage() {
                   <TableCell>
                     {coupon.valid_until
                       ? new Date(coupon.valid_until).toLocaleDateString("he-IL")
-                      : "—"}
+                      : "-"}
                   </TableCell>
                   <TableCell>
                     <Badge variant={coupon.is_active ? "default" : "outline"}>

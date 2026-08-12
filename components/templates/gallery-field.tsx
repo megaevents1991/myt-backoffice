@@ -141,7 +141,7 @@ export function GalleryField({
       {value.length > 0 ? (
         <>
           <p className="text-xs text-muted-foreground">
-            {value.length} image{value.length > 1 ? "s" : ""} in the gallery — the
+            {value.length} image{value.length > 1 ? "s" : ""} in the gallery - the
             creative generator and the site rotate them per event. Click a photo
             to open it full size; × removes it (saved on the next Save).
           </p>

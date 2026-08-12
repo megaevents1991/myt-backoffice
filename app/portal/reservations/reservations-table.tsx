@@ -38,10 +38,10 @@ const usdExact = new Intl.NumberFormat("en-US", {
 });
 
 function formatDate(value: string | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const date = new Date(value);
   // Two-digit year: 14 columns must fit the card without clipping (אלון,
-  // 2026-08-08 — the wide table pushed סכום/עמלה out of view).
+  // 2026-08-08 - the wide table pushed סכום/עמלה out of view).
   return Number.isNaN(date.getTime())
     ? value
     : date.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit" });
@@ -92,10 +92,10 @@ function ChoicesPanel({ reservation }: { reservation: PortalReservation }) {
             <div className="text-muted-foreground">
               {[ticket.quantity ? `×${ticket.quantity}` : null, ticket.category]
                 .filter(Boolean)
-                .join(" · ") || "—"}
+                .join(" · ") || "-"}
             </div>
           ) : (
-            <div className="text-muted-foreground">—</div>
+            <div className="text-muted-foreground">-</div>
           )}
         </div>
       </div>
@@ -105,7 +105,7 @@ function ChoicesPanel({ reservation }: { reservation: PortalReservation }) {
           <div className="font-medium">טיסה</div>
           {flight ? (
             <div className="text-muted-foreground">
-              <span dir="ltr">{flight.route ?? "—"}</span>
+              <span dir="ltr">{flight.route ?? "-"}</span>
               {flight.airline ? ` · ${flight.airline}` : ""}
               {flight.depart ? (
                 <div className="text-xs">
@@ -214,7 +214,7 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border bg-background">
-          {/* Compact density — 14 columns have to fit a ~1100px card. */}
+          {/* Compact density - 14 columns have to fit a ~1100px card. */}
           <Table className="text-sm [&_th]:h-10 [&_th]:whitespace-nowrap [&_th]:px-2 [&_td]:px-2 [&_td]:py-2">
             <TableHeader>
               <TableRow>
@@ -260,7 +260,7 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                   </TableCell>
                   <TableCell className="max-w-[7rem]">
                     <span className="block truncate">
-                      {reservation.customer_name || "—"}
+                      {reservation.customer_name || "-"}
                     </span>
                   </TableCell>
                   <TableCell className="max-w-[10rem]">
@@ -275,14 +275,14 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                   </TableCell>
                   <TableCell className="max-w-[7rem]">
                     <span className="block truncate">
-                      {reservation.event_location || "—"}
+                      {reservation.event_location || "-"}
                     </span>
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    {reservation.event_date ? formatDate(reservation.event_date) : "—"}
+                    {reservation.event_date ? formatDate(reservation.event_date) : "-"}
                   </TableCell>
                   <TableCell className="text-center tabular-nums">
-                    {reservation.tickets || "—"}
+                    {reservation.tickets || "-"}
                   </TableCell>
                   <TableCell className="text-center tabular-nums">
                     {reservation.pax}
@@ -336,7 +336,7 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                         </div>
                       </>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-muted-foreground">-</span>
                     )}
                   </TableCell>
                 </TableRow>

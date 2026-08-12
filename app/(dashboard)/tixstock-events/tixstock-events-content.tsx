@@ -304,7 +304,7 @@ export function TixStockEventsContent() {
 
   const handleCreateEventFromTixStock = async (event: TixStockEventDB) => {
     try {
-      // Shared mapping (name/date/venue/coords/map + smart dates) — same as batch-create.
+      // Shared mapping (name/date/venue/coords/map + smart dates) - same as batch-create.
       const eventData = tixstockToEvent(event);
 
       // Encode the event data and navigate to create event page
@@ -382,7 +382,7 @@ export function TixStockEventsContent() {
     return filteredEvents.slice(start, start + eventPageSize);
   }, [filteredEvents, eventPage]);
 
-  // A batch is always one performer's events — reset selection when the performer changes.
+  // A batch is always one performer's events - reset selection when the performer changes.
   useEffect(() => setSelectedEventIds(new Set()), [selectedPerformer]);
 
   const toggleSelected = (id: string) =>

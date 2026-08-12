@@ -1,29 +1,30 @@
 # Multi-Select Batch Event Creation from TixStock Events
 
 **Date:** 2026-07-01
-**Status:** Implemented — see Revision note (pivoted to Approach C)
+**Status:** Implemented - see Revision note (pivoted to Approach C)
 **Area:** `app/(dashboard)/tixstock-events/` (backoffice)
 
-## Revision (2026-07-01) — FINAL: Approach D — batch mode on the real create page
+## Revision (2026-07-01) - FINAL: Approach D - batch mode on the real create page
 
 The sections below describe two superseded designs (Approach B: in-page tabbed
 overlay; a brief Approach C: N real browser tabs). Both were dropped:
 
 - Approach B (lean overlay) duplicated the form and omitted the ticket UI.
 - Approach C (real tabs) was popup-blocked (only one tab opened) **and** made the
-  admin repeat the expensive ticket-adding step once per tab — the opposite of the
+  admin repeat the expensive ticket-adding step once per tab - the opposite of the
   goal.
 
-**What actually shipped — Approach D as a stepwise review wizard:** the shared
+**What actually shipped - Approach D as a stepwise review wizard:** the shared
 "form" IS the real create page, run in **batch mode** as a per-event wizard. You
 configure/review each event on the real form; **Save & Next** creates the current
 one and loads the next with the shared config carried over. This adds the mandatory
-**per-event confirmation** (not all fields are the same — venue/prices/tickets differ).
+**per-event confirmation** (not all fields are the same - venue/prices/tickets differ).
 
 Flow:
+
 1. TixStock page: multi-select (scoped to one performer) → sticky "Create N events".
 2. Click stashes the selected `TixStockEventDB[]` in `localStorage["tx_batch_create"]`
-   and opens `/events/new?batch=1` (a single `window.open` — not popup-blocked).
+   and opens `/events/new?batch=1` (a single `window.open` - not popup-blocked).
 3. The create page detects `batch=1`, reads the list, and pre-fills from event 1
    (`tixstockToEvent(list[batchIndex])`), so its Source Tickets load via
    `txEventId = list[batchIndex].event_id`. A banner shows "reviewing event X of N"
@@ -46,13 +47,14 @@ Flow:
    A per-event create failure toasts and does not advance (admin can retry that event).
 
 Files after this revision:
-- **`tixstock-to-event.ts`** — kept (`tixstockToEvent`, `calculateSmartDates`). The
+
+- **`tixstock-to-event.ts`** - kept (`tixstockToEvent`, `calculateSmartDates`). The
   `mergeShared`/`SharedDraft` helpers were removed (only used by the dropped shared form).
-- **Modified `events/[id]/page.tsx`** — additive batch branch: `batchIndex` state,
+- **Modified `events/[id]/page.tsx`** - additive batch branch: `batchIndex` state,
   batch load + representative prefill, `tixStockEventId` follows the step, banner,
   `repriceCategoryForEvent` + `loadBatchEvent` + `handleBatchStepSave` + `handleBatchSkip`,
   `handleSubmit` batch branch, step-aware Save/Skip buttons.
-- **Modified `tixstock-events-content.tsx`** — selection + `openBatchCreate` launcher.
+- **Modified `tixstock-events-content.tsx`** - selection + `openBatchCreate` launcher.
 - **Deleted:** `batch-create-overlay.tsx`, `batch-shared-form.tsx`, `batch-event-fields.tsx`.
 
 Consequences: full real-flow parity with **zero** form duplication; ticket categories
@@ -94,12 +96,12 @@ BATCH TABS (full-screen overlay, no page navigation)
 ```
 
 No page navigation. The overlay opens on the tixstock page; selected events and
-shared values live in React state — nothing serialized to URL or sessionStorage.
+shared values live in React state - nothing serialized to URL or sessionStorage.
 
-## Core Mechanism — "blank = per-event, filled = forced on all"
+## Core Mechanism - "blank = per-event, filled = forced on all"
 
 The shared form exposes **every shareable field** (not a fixed shared subset).
-The admin decides what is shared for *this* batch by what they type. Merge rule,
+The admin decides what is shared for _this_ batch by what they type. Merge rule,
 evaluated per field, per tab:
 
 ```
@@ -114,14 +116,14 @@ tab.field =
 `shared: Partial<Event>` containing only filled keys, so blank fields never
 overwrite a per-event TixStock value.
 
-### Fixed exceptions (never in the shared form — inherently per-event)
+### Fixed exceptions (never in the shared form - inherently per-event)
 
-- `tickets_and_rates` — each TixStock event has its own tickets; per-tab only,
+- `tickets_and_rates` - each TixStock event has its own tickets; per-tab only,
   sourced from that event.
 - Offline flight/hotel **link panels** (link an existing offline flight/hotel to
-  the event) — linking one specific flight to all N events is meaningless. Not in
+  the event) - linking one specific flight to all N events is meaningless. Not in
   the shared form and not in the tabs; done later via normal event edit if ever.
-  Note: flight/hotel **base price + Search buttons** ARE included and shareable —
+  Note: flight/hotel **base price + Search buttons** ARE included and shareable -
   only the link-existing-inventory panels are dropped.
 
 ## Field Inventory
@@ -130,54 +132,54 @@ Everything below is available in **both** the shared form and each tab (same
 field component). Per-event defaults come from the existing TixStock mapping
 (`handleCreateEventFromTixStock` in `tixstock-events-content.tsx`).
 
-| Field | Type | Per-event TixStock default |
-|---|---|---|
-| `name` | string | `event_name` |
-| `name_english` | string | `event_name` |
-| `type` | EventType | `tx_event` |
-| `description` | string | `"{event_name} at {venue_name}"` |
-| `date` | ISO date | `show_date` |
-| `def_date_depart` / `def_date_return` | ISO date | auto via `calculateSmartDates(date)` |
-| `location.{name,city_iata,latitude,longitude,country_code}` | object | `venue_name`, `venue_data.latitude/longitude` (city_iata blank — admin fills) |
-| `map_image_url` | string | `venue_map_url` |
-| `card_image_url` / `art_image_url` | string | empty |
-| `usual_price` | number | 0 |
-| `base_flight_price` | number (+ Search Flights) | 0 |
-| `base_hotel_price` | number (+ Search Hotels) | 0 |
-| `is_prioritized` | boolean | false |
-| `skip_flight` (+ `skip_flight_markup`) | boolean / number\|null | false / null |
-| `event_additional_markup` | number \| null | null |
-| `tags` | string | empty |
-| `tx_excluded_sections` | string[] | empty |
-| `tickets_and_rates` | EventTicket[] | that event's TixStock tickets (per-tab only) |
+| Field                                                       | Type                      | Per-event TixStock default                                                    |
+| ----------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------- |
+| `name`                                                      | string                    | `event_name`                                                                  |
+| `name_english`                                              | string                    | `event_name`                                                                  |
+| `type`                                                      | EventType                 | `tx_event`                                                                    |
+| `description`                                               | string                    | `"{event_name} at {venue_name}"`                                              |
+| `date`                                                      | ISO date                  | `show_date`                                                                   |
+| `def_date_depart` / `def_date_return`                       | ISO date                  | auto via `calculateSmartDates(date)`                                          |
+| `location.{name,city_iata,latitude,longitude,country_code}` | object                    | `venue_name`, `venue_data.latitude/longitude` (city_iata blank - admin fills) |
+| `map_image_url`                                             | string                    | `venue_map_url`                                                               |
+| `card_image_url` / `art_image_url`                          | string                    | empty                                                                         |
+| `usual_price`                                               | number                    | 0                                                                             |
+| `base_flight_price`                                         | number (+ Search Flights) | 0                                                                             |
+| `base_hotel_price`                                          | number (+ Search Hotels)  | 0                                                                             |
+| `is_prioritized`                                            | boolean                   | false                                                                         |
+| `skip_flight` (+ `skip_flight_markup`)                      | boolean / number\|null    | false / null                                                                  |
+| `event_additional_markup`                                   | number \| null            | null                                                                          |
+| `tags`                                                      | string                    | empty                                                                         |
+| `tx_excluded_sections`                                      | string[]                  | empty                                                                         |
+| `tickets_and_rates`                                         | EventTicket[]             | that event's TixStock tickets (per-tab only)                                  |
 
 `is_deleted` is forced to `null` by `createEvent`; not shown.
 
-## Architecture — Approach B (lean batch form, in-page tabs)
+## Architecture - Approach B (lean batch form, in-page tabs)
 
 Chosen over: (A) extract the full ~1300-line `events/[id]/page.tsx` form and render
-N heavy instances — big refactor, real regression risk on the live new/edit page;
-(C) open N real browser tabs at `/events/new` — the messy multi-window UX we
+N heavy instances - big refactor, real regression risk on the live new/edit page;
+(C) open N real browser tabs at `/events/new` - the messy multi-window UX we
 rejected. B contains blast radius and keeps flight/hotel price parity.
 
-**Reuse insight:** the shared form and every tab render the *same* field
+**Reuse insight:** the shared form and every tab render the _same_ field
 component, so they stay in parity by construction. One field set, two uses:
 empty-start to collect `shared`, merged-init to save an event.
 
-### New files — `app/(dashboard)/tixstock-events/batch/`
+### New files - `app/(dashboard)/tixstock-events/batch/`
 
-| File | Role |
-|---|---|
-| `batch-event-fields.tsx` | Presentational lean field set (all shareable fields + flight/hotel Search buttons). Controlled via `value` / `onChange`. Reused by shared form and each tab. |
-| `batch-shared-form.tsx` | Dialog wrapping the field set, empty-start. `Continue` emits `shared: Partial<Event>` (only filled keys). |
-| `batch-create-overlay.tsx` | Full-screen Radix Tabs container. Holds per-tab form state + per-tab save status. One tab per selected event. Per-tab `Save` calls `createEvent()`. |
-| `tixstock-to-event.ts` | Maps `TixStockEventDB` -> `Partial<Event>`. Extracted from the existing `handleCreateEventFromTixStock` mapping + `calculateSmartDates` so single- and batch-create share one mapping. |
+| File                       | Role                                                                                                                                                                                   |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `batch-event-fields.tsx`   | Presentational lean field set (all shareable fields + flight/hotel Search buttons). Controlled via `value` / `onChange`. Reused by shared form and each tab.                           |
+| `batch-shared-form.tsx`    | Dialog wrapping the field set, empty-start. `Continue` emits `shared: Partial<Event>` (only filled keys).                                                                              |
+| `batch-create-overlay.tsx` | Full-screen Radix Tabs container. Holds per-tab form state + per-tab save status. One tab per selected event. Per-tab `Save` calls `createEvent()`.                                    |
+| `tixstock-to-event.ts`     | Maps `TixStockEventDB` -> `Partial<Event>`. Extracted from the existing `handleCreateEventFromTixStock` mapping + `calculateSmartDates` so single- and batch-create share one mapping. |
 
 ### Modified file
 
 - `app/(dashboard)/tixstock-events/tixstock-events-content.tsx`
   - Add `selectedEventIds: Set<string>` selection state (scoped to the currently
-    performer-filtered events list — this is what enforces "same artist/team").
+    performer-filtered events list - this is what enforces "same artist/team").
   - Add a checkbox to each event card.
   - Add a sticky bar: selection count + `Create N events`.
   - Mount `batch-shared-form` -> `batch-create-overlay`.
@@ -186,7 +188,7 @@ empty-start to collect `shared`, merged-init to save an event.
 
 ### Reused, unchanged
 
-- `createEvent(event: Omit<Event,"id">)` in `lib/actions/event-actions.ts` — one
+- `createEvent(event: Omit<Event,"id">)` in `lib/actions/event-actions.ts` - one
   call per tab. **No new bulk server action.**
 - Existing pickers (`ImageFilePicker`, `ArtBlobPicker`), tag select, and the
   flight/hotel search endpoints the current form uses.
@@ -214,20 +216,20 @@ columns confirmed during planning against the single-create path.
 
 ## Error Handling
 
-- **Shared form:** nothing required — blank simply means "not shared."
+- **Shared form:** nothing required - blank simply means "not shared."
 - **Tab save:** validate the same required fields the single form enforces
   (`name`, `name_english`, `date`, `location` coords, `usual_price`,
   `base_flight_price`, `base_hotel_price`). On failure: block, inline errors, tab
   stays open.
 - **`createEvent` throws:** catch, toast on that tab, set status `error`, allow
   retry. Other tabs are unaffected (independent inserts).
-- **Close overlay with unsaved tabs:** confirm dialog — "N events not saved,
+- **Close overlay with unsaved tabs:** confirm dialog - "N events not saved,
   discard?".
 
 ## Cross-Project Impact
 
 **None.** No DB schema change, no shared-type change (`types/app.types.ts`
-untouched), no price-chain change — same `createEvent`, same fields, same
+untouched), no price-chain change - same `createEvent`, same fields, same
 per-currency markups. The main app (`../myt-main`) is unaffected.
 
 ## Out of Scope (YAGNI)
@@ -242,6 +244,7 @@ per-currency markups. The main app (`../myt-main`) is unaffected.
 ## Testing
 
 No automated test suite in the repo. Verification:
+
 - `npx tsc --noEmit` type gate (build ignores TS errors, so this is the real gate).
 - Manual QA: select 3 events for one performer -> fill a few shared fields ->
   confirm each tab merges shared + TixStock correctly -> save one, error one

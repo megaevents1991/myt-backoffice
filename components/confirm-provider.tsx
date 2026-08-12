@@ -48,7 +48,7 @@ const PromptContext = createContext<PromptFn | null>(null);
  *   const url = await prompt({ title: "Link URL", defaultValue: "https://" });
  *   if (url === null) return; // cancelled
  *
- * The native browser popups are never used — these are the branded replacements.
+ * The native browser popups are never used - these are the branded replacements.
  */
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -64,7 +64,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     setConfirmOpen(true);
     return new Promise<boolean>((resolve) => {
       // A second confirm() before the first settles would strand the old
-      // promise — resolve it as cancelled rather than leaking it.
+      // promise - resolve it as cancelled rather than leaking it.
       confirmResolveRef.current?.(false);
       confirmResolveRef.current = resolve;
     });

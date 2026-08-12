@@ -319,7 +319,7 @@ CREATE TRIGGER tixstock_events_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- ─────────────────────────────────────────────────────────────
--- offline_hotel_rooms — per-room detail for offline_hotels batches
+-- offline_hotel_rooms - per-room detail for offline_hotels batches
 -- (created 2026-06-08; see db/migrations/2026-06-08-offline-hotel-rooms.sql)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS offline_hotel_rooms (

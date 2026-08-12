@@ -1,7 +1,7 @@
 -- Whether an agent may settle a booking with a voucher instead of a card.
 --
 -- This is per agreement, not a global capability: an agent who has it sends us
--- a voucher for the booking, and one who does not pays by card — their own or
+-- a voucher for the booking, and one who does not pays by card - their own or
 -- the customer's. Default false so an existing agent gains nothing until the
 -- agreement is recorded here.
 

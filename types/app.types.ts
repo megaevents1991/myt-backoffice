@@ -1,4 +1,3 @@
-
 export type EventType =
   | "sports_event"
   | "music_event"
@@ -48,12 +47,12 @@ export type Event = {
   skip_flight_markup?: number | null;
   // LOCKFLIGHT: when set, the main app offers ONLY this offline flight and
   // never calls Amadeus for this event. skip_flight still applies. When the
-  // flight's allocation for this event is exhausted the package is sold out —
+  // flight's allocation for this event is exhausted the package is sold out -
   // there is deliberately no fallback to a dynamic search.
   locked_flight_id?: number | null;
   // Derived at read time in the MAIN app (markLockedPackagesSoldOut), NOT a
   // column: the locked flight has no seats left for this event, so the catalog
-  // card reads sold out. Mirrored here only to keep the shared type identical —
+  // card reads sold out. Mirrored here only to keep the shared type identical -
   // the backoffice never sets it.
   locked_flight_sold_out?: boolean;
   is_deleted: string;
@@ -156,7 +155,7 @@ export type OrderHotel = {
   checkout: string;
   isOffline?: boolean;
   // When isOffline: every offline_hotels.id consumed (one per room unit);
-  // offlineId kept as the first for legacy paths — mirrors main.
+  // offlineId kept as the first for legacy paths - mirrors main.
   offlineId?: number;
   offlineIds?: number[];
   offlineRawPrice?: number;
@@ -172,11 +171,15 @@ export type OrderHotel = {
 };
 
 /**
- * How an agent-entered booking gets settled — mirror of main's
+ * How an agent-entered booking gets settled - mirror of main's
  * lib/app.types.ts (resolveAgentSettlement there). Stored on
  * reservations.partner_settlement_method.
  */
-export const SETTLEMENT_METHODS = ["customer_card", "agent_card", "voucher"] as const;
+export const SETTLEMENT_METHODS = [
+  "customer_card",
+  "agent_card",
+  "voucher",
+] as const;
 export type SettlementMethod = (typeof SETTLEMENT_METHODS)[number];
 
 export type Order = {
@@ -226,7 +229,7 @@ export type AffiliateTracking = {
 };
 
 /**
- * Customer-facing discount code (shared `coupons` table — this app writes,
+ * Customer-facing discount code (shared `coupons` table - this app writes,
  * myt-main validates + applies). Does NOT stack with the affiliate discount:
  * the bigger single discount wins.
  */

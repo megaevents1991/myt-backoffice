@@ -5,7 +5,7 @@ import { PARTNER_ROLES } from "@/types/auth.types";
 import { PortalNav } from "./portal-nav";
 
 // Main-app brand fonts (Assistant body / Rubik display), loaded only for the
-// portal subtree — the admin dashboard keeps its own look.
+// portal subtree - the admin dashboard keeps its own look.
 const assistant = Assistant({
   subsets: ["hebrew", "latin"],
   weight: ["400", "500", "600", "700"],
@@ -33,7 +33,7 @@ export default async function PortalLayout({
       dir="rtl"
       className={`portal-theme min-h-screen ${assistant.variable} ${rubik.variable}`}
     >
-      {/* Forest brand band — same near-black green the main site headers use */}
+      {/* Forest brand band - same near-black green the main site headers use */}
       <header className="portal-hero text-primary-foreground">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4">
           <div className="flex min-w-0 items-center gap-3">
@@ -61,7 +61,7 @@ export default async function PortalLayout({
                 )}
               </div>
               <div className="flex items-center gap-2 text-xs text-primary-foreground/60">
-                <span>MYT — פורטל שותפים</span>
+                <span>MYT - פורטל שותפים</span>
                 {session?.partner_code && (
                   <span className="font-mono" dir="ltr">
                     {session.partner_code}
@@ -77,7 +77,7 @@ export default async function PortalLayout({
       <main className="mx-auto max-w-6xl px-4 py-6">
         {!isPartner ? (
           <div className="mb-4 rounded-xl border border-dashed p-3 text-sm text-muted-foreground">
-            תצוגת צוות — נתוני שותף לא נטענים עבור משתמשי צוות.
+            תצוגת צוות - נתוני שותף לא נטענים עבור משתמשי צוות.
           </div>
         ) : null}
         {children}

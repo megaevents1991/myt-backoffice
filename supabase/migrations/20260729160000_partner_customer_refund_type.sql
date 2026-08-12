@@ -6,7 +6,7 @@
 -- ~1312 rows were classified as influencers (משפיען) and swamped every partner
 -- list. They get their own type; `agent`/`affiliate` now mean marketing only.
 
--- 1. Backfill on the Hebrew name marker — the definitive signature the main app
+-- 1. Backfill on the Hebrew name marker - the definitive signature the main app
 --    writes. Deliberately NOT matching on the `_NNN` tracking-code suffix: that
 --    was only ever a heuristic, and a real influencer whose code happens to end
 --    in _001 must not be reclassified and hidden from the partner lists.
@@ -34,7 +34,7 @@ update "public"."partners"
 -- instead. Add the constraint once the main app's writes are confirmed.
 
 comment on column "public"."partners"."type" is
-  'agent = סוכן, affiliate = משפיען (both partner marketing, managed by staff); customer_refund = החזר ללקוח, opened automatically per booking by the main app — excluded from partner lists and dashboard counts.';
+  'agent = סוכן, affiliate = משפיען (both partner marketing, managed by staff); customer_refund = החזר ללקוח, opened automatically per booking by the main app - excluded from partner lists and dashboard counts.';
 
 -- Not yet a filter index: the column keeps its 'affiliate' DEFAULT and the main
 -- app still inserts refund rows without setting `type`, so classification lives

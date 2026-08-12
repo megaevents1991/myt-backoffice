@@ -1,4 +1,4 @@
--- Categories — first per-type "Template" table of the backoffice CMS that will
+-- Categories - first per-type "Template" table of the backoffice CMS that will
 -- replace Contentful. Each Contentful content type becomes its own typed table
 -- sharing a common base (id, slug, name, name_english, image_url, display_order,
 -- is_active, is_deleted, timestamps). New types = a new typed table + a 6-line

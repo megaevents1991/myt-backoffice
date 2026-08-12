@@ -12,7 +12,7 @@ import { replaceOfflineHotelRooms } from "./offline-hotel-room-actions";
 import type { NewOfflineHotelRoom } from "../../types/offline-hotel.types";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 
-// offline_hotels is not in Supabase generated types — cast to bypass never inference
+// offline_hotels is not in Supabase generated types - cast to bypass never inference
 const hotelsTable = () => (supabase as any).from("offline_hotels");
 const flightsTable = () => (supabase as any).from("flights");
 
@@ -23,7 +23,9 @@ export type HotelSearchResult = {
   address: string;
 };
 
-export async function searchWorldOTAHotels(query: string): Promise<HotelSearchResult[]> {
+export async function searchWorldOTAHotels(
+  query: string,
+): Promise<HotelSearchResult[]> {
   await requireStaff();
   if (!query || query.trim().length < 2) return [];
   const { data, error } = await supabase
@@ -56,7 +58,9 @@ export type ReservationOfflineRoom = {
   meal_plan: string | null;
 };
 
-export async function getOfflineHotelsByIds(ids: number[]): Promise<ReservationOfflineRoom[]> {
+export async function getOfflineHotelsByIds(
+  ids: number[],
+): Promise<ReservationOfflineRoom[]> {
   await requireStaff();
   if (!ids.length) return [];
   const unique = Array.from(new Set(ids));
@@ -69,18 +73,18 @@ export async function getOfflineHotelsByIds(ids: number[]): Promise<ReservationO
 
 export async function getOfflineHotel(id: number): Promise<OfflineHotel> {
   await requireStaff();
-  const { data, error } = await hotelsTable()
-    .select("*")
-    .eq("id", id)
-    .single();
+  const { data, error } = await hotelsTable().select("*").eq("id", id).single();
 
   if (error) throw error;
   return data as OfflineHotel;
 }
 
 export async function createOfflineHotel(
-  hotel: Omit<OfflineHotel, "id" | "consumed_rooms" | "is_deleted" | "created_at">,
-  rooms?: NewOfflineHotelRoom[]
+  hotel: Omit<
+    OfflineHotel,
+    "id" | "consumed_rooms" | "is_deleted" | "created_at"
+  >,
+  rooms?: NewOfflineHotelRoom[],
 ): Promise<OfflineHotel> {
   await requireStaff();
   const { data, error } = await hotelsTable()
@@ -110,7 +114,7 @@ export async function createOfflineHotel(
 export async function updateOfflineHotel(
   id: number,
   hotel: Partial<Omit<OfflineHotel, "id" | "consumed_rooms" | "created_at">>,
-  rooms?: NewOfflineHotelRoom[]
+  rooms?: NewOfflineHotelRoom[],
 ): Promise<OfflineHotel> {
   await requireStaff();
   const auditBefore = await fetchBefore("offline_hotels", "id", id, hotel);
@@ -143,10 +147,10 @@ export async function updateOfflineHotel(
   // (Double -> 2, Triple -> 3, ...). Without this the whole room price is
   // charged per traveler (e.g. a $940 double showed as $940/person, not $470).
   const baseHotelPrice = Math.round(
-    Number(updated.price) / getOfflineRoomCapacity(updated.room_type)
+    Number(updated.price) / getOfflineRoomCapacity(updated.room_type),
   );
   const oldBaseHotelPrice = Math.round(
-    oldPrice / getOfflineRoomCapacity(oldRoomType)
+    oldPrice / getOfflineRoomCapacity(oldRoomType),
   );
   const priceChanged = baseHotelPrice !== oldBaseHotelPrice;
 
@@ -160,7 +164,7 @@ export async function updateOfflineHotel(
     await Promise.all(
       Array.from(eventsNeedingPriceUpdate).map(async (eventId) => {
         const isNewlyAdded = addedEventIds.includes(eventId);
-        // Flight wins over hotel for def dates — only set hotel dates on newly-linked events without a flight
+        // Flight wins over hotel for def dates - only set hotel dates on newly-linked events without a flight
         let hasFlight = true;
         if (isNewlyAdded) {
           const { data: flightsForEvent } = await flightsTable()
@@ -179,7 +183,7 @@ export async function updateOfflineHotel(
           eventUpdate.base_hotel_price = baseHotelPrice;
         } else {
           // Dates owned by a flight (or pre-existing event). Only push the price
-          // if the hotel stay matches the event's default dates — otherwise the
+          // if the hotel stay matches the event's default dates - otherwise the
           // hotel won't show in the customer flow and the price would be a lie.
           const { data: ev } = await (supabase as any)
             .from("events")
@@ -198,7 +202,7 @@ export async function updateOfflineHotel(
           .update(eventUpdate)
           .eq("id", eventId);
         if (evErr) throw evErr;
-      })
+      }),
     );
   }
 
@@ -219,7 +223,9 @@ export async function updateOfflineHotel(
   return data[0] as OfflineHotel;
 }
 
-export async function softDeleteOfflineHotel(id: number): Promise<OfflineHotel> {
+export async function softDeleteOfflineHotel(
+  id: number,
+): Promise<OfflineHotel> {
   await requireStaff();
   const { data, error } = await hotelsTable()
     .update({ is_deleted: true })
@@ -227,12 +233,18 @@ export async function softDeleteOfflineHotel(id: number): Promise<OfflineHotel> 
     .select();
 
   if (error) throw error;
-  await logAudit({ action: "delete", entityType: "offline_hotel", entityId: id });
+  await logAudit({
+    action: "delete",
+    entityType: "offline_hotel",
+    entityId: id,
+  });
   revalidatePath("/offline-hotels");
   return data[0] as OfflineHotel;
 }
 
-export async function getHotelsByEventId(eventId: number): Promise<OfflineHotel[]> {
+export async function getHotelsByEventId(
+  eventId: number,
+): Promise<OfflineHotel[]> {
   await requireStaff();
   const { data, error } = await hotelsTable()
     .select("*")
@@ -244,7 +256,9 @@ export async function getHotelsByEventId(eventId: number): Promise<OfflineHotel[
   return (data ?? []) as OfflineHotel[];
 }
 
-export async function getHotelsByFlightId(flightId: number): Promise<OfflineHotel[]> {
+export async function getHotelsByFlightId(
+  flightId: number,
+): Promise<OfflineHotel[]> {
   await requireStaff();
   const { data, error } = await hotelsTable()
     .select("*")
@@ -256,7 +270,10 @@ export async function getHotelsByFlightId(flightId: number): Promise<OfflineHote
   return (data ?? []) as OfflineHotel[];
 }
 
-export async function removeEventFromHotel(hotelId: number, eventId: number): Promise<OfflineHotel> {
+export async function removeEventFromHotel(
+  hotelId: number,
+  eventId: number,
+): Promise<OfflineHotel> {
   await requireStaff();
   const { data: current, error: fetchError } = await hotelsTable()
     .select("event_ids")
@@ -284,7 +301,10 @@ export async function removeEventFromHotel(hotelId: number, eventId: number): Pr
   return data[0] as OfflineHotel;
 }
 
-export async function addEventToHotel(hotelId: number, eventId: number): Promise<OfflineHotel> {
+export async function addEventToHotel(
+  hotelId: number,
+  eventId: number,
+): Promise<OfflineHotel> {
   await requireStaff();
   const { data: current, error: fetchError } = await hotelsTable()
     .select("event_ids")
@@ -313,7 +333,10 @@ export async function addEventToHotel(hotelId: number, eventId: number): Promise
   return data[0] as OfflineHotel;
 }
 
-export async function addFlightToHotel(hotelId: number, flightId: number): Promise<OfflineHotel> {
+export async function addFlightToHotel(
+  hotelId: number,
+  flightId: number,
+): Promise<OfflineHotel> {
   await requireStaff();
   const { data: current, error: fetchError } = await hotelsTable()
     .select("flight_ids")
@@ -345,7 +368,7 @@ export async function addFlightToHotel(hotelId: number, flightId: number): Promi
 export async function getRelevantEventsForHotel(
   city: string,
   checkIn: string,
-  checkOut: string
+  checkOut: string,
 ): Promise<Pick<Event, "id" | "name" | "date">[]> {
   await requireStaff();
   const cityCodes = airportsForCityName(city);
@@ -370,11 +393,25 @@ export async function getRelevantEventsForHotel(
 export async function getRelevantFlightsForHotel(
   _city: string,
   checkIn: string,
-  checkOut: string
-): Promise<Pick<OfflineFlight, "id" | "airline_code" | "metadata_name" | "outbound_departure_airport" | "outbound_arrival_airport" | "outbound_departure_time" | "inbound_arrival_time" | "price">[]> {
+  checkOut: string,
+): Promise<
+  Pick<
+    OfflineFlight,
+    | "id"
+    | "airline_code"
+    | "metadata_name"
+    | "outbound_departure_airport"
+    | "outbound_arrival_airport"
+    | "outbound_departure_time"
+    | "inbound_arrival_time"
+    | "price"
+  >[]
+> {
   await requireStaff();
   const { data, error } = await flightsTable()
-    .select("id, airline_code, metadata_name, outbound_departure_airport, outbound_arrival_airport, outbound_departure_time, inbound_arrival_time, price")
+    .select(
+      "id, airline_code, metadata_name, outbound_departure_airport, outbound_arrival_airport, outbound_departure_time, inbound_arrival_time, price",
+    )
     .eq("is_deleted", false)
     .lte("outbound_departure_time", checkOut)
     .gte("inbound_arrival_time", checkIn)

@@ -17,7 +17,7 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
 type Passenger = { name: string; reservationId: number; status: string };
 
 // Flattens active reservations into a numbered passenger manifest grouped by
-// reservation — prep for the flights team's group ticketing. Main contact comes
+// reservation - prep for the flights team's group ticketing. Main contact comes
 // first in each reservation, followed by the extra pax.
 function buildManifest(reservations: InventoryReservation[]) {
   const groups = reservations.map((r) => {
@@ -30,7 +30,7 @@ function buildManifest(reservations: InventoryReservation[]) {
     }
     // Fall back to a single unnamed seat so the count still reflects the pax.
     if (names.length === 0) names.push("(unnamed passenger)");
-    return { reservationId: r.id, status: r.status || "—", names };
+    return { reservationId: r.id, status: r.status || "-", names };
   });
   const totalPax = groups.reduce((sum, g) => sum + g.names.length, 0);
   return { groups, totalPax };
@@ -48,7 +48,7 @@ export function FlightPassengerManifest({
     let seq = 0;
     return groups
       .map((g) => {
-        const header = `Reservation ${g.reservationId} — ${g.status}`;
+        const header = `Reservation ${g.reservationId} - ${g.status}`;
         const lines = g.names.map((n) => `  ${++seq}. ${n} (Res ${g.reservationId})`);
         return [header, ...lines].join("\n");
       })

@@ -1,6 +1,6 @@
 -- Draw a line under what has already been paid to partners.
 --
--- Everything owed up to and including 2026-06-30 — commission AND site credit —
+-- Everything owed up to and including 2026-06-30 - commission AND site credit -
 -- was settled with every partner outside this system. Without a cutoff, both
 -- mechanisms would pay it a second time:
 --

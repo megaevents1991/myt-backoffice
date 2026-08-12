@@ -16,7 +16,7 @@ type StickySaveBarProps = {
   isDirty: boolean;
   /** Shows spinner and disables both buttons. */
   isSaving: boolean;
-  /** Primary action — should call the same submit handler as the bottom button. */
+  /** Primary action - should call the same submit handler as the bottom button. */
   onSave: () => void;
   /** Resets the form back to its original (loaded) values. */
   onDiscard: () => void;
@@ -31,7 +31,7 @@ type StickySaveBarProps = {
 /**
  * Fixed bottom bar that slides up once a form is dirty, giving the user a
  * Save + Discard control without scrolling to the end of long forms.
- * Prop-driven — it holds no form state of its own.
+ * Prop-driven - it holds no form state of its own.
  */
 export function StickySaveBar({
   isDirty,

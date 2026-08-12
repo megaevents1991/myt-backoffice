@@ -1,7 +1,7 @@
 -- Partner marketing insights: time-windowed funnel + clicked-events.
 --
 -- affiliates_tracking has carried created_at since day one, but both existing
--- RPCs aggregate the whole history and the column is unindexed — so "this
+-- RPCs aggregate the whole history and the column is unindexed - so "this
 -- week vs this month" questions were unanswerable. New *_range variants take
 -- an optional window; the originals stay untouched (the partner portal keeps
 -- calling them), so nothing existing changes behavior.
@@ -69,7 +69,7 @@ comment on function "public"."partner_clicked_events_range"(text, timestamptz, t
   'partner_clicked_events with an optional created_at window. Groups by event name+date+location (tracking carries no event id).';
 
 -- Cross-partner variants for the staff Insights tab: the same aggregations
--- with no tracking-code filter — the whole partner-driven traffic at once.
+-- with no tracking-code filter - the whole partner-driven traffic at once.
 
 create or replace function "public"."partners_funnel_counts_all"(
   "p_from" timestamptz default null,
@@ -147,9 +147,9 @@ as $$
 $$;
 
 comment on function "public"."partners_visitors_by_code"(timestamptz, timestamptz) is
-  'Distinct VISIT visitors per tracking code in an optional window — feeds per-partner conversion on the staff Insights tab.';
+  'Distinct VISIT visitors per tracking code in an optional window - feeds per-partner conversion on the staff Insights tab.';
 
--- Service-role only, like the originals — called from backoffice actions.
+-- Service-role only, like the originals - called from backoffice actions.
 revoke all on function "public"."partner_funnel_counts_range"(text, timestamptz, timestamptz) from public, anon, authenticated;
 grant execute on function "public"."partner_funnel_counts_range"(text, timestamptz, timestamptz) to service_role;
 revoke all on function "public"."partner_clicked_events_range"(text, timestamptz, timestamptz, integer) from public, anon, authenticated;

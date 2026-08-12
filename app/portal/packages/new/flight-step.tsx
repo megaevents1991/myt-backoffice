@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Flights step — myt-main's FlightSelection, agent-side.
+ * Flights step - myt-main's FlightSelection, agent-side.
  * Same anatomy: event band with pax+dates search, the 3-tab sort row, a
  * filters sidebar (stops / baggage / departure windows / airlines), and one
- * merged list of flight cards — offline inventory prioritized and badged,
+ * merged list of flight cards - offline inventory prioritized and badged,
  * live (Amadeus-via-main) results after a search. The whole card is the click
  * target; skip lives in the sticky continue bar, exactly like the site.
  */
@@ -177,7 +177,7 @@ const dayPartOf = (iso: string | null): DayPart => {
 };
 
 /* ------------------------------------------------------------------ */
-/*  FlightMeta — main's leg centerpiece                                */
+/*  FlightMeta - main's leg centerpiece                                */
 /* ------------------------------------------------------------------ */
 
 const STOPS_LABEL: Record<number, string> = {
@@ -215,7 +215,7 @@ function FlightMeta({ leg }: { leg: DisplayLeg }) {
       </div>
       <div className="text-center">
         <p className="whitespace-nowrap text-base font-bold tabular-nums lg:text-2xl">
-          {leg.arrTime ? timeFmt(leg.arrTime) : "—"}
+          {leg.arrTime ? timeFmt(leg.arrTime) : "-"}
         </p>
         <p className="text-sm lg:text-lg">{leg.arrAirport}</p>
       </div>
@@ -422,7 +422,7 @@ export function FlightStep() {
   const { event } = w;
 
   const all = useMemo<DisplayFlight[]>(() => {
-    // A locked package sells exactly ONE flight — other inventory rows linked
+    // A locked package sells exactly ONE flight - other inventory rows linked
     // to the event must not be pinnable (the site never offers them for it).
     const lockedId = event?.locked_flight_id ?? null;
     const offline = w.flights
@@ -459,7 +459,7 @@ export function FlightStep() {
         return ai - bi || byPrice(a, b);
       });
     }
-    // "best" — main's pickBestFlight order: offline first, fewest stops, cheapest.
+    // "best" - main's pickBestFlight order: offline first, fewest stops, cheapest.
     return filtered.sort((a, b) => {
       const ao = a.kind === "offline" ? 0 : 1;
       const bo = b.kind === "offline" ? 0 : 1;
@@ -512,7 +512,7 @@ export function FlightStep() {
         imageUrl={event.image_url}
       >
         {!isLocked && (
-          /* One compact search pill — never allowed to wrap into a second
+          /* One compact search pill - never allowed to wrap into a second
              row on desktop (the loose 60%-wide row used to drop the button). */
           <div className="flex w-full items-center lg:w-auto lg:flex-1 lg:justify-end">
             <div className="flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-border bg-card p-1.5 shadow-sm lg:w-auto lg:flex-nowrap">
@@ -541,7 +541,7 @@ export function FlightStep() {
                 onChange={(e) => w.setFsDepart(e.target.value)}
                 className="h-9 w-[8.4rem] shrink-0 border-0 bg-background shadow-none"
               />
-              <span className="shrink-0 text-muted-foreground">—</span>
+              <span className="shrink-0 text-muted-foreground">-</span>
               <Input
                 type="date"
                 dir="ltr"
@@ -567,7 +567,7 @@ export function FlightStep() {
       {isLocked ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Lock className="h-3.5 w-3.5 shrink-0" />
-          חבילה זו נמכרת עם טיסה קבועה — הטיסה אינה ניתנת לשינוי.
+          חבילה זו נמכרת עם טיסה קבועה - הטיסה אינה ניתנת לשינוי.
         </div>
       ) : (
         <div className="flex items-stretch gap-1.5">
@@ -595,7 +595,7 @@ export function FlightStep() {
           const chosen = w.flights.find((f) => f.id === flightChoice.flightId);
           return chosen && chosen.remaining < w.qty ? (
             <p className="text-sm text-destructive">
-              בטיסה שנבחרה נותרו {chosen.remaining} מקומות בלבד, אבל בחבילה {w.qty} נוסעים —
+              בטיסה שנבחרה נותרו {chosen.remaining} מקומות בלבד, אבל בחבילה {w.qty} נוסעים -
               בחרו טיסה אחרת או הפחיתו נוסעים.
             </p>
           ) : null;
@@ -678,7 +678,7 @@ export function FlightStep() {
               {isLocked && all.length === 0 && (
                 <IssueState
                   title="הטיסה הקבועה של החבילה אינה זמינה כרגע"
-                  subtitle="לא ניתן להצמיד טיסה — אפשר להמשיך והלקוח יראה את הזמינות באתר"
+                  subtitle="לא ניתן להצמיד טיסה - אפשר להמשיך והלקוח יראה את הזמינות באתר"
                 />
               )}
               {!isLocked && visible.length === 0 && (all.length > 0 || w.fsResults != null) && (
@@ -690,7 +690,7 @@ export function FlightStep() {
               {!isLocked && all.length === 0 && w.fsResults == null && (
                 <IssueState
                   title="חפשו טיסות לתאריכים שלכם"
-                  subtitle="בחרו תאריכים למעלה ולחצו חיפוש — התוצאות מגיעות מהספקים בזמן אמת, בדיוק כמו באתר"
+                  subtitle="בחרו תאריכים למעלה ולחצו חיפוש - התוצאות מגיעות מהספקים בזמן אמת, בדיוק כמו באתר"
                 />
               )}
 

@@ -1,5 +1,5 @@
 /**
- * Backoffice CMS template types — one typed table per content type (replacing
+ * Backoffice CMS template types - one typed table per content type (replacing
  * Contentful). Every table shares `TemplateBase`; each adds its own columns.
  */
 export interface TemplateBase {

@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
       baseSearchParams.returnDate = returnDate;
     }
 
-    // Amadeus per-request client reference (ama-Client-Ref) — required by the
+    // Amadeus per-request client reference (ama-Client-Ref) - required by the
     // production-certification checklist so Amadeus can trace each call.
     const clientRef = `MYT-BO-${originLocationCode}${destinationLocationCode}-${Math.floor(Date.now() / 1000)}`;
 

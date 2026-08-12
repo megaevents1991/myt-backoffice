@@ -17,7 +17,7 @@ function CopyField({ value, label }: { value: string; label: string }) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Clipboard is blocked on insecure origins and in some browsers — the
+      // Clipboard is blocked on insecure origins and in some browsers - the
       // input stays selectable, so copying by hand still works.
       setCopied(false);
     }

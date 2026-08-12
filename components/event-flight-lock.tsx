@@ -23,7 +23,7 @@ export type EventFlightLockProps = {
   onChanged?: () => void;
   /**
    * The new locked flight id (or null). This panel writes straight to the
-   * database, so the page needs it to keep its own copy of the event honest —
+   * database, so the page needs it to keep its own copy of the event honest -
    * otherwise a later save would write back the stale value.
    */
   onLockChange?: (flightId: number | null) => void;
@@ -45,7 +45,7 @@ export function EventFlightLock({
 
   useEffect(() => setLocked(lockedFlightId ?? null), [lockedFlightId]);
 
-  // Load the linked flights whenever the panel needs to name one — while
+  // Load the linked flights whenever the panel needs to name one - while
   // picking, and while locked so the banner can describe the flight rather than
   // just print its id.
   useEffect(() => {
@@ -109,7 +109,7 @@ export function EventFlightLock({
 
   return (
     <div className="rounded-md border">
-      {/* header — the switch is the only control until a decision is needed */}
+      {/* header - the switch is the only control until a decision is needed */}
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
         <div className="flex items-center gap-2">
           {isLocked ? (
@@ -128,7 +128,7 @@ export function EventFlightLock({
 
         <span className="text-xs text-muted-foreground">
           {isLocked
-            ? "Customers see only this flight — no live search."
+            ? "Customers see only this flight - no live search."
             : "Sell exactly one offline flight instead of a live flight search."}
         </span>
 
@@ -150,14 +150,14 @@ export function EventFlightLock({
         </div>
       </div>
 
-      {/* picker — only while choosing */}
+      {/* picker - only while choosing */}
       {picking && !isLocked && (
         <div className="border-t px-4 py-3">
           {options === null ? (
             <p className="text-sm text-muted-foreground">Loading linked flights…</p>
           ) : options.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Link a flight to this event first — then you can lock the package to it.
+              Link a flight to this event first - then you can lock the package to it.
             </p>
           ) : (
             <ul className="divide-y">
@@ -198,8 +198,8 @@ export function EventFlightLock({
             {lockedFlight ? lockedFlight.label : `Flight #${locked}`}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Package dates fixed to {defDateDepart ?? "—"} → {defDateReturn ?? "—"}.
-            When this flight sells out the package shows as sold out — it never falls
+            Package dates fixed to {defDateDepart ?? "-"} → {defDateReturn ?? "-"}.
+            When this flight sells out the package shows as sold out - it never falls
             back to a live search, which would change the price.
           </p>
           <p className="mt-1 text-xs text-muted-foreground">

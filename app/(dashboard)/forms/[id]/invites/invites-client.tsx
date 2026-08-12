@@ -154,7 +154,7 @@ export function InvitesClient({
       <div className="space-y-4 rounded-lg border bg-card p-4">
         <div className="space-y-1.5">
           <Label className="text-xs font-medium text-muted-foreground">
-            Recipients — one per line, “Name, email@example.com”
+            Recipients - one per line, “Name, email@example.com”
           </Label>
           <Textarea
             rows={6}
@@ -214,7 +214,7 @@ export function InvitesClient({
             {invites.map((invite) => (
               <TableRow key={invite.id}>
                 <TableCell>
-                  <div className="font-medium">{invite.recipient_name ?? "—"}</div>
+                  <div className="font-medium">{invite.recipient_name ?? "-"}</div>
                   <div className="text-xs text-muted-foreground">
                     {invite.recipient_email ?? "no email"}
                   </div>
@@ -225,12 +225,12 @@ export function InvitesClient({
                 <TableCell className="uppercase text-muted-foreground">{invite.lang}</TableCell>
                 <TableCell>{statusBadge(invite)}</TableCell>
                 <TableCell className="whitespace-nowrap text-muted-foreground">
-                  {invite.sent_at ? new Date(invite.sent_at).toLocaleDateString() : "—"}
+                  {invite.sent_at ? new Date(invite.sent_at).toLocaleDateString() : "-"}
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-muted-foreground">
                   {invite.submitted_at
                     ? new Date(invite.submitted_at).toLocaleDateString()
-                    : "—"}
+                    : "-"}
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end">

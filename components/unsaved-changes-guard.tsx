@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
 /**
- * Warns before leaving a page with unsaved changes — using our own
+ * Warns before leaving a page with unsaved changes - using our own
  * shadcn dialog instead of the native `window.confirm`.
  *
  * Covers:
@@ -21,7 +21,7 @@ export function UnsavedChangesGuard({ when }: { when: boolean }) {
   const router = useRouter();
   const [pendingHref, setPendingHref] = useState<string | null>(null);
 
-  // Refresh / tab close / hard navigation — native prompt is unavoidable here.
+  // Refresh / tab close / hard navigation - native prompt is unavoidable here.
   useEffect(() => {
     if (!when) return;
     const handler = (e: BeforeUnloadEvent) => {

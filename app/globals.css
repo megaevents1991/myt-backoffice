@@ -94,11 +94,11 @@ body {
 }
 
 /*
- * Partner portal theme — the main app's brand (forest #0A1A14 + glow mint
+ * Partner portal theme - the main app's brand (forest #0A1A14 + glow mint
  * #5BFF95 + the neon accent set), scoped to the /portal subtree only. The
  * admin dashboard above keeps the stock neutral tokens; shadcn primitives
  * rendered inside .portal-theme pick these up automatically.
- * Values lifted from ../myt-main/app/globals.css — keep in sync by hand.
+ * Values lifted from ../myt-main/app/globals.css - keep in sync by hand.
  */
 @layer base {
   .portal-theme {
@@ -108,7 +108,7 @@ body {
     --card-foreground: 244 81% 4%;
     --popover: 0 0% 100%;
     --popover-foreground: 244 81% 4%;
-    --primary: 158 44% 7%; /* #0A1A14 dark forest — pills, CTAs */
+    --primary: 158 44% 7%; /* #0A1A14 dark forest - pills, CTAs */
     --primary-foreground: 60 33% 97%;
     --secondary: 141 100% 68%; /* #5BFF95 glow mint */
     --secondary-foreground: 158 44% 7%;
@@ -138,11 +138,19 @@ body {
 }
 
 @layer components {
-  /* Forest hero band with the main site's aurora glow — pure CSS, no images. */
+  /* Forest hero band with the main site's aurora glow - pure CSS, no images. */
   .portal-hero {
     background-color: hsl(var(--brand-forest));
     background-image:
-      radial-gradient(60% 120% at 85% -20%, hsl(var(--brand-mint) / 0.22), transparent 60%),
-      radial-gradient(40% 100% at 10% 120%, hsl(var(--brand-aqua) / 0.12), transparent 60%);
+      radial-gradient(
+        60% 120% at 85% -20%,
+        hsl(var(--brand-mint) / 0.22),
+        transparent 60%
+      ),
+      radial-gradient(
+        40% 100% at 10% 120%,
+        hsl(var(--brand-aqua) / 0.12),
+        transparent 60%
+      );
   }
 }

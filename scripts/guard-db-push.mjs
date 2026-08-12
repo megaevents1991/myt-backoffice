@@ -4,7 +4,7 @@
  * Why this exists: `supabase db push` writes to the SHARED PRODUCTION database.
  * Pushing from a feature branch applies migration files that exist only on that
  * branch, so the remote migration-history table gains versions master has never
- * seen — and every later push from master or CI then fails with
+ * seen - and every later push from master or CI then fails with
  * "Remote migration versions not found in local migrations directory".
  *
  * Migrations should land the same way code does: merge to master, then let the
@@ -30,7 +30,7 @@ function git(...args) {
 }
 
 function fail(title, lines) {
-  console.error(`\n${RED}${BOLD}✖ db:push blocked — ${title}${RESET}\n`);
+  console.error(`\n${RED}${BOLD}✖ db:push blocked - ${title}${RESET}\n`);
   for (const line of lines) console.error(`  ${line}`);
   console.error(
     `\n  ${YELLOW}Override for a real emergency:${RESET} ALLOW_DB_PUSH=1 npm run db:push\n`,
@@ -39,7 +39,9 @@ function fail(title, lines) {
 }
 
 if (process.env.ALLOW_DB_PUSH === "1") {
-  console.warn(`${YELLOW}⚠ ALLOW_DB_PUSH=1 — skipping the db:push safety checks.${RESET}`);
+  console.warn(
+    `${YELLOW}⚠ ALLOW_DB_PUSH=1 - skipping the db:push safety checks.${RESET}`,
+  );
   process.exit(0);
 }
 
@@ -75,7 +77,9 @@ if (status) {
 }
 
 try {
-  execFileSync("git", ["fetch", "origin", "master", "--quiet"], { stdio: "ignore" });
+  execFileSync("git", ["fetch", "origin", "master", "--quiet"], {
+    stdio: "ignore",
+  });
   const behind = git("rev-list", "--count", "HEAD..origin/master");
   if (behind !== "0") {
     fail(`your master is ${behind} commit(s) behind origin/master`, [
@@ -93,7 +97,7 @@ try {
 } catch (error) {
   if (error?.status === 1) throw error;
   console.warn(
-    `${YELLOW}⚠ Could not reach origin to compare branches — continuing.${RESET}`,
+    `${YELLOW}⚠ Could not reach origin to compare branches - continuing.${RESET}`,
   );
 }
 
@@ -113,4 +117,6 @@ for (const file of readdirSync("supabase/migrations")) {
   versions.set(version, file);
 }
 
-console.log("✓ db:push checks passed — on master, in sync, no version clashes.");
+console.log(
+  "✓ db:push checks passed - on master, in sync, no version clashes.",
+);

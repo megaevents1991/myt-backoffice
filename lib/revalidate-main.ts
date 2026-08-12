@@ -1,5 +1,5 @@
 // Best-effort ISR refresh of the customer site(s) after backoffice data
-// changes. Same dual-target fan-out as app/api/revalidate/route.ts — never
+// changes. Same dual-target fan-out as app/api/revalidate/route.ts - never
 // throws; a failed ping just means the site refreshes on its 1h ISR window.
 export async function revalidateMain(): Promise<void> {
   const primary = process.env.NEXT_SECRET_HOTEL_SERVICE_URL;

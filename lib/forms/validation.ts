@@ -11,7 +11,12 @@
  */
 
 import { z } from "zod";
-import type { AnswerMap, AnswerValue, FormField, FormLang } from "@/types/form.types";
+import type {
+  AnswerMap,
+  AnswerValue,
+  FormField,
+  FormLang,
+} from "@/types/form.types";
 import { strings } from "./i18n";
 
 /** Hard caps so a public endpoint cannot be used to store arbitrary blobs. */
@@ -102,7 +107,7 @@ export function buildFieldSchema(field: FormField): z.ZodTypeAny | null {
     }
 
     default:
-      // Unknown type persisted by an older build — reject rather than store junk.
+      // Unknown type persisted by an older build - reject rather than store junk.
       return z.never();
   }
 }
@@ -114,7 +119,7 @@ export type ValidationResult = ValidationOk | ValidationFail;
 /**
  * Validate a raw answer map against the form's fields.
  *
- * Iterates the FIELDS, never the submitted keys — so unknown or forged field ids
+ * Iterates the FIELDS, never the submitted keys - so unknown or forged field ids
  * in `raw` are silently dropped and never reach the database.
  */
 export function validateAnswers(
@@ -164,7 +169,7 @@ export function formatAnswer(
   const labelOf = (v: string) => {
     const option = field.options.find((o) => o.value === v);
     if (!option) return v;
-    // Falls back across languages — an option may be authored in Hebrew only.
+    // Falls back across languages - an option may be authored in Hebrew only.
     const preferred = lang === "he" ? option.label_he : option.label_en;
     const other = lang === "he" ? option.label_en : option.label_he;
     return preferred?.trim() || other?.trim() || v;
@@ -174,7 +179,8 @@ export function formatAnswer(
     return value ? strings(lang).yes : strings(lang).no;
   }
   if (Array.isArray(value)) return value.map(labelOf).join(", ");
-  if (field.type === "select" || field.type === "radio") return labelOf(String(value));
+  if (field.type === "select" || field.type === "radio")
+    return labelOf(String(value));
   if (field.type === "rating") {
     const max = typeof field.config.max === "number" ? field.config.max : 5;
     return `${value} / ${max}`;

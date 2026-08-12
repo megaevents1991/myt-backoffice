@@ -464,7 +464,7 @@ export default function NewOfflineFlightPage() {
   async function onSubmit(values: OfflineFlightFormData) {
     startTransition(async () => {
       try {
-        // `*_has_stop` drives the form only — the row carries the airports, and
+        // `*_has_stop` drives the form only - the row carries the airports, and
         // `stops` is derived from them (here and by the DB trigger).
         const {
           outbound_has_stop: _outboundHasStop,

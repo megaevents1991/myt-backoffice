@@ -1,5 +1,5 @@
 /**
- * Dynamic forms (טפסים) — staff-built bilingual questionnaires sent to clients.
+ * Dynamic forms (טפסים) - staff-built bilingual questionnaires sent to clients.
  *
  * Backoffice-only. Not mirrored in ../myt-main.
  */
@@ -47,7 +47,7 @@ export type FormLanguages = FormLang | "both";
 /** Dark uses the brand indigo canvas; light is ink on off-white, same accent. */
 export type FormTheme = "dark" | "light";
 
-/** The languages a form is authored in — drives which tabs the builder shows. */
+/** The languages a form is authored in - drives which tabs the builder shows. */
 export function enabledLangs(languages: FormLanguages): FormLang[] {
   return languages === "both" ? ["en", "he"] : [languages];
 }
@@ -190,7 +190,10 @@ export type PublicForm = {
 };
 
 /** Draft shape used by the builder before a field exists in the DB. */
-export type FormFieldDraft = Omit<FormField, "id" | "form_id" | "created_at"> & {
+export type FormFieldDraft = Omit<
+  FormField,
+  "id" | "form_id" | "created_at"
+> & {
   /** Negative for unsaved fields, real row id once persisted. */
   id: number;
 };

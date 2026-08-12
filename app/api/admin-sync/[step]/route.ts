@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardAdminRoute } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
-import { isSyncStepId, type SyncStepId, type SyncStepResult } from "@/lib/sync-steps";
+import {
+  isSyncStepId,
+  type SyncStepId,
+  type SyncStepResult,
+} from "@/lib/sync-steps";
 import { syncEvents } from "@/lib/services/sports-events-sync";
 import { syncLiveEvents } from "@/lib/services/live-events-sync";
 import { syncTixStockEvents } from "@/lib/services/tixstock-sync";
@@ -11,7 +15,7 @@ import { runCampaignCreatives } from "@/lib/creative/auto";
 import { publishMetaFeeds } from "@/lib/feed/publish-meta-feed";
 
 /**
- * Staff-triggered version of the nightly crons — one step per request, driven
+ * Staff-triggered version of the nightly crons - one step per request, driven
  * by the "סנכרון מלא" button on /meta-feed (see lib/sync-steps.ts for the
  * pipeline). Admin-triggered, so it takes `guardAdminRoute()`, NOT the cron
  * guard: no secret is involved, the caller's session decides.
@@ -41,7 +45,10 @@ async function runStep(step: SyncStepId): Promise<SyncStepResult> {
     case "tixstock-events": {
       const r = await syncTixStockEvents();
       if (r.status === "error") throw new Error(r.error ?? "sync failed");
-      return { step, summary: `${r.count} אירועי TixStock ב־${r.durationSeconds} שנ׳` };
+      return {
+        step,
+        summary: `${r.count} אירועי TixStock ב־${r.durationSeconds} שנ׳`,
+      };
     }
     case "tixstock-prices": {
       const r = await syncTixStockPrices();
@@ -60,7 +67,9 @@ async function runStep(step: SyncStepId): Promise<SyncStepResult> {
       };
     }
     case "campaign-creatives": {
-      const r = await runCampaignCreatives({ timeBudgetMs: CREATIVE_TIME_BUDGET_MS });
+      const r = await runCampaignCreatives({
+        timeBudgetMs: CREATIVE_TIME_BUDGET_MS,
+      });
       const errors = r.errors.length ? `, ${r.errors.length} שגיאות` : "";
       const skipped = r.skipped.length ? `, ${r.skipped.length} דולגו` : "";
       return {
@@ -71,7 +80,10 @@ async function runStep(step: SyncStepId): Promise<SyncStepResult> {
     }
     case "publish-feed": {
       const r = await publishMetaFeeds();
-      return { step, summary: `${r.activityRows} אירועים פורסמו לקובץ שמטא קוראת` };
+      return {
+        step,
+        summary: `${r.activityRows} אירועים פורסמו לקובץ שמטא קוראת`,
+      };
     }
   }
 }
@@ -85,7 +97,10 @@ export async function POST(
 
   const { step } = await params;
   if (!isSyncStepId(step)) {
-    return NextResponse.json({ error: `Unknown sync step "${step}"` }, { status: 400 });
+    return NextResponse.json(
+      { error: `Unknown sync step "${step}"` },
+      { status: 400 },
+    );
   }
 
   try {
@@ -100,6 +115,9 @@ export async function POST(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error(`[admin-sync] ${step} failed:`, message);
-    return NextResponse.json({ ok: false, step, error: message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, step, error: message },
+      { status: 500 },
+    );
   }
 }

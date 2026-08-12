@@ -168,7 +168,7 @@ export function ResponsesClient({ formId, fields, initialResponses }: Props) {
                       {adminLabel(field.label_en, field.label_he)}
                     </div>
                     <div className="whitespace-pre-line text-sm">
-                      {value || <span className="text-muted-foreground">—</span>}
+                      {value || <span className="text-muted-foreground">-</span>}
                     </div>
                   </div>
                 );

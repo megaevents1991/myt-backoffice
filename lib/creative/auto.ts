@@ -2,20 +2,24 @@
  * Guard-free creative cores shared by the designer server actions
  * (`lib/actions/creative-actions.ts`, which add requireStaff) and the
  * nightly campaign cron (`/api/cron/nightlyCampaignCreatives`, cron-secret
- * guarded). Server-only — imports the service-role client.
+ * guarded). Server-only - imports the service-role client.
  *
  * Campaign flow: every feed-eligible event gets an auto-generated creative
  * (square → feed image_link, banner → additional_image_link). Clean
  * auto-derivation (matched teams/artist) uses the branded logo composition;
  * when derivation warns (unmatched names, no artist image), it falls back to
- * a full-bleed creative using the event's own photo ("photo" kind) — only a
+ * a full-bleed creative using the event's own photo ("photo" kind) - only a
  * genuinely imageless or priceless event still skips (feed then falls back
  * to the original card image untouched). Regeneration is hash-driven:
  * date/price/name change → new hash → re-render next run.
  */
 import { createHash } from "node:crypto";
 import { supabase } from "@/lib/supabase-server";
-import { renderCreativePng, SIZES, type CreativeSize } from "@/lib/creative/render";
+import {
+  renderCreativePng,
+  SIZES,
+  type CreativeSize,
+} from "@/lib/creative/render";
 import {
   buildCreativeInput,
   teamImage,
@@ -31,16 +35,16 @@ export type CreativeDefaults = {
   locationText: string;
   price: number | null; // final customer package price (main-app formula)
   currency: string;
-  // "team:<id>" (football_teams) or "logo:<id>" (football_logos) — see input.ts.
+  // "team:<id>" (football_teams) or "logo:<id>" (football_logos) - see input.ts.
   homeRef: string | null;
   awayRef: string | null;
   artistName: string | null;
   artistImageUrl: string | null;
   // Whether artistImageUrl is a real transparent cut-out (art_image_url) vs a
-  // regular photo (image_url/card_image_url) — decides blob-card vs plain
+  // regular photo (image_url/card_image_url) - decides blob-card vs plain
   // circular-avatar rendering (see MatchTemplate). Meaningless when kind !== "artist".
   artistIsCutout: boolean;
-  // Event's own regular photo — the fallback subject for the "photo" creative
+  // Event's own regular photo - the fallback subject for the "photo" creative
   // kind when no team/artist logo could be matched (see `warnings`).
   cardImageUrl: string | null;
   eventName: string;
@@ -61,7 +65,7 @@ type PersonRow = {
   logo_url: string | null;
   art_image_url: string | null;
   image_url: string | null;
-  // artists.gallery (jsonb) — array of image URLs, empty for most rows.
+  // artists.gallery (jsonb) - array of image URLs, empty for most rows.
   // Only loaded for artists; football_teams/logos subjects leave it unset.
   gallery?: string[] | null;
 };
@@ -73,7 +77,7 @@ type SubjectRow = PersonRow & { ref: string };
  * Optional per-run lookup caches so batch callers (the nightly campaign cron)
  * don't re-fetch the full artists / football_teams / football_logos tables
  * for EVERY event (~40 full-table reads per run). Scoped to the caller's
- * object — no TTL, no cross-request staleness; single-event designer calls
+ * object - no TTL, no cross-request staleness; single-event designer calls
  * simply omit it and fetch fresh.
  */
 export type CreativeLookupCaches = {
@@ -81,7 +85,11 @@ export type CreativeLookupCaches = {
   subjects?: SubjectRow[];
 };
 
-const norm = (s: string) => s.toLowerCase().replace(/['"’.]/g, "").trim();
+const norm = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/['"’.]/g, "")
+    .trim();
 
 // Match one side of "ברצלונה - ריאל מדריד" against a person/team row by
 // Hebrew or English name (exact or containment, both directions).
@@ -101,7 +109,9 @@ function matchPerson<R extends PersonRow>(part: string, rows: R[]): R | null {
 }
 
 /** Artists table rows (deduped per batch run through `caches`). */
-async function loadArtistRows(caches?: CreativeLookupCaches): Promise<PersonRow[]> {
+async function loadArtistRows(
+  caches?: CreativeLookupCaches,
+): Promise<PersonRow[]> {
   if (caches?.artists) return caches.artists;
   const { data, error } = await supabase
     .from("artists")
@@ -118,10 +128,13 @@ async function loadArtistRows(caches?: CreativeLookupCaches): Promise<PersonRow[
 /**
  * Deterministic per-event pick from an artist's gallery (jsonb URL array).
  * Plain modulo on the event id: same-artist events carry near-sequential ids,
- * so this walks the gallery round-robin — maximum variety across the artist's
+ * so this walks the gallery round-robin - maximum variety across the artist's
  * events, stable for any single event across re-renders.
  */
-export function pickGalleryImage(gallery: unknown, eventId: number): string | null {
+export function pickGalleryImage(
+  gallery: unknown,
+  eventId: number,
+): string | null {
   const pool = Array.isArray(gallery)
     ? gallery.filter((u): u is string => typeof u === "string" && u.length > 0)
     : [];
@@ -175,34 +188,37 @@ export async function deriveCreativeDefaults(
   const event = data as unknown as Event;
   const warnings: string[] = [];
 
-  // Date + optional time in UTC (midnight UTC = "no time set" — local getters
+  // Date + optional time in UTC (midnight UTC = "no time set" - local getters
   // would shift stored midnight to 02:00/03:00 Israel time).
   const { dateText, timeText } = eventDateTexts(event.date);
 
   const locationText = event.location?.name ?? "";
   const price = computePackagePrice(event);
-  if (price === null) warnings.push("אין כרטיסים זמינים — מחיר לא חושב, מלא ידנית");
+  if (price === null)
+    warnings.push("אין כרטיסים זמינים - מחיר לא חושב, מלא ידנית");
 
   // Names carry stray whitespace in the DB (114 future events at the time of
-  // writing) — an untrimmed "%גרייסי אברמס %" ilike matches nothing.
+  // writing) - an untrimmed "%גרייסי אברמס %" ilike matches nothing.
   const hebName = (event.name ?? "").trim();
   const engName = (event.name_english ?? "").trim();
   const displayName = hebName || engName;
 
   // Kind detection: type prefix is unreliable (most events are tx_event), so
-  // structure decides — "A - B" names are matches; a name that doesn't split
+  // structure decides - "A - B" names are matches; a name that doesn't split
   // in two and exists in the artists table is an artist show.
   const splitsInTwo = [event.name, event.name_english].some(
     (source) =>
       source &&
-      source.split(/\s+[-–—]\s+|\s+vs\.?\s+/i).map((p) => p.trim()).length === 2,
+      source.split(/\s+[-–-]\s+|\s+vs\.?\s+/i).map((p) => p.trim()).length ===
+        2,
   );
   // A per-event cut-out (art_image_url) is itself strong evidence this is a
-  // single-subject show, regardless of whether an artists-table row exists —
+  // single-subject show, regardless of whether an artists-table row exists -
   // without this, an event with its own uploaded cutout but no matching
   // artists row (or matching team names) fell through to the team-match
   // path, failed there too, and its perfectly good cutout went unused.
-  let isMusic = event.type.startsWith("music") || (!!event.art_image_url && !splitsInTwo);
+  let isMusic =
+    event.type.startsWith("music") || (!!event.art_image_url && !splitsInTwo);
   if (!isMusic && !splitsInTwo) {
     // Probe BOTH names. The Hebrew spellings drift from the library's
     // ("בון גובי" vs "בון ג'ובי", "פטבול" vs "פיטבול") while the English is
@@ -227,26 +243,32 @@ export async function deriveCreativeDefaults(
   if (isMusic) {
     // Artist creative: event cut-out → matched artist image → event card.
     // Tracks whether the resolved image is a REAL cut-out (art_image_url,
-    // blob-safe) or a regular photo (image_url/card_image_url — plain
+    // blob-safe) or a regular photo (image_url/card_image_url - plain
     // circular-avatar rendering, see MatchTemplate) so a "clean" artist match
     // whose only image is a flat photo doesn't get crammed into a blob.
     let artistImageUrl: string | null = event.art_image_url ?? null;
     let artistIsCutout = artistImageUrl != null;
     let artistName = displayName;
     const rows = await loadArtistRows(caches);
-    // Hebrew first, English as the fallback — same reason as the probe above.
+    // Hebrew first, English as the fallback - same reason as the probe above.
     const match = matchArtistForEvent(event, rows);
     if (match) {
       artistName = match.name;
       if (!artistImageUrl) {
         // Gallery first: a per-event rotating pick beats the one static
-        // artist image — that's what makes each product's creative (and so
+        // artist image - that's what makes each product's creative (and so
         // the Meta feed) look different per event of the same artist. Falls
         // back to the artist cut-out/photo when the gallery is empty.
+        //
+        // Gallery images ARE cut-outs (the gallery editor's upload pipeline
+        // strips backgrounds) - so they get the blob card with the seeded
+        // per-event color/shape, not the plain avatar circle a raw photo
+        // gets (2026-08-11: a cutout crammed into a cover-cropped circle
+        // rendered as a floating torso).
         const galleryPick = pickGalleryImage(match.gallery, eventId);
         if (galleryPick) {
           artistImageUrl = galleryPick;
-          artistIsCutout = false;
+          artistIsCutout = true;
         } else if (match.art_image_url) {
           artistImageUrl = match.art_image_url;
           artistIsCutout = true;
@@ -260,7 +282,7 @@ export async function deriveCreativeDefaults(
       artistImageUrl = event.card_image_url;
       artistIsCutout = false;
     }
-    if (!artistImageUrl) warnings.push("לא נמצאה תמונת אמן — בחר תמונה ידנית");
+    if (!artistImageUrl) warnings.push("לא נמצאה תמונת אמן - בחר תמונה ידנית");
 
     return {
       kind: "artist",
@@ -295,7 +317,7 @@ export async function deriveCreativeDefaults(
         .from("football_teams")
         .select("id,name,name_english,logo_url,art_image_url,image_url")
         .eq("is_deleted", false),
-      // football_logos isn't in the generated DB types yet — cast like template-crud.
+      // football_logos isn't in the generated DB types yet - cast like template-crud.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any)
         .from("football_logos")
@@ -320,9 +342,9 @@ export async function deriveCreativeDefaults(
       image_url: null,
       ref: `logo:${l.id}`,
     }));
-    const teamSubjects: SubjectRow[] = ((teamsRes.data || []) as PersonRow[]).map(
-      (t) => ({ ...t, ref: `team:${t.id}` }),
-    );
+    const teamSubjects: SubjectRow[] = (
+      (teamsRes.data || []) as PersonRow[]
+    ).map((t) => ({ ...t, ref: `team:${t.id}` }));
     subjects = [...logoSubjects, ...teamSubjects];
     if (caches) caches.subjects = subjects;
   }
@@ -330,7 +352,7 @@ export async function deriveCreativeDefaults(
   let homeRef: string | null = null;
   let awayRef: string | null = null;
   // When only ONE side of "A - B" matches a known team/logo (the common case
-  // — the opponent just isn't in our small library), remember it: rather
+  // - the opponent just isn't in our small library), remember it: rather
   // than discard a perfectly good, real crest, the campaign flow uses it for
   // a single-team spotlight (see generateCampaignForEvent) instead of
   // skipping the whole fixture.
@@ -338,7 +360,7 @@ export async function deriveCreativeDefaults(
   // Try both names; first one that splits into exactly two parts wins.
   for (const source of [event.name, event.name_english]) {
     if (!source) continue;
-    const parts = source.split(/\s+[-–—]\s+|\s+vs\.?\s+/i).map((p) => p.trim());
+    const parts = source.split(/\s+[-–-]\s+|\s+vs\.?\s+/i).map((p) => p.trim());
     if (parts.length !== 2) continue;
     const home = matchPerson(parts[0], subjects);
     const away = matchPerson(parts[1], subjects);
@@ -355,7 +377,7 @@ export async function deriveCreativeDefaults(
     }
   }
   if (homeRef === null || awayRef === null) {
-    warnings.push("לא זוהו שתי קבוצות משם האירוע — בחר ידנית");
+    warnings.push("לא זוהו שתי קבוצות משם האירוע - בחר ידנית");
   }
 
   return {
@@ -397,7 +419,9 @@ export async function renderAndUploadCreative(
       console.error(JSON.stringify(error));
       throw new Error(`Upload failed for ${size}`);
     }
-    urls[size] = supabase.storage.from("creatives").getPublicUrl(path).data.publicUrl;
+    urls[size] = supabase.storage
+      .from("creatives")
+      .getPublicUrl(path).data.publicUrl;
   }
   return urls;
 }
@@ -416,25 +440,28 @@ export type CampaignEventRow = Event & { campaign_input_hash?: string | null };
 //
 // STILL "v3" on purpose (2026-08-11): the hero/name-top/price-top layouts
 // exist but are manual-designer-only until the creative team picks the new
-// template together — bump to "v4" when that lands, and the whole catalog
+// template together - bump to "v4" when that lands, and the whole catalog
 // re-renders in the chosen look. Until then deploying this file changes
 // nothing about existing creatives.
 const RENDER_VERSION = "v3";
 
 /**
- * Hash of everything printed on the creative — change → regenerate. Includes
+ * Hash of everything printed on the creative - change → regenerate. Includes
  * the event's own image fields (card_image_url, art_image_url): without
  * this, uploading a missing photo/cutout directly on the event doesn't
  * change its date/price/name, so a prior skip stayed checkpointed forever
  * even after the actual blocker was fixed.
  *
  * `galleryUrl` is the deterministic artist-gallery pick for this event (see
- * pickGalleryImage) — batch callers pass it so uploading/editing an artist's
+ * pickGalleryImage) - batch callers pass it so uploading/editing an artist's
  * gallery regenerates that artist's creatives on the next run. (Fixing a
  * linked row's plain art_image_url/image_url instead still needs a manual
- * recheck — that data isn't in the hash.)
+ * recheck - that data isn't in the hash.)
  */
-export function campaignInputHash(event: Event, galleryUrl?: string | null): string {
+export function campaignInputHash(
+  event: Event,
+  galleryUrl?: string | null,
+): string {
   const { dateText } = eventDateTexts(event.date);
   const price = computePackagePrice(event);
   // The gallery segment is appended ONLY when a pick exists: with every
@@ -457,7 +484,10 @@ export function campaignInputHash(event: Event, galleryUrl?: string | null): str
  * and a deploy that lands before its migration must not take creative
  * generation down with it. Failure is logged, never thrown.
  */
-async function setSkipReason(eventId: number, reason: string | null): Promise<void> {
+async function setSkipReason(
+  eventId: number,
+  reason: string | null,
+): Promise<void> {
   const { error } = await supabase
     .from("events")
     .update({ campaign_skip_reason: reason } as never)
@@ -491,12 +521,12 @@ export async function generateCampaignForEvent(
   const hash = campaignInputHash(event, galleryUrl);
   if (event.campaign_input_hash === hash) return { status: "current" };
 
-  // Records the hash even on skip — otherwise an event whose derivation
+  // Records the hash even on skip - otherwise an event whose derivation
   // fails (unmatched teams, no artist image) gets re-evaluated on EVERY
   // cron run forever, permanently occupying batch slots and starving newer
   // events further down the date-ordered scan from ever being reached.
   // Existing campaign_image_url/banner (if any, from a prior successful
-  // run) are left untouched — a newly-failing derivation shouldn't blank
+  // run) are left untouched - a newly-failing derivation shouldn't blank
   // out a previously good creative.
   // The reason is stored on the event so "why is this product missing?" is
   // answerable in the UI instead of only in a cron response nobody reads.
@@ -515,7 +545,7 @@ export async function generateCampaignForEvent(
   if (defaults.price === null) {
     // The only remaining skip: Meta requires a price, so a priceless event has
     // no product to advertise. Everything else now renders SOMETHING branded.
-    await markChecked("אין מחיר — אין כרטיסים זמינים לחישוב מחיר חבילה");
+    await markChecked("אין מחיר - אין כרטיסים זמינים לחישוב מחיר חבילה");
     return { status: "skipped", reason: "no computable price" };
   }
 
@@ -531,7 +561,7 @@ export async function generateCampaignForEvent(
   // The auto/campaign flow renders EXACTLY the v3 look for now: classic
   // layout, no hero mode. The new layouts (hero / name-top / price-top,
   // 2026-08-10) are manual-designer-only until the creative team picks the
-  // production template together — then wire the choice in here and bump
+  // production template together - then wire the choice in here and bump
   // RENDER_VERSION. Gallery picks still flow through artistImageUrl, so an
   // artist with gallery images already gets per-event photo variety.
   let params: CreativeParams;
@@ -554,7 +584,7 @@ export async function generateCampaignForEvent(
       ...baseFields,
     };
   } else if (defaults.partialTeamImageUrl) {
-    // Only ONE side of "A - B" matched a known team (the common case — the
+    // Only ONE side of "A - B" matched a known team (the common case - the
     // opponent just isn't in our small library). Rather than discard a real
     // crest, spotlight that one team on the football-stadium backdrop (same
     // look as the site's own team pages) with the FULL original match title
@@ -568,7 +598,7 @@ export async function generateCampaignForEvent(
       ...baseFields,
     };
   } else {
-    // No matched team/artist logo — fall back to the event's own photo, and
+    // No matched team/artist logo - fall back to the event's own photo, and
     // when there isn't one either, to a BARE branded canvas (wordmark,
     // tagline, name, date, price pill; no subject image).
     //
@@ -613,7 +643,7 @@ export async function generateCampaignForEvent(
 export type CampaignRunSummary = {
   /** Feed-eligible events looked at (not deleted, today onward). */
   scanned: number;
-  /** Already up to date — hash matched, nothing to do. */
+  /** Already up to date - hash matched, nothing to do. */
   current: number;
   generated: number[];
   skipped: { id: number; reason: string }[];
@@ -632,7 +662,7 @@ export type CampaignRunOptions = {
 
 /**
  * Regenerate every campaign creative whose input hash changed, oldest event
- * first. Shared by the nightly cron and the manual "sync everything" button —
+ * first. Shared by the nightly cron and the manual "sync everything" button -
  * both get the same batching semantics.
  *
  * There is no per-run render CAP by default: the only bound is `timeBudgetMs`,
@@ -673,7 +703,7 @@ export async function runCampaignCreatives(
   let processed = 0;
   // Shared per-run caches: artists/teams/logos tables load once, not per event.
   const caches: CreativeLookupCaches = {};
-  // The pre-check hash is gallery-aware, so the artists table loads up front —
+  // The pre-check hash is gallery-aware, so the artists table loads up front -
   // one query per run, same rows generateCampaignForEvent reuses via `caches`.
   const artistRows = await loadArtistRows(caches);
   for (const event of events) {

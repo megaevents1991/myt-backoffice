@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * "מה חדש" — one card PER ARTIST, main-site brand look (forest surface, mint
+ * "מה חדש" - one card PER ARTIST, main-site brand look (forest surface, mint
  * accent), arrow-paged rail. Design rules applied (ui-ux-pro-max):
  * - No nested scrollbar: the strip pages with arrow buttons (scrollbar hidden,
- *   touch swipe still works on mobile) — scroll-in-scroll is a trap.
+ *   touch swipe still works on mobile) - scroll-in-scroll is a trap.
  * - Click a card → its upcoming dates open in a fixed panel BELOW the rail,
  *   capped at 6 visible + "ועוד N" (no inner scrolling either).
  * - Touch targets ≥44px, aria-expanded on cards, aria-labels on arrows,
@@ -28,7 +28,7 @@ function formatDate(value: string | null): string {
 export function NewPackagesRail({ groups }: { groups: PortalNewGroup[] }) {
   const railRef = useRef<HTMLDivElement>(null);
   const [openKey, setOpenKey] = useState<string | null>(null);
-  // Arrows appear only when the strip actually overflows — with few artists
+  // Arrows appear only when the strip actually overflows - with few artists
   // everything is already visible and dead arrows just confuse.
   const [overflowing, setOverflowing] = useState(false);
   useEffect(() => {
@@ -44,7 +44,7 @@ export function NewPackagesRail({ groups }: { groups: PortalNewGroup[] }) {
   if (groups.length === 0) {
     return (
       <p className="py-6 text-sm text-muted-foreground">
-        אין חבילות חדשות מהחודש האחרון. ברגע שנעלה אירועים חדשים — הם יופיעו כאן.
+        אין חבילות חדשות מהחודש האחרון. ברגע שנעלה אירועים חדשים - הם יופיעו כאן.
       </p>
     );
   }
@@ -109,7 +109,7 @@ export function NewPackagesRail({ groups }: { groups: PortalNewGroup[] }) {
         </div>
         {overflowing && (
           <>
-            {/* RTL: the rail advances LEFTWARD — "next" sits on the LEFT edge
+            {/* RTL: the rail advances LEFTWARD - "next" sits on the LEFT edge
                 pointing left, "previous" on the RIGHT pointing right. */}
             <button
               type="button"
@@ -159,7 +159,7 @@ export function NewPackagesRail({ groups }: { groups: PortalNewGroup[] }) {
           </div>
           {open.events.length > VISIBLE_DATES && (
             <p className="mt-2 text-xs text-muted-foreground">
-              ועוד {open.events.length - VISIBLE_DATES} תאריכים — כולם זמינים דרך הלינק האישי שלכם באתר.
+              ועוד {open.events.length - VISIBLE_DATES} תאריכים - כולם זמינים דרך הלינק האישי שלכם באתר.
             </p>
           )}
         </div>

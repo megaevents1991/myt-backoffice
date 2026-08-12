@@ -3,7 +3,7 @@
 /**
  * An EN / עב pair of inputs behind two small tabs.
  *
- * There is no i18n library here — every user-visible string on a form is a
+ * There is no i18n library here - every user-visible string on a form is a
  * `*_en` / `*_he` column pair, so this is the one control staff use to author
  * both languages of any string.
  *

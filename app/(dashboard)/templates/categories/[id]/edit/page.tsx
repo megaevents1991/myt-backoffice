@@ -63,10 +63,10 @@ export default function EditCategoryPage({
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [membersRaw, setMembersRaw] = useState("");
-  // Which tags compose this category — the whole membership rule (see
+  // Which tags compose this category - the whole membership rule (see
   // CategoryTagsField).
   const [catTagIds, setCatTagIds] = useState<number[]>([]);
-  // Parent options — self excluded; the server also refuses a cycle.
+  // Parent options - self excluded; the server also refuses a cycle.
   const [parentOptions, setParentOptions] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [artImageUrl, setArtImageUrl] = useState("");
@@ -248,7 +248,7 @@ export default function EditCategoryPage({
                     value={field.value ?? ""}
                     onChange={field.onChange}
                   >
-                    <option value="">— ראשית —</option>
+                    <option value="">- ראשית -</option>
                     {parentOptions.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -309,7 +309,7 @@ export default function EditCategoryPage({
 
           <div className="rounded-lg border p-4">
             <ArtBlobPicker
-              label="Card art — cut-out + blob (optional)"
+              label="Card art - cut-out + blob (optional)"
               imageUrl={artImageUrl}
               colorIndex={artColorIndex}
               shapeIndex={artShapeIndex}

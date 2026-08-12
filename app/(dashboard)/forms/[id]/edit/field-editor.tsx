@@ -41,7 +41,7 @@ import { BilingualInput } from "./bilingual-input";
 
 /**
  * Option values are the strings stored in `form_responses.answers`, so they are
- * generated once from the English label and then never change — renaming a
+ * generated once from the English label and then never change - renaming a
  * label must not orphan answers already collected.
  */
 function optionValueFrom(labelEn: string, index: number): string {
@@ -58,7 +58,7 @@ type Props = {
   field: FormFieldDraft;
   index: number;
   total: number;
-  /** Languages the parent form offers — drives which tabs appear. */
+  /** Languages the parent form offers - drives which tabs appear. */
   langs: FormLang[];
   onChange: (patch: Partial<FormFieldDraft>) => void;
   onMove: (direction: -1 | 1) => void;

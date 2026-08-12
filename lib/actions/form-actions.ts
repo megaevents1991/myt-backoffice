@@ -20,7 +20,7 @@ import { DEFAULT_ACCENT } from "@/lib/forms/brand";
 
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
-// `forms` isn't in the generated client types — same untyped-table pattern as
+// `forms` isn't in the generated client types - same untyped-table pattern as
 // template-crud.ts / coupon-actions.ts.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const formsTable = () => (supabase as any).from("forms");
@@ -140,14 +140,20 @@ export async function createForm(): Promise<Form> {
     created_by: actor.email ?? null,
   };
 
-  const { data, error } = await formsTable().insert(payload).select(FORM_COLUMNS);
+  const { data, error } = await formsTable()
+    .insert(payload)
+    .select(FORM_COLUMNS);
   if (error) {
     console.error("createForm failed:", JSON.stringify(error));
     throw error;
   }
 
   const created = data[0] as Form;
-  await logAudit({ action: "create", entityType: "form", entityId: created.id });
+  await logAudit({
+    action: "create",
+    entityType: "form",
+    entityId: created.id,
+  });
   revalidatePath("/forms");
   return created;
 }
@@ -169,14 +175,14 @@ export type FormMetaInput = {
   cover_image_url: string | null;
 };
 
-/** Columns mapped one by one — never spread a client object into the row. */
+/** Columns mapped one by one - never spread a client object into the row. */
 export async function updateFormMeta(
   id: number,
   input: FormMetaInput,
 ): Promise<Form> {
   await requireStaff();
 
-  // A form may be authored in Hebrew only — require one language, not English.
+  // A form may be authored in Hebrew only - require one language, not English.
   const titleEn = input.title_en?.trim() ?? "";
   const titleHe = input.title_he?.trim() ?? "";
   if (!titleEn && !titleHe) throw new Error("Add a title in English or Hebrew");
@@ -188,7 +194,11 @@ export async function updateFormMeta(
     : "both";
   // A single-language form has nothing to toggle to.
   const defaultLang: FormLang =
-    languages === "both" ? (input.default_lang === "he" ? "he" : "en") : languages;
+    languages === "both"
+      ? input.default_lang === "he"
+        ? "he"
+        : "en"
+      : languages;
 
   const requestedSlug = await slugify(input.slug || titleEn || titleHe);
   const slug = await uniqueSlug(requestedSlug, id);
@@ -205,7 +215,7 @@ export async function updateFormMeta(
     default_lang: defaultLang,
     allow_multiple: Boolean(input.allow_multiple),
     theme: input.theme === "light" ? "light" : "dark",
-    // The accent is written into inline styles on a public page — only ever
+    // The accent is written into inline styles on a public page - only ever
     // store a hex value, never arbitrary text from the client.
     accent_color: HEX_RE.test(input.accent_color ?? "")
       ? input.accent_color
@@ -225,13 +235,21 @@ export async function updateFormMeta(
     throw error;
   }
 
-  await logAudit({ action: "update", entityType: "form", entityId: id, changes: patch });
+  await logAudit({
+    action: "update",
+    entityType: "form",
+    entityId: id,
+    changes: patch,
+  });
   revalidatePath("/forms");
   revalidatePath(`/forms/${id}/edit`);
   return data[0] as Form;
 }
 
-export async function setFormStatus(id: number, status: FormStatus): Promise<Form> {
+export async function setFormStatus(
+  id: number,
+  status: FormStatus,
+): Promise<Form> {
   await requireStaff();
   if (!["draft", "live", "closed"].includes(status)) {
     throw new Error("Invalid status");
@@ -303,7 +321,9 @@ export async function saveFormFields(
     throw existingError;
   }
 
-  const existingIds = new Set<number>((existing ?? []).map((r: { id: number }) => r.id));
+  const existingIds = new Set<number>(
+    (existing ?? []).map((r: { id: number }) => r.id),
+  );
   const keptIds = new Set<number>();
 
   for (const [index, field] of fields.entries()) {
@@ -311,7 +331,10 @@ export async function saveFormFields(
 
     if (field.id > 0 && existingIds.has(field.id)) {
       keptIds.add(field.id);
-      const { error } = await fieldsTable().update(row).eq("id", field.id).eq("form_id", formId);
+      const { error } = await fieldsTable()
+        .update(row)
+        .eq("id", field.id)
+        .eq("form_id", formId);
       if (error) {
         console.error("saveFormFields update failed:", JSON.stringify(error));
         throw error;
@@ -327,14 +350,19 @@ export async function saveFormFields(
 
   const removed = [...existingIds].filter((id) => !keptIds.has(id));
   if (removed.length > 0) {
-    const { error } = await fieldsTable().delete().in("id", removed).eq("form_id", formId);
+    const { error } = await fieldsTable()
+      .delete()
+      .in("id", removed)
+      .eq("form_id", formId);
     if (error) {
       console.error("saveFormFields delete failed:", JSON.stringify(error));
       throw error;
     }
   }
 
-  await formsTable().update({ updated_at: new Date().toISOString() }).eq("id", formId);
+  await formsTable()
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", formId);
   await logAudit({
     action: "update",
     entityType: "form_fields",
@@ -393,12 +421,20 @@ export async function duplicateForm(id: number): Promise<Form> {
     }));
     const { error: fieldsError } = await fieldsTable().insert(rows);
     if (fieldsError) {
-      console.error("duplicateForm fields failed:", JSON.stringify(fieldsError));
+      console.error(
+        "duplicateForm fields failed:",
+        JSON.stringify(fieldsError),
+      );
       throw fieldsError;
     }
   }
 
-  await logAudit({ action: "create", entityType: "form", entityId: created.id, metadata: { duplicated_from: id } });
+  await logAudit({
+    action: "create",
+    entityType: "form",
+    entityId: created.id,
+    metadata: { duplicated_from: id },
+  });
   revalidatePath("/forms");
   return created;
 }

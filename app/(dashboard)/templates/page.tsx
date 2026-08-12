@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-// The Templates hub — one entry per content type. New types are added here as
+// The Templates hub - one entry per content type. New types are added here as
 // we migrate them off Contentful (artists, football teams, blog, carousel...).
 const TEMPLATE_TYPES: {
   segment: string;
@@ -24,7 +24,7 @@ export default function TemplatesHubPage() {
     <div className="container mx-auto py-10">
       <h1 className="text-3xl font-bold mb-2">Templates</h1>
       <p className="text-muted-foreground mb-6">
-        Backoffice CMS — replacing Contentful. Pick a content type to manage.
+        Backoffice CMS - replacing Contentful. Pick a content type to manage.
       </p>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {TEMPLATE_TYPES.map((t) =>

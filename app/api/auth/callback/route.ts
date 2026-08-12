@@ -15,7 +15,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   if (!code) {
-    return NextResponse.redirect(new URL("/auth/login?error=oauth", request.url));
+    return NextResponse.redirect(
+      new URL("/auth/login?error=oauth", request.url),
+    );
   }
 
   try {
@@ -28,16 +30,19 @@ export async function GET(request: Request) {
           getAll: () => cookieStore.getAll(),
           setAll: () => {}, // we do not keep the Supabase session
         },
-      }
+      },
     );
 
-    const { data, error } = await supabaseAuth.auth.exchangeCodeForSession(code);
+    const { data, error } =
+      await supabaseAuth.auth.exchangeCodeForSession(code);
     if (error || !data.user?.email) {
       console.error("OAuth exchange error:", error);
-      return NextResponse.redirect(new URL("/auth/login?error=oauth", request.url));
+      return NextResponse.redirect(
+        new URL("/auth/login?error=oauth", request.url),
+      );
     }
 
-    // Only pre-created users may enter — no self-signup via Google.
+    // Only pre-created users may enter - no self-signup via Google.
     const profile = await getProfileByEmail(data.user.email);
     if (!profile || !profile.is_active) {
       await logAudit({
@@ -47,7 +52,7 @@ export async function GET(request: Request) {
         metadata: { provider: "google", reason: "no_account" },
       });
       return NextResponse.redirect(
-        new URL("/auth/login?error=no-account", request.url)
+        new URL("/auth/login?error=no-account", request.url),
       );
     }
 
@@ -64,7 +69,7 @@ export async function GET(request: Request) {
     const home = isPartner ? "/portal" : "/dashboard";
     const redirect = NextResponse.redirect(new URL(home, request.url));
     // Partners get the /portal-scoped cookie so their login coexists with a
-    // staff `session` in the same browser — same split as the password login.
+    // staff `session` in the same browser - same split as the password login.
     redirect.cookies.set(
       isPartner ? PORTAL_SESSION_COOKIE : SESSION_COOKIE,
       await createSessionValue({
@@ -79,10 +84,10 @@ export async function GET(request: Request) {
         sameSite: "lax",
         maxAge: SESSION_MAX_AGE,
         path: isPartner ? "/portal" : "/",
-      }
+      },
     );
     if (isPartner) {
-      // Routing hint (no auth value) — see the login route.
+      // Routing hint (no auth value) - see the login route.
       redirect.cookies.set(PORTAL_MEMBER_HINT_COOKIE, "1", {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -98,6 +103,8 @@ export async function GET(request: Request) {
     return redirect;
   } catch (error) {
     console.error("OAuth callback error:", error);
-    return NextResponse.redirect(new URL("/auth/login?error=oauth", request.url));
+    return NextResponse.redirect(
+      new URL("/auth/login?error=oauth", request.url),
+    );
   }
 }

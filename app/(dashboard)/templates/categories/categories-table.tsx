@@ -31,7 +31,7 @@ export function CategoriesTable() {
   const confirm = useConfirm();
 
   /**
-   * Depth-first order so a sub-category sits under its parent, indented — the
+   * Depth-first order so a sub-category sits under its parent, indented - the
    * flat list gave no clue that /c/sport/football is nested. Searching flattens
    * back to a plain list: matches would otherwise vanish with their parent.
    */
@@ -163,7 +163,7 @@ export function CategoriesTable() {
                   </span>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{c.slug}</TableCell>
-                <TableCell>{c.sport ?? "—"}</TableCell>
+                <TableCell>{c.sport ?? "-"}</TableCell>
                 <TableCell>{c.member_ids?.length ?? 0}</TableCell>
                 <TableCell>{c.display_order}</TableCell>
                 <TableCell>

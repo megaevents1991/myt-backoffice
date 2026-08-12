@@ -2,9 +2,9 @@ import type { EventTicket } from "@/types/app.types";
 
 /**
  * Main's pricing knobs, read from the SAME env names main uses
- * (NEXT_PUBLIC_MARKUP, NEXT_PUBLIC_HOTEL_SKIP_MARKUP_LOW/HIGH — see myt-main
+ * (NEXT_PUBLIC_MARKUP, NEXT_PUBLIC_HOTEL_SKIP_MARKUP_LOW/HIGH - see myt-main
  * lib/events/price.ts + app/order/hooks.tsx) with main's defaults. If those
- * are ever set on main's Vercel, set them HERE too — otherwise every
+ * are ever set on main's Vercel, set them HERE too - otherwise every
  * site_price the wizard shows silently diverges from checkout.
  */
 const num = (raw: string | undefined, fallback: number): number => {
@@ -12,8 +12,14 @@ const num = (raw: string | undefined, fallback: number): number => {
   return Number.isFinite(n) ? n : fallback;
 };
 const GLOBAL_MARKUP = num(process.env.NEXT_PUBLIC_MARKUP, 175);
-const HOTEL_SKIP_MARKUP_LOW = num(process.env.NEXT_PUBLIC_HOTEL_SKIP_MARKUP_LOW, 100);
-const HOTEL_SKIP_MARKUP_HIGH = num(process.env.NEXT_PUBLIC_HOTEL_SKIP_MARKUP_HIGH, 150);
+const HOTEL_SKIP_MARKUP_LOW = num(
+  process.env.NEXT_PUBLIC_HOTEL_SKIP_MARKUP_LOW,
+  100,
+);
+const HOTEL_SKIP_MARKUP_HIGH = num(
+  process.env.NEXT_PUBLIC_HOTEL_SKIP_MARKUP_HIGH,
+  150,
+);
 /** Base-flight threshold separating LOW from HIGH hotel-skip fee (main hardcodes it). */
 const HOTEL_SKIP_FLIGHT_THRESHOLD = 550;
 
@@ -30,7 +36,7 @@ export type PackagePriceEvent = {
 // Replicates main-app computePackagePrice: flight + hotel + min available
 // ticket + markups (composed per-component when any markup_* set, else the
 // global 175) + event_additional_markup. See myt-main lib/events/price.ts.
-// Per-traveler USD, like main's — the order flow multiplies by pax.
+// Per-traveler USD, like main's - the order flow multiplies by pax.
 // `ticketPrice` prices a SPECIFIC category instead of the cheapest one
 // (main reaches the same number as min-based price + category delta).
 export function computePackagePrice(
@@ -47,7 +53,9 @@ export function computePackagePrice(
     event.markup_flight != null ||
     event.markup_hotel != null;
   const markup = composed
-    ? (event.markup_ticket ?? 0) + (event.markup_flight ?? 0) + (event.markup_hotel ?? 0)
+    ? (event.markup_ticket ?? 0) +
+      (event.markup_flight ?? 0) +
+      (event.markup_hotel ?? 0)
     : GLOBAL_MARKUP;
   return Math.round(
     (event.base_flight_price ?? 0) +
@@ -58,7 +66,9 @@ export function computePackagePrice(
   );
 }
 
-export function hasAvailableTickets(event: Pick<PackagePriceEvent, "tickets_and_rates">): boolean {
+export function hasAvailableTickets(
+  event: Pick<PackagePriceEvent, "tickets_and_rates">,
+): boolean {
   return (event.tickets_and_rates || []).some((t) => t?.available !== false);
 }
 
@@ -87,12 +97,12 @@ export type PerPersonPriceInput = {
 };
 
 /**
- * Per-person package price the way main really charges it — a per-person
+ * Per-person package price the way main really charges it - a per-person
  * mirror of main's calculateBaseTotal (app/order/hooks.tsx), including the
  * skip paths the plain computePackagePrice above never sees:
  * - skipped flight drops base_flight_price and adds skip_flight_markup
  * - skipped hotel drops base_hotel_price and adds the hotel-skip fee
- *   (legacy: main's NEXT_PUBLIC_HOTEL_SKIP_MARKUP_LOW/HIGH pair — env-tunable
+ *   (legacy: main's NEXT_PUBLIC_HOTEL_SKIP_MARKUP_LOW/HIGH pair - env-tunable
  *   there, mirrored here at the defaults: $100 under a $550 base flight, $150
  *   over; composed: the event's skip_hotel_markup)
  * - both skipped with ticket_only_markup set → exactly ticket + override
@@ -107,12 +117,21 @@ export function computePerPersonPackagePrice(
   const hotelDelta = input.hotelDelta ?? 0;
 
   const ticketOnly = Number(event.ticket_only_markup ?? NaN);
-  if (flightSkipped && hotelSkipped && Number.isFinite(ticketOnly) && ticketOnly >= 0) {
+  if (
+    flightSkipped &&
+    hotelSkipped &&
+    Number.isFinite(ticketOnly) &&
+    ticketOnly >= 0
+  ) {
     return Math.ceil(ticketPrice + ticketOnly);
   }
 
-  const flightComponent = flightSkipped ? 0 : (event.base_flight_price ?? 0) + flightDelta;
-  const hotelComponent = hotelSkipped ? 0 : (event.base_hotel_price ?? 0) + hotelDelta;
+  const flightComponent = flightSkipped
+    ? 0
+    : (event.base_flight_price ?? 0) + flightDelta;
+  const hotelComponent = hotelSkipped
+    ? 0
+    : (event.base_hotel_price ?? 0) + hotelDelta;
   const additional = event.event_additional_markup ?? 0;
   const skipFlightMarkup = Math.max(0, event.skip_flight_markup ?? 0);
   const skipHotelMarkup = Math.max(0, event.skip_hotel_markup ?? 0);
@@ -125,15 +144,16 @@ export function computePerPersonPackagePrice(
     const markup =
       (event.markup_ticket ?? 0) +
       additional +
-      (flightSkipped ? skipFlightMarkup : event.markup_flight ?? 0) +
-      (hotelSkipped ? skipHotelMarkup : event.markup_hotel ?? 0);
+      (flightSkipped ? skipFlightMarkup : (event.markup_flight ?? 0)) +
+      (hotelSkipped ? skipHotelMarkup : (event.markup_hotel ?? 0));
     return Math.ceil(ticketPrice + markup + flightComponent + hotelComponent);
   }
 
   // Legacy: the global 175. A charged skip-flight markup suppresses the
   // hotel-skip fee (main's skipFlightMarkupAlreadyApplied), avoiding double margin.
   const chargedSkipFlight = flightSkipped ? skipFlightMarkup : 0;
-  const suppressHotelFee = event.skip_flight === true && flightSkipped && skipFlightMarkup > 0;
+  const suppressHotelFee =
+    event.skip_flight === true && flightSkipped && skipFlightMarkup > 0;
   const hotelSkipFee =
     hotelSkipped && !suppressHotelFee
       ? (event.base_flight_price ?? 0) < HOTEL_SKIP_FLIGHT_THRESHOLD
@@ -152,11 +172,15 @@ export function computePerPersonPackagePrice(
 }
 
 // Mirrors myt-main lib/events/price.ts isEventSoldOut. `lockedFlightSoldOut`
-// is main's in-memory markLockedPackagesSoldOut flag — callers here derive it
+// is main's in-memory markLockedPackagesSoldOut flag - callers here derive it
 // themselves (the backoffice reads `flights` directly) and pass it in.
 export function isEventSoldOut(
-  event: Pick<PackagePriceEvent, "tickets_and_rates"> & { tags?: string | null },
+  event: Pick<PackagePriceEvent, "tickets_and_rates"> & {
+    tags?: string | null;
+  },
   lockedFlightSoldOut = false,
 ): boolean {
-  return !hasAvailableTickets(event) || event.tags === "Sold" || lockedFlightSoldOut;
+  return (
+    !hasAvailableTickets(event) || event.tags === "Sold" || lockedFlightSoldOut
+  );
 }

@@ -1,4 +1,4 @@
--- 2026-07-02 — Card-art zoom controls. art_image_scale zooms the artist
+-- 2026-07-02 - Card-art zoom controls. art_image_scale zooms the artist
 -- cut-out, art_bg_scale zooms the background (blob shape or photo).
 -- Floats, 1 = 100%. All nullable: null renders at the default 100%.
 alter table public.events

@@ -69,14 +69,14 @@ export function ReservationsTable() {
     }
   }
 
-  // Function to check for new reservations. Cheap count probe first — the
+  // Function to check for new reservations. Cheap count probe first - the
   // full table is only re-downloaded when something actually arrived.
   async function checkForNewReservations() {
     try {
       const count = await getReservationsCount();
       const last = lastCountRef.current;
       lastCountRef.current = count;
-      // First probe only records the baseline — no toast.
+      // First probe only records the baseline - no toast.
       if (last !== null && count > last) {
         const data = await getReservations();
         setReservations(data);
@@ -377,7 +377,7 @@ export function ReservationsTable() {
             {settlementMethod === "voucher" && (
               <span
                 className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800"
-                title="Awaiting voucher from partner — do not call customer for payment"
+                title="Awaiting voucher from partner - do not call customer for payment"
               >
                 Voucher
               </span>

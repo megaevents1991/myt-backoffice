@@ -1,7 +1,7 @@
 /**
  * Shared CRUD helpers for the per-type CMS "Template" tables (categories,
  * artists, football_teams, blogs...). Each type's `*-actions.ts` ("use server")
- * file is a thin wrapper that passes its table name here — so a new type needs
+ * file is a thin wrapper that passes its table name here - so a new type needs
  * only a typed table + a ~6-line actions file. Server-only (imports
  * supabase-server + next/cache); never import from a client component.
  */
@@ -10,14 +10,11 @@ import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth/guards";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 
-// Tables aren't in Supabase generated types — cast to bypass never inference.
+// Tables aren't in Supabase generated types - cast to bypass never inference.
 const tbl = (table: string) => (supabase as any).from(table);
 
 // `orderBy` must be a real column on `table`.
-export async function listRows<T>(
-  table: string,
-  orderBy = "id"
-): Promise<T[]> {
+export async function listRows<T>(table: string, orderBy = "id"): Promise<T[]> {
   await requireStaff();
   const { data, error } = await tbl(table)
     .select("*")
@@ -37,7 +34,7 @@ export async function getRow<T>(table: string, id: number): Promise<T> {
 export async function createRow<T>(
   table: string,
   row: Record<string, unknown>,
-  revalidate: string[]
+  revalidate: string[],
 ): Promise<T> {
   await requireStaff();
   const { data, error } = await tbl(table)
@@ -61,7 +58,7 @@ export async function updateRow<T>(
   table: string,
   id: number,
   row: Record<string, unknown>,
-  revalidate: string[]
+  revalidate: string[],
 ): Promise<T> {
   await requireStaff();
   const before = await fetchBefore(table, "id", id, row);
@@ -87,7 +84,7 @@ export async function updateRow<T>(
 export async function saveRowOrder(
   table: string,
   orderedIds: number[],
-  revalidate: string[]
+  revalidate: string[],
 ): Promise<void> {
   await requireStaff();
   const stamp = new Date().toISOString();
@@ -95,8 +92,8 @@ export async function saveRowOrder(
     orderedIds.map((id, i) =>
       tbl(table)
         .update({ display_order: i + 1, updated_at: stamp })
-        .eq("id", id)
-    )
+        .eq("id", id),
+    ),
   );
   const failed = results.find((r) => r.error);
   if (failed?.error) throw failed.error;
@@ -111,7 +108,7 @@ export async function saveRowOrder(
 export async function softDeleteRow<T>(
   table: string,
   id: number,
-  revalidate: string[]
+  revalidate: string[],
 ): Promise<T> {
   await requireStaff();
   const { data, error } = await tbl(table)

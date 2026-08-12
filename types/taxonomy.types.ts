@@ -1,10 +1,10 @@
 /**
- * ONE category table: `categories` — the Templates card the team builds, which
+ * ONE category table: `categories` - the Templates card the team builds, which
  * also carries the tree (`parent_id`) and the tags that compose it
  * (`category_tags`). The old parallel `event_categories` node is gone; see the
  * one_category_table migration.
  *
- * Mirrored in main as lib/taxonomy.types.ts — keep both in sync.
+ * Mirrored in main as lib/taxonomy.types.ts - keep both in sync.
  */
 export type EventCategory = {
   id: number;
@@ -23,7 +23,9 @@ export type EventCategory = {
 };
 
 // Built in memory from a flat EventCategory[] for tree UI + traversal.
-export type EventCategoryNode = EventCategory & { children: EventCategoryNode[] };
+export type EventCategoryNode = EventCategory & {
+  children: EventCategoryNode[];
+};
 
 export type EventTag = {
   id: number;

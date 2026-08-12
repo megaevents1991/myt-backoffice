@@ -3,7 +3,7 @@
 --
 -- What happened: the category collapse was first applied from a feature branch
 -- as 20260729200000. c24ad93 then renamed the file to 20260729230000 to sort it
--- after the partner migrations, on the assumption it had not run yet — and a
+-- after the partner migrations, on the assumption it had not run yet - and a
 -- later push applied it a second time under the new version. The remote history
 -- now records BOTH versions, so both files have to exist here or every
 -- `supabase db push` dies with "Remote migration versions not found in local

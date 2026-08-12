@@ -38,7 +38,7 @@ const usdExact = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
-/** The top filter — scopes every activity figure below it (the commission
+/** The top filter - scopes every activity figure below it (the commission
  *  money tiles stay whole-history, same fact the invoice bills on). */
 const RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
   { key: "today", label: "היום" },
@@ -58,7 +58,7 @@ export default async function PortalDashboardPage({
   const session = await getSession();
   const isPartner = !!session && PARTNER_ROLES.includes(session.role);
 
-  // Staff visiting /portal see the layout's notice only — never call partner
+  // Staff visiting /portal see the layout's notice only - never call partner
   // actions for them (they throw for non-agent/affiliate roles).
   if (!isPartner) return null;
 
@@ -73,7 +73,7 @@ export default async function PortalDashboardPage({
     getMyCredit(),
     getPortalUserActivity(range),
     // Agents see their open voucher settlement where the funnel card sits for
-    // influencers (הורד לבקשת אלון ודור — יש כבר שלושה משפכים למטה).
+    // influencers (הורד לבקשת אלון ודור - יש כבר שלושה משפכים למטה).
     isAgent ? getMyVoucherSettlement() : Promise.resolve<VoucherSettlement | null>(null),
   ]);
 
@@ -150,7 +150,7 @@ export default async function PortalDashboardPage({
           </Link>
         ))}
         <span className="ms-2 text-xs text-muted-foreground">
-          הסינון חל על הפעילות, המשפכים והאירועים — לא על תיקי העמלה.
+          הסינון חל על הפעילות, המשפכים והאירועים - לא על תיקי העמלה.
         </span>
       </div>
 
@@ -199,7 +199,7 @@ export default async function PortalDashboardPage({
           <CardHeader>
             <CardTitle>מה חדש?</CardTitle>
             <CardDescription>
-              אמנים וחבילות שעלו לאתר ב-30 הימים האחרונים — לחיצה על כרטיס פותחת
+              אמנים וחבילות שעלו לאתר ב-30 הימים האחרונים - לחיצה על כרטיס פותחת
               את כל התאריכים שלו, וכל קישור כבר נושא את קוד המעקב שלכם.
             </CardDescription>
           </CardHeader>
@@ -215,7 +215,7 @@ export default async function PortalDashboardPage({
             <CardHeader>
               <CardTitle>התחשבנות פתוחה</CardTitle>
               <CardDescription>
-                שוברים לגבייה — אותם נתונים כמו בעמוד הצבירה.
+                שוברים לגבייה - אותם נתונים כמו בעמוד הצבירה.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -325,7 +325,7 @@ export default async function PortalDashboardPage({
                     <div className="min-w-0">
                       <p className="truncate font-medium">{event.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {[event.location, event.date].filter(Boolean).join(" · ") || "—"}
+                        {[event.location, event.date].filter(Boolean).join(" · ") || "-"}
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">

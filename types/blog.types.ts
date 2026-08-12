@@ -1,4 +1,4 @@
-/** Blog post — typed row of the `blog_posts` table. */
+/** Blog post - typed row of the `blog_posts` table. */
 export interface BlogPost {
   id: number;
   slug: string;

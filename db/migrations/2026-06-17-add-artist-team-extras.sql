@@ -1,4 +1,4 @@
--- Bucket B — artist/team page enrichments (doc items 19b / 20 / 21 / 24).
+-- Bucket B - artist/team page enrichments (doc items 19b / 20 / 21 / 24).
 -- Added to BOTH people tables so artist + team pages share one UI + reader.
 -- jsonb arrays default to '[]' so the readers map them with no null checks.
 -- Additive only (ADD COLUMN IF NOT EXISTS) → safe for the live site; the main

@@ -1,5 +1,5 @@
 -- Offline flights expansion, phase A: the fields the operations Excel carries
--- that the `flights` table never had. All nullable — existing rows unaffected.
+-- that the `flights` table never had. All nullable - existing rows unaffected.
 
 alter table "public"."flights"
   add column "cost_price"             numeric(10,2),
@@ -26,7 +26,7 @@ alter table "public"."flights"
   add column "inbound_stop_duration"  interval;
 
 comment on column "public"."flights"."cost_price" is
-  'What we pay the supplier. `price` stays the selling price. Backoffice-only — never part of the customer price chain.';
+  'What we pay the supplier. `price` stays the selling price. Backoffice-only - never part of the customer price chain.';
 
 alter table "public"."flights"
   add constraint "flights_block_status_check"

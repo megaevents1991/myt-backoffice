@@ -23,7 +23,7 @@ export async function GET(request: Request) {
       const route = `${flight.outbound_departure_airport}-${flight.outbound_arrival_airport}`;
 
       for (const reservation of reservations) {
-        // The main contact flies too — they are a passenger, not just a payer.
+        // The main contact flies too - they are a passenger, not just a payer.
         const pax: PaxInfo[] = [
           {
             first_name: reservation.main_contact_first_name,

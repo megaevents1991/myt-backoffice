@@ -13,13 +13,13 @@ import {
 import type { TixStockListing } from "@/lib/tixstock.types";
 import type { EventTicket, EventType } from "@/types/app.types";
 
-/** myt-main's deployment — the same base URL the hotel proxy already uses. */
+/** myt-main's deployment - the same base URL the hotel proxy already uses. */
 const MAIN_APP_URL = (
   process.env.NEXT_SECRET_HOTEL_SERVICE_URL || "https://www.mega-events.co.il"
 ).replace(/\/$/, "");
 
 /**
- * Prepared packages — the portal's live-link builder.
+ * Prepared packages - the portal's live-link builder.
  *
  * A partner assembles a concrete ticket(+flight)(+hotel) combination from the
  * inventory this backoffice already manages and gets a link that lands their
@@ -29,7 +29,7 @@ const MAIN_APP_URL = (
  * myt-main consumes the token in `app/api/package/[id]/route.ts`, re-validating
  * every piece against live data (event gone/sold out → 410, stale flight/hotel
  * → dropped with a `_needs_repick` flag). So the snapshots written here are a
- * convenience, never a price commitment — but their JSON shapes MUST match what
+ * convenience, never a price commitment - but their JSON shapes MUST match what
  * main's own order flow round-trips through `reservations.*_order_info`:
  * the flattened ticket object, main's `Flight`, and main's `OrderHotel`.
  * The builders below mirror main's `transformDbFlightToFlight`
@@ -76,11 +76,14 @@ function intervalToHours(value: string | null | undefined): number | null {
   if (!value) return null;
   const [hours, minutes] = String(value).split(":").map(Number);
   if (!Number.isFinite(hours)) return null;
-  return Math.round((hours + (Number.isFinite(minutes) ? minutes : 0) / 60) * 10) / 10;
+  return (
+    Math.round((hours + (Number.isFinite(minutes) ? minutes : 0) / 60) * 10) /
+    10
+  );
 }
 
 // ---------------------------------------------------------------------------
-// Builder data — what the wizard shows
+// Builder data - what the wizard shows
 // ---------------------------------------------------------------------------
 
 export interface BuilderEvent {
@@ -95,10 +98,10 @@ export interface BuilderEvent {
   image_url: string | null;
   /** Customer-facing site price per traveler (cheapest category); null = sold out. */
   site_price: number | null;
-  /** Package-pricing baselines — the site shows component prices as ± deltas vs these. */
+  /** Package-pricing baselines - the site shows component prices as ± deltas vs these. */
   base_flight_price: number | null;
   base_hotel_price: number | null;
-  /** Skip-aware pricing knobs (computePerPersonPackagePrice) — main's skip fees. */
+  /** Skip-aware pricing knobs (computePerPersonPackagePrice) - main's skip fees. */
   event_additional_markup: number | null;
   markup_ticket: number | null;
   markup_flight: number | null;
@@ -121,7 +124,7 @@ export interface BuilderEvent {
   }[];
   /** tx_event only: TixStock event id (from any ticket's eid) → live pricing. */
   tix_event_id: string | null;
-  /** tx_event only: sections excluded from sale — the map greys and ignores them. */
+  /** tx_event only: sections excluded from sale - the map greys and ignores them. */
   tx_excluded_sections: string[] | null;
 }
 
@@ -159,11 +162,13 @@ const EVENT_COLUMNS =
   "def_date_depart, def_date_return";
 
 /**
- * Locked packages sell exactly one offline flight with no Amadeus fallback —
+ * Locked packages sell exactly one offline flight with no Amadeus fallback -
  * when that flight has no seats left the whole package is sold out (main's
  * markLockedPackagesSoldOut, mirrored lite: global remaining only).
  */
-async function lockedFlightSoldOutSet(lockedIds: number[]): Promise<Set<number>> {
+async function lockedFlightSoldOutSet(
+  lockedIds: number[],
+): Promise<Set<number>> {
   if (lockedIds.length === 0) return new Set();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
@@ -183,7 +188,11 @@ async function lockedFlightSoldOutSet(lockedIds: number[]): Promise<Set<number>>
   const soldOut = new Set<number>();
   for (const id of lockedIds) {
     const row = rows.find((r) => r.id === id);
-    if (!row || row.is_deleted || (row.initial_quantity ?? 0) - (row.consumed_quantity ?? 0) < 1) {
+    if (
+      !row ||
+      row.is_deleted ||
+      (row.initial_quantity ?? 0) - (row.consumed_quantity ?? 0) < 1
+    ) {
       soldOut.add(id);
     }
   }
@@ -209,13 +218,19 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
 
   const rows = (data ?? []) as EventListRow[];
   const lockedIds = [
-    ...new Set(rows.map((r) => r.locked_flight_id).filter((id): id is number => id != null)),
+    ...new Set(
+      rows
+        .map((r) => r.locked_flight_id)
+        .filter((id): id is number => id != null),
+    ),
   ];
   const lockedSoldOut = await lockedFlightSoldOutSet(lockedIds);
 
   const builderEvents = rows.map((row) => {
     const tickets = ((row.tickets_and_rates ?? []) as EventTicket[])
-      .filter((t) => t && t.available !== false && typeof t.category === "string")
+      .filter(
+        (t) => t && t.available !== false && typeof t.category === "string",
+      )
       .map((t) => ({
         category: t.category,
         price: t.price,
@@ -254,9 +269,11 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
       tickets,
       tix_event_id:
         row.type === "tx_event"
-          ? (((row.tickets_and_rates ?? []) as (EventTicket & { eid?: string })[]).find(
-              (t) => t?.eid,
-            )?.eid ?? null)
+          ? ((
+              (row.tickets_and_rates ?? []) as (EventTicket & {
+                eid?: string;
+              })[]
+            ).find((t) => t?.eid)?.eid ?? null)
           : null,
       tx_excluded_sections: row.tx_excluded_sections ?? null,
     };
@@ -269,9 +286,9 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
 }
 
 export interface BuilderCommissionTerms {
-  /** partners.commission_type — "percent_of_sale" | "fixed_per_ticket" (default). */
+  /** partners.commission_type - "percent_of_sale" | "fixed_per_ticket" (default). */
   type: string | null;
-  /** partners.commission — % of sale or $ per ticket, per the type. */
+  /** partners.commission - % of sale or $ per ticket, per the type. */
   rate: number | null;
 }
 
@@ -289,7 +306,10 @@ export async function getMyCommissionTerms(): Promise<BuilderCommissionTerms | n
     .eq("partner_tracking_code", session.partner_code)
     .maybeSingle();
   if (error || !data) return null;
-  const row = data as { commission: number | null; commission_type: string | null };
+  const row = data as {
+    commission: number | null;
+    commission_type: string | null;
+  };
   return { type: row.commission_type ?? null, rate: row.commission ?? null };
 }
 
@@ -297,7 +317,7 @@ export interface LiveTicketCategory {
   category: string;
   id: string;
   vendor?: string;
-  /** Live per-ticket price (ceil'd USD) — cheapest listing satisfying qty. */
+  /** Live per-ticket price (ceil'd USD) - cheapest listing satisfying qty. */
   price: number;
   /** Customer-facing site price per traveler at that live price. */
   site_price: number | null;
@@ -308,7 +328,7 @@ export type LiveTicketsResult =
   | { ok: false; error: string };
 
 /**
- * tx_event live pricing — proxied through main's own /api/tixstock/tickets so
+ * tx_event live pricing - proxied through main's own /api/tixstock/tickets so
  * the wizard shows EXACTLY what the customer's ticket step shows: the same
  * listings, the same per-quantity cheapest-qualifying rule, the same refreshed
  * category list. (Main: app/order/TicketSelection.tsx.)
@@ -334,11 +354,12 @@ export async function getLiveTicketOffers(input: {
     return { ok: false, error: "האירוע לא נמצא" };
   }
   const row = data as EventListRow;
-  if (row.type !== "tx_event") return { ok: false, error: "לאירוע הזה אין תמחור חי" };
+  if (row.type !== "tx_event")
+    return { ok: false, error: "לאירוע הזה אין תמחור חי" };
 
-  const tickets = ((row.tickets_and_rates ?? []) as (EventTicket & { eid?: string })[]).filter(
-    (t) => t && t.available !== false && typeof t.category === "string",
-  );
+  const tickets = (
+    (row.tickets_and_rates ?? []) as (EventTicket & { eid?: string })[]
+  ).filter((t) => t && t.available !== false && typeof t.category === "string");
   const tixEventId = tickets.find((t) => t.eid)?.eid ?? null;
   if (!tixEventId) return { ok: false, error: "לאירוע אין מזהה TixStock" };
 
@@ -351,10 +372,13 @@ export async function getLiveTicketOffers(input: {
     if (row.tx_excluded_sections?.length) {
       params.set("excluded_sections", row.tx_excluded_sections.join(","));
     }
-    const res = await fetch(`${MAIN_APP_URL}/api/tixstock/tickets?${params.toString()}`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(30_000),
-    });
+    const res = await fetch(
+      `${MAIN_APP_URL}/api/tixstock/tickets?${params.toString()}`,
+      {
+        cache: "no-store",
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
     const json = (await res.json()) as {
       data?: { data?: TixStockListing[] };
       tickets_and_rates?: (EventTicket & { eid?: string })[];
@@ -528,7 +552,9 @@ type HotelMetaRow = {
   amenity_groups: { group_name: string; amenities: string[] }[] | null;
 };
 
-export async function getPackageBuilderInventory(eventId: number): Promise<BuilderInventory> {
+export async function getPackageBuilderInventory(
+  eventId: number,
+): Promise<BuilderInventory> {
   await requirePartner();
 
   const id = Number(eventId);
@@ -554,8 +580,16 @@ export async function getPackageBuilderInventory(eventId: number): Promise<Build
       .order("price", { ascending: true }),
   ]);
 
-  if (flightsRes.error) console.error("getPackageBuilderInventory flights:", JSON.stringify(flightsRes.error));
-  if (hotelsRes.error) console.error("getPackageBuilderInventory hotels:", JSON.stringify(hotelsRes.error));
+  if (flightsRes.error)
+    console.error(
+      "getPackageBuilderInventory flights:",
+      JSON.stringify(flightsRes.error),
+    );
+  if (hotelsRes.error)
+    console.error(
+      "getPackageBuilderInventory hotels:",
+      JSON.stringify(hotelsRes.error),
+    );
 
   const flights = ((flightsRes.data ?? []) as FlightRow[])
     .map((f) => ({
@@ -564,7 +598,8 @@ export async function getPackageBuilderInventory(eventId: number): Promise<Build
       airline_logo: f.metadata_logo,
       price: Number(f.price),
       remaining: (f.initial_quantity ?? 0) - (f.consumed_quantity ?? 0),
-      bags_included: f.outbound_check_bags_included && f.inbound_check_bags_included,
+      bags_included:
+        f.outbound_check_bags_included && f.inbound_check_bags_included,
       checked_bag_kg: f.checked_bag_kg ?? null,
       cabin_bag_kg: f.cabin_bag_kg ?? null,
       outbound_departure_time: f.outbound_departure_time,
@@ -585,12 +620,16 @@ export async function getPackageBuilderInventory(eventId: number): Promise<Build
     .filter((f) => f.remaining > 0);
 
   const hotelRows = (hotelsRes.data ?? []) as HotelRow[];
-  const hids = hotelRows.filter((h) => h.hid != null).map((h) => h.hid as number);
+  const hids = hotelRows
+    .filter((h) => h.hid != null)
+    .map((h) => h.hid as number);
   let meta: HotelMetaRow[] = [];
   if (hids.length > 0) {
     const { data: metaRows } = await supabase
       .from("hotels")
-      .select("hid, name, star_rating, address, latitude, longitude, amenity_groups")
+      .select(
+        "hid, name, star_rating, address, latitude, longitude, amenity_groups",
+      )
       .in("hid", hids);
     meta = (metaRows ?? []) as HotelMetaRow[];
   }
@@ -616,7 +655,7 @@ export async function getPackageBuilderInventory(eventId: number): Promise<Build
 }
 
 // ---------------------------------------------------------------------------
-// Snapshot builders — shapes owned by myt-main, mirrored here
+// Snapshot builders - shapes owned by myt-main, mirrored here
 // ---------------------------------------------------------------------------
 
 type FlightStop = { iataCode: string; duration: number | null };
@@ -632,7 +671,7 @@ function buildStops(
   return [{ iataCode: stopAirport, duration: stopDurationHours }, destination];
 }
 
-/** Main's `Flight` for an offline row — mirrors transformDbFlightToFlight. */
+/** Main's `Flight` for an offline row - mirrors transformDbFlightToFlight. */
 function buildFlightSnapshot(row: FlightRow, travelers: number) {
   return {
     offer: {},
@@ -689,7 +728,7 @@ function buildFlightSnapshot(row: FlightRow, travelers: number) {
 }
 
 /**
- * Main's `OrderHotel` for a set of offline room units — mirrors the synthetic
+ * Main's `OrderHotel` for a set of offline room units - mirrors the synthetic
  * rate main's /api/offline-hotels builds, so OrderReview renders it exactly
  * like a hotel the customer picked themselves.
  */
@@ -713,10 +752,15 @@ function buildHotelSnapshot(
   // One guests entry per room unit, travelers distributed by capacity.
   const guests: { adults: number; children: number[] }[] = [];
   let unassigned = travelers;
-  const flatUnits = units.flatMap(({ row, count }) => Array(count).fill(row) as HotelRow[]);
+  const flatUnits = units.flatMap(
+    ({ row, count }) => Array(count).fill(row) as HotelRow[],
+  );
   flatUnits.forEach((row, i) => {
     const remainingUnits = flatUnits.length - i - 1;
-    const take = Math.max(1, Math.min(roomCapacity(row.room_type), unassigned - remainingUnits));
+    const take = Math.max(
+      1,
+      Math.min(roomCapacity(row.room_type), unassigned - remainingUnits),
+    );
     guests.push({ adults: Math.max(1, take), children: [] });
     unassigned -= take;
   });
@@ -724,7 +768,8 @@ function buildHotelSnapshot(
   const cancellationDates = units
     .map(({ row }) => row.last_cancellation_date)
     .filter((d): d is string => !!d);
-  const freeCancellationBefore = cancellationDates.length > 0 ? [...cancellationDates].sort()[0] : "";
+  const freeCancellationBefore =
+    cancellationDates.length > 0 ? [...cancellationDates].sort()[0] : "";
 
   const totalPriceStr = String(totalPrice);
   const roomName = anchor.room_type || "Standard Room";
@@ -752,7 +797,16 @@ function buildHotelSnapshot(
         },
       ],
     },
-    rg_ext: { class: 0, quality: 0, sex: 0, bathroom: 0, bedding: 0, family: 0, capacity: 0, club: 0 },
+    rg_ext: {
+      class: 0,
+      quality: 0,
+      sex: 0,
+      bathroom: 0,
+      bedding: 0,
+      family: 0,
+      capacity: 0,
+      club: 0,
+    },
     room_name: roomName,
     room_name_info: null,
     serp_filters: [],
@@ -776,7 +830,8 @@ function buildHotelSnapshot(
   };
 
   const generalAmenities =
-    (meta?.amenity_groups ?? []).find((g) => g.group_name === "General")?.amenities ?? [];
+    (meta?.amenity_groups ?? []).find((g) => g.group_name === "General")
+      ?.amenities ?? [];
 
   return {
     rate,
@@ -802,7 +857,7 @@ function buildHotelSnapshot(
 }
 
 // ---------------------------------------------------------------------------
-// Live search — proxied to myt-main's own customer-facing APIs, so the offers
+// Live search - proxied to myt-main's own customer-facing APIs, so the offers
 // an agent pins are EXACTLY what a customer would be offered. Both actions are
 // requirePartner-gated server-side; no new public routes are exposed here.
 // ---------------------------------------------------------------------------
@@ -811,7 +866,7 @@ function buildHotelSnapshot(
  * A flight offer as main's /api/flights/search returns it (offline inventory
  * merged with live Amadeus). Display fields are typed; everything else (the
  * raw Amadeus `offer` blob etc.) rides along untyped and is snapshotted as-is
- * — main round-trips this exact object through reservations.flight_order_info.
+ * - main round-trips this exact object through reservations.flight_order_info.
  * `price` is the TOTAL for all travelers (main's semantics).
  */
 export interface LiveFlightOffer {
@@ -848,7 +903,12 @@ export interface LiveFlightOffer {
 }
 
 export type LiveFlightSearchResult =
-  | { ok: true; flights: LiveFlightOffer[]; locked: boolean; lockedSoldOut: boolean }
+  | {
+      ok: true;
+      flights: LiveFlightOffer[];
+      locked: boolean;
+      lockedSoldOut: boolean;
+    }
   | { ok: false; error: string };
 
 export async function searchLiveFlights(input: {
@@ -864,25 +924,32 @@ export async function searchLiveFlights(input: {
   if (!input.departureDate || !input.returnDate) {
     return { ok: false, error: "יש לבחור תאריכי טיסה" };
   }
-  // Amadeus rejects adults > 9 — surface that instead of a generic upstream 500.
+  // Amadeus rejects adults > 9 - surface that instead of a generic upstream 500.
   if ((input.adults || 1) > 9) {
-    return { ok: false, error: "חיפוש טיסות חי נתמך עד 9 נוסעים — לקבוצה גדולה השאירו את בחירת הטיסה ללקוח או הצמידו טיסה מהמלאי" };
+    return {
+      ok: false,
+      error:
+        "חיפוש טיסות חי נתמך עד 9 נוסעים - לקבוצה גדולה השאירו את בחירת הטיסה ללקוח או הצמידו טיסה מהמלאי",
+    };
   }
 
   try {
-    const res = await fetch(`${MAIN_APP_URL}/api/flights/search?eventId=${eventId}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        departureDate: input.departureDate,
-        returnDate: input.returnDate,
-        adults: Math.max(1, Math.min(9, Math.floor(input.adults || 1))),
-        originLocationCode: "TLV",
-        nonStop: false,
-      }),
-      // Amadeus searches are slow; main's route caps itself at 30s.
-      signal: AbortSignal.timeout(35_000),
-    });
+    const res = await fetch(
+      `${MAIN_APP_URL}/api/flights/search?eventId=${eventId}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          departureDate: input.departureDate,
+          returnDate: input.returnDate,
+          adults: Math.max(1, Math.min(9, Math.floor(input.adults || 1))),
+          originLocationCode: "TLV",
+          nonStop: false,
+        }),
+        // Amadeus searches are slow; main's route caps itself at 30s.
+        signal: AbortSignal.timeout(35_000),
+      },
+    );
     const data = (await res.json()) as {
       flights?: LiveFlightOffer[];
       locked?: boolean;
@@ -925,7 +992,7 @@ export interface LiveHotelOption {
   /** The stay window this option was priced for (what the snapshot carries). */
   checkin: string;
   checkout: string;
-  /** The full OrderHotel snapshot main round-trips — saved verbatim on pick. */
+  /** The full OrderHotel snapshot main round-trips - saved verbatim on pick. */
   snapshot: Record<string, unknown>;
 }
 
@@ -977,13 +1044,20 @@ export async function searchLiveHotels(input: {
     console.error("searchLiveHotels event:", JSON.stringify(eventError));
     return { ok: false, error: "האירוע לא נמצא" };
   }
-  const location = (eventData as { location: { latitude?: number; longitude?: number; country_code?: string } })
-    .location;
+  const location = (
+    eventData as {
+      location: {
+        latitude?: number;
+        longitude?: number;
+        country_code?: string;
+      };
+    }
+  ).location;
   if (location?.latitude == null || location?.longitude == null) {
     return { ok: false, error: "לאירוע אין מיקום מוגדר" };
   }
 
-  // Rooms of two, remainder joins the last room — same spirit as main's
+  // Rooms of two, remainder joins the last room - same spirit as main's
   // getRoomParams seeding the party from the traveler count.
   const travelers = Math.max(1, Math.min(20, Math.floor(input.travelers || 1)));
   const guests: { adults: number; children: number[] }[] = [];
@@ -1010,17 +1084,28 @@ export async function searchLiveHotels(input: {
     });
     const search = (await searchRes.json()) as {
       data?: { hotels?: WorldotaHotel[] };
-      debug?: { request?: { guests?: unknown; checkin?: string; checkout?: string } };
+      debug?: {
+        request?: { guests?: unknown; checkin?: string; checkout?: string };
+      };
       error?: string | null;
     };
     if (!searchRes.ok || !search?.data?.hotels) {
-      console.error("searchLiveHotels upstream:", searchRes.status, search?.error);
+      console.error(
+        "searchLiveHotels upstream:",
+        searchRes.status,
+        search?.error,
+      );
       return { ok: false, error: "חיפוש המלונות נכשל. נסו שוב." };
     }
 
     const hotels = (search.data.hotels ?? []).slice(0, 20);
     if (hotels.length === 0) {
-      return { ok: true, options: [], checkin: input.checkin, checkout: input.checkout };
+      return {
+        ok: true,
+        options: [],
+        checkin: input.checkin,
+        checkout: input.checkout,
+      };
     }
 
     const infoRes = await fetch(`${MAIN_APP_URL}/api/hotels-info`, {
@@ -1030,7 +1115,10 @@ export async function searchLiveHotels(input: {
         hotels: hotels.map((h) => ({
           hid: h.hid,
           id: h.id,
-          rooms: (h.rates ?? []).map((r) => r.room_name).filter(Boolean).slice(0, 10),
+          rooms: (h.rates ?? [])
+            .map((r) => r.room_name)
+            .filter(Boolean)
+            .slice(0, 10),
         })),
         event: { location },
       }),
@@ -1066,11 +1154,15 @@ export async function searchLiveHotels(input: {
       }
 
       for (const rate of rates) {
-        const amount = Number(rate.payment_options!.payment_types![0].show_amount);
+        const amount = Number(
+          rate.payment_options!.payment_types![0].show_amount,
+        );
         const roomName =
-          rate.room_name || entry.rooms?.[Object.keys(entry.rooms || {})[0]]?.name || "";
+          rate.room_name ||
+          entry.rooms?.[Object.keys(entry.rooms || {})[0]]?.name ||
+          "";
         // The exact shape main's HotelSelection setHotel() produces for a live
-        // hotel — /api/package/[id] and confirm-order round-trip it unchanged.
+        // hotel - /api/package/[id] and confirm-order round-trip it unchanged.
         const snapshot: Record<string, unknown> = {
           rate,
           address: entry.metadata.address ?? "",
@@ -1135,9 +1227,13 @@ export type CreatePackageInput = {
     | { mode: "none" };
 };
 
-export type CreatePackageResult = { ok: true; link: string } | { ok: false; error: string };
+export type CreatePackageResult =
+  | { ok: true; link: string }
+  | { ok: false; error: string };
 
-export async function createPreparedPackage(input: CreatePackageInput): Promise<CreatePackageResult> {
+export async function createPreparedPackage(
+  input: CreatePackageInput,
+): Promise<CreatePackageResult> {
   const session = await requirePartner();
 
   const eventId = Number(input.eventId);
@@ -1160,13 +1256,17 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
     return { ok: false, error: "שגיאה בטעינת האירוע" };
   }
   const event = eventData as EventListRow | null;
-  if (!event || event.is_deleted || new Date(event.date).getTime() <= Date.now()) {
+  if (
+    !event ||
+    event.is_deleted ||
+    new Date(event.date).getTime() <= Date.now()
+  ) {
     return { ok: false, error: "האירוע לא נמצא או שאינו זמין יותר" };
   }
 
   const qty = Math.max(1, Math.min(999, Math.floor(input.qty || 1)));
 
-  // Re-derive the ticket from the live event — the client sends only the
+  // Re-derive the ticket from the live event - the client sends only the
   // category name, never a price (same rule as main's savePreparedPackage).
   const liveTicket = ((event.tickets_and_rates ?? []) as EventTicket[]).find(
     (t) => t && t.category === input.category && t.available !== false,
@@ -1194,7 +1294,7 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
   let flightPerPerson: number | null = null;
   const flightSkipped = input.flight.mode === "none";
   if (input.flight.mode === "live-offer") {
-    // A live (Amadeus) offer has no cheap ground truth to re-verify against —
+    // A live (Amadeus) offer has no cheap ground truth to re-verify against -
     // main's own savePreparedPackage trusts it the same way, and confirm-order's
     // price floor remains the real backstop at booking time. Offline rows that
     // arrive through the live search DO carry their true inventory cost, so
@@ -1225,7 +1325,10 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
     flightOrderInfo = offer;
     flightPerPerson =
       Number(offer.price) /
-      Math.max(1, Number((offer as { numOfTravelers?: number }).numOfTravelers) || qty);
+      Math.max(
+        1,
+        Number((offer as { numOfTravelers?: number }).numOfTravelers) || qty,
+      );
   }
   if (input.flight.mode === "offline") {
     const { data: flightRow, error: flightError } = await supabase
@@ -1234,10 +1337,15 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
       .eq("id", input.flight.flightId)
       .maybeSingle();
     if (flightError) {
-      console.error("createPreparedPackage flight:", JSON.stringify(flightError));
+      console.error(
+        "createPreparedPackage flight:",
+        JSON.stringify(flightError),
+      );
       return { ok: false, error: "שגיאה בטעינת הטיסה" };
     }
-    const row = flightRow as (FlightRow & { event_ids: number[]; is_deleted: boolean | null }) | null;
+    const row = flightRow as
+      | (FlightRow & { event_ids: number[]; is_deleted: boolean | null })
+      | null;
     if (
       !row ||
       row.is_deleted ||
@@ -1276,11 +1384,15 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
     ) {
       return { ok: false, error: "המלון שנבחר אינו תקין" };
     }
-    // Date-only checkin parses as UTC midnight on main's isInFuture — a
+    // Date-only checkin parses as UTC midnight on main's isInFuture - a
     // same-day checkin resolves as hotel_needs_repick the moment the link is
     // opened, so a package saved with one is dead on arrival. Require tomorrow+.
     if (offer.checkin <= new Date().toISOString().slice(0, 10)) {
-      return { ok: false, error: "צ'ק-אין חייב להיות מחר או מאוחר יותר — צ'ק-אין של היום יידרש בחירה מחדש בפתיחת הלינק" };
+      return {
+        ok: false,
+        error:
+          "צ'ק-אין חייב להיות מחר או מאוחר יותר - צ'ק-אין של היום יידרש בחירה מחדש בפתיחת הלינק",
+      };
     }
     if (
       offer.isOffline === true &&
@@ -1311,29 +1423,38 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
 
     const units: { row: HotelRow; count: number }[] = [];
     for (const u of requested) {
-      const row = ((hotelRows ?? []) as (HotelRow & { event_ids: number[]; is_deleted: boolean | null })[]).find(
-        (r) => r.id === Number(u.rowId),
-      );
+      const row = (
+        (hotelRows ?? []) as (HotelRow & {
+          event_ids: number[];
+          is_deleted: boolean | null;
+        })[]
+      ).find((r) => r.id === Number(u.rowId));
       if (!row || row.is_deleted || !(row.event_ids ?? []).includes(eventId)) {
         return { ok: false, error: "אחד החדרים שנבחרו אינו זמין לאירוע הזה" };
       }
       const count = Math.max(1, Math.min(9, Math.floor(u.count)));
       if ((row.num_rooms ?? 0) - (row.consumed_rooms ?? 0) < count) {
-        return { ok: false, error: `אין מספיק חדרים פנויים (${row.hotel_name} — ${row.room_type})` };
+        return {
+          ok: false,
+          error: `אין מספיק חדרים פנויים (${row.hotel_name} - ${row.room_type})`,
+        };
       }
       units.push({ row, count });
     }
 
-    // All units must belong to one hotel with one date window — that is the
+    // All units must belong to one hotel with one date window - that is the
     // one combination main can present as a single OrderHotel.
     const anchor = units[0].row;
     const sameHotel = units.every(
       ({ row }) =>
         (row.hid != null && row.hid === anchor.hid) ||
-        (row.hid == null && anchor.hid == null && row.hotel_name === anchor.hotel_name),
+        (row.hid == null &&
+          anchor.hid == null &&
+          row.hotel_name === anchor.hotel_name),
     );
     const sameDates = units.every(
-      ({ row }) => row.check_in === anchor.check_in && row.check_out === anchor.check_out,
+      ({ row }) =>
+        row.check_in === anchor.check_in && row.check_out === anchor.check_out,
     );
     if (!sameHotel || !sameDates) {
       return { ok: false, error: "יש לבחור חדרים מאותו מלון ובאותם תאריכים" };
@@ -1351,7 +1472,9 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
     if (anchor.hid != null) {
       const { data: metaRow } = await supabase
         .from("hotels")
-        .select("hid, name, star_rating, address, latitude, longitude, amenity_groups")
+        .select(
+          "hid, name, star_rating, address, latitude, longitude, amenity_groups",
+        )
         .eq("hid", anchor.hid)
         .maybeSingle();
       meta = (metaRow as HotelMetaRow | null) ?? null;
@@ -1359,10 +1482,13 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
 
     hotelOrderInfo = buildHotelSnapshot(units, meta, qty);
     hotelPerPerson =
-      units.reduce((sum, { row, count }) => sum + Number(row.price) * count, 0) / qty;
+      units.reduce(
+        (sum, { row, count }) => sum + Number(row.price) * count,
+        0,
+      ) / qty;
   }
 
-  // What main will actually charge per traveller for THIS composition — the
+  // What main will actually charge per traveller for THIS composition - the
   // quote flow's baseline (מחיר היחידה חייב לשקף את החבילה, לא את האירוע).
   // Deltas are the chosen component vs the event baseline, exactly like the
   // wizard's preview; a live-picked component contributes no delta.
@@ -1375,10 +1501,12 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
         ? flightPerPerson - (event.base_flight_price ?? 0)
         : 0,
     hotelDelta:
-      hotelPerPerson != null ? hotelPerPerson - (event.base_hotel_price ?? 0) : 0,
+      hotelPerPerson != null
+        ? hotelPerPerson - (event.base_hotel_price ?? 0)
+        : 0,
   });
 
-  // Opaque token — main looks packages up by this, never by the row id.
+  // Opaque token - main looks packages up by this, never by the row id.
   const shareToken = crypto.randomUUID();
 
   const baseRow = {
@@ -1403,7 +1531,10 @@ export async function createPreparedPackage(input: CreatePackageInput): Promise<
 
   // Deploy/migration race: if allow_edit hasn't landed yet, save without it
   // (column default is true) rather than failing the whole package.
-  if (insertError && (insertError.code === "PGRST204" || insertError.code === "42703")) {
+  if (
+    insertError &&
+    (insertError.code === "PGRST204" || insertError.code === "42703")
+  ) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ({ data: inserted, error: insertError } = await (supabase as any)
       .from("prepared_packages")
@@ -1460,9 +1591,16 @@ type PreparedPackageRow = {
     /** Per-traveller site price for THIS composition, stamped at creation. */
     price_per_person?: number;
   } | null;
-  flight_order_info: { airline?: string; outbound?: { departureTime?: string } } | null;
+  flight_order_info: {
+    airline?: string;
+    outbound?: { departureTime?: string };
+  } | null;
   flight_skipped: boolean;
-  hotel_order_info: { name?: string; checkin?: string; checkout?: string } | null;
+  hotel_order_info: {
+    name?: string;
+    checkin?: string;
+    checkout?: string;
+  } | null;
   hotel_skipped: boolean;
   num_travelers: number;
   allow_edit?: boolean | null;
@@ -1471,7 +1609,9 @@ type PreparedPackageRow = {
 const LIST_COLUMNS =
   "id, share_token, created_at, event_id, event_order_info, flight_order_info, flight_skipped, hotel_order_info, hotel_skipped, num_travelers";
 
-export async function getMyPreparedPackages(): Promise<PreparedPackageListItem[]> {
+export async function getMyPreparedPackages(): Promise<
+  PreparedPackageListItem[]
+> {
   const session = await requirePartner();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1500,8 +1640,16 @@ export async function getMyPreparedPackages(): Promise<PreparedPackageListItem[]
 
   return ((data ?? []) as PreparedPackageRow[]).map((row) => {
     const info = row.event_order_info ?? {};
-    const flightMode = row.flight_skipped ? "none" : row.flight_order_info ? "offline" : "live";
-    const hotelMode = row.hotel_skipped ? "none" : row.hotel_order_info ? "offline" : "live";
+    const flightMode = row.flight_skipped
+      ? "none"
+      : row.flight_order_info
+        ? "offline"
+        : "live";
+    const hotelMode = row.hotel_skipped
+      ? "none"
+      : row.hotel_order_info
+        ? "offline"
+        : "live";
     return {
       id: row.id,
       link: partnerLink(session.partner_code, row.event_id, row.share_token),
@@ -1535,13 +1683,16 @@ export async function getMyPreparedPackages(): Promise<PreparedPackageListItem[]
 
 export type DeletePackageResult = { ok: true } | { ok: false; error: string };
 
-export async function deletePreparedPackage(id: number): Promise<DeletePackageResult> {
+export async function deletePreparedPackage(
+  id: number,
+): Promise<DeletePackageResult> {
   const session = await requirePartner();
 
   const packageId = Number(id);
-  if (!Number.isFinite(packageId)) return { ok: false, error: "חבילה לא תקינה" };
+  if (!Number.isFinite(packageId))
+    return { ok: false, error: "חבילה לא תקינה" };
 
-  // Scoped to the caller's own tracking code — a partner can only ever kill
+  // Scoped to the caller's own tracking code - a partner can only ever kill
   // their own links. Deleting a link only invalidates it; main answers 404 and
   // falls back to a normal order flow for anyone still holding it.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1560,23 +1711,26 @@ export async function deletePreparedPackage(id: number): Promise<DeletePackageRe
   return { ok: true };
 }
 
-export type SetPackageAllowEditResult = { ok: true } | { ok: false; error: string };
+export type SetPackageAllowEditResult =
+  | { ok: true }
+  | { ok: false; error: string };
 
 /**
  * Lock or unlock an existing package after creation. A lock chosen by mistake
- * in the wizard was previously permanent — the customer link honored it and
+ * in the wizard was previously permanent - the customer link honored it and
  * nothing anywhere could flip it back.
  */
 export async function setPackageAllowEdit(
   id: number,
-  allowEdit: boolean
+  allowEdit: boolean,
 ): Promise<SetPackageAllowEditResult> {
   const session = await requirePartner();
 
   const packageId = Number(id);
-  if (!Number.isFinite(packageId)) return { ok: false, error: "חבילה לא תקינה" };
+  if (!Number.isFinite(packageId))
+    return { ok: false, error: "חבילה לא תקינה" };
 
-  // Scoped to the caller's own tracking code — same posture as delete.
+  // Scoped to the caller's own tracking code - same posture as delete.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from("prepared_packages")
@@ -1593,10 +1747,12 @@ export async function setPackageAllowEdit(
   return { ok: true };
 }
 
-export type AgentOrderLinkResult = { ok: true; url: string } | { ok: false; error: string };
+export type AgentOrderLinkResult =
+  | { ok: true; url: string }
+  | { ok: false; error: string };
 
 /**
- * "הזמנה עבור הלקוח" — the order link routed through main's partner-handoff
+ * "הזמנה עבור הלקוח" - the order link routed through main's partner-handoff
  * endpoint, so the agent lands on the order flow with a live partner session
  * on MAIN'S domain. Without it main's `requireAgent()` fails and both
  * agent-paid settlement methods (agent card / voucher) are rejected server-side.
@@ -1605,10 +1761,13 @@ export type AgentOrderLinkResult = { ok: true; url: string } | { ok: false; erro
  * (see lib/auth/partner-handoff.ts) and must not sit for hours in the DOM of
  * an open tab.
  */
-export async function getAgentOrderHandoffLink(packageId: number): Promise<AgentOrderLinkResult> {
+export async function getAgentOrderHandoffLink(
+  packageId: number,
+): Promise<AgentOrderLinkResult> {
   const session = await requirePartner();
-  // Ordering on a customer's behalf is an agent tool — mirrors main's requireAgent.
-  if (session.role !== "agent") return { ok: false, error: "זמין לסוכנים בלבד" };
+  // Ordering on a customer's behalf is an agent tool - mirrors main's requireAgent.
+  if (session.role !== "agent")
+    return { ok: false, error: "זמין לסוכנים בלבד" };
 
   const id = Number(packageId);
   if (!Number.isFinite(id)) return { ok: false, error: "חבילה לא תקינה" };
@@ -1621,11 +1780,12 @@ export async function getAgentOrderHandoffLink(packageId: number): Promise<Agent
     .eq("partner_tracking_code", session.partner_code)
     .maybeSingle();
   if (error || !data) {
-    if (error) console.error("getAgentOrderHandoffLink:", JSON.stringify(error));
+    if (error)
+      console.error("getAgentOrderHandoffLink:", JSON.stringify(error));
     return { ok: false, error: "החבילה לא נמצאה" };
   }
 
-  // Main re-verifies the token's sub against user_profiles — a partner with no
+  // Main re-verifies the token's sub against user_profiles - a partner with no
   // portal user (possible under impersonation, where the session may carry the
   // admin's own sub) would sail through minting and then die silently on
   // main's side. Fail loudly here instead.
@@ -1639,7 +1799,8 @@ export async function getAgentOrderHandoffLink(packageId: number): Promise<Agent
   if (!profileRow) {
     return {
       ok: false,
-      error: "לשותף אין משתמש פורטל מקושר — הזמנה בשם הלקוח דורשת חשבון שותף אמיתי",
+      error:
+        "לשותף אין משתמש פורטל מקושר - הזמנה בשם הלקוח דורשת חשבון שותף אמיתי",
     };
   }
 
@@ -1652,18 +1813,18 @@ export async function getAgentOrderHandoffLink(packageId: number): Promise<Agent
       partner_code: session.partner_code,
     });
   } catch (e) {
-    // NEXT_SECRET_SESSION_SECRET missing — the plain link still works, the
+    // NEXT_SECRET_SESSION_SECRET missing - the plain link still works, the
     // agent just won't get agent-mode settlement on main. Fail loudly here so
     // the misconfiguration is visible instead of silently downgrading.
     console.error("getAgentOrderHandoffLink mint:", e);
-    return { ok: false, error: "החתימה לא מוגדרת — פנו לתמיכה" };
+    return { ok: false, error: "החתימה לא מוגדרת - פנו לתמיכה" };
   }
 
   const next = `/order/${data.event_id}?utm_source=${encodeURIComponent(
-    session.partner_code
+    session.partner_code,
   )}&pkg=${encodeURIComponent(data.share_token)}`;
   const url = `${PUBLIC_SITE_URL}/api/partner-handoff?token=${encodeURIComponent(
-    token
+    token,
   )}&next=${encodeURIComponent(next)}`;
   return { ok: true, url };
 }

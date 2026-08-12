@@ -2,7 +2,7 @@
 
 /**
  * The public form renderer, used by /f/[slug], /f/i/[token] and the builder
- * preview — so what staff see while authoring is exactly what a client fills in.
+ * preview - so what staff see while authoring is exactly what a client fills in.
  *
  * Branding is per form: the deep indigo brand canvas (or a light variant), one
  * accent from the MYT neon palette, an optional logo and cover image. Layout is
@@ -85,7 +85,7 @@ export function FormRenderer({
     [fields],
   );
 
-  // Progress counts required questions only — optional ones would make a form
+  // Progress counts required questions only - optional ones would make a form
   // look unfinished when the client has done everything that is actually asked.
   const requiredIds = questions.filter((f) => f.required).map((f) => String(f.id));
   const answeredRequired = requiredIds.filter((id) => {
@@ -185,7 +185,7 @@ export function FormRenderer({
           !preview && "lg:grid-cols-[minmax(0,430px)_minmax(0,1fr)]",
         )}
       >
-        {/* Cover — the brand surface: logo, title, progress, ambient glow. */}
+        {/* Cover - the brand surface: logo, title, progress, ambient glow. */}
         <aside
           className={cn(
             "relative overflow-hidden px-6 pb-10 pt-12 sm:px-10",
@@ -273,7 +273,7 @@ export function FormRenderer({
         {/* Questions */}
         <main className="relative px-6 pb-20 pt-4 sm:px-10 lg:py-16">
           <form onSubmit={handleSubmit} noValidate>
-            {/* Honeypot — off-screen for people, tempting to bots. */}
+            {/* Honeypot - off-screen for people, tempting to bots. */}
             <div aria-hidden className="pointer-events-none absolute -left-[9999px] opacity-0">
               <label>
                 Company

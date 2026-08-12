@@ -1,5 +1,5 @@
 /**
- * Person — typed row shared by the `artists` and `football_teams` tables
+ * Person - typed row shared by the `artists` and `football_teams` tables
  * (identical schema). Managed in the backoffice, read by myt-main. Keep in sync
  * with myt-main `lib/app.types.ts` (`Artist`/`FootballTeam` runtime shapes).
  */
@@ -22,7 +22,7 @@ export interface Person {
   // Cut-out position, % of frame (null/0 = default bottom-center). X+ = right, Y+ = down.
   art_image_offset_x: number | null;
   art_image_offset_y: number | null;
-  // Club logo for the creative generator — transparent PNG only.
+  // Club logo for the creative generator - transparent PNG only.
   // Column exists ONLY on football_teams (artists rows have no logo_url).
   logo_url?: string | null;
   bio: unknown; // Contentful-compatible rich-text document
@@ -30,9 +30,9 @@ export interface Person {
   meta_description: string | null;
   meta_tags: string | null;
   featured_order: number | null;
-  // Homepage section-carousel order (כדורגל / אמנים מובילים) — Templates → Homepage order.
+  // Homepage section-carousel order (כדורגל / אמנים מובילים) - Templates → Homepage order.
   display_order: number | null;
-  // Page enrichments (doc 19b/20/21/24) — read by myt-main artist/team pages.
+  // Page enrichments (doc 19b/20/21/24) - read by myt-main artist/team pages.
   hero_video_url: string | null;
   banners: { image_url?: string; link_url?: string; title?: string }[] | null;
   gallery: string[] | null;
@@ -43,7 +43,7 @@ export interface Person {
   updated_at: string;
 }
 
-// display_order excluded — managed only by the Homepage Order screen.
+// display_order excluded - managed only by the Homepage Order screen.
 export type CreatePersonData = Omit<
   Person,
   "id" | "display_order" | "is_deleted" | "created_at" | "updated_at"

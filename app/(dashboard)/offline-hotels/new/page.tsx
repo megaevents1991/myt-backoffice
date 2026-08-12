@@ -283,7 +283,7 @@ export default function NewOfflineHotelPage() {
               <FormItem className="md:col-span-2">
                 <FormLabel>Hotel Name</FormLabel>
                 <FormControl><Input placeholder="e.g., Grand Hyatt Amsterdam" {...field} /></FormControl>
-                <FormDescription>Auto-filled from search above — edit if needed.</FormDescription>
+                <FormDescription>Auto-filled from search above - edit if needed.</FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
@@ -291,7 +291,7 @@ export default function NewOfflineHotelPage() {
               <FormItem className="md:col-span-2">
                 <FormLabel>City</FormLabel>
                 <FormControl><Input placeholder="e.g., Amsterdam" {...field} /></FormControl>
-                <FormDescription>Auto-filled from hotel address — edit if needed. Used to match relevant flights.</FormDescription>
+                <FormDescription>Auto-filled from hotel address - edit if needed. Used to match relevant flights.</FormDescription>
                 <FormMessage />
               </FormItem>
             )} />

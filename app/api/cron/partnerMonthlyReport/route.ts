@@ -4,7 +4,10 @@ import { supabase } from "@/lib/supabase-server";
 import nodemailer from "nodemailer";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { guardCronRoute } from "@/lib/auth/guards";
-import { fundedCouponCodesFor, quoteUpliftsFor } from "@/lib/actions/portal-coupon-actions";
+import {
+  fundedCouponCodesFor,
+  quoteUpliftsFor,
+} from "@/lib/actions/portal-coupon-actions";
 import {
   PAID_STATUS,
   commissionForReservation,
@@ -20,7 +23,7 @@ interface Reservation {
   event_order_info: any;
   created_at: string;
   accounting_number: number;
-  /** Both are needed to price a reservation — see lib/partner-commission.ts. */
+  /** Both are needed to price a reservation - see lib/partner-commission.ts. */
   status: string;
   user_shown_price: number | null;
   /** Commission-funded coupons deduct their discount from this row's payout. */
@@ -89,7 +92,10 @@ function formatDay(value: string | undefined): string {
 }
 
 /** The span the report actually covers, e.g. "28/07/2026 – 30/08/2026". */
-function formatPeriod(first: string | undefined, last: string | undefined): string {
+function formatPeriod(
+  first: string | undefined,
+  last: string | undefined,
+): string {
   const from = formatDay(first);
   const to = formatDay(last);
   if (!from && !to) return "";
@@ -122,14 +128,14 @@ export async function GET(req: Request) {
   try {
     await transporter.verify();
   } catch (verifyError) {
-    console.error("SMTP verify failed — aborting, no mail sent:", verifyError);
+    console.error("SMTP verify failed - aborting, no mail sent:", verifyError);
     return Response.json(
       { ok: false, stage: "smtp_verify", error: String(verifyError) },
       { status: 502 },
     );
   }
 
-  // Per-partner outcomes — returned in the response AND mailed to ops so a
+  // Per-partner outcomes - returned in the response AND mailed to ops so a
   // partial/total failure can never pass unnoticed again.
   const sent: { partner: string; email: string }[] = [];
   const failed: { partner: string; email: string; error: string }[] = [];
@@ -139,8 +145,8 @@ export async function GET(req: Request) {
     //
     // This used to select reservations created in the previous calendar month
     // that are Paid now. A reservation created on 28 July and paid on 3 August
-    // matched neither run — the August run wanted July-created rows but it
-    // wasn't paid yet, the September run wanted August-created rows — so it was
+    // matched neither run - the August run wanted July-created rows but it
+    // wasn't paid yet, the September run wanted August-created rows - so it was
     // never billed and nothing reported the gap.
     //
     // Anything paid and not yet stamped is owed, however long ago it was
@@ -172,7 +178,7 @@ export async function GET(req: Request) {
     // this check, a backlog would quietly push billable reservations out of an
     // unordered result and partners would stop being paid on a green run.
     if (reservations && reservations.length >= BILLING_BATCH_SIZE) {
-      const message = `Hit the ${BILLING_BATCH_SIZE}-reservation billing cap — more are waiting. Re-run after this one to clear the rest.`;
+      const message = `Hit the ${BILLING_BATCH_SIZE}-reservation billing cap - more are waiting. Re-run after this one to clear the rest.`;
       console.error(`partnerMonthlyReport: ${message}`);
       failed.push({ partner: "(batch)", email: "-", error: message });
     }
@@ -199,7 +205,9 @@ export async function GET(req: Request) {
 
       const { data: partnerData, error: partnerError } = (await supabase
         .from("partners")
-        .select("name_hebrew,email,commission,commission_type,supplier_number,is_active")
+        .select(
+          "name_hebrew,email,commission,commission_type,supplier_number,is_active",
+        )
         .eq("partner_tracking_code", trackingCode)
         // maybeSingle, not single: an orphan tracking code is a missing row,
         // not an error. With .single() it raised PGRST116 and hit the `continue`
@@ -215,7 +223,7 @@ export async function GET(req: Request) {
         continue;
       }
       // These are never payable, so stamp them. Skipping without stamping used
-      // to be harmless — the old date window moved past them after a month. Now
+      // to be harmless - the old date window moved past them after a month. Now
       // they would be re-selected on every run, for ever, until the permanent
       // residue fills the batch and crowds out reservations that ARE owed.
       if (!partnerData || partnerData.email === "support@mega-events.co.il") {
@@ -227,7 +235,7 @@ export async function GET(req: Request) {
           trackingCode,
         );
         if (skipError) {
-          // Nobody was mailed, so this isn't a payment problem — but leaving
+          // Nobody was mailed, so this isn't a payment problem - but leaving
           // them unstamped brings the permanent-residue issue back.
           console.error(
             `partnerMonthlyReport: could not stamp non-payable rows for ${trackingCode}:`,
@@ -267,7 +275,7 @@ export async function GET(req: Request) {
 
       if (result.ok) {
         // Stamp only after the report actually went out. Marking them billed
-        // first would mean a mail failure silently wrote off the money — the
+        // first would mean a mail failure silently wrote off the money - the
         // rows would never be picked up again. The cost of this order is a
         // possible duplicate report, which someone will notice; the other way
         // round, nobody ever does.
@@ -279,16 +287,19 @@ export async function GET(req: Request) {
           // The partner was paid but the rows still look unbilled, so the next
           // run would pay again. Loud, and reported to ops as a failure.
           console.error(
-            `partnerMonthlyReport: ${trackingCode} was emailed but billed_at was not set — the next run will double-bill:`,
+            `partnerMonthlyReport: ${trackingCode} was emailed but billed_at was not set - the next run will double-bill:`,
             stampError,
           );
           failed.push({
             partner: partnerData?.name_hebrew,
             email: partnerData.email,
-            error: `REPORT SENT BUT NOT MARKED BILLED — will double-bill: ${stampError}`,
+            error: `REPORT SENT BUT NOT MARKED BILLED - will double-bill: ${stampError}`,
           });
         } else {
-          sent.push({ partner: partnerData?.name_hebrew, email: partnerData.email });
+          sent.push({
+            partner: partnerData?.name_hebrew,
+            email: partnerData.email,
+          });
         }
       } else {
         failed.push({
@@ -307,7 +318,7 @@ export async function GET(req: Request) {
     );
   }
 
-  // Always tell ops what happened — counts + the exact partners that failed.
+  // Always tell ops what happened - counts + the exact partners that failed.
   await sendOpsSummary(sent, failed).catch(() => {});
 
   console.log(`Cron done. sent=${sent.length} failed=${failed.length}`);
@@ -327,18 +338,16 @@ async function sendOpsSummary(
   failed: { partner: string; email: string; error: string }[],
   fatalError?: string,
 ) {
-  const rows = (
-    list: { partner: string; email: string; error?: string }[],
-  ) =>
+  const rows = (list: { partner: string; email: string; error?: string }[]) =>
     list
       .map(
         (r) =>
-          `<tr><td>${r.partner}</td><td>${r.email}</td><td>${r.error ?? "—"}</td></tr>`,
+          `<tr><td>${r.partner}</td><td>${r.email}</td><td>${r.error ?? "-"}</td></tr>`,
       )
       .join("") || `<tr><td colspan="3">none</td></tr>`;
 
   const html = `
-    <h2>Partner Monthly Report — run summary</h2>
+    <h2>Partner Monthly Report - run summary</h2>
     ${fatalError ? `<p style="color:#c00"><b>FATAL:</b> ${fatalError}</p>` : ""}
     <p>Sent: <b>${sent.length}</b> &nbsp; Failed: <b>${failed.length}</b></p>
     <h3>Sent</h3>
@@ -350,7 +359,7 @@ async function sendOpsSummary(
   await transporter.sendMail({
     from: "alon@mega-events.co.il",
     to: "alon@megatr.co.il, office@megatr.co.il",
-    subject: `Partner Monthly Report — sent ${sent.length}, failed ${failed.length}${fatalError ? " (FATAL)" : ""}`,
+    subject: `Partner Monthly Report - sent ${sent.length}, failed ${failed.length}${fatalError ? " (FATAL)" : ""}`,
     html,
   });
 }
@@ -366,7 +375,7 @@ const generateEmailHtml = ({
   supplier_number = null,
 }: PartnerReportProps) => {
   // Percentage commission divides, so raw sums render as 133.51999999999998.
-  // This is an invoice — always two decimals.
+  // This is an invoice - always two decimals.
   const money = (amount: number) => amount.toFixed(2);
   // One total, computed the same way the backoffice and the portal compute it.
   const totalCommission = money(commissionForReservations(reservations, terms));
@@ -773,7 +782,7 @@ async function sendMonthlyReportEmail(partnerData: PartnerData) {
 
   // The period comes from the reservations, not from "last month". A report now
   // covers everything not previously billed, which after a mail failure, a
-  // partner reactivation, or a late payment can span several months — labelling
+  // partner reactivation, or a late payment can span several months - labelling
   // that "July 2026" while the rows inside are dated August is a statement the
   // partner can see is false on the same page.
   const dates = partnerData.reservations

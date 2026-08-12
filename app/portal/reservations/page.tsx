@@ -17,7 +17,7 @@ export default async function PortalReservationsPage() {
   const session = await getSession();
   const isPartner = !!session && PARTNER_ROLES.includes(session.role);
 
-  // Staff visiting /portal see the layout's notice only — never call partner
+  // Staff visiting /portal see the layout's notice only - never call partner
   // actions for them (getPortalReservations throws for non-agent/affiliate roles).
   if (!isPartner) return null;
 
@@ -34,7 +34,7 @@ export default async function PortalReservationsPage() {
   const paid = rows.filter(isPaid);
   const holds = rows.filter((r) => r.is_hold);
 
-  // The doc's four tiles — orders in, orders paid, tickets sold, commission
+  // The doc's four tiles - orders in, orders paid, tickets sold, commission
   // earned. Deliberately NO sales/revenue tile (הורד לבקשת אלון ודור).
   const tiles = [
     { label: "הזמנות שנכנסו", value: String(rows.length), icon: ClipboardList },
@@ -76,7 +76,7 @@ export default async function PortalReservationsPage() {
 
       {truncated && (
         <p className="text-sm text-muted-foreground">
-          המספרים והרשימה מחושבים מ-500 ההזמנות האחרונות. יש הזמנות ישנות יותר —
+          המספרים והרשימה מחושבים מ-500 ההזמנות האחרונות. יש הזמנות ישנות יותר -
           פנו אלינו אם צריך אותן.
         </p>
       )}

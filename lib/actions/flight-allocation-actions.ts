@@ -11,7 +11,11 @@ import type { FlightAllocationRow } from "@/types/offline-flight.types";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = () => supabase as any;
 
-type ConsumedRow = { flight_id: number; event_id: number; consumed_seats: number };
+type ConsumedRow = {
+  flight_id: number;
+  event_id: number;
+  consumed_seats: number;
+};
 type AllocRow = { event_id: number; allocated_seats: number };
 
 async function loadFlightState(flightId: number): Promise<{
@@ -43,10 +47,16 @@ async function loadFlightState(flightId: number): Promise<{
     initialQuantity: Number(flight?.initial_quantity ?? 0),
     eventIds: (flight?.event_ids ?? []) as number[],
     allocations: new Map(
-      ((allocRows ?? []) as AllocRow[]).map((r) => [r.event_id, r.allocated_seats]),
+      ((allocRows ?? []) as AllocRow[]).map((r) => [
+        r.event_id,
+        r.allocated_seats,
+      ]),
     ),
     consumed: new Map(
-      ((consumedRows ?? []) as ConsumedRow[]).map((r) => [r.event_id, r.consumed_seats]),
+      ((consumedRows ?? []) as ConsumedRow[]).map((r) => [
+        r.event_id,
+        r.consumed_seats,
+      ]),
     ),
   };
 }
@@ -79,10 +89,15 @@ export async function getFlightAllocations(flightId: number): Promise<{
       allocated_seats: allocations.get(event.id) ?? null,
       consumed_seats: consumed.get(event.id) ?? 0,
     }));
-    rows.sort((a, b) => String(a.event_date).localeCompare(String(b.event_date)));
+    rows.sort((a, b) =>
+      String(a.event_date).localeCompare(String(b.event_date)),
+    );
   }
 
-  const allocatedTotal = Array.from(allocations.values()).reduce((sum, n) => sum + n, 0);
+  const allocatedTotal = Array.from(allocations.values()).reduce(
+    (sum, n) => sum + n,
+    0,
+  );
   return {
     rows,
     initial_quantity: initialQuantity,
@@ -100,12 +115,13 @@ export async function setFlightAllocation(
     throw new Error("Seats must be a non-negative integer");
   }
 
-  const { initialQuantity, allocations, consumed } = await loadFlightState(flightId);
+  const { initialQuantity, allocations, consumed } =
+    await loadFlightState(flightId);
 
   const alreadyConsumed = consumed.get(eventId) ?? 0;
   if (seats < alreadyConsumed) {
     throw new Error(
-      `Cannot allocate ${seats} seats — this event has already sold ${alreadyConsumed}`,
+      `Cannot allocate ${seats} seats - this event has already sold ${alreadyConsumed}`,
     );
   }
 
@@ -114,7 +130,7 @@ export async function setFlightAllocation(
     .reduce((sum, [, n]) => sum + n, 0);
   if (otherAllocated + seats > initialQuantity) {
     throw new Error(
-      `Cannot allocate ${seats} seats — only ${initialQuantity - otherAllocated} of ${initialQuantity} remain unallocated`,
+      `Cannot allocate ${seats} seats - only ${initialQuantity - otherAllocated} of ${initialQuantity} remain unallocated`,
     );
   }
 
@@ -139,7 +155,7 @@ export async function setFlightAllocation(
 }
 
 /**
- * Removing an allocation returns that event to the flight's global pool — it
+ * Removing an allocation returns that event to the flight's global pool - it
  * does not block it. That is the documented no-row fallback, not a bug.
  */
 export async function removeFlightAllocation(

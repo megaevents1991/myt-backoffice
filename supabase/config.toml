@@ -34,7 +34,7 @@ enabled = false
 # Port to use for the local database URL.
 port = 54322
 # Port used by db diff command to initialize the shadow database.
-# 54320 falls in a Windows excluded port range (Hyper-V/WSL) — keep outside 54299-54398
+# 54320 falls in a Windows excluded port range (Hyper-V/WSL) - keep outside 54299-54398
 shadow_port = 64320
 # Maximum amount of time to wait for health check when starting the local database.
 health_timeout = "2m"
@@ -375,8 +375,8 @@ allow_dynamic_registration = false
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
-# `per_worker` (default) — enables hot reload during local development.
-# `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
+# `per_worker` (default) - enables hot reload during local development.
+# `oneshot` - fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
 policy = "per_worker"
 # Port to attach the Chrome inspector for debugging edge functions.
 inspector_port = 8083

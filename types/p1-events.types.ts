@@ -72,7 +72,7 @@ export interface P1EventDB {
   compare_price_ticket_only?: number;
   compare_price_ticket_hotel?: number;
   checkout_link: string;
-  tickets?: P1Ticket[]; // Embedded tickets as JSONB — absent on slim list fetches (see /api/p1-events/events?slim=true)
+  tickets?: P1Ticket[]; // Embedded tickets as JSONB - absent on slim list fetches (see /api/p1-events/events?slim=true)
   is_active: boolean;
   last_synced: string;
   created_at?: string;
@@ -90,46 +90,47 @@ export interface P1EventsApiResponse<T> {
 
 // Currency constants for P1
 export const P1_CURRENCIES = {
-  USD: 'USD',
-  EUR: 'EUR',
-  GBP: 'GBP',
-  CHF: 'CHF',
+  USD: "USD",
+  EUR: "EUR",
+  GBP: "GBP",
+  CHF: "CHF",
 } as const;
 
 // Category constants - common categories from P1
 export const P1_CATEGORIES = {
-  FOOTBALL: 'FOOTBALL',
-  TENNIS: 'TENNIS',
-  RUGBY: 'RUGBY',
-  FORMULA_1: 'FORMULA_1',
-  BASKETBALL: 'BASKETBALL',
-  AMERICAN_FOOTBALL: 'AMERICAN_FOOTBALL',
-  BASEBALL: 'BASEBALL',
-  GOLF: 'GOLF',
-  MOTORSPORT: 'MOTORSPORT',
-  BOXING: 'BOXING',
-  OLYMPICS: 'OLYMPICS',
-  MUSIC: 'MUSIC',
-  OTHER: 'OTHER',
+  FOOTBALL: "FOOTBALL",
+  TENNIS: "TENNIS",
+  RUGBY: "RUGBY",
+  FORMULA_1: "FORMULA_1",
+  BASKETBALL: "BASKETBALL",
+  AMERICAN_FOOTBALL: "AMERICAN_FOOTBALL",
+  BASEBALL: "BASEBALL",
+  GOLF: "GOLF",
+  MOTORSPORT: "MOTORSPORT",
+  BOXING: "BOXING",
+  OLYMPICS: "OLYMPICS",
+  MUSIC: "MUSIC",
+  OTHER: "OTHER",
 } as const;
 
 // Ticket type constants
 export const P1_TICKET_TYPES = {
-  MOBILE: 'Mobile',
-  PAPER: 'Paper',
-  ETICKET: 'E-Ticket',
-  COLLECTION: 'Collection',
+  MOBILE: "Mobile",
+  PAPER: "Paper",
+  ETICKET: "E-Ticket",
+  COLLECTION: "Collection",
 } as const;
 
 // Tag constants
 export const P1_TAGS = {
-  HOSPITALITY: 'hospitality',
-  VIP: 'vip',
-  PREMIUM: 'premium',
-  STANDARD: 'standard',
+  HOSPITALITY: "hospitality",
+  VIP: "vip",
+  PREMIUM: "premium",
+  STANDARD: "standard",
 } as const;
 
-export type P1Currency = typeof P1_CURRENCIES[keyof typeof P1_CURRENCIES];
-export type P1Category = typeof P1_CATEGORIES[keyof typeof P1_CATEGORIES];
-export type P1TicketType = typeof P1_TICKET_TYPES[keyof typeof P1_TICKET_TYPES];
-export type P1Tag = typeof P1_TAGS[keyof typeof P1_TAGS];
+export type P1Currency = (typeof P1_CURRENCIES)[keyof typeof P1_CURRENCIES];
+export type P1Category = (typeof P1_CATEGORIES)[keyof typeof P1_CATEGORIES];
+export type P1TicketType =
+  (typeof P1_TICKET_TYPES)[keyof typeof P1_TICKET_TYPES];
+export type P1Tag = (typeof P1_TAGS)[keyof typeof P1_TAGS];

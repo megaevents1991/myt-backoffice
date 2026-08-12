@@ -56,17 +56,17 @@ const parseMemberIds = (raw: string): string[] =>
 
 export default function NewCategoryPage() {
   const router = useRouter();
-  // "+ תת-קטגוריה" on a row arrives as ?parent=<id> — the form opens with the
+  // "+ תת-קטגוריה" on a row arrives as ?parent=<id> - the form opens with the
   // parent already chosen so building a branch is one step, not two.
   const presetParent = useSearchParams().get("parent") ?? "";
   const [isPending, startTransition] = useTransition();
   const [imageUrl, setImageUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [membersRaw, setMembersRaw] = useState("");
-  // Which tags compose this category — the whole membership rule (see
+  // Which tags compose this category - the whole membership rule (see
   // CategoryTagsField). Saved after the card itself exists.
   const [catTagIds, setCatTagIds] = useState<number[]>([]);
-  // Parent options — a category page nests under its parent (/c/sport/football).
+  // Parent options - a category page nests under its parent (/c/sport/football).
   const [parentOptions, setParentOptions] = useState<{ id: number; name: string }[]>([]);
   useEffect(() => {
     getCategories()
@@ -195,7 +195,7 @@ export default function NewCategoryPage() {
                     value={field.value ?? ""}
                     onChange={field.onChange}
                   >
-                    <option value="">— ראשית —</option>
+                    <option value="">- ראשית -</option>
                     {parentOptions.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -257,7 +257,7 @@ export default function NewCategoryPage() {
 
           <div className="rounded-lg border p-4">
             <ArtBlobPicker
-              label="Card art — cut-out + blob (optional)"
+              label="Card art - cut-out + blob (optional)"
               imageUrl={artImageUrl}
               colorIndex={artColorIndex}
               shapeIndex={artShapeIndex}

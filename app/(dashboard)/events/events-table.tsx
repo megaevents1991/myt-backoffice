@@ -88,7 +88,7 @@ import {
 import { Input } from "@/components/ui/input";
 
 // Storefront tag vocabulary. MUST stay in sync with myt-main
-// `lib/eventTags.ts` — a tag the site doesn't recognize renders NO badge at
+// `lib/eventTags.ts` - a tag the site doesn't recognize renders NO badge at
 // all (that's how "Hot" / "Selling Fast" / "Limited Availability" were
 // invisible on the site). Same list as the event detail page's Tags select.
 const COMMON_TAGS = [
@@ -497,7 +497,7 @@ export function EventsTable() {
   const bulkDetailToastRef = useRef<ReturnType<typeof toast> | null>(null);
 
   // Bulk TAG assignment over the selected rows. Categories are never assigned
-  // by hand any more — a category is composed of tags (Templates → Categories),
+  // by hand any more - a category is composed of tags (Templates → Categories),
   // so tagging an event is what puts it in one.
   const [catOptions, setCatOptions] = useState<TaxonomyOption[]>([]);
   const [tagOptions, setTagOptions] = useState<TaxonomyOption[]>([]);
@@ -932,7 +932,7 @@ export function EventsTable() {
   const popMismatchQueue = () => {
     setMismatchQueue(prev => {
       if (prev.length === 0) {
-        // No more mismatches — dismiss the persistent detail toast
+        // No more mismatches - dismiss the persistent detail toast
         setTimeout(() => {
           bulkDetailToastRef.current?.dismiss();
           bulkDetailToastRef.current = null;
@@ -1068,7 +1068,7 @@ export function EventsTable() {
               const priceUSD = Math.round(await toUSD(rawPrice, iso));
               pendingMismatches.push({ provider, eventId: currentEvent.id, priceUSD, rawPrice, isoCurrency: iso, eventDate: normalizeDateInput(currentEvent.date), foundDate: nearest?.matchedDate ?? nearest?.date ?? "", result });
             } else {
-              // No usable price — treat as no result (blue)
+              // No usable price - treat as no result (blue)
               const noResultComp = { price: 0, name: providerLabel, date: normalizeDateInput(currentEvent.date), status: "no_result" as const };
               await updateEvent(currentEvent.id, { comp_pricing: noResultComp });
               setEvents(prev => prev.map(e => e.id === currentEvent.id ? { ...e, comp_pricing: noResultComp } : e));
@@ -1320,7 +1320,7 @@ export function EventsTable() {
             foundDate: nearest?.matchedDate ?? nearest?.date ?? "",
           });
         } else {
-          // No usable price from nearestAvailable — treat as no result (blue)
+          // No usable price from nearestAvailable - treat as no result (blue)
           try {
             const compPricing: NonNullable<Event["comp_pricing"]> = {
               price: 0,
@@ -1647,7 +1647,7 @@ export function EventsTable() {
       cell: ({ row }) => {
         const catIds = catsByEvent[row.original.id] ?? [];
         const tagIds = tagsByEvent[row.original.id] ?? [];
-        // Leaf label only ("כדורגל › ליגה אנגלית" → "ליגה אנגלית") — keep the cell narrow.
+        // Leaf label only ("כדורגל › ליגה אנגלית" → "ליגה אנגלית") - keep the cell narrow.
         const catLabels = catIds
           .map((id) => catOptions.find((o) => o.id === id)?.label.split(" › ").pop())
           .filter(Boolean) as string[];
@@ -1655,7 +1655,7 @@ export function EventsTable() {
           .map((id) => tagOptions.find((o) => o.id === id)?.label)
           .filter(Boolean) as string[];
         if (!catLabels.length && !tagLabels.length) {
-          return <span className="text-xs italic text-muted-foreground">—</span>;
+          return <span className="text-xs italic text-muted-foreground">-</span>;
         }
         const shown = [
           ...catLabels.slice(0, 2).map((l) => ({ l, kind: "cat" as const })),
@@ -2097,7 +2097,7 @@ export function EventsTable() {
           </label>
         </div>
 
-        {/* Taxonomy filters — category matches its whole subtree */}
+        {/* Taxonomy filters - category matches its whole subtree */}
         <select
           className="h-8 rounded-md border border-input bg-background px-2 text-sm"
           value={filterCatId}

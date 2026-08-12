@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Hotel step — myt-main's HotelSelection, agent-side.
+ * Hotel step - myt-main's HotelSelection, agent-side.
  * Same anatomy: band with guests + dates search, the 3-tab sort row
  * (price/stars/distance), a filters sidebar (breakfast / stars / name), and one
- * merged card list — offline rooms first (badged "מהמלאי המובטח", with per-room
+ * merged card list - offline rooms first (badged "מהמלאי המובטח", with per-room
  * unit counters, since that inventory is sold by room), then live Ratehawk
  * results styled like main's hotelCard: photo, name + stars, distance line,
  * room + breakfast, and a per-guest price delta.
@@ -150,7 +150,7 @@ export function HotelStep() {
         location={event.location_name}
         imageUrl={event.image_url}
       >
-        {/* One compact search pill — matches the flight step's, never wraps
+        {/* One compact search pill - matches the flight step's, never wraps
             into a second row on desktop. */}
         <div className="flex w-full items-center lg:w-auto lg:flex-1 lg:justify-end">
           <div className="flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-border bg-card p-1.5 shadow-sm lg:w-auto lg:flex-nowrap">
@@ -174,7 +174,7 @@ export function HotelStep() {
               }}
               className="h-9 w-[8.4rem] shrink-0 border-0 bg-background shadow-none"
             />
-            <span className="shrink-0 text-muted-foreground">—</span>
+            <span className="shrink-0 text-muted-foreground">-</span>
             <Input
               type="date"
               dir="ltr"
@@ -312,7 +312,7 @@ export function HotelStep() {
               {w.hotels.length === 0 && w.hsResults == null && (
                 <IssueState
                   title="חפשו מלונות לתאריכים שלכם"
-                  subtitle="בחרו תאריכים למעלה ולחצו חיפוש — ההיצע החי סביב האירוע, בדיוק כמו באתר"
+                  subtitle="בחרו תאריכים למעלה ולחצו חיפוש - ההיצע החי סביב האירוע, בדיוק כמו באתר"
                 />
               )}
 
@@ -340,7 +340,7 @@ export function HotelStep() {
   );
 }
 
-/** Offline inventory — sold by room, so the card keeps per-room unit counters. */
+/** Offline inventory - sold by room, so the card keeps per-room unit counters. */
 function OfflineHotelCard({ groupKey, group }: { groupKey: string; group: BuilderHotelRoom[] }) {
   const w = useWizard();
   const anchor = group[0];
@@ -435,7 +435,7 @@ function OfflineHotelCard({ groupKey, group }: { groupKey: string; group: Builde
         </ul>
         {isSelected && w.hotelCapacity < w.qty && (
           <p className="mt-2 text-sm text-destructive">
-            החדרים שנבחרו מתאימים ל-{w.hotelCapacity} נוסעים, אבל בחבילה {w.qty} — הוסיפו חדר.
+            החדרים שנבחרו מתאימים ל-{w.hotelCapacity} נוסעים, אבל בחבילה {w.qty} - הוסיפו חדר.
           </p>
         )}
       </div>
@@ -443,7 +443,7 @@ function OfflineHotelCard({ groupKey, group }: { groupKey: string; group: Builde
   );
 }
 
-/** Live Ratehawk result — main's hotelCard layout. */
+/** Live Ratehawk result - main's hotelCard layout. */
 function LiveHotelCard({ option, perPerson }: { option: LiveHotelOption; perPerson: number }) {
   const w = useWizard();
   const isSelected =

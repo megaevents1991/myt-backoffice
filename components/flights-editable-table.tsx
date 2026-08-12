@@ -297,7 +297,7 @@ export function FlightsEditableTable({
   );
 
   // Filter options come from the flights you can actually see. A series whose
-  // every flight was deleted must not linger in the dropdown — picking it would
+  // every flight was deleted must not linger in the dropdown - picking it would
   // filter the table down to nothing.
   const filterableFlights = useMemo(
     () => (filters.showDeleted ? flights : flights.filter((f) => !f.is_deleted)),
@@ -391,7 +391,7 @@ export function FlightsEditableTable({
           }}
         >
           <SelectTrigger className="h-8 w-full">
-            <SelectValue placeholder="—" />
+            <SelectValue placeholder="-" />
           </SelectTrigger>
           <SelectContent>
             {(field.options ?? []).map((option) => (
@@ -431,7 +431,7 @@ export function FlightsEditableTable({
           const next = fromInputValue(field, event.currentTarget.value);
           // Compare against the ORIGINAL round-tripped through the same
           // normalization, not against the raw column value. Postgres returns
-          // numeric as "1337.00" while the input yields 1337 — comparing those
+          // numeric as "1337.00" while the input yields 1337 - comparing those
           // directly reports a change on every blur, so merely opening and
           // closing the drawer wrote to the database and pushed a new base
           // flight price onto every linked event.

@@ -46,7 +46,7 @@ export const INSIGHTS_RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
   { key: "all", label: "All time" },
 ];
 
-/** The cross-partner insights block — the opening view of /partners. */
+/** The cross-partner insights block - the opening view of /partners. */
 export function PartnersInsights({
   overview,
   range,
@@ -108,7 +108,7 @@ export function PartnersInsights({
       value:
         overview.globalConversionRate != null
           ? `${(overview.globalConversionRate * 100).toFixed(2)}%`
-          : "—",
+          : "-",
       hint: `${overview.trackedVisitors} visitors → ${overview.paidReservations} paid`,
       icon: Percent,
     },
@@ -117,7 +117,7 @@ export function PartnersInsights({
       value:
         overview.costPerConversionUsd != null
           ? usdExact.format(overview.costPerConversionUsd)
-          : "—",
+          : "-",
       hint: "Commission + coupons per paid ticket",
       icon: Wallet,
     },
@@ -145,7 +145,7 @@ export function PartnersInsights({
 
       {overview.truncated && (
         <p className="rounded-md border border-dashed border-amber-400/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-          הטווח הזה עבר את תקרת הסריקה — המספרים מחושבים מהרשומות האחרונות בלבד
+          הטווח הזה עבר את תקרת הסריקה - המספרים מחושבים מהרשומות האחרונות בלבד
           וסוכמים פחות מהאמת. צמצמו את הטווח לקבלת תמונה מלאה.
         </p>
       )}
@@ -191,7 +191,7 @@ export function PartnersInsights({
             Hot events right now
           </CardTitle>
           <CardDescription>
-            Most-clicked events across every partner&apos;s audience in this period —
+            Most-clicked events across every partner&apos;s audience in this period -
             event, date and location. Converted counts only bookings that are
             PAID and attributed to a real partner or agent.
           </CardDescription>

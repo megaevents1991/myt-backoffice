@@ -1,10 +1,10 @@
-# Offline Flights Phase B — Per-Event Seat Allocation
+# Offline Flights Phase B - Per-Event Seat Allocation
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Give each flight↔event link its own seat quota — 10 seats to Ariana, 10 to the organised trip — enforced as a hard cap in the customer-facing app, and shown as ORG / TAKEN / AVAILABLE per event in the backoffice.
+**Goal:** Give each flight↔event link its own seat quota - 10 seats to Ariana, 10 to the organised trip - enforced as a hard cap in the customer-facing app, and shown as ORG / TAKEN / AVAILABLE per event in the backoffice.
 
-**Architecture:** A `flight_event_allocations` table holds only the quota. Consumed seats are never stored — a `flight_event_consumed` view derives them from active reservations, so the purchase path in `myt-main` needs no change and there is no second counter to drift. The main app's flight search reads both and hides a flight from an event whose quota is exhausted.
+**Architecture:** A `flight_event_allocations` table holds only the quota. Consumed seats are never stored - a `flight_event_consumed` view derives them from active reservations, so the purchase path in `myt-main` needs no change and there is no second counter to drift. The main app's flight search reads both and hides a flight from an event whose quota is exhausted.
 
 **Tech Stack:** Supabase (PostgreSQL view + table), Next.js Server Actions, React 19 client table, `myt-main` API route.
 
@@ -12,9 +12,9 @@
 
 - Spec: `docs/superpowers/specs/2026-07-28-offline-flights-expansion-design.md`, §1.1–1.3 and §3.
 - **Prerequisite: Phase A is merged**, in particular `components/flights-editable-table.tsx` and `lib/actions/offline-flight-columns.ts`.
-- **No backfill.** An event with no allocation row keeps using the global pool — today's exact behaviour. The hard cap applies only where a row exists.
+- **No backfill.** An event with no allocation row keeps using the global pool - today's exact behaviour. The hard cap applies only where a row exists.
 - `flights.consumed_quantity` and `app/api/confirm-order/route.ts` in `myt-main` stay **exactly as they are**. Do not add a per-event counter anywhere.
-- Backoffice commits go to `master`. Main-app work goes on the branch `feat/offline-flights-v2` and is merged by PR — never `git merge` locally.
+- Backoffice commits go to `master`. Main-app work goes on the branch `feat/offline-flights-v2` and is merged by PR - never `git merge` locally.
 - Shared types edited in `types/app.types.ts` must be mirrored into `../myt-main/lib/app.types.ts`.
 - Every Server Action starts with `await requireStaff()`. Every route starts with its guard.
 - No test suite: the gate is `npx tsc --noEmit` in each repo plus the stated manual check.
@@ -23,34 +23,36 @@
 
 ## Deploy order
 
-Backoffice ships first and is safe on its own: `myt-main` does not query a table it does not know about, so allocations sit inert until its branch merges. Nothing in this phase can oversell before main catches up — it can only fail to *restrict*, which is today's behaviour.
+Backoffice ships first and is safe on its own: `myt-main` does not query a table it does not know about, so allocations sit inert until its branch merges. Nothing in this phase can oversell before main catches up - it can only fail to _restrict_, which is today's behaviour.
 
 ---
 
 ## File Structure
 
-| File | Responsibility |
-|---|---|
-| `supabase/migrations/<ts>_add_flight_event_allocations.sql` | Table, view, grant |
-| `types/offline-flight.types.ts` | `FlightEventAllocation`, `FlightAllocationRow` |
-| `lib/actions/flight-allocation-actions.ts` | Read/write allocations with quota validation |
-| `components/flight-allocations-panel.tsx` | The expanded-row panel: per-event ORG/TAKEN/AVAILABLE + unallocated |
-| `components/flights-editable-table.tsx` | Gains the expand toggle that renders the panel |
-| `../myt-main/lib/flights/offlineSeatQuota.ts` | Pure cap logic (`buildSeatQuota`, `hasSeatsForEvent`) |
-| `../myt-main/lib/flights/offlineStops.ts` | Pure stopover shaping (`buildOfflineStops`) |
-| `../myt-main/lib/flights/__tests__/` | Vitest cover for both helpers |
-| `../myt-main/app/api/flights/search/route.ts` | Applies the cap; renders stopovers and bag weights |
-| `types/app.types.ts` + `../myt-main/lib/app.types.ts` | `FlightSegment` baggage-weight fields (shared) |
+| File                                                        | Responsibility                                                      |
+| ----------------------------------------------------------- | ------------------------------------------------------------------- |
+| `supabase/migrations/<ts>_add_flight_event_allocations.sql` | Table, view, grant                                                  |
+| `types/offline-flight.types.ts`                             | `FlightEventAllocation`, `FlightAllocationRow`                      |
+| `lib/actions/flight-allocation-actions.ts`                  | Read/write allocations with quota validation                        |
+| `components/flight-allocations-panel.tsx`                   | The expanded-row panel: per-event ORG/TAKEN/AVAILABLE + unallocated |
+| `components/flights-editable-table.tsx`                     | Gains the expand toggle that renders the panel                      |
+| `../myt-main/lib/flights/offlineSeatQuota.ts`               | Pure cap logic (`buildSeatQuota`, `hasSeatsForEvent`)               |
+| `../myt-main/lib/flights/offlineStops.ts`                   | Pure stopover shaping (`buildOfflineStops`)                         |
+| `../myt-main/lib/flights/__tests__/`                        | Vitest cover for both helpers                                       |
+| `../myt-main/app/api/flights/search/route.ts`               | Applies the cap; renders stopovers and bag weights                  |
+| `types/app.types.ts` + `../myt-main/lib/app.types.ts`       | `FlightSegment` baggage-weight fields (shared)                      |
 
 ---
 
-### Task 1: Schema — allocations table and derived-consumed view
+### Task 1: Schema - allocations table and derived-consumed view
 
 **Files:**
+
 - Create: `supabase/migrations/<timestamp>_add_flight_event_allocations.sql`
 - Modify: `types/offline-flight.types.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: table `flight_event_allocations(id, flight_id, event_id, allocated_seats, created_at)`; view `flight_event_consumed(flight_id, event_id, consumed_seats)`; TypeScript types `FlightEventAllocation` and `FlightAllocationRow`.
 
@@ -127,9 +129,9 @@ git add supabase/migrations types/offline-flight.types.ts
 git commit -m "feat(offline-flights): per-event seat allocations table and derived-consumed view"
 ```
 
-- [ ] **Step 5: STOP — ask Dor to apply the migration**
+- [ ] **Step 5: STOP - ask Dor to apply the migration**
 
-Tell Dor: *"Migration B is committed. Run `npm run db:push`, or GitHub → Actions → 'Apply DB Migrations'. It creates `flight_event_allocations` and the `flight_event_consumed` view — nothing existing is altered."*
+Tell Dor: _"Migration B is committed. Run `npm run db:push`, or GitHub → Actions → 'Apply DB Migrations'. It creates `flight_event_allocations` and the `flight_event_consumed` view - nothing existing is altered."_
 
 Wait for confirmation, then:
 
@@ -144,9 +146,11 @@ git commit -m "chore(types): regenerate database types after allocations"
 ### Task 2: Allocation server actions
 
 **Files:**
+
 - Create: `lib/actions/flight-allocation-actions.ts`
 
 **Interfaces:**
+
 - Consumes: `requireStaff`, `supabase`, `logAudit`, `FlightAllocationRow`.
 - Produces:
   - `getFlightAllocations(flightId: number): Promise<{ rows: FlightAllocationRow[]; initial_quantity: number; unallocated: number }>`
@@ -154,6 +158,7 @@ git commit -m "chore(types): regenerate database types after allocations"
   - `removeFlightAllocation(flightId: number, eventId: number): Promise<void>`
 
 **Validation rules (both writes):**
+
 1. `sum(allocated_seats) across the flight` must not exceed `flights.initial_quantity`.
 2. An event's `allocated_seats` must not drop below the seats that event has already consumed.
 
@@ -173,7 +178,11 @@ import type { FlightAllocationRow } from "@/types/offline-flight.types";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = () => supabase as any;
 
-type ConsumedRow = { flight_id: number; event_id: number; consumed_seats: number };
+type ConsumedRow = {
+  flight_id: number;
+  event_id: number;
+  consumed_seats: number;
+};
 type AllocRow = { event_id: number; allocated_seats: number };
 
 async function loadFlightState(flightId: number): Promise<{
@@ -204,8 +213,15 @@ async function loadFlightState(flightId: number): Promise<{
   return {
     initialQuantity: Number(flight?.initial_quantity ?? 0),
     eventIds: (flight?.event_ids ?? []) as number[],
-    allocations: new Map((allocRows ?? []).map((r: AllocRow) => [r.event_id, r.allocated_seats])),
-    consumed: new Map((consumedRows ?? []).map((r: ConsumedRow) => [r.event_id, r.consumed_seats])),
+    allocations: new Map(
+      (allocRows ?? []).map((r: AllocRow) => [r.event_id, r.allocated_seats]),
+    ),
+    consumed: new Map(
+      (consumedRows ?? []).map((r: ConsumedRow) => [
+        r.event_id,
+        r.consumed_seats,
+      ]),
+    ),
   };
 }
 
@@ -215,7 +231,8 @@ export async function getFlightAllocations(flightId: number): Promise<{
   unallocated: number;
 }> {
   await requireStaff();
-  const { initialQuantity, eventIds, allocations, consumed } = await loadFlightState(flightId);
+  const { initialQuantity, eventIds, allocations, consumed } =
+    await loadFlightState(flightId);
 
   let rows: FlightAllocationRow[] = [];
   if (eventIds.length > 0) {
@@ -234,7 +251,10 @@ export async function getFlightAllocations(flightId: number): Promise<{
     rows.sort((a, b) => a.event_date.localeCompare(b.event_date));
   }
 
-  const allocatedTotal = Array.from(allocations.values()).reduce((sum, n) => sum + n, 0);
+  const allocatedTotal = Array.from(allocations.values()).reduce(
+    (sum, n) => sum + n,
+    0,
+  );
   return {
     rows,
     initial_quantity: initialQuantity,
@@ -248,14 +268,16 @@ export async function setFlightAllocation(
   seats: number,
 ): Promise<void> {
   await requireStaff();
-  if (!Number.isInteger(seats) || seats < 0) throw new Error("Seats must be a non-negative integer");
+  if (!Number.isInteger(seats) || seats < 0)
+    throw new Error("Seats must be a non-negative integer");
 
-  const { initialQuantity, allocations, consumed } = await loadFlightState(flightId);
+  const { initialQuantity, allocations, consumed } =
+    await loadFlightState(flightId);
 
   const alreadyConsumed = consumed.get(eventId) ?? 0;
   if (seats < alreadyConsumed) {
     throw new Error(
-      `Cannot allocate ${seats} seats — this event has already sold ${alreadyConsumed}`,
+      `Cannot allocate ${seats} seats - this event has already sold ${alreadyConsumed}`,
     );
   }
 
@@ -264,7 +286,7 @@ export async function setFlightAllocation(
     .reduce((sum, [, n]) => sum + n, 0);
   if (otherAllocated + seats > initialQuantity) {
     throw new Error(
-      `Cannot allocate ${seats} seats — only ${initialQuantity - otherAllocated} of ${initialQuantity} remain unallocated`,
+      `Cannot allocate ${seats} seats - only ${initialQuantity - otherAllocated} of ${initialQuantity} remain unallocated`,
     );
   }
 
@@ -311,7 +333,7 @@ export async function removeFlightAllocation(
 }
 ```
 
-Note: removing an allocation returns that event to the global pool — it does **not** block it. That is the documented no-row fallback, not a bug.
+Note: removing an allocation returns that event to the global pool - it does **not** block it. That is the documented no-row fallback, not a bug.
 
 - [ ] **Step 2: Typecheck and commit**
 
@@ -326,10 +348,12 @@ git commit -m "feat(offline-flights): read and write per-event seat allocations 
 ### Task 3: Allocations panel in the table
 
 **Files:**
+
 - Create: `components/flight-allocations-panel.tsx`
 - Modify: `components/flights-editable-table.tsx`
 
 **Interfaces:**
+
 - Consumes: `getFlightAllocations`, `setFlightAllocation`, `removeFlightAllocation` (Task 2).
 - Produces:
 
@@ -340,15 +364,17 @@ export type FlightAllocationsPanelProps = {
   highlightEventId?: number;
   onChanged?: () => void;
 };
-export function FlightAllocationsPanel(props: FlightAllocationsPanelProps): JSX.Element;
+export function FlightAllocationsPanel(
+  props: FlightAllocationsPanelProps,
+): JSX.Element;
 ```
 
 - [ ] **Step 1: Build the panel**
 
 Create `components/flight-allocations-panel.tsx` as a `"use client"` component. On mount, call `getFlightAllocations(flightId)`. Render a small table:
 
-| Event | ORG | TAKEN | AVAILABLE | |
-|---|---|---|---|---|
+| Event             | ORG                                                                     | TAKEN            | AVAILABLE                                                            |                              |
+| ----------------- | ----------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------- | ---------------------------- |
 | event name + date | editable number input, or "global pool" when `allocated_seats === null` | `consumed_seats` | `allocated_seats − consumed_seats`, green above zero and red at zero | remove button when allocated |
 
 Below the rows, one summary line: `Unallocated: {unallocated} of {initial_quantity}`, rendered red when `unallocated < 0` (possible only if `initial_quantity` was lowered after allocating).
@@ -382,14 +408,15 @@ In `components/flights-editable-table.tsx` add a leading chevron column. Track `
 
 - [ ] **Step 3: Typecheck and manual acceptance**
 
-Run: `npx tsc --noEmit` — expected: no new errors.
+Run: `npx tsc --noEmit` - expected: no new errors.
 
 `npm run dev` → `/offline-flights`. On a flight with `initial_quantity = 20` linked to two events:
+
 - expand it, confirm both events appear as "global pool";
-- allocate 10 to the first — unallocated drops to 10;
-- allocate 15 to the second — **rejected** with "only 10 of 20 remain unallocated";
-- allocate 10 to the second — unallocated becomes 0;
-- on an event that has a live reservation, try to allocate fewer seats than it has sold — **rejected** with the "already sold" message;
+- allocate 10 to the first - unallocated drops to 10;
+- allocate 15 to the second - **rejected** with "only 10 of 20 remain unallocated";
+- allocate 10 to the second - unallocated becomes 0;
+- on an event that has a live reservation, try to allocate fewer seats than it has sold - **rejected** with the "already sold" message;
 - remove an allocation and confirm the row returns to "global pool".
 
 - [ ] **Step 4: Commit**
@@ -401,19 +428,21 @@ git commit -m "feat(offline-flights): per-event ORG/TAKEN/AVAILABLE in the expan
 
 ---
 
-### Task 4: Main app — enforce the per-event cap
+### Task 4: Main app - enforce the per-event cap
 
 **Files:**
+
 - Create: `../myt-main/lib/flights/offlineSeatQuota.ts`
 - Create: `../myt-main/lib/flights/__tests__/offlineSeatQuota.test.ts`
 - Modify: `../myt-main/app/api/flights/search/route.ts` (`getOfflineFlightsFromDB` ~line 161, `transformDbFlightToFlight` ~line 93, the POST handler's call site ~line 290)
 
 **Interfaces:**
+
 - Consumes: the `flight_event_allocations` table and `flight_event_consumed` view from Task 1.
 - Produces:
   - `buildSeatQuota(allocations, consumed): Map<number, number>`
   - `hasSeatsForEvent(quota, flightId, travelers): boolean`
-  - No exported API change on the route — its response shape is unchanged; some flights are simply absent.
+  - No exported API change on the route - its response shape is unchanged; some flights are simply absent.
 
 Unlike the backoffice, `myt-main` has vitest with unit tests under `lib/**/__tests__/`. The cap decision is pure logic, so it is extracted into `lib/` and tested there rather than being buried in the route.
 
@@ -453,7 +482,10 @@ describe("buildSeatQuota", () => {
 });
 
 describe("hasSeatsForEvent", () => {
-  const quota = new Map<number, number>([[1, 2], [2, 0]]);
+  const quota = new Map<number, number>([
+    [1, 2],
+    [2, 0],
+  ]);
 
   it("allows a party that fits the allocation", () => {
     expect(hasSeatsForEvent(quota, 1, 2)).toBe(true);
@@ -476,7 +508,7 @@ describe("hasSeatsForEvent", () => {
 - [ ] **Step 3: Run it and watch it fail**
 
 Run: `npx vitest run lib/flights/__tests__/offlineSeatQuota.test.ts`
-Expected: FAIL — cannot resolve `../offlineSeatQuota`.
+Expected: FAIL - cannot resolve `../offlineSeatQuota`.
 
 - [ ] **Step 4: Write the helper**
 
@@ -488,7 +520,7 @@ export type ConsumedRow = { flight_id: number; consumed_seats: number };
 
 /**
  * Seats still sellable to ONE event, keyed by flight id. A flight absent from
- * the map has no allocation row and draws on the global pool — the
+ * the map has no allocation row and draws on the global pool - the
  * pre-allocation behaviour, deliberately preserved so existing links keep working.
  */
 export function buildSeatQuota(
@@ -501,7 +533,8 @@ export function buildSeatQuota(
   return new Map(
     allocations.map((allocation) => [
       allocation.flight_id,
-      allocation.allocated_seats - (consumedByFlight.get(allocation.flight_id) ?? 0),
+      allocation.allocated_seats -
+        (consumedByFlight.get(allocation.flight_id) ?? 0),
     ]),
   );
 }
@@ -529,9 +562,14 @@ Expected: PASS, 7 tests.
 In `app/api/flights/search/route.ts`, import the helper and add above `getOfflineFlightsFromDB`:
 
 ```ts
-import { buildSeatQuota, hasSeatsForEvent } from "@/lib/flights/offlineSeatQuota";
+import {
+  buildSeatQuota,
+  hasSeatsForEvent,
+} from "@/lib/flights/offlineSeatQuota";
 
-const getEventSeatQuota = async (eventId: number): Promise<Map<number, number>> => {
+const getEventSeatQuota = async (
+  eventId: number,
+): Promise<Map<number, number>> => {
   const { data: allocations, error: allocError } = await supabase
     .from("flight_event_allocations")
     .select("flight_id, allocated_seats")
@@ -563,7 +601,7 @@ const transformDbFlightToFlight = (
   num_of_travelers: number,
   eventSeatQuota: Map<number, number>,
 ): Flight | null => {
-  // Not enough remaining inventory for this party size — hide the flight
+  // Not enough remaining inventory for this party size - hide the flight
   // entirely. Returning a placeholder ({}) here would propagate an invalid
   // Flight to the client and crash flight rendering.
   if (dbFlight.initial_quantity - dbFlight.consumed_quantity < num_of_travelers) {
@@ -587,9 +625,11 @@ In `getOfflineFlightsFromDB`, call `getEventSeatQuota(eventId)` inside the exist
 ```bash
 cd ../myt-main && npx tsc --noEmit && npx vitest run
 ```
+
 Expected: no new type errors; the whole unit suite passes, including the 7 new tests.
 
 Then, against the shared database:
+
 - pick an event with an offline flight and **no** allocation row; search flights on the site and confirm the offline flight still appears (unchanged behaviour);
 - in the backoffice allocate 1 seat to that event; search for 2 travellers and confirm the flight disappears; search for 1 traveller and confirm it appears;
 - allocate 0 seats and confirm it disappears for every party size;
@@ -603,19 +643,21 @@ git commit -m "feat(flights): honour per-event offline seat allocations"
 git push -u origin feat/offline-flights-v2
 ```
 
-Open a PR against `master` describing the hard-cap behaviour and the no-allocation fallback. Do not merge — Dor merges.
+Open a PR against `master` describing the hard-cap behaviour and the no-allocation fallback. Do not merge - Dor merges.
 
 ---
 
-### Task 5: Main app — surface the stopover and baggage weights
+### Task 5: Main app - surface the stopover and baggage weights
 
 **Files:**
+
 - Create: `../myt-main/lib/flights/offlineStops.ts`
 - Create: `../myt-main/lib/flights/__tests__/offlineStops.test.ts`
 - Modify: `../myt-main/lib/app.types.ts` and `types/app.types.ts` (both `FlightSegment` copies)
 - Modify: `../myt-main/app/api/flights/search/route.ts` (`transformDbFlightToFlight`)
 
 **Interfaces:**
+
 - Consumes: the `outbound_stop_airport` / `outbound_stop_duration` / `inbound_stop_*` / `checked_bag_kg` / `cabin_bag_kg` columns from Phase A Task 1.
 - Produces: `buildOfflineStops(arrivalAirport, stopAirport, stopDurationHours): { iataCode: string; duration: number | null }[]`.
 
@@ -666,7 +708,7 @@ describe("buildOfflineStops", () => {
 - [ ] **Step 3: Run it and watch it fail**
 
 Run: `npx vitest run lib/flights/__tests__/offlineStops.test.ts`
-Expected: FAIL — cannot resolve `../offlineStops`.
+Expected: FAIL - cannot resolve `../offlineStops`.
 
 - [ ] **Step 4: Write the module**
 
@@ -719,14 +761,19 @@ and the same for `inbound` using `inbound_arrival_airport` / `inbound_stop_airpo
     stops: Number(dbFlight.stops) || 0,
 ```
 
-Add the small parser next to `PTfunction` in the same file — Postgres renders `interval` as `HH:MM:SS`, which is what `PTfunction` already assumes:
+Add the small parser next to `PTfunction` in the same file - Postgres renders `interval` as `HH:MM:SS`, which is what `PTfunction` already assumes:
 
 ```ts
-const isoDurationToHours = (value: string | null | undefined): number | null => {
+const isoDurationToHours = (
+  value: string | null | undefined,
+): number | null => {
   if (!value) return null;
   const [hours, minutes] = String(value).split(":").map(Number);
   if (!Number.isFinite(hours)) return null;
-  return Math.round((hours + (Number.isFinite(minutes) ? minutes : 0) / 60) * 10) / 10;
+  return (
+    Math.round((hours + (Number.isFinite(minutes) ? minutes : 0) / 60) * 10) /
+    10
+  );
 };
 ```
 
@@ -735,6 +782,7 @@ const isoDurationToHours = (value: string | null | undefined): number | null => 
 ```bash
 cd ../myt-main && npx tsc --noEmit && npx vitest run
 ```
+
 Expected: no new type errors; the unit suite passes.
 
 In the backoffice set `outbound_stop_airport = VIE` and `outbound_stop_duration = 02:00:00` on an offline flight, then search that event on the site: the flight card must show one stop rather than "direct", and the existing long-layover and stop-count rules must not have changed for Amadeus results.
@@ -757,6 +805,7 @@ cd ../../myt-backoffice && git add types/app.types.ts && git commit -m "chore(ty
 npx tsc --noEmit && npm run build
 cd ../myt-main && npx tsc --noEmit && npm run build && npx vitest run
 ```
+
 Expected: all succeed.
 
 - [ ] **Step 2: Confirm confirm-order is untouched**
@@ -764,7 +813,8 @@ Expected: all succeed.
 ```bash
 cd ../myt-main && git diff master...feat/offline-flights-v2 --stat
 ```
-Expected: `app/api/flights/search/route.ts`, `lib/app.types.ts`, and the new files under `lib/flights/`. If `app/api/confirm-order/route.ts` appears, revert that file — the derived-consumed design depends on it staying as it is.
+
+Expected: `app/api/flights/search/route.ts`, `lib/app.types.ts`, and the new files under `lib/flights/`. If `app/api/confirm-order/route.ts` appears, revert that file - the derived-consumed design depends on it staying as it is.
 
 - [ ] **Step 3: Report to Dor**
 
@@ -778,4 +828,4 @@ State that the backoffice side is on `master` and inert until the main PR merges
 
 **Placeholders.** None: the migration, the actions module, the pure helper, its test and every main-app edit are pasted in full; the one described component (Task 3) has its exact props, its table columns, its error path and six numbered acceptance checks.
 
-**Type consistency.** `FlightAllocationRow` (Task 1) is the return element of `getFlightAllocations` (Task 2) and the row type the panel renders (Task 3). `setFlightAllocation(flightId, eventId, seats)` keeps that argument order in both the action and the panel. The view's column names — `flight_id`, `event_id`, `consumed_seats` — are used identically in Task 2's `loadFlightState`, Task 4's `getEventSeatQuota`, and the `AllocationRow` / `ConsumedRow` types in `offlineSeatQuota.ts`. `buildSeatQuota` and `hasSeatsForEvent` are called under those exact names in the route.
+**Type consistency.** `FlightAllocationRow` (Task 1) is the return element of `getFlightAllocations` (Task 2) and the row type the panel renders (Task 3). `setFlightAllocation(flightId, eventId, seats)` keeps that argument order in both the action and the panel. The view's column names - `flight_id`, `event_id`, `consumed_seats` - are used identically in Task 2's `loadFlightState`, Task 4's `getEventSeatQuota`, and the `AllocationRow` / `ConsumedRow` types in `offlineSeatQuota.ts`. `buildSeatQuota` and `hasSeatsForEvent` are called under those exact names in the route.

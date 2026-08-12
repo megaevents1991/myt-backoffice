@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * A stopover lives per direction (`outbound_stop_airport` / `inbound_stop_airport`)
- * — the outbound leg can connect while the inbound is direct, and each may
+ * - the outbound leg can connect while the inbound is direct, and each may
  * connect somewhere different. `flights.stops` is the legacy round-trip count
  * the main app still reads, derived from those two so they can never disagree.
  *
@@ -19,7 +19,7 @@ export function deriveStops(
   return Math.max(outbound, inbound);
 }
 
-/** Blank inputs must reach the DB as null, not "" — `varchar(3)` would keep it. */
+/** Blank inputs must reach the DB as null, not "" - `varchar(3)` would keep it. */
 export function blankToNull(value?: string | null): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -30,7 +30,7 @@ const stopDurationPattern = /^\d{1,2}:[0-5]\d$/;
 const stopIataPattern = /^[A-Z]{3}$/;
 
 /**
- * Postgres renders `interval` as "HH:MM:SS" — drop the seconds so the value it
+ * Postgres renders `interval` as "HH:MM:SS" - drop the seconds so the value it
  * hands back is one the layover input will accept again on the next save.
  */
 export function intervalToHhMm(value?: string | null): string {
@@ -42,7 +42,7 @@ export function intervalToHhMm(value?: string | null): string {
 }
 
 /**
- * The stopover half of both flight form schemas. `*_has_stop` is form-only —
+ * The stopover half of both flight form schemas. `*_has_stop` is form-only -
  * it drives the reveal and the "airport is required" rule, and is stripped
  * before the payload reaches Supabase.
  */
@@ -66,8 +66,8 @@ type StopoverValues = {
 
 /**
  * Pass to `.superRefine()` on either flight form schema. Saving "1 stop" with
- * no airport would store a connection the customer never sees — the trigger
- * would derive 0 stops and the flight would sell as direct — so it is an error
+ * no airport would store a connection the customer never sees - the trigger
+ * would derive 0 stops and the flight would sell as direct - so it is an error
  * rather than a silent downgrade.
  */
 export function stopoverSuperRefine(

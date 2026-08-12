@@ -17,7 +17,7 @@ import { createPartnerCoupon } from "@/lib/actions/portal-coupon-actions";
 import type { MyCouponTerms } from "@/lib/actions/portal-coupon-actions";
 
 /** Create a commission-funded coupon. The unit follows the partner's
- *  commission type; the value is capped at their rate — both enforced again
+ *  commission type; the value is capped at their rate - both enforced again
  *  server-side. */
 export function CreateCoupon({ terms }: { terms: MyCouponTerms }) {
   const router = useRouter();
@@ -63,7 +63,7 @@ export function CreateCoupon({ terms }: { terms: MyCouponTerms }) {
           קופון הנחה על חשבון העמלה
         </CardTitle>
         <CardDescription>
-          תנו ללקוח הנחה נוספת כשהוא משלם באתר — עד התקרה שבהסכם שלכם ({capLabel}
+          תנו ללקוח הנחה נוספת כשהוא משלם באתר - עד התקרה שבהסכם שלכם ({capLabel}
           {isPercent ? "" : " לכרטיס"}).
         </CardDescription>
       </CardHeader>

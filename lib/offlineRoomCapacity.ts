@@ -1,7 +1,7 @@
 // Capacity mapping for the controlled vocabulary in offline_hotels.room_type.
 // Must match the <SelectItem> values in the offline-hotels form
 // (app/(dashboard)/offline-hotels/new/page.tsx) AND the duplicate in the main
-// app (../myt---main/lib/offlineRoomCapacity.ts) — keep all three in sync.
+// app (../myt---main/lib/offlineRoomCapacity.ts) - keep all three in sync.
 //
 // Used when pushing an offline room's price onto an event's base_hotel_price:
 // the offline `price` is the TOTAL per room (for the whole stay), but
@@ -22,7 +22,7 @@ export const OFFLINE_ROOM_CAPACITY: Record<string, number> = {
 // Default to 2 (no single-capacity rooms exist in offline inventory) so an
 // unknown/blank room_type never collapses the divisor to 1 and double-charges.
 export const getOfflineRoomCapacity = (
-  roomType: string | null | undefined
+  roomType: string | null | undefined,
 ): number => {
   if (!roomType) return 2;
   return OFFLINE_ROOM_CAPACITY[roomType] ?? 2;

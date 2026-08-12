@@ -34,7 +34,7 @@ function canManage(actorRole: Role, targetRole: Role): boolean {
 
 /**
  * Make sure the `partners` row an agent/affiliate login points at exists.
- * Existing codes are left untouched — commercial terms are edited on the
+ * Existing codes are left untouched - commercial terms are edited on the
  * partner screen, and silently rewriting a live commission from the user form
  * is not something an admin picking a name from a dropdown is asking for.
  */
@@ -61,7 +61,7 @@ async function ensurePartnerForUser(args: {
     name_hebrew: args.name || null,
     email: args.email,
     // Legacy plaintext column the main app reads for affiliate auth. The login
-    // is Supabase Auth, so this gets an unusable sentinel — never "".
+    // is Supabase Auth, so this gets an unusable sentinel - never "".
     password: `disabled-${crypto.randomUUID()}`,
     // Zeroed on purpose: an unconfigured partner must never quietly start
     // earning. Terms are set on the partner screen.
@@ -87,7 +87,9 @@ async function ensurePartnerForUser(args: {
 }
 
 /** Undo a partner created moments ago for a user that then failed to be created. */
-async function rollbackCreatedPartner(trackingCode: string | null): Promise<void> {
+async function rollbackCreatedPartner(
+  trackingCode: string | null,
+): Promise<void> {
   if (!trackingCode) return;
   const { error } = await supabase
     .from("partners")
@@ -96,7 +98,7 @@ async function rollbackCreatedPartner(trackingCode: string | null): Promise<void
   if (error) {
     console.error(
       `createUser rollback failed (orphan partner "${trackingCode}"):`,
-      JSON.stringify(error)
+      JSON.stringify(error),
     );
   }
 }
@@ -142,14 +144,17 @@ export async function createUser(input: {
 
   const email = input.email?.trim().toLowerCase();
   if (!email || !input.password || input.password.length < 8) {
-    return { ok: false, error: "Email and a password of 8+ characters are required" };
+    return {
+      ok: false,
+      error: "Email and a password of 8+ characters are required",
+    };
   }
   if (PARTNER_ROLES.includes(input.role) && !input.partner_tracking_code) {
     return { ok: false, error: "Agent/affiliate users need a partner link" };
   }
 
   // An agent/affiliate login is meaningless without the partner row it points
-  // at — the portal reads every figure from it, and the FK would reject the
+  // at - the portal reads every figure from it, and the FK would reject the
   // profile anyway. Create it here so picking a brand-new code just works.
   let createdPartnerCode: string | null = null;
   if (PARTNER_ROLES.includes(input.role) && input.partner_tracking_code) {
@@ -160,36 +165,48 @@ export async function createUser(input: {
       name: input.display_name,
     });
     if (!ensured.ok) return { ok: false, error: ensured.error };
-    if (ensured.created) createdPartnerCode = input.partner_tracking_code.trim();
+    if (ensured.created)
+      createdPartnerCode = input.partner_tracking_code.trim();
   }
 
-  const { data: created, error: authError } = await supabase.auth.admin.createUser({
-    email,
-    password: input.password,
-    email_confirm: true,
-  });
+  const { data: created, error: authError } =
+    await supabase.auth.admin.createUser({
+      email,
+      password: input.password,
+      email_confirm: true,
+    });
   if (authError || !created.user) {
     console.error("createUser auth:", JSON.stringify(authError));
     await rollbackCreatedPartner(createdPartnerCode);
-    return { ok: false, error: authError?.message ?? "Auth user creation failed" };
+    return {
+      ok: false,
+      error: authError?.message ?? "Auth user creation failed",
+    };
   }
 
-  const { error: profileError } = await (supabase as any).from("user_profiles").insert({
-    id: created.user.id,
-    email,
-    display_name: input.display_name || null,
-    role: input.role,
-    partner_tracking_code: input.partner_tracking_code || null,
-    phone: input.phone || null,
-    is_active: true,
-    created_by: actor.sub,
-  });
+  const { error: profileError } = await (supabase as any)
+    .from("user_profiles")
+    .insert({
+      id: created.user.id,
+      email,
+      display_name: input.display_name || null,
+      role: input.role,
+      partner_tracking_code: input.partner_tracking_code || null,
+      phone: input.phone || null,
+      is_active: true,
+      created_by: actor.sub,
+    });
   if (profileError) {
     console.error("createUser profile:", JSON.stringify(profileError));
     // Roll back the orphan auth user so the email isn't locked.
-    await supabase.auth.admin.deleteUser(created.user.id).catch((e) =>
-      console.error("createUser rollback failed (orphan auth user):", JSON.stringify(e))
-    );
+    await supabase.auth.admin
+      .deleteUser(created.user.id)
+      .catch((e) =>
+        console.error(
+          "createUser rollback failed (orphan auth user):",
+          JSON.stringify(e),
+        ),
+      );
     await rollbackCreatedPartner(createdPartnerCode);
     return { ok: false, error: "Profile creation failed" };
   }
@@ -215,7 +232,7 @@ export async function updateUser(
     partner_tracking_code?: string | null;
     phone?: string | null;
     is_active?: boolean;
-  }
+  },
 ): Promise<Result> {
   const actor = await requireAdmin();
   if (id === actor.sub && input.is_active === false) {
@@ -232,13 +249,18 @@ export async function updateUser(
   if (!canManage(actor.role, targetRole)) {
     return { ok: false, error: "Only a superadmin can modify admin users" };
   }
-  if (input.role && ADMIN_ROLES.includes(input.role) && actor.role !== "superadmin") {
+  if (
+    input.role &&
+    ADMIN_ROLES.includes(input.role) &&
+    actor.role !== "superadmin"
+  ) {
     return { ok: false, error: "Only a superadmin can grant admin roles" };
   }
 
-  // Map columns explicitly — never spread client input.
+  // Map columns explicitly - never spread client input.
   const update: Record<string, unknown> = {};
-  if (input.display_name !== undefined) update.display_name = input.display_name;
+  if (input.display_name !== undefined)
+    update.display_name = input.display_name;
   if (input.role !== undefined) update.role = input.role;
   if (input.partner_tracking_code !== undefined)
     update.partner_tracking_code = input.partner_tracking_code;
@@ -264,7 +286,10 @@ export async function updateUser(
   return { ok: true };
 }
 
-export async function resetUserPassword(id: string, newPassword: string): Promise<Result> {
+export async function resetUserPassword(
+  id: string,
+  newPassword: string,
+): Promise<Result> {
   const actor = await requireAdmin();
   if (!newPassword || newPassword.length < 8) {
     return { ok: false, error: "Password must be 8+ characters" };
@@ -274,7 +299,10 @@ export async function resetUserPassword(id: string, newPassword: string): Promis
     return { ok: false, error: "User not found" };
   }
   if (!canManage(actor.role, targetRole)) {
-    return { ok: false, error: "Only a superadmin can reset an admin's password" };
+    return {
+      ok: false,
+      error: "Only a superadmin can reset an admin's password",
+    };
   }
   const { error } = await supabase.auth.admin.updateUserById(id, {
     password: newPassword,
@@ -283,12 +311,16 @@ export async function resetUserPassword(id: string, newPassword: string): Promis
     console.error("resetUserPassword:", JSON.stringify(error));
     return { ok: false, error: error.message };
   }
-  await logAudit({ action: "password_reset", entityType: "user", entityId: id });
+  await logAudit({
+    action: "password_reset",
+    entityType: "user",
+    entityId: id,
+  });
   return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
-// Contract attachment (agent/affiliate). One file per user, PRIVATE bucket —
+// Contract attachment (agent/affiliate). One file per user, PRIVATE bucket -
 // contract_url stores the storage PATH; access only via short signed URLs.
 // ---------------------------------------------------------------------------
 
@@ -307,7 +339,7 @@ async function getContractPath(id: string): Promise<string | null> {
 
 export async function uploadUserContract(
   id: string,
-  formData: FormData
+  formData: FormData,
 ): Promise<Result> {
   const actor = await requireAdmin();
   const targetRole = await getTargetRole(id);
@@ -317,10 +349,16 @@ export async function uploadUserContract(
   }
 
   const file = formData.get("file") as File | null;
-  if (!file || file.size === 0) return { ok: false, error: "Contract file is required" };
-  if (file.size > CONTRACT_MAX_BYTES) return { ok: false, error: "File too large (max 10MB)" };
+  if (!file || file.size === 0)
+    return { ok: false, error: "Contract file is required" };
+  if (file.size > CONTRACT_MAX_BYTES)
+    return { ok: false, error: "File too large (max 10MB)" };
   const ext = CONTRACT_TYPES[file.type];
-  if (!ext) return { ok: false, error: "Only PDF, DOC, DOCX, PNG or JPG files are allowed" };
+  if (!ext)
+    return {
+      ok: false,
+      error: "Only PDF, DOC, DOCX, PNG or JPG files are allowed",
+    };
 
   const previous = await getContractPath(id);
   const path = `${id}/contract-${Date.now()}.${ext}`;
@@ -344,12 +382,13 @@ export async function uploadUserContract(
     return { ok: false, error: "Saving contract reference failed" };
   }
 
-  // Replaced an older contract — best-effort cleanup, the row is source of truth.
+  // Replaced an older contract - best-effort cleanup, the row is source of truth.
   if (previous && previous !== path) {
     const { error: rmError } = await supabase.storage
       .from(CONTRACTS_BUCKET)
       .remove([previous]);
-    if (rmError) console.error("uploadUserContract cleanup:", JSON.stringify(rmError));
+    if (rmError)
+      console.error("uploadUserContract cleanup:", JSON.stringify(rmError));
   }
 
   await logAudit({
@@ -362,7 +401,7 @@ export async function uploadUserContract(
 }
 
 export async function getContractDownloadUrl(
-  id: string
+  id: string,
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   await requireAdmin();
   const path = await getContractPath(id);
@@ -398,7 +437,8 @@ export async function removeUserContract(id: string): Promise<Result> {
   const { error: rmError } = await supabase.storage
     .from(CONTRACTS_BUCKET)
     .remove([path]);
-  if (rmError) console.error("removeUserContract storage:", JSON.stringify(rmError));
+  if (rmError)
+    console.error("removeUserContract storage:", JSON.stringify(rmError));
 
   await logAudit({
     action: "user_updated",
