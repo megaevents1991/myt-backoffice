@@ -37,9 +37,11 @@ import {
   type TopCount,
 } from "@/lib/actions/partner-performance-actions";
 import { getPartnerCredit } from "@/lib/actions/partner-credit-actions";
+import { getUnbilledPaidReservations } from "@/lib/actions/partner-billing-actions";
 import { describeCommission } from "@/lib/partner-commission";
 import { PARTNER_TYPE_LABELS, isCustomerRefundPartner } from "@/types/partner.types";
 import { EntryFunnelsGrid } from "../../entry-funnel-cards";
+import { PendingCommissionPanel } from "./pending-commission-panel";
 import { PerformanceChart } from "./performance-chart";
 import { ReservationsTable } from "./reservations-table";
 
@@ -86,9 +88,10 @@ export default async function ViewPartnerPage({
   });
   if (!partner) notFound();
 
-  const [performance, credit] = await Promise.all([
+  const [performance, credit, unbilled] = await Promise.all([
     getPartnerPerformance(code, range),
     getPartnerCredit(code),
+    getUnbilledPaidReservations(code),
   ]);
 
   const type = isCustomerRefundPartner(partner)
@@ -223,6 +226,11 @@ export default async function ViewPartnerPage({
           );
         })}
       </div>
+
+      <PendingCommissionPanel
+        trackingCode={partner.partner_tracking_code}
+        rows={unbilled}
+      />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
