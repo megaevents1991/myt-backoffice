@@ -408,9 +408,13 @@ export function MatchTemplate({
   // dwarfing the text block, so it stays the largest square that fits.
   const avatarSize = isSingleSubject ? (isPortrait ? 700 : 300) : cardW;
   // Wide stadium panel (photo-bg match mode): one panel, both logos inside.
+  // panelLogo MUST leave room for the VS between the two crests: the row is
+  // space-between, so 2*panelLogo + the VS glyph has to fit inside
+  // panelW minus its padding, or the crests overlap the VS (they did at 400).
+  //   portrait: 1024 panel - 88 padding = 936 content; 2*340 + ~144 VS = 824.
   const panelW = width - 2 * (isPortrait ? 28 : 48);
   const panelH = isPortrait ? 860 : 340;
-  const panelLogo = isPortrait ? 400 : 185;
+  const panelLogo = isPortrait ? 340 : 185;
 
   // Card background: explicit choice wins; default = football photo for
   // matches, brand blob for artists. A stock category photo (stadium etc.)
@@ -629,7 +633,7 @@ export function MatchTemplate({
               position: "relative",
               backgroundColor: "#0D0C1E",
               boxShadow: "0 24px 70px rgba(0,0,0,0.55)",
-              padding: `0 ${isPortrait ? 56 : 44}px`,
+              padding: `0 ${isPortrait ? 44 : 44}px`,
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
