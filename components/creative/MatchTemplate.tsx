@@ -227,8 +227,14 @@ function BlobCard({
   const bw = Math.round(shape.w * cover);
   const bh = Math.round(shape.h * cover);
   // Subject image: scaled dimensions + px offsets (satori-safe, no transform).
-  const iw = Math.round((w - 24) * imgScale);
-  const ih = Math.round((h - 40) * imgScale);
+  // On a PHOTO backdrop (the single-team stadium spotlight) the subject is
+  // inset instead of filling the card: a crest sized to the card's full height
+  // swallows the stadium behind it. A brand-blob card keeps the subject large -
+  // that's the site's own event-art look, and the blob is decoration, not scene.
+  // imgScale still multiplies on top, so the designer can push it back up.
+  const fit = photoUrl ? 0.62 : 1;
+  const iw = Math.round((w - 24) * imgScale * fit);
+  const ih = Math.round((h - 40) * imgScale * fit);
   const ox = Math.round((imgOffsetX / 100) * w);
   const oy = Math.round((imgOffsetY / 100) * h);
   const pw = Math.round(w * bgScale);
