@@ -43,6 +43,22 @@ import { TixStockEventDB, TixStockListing } from "@/types/tixstock.types";
 import { Checkbox } from "@/components/ui/checkbox";
 import { tixstockToEvent } from "./batch/tixstock-to-event";
 
+/**
+ * "Known empty" for the hide-toggle. ticket_count 0 is a measured zero; a NULL
+ * on a row the nightly sync hasn't touched in two runs means the event is gone
+ * from the TixStock feed entirely (dropped fixtures keep their DB row) — there
+ * is nothing to buy either way. A fresh null stays visible as genuinely unknown.
+ */
+const STALE_SYNC_MS = 48 * 60 * 60 * 1000;
+const isKnownEmpty = (event: TixStockEventDB): boolean => {
+  if (event.ticket_count === 0) return true;
+  if (event.ticket_count == null) {
+    const synced = event.last_synced ? Date.parse(event.last_synced) : NaN;
+    return Number.isFinite(synced) && Date.now() - synced > STALE_SYNC_MS;
+  }
+  return false;
+};
+
 // Helper component for filter and sort controls
 const FilterSortControls = ({
   filter,
@@ -366,9 +382,9 @@ export function TixStockEventsContent() {
       return matchesSearch && matchesCategory && matchesPerformer;
     });
 
-    // Events the nightly sync measured as ticketless; null/undefined = unknown, kept.
-    const knownEmptyCount = base.filter(e => e.ticket_count === 0).length;
-    const filtered = hideNoTickets ? base.filter(e => e.ticket_count !== 0) : base;
+    // Measured zeros + stale nulls (dropped from the feed); fresh unknowns kept.
+    const knownEmptyCount = base.filter(isKnownEmpty).length;
+    const filtered = hideNoTickets ? base.filter(e => !isKnownEmpty(e)) : base;
 
     filtered.sort((a, b) => {
       let comparison = 0;
@@ -405,11 +421,14 @@ export function TixStockEventsContent() {
   );
 
   const filteredTickets = useMemo(() => {
-    const filtered = tickets.filter(t => {
-      const matchesSearch = t.seat_details?.category?.toLowerCase().includes(ticketFilter.toLowerCase()) || 
-                            t.seat_details?.section?.toLowerCase().includes(ticketFilter.toLowerCase());
-      return matchesSearch;
-    });
+    const query = ticketFilter.trim().toLowerCase();
+    // No query = keep everything. A listing without seat_details must not be
+    // dropped by `undefined?.includes(...)` evaluating to undefined.
+    const filtered = tickets.filter(t =>
+      !query ||
+      (t.seat_details?.category?.toLowerCase().includes(query) ?? false) ||
+      (t.seat_details?.section?.toLowerCase().includes(query) ?? false)
+    );
 
     filtered.sort((a, b) => {
       let comparison = 0;
@@ -641,7 +660,7 @@ export function TixStockEventsContent() {
                         />
                       </div>
                       <Card
-                        className={`cursor-pointer transition-colors ${selectedEvent?.event_id === event.event_id ? 'bg-accent border-primary' : 'hover:bg-accent/50'} ${event.ticket_count === 0 ? 'opacity-50' : ''}`}
+                        className={`cursor-pointer transition-colors ${selectedEvent?.event_id === event.event_id ? 'bg-accent border-primary' : 'hover:bg-accent/50'} ${isKnownEmpty(event) ? 'opacity-50' : ''}`}
                         onClick={() => setSelectedEvent(event)}
                       >
                         <CardContent className="p-4 pl-9">
@@ -649,7 +668,7 @@ export function TixStockEventsContent() {
                             <div className="flex items-start justify-between">
                               <h3 className="font-semibold text-sm">{event.event_name}</h3>
                               <div className="flex items-center gap-1 shrink-0">
-                                {event.ticket_count === 0 ? (
+                                {isKnownEmpty(event) ? (
                                   <Badge variant="outline" className="text-xs text-muted-foreground">
                                     No tickets
                                   </Badge>
