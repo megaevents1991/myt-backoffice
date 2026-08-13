@@ -22,11 +22,16 @@ const tbl = (t: string) => (supabase as any).from(t);
 
 const HUB_SLUG = { artist: "artists", team: "teams" } as const;
 
-export async function ensurePersonTaxonomy(input: {
-  kind: "artist" | "team";
-  name: string;
-  nameEnglish: string | null | undefined;
-}): Promise<{ skipped?: string; tagId?: number; categoryId?: number }> {
+export async function ensurePersonTaxonomy(
+  input: {
+    kind: "artist" | "team";
+    name: string;
+    nameEnglish: string | null | undefined;
+  },
+  // Backfill loops pass false and run the tagger once at the end instead of
+  // once per person.
+  opts: { runRules?: boolean } = {},
+): Promise<{ skipped?: string; tagId?: number; categoryId?: number }> {
   const nameEnglish = input.nameEnglish?.trim();
   const name = input.name?.trim();
   if (!name) return { skipped: "no name" };
@@ -35,12 +40,41 @@ export async function ensurePersonTaxonomy(input: {
   }
   const slug = slugify(nameEnglish);
 
-  // 1. Tag (idempotent by slug; retype if it exists under another type).
-  const { data: existingTag, error: tagFindErr } = await tbl("event_tags")
-    .select("id,type,is_deleted")
+  // 1. Tag (idempotent by slug, then by live Hebrew name - the CMS card may
+  // spell the English name differently than an existing tag's slug, and
+  // uq_event_tags_name_live forbids a second live tag with the same name).
+  let { data: existingTag, error: tagFindErr } = await tbl("event_tags")
+    .select("id,type,is_deleted,slug")
     .eq("slug", slug)
     .maybeSingle();
   if (tagFindErr) throw tagFindErr;
+  if (!existingTag) {
+    const { data: byName, error: nameErr } = await tbl("event_tags")
+      .select("id,type,is_deleted,slug")
+      .ilike("name", name.replace(/[%_]/g, "\\$&"))
+      .eq("is_deleted", false)
+      .limit(1)
+      .maybeSingle();
+    if (nameErr) throw nameErr;
+    if (byName) existingTag = byName;
+  }
+  // NEVER hijack a tag of another established type - "ברצלונה" the club must
+  // not retype "ברצלונה" the city (that broke label_3 on 2026-08-13). Only a
+  // same-kind or untyped ("other") tag may be reused.
+  if (
+    existingTag &&
+    !existingTag.is_deleted &&
+    existingTag.type !== input.kind &&
+    existingTag.type !== "other"
+  ) {
+    return {
+      skipped: `name/slug collides with existing ${existingTag.type} tag (id ${existingTag.id}) - resolve manually in Tags`,
+    };
+  }
+
+  // The category mirrors the TAG's real slug (an existing tag may spell it
+  // differently than this CMS card would).
+  const tagSlug: string = existingTag?.slug ?? slug;
   let tagId: number;
   if (existingTag && !existingTag.is_deleted) {
     tagId = existingTag.id;
@@ -109,7 +143,7 @@ export async function ensurePersonTaxonomy(input: {
   if (hub) {
     const { data: existingCat, error: catFindErr } = await tbl("categories")
       .select("id,is_deleted")
-      .eq("slug", slug)
+      .eq("slug", tagSlug)
       .maybeSingle();
     if (catFindErr) throw catFindErr;
     if (existingCat && !existingCat.is_deleted) {
@@ -121,10 +155,10 @@ export async function ensurePersonTaxonomy(input: {
         .eq("id", hub.parent_id)
         .maybeSingle();
       if (rootErr) throw rootErr;
-      const linkUrl = `/c/${root ? root.slug + "/" : ""}${HUB_SLUG[input.kind]}/${slug}`;
+      const linkUrl = `/c/${root ? root.slug + "/" : ""}${HUB_SLUG[input.kind]}/${tagSlug}`;
       const { data, error } = await tbl("categories")
         .insert({
-          slug,
+          slug: tagSlug,
           name,
           name_english: nameEnglish,
           parent_id: hub.id,
@@ -148,7 +182,7 @@ export async function ensurePersonTaxonomy(input: {
   }
 
   // 4. Tag existing events that match the new rule.
-  await applyTagRules();
+  if (opts.runRules !== false) await applyTagRules();
 
   return { tagId, categoryId };
 }
