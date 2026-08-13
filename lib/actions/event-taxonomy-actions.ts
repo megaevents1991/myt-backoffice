@@ -268,6 +268,56 @@ export async function setEventTags(
   }
 }
 
+/** Slim event row for the tag-side events manager. */
+export type TagEventRow = {
+  id: number;
+  name: string;
+  name_english: string | null;
+  date: string | null;
+};
+
+/**
+ * Live events carrying a tag, newest first - the Tags screen's per-tag
+ * events dialog. Includes past events (curation needs the full picture).
+ */
+export async function listTagEvents(tagId: number): Promise<TagEventRow[]> {
+  await requireStaff();
+  const { data: links, error: linkErr } = await tbl("event_tag_links")
+    .select("event_id")
+    .eq("tag_id", tagId);
+  if (linkErr) throw linkErr;
+  const ids = (links ?? []).map((r: { event_id: number }) => r.event_id);
+  if (!ids.length) return [];
+  const rows: TagEventRow[] = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await tbl("events")
+      .select("id,name,name_english,date")
+      .in("id", ids.slice(i, i + 200))
+      .is("is_deleted", null);
+    if (error) throw error;
+    rows.push(...((data ?? []) as TagEventRow[]));
+  }
+  return rows.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+}
+
+/**
+ * Name search over live events for adding to a tag - matches name or
+ * name_english, soonest first, capped at 20.
+ */
+export async function searchEventsForTag(query: string): Promise<TagEventRow[]> {
+  await requireStaff();
+  const q = query.trim().replace(/[%_]/g, "\\$&");
+  if (!q) return [];
+  const { data, error } = await tbl("events")
+    .select("id,name,name_english,date")
+    .or(`name.ilike.%${q}%,name_english.ilike.%${q}%`)
+    .is("is_deleted", null)
+    .order("date", { ascending: true })
+    .limit(20);
+  if (error) throw error;
+  return (data ?? []) as TagEventRow[];
+}
+
 export async function bulkAssignTags(
   eventIds: number[],
   tagIds: number[],

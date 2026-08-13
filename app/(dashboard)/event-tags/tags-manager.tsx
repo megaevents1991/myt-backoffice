@@ -28,6 +28,10 @@ import {
   updateTag,
   softDeleteTag,
   bulkSoftDeleteTags,
+  bulkAssignTags,
+  listTagEvents,
+  searchEventsForTag,
+  type TagEventRow,
 } from "@/lib/actions/event-taxonomy-actions";
 import { TAG_TYPES, type EventTag, type TagType } from "@/types/taxonomy.types";
 
@@ -70,6 +74,88 @@ export function TagsManager({
   const savingEditRef = useRef(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  // Live copy of the per-tag event counts - the events dialog mutates links,
+  // and the server prop only refreshes on full page load.
+  const [countsState, setCountsState] = useState<Record<number, number>>(counts);
+  // Tag-side events manager: which tag's events dialog is open + its data.
+  const [eventsTag, setEventsTag] = useState<EventTag | null>(null);
+  const [tagEvents, setTagEvents] = useState<TagEventRow[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+  const [evQuery, setEvQuery] = useState("");
+  const [evResults, setEvResults] = useState<TagEventRow[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  const openEvents = async (t: EventTag) => {
+    setEventsTag(t);
+    setTagEvents([]);
+    setEvQuery("");
+    setEvResults([]);
+    setLoadingEvents(true);
+    try {
+      setTagEvents(await listTagEvents(t.id));
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: e instanceof Error ? e.message : "Failed to load events",
+      });
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
+
+  const bumpCount = (tagId: number, delta: number) =>
+    setCountsState((prev) => ({
+      ...prev,
+      [tagId]: Math.max(0, (prev[tagId] ?? 0) + delta),
+    }));
+
+  const removeEventFromTag = async (ev: TagEventRow) => {
+    if (!eventsTag) return;
+    try {
+      await bulkAssignTags([ev.id], [eventsTag.id], "remove");
+      setTagEvents((prev) => prev.filter((r) => r.id !== ev.id));
+      bumpCount(eventsTag.id, -1);
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: e instanceof Error ? e.message : "Failed",
+      });
+    }
+  };
+
+  const searchEvents = async () => {
+    if (!evQuery.trim() || searching) return;
+    setSearching(true);
+    try {
+      setEvResults(await searchEventsForTag(evQuery));
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: e instanceof Error ? e.message : "Search failed",
+      });
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const addEventToTag = async (ev: TagEventRow) => {
+    if (!eventsTag) return;
+    try {
+      await bulkAssignTags([ev.id], [eventsTag.id], "add");
+      setTagEvents((prev) => [ev, ...prev.filter((r) => r.id !== ev.id)]);
+      setEvResults((prev) => prev.filter((r) => r.id !== ev.id));
+      bumpCount(eventsTag.id, 1);
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: e instanceof Error ? e.message : "Failed",
+      });
+    }
+  };
 
   // Single source of truth for "what's on screen" - the row list, the
   // select-all checkbox and its handler all read this, never raw `tags`,
@@ -98,7 +184,7 @@ export function TagsManager({
 
   const bulkRemove = async () => {
     if (!selected.size || bulkDeleting) return;
-    const links = [...selected].reduce((sum, id) => sum + (counts[id] ?? 0), 0);
+    const links = [...selected].reduce((sum, id) => sum + (countsState[id] ?? 0), 0);
     if (
       !(await confirm({
         title: `Delete ${selected.size} tag(s)?`,
@@ -200,7 +286,7 @@ export function TagsManager({
   };
 
   const remove = async (t: EventTag) => {
-    const n = counts[t.id] ?? 0;
+    const n = countsState[t.id] ?? 0;
     if (
       !(await confirm({
         title: `Delete "${t.name}"?`,
@@ -315,11 +401,14 @@ export function TagsManager({
               {t.name_english ? (
                 <span className="text-muted-foreground"> · {t.name_english}</span>
               ) : null}
-              <span className="text-xs text-muted-foreground"> ({counts[t.id] ?? 0} events)</span>
+              <span className="text-xs text-muted-foreground"> ({countsState[t.id] ?? 0} events)</span>
               {!t.is_active && (
                 <span className="text-xs text-destructive"> · inactive</span>
               )}
             </span>
+            <Button size="sm" variant="ghost" onClick={() => openEvents(t)}>
+              Events
+            </Button>
             <Button size="sm" variant="ghost" onClick={() => openEdit(t)}>
               Edit
             </Button>
@@ -381,6 +470,85 @@ export function TagsManager({
               {savingEdit ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Tag-side events manager: see, add and remove the events carrying a
+          tag without hunting them one-by-one in the events table. */}
+      <Dialog open={!!eventsTag} onOpenChange={(o) => !o && setEventsTag(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              אירועים עם התגית &quot;{eventsTag?.name}&quot;
+              <span className="text-sm font-normal text-muted-foreground">
+                {" "}· {tagEvents.length} אירועים
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <Input
+                value={evQuery}
+                onChange={(e) => setEvQuery(e.target.value)}
+                placeholder="חיפוש אירוע להוספה (שם בעברית או באנגלית)"
+                onKeyDown={(e) => e.key === "Enter" && searchEvents()}
+              />
+              <Button onClick={searchEvents} disabled={searching}>
+                {searching ? "..." : "חפש"}
+              </Button>
+            </div>
+            {evResults.length > 0 && (
+              <div className="max-h-40 overflow-y-auto rounded-md border bg-muted/30">
+                {evResults.map((ev) => {
+                  const already = tagEvents.some((r) => r.id === ev.id);
+                  return (
+                    <div key={ev.id} className="flex items-center gap-2 border-b px-2 py-1 text-sm">
+                      <span className="flex-1">
+                        {ev.name_english || ev.name}
+                        <span className="text-xs text-muted-foreground">
+                          {" "}· {ev.date?.slice(0, 10) ?? "-"}
+                        </span>
+                      </span>
+                      {already ? (
+                        <span className="text-xs text-muted-foreground">כבר מתויג</span>
+                      ) : (
+                        <Button size="sm" variant="secondary" onClick={() => addEventToTag(ev)}>
+                          הוסף
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="max-h-80 overflow-y-auto rounded-md border">
+              {loadingEvents && (
+                <div className="p-4 text-sm text-muted-foreground">טוען...</div>
+              )}
+              {!loadingEvents && tagEvents.length === 0 && (
+                <div className="p-4 text-sm text-muted-foreground">
+                  אין אירועים עם התגית הזו.
+                </div>
+              )}
+              {tagEvents.map((ev) => {
+                const past = ev.date ? new Date(ev.date) < new Date() : false;
+                return (
+                  <div key={ev.id} className="flex items-center gap-2 border-b px-2 py-1 text-sm">
+                    <span className="flex-1">
+                      {ev.name_english || ev.name}
+                      <span className="text-xs text-muted-foreground">
+                        {" "}· {ev.date?.slice(0, 10) ?? "-"}
+                        {past && " · עבר"}
+                      </span>
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={() => removeEventFromTag(ev)}>
+                      הסר
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
