@@ -50,6 +50,14 @@ import { tixstockToEvent } from "./batch/tixstock-to-event";
  * is nothing to buy either way. A fresh null stays visible as genuinely unknown.
  */
 const STALE_SYNC_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * Events starting sooner than this never make the list. MYT packages need
+ * flight+hotel lead time, and the nightly snapshot is stale by showtime anyway
+ * (TixStock pulls listings during the day of the event) — the head of the
+ * date-sorted list was permanently unreliable.
+ */
+const MIN_LEAD_MS = 48 * 60 * 60 * 1000;
 const isKnownEmpty = (event: TixStockEventDB): boolean => {
   if (event.ticket_count === 0) return true;
   if (event.ticket_count == null) {
@@ -375,7 +383,11 @@ export function TixStockEventsContent() {
   }, [filteredPerformers, performerPage]);
 
   const { filteredEvents, knownEmptyCount } = useMemo(() => {
+    const leadHorizon = Date.now() + MIN_LEAD_MS;
     const base = events.filter(e => {
+      const showMs = Date.parse(e.show_date);
+      // Unparseable dates stay visible rather than silently vanishing.
+      if (Number.isFinite(showMs) && showMs < leadHorizon) return false;
       const matchesSearch = e.event_name.toLowerCase().includes(eventFilter.toLowerCase());
       const matchesCategory = selectedCategory ? e.category_name === selectedCategory : true;
       const matchesPerformer = selectedPerformer ? e.performers?.some(p => p.name === selectedPerformer) : true;
