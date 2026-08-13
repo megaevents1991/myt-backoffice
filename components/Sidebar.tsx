@@ -30,6 +30,7 @@ import {
   Rss,
   ClipboardCheck,
   ArrowLeftRight,
+  Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -87,6 +88,7 @@ const navGroups: NavGroup[] = [
       // picks the tags that fill it and places it in the tree.
       { name: "Categories (קטגוריות)", href: "/templates/categories", icon: FolderTree },
       { name: "Tags (תגיות)", href: "/event-tags", icon: Tag },
+      { name: "Tag Rules (כללי תיוג)", href: "/tag-rules", icon: Wand2 },
       {
         name: "Creative Generator",
         href: "/creative-generator",

@@ -60,7 +60,13 @@ export function EventTaxonomySelect({
     creatingRef.current = true;
     setCreating(true);
     try {
-      const created = await createTag({ name: q, name_english: createEnglish.trim() });
+      // Full typing happens on the Tags screen - inline create just gets you
+      // going with a plain "other" tag.
+      const created = await createTag({
+        name: q,
+        name_english: createEnglish.trim(),
+        type: "other",
+      });
       const opt: TaxonomyOption = { id: created.id, label: created.name };
       // Idempotent server create can return an existing row - don't double-add.
       if (!options.some((o) => o.id === created.id)) onOptionCreated?.(opt);
