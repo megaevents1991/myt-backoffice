@@ -43,11 +43,12 @@ export async function ensurePersonTaxonomy(
   // 1. Tag (idempotent by slug, then by live Hebrew name - the CMS card may
   // spell the English name differently than an existing tag's slug, and
   // uq_event_tags_name_live forbids a second live tag with the same name).
-  let { data: existingTag, error: tagFindErr } = await tbl("event_tags")
+  const bySlugRes = await tbl("event_tags")
     .select("id,type,is_deleted,slug")
     .eq("slug", slug)
     .maybeSingle();
-  if (tagFindErr) throw tagFindErr;
+  if (bySlugRes.error) throw bySlugRes.error;
+  let existingTag = bySlugRes.data;
   if (!existingTag) {
     const { data: byName, error: nameErr } = await tbl("event_tags")
       .select("id,type,is_deleted,slug")
