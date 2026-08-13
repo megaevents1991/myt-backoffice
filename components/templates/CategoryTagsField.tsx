@@ -58,7 +58,8 @@ export function CategoryTagsField({
       )}
       {value.length === 0 && !failed && (
         <p className="text-xs text-amber-600">
-          בלי תגיות הקטגוריה תישאר ריקה - לא ייכנסו אליה אירועים.
+          ללא תגיות הקטגוריה לא אוספת אירועים - זה תקין עבור צומת-אב (hub) שמציג
+          רק אריחי ילדים, למשל &quot;ליגות&quot; או &quot;יעדים&quot;.
         </p>
       )}
     </div>

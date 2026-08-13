@@ -12,6 +12,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/confirm-provider";
@@ -22,7 +29,17 @@ import {
   softDeleteTag,
   bulkSoftDeleteTags,
 } from "@/lib/actions/event-taxonomy-actions";
-import type { EventTag } from "@/types/taxonomy.types";
+import { TAG_TYPES, type EventTag, type TagType } from "@/types/taxonomy.types";
+
+const TYPE_LABELS: Record<TagType, string> = {
+  vertical: "ורטיקל",
+  league: "ליגה",
+  team: "קבוצה",
+  artist: "אמן",
+  genre: "ז'אנר",
+  city: "עיר",
+  other: "אחר",
+};
 
 export function TagsManager({
   initial,
@@ -36,16 +53,38 @@ export function TagsManager({
   const [tags, setTags] = useState<EventTag[]>(initial);
   const [name, setName] = useState("");
   const [nameEnglish, setNameEnglish] = useState("");
+  const [type, setType] = useState<TagType>("other");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<EventTag | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", name_english: "", is_active: true });
+  const [editForm, setEditForm] = useState<{
+    name: string;
+    name_english: string;
+    is_active: boolean;
+    type: TagType;
+  }>({ name: "", name_english: "", is_active: true, type: "other" });
   const [savingEdit, setSavingEdit] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<TagType | "all">("all");
   // Synchronous re-entry guards - the state flags update async, so a
   // double-tap / Enter+click fires the handler twice before the re-render.
   const addingRef = useRef(false);
   const savingEditRef = useRef(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  // Single source of truth for "what's on screen" - the row list, the
+  // select-all checkbox and its handler all read this, never raw `tags`,
+  // so a type filter can never let select-all reach tags the admin can't see.
+  const visibleTags = tags.filter(
+    (t) => typeFilter === "all" || t.type === typeFilter,
+  );
+
+  // Switching filters clears the selection rather than trying to reconcile
+  // it against the new visible set - simpler than merging, and it's exactly
+  // what an admin expects: what's checked is what's on screen right now.
+  const selectTypeFilter = (v: TagType | "all") => {
+    setTypeFilter(v);
+    setSelected(new Set());
+  };
 
   const refresh = async () => setTags(await listTags());
 
@@ -102,9 +141,10 @@ export function TagsManager({
     addingRef.current = true;
     setAdding(true);
     try {
-      await createTag({ name, name_english: nameEnglish.trim() });
+      await createTag({ name, name_english: nameEnglish.trim(), type });
       setName("");
       setNameEnglish("");
+      setType("other");
       await refresh();
       toast({ title: "Added" });
     } catch (e) {
@@ -121,7 +161,12 @@ export function TagsManager({
 
   const openEdit = (t: EventTag) => {
     setEditing(t);
-    setEditForm({ name: t.name, name_english: t.name_english ?? "", is_active: t.is_active });
+    setEditForm({
+      name: t.name,
+      name_english: t.name_english ?? "",
+      is_active: t.is_active,
+      type: t.type,
+    });
   };
 
   const saveEdit = async () => {
@@ -137,6 +182,7 @@ export function TagsManager({
         name: editForm.name,
         name_english: editForm.name_english || null,
         is_active: editForm.is_active,
+        type: editForm.type,
       });
       setEditing(null);
       await refresh();
@@ -193,16 +239,51 @@ export function TagsManager({
           placeholder="English name (→ feed slug)"
           onKeyDown={(e) => e.key === "Enter" && add()}
         />
+        <Select value={type} onValueChange={(v) => setType(v as TagType)}>
+          <SelectTrigger className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TAG_TYPES.map((tt) => (
+              <SelectItem key={tt} value={tt}>
+                {TYPE_LABELS[tt]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button onClick={add} disabled={adding}>
           {adding ? "Adding..." : "Add"}
         </Button>
       </div>
-      {tags.length > 0 && (
+      <div className="flex flex-wrap items-center gap-1">
+        <button
+          type="button"
+          onClick={() => selectTypeFilter("all")}
+          className={`rounded-full border px-2 py-0.5 text-xs ${
+            typeFilter === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+          }`}
+        >
+          הכל
+        </button>
+        {TAG_TYPES.map((tt) => (
+          <button
+            key={tt}
+            type="button"
+            onClick={() => selectTypeFilter(tt)}
+            className={`rounded-full border px-2 py-0.5 text-xs ${
+              typeFilter === tt ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+            }`}
+          >
+            {TYPE_LABELS[tt]}
+          </button>
+        ))}
+      </div>
+      {visibleTags.length > 0 && (
         <div className="flex items-center gap-3">
           <Checkbox
-            checked={selected.size > 0 && selected.size === tags.length}
+            checked={selected.size > 0 && selected.size === visibleTags.length}
             onCheckedChange={(v) =>
-              setSelected(v ? new Set(tags.map((t) => t.id)) : new Set())
+              setSelected(v ? new Set(visibleTags.map((t) => t.id)) : new Set())
             }
             aria-label="Select all tags"
           />
@@ -215,10 +296,12 @@ export function TagsManager({
         </div>
       )}
       <div className="rounded-md border">
-        {tags.length === 0 && (
-          <div className="p-4 text-sm text-muted-foreground">No tags yet.</div>
+        {visibleTags.length === 0 && (
+          <div className="p-4 text-sm text-muted-foreground">
+            {tags.length === 0 ? "No tags yet." : "No tags match this filter."}
+          </div>
         )}
-        {tags.map((t) => (
+        {visibleTags.map((t) => (
           <div key={t.id} className="flex items-center gap-2 py-1 px-2 border-b">
             <Checkbox
               checked={selected.has(t.id)}
@@ -227,6 +310,8 @@ export function TagsManager({
             />
             <span className="flex-1">
               {t.name}
+              {" "}
+              <span className="rounded bg-muted px-1.5 py-0.5 text-xs">{TYPE_LABELS[t.type]}</span>
               {t.name_english ? (
                 <span className="text-muted-foreground"> · {t.name_english}</span>
               ) : null}
@@ -264,6 +349,24 @@ export function TagsManager({
                 value={editForm.name_english}
                 onChange={(e) => setEditForm((f) => ({ ...f, name_english: e.target.value }))}
               />
+            </div>
+            <div>
+              <Label>Type</Label>
+              <Select
+                value={editForm.type}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, type: v as TagType }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TAG_TYPES.map((tt) => (
+                    <SelectItem key={tt} value={tt}>
+                      {TYPE_LABELS[tt]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-center gap-2">
               <Switch

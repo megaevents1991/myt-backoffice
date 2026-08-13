@@ -3,10 +3,12 @@
 import { supabase } from "@/lib/supabase-server";
 import { requireStaff } from "@/lib/auth/guards";
 import { slugify } from "@/lib/slug";
-import type {
-  EventCategory,
-  EventTag,
-  AssignMode,
+import {
+  TAG_TYPES,
+  type EventCategory,
+  type EventTag,
+  type AssignMode,
+  type TagType,
 } from "@/types/taxonomy.types";
 
 /**
@@ -94,9 +96,13 @@ export async function listTags(): Promise<EventTag[]> {
 export async function createTag(input: {
   name: string;
   name_english?: string;
+  type?: TagType;
 }): Promise<EventTag> {
   await requireStaff();
   if (!input.name?.trim()) throw new Error("Tag name is required.");
+  if (input.type && !TAG_TYPES.includes(input.type)) {
+    throw new Error("Bad tag type.");
+  }
   // Checked FIRST so re-adding an old Hebrew-only tag doesn't demand English.
   const existing = await findByName("event_tags", input.name);
   if (existing) return existing as EventTag;
@@ -112,6 +118,7 @@ export async function createTag(input: {
     .insert({
       name: input.name.trim(),
       name_english: input.name_english ?? null,
+      type: input.type ?? "other",
       slug,
       is_active: true,
       is_deleted: false,
@@ -124,13 +131,14 @@ export async function createTag(input: {
 
 export async function updateTag(
   id: number,
-  patch: Partial<Pick<EventTag, "name" | "name_english" | "is_active">>,
+  patch: Partial<Pick<EventTag, "name" | "name_english" | "is_active" | "type">>,
 ): Promise<void> {
   await requireStaff();
   const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.name_english !== undefined) row.name_english = patch.name_english;
   if (patch.is_active !== undefined) row.is_active = patch.is_active;
+  if (patch.type !== undefined) row.type = patch.type;
   // Replace the "item-N" fallback once an English name exists (feed/tag URLs
   // are slug-keyed).
   if (patch.name_english) {

@@ -839,7 +839,11 @@ export function EventsTable() {
     }
     if (filterTagId) {
       const ids = tagsByEvent[event.id] ?? [];
-      if (!ids.includes(Number(filterTagId))) return false;
+      if (filterTagId === "__none__") {
+        if (ids.length > 0) return false;
+      } else if (!ids.includes(Number(filterTagId))) {
+        return false;
+      }
     }
     return true;
   });
@@ -2137,6 +2141,7 @@ export function EventsTable() {
           aria-label="Filter by feed tag"
         >
           <option value="">All feed tags</option>
+          <option value="__none__">ללא תגיות (untagged)</option>
           {tagOptions.map((o) => (
             <option key={o.id} value={o.id}>
               {o.label}

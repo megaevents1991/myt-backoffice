@@ -4,6 +4,7 @@ import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import type { Event } from "@/types/app.types";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
+import { applyTagRules } from "@/lib/services/auto-tagger";
 
 // Exactly the columns the events LIST page reads (table cells, filters,
 // auto-calc, competitor-pricing dialog). Sole consumer is events-table.tsx;
@@ -59,6 +60,12 @@ export async function createEvent(event: Omit<Event, "id">) {
     entityId: created.id,
     changes: eventData,
   });
+  // Auto-tag from tag_rules - tolerant: a tagging failure must not fail the create.
+  try {
+    await applyTagRules([created.id]);
+  } catch (e) {
+    console.error("auto-tag on create failed:", e);
+  }
   return created;
 }
 
