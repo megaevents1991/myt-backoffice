@@ -14,6 +14,7 @@ import type {
   CreatePersonData,
   UpdatePersonData,
 } from "../../types/person.types";
+import { ensurePersonTaxonomy } from "@/lib/services/taxonomy-sync";
 
 const TABLE = "football_teams";
 const REVALIDATE = ["/templates", "/templates/football"];
@@ -30,7 +31,20 @@ export async function createFootballTeam(
   data: CreatePersonData,
 ): Promise<Person> {
   await requireStaff();
-  return createRow<Person>(TABLE, data, REVALIDATE);
+  const created = await createRow<Person>(TABLE, data, REVALIDATE);
+  // New team card ⇒ team tag + auto-tag rule + category leaf under
+  // הקבוצות שלנו. Tolerant: a sync failure must not fail the create.
+  try {
+    const res = await ensurePersonTaxonomy({
+      kind: "team",
+      name: created.name,
+      nameEnglish: created.name_english,
+    });
+    if (res.skipped) console.warn("team taxonomy sync skipped:", res.skipped);
+  } catch (e) {
+    console.error("team taxonomy sync failed:", e);
+  }
+  return created;
 }
 export async function updateFootballTeam(
   id: number,
