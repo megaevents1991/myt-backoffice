@@ -152,7 +152,17 @@ export async function updateTag(
     }
   }
   const { error } = await tbl("event_tags").update(row).eq("id", id);
-  if (error) throw error;
+  if (error) {
+    // uq_event_tags_name_live: two LIVE tags may not share a (Hebrew) name -
+    // surface a readable message instead of a raw 500 (e.g. renaming the
+    // FC ברצלונה team tag to "ברצלונה" while the city tag holds that name).
+    if ((error as { code?: string }).code === "23505") {
+      throw new Error(
+        "השם הזה כבר בשימוש בתגית חיה אחרת - שתי תגיות לא יכולות לחלוק שם זהה. שנו קודם את התגית השנייה.",
+      );
+    }
+    throw error;
+  }
 }
 
 export async function softDeleteTag(id: number): Promise<void> {
