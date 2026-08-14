@@ -1,17 +1,35 @@
 import { listTags, getTagEventCounts } from "@/lib/actions/event-taxonomy-actions";
-import { TagsManager } from "./tags-manager";
+import { listTagRules } from "@/lib/actions/tag-rule-actions";
+import { TagsRulesTabs } from "./tags-rules-tabs";
 
 export const dynamic = "force-dynamic";
 
-export default async function EventTagsPage() {
-  const [tags, counts] = await Promise.all([listTags(), getTagEventCounts()]);
+export default async function EventTagsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const { tab } = await searchParams;
+  const [tags, counts, rules] = await Promise.all([
+    listTags(),
+    getTagEventCounts(),
+    listTagRules(),
+  ]);
   return (
     <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-bold">Event Tags</h1>
-      <p className="text-sm text-muted-foreground">
-        Curated flat tags for product-feed targeting and promotions.
-      </p>
-      <TagsManager initial={tags} counts={counts} />
+      <div>
+        <h1 className="text-2xl font-bold">Tags & Rules (תגיות וכללי תיוג)</h1>
+        <p className="text-sm text-muted-foreground">
+          תגיות מרכיבות קטגוריות ומזינות את הפיד; כללים מתייגים אירועים
+          אוטומטית (הוספה בלבד - לא מוחקים תיוג ידני).
+        </p>
+      </div>
+      <TagsRulesTabs
+        initialTab={tab === "rules" ? "rules" : "tags"}
+        tags={tags}
+        counts={counts}
+        rules={rules}
+      />
     </div>
   );
 }
