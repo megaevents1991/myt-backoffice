@@ -68,6 +68,7 @@ export function TagsManager({
   }>({ name: "", name_english: "", is_active: true, type: "other" });
   const [savingEdit, setSavingEdit] = useState(false);
   const [typeFilter, setTypeFilter] = useState<TagType | "all">("all");
+  const [search, setSearch] = useState("");
   // Synchronous re-entry guards - the state flags update async, so a
   // double-tap / Enter+click fires the handler twice before the re-render.
   const addingRef = useRef(false);
@@ -160,8 +161,14 @@ export function TagsManager({
   // Single source of truth for "what's on screen" - the row list, the
   // select-all checkbox and its handler all read this, never raw `tags`,
   // so a type filter can never let select-all reach tags the admin can't see.
+  const q = search.trim().toLowerCase();
   const visibleTags = tags.filter(
-    (t) => typeFilter === "all" || t.type === typeFilter,
+    (t) =>
+      (typeFilter === "all" || t.type === typeFilter) &&
+      (!q ||
+        t.name.toLowerCase().includes(q) ||
+        (t.name_english ?? "").toLowerCase().includes(q) ||
+        t.slug.toLowerCase().includes(q)),
   );
 
   // Switching filters clears the selection rather than trying to reconcile
@@ -169,6 +176,10 @@ export function TagsManager({
   // what an admin expects: what's checked is what's on screen right now.
   const selectTypeFilter = (v: TagType | "all") => {
     setTypeFilter(v);
+    setSelected(new Set());
+  };
+  const setSearchAndClear = (v: string) => {
+    setSearch(v);
     setSelected(new Set());
   };
 
@@ -341,6 +352,11 @@ export function TagsManager({
           {adding ? "Adding..." : "Add"}
         </Button>
       </div>
+      <Input
+        value={search}
+        onChange={(e) => setSearchAndClear(e.target.value)}
+        placeholder="חיפוש תגית (שם, אנגלית או slug)"
+      />
       <div className="flex flex-wrap items-center gap-1">
         <button
           type="button"

@@ -31,6 +31,18 @@ export function RulesManager({
   const [adding, setAdding] = useState(false);
   const [running, setRunning] = useState(false);
   const addingRef = useRef(false);
+  const [search, setSearch] = useState("");
+  const [fieldFilter, setFieldFilter] = useState<TagRuleField | "all">("all");
+
+  const q = search.trim().toLowerCase();
+  const visibleRules = rules.filter(
+    (r) =>
+      (fieldFilter === "all" || r.field === fieldFilter) &&
+      (!q ||
+        r.pattern.toLowerCase().includes(q) ||
+        r.tag_name.toLowerCase().includes(q) ||
+        r.tag_slug.toLowerCase().includes(q)),
+  );
 
   const refresh = async () => setRules(await listTagRules());
 
@@ -152,11 +164,43 @@ export function RulesManager({
         </Button>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          className="w-72"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="חיפוש כלל (דפוס, תגית או slug)"
+        />
+        {(
+          [
+            ["all", "הכל"],
+            ["name", "שם אירוע"],
+            ["city", "עיר IATA"],
+          ] as const
+        ).map(([v, label]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setFieldFilter(v)}
+            className={`rounded-full border px-2 py-0.5 text-xs ${
+              fieldFilter === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        <span className="text-xs text-muted-foreground">
+          {visibleRules.length} / {rules.length}
+        </span>
+      </div>
+
       <div className="rounded-md border">
-        {rules.length === 0 && (
-          <div className="p-4 text-sm text-muted-foreground">No rules yet.</div>
+        {visibleRules.length === 0 && (
+          <div className="p-4 text-sm text-muted-foreground">
+            {rules.length === 0 ? "No rules yet." : "No rules match the filter."}
+          </div>
         )}
-        {rules.map((r) => (
+        {visibleRules.map((r) => (
           <div key={r.id} className="flex items-center gap-3 py-1.5 px-2 border-b">
             <span className="flex-1 text-sm">
               <span className="font-mono">{r.pattern}</span>
