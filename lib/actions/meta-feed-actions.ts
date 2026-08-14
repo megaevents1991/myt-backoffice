@@ -88,7 +88,10 @@ export async function getSyncHealth(): Promise<SyncHealth> {
     const { data, error } = await db
       .from(table)
       .select(column)
-      .order(column, { ascending: false })
+      // DESC puts NULLs FIRST in Postgres - events.campaign_generated_at is
+      // null on rows without a creative, so without nullsFirst:false the
+      // newest "stamp" is a null and the sync reads "never ran".
+      .order(column, { ascending: false, nullsFirst: false })
       .limit(1);
     if (error) {
       console.error(`[sync-health] ${table} failed:`, JSON.stringify(error));
