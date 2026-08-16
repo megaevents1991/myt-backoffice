@@ -1,0 +1,374 @@
+<title>בדיקות QA — UTM קצה לקצה</title>
+<style>
+  :root {
+    --bg: #FAFBF9;
+    --card: #FFFFFF;
+    --ink: #14201A;
+    --muted: #5A6B61;
+    --line: #DCE3DD;
+    --accent: #0E6B3F;
+    --accent-soft: #E7F3EC;
+    --warn: #B45309;
+    --warn-soft: #FDF3E3;
+    --code-bg: #F1F5F1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0F1713;
+      --card: #16211B;
+      --ink: #E8EFE9;
+      --muted: #93A398;
+      --line: #263229;
+      --accent: #3ECF77;
+      --accent-soft: #12291C;
+      --warn: #E8A34C;
+      --warn-soft: #2C2113;
+      --code-bg: #1C2822;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F1713;
+    --card: #16211B;
+    --ink: #E8EFE9;
+    --muted: #93A398;
+    --line: #263229;
+    --accent: #3ECF77;
+    --accent-soft: #12291C;
+    --warn: #E8A34C;
+    --warn-soft: #2C2113;
+    --code-bg: #1C2822;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", "Assistant", Tahoma, Arial, sans-serif;
+    line-height: 1.6;
+    margin: 0;
+  }
+  .wrap { max-width: 800px; margin: 0 auto; padding: 40px 20px 80px; }
+  .eyebrow { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .08em; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 6px 0 4px; text-wrap: balance; }
+  .meta { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+  h2 { font-size: 21px; margin: 34px 0 10px; }
+  h3 { font-size: 16px; margin: 18px 0 6px; }
+  p { margin: 8px 0; }
+  code, .url {
+    direction: ltr; unicode-bidi: isolate;
+    font-family: Consolas, Menlo, monospace;
+    background: var(--code-bg); border-radius: 5px; padding: 1px 6px;
+    font-size: 13px; word-break: break-all;
+  }
+  .callout {
+    background: var(--accent-soft); border-inline-start: 4px solid var(--accent);
+    border-radius: 8px; padding: 12px 16px; margin: 16px 0; font-size: 15px;
+  }
+  .callout.warn { background: var(--warn-soft); border-inline-start-color: var(--warn); }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 20px 22px; margin: 18px 0;
+  }
+  .card-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .num {
+    background: var(--accent); color: var(--bg); font-weight: 800; font-size: 15px;
+    border-radius: 8px; padding: 2px 11px; flex: none;
+  }
+  .card-head h2 { margin: 0; font-size: 18px; }
+  .tag {
+    font-size: 12px; font-weight: 700; letter-spacing: .05em;
+    color: var(--warn); background: var(--warn-soft);
+    border: 1px solid var(--warn); border-radius: 99px; padding: 1px 10px;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 14px; }
+  .scroll { overflow-x: auto; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: right; vertical-align: top; }
+  th { background: var(--code-bg); font-size: 13px; }
+  td.step { width: 34px; text-align: center; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .verdict { display: flex; gap: 22px; align-items: center; margin-top: 12px; font-size: 15px; flex-wrap: wrap; }
+  .verdict label { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+  .verdict input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+  .verdict input.fail { accent-color: var(--warn); }
+  .notes {
+    flex: 1 1 220px; min-width: 180px;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
+    color: var(--ink); font-family: inherit; font-size: 14px; padding: 5px 10px;
+  }
+  .notes:focus, .verdict input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .legend td:first-child { direction: ltr; text-align: left; font-family: Consolas, Menlo, monospace; font-size: 13px; width: 60px; }
+  .summary td:last-child { text-align: center; width: 90px; font-size: 17px; }
+  .foot { color: var(--muted); font-size: 13px; margin-top: 40px; border-top: 1px solid var(--line); padding-top: 14px; }
+  @media print {
+    .card { break-inside: avoid; }
+    body { background: #fff; color: #111; }
+  }
+</style>
+
+<div class="wrap" dir="rtl" lang="he">
+  <div class="eyebrow">MEGA EVENTS · QA</div>
+  <h1>בדיקות QA — פיצ'ר UTM קצה לקצה</h1>
+  <div class="meta">
+    גרסה 2 · 16.08.2026 · כל השלבים בפרודקשן · אתר: <span class="url">https://www.mega-events.co.il</span> · בק-אופיס: הזמנות ← כרטיס "מקור הגעה"
+  </div>
+
+  <p><strong>מה הפיצ'ר:</strong> כניסה לאתר עם פרמטרים של קמפיין (<code>utm_source</code> וכו') נשמרת בעוגייה <code>myt_utm</code> ל-90 יום. משפיען שהביא גולש — הקרדיט שלו מוגן מדריסה של מודעות. כשהגולש מבצע הזמנה — כל היסטוריית המקורות נשמרת על ההזמנה ומוצגת בבק-אופיס בכרטיס <strong>"מקור הגעה"</strong>.</p>
+
+  <div class="callout">
+    <strong>דרישות גישה ל-QA:</strong> דפדפן + אייפון · כניסה לבק-אופיס (הזמנות) · גישה ללוגים ב-Vercel (בדיקה 7 — אפשר גם ע"י דור).
+  </div>
+
+  <h2>הכנה — איך רואים את העוגייה</h2>
+
+  <h3>במחשב (Chrome)</h3>
+  <p>נכנסים לאתר → <code>F12</code> → לשונית <strong>Application</strong> → <strong>Cookies</strong> → הדומיין → שורה בשם <code>myt_utm</code>.<br>
+  לקריאת התוכן: מעתיקים את ה-Value, בלשונית <strong>Console</strong> מריצים: <code>decodeURIComponent("מדביקים כאן")</code></p>
+
+  <h3>באייפון (Safari) — טריק הסימנייה</h3>
+  <p>1. שומרים סימנייה כלשהי (שיתוף → Add Bookmark).<br>
+  2. עורכים אותה ומחליפים את הכתובת ב: <code>javascript:alert(document.cookie)</code><br>
+  3. גולשים לאתר, לוחצים על הסימנייה — קופץ חלון עם העוגיות. מחפשים <code>myt_utm=</code>.</p>
+
+  <h3>איך קוראים את ה-JSON של העוגייה</h3>
+  <div class="scroll"><table class="legend">
+    <tr><th>שדה</th><th>משמעות</th></tr>
+    <tr><td>p</td><td>המקור הקובע (Primary) — מי מקבל את הקרדיט</td></tr>
+    <tr><td>h</td><td>היסטוריית ביקורים קודמים (עד 5)</td></tr>
+    <tr><td>s / m / c</td><td>utm_source / utm_medium / utm_campaign</td></tr>
+    <tr><td>inf</td><td>האם משפיען — true / false</td></tr>
+    <tr><td>at</td><td>מועד הביקור</td></tr>
+  </table></div>
+
+  <!-- ===================== 1 ===================== -->
+  <div class="card">
+    <div class="card-head"><span class="num">1</span><h2>עוגייה — נוצרת, נשמרת, לא נדרסת</h2></div>
+    <div class="scroll"><table>
+      <tr><th></th><th>פעולה</th><th>תוצאה צפויה</th></tr>
+      <tr><td class="step">1</td>
+        <td>בגלישה בסתר: <span class="url">https://www.mega-events.co.il/?utm_source=qa_test&amp;utm_medium=cpc&amp;utm_campaign=qa1</span></td>
+        <td>האתר נטען רגיל. בעוגייה: <code>"s":"qa_test"</code>, <code>"inf":false</code>, תוקף ≈ 90 יום</td></tr>
+      <tr><td class="step">2</td>
+        <td>ניווט חופשי, ואז כניסה ל-<span class="url">https://www.mega-events.co.il/</span> (בלי פרמטרים)</td>
+        <td>העוגייה לא נמחקת ולא משתנה</td></tr>
+      <tr><td class="step">3</td>
+        <td>כניסה עם קמפיין אחר: <span class="url">...?utm_source=facebook&amp;utm_campaign=qa2</span></td>
+        <td>ה-p מתחלף ל-facebook, ו-qa_test יורד ל-h (היסטוריה)</td></tr>
+    </table></div>
+    <div class="verdict">
+      <label><input type="checkbox" data-k="t1p"> עבר</label>
+      <label><input type="checkbox" class="fail" data-k="t1f"> נכשל</label>
+      <input class="notes" data-k="t1n" placeholder="הערות...">
+    </div>
+  </div>
+
+  <!-- ===================== 2 ===================== -->
+  <div class="card">
+    <div class="card-head"><span class="num">2</span><h2>אייפון — העוגייה שורדת ימים</h2><span class="tag">קריטי</span></div>
+    <div class="scroll"><table>
+      <tr><th></th><th>פעולה</th><th>תוצאה צפויה</th></tr>
+      <tr><td class="step">1</td>
+        <td>באייפון: <span class="url">https://www.mega-events.co.il/?utm_source=qa_iphone&amp;utm_medium=cpc</span> → בדיקה עם סימניית ה-JavaScript</td>
+        <td>רואים <code>myt_utm=</code> עם <code>qa_iphone</code></td></tr>
+      <tr><td class="step">2</td>
+        <td><strong>אחרי יומיים-שלושה:</strong> פותחים את האתר (בלי פרמטרים) ולוחצים שוב על הסימנייה</td>
+        <td>העוגייה עדיין שם — לא נעלמה</td></tr>
+    </table></div>
+    <div class="verdict">
+      <label><input type="checkbox" data-k="t2p"> עבר</label>
+      <label><input type="checkbox" class="fail" data-k="t2f"> נכשל</label>
+      <input class="notes" data-k="t2n" placeholder="הערות...">
+    </div>
+  </div>
+
+  <!-- ===================== 3 ===================== -->
+  <div class="card">
+    <div class="card-head"><span class="num">3</span><h2>הגנת משפיען בעוגייה</h2><span class="tag">הלב של הפיצ'ר</span></div>
+    <div class="scroll"><table>
+      <tr><th></th><th>פעולה</th><th>תוצאה צפויה</th></tr>
+      <tr><td class="step">1</td>
+        <td>בגלישה בסתר: לינק אמיתי של משפיען מהפורטל (או: <span class="url">https://www.mega-events.co.il/?utm_source=yarden_israel_1700</span>)</td>
+        <td>בעוגייה: קוד המשפיען, <code>"inf":true</code></td></tr>
+      <tr><td class="step">2</td>
+        <td>באותו דפדפן, מדמים מודעת גוגל: <span class="url">...?utm_source=google&amp;utm_medium=cpc&amp;utm_campaign=qa_override</span></td>
+        <td><strong>ה-p נשאר המשפיען!</strong> גוגל נכנס רק להיסטוריה</td></tr>
+      <tr><td class="step">3</td>
+        <td>לינק של משפיען <strong>אחר</strong></td>
+        <td>ה-p מתחלף למשפיען החדש (משפיען כן מחליף משפיען)</td></tr>
+    </table></div>
+    <div class="verdict">
+      <label><input type="checkbox" data-k="t3p"> עבר</label>
+      <label><input type="checkbox" class="fail" data-k="t3f"> נכשל</label>
+      <input class="notes" data-k="t3n" placeholder="הערות...">
+    </div>
+  </div>
+
+  <!-- ===================== 4 ===================== -->
+  <div class="card">
+    <div class="card-head"><span class="num">4</span><h2>קצה לקצה — הזמנה עם קמפיין מגיעה לבק-אופיס</h2><span class="tag">E2E</span></div>
+    <div class="scroll"><table>
+      <tr><th></th><th>פעולה</th><th>תוצאה צפויה</th></tr>
+      <tr><td class="step">1</td>
+        <td>בגלישה בסתר: <span class="url">https://www.mega-events.co.il/?utm_source=qa_e2e&amp;utm_medium=cpc&amp;utm_campaign=booking_test</span></td>
+        <td>עוגייה נוצרה</td></tr>
+      <tr><td class="step">2</td>
+        <td>ביקור נוסף עם קמפיין שני: <span class="url">...?utm_source=qa_e2e_2&amp;utm_campaign=second_visit</span></td>
+        <td>p התחלף, הראשון בהיסטוריה</td></tr>
+      <tr><td class="step">3</td>
+        <td>מבצעים <strong>הזמנת בדיקה</strong> מלאה עד עמוד התשלום (לא לשלם) — עם פרטי בדיקה מזוהים (שם: QA Test)</td>
+        <td>ההזמנה נקלטת כרגיל</td></tr>
+      <tr><td class="step">4</td>
+        <td>בבק-אופיס: הזמנות → פותחים את ההזמנה של QA Test → מחפשים כרטיס <strong>"מקור הגעה"</strong></td>
+        <td>הכרטיס מופיע: Primary = <code>qa_e2e_2</code> / second_visit, ובהיסטוריה <code>qa_e2e</code> / booking_test עם ציון זמן ("ביום ההזמנה")</td></tr>
+    </table></div>
+    <div class="verdict">
+      <label><input type="checkbox" data-k="t4p"> עבר</label>
+      <label><input type="checkbox" class="fail" data-k="t4f"> נכשל</label>
+      <input class="notes" data-k="t4n" placeholder="הערות...">
+    </div>
+  </div>
+
+  <!-- ===================== 5 ===================== -->
+  <div class="card">
+    <div class="card-head"><span class="num">5</span><h2>קצה לקצה — קרדיט משפיען מוגן עד ההזמנה</h2><span class="tag">E2E · קריטי</span></div>
+    <div class="scroll"><table>
+      <tr><th></th><th>פעולה</th><th>תוצאה צפויה</th></tr>
+      <tr><td class="step">1</td>
+        <td>בגלישה בסתר: לינק משפיען → ואז לינק "מודעת גוגל" (כמו בדיקה 3, שלבים 1-2)</td>
+        <td>בעוגייה: p = משפיען, גוגל בהיסטוריה</td></tr>
+      <tr><td class="step">2</td>
+        <td>הזמנת בדיקה עד עמוד תשלום (שם: QA Influencer)</td>
+        <td>נקלטת כרגיל</td></tr>
+      <tr><td class="step">3</td>
+        <td>בבק-אופיס: פותחים את ההזמנה</td>
+        <td>בכרטיס "מקור הגעה": Primary = קוד המשפיען עם תג <strong>משפיען</strong> סגול; גוגל מופיע רק בהיסטוריה</td></tr>
+      <tr><td class="step">4</td>
+        <td>בודקים את שדה השותף של ההזמנה (הקוד שמקבל עמלה)</td>
+        <td>קוד המשפיען — <strong>לא</strong> "google"</td></tr>
+    </table></div>
+    <div class="verdict">
+      <label><input type="checkbox" data-k="t5p"> עבר</label>
+      <label><input type="checkbox" class="fail" data-k="t5f"> נכשל</label>
+      <input class="notes" data-k="t5n" placeholder="הערות...">
+    </div>
+  </div>
+
+  <!-- ===================== 6 ===================== -->
+  <div class="card">
+    <div class="card-head"><span class="num">6</span><h2>לינקים חדשים מהפורטל נושאים סימון משפיען</h2></div>
+    <div class="scroll"><table>
+      <tr><th></th><th>פעולה</th><th>תוצאה צפויה</th></tr>
+      <tr><td class="step">1</td>
+        <td>בפורטל השותפים (או בצפייה של צוות בשותף): מעתיקים לינק מעקב של שותף</td>
+        <td>הלינק מכיל <code>utm_medium=influencer</code></td></tr>
+      <tr><td class="step">2</td>
+        <td>מעתיקים לינק חבילה (package) של סוכן</td>
+        <td>גם הוא מכיל <code>utm_medium=influencer</code> (ו-<code>pkg=</code> נשמר)</td></tr>
+      <tr><td class="step">3</td>
+        <td>פותחים את לינק החבילה בגלישה בסתר</td>
+        <td>החבילה נטענת כרגיל, בעוגייה <code>"inf":true</code></td></tr>
+    </table></div>
+    <div class="verdict">
+      <label><input type="checkbox" data-k="t6p"> עבר</label>
+      <label><input type="checkbox" class="fail" data-k="t6f"> נכשל</label>
+      <input class="notes" data-k="t6n" placeholder="הערות...">
+    </div>
+  </div>
+
+  <!-- ===================== 7 ===================== -->
+  <div class="card">
+    <div class="card-head"><span class="num">7</span><h2>שום דבר לא נשבר — לוגים ונתונים</h2><span class="tag">יומי × 3 ימים</span></div>
+    <div class="scroll"><table>
+      <tr><th></th><th>פעולה</th><th>תוצאה צפויה</th></tr>
+      <tr><td class="step">1</td>
+        <td>Vercel → <code>mega-events-platform</code> → Logs → חיפוש: <code>utm capture failed</code>, <code>utm classify lookup failed</code>, <code>utm_touches insert failed</code></td>
+        <td><strong>אפס תוצאות</strong> (בודדות — לדווח לדור)</td></tr>
+      <tr><td class="step">2</td>
+        <td>Mixpanel: טראפיק יומי + משפך הזמנה מול שבוע שעבר</td>
+        <td>ללא שינוי חריג</td></tr>
+      <tr><td class="step">3</td>
+        <td>הזמנה רגילה בלי שום UTM (גלישה בסתר, כניסה ישירה)</td>
+        <td>עוברת חלק; בבק-אופיס אין כרטיס "מקור הגעה" (וזה תקין)</td></tr>
+    </table></div>
+    <div class="verdict">
+      <label><input type="checkbox" data-k="t7p"> עבר</label>
+      <label><input type="checkbox" class="fail" data-k="t7f"> נכשל</label>
+      <input class="notes" data-k="t7n" placeholder="הערות...">
+    </div>
+  </div>
+
+  <!-- ===================== 8 ===================== -->
+  <div class="card">
+    <div class="card-head"><span class="num">8</span><h2>הזמנות ישנות לא הושפעו</h2></div>
+    <div class="scroll"><table>
+      <tr><th></th><th>פעולה</th><th>תוצאה צפויה</th></tr>
+      <tr><td class="step">1</td>
+        <td>בבק-אופיס: פותחים 2-3 הזמנות מלפני 16.08</td>
+        <td>נפתחות רגיל, כל המידע במקום, אין כרטיס "מקור הגעה" (נאסף רק מהיום)</td></tr>
+      <tr><td class="step">2</td>
+        <td>עריכה קטנה באחת מהן (סטטוס/הערה) ושמירה</td>
+        <td>נשמר כרגיל</td></tr>
+    </table></div>
+    <div class="verdict">
+      <label><input type="checkbox" data-k="t8p"> עבר</label>
+      <label><input type="checkbox" class="fail" data-k="t8f"> נכשל</label>
+      <input class="notes" data-k="t8n" placeholder="הערות...">
+    </div>
+  </div>
+
+  <h2>סיכום</h2>
+  <div class="scroll"><table class="summary">
+    <tr><th>בדיקה</th><th>סטטוס</th></tr>
+    <tr><td>1 · עוגייה — נוצרת ונשמרת</td><td data-sum="t1"></td></tr>
+    <tr><td>2 · אייפון — שורדת ימים</td><td data-sum="t2"></td></tr>
+    <tr><td>3 · הגנת משפיען בעוגייה</td><td data-sum="t3"></td></tr>
+    <tr><td>4 · E2E — קמפיין עד הבק-אופיס</td><td data-sum="t4"></td></tr>
+    <tr><td>5 · E2E — קרדיט משפיען מוגן</td><td data-sum="t5"></td></tr>
+    <tr><td>6 · לינקים עם סימון משפיען</td><td data-sum="t6"></td></tr>
+    <tr><td>7 · לוגים ונתונים נקיים (3 ימים)</td><td data-sum="t7"></td></tr>
+    <tr><td>8 · הזמנות ישנות תקינות</td><td data-sum="t8"></td></tr>
+  </table></div>
+
+  <div class="callout">
+    <strong>הכל ירוק → הפיצ'ר סגור.</strong> מדווחים לדור עם הצילומים/הערות. משהו אדום — לעצור ולדווח מיד, במיוחד בבדיקות 5 ו-7.
+  </div>
+
+  <div class="foot">
+    הסימונים וההערות נשמרים מקומית בדפדפן הזה בלבד · UTM Capture E2E · גרסה 2 · myt-main + myt-backoffice
+  </div>
+</div>
+
+<script>
+  var KEY = "utm-qa-e2e-2026-08-16";
+  var state = {};
+  try { state = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { state = {}; }
+
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  function refreshSummary() {
+    for (var i = 1; i <= 8; i++) {
+      var cell = document.querySelector('[data-sum="t' + i + '"]');
+      if (!cell) continue;
+      var p = state["t" + i + "p"], f = state["t" + i + "f"];
+      cell.textContent = f ? "✗" : p ? "✓" : "☐";
+      cell.style.color = f ? "var(--warn)" : p ? "var(--accent)" : "var(--muted)";
+    }
+  }
+
+  document.querySelectorAll("[data-k]").forEach(function (el) {
+    var k = el.getAttribute("data-k");
+    if (el.type === "checkbox") {
+      el.checked = !!state[k];
+      el.addEventListener("change", function () {
+        state[k] = el.checked;
+        var twin = k.slice(0, -1) + (k.endsWith("p") ? "f" : "p");
+        if (el.checked) {
+          state[twin] = false;
+          var twinEl = document.querySelector('[data-k="' + twin + '"]');
+          if (twinEl) twinEl.checked = false;
+        }
+        save(); refreshSummary();
+      });
+    } else {
+      el.value = state[k] || "";
+      el.addEventListener("input", function () { state[k] = el.value; save(); });
+    }
+  });
+  refreshSummary();
+</script>

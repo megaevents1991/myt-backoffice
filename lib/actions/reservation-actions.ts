@@ -3,6 +3,7 @@
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import type { Reservation } from "@/types/reservation.types";
+import type { UtmTouch } from "@/types/utm.types";
 import { revalidatePath } from "next/cache";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 
@@ -38,6 +39,31 @@ export async function getReservation(id: number) {
 
   if (error) throw error;
   return data as Reservation;
+}
+
+/**
+ * Attribution touches for this reservation, captured from the `myt_utm`
+ * cookie at checkout (see types/utm.types.ts). position 0 is the primary
+ * (attributed) touch. Returns [] on any query error - including the
+ * expected case where `utm_touches` hasn't been migrated onto the connected
+ * DB yet - so the reservation-detail attribution section just stays hidden.
+ */
+export async function getReservationUtmTouches(
+  reservationId: number,
+): Promise<UtmTouch[]> {
+  await requireStaff();
+  const { data, error } = await supabase
+    .from("utm_touches")
+    .select(
+      "id, reservation_id, position, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid, is_influencer, visited_at, created_at",
+    )
+    .eq("reservation_id", reservationId)
+    .order("position", { ascending: true });
+  if (error) {
+    console.error(JSON.stringify(error));
+    return [];
+  }
+  return (data ?? []) as UtmTouch[];
 }
 
 export async function createReservation(

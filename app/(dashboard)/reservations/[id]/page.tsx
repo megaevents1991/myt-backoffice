@@ -22,8 +22,10 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import type { Reservation } from "@/types/reservation.types";
+import type { UtmTouch } from "@/types/utm.types";
 import {
   getReservation,
+  getReservationUtmTouches,
   setReservationVoucherState,
   setTravelMaterialsSent,
   type VoucherState,
@@ -70,6 +72,10 @@ export default function ReservationDetailsPage({
   );
   // Specific child rooms (offline_hotel_rooms) manually linked to this reservation.
   const [linkedChildRooms, setLinkedChildRooms] = useState<OfflineHotelRoom[]>([]);
+  // UTM attribution touches (myt_utm cookie, captured at checkout). Empty
+  // when none were captured, or when the utm_touches table/query errors -
+  // either way the attribution card below just stays hidden.
+  const [utmTouches, setUtmTouches] = useState<UtmTouch[]>([]);
 
   useEffect(() => {
     async function fetchReservation() {
@@ -89,6 +95,9 @@ export default function ReservationDetailsPage({
     }
 
     fetchReservation();
+    getReservationUtmTouches(Number.parseInt(resolvedParams.id))
+      .then(setUtmTouches)
+      .catch(() => {});
   }, [resolvedParams.id, toast]);
 
   useEffect(() => {
@@ -446,6 +455,65 @@ export default function ReservationDetailsPage({
           </CardContent>
         </Card>
       </div>
+
+      {utmTouches.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>מקור הגעה</CardTitle>
+            <CardDescription>UTM attribution — המגע האחרון קובע את הזיכוי</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {utmTouches.map((touch) => (
+              <div key={touch.id} className="flex flex-wrap items-center gap-2 text-sm">
+                {touch.position === 0 ? (
+                  <span className="inline-flex items-center rounded-full bg-primary px-2.5 py-0.5 text-xs font-bold text-primary-foreground">
+                    Primary
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">#{touch.position}</span>
+                )}
+                <span className="font-medium">{touch.utm_source ?? "(no source)"}</span>
+                {touch.utm_medium && (
+                  <span className="text-muted-foreground">/ {touch.utm_medium}</span>
+                )}
+                {touch.utm_campaign && (
+                  <span className="text-muted-foreground">/ {touch.utm_campaign}</span>
+                )}
+                {touch.is_influencer && (
+                  <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-bold text-purple-700">
+                    משפיען
+                  </span>
+                )}
+                {touch.visited_at && (
+                  <span className="ms-auto flex items-center gap-2 text-xs text-muted-foreground">
+                    {new Date(touch.visited_at).toLocaleDateString("he-IL", {
+                      day: "2-digit", month: "2-digit", year: "numeric",
+                      hour: "2-digit", minute: "2-digit",
+                    })}
+                    {(() => {
+                      const days = Math.floor(
+                        (new Date(reservation.created_at).getTime() -
+                          new Date(touch.visited_at).getTime()) /
+                          86400000
+                      );
+                      if (!Number.isFinite(days) || days < 0) return null;
+                      return (
+                        <span>
+                          {days === 0
+                            ? "ביום ההזמנה"
+                            : days === 1
+                            ? "יום לפני ההזמנה"
+                            : `${days} ימים לפני ההזמנה`}
+                        </span>
+                      );
+                    })()}
+                  </span>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

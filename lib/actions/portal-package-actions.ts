@@ -1822,7 +1822,7 @@ export async function getAgentOrderHandoffLink(
 
   const next = `/order/${data.event_id}?utm_source=${encodeURIComponent(
     session.partner_code,
-  )}&pkg=${encodeURIComponent(data.share_token)}`;
+  )}&utm_medium=influencer&pkg=${encodeURIComponent(data.share_token)}`;
   const url = `${PUBLIC_SITE_URL}/api/partner-handoff?token=${encodeURIComponent(
     token,
   )}&next=${encodeURIComponent(next)}`;
