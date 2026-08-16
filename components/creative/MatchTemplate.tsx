@@ -70,6 +70,18 @@ export const BLOB_SHAPES: { d: string; w: number; h: number }[] = [
 
 const TAGLINE = "טיסות, מלון, כרטיסים - הרכיבו בעצמכם";
 
+// 1:1 SAFE ZONE. A product feed serves ONE image_link per product and Meta
+// crops it per placement - Facebook collection/carousel render 1:1, which
+// centre-crops our 1080x1350 to its middle 1080 and throws away a 135px band
+// top and bottom. The wordmark and the price pill used to sit exactly in those
+// bands, so a live collection ad showed neither (2026-08-16).
+//
+// Everything that MUST survive that crop is therefore inset by this much from
+// the top and bottom edges; only background (canvas, glow, the subject card's
+// bleed) may live outside it. (1350 - 1080) / 2 = 135, plus a small margin for
+// font-metric variance.
+const SAFE_INSET = 148;
+
 // The real "MegaΣvents." logotype (exact paths from myt-main's
 // components/ui/myt.tsx MYT component, exported from the Figma brand book) -
 // NOT hand-typed text. currentColor letterforms → INK; the accent dot stays
@@ -401,20 +413,26 @@ export function MatchTemplate({
   // Match cards: as wide as two of them plus the VS column fit, and tall
   // enough to fill the band (portrait cards, not squares - a square pair left
   // ~280px of empty canvas above and below).
-  const cardW = kind === "artist" ? (isPortrait ? width - 56 : 300) : isPortrait ? 443 : 235;
+  // Card heights are bounded by the safe square (see SAFE_INSET below): the
+  // card sits between header and footer, so pulling those two inside the
+  // 1:1 crop is paid for out of the card's height.
+  // Artist card is no longer full-bleed wide: at the safe-zone height a
+  // 1024-wide card is a 2:1 letterbox and the blob cover-crops into a shapeless
+  // green slab. ~1.6:1 keeps the Figma blob readable.
+  const cardW = kind === "artist" ? (isPortrait ? 820 : 300) : isPortrait ? 443 : 235;
   const cardH =
-    isPortrait && kind === "artist" ? 740 : isPortrait && kind === "match" ? 640 : cardW;
+    isPortrait && kind === "artist" ? 500 : isPortrait && kind === "match" ? 520 : cardW;
   // No-cutout circular avatar diameter - a circle can't go full-bleed without
   // dwarfing the text block, so it stays the largest square that fits.
-  const avatarSize = isSingleSubject ? (isPortrait ? 700 : 300) : cardW;
+  const avatarSize = isSingleSubject ? (isPortrait ? 470 : 300) : cardW;
   // Wide stadium panel (photo-bg match mode): one panel, both logos inside.
   // panelLogo MUST leave room for the VS between the two crests: the row is
   // space-between, so 2*panelLogo + the VS glyph has to fit inside
   // panelW minus its padding, or the crests overlap the VS (they did at 400).
   //   portrait: 1024 panel - 88 padding = 936 content; 2*340 + ~144 VS = 824.
   const panelW = width - 2 * (isPortrait ? 28 : 48);
-  const panelH = isPortrait ? 860 : 340;
-  const panelLogo = isPortrait ? 340 : 185;
+  const panelH = isPortrait ? 620 : 340;
+  const panelLogo = isPortrait ? 300 : 185;
 
   // Card background: explicit choice wins; default = football photo for
   // matches, brand blob for artists. A stock category photo (stadium etc.)
@@ -547,7 +565,7 @@ export function MatchTemplate({
       )}
 
       {/* header: real wordmark logo + tagline */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: isPortrait ? 28 : 22 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: isPortrait ? SAFE_INSET : 22 }}>
         <Wordmark width={isPortrait ? 460 : 220} />
         <div style={{ display: "flex", fontSize: isPortrait ? 46 : 17, color: "rgba(250,250,245,0.72)", marginTop: isPortrait ? 14 : 10 }}>
           {bidiVisual(TAGLINE)}
@@ -705,7 +723,7 @@ export function MatchTemplate({
       )}
 
       {/* footer: [hero name +] date/location + price pill */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: isPortrait ? 34 : 34 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: isPortrait ? SAFE_INSET : 34 }}>
         {/* hero keeps the name in the bottom block (unless name-top already
             placed it as the headline), with a mint accent bar under it.
             One wrapper div, not a fragment - satori mis-stacks fragment

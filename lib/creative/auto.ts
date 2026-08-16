@@ -442,14 +442,17 @@ export type CampaignEventRow = Event & { campaign_input_hash?: string | null };
 // hero/name-top/price-top layouts remain manual-designer-only - the auto
 // flow still renders the classic layout. v5: stadium-panel crests no longer
 // overlap the VS, and the single-team spotlight crest is inset + centred on
-// its photo backdrop (2026-08-12).
+// its photo backdrop (2026-08-12). v6: 1:1 safe zone - the wordmark and price
+// pill moved inside the middle 1080x1080 square so Facebook collection/carousel
+// placements, which centre-crop the 4:5 asset, stop cutting them off
+// (2026-08-16).
 //
 // BUMP THIS for any rendering change - do NOT just clear campaign_input_hash.
 // The stored URL carries `?v=<hash>`, and the hash is what makes Meta refetch
 // the image. Clearing the hash re-renders the same URL, so Meta keeps serving
 // the cached OLD picture and the fix never reaches the ad (happened on
 // 2026-08-12; needed a manual cache-buster on the affected rows).
-const RENDER_VERSION = "v5";
+const RENDER_VERSION = "v6";
 
 /**
  * Hash of everything printed on the creative - change → regenerate. Includes
