@@ -284,6 +284,42 @@ export function HotelStep() {
                 className="pe-9"
               />
             </div>
+            {/* The loaded list is a capped slice of the live offer. When the
+                typed name isn't in it, offer a server-side dig through the FULL
+                serp result - the same pool main shows the customer. */}
+            {(() => {
+              const term = nameQuery.trim().toLowerCase();
+              const missesLoaded =
+                term.length >= 2 &&
+                w.hsResults != null &&
+                !(w.hsResults ?? []).some((o) =>
+                  o.name.toLowerCase().includes(term),
+                );
+              if (!missesLoaded) return null;
+              return (
+                <button
+                  type="button"
+                  disabled={w.hsLoading}
+                  onClick={() => {
+                    if (!w.hsCheckin || !w.hsCheckout) {
+                      const d = w.defaultHotelDates();
+                      w.setHsCheckin(d.checkin);
+                      w.setHsCheckout(d.checkout);
+                      if (!d.checkin || !d.checkout) return;
+                    }
+                    w.runHotelSearch({ query: nameQuery.trim() });
+                  }}
+                  className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-brand-forest px-3 py-2 text-sm font-medium text-brand-forest transition-colors hover:bg-brand-mint/10 disabled:opacity-50 dark:border-brand-mint dark:text-brand-mint"
+                >
+                  {w.hsLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search size={14} />
+                  )}
+                  חפשו &quot;{nameQuery.trim()}&quot; בכל ההיצע
+                </button>
+              );
+            })()}
           </div>
         </div>
 

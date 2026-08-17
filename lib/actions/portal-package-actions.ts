@@ -1025,6 +1025,12 @@ export async function searchLiveHotels(input: {
   checkin: string;
   checkout: string;
   travelers: number;
+  /**
+   * Optional hotel-name filter. Matched server-side against the FULL serp
+   * result (via the Worldota id slug, e.g. "tavistock_hotel"), so an agent can
+   * find a hotel that main shows but fell outside the default result cap.
+   */
+  query?: string;
 }): Promise<LiveHotelSearchResult> {
   await requirePartner();
 
@@ -1098,7 +1104,17 @@ export async function searchLiveHotels(input: {
       return { ok: false, error: "חיפוש המלונות נכשל. נסו שוב." };
     }
 
-    const hotels = (search.data.hotels ?? []).slice(0, 20);
+    // Main shows EVERY hotel the serp returned - a hard cap here is why agents
+    // couldn't find hotels the customer flow shows (the 2026-08 Tavistock gap).
+    // Still capped for payload size, but higher, and a name query filters the
+    // full list BEFORE the cap so a searched-for hotel always survives it.
+    const allHotels = search.data.hotels ?? [];
+    const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const q = slug(input.query ?? "");
+    const pool = q
+      ? allHotels.filter((h) => slug(h.id).includes(q))
+      : allHotels;
+    const hotels = pool.slice(0, q ? 30 : 60);
     if (hotels.length === 0) {
       return {
         ok: true,
@@ -1198,7 +1214,9 @@ export async function searchLiveHotels(input: {
     }
 
     options.sort((a, b) => a.price - b.price);
-    return { ok: true, options: options.slice(0, 30), checkin, checkout };
+    // Up to ~4 rates per hotel; 240 keeps every hotel the cap above let through
+    // (60 hotels) instead of silently dropping the pricier half of them.
+    return { ok: true, options: options.slice(0, 240), checkin, checkout };
   } catch (err) {
     console.error("searchLiveHotels:", err);
     return { ok: false, error: "חיפוש המלונות נכשל. נסו שוב." };

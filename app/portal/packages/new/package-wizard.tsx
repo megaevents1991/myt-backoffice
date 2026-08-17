@@ -394,7 +394,7 @@ export function PackageWizard({
     };
   };
 
-  const runHotelSearch = () => {
+  const runHotelSearch = (opts?: { query?: string }) => {
     if (!event) return;
     const forEventId = event.id;
     const forQty = qty;
@@ -407,12 +407,28 @@ export function PackageWizard({
       checkin: hsCheckin,
       checkout: hsCheckout,
       travelers: qty,
+      query: opts?.query,
     })
       .then((res) => {
         if (stale()) return;
         if (res.ok) {
-          setHsResults(res.options);
-          if (res.options.length === 0) setHsError("לא נמצאו מלונות לתאריכים האלה");
+          if (opts?.query) {
+            // Name search digs through the FULL serp result - merge its hits
+            // into the loaded list (dedup by key) so clearing the filter still
+            // shows the default result set.
+            setHsResults((prev) => {
+              const seen = new Set((prev ?? []).map((o) => o.key));
+              return [
+                ...(prev ?? []),
+                ...res.options.filter((o) => !seen.has(o.key)),
+              ];
+            });
+            if (res.options.length === 0)
+              setHsError("המלון הזה לא נמצא בהיצע החי סביב האירוע לתאריכים שנבחרו");
+          } else {
+            setHsResults(res.options);
+            if (res.options.length === 0) setHsError("לא נמצאו מלונות לתאריכים האלה");
+          }
         } else {
           setHsError(res.error);
         }
