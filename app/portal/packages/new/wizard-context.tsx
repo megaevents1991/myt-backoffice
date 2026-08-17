@@ -101,7 +101,7 @@ export interface WizardState {
   hsLoading: boolean;
   hsError: string | null;
   hsResults: LiveHotelOption[] | null;
-  runHotelSearch: () => void;
+  runHotelSearch: (opts?: { query?: string }) => void;
   defaultHotelDates: () => { checkin: string; checkout: string };
 
   /* pricing (per person, vs the site's package baselines) */
