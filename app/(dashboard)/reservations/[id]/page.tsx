@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,6 +13,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -76,6 +81,8 @@ export default function ReservationDetailsPage({
   // when none were captured, or when the utm_touches table/query errors -
   // either way the attribution card below just stays hidden.
   const [utmTouches, setUtmTouches] = useState<UtmTouch[]>([]);
+  // Collapsed by default - attribution is "when a question comes up" info.
+  const [utmOpen, setUtmOpen] = useState(false);
 
   useEffect(() => {
     async function fetchReservation() {
@@ -455,65 +462,6 @@ export default function ReservationDetailsPage({
           </CardContent>
         </Card>
       </div>
-
-      {utmTouches.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>מקור הגעה</CardTitle>
-            <CardDescription>UTM attribution — המגע האחרון קובע את הזיכוי</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {utmTouches.map((touch) => (
-              <div key={touch.id} className="flex flex-wrap items-center gap-2 text-sm">
-                {touch.position === 0 ? (
-                  <span className="inline-flex items-center rounded-full bg-primary px-2.5 py-0.5 text-xs font-bold text-primary-foreground">
-                    Primary
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">#{touch.position}</span>
-                )}
-                <span className="font-medium">{touch.utm_source ?? "(no source)"}</span>
-                {touch.utm_medium && (
-                  <span className="text-muted-foreground">/ {touch.utm_medium}</span>
-                )}
-                {touch.utm_campaign && (
-                  <span className="text-muted-foreground">/ {touch.utm_campaign}</span>
-                )}
-                {touch.is_influencer && (
-                  <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-bold text-purple-700">
-                    משפיען
-                  </span>
-                )}
-                {touch.visited_at && (
-                  <span className="ms-auto flex items-center gap-2 text-xs text-muted-foreground">
-                    {new Date(touch.visited_at).toLocaleDateString("he-IL", {
-                      day: "2-digit", month: "2-digit", year: "numeric",
-                      hour: "2-digit", minute: "2-digit",
-                    })}
-                    {(() => {
-                      const days = Math.floor(
-                        (new Date(reservation.created_at).getTime() -
-                          new Date(touch.visited_at).getTime()) /
-                          86400000
-                      );
-                      if (!Number.isFinite(days) || days < 0) return null;
-                      return (
-                        <span>
-                          {days === 0
-                            ? "ביום ההזמנה"
-                            : days === 1
-                            ? "יום לפני ההזמנה"
-                            : `${days} ימים לפני ההזמנה`}
-                        </span>
-                      );
-                    })()}
-                  </span>
-                )}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardHeader>
@@ -980,6 +928,83 @@ export default function ReservationDetailsPage({
           </CardContent>
         </Card>
       </div>
+
+      {/* Attribution is reference info, not daily-workflow data - it lives
+          collapsed at the bottom so it's there when a "מאיפה הוא הגיע?"
+          question comes up, without stealing attention the rest of the time. */}
+      {utmTouches.length > 0 && (
+        <Collapsible open={utmOpen} onOpenChange={setUtmOpen}>
+          <Card>
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer select-none flex-row items-center justify-between space-y-0">
+                <div>
+                  <CardTitle>מקור הגעה</CardTitle>
+                  <CardDescription>
+                    UTM attribution — המגע האחרון קובע את הזיכוי
+                  </CardDescription>
+                </div>
+                <ChevronDown
+                  className={`h-5 w-5 text-muted-foreground transition-transform ${
+                    utmOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="space-y-3">
+                {utmTouches.map((touch) => (
+                  <div key={touch.id} className="flex flex-wrap items-center gap-2 text-sm">
+                    {touch.position === 0 ? (
+                      <span className="inline-flex items-center rounded-full bg-primary px-2.5 py-0.5 text-xs font-bold text-primary-foreground">
+                        Primary
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">#{touch.position}</span>
+                    )}
+                    <span className="font-medium">{touch.utm_source ?? "(no source)"}</span>
+                    {touch.utm_medium && (
+                      <span className="text-muted-foreground">/ {touch.utm_medium}</span>
+                    )}
+                    {touch.utm_campaign && (
+                      <span className="text-muted-foreground">/ {touch.utm_campaign}</span>
+                    )}
+                    {touch.is_influencer && (
+                      <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-bold text-purple-700">
+                        משפיען
+                      </span>
+                    )}
+                    {touch.visited_at && (
+                      <span className="ms-auto flex items-center gap-2 text-xs text-muted-foreground">
+                        {new Date(touch.visited_at).toLocaleDateString("he-IL", {
+                          day: "2-digit", month: "2-digit", year: "numeric",
+                          hour: "2-digit", minute: "2-digit",
+                        })}
+                        {(() => {
+                          const days = Math.floor(
+                            (new Date(reservation.created_at).getTime() -
+                              new Date(touch.visited_at).getTime()) /
+                              86400000
+                          );
+                          if (!Number.isFinite(days) || days < 0) return null;
+                          return (
+                            <span>
+                              {days === 0
+                                ? "ביום ההזמנה"
+                                : days === 1
+                                ? "יום לפני ההזמנה"
+                                : `${days} ימים לפני ההזמנה`}
+                            </span>
+                          );
+                        })()}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+      )}
 
       <div className="flex justify-end gap-4">
         <Button variant="outline" onClick={() => router.back()}>
