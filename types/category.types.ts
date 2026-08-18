@@ -1,4 +1,5 @@
 import type { TemplateBase, CreateBase } from "./template.types";
+import type { CategoryPageContent } from "./page-content.types";
 
 /**
  * Category ("Template") - typed row of the `categories` table. Managed in the
@@ -15,6 +16,13 @@ export interface Category extends TemplateBase {
   member_ids: string[];
   /** Optional override link; when set the card links here instead of /category/[slug]. */
   link_url: string | null;
+  /**
+   * Rich content of the category's PAGE on the site (hub verticals like
+   * כדורגל, and the league/genre pages under them): marketing text, gallery,
+   * stadium cards, FAQ. NULL on plain nodes - myt-main then falls back to its
+   * bundled launch copy. Edited with `PageContentField`.
+   */
+  page_content: CategoryPageContent | null;
 }
 
 export type CreateCategoryData = CreateBase<Category>;

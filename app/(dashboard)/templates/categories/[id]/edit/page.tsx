@@ -29,7 +29,12 @@ import {
 import { ArtBlobPicker } from "@/components/art-blob-picker";
 import { CategoryTagsField } from "@/components/templates/CategoryTagsField";
 import { HeroImageField } from "@/components/templates/HeroImageField";
+import { PageContentField } from "@/components/templates/PageContentField";
 import { StickySaveBar } from "@/components/sticky-save-bar";
+import {
+  isEmptyPageContent,
+  type CategoryPageContent,
+} from "@/types/page-content.types";
 
 const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -76,6 +81,8 @@ export default function EditCategoryPage({
   const [artBgScale, setArtBgScale] = useState(1);
   const [artImageOffsetX, setArtImageOffsetX] = useState(0);
   const [artImageOffsetY, setArtImageOffsetY] = useState(0);
+  // Rich page content (hub/league pages) - see PageContentField.
+  const [pageContent, setPageContent] = useState<CategoryPageContent>({});
   // baseline of non-RHF state (image, art, members) as loaded
   const initialExtrasRef = useRef<string>("");
 
@@ -127,8 +134,10 @@ export default function EditCategoryPage({
         setArtImageOffsetX(c.art_image_offset_x ?? 0);
         setArtImageOffsetY(c.art_image_offset_y ?? 0);
         setMembersRaw((c.member_ids ?? []).join(", "));
+        setPageContent(c.page_content ?? {});
         initialExtrasRef.current = JSON.stringify({
           catTagIds: tagIds,
+          pageContent: c.page_content ?? {},
           imageUrl: c.image_url ?? "",
           artImageUrl: c.art_image_url ?? "",
           artColorIndex: c.art_color_index ?? 0,
@@ -149,6 +158,7 @@ export default function EditCategoryPage({
     form.formState.isDirty ||
     JSON.stringify({
       catTagIds,
+      pageContent,
       imageUrl,
       artImageUrl,
       artColorIndex,
@@ -163,6 +173,7 @@ export default function EditCategoryPage({
   const resetExtras = () => {
     const e = JSON.parse(initialExtrasRef.current || "{}");
     setCatTagIds(e.catTagIds ?? []);
+    setPageContent(e.pageContent ?? {});
     setImageUrl(e.imageUrl ?? "");
     setArtImageUrl(e.artImageUrl ?? "");
     setArtColorIndex(e.artColorIndex ?? 0);
@@ -197,6 +208,9 @@ export default function EditCategoryPage({
           link_url: values.link_url || null,
           parent_id: values.parent_id ? Number(values.parent_id) : null,
           member_ids: parseMemberIds(membersRaw),
+          // Nothing filled in → NULL, so myt-main keeps its bundled fallback
+          // copy instead of rendering an empty section.
+          page_content: isEmptyPageContent(pageContent) ? null : pageContent,
         });
         // Tags ARE the category: every event carrying one lands in it.
         await setCategoryTags(templateId, catTagIds);
@@ -337,6 +351,8 @@ export default function EditCategoryPage({
           </div>
 
           <CategoryTagsField value={catTagIds} onChange={setCatTagIds} />
+
+          <PageContentField value={pageContent} onChange={setPageContent} />
 
           <FormField control={form.control} name="is_active" render={({ field }) => (
             <FormItem className="flex items-center gap-2 space-y-0">

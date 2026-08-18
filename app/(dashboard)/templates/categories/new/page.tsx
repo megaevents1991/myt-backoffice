@@ -146,6 +146,9 @@ export default function NewCategoryPage() {
           link_url: values.link_url || null,
           parent_id: values.parent_id ? Number(values.parent_id) : null,
           member_ids: parseMemberIds(membersRaw),
+          // Page content is authored on the EDIT screen (same as the tags,
+          // which also need the row to exist first).
+          page_content: null,
         });
         // Tags ARE the category: every event carrying one lands in it.
         if (catTagIds.length) await setCategoryTags(created.id, catTagIds);
