@@ -640,6 +640,16 @@ export function FormBuilder({ form, initialFields }: Props) {
                     style={{ background: option.value }}
                   />
                 ))}
+                {/* The live accent, always visible - and the door to the full
+                    native palette. type="color" needs a valid #rrggbb. */}
+                <input
+                  type="color"
+                  aria-label="Pick a custom accent colour"
+                  title="Custom colour"
+                  value={/^#[0-9a-f]{6}$/i.test(accent) ? accent : DEFAULT_ACCENT}
+                  onChange={(e) => touch(setAccent)(e.target.value.toUpperCase())}
+                  className="h-8 w-8 cursor-pointer appearance-none rounded-full border-2 border-foreground bg-transparent p-0 [&::-moz-color-swatch]:rounded-full [&::-moz-color-swatch]:border-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-full [&::-webkit-color-swatch]:border-none"
+                />
                 <Input
                   value={accent}
                   onChange={(e) => touch(setAccent)(e.target.value)}
