@@ -11,13 +11,24 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { BedDouble, Check, Copy, Plane, Search, Ticket } from "lucide-react";
+import {
+  BedDouble,
+  Check,
+  Copy,
+  ExternalLink,
+  FileText,
+  Loader2,
+  Plane,
+  Search,
+  Ticket,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { computePerPersonPackagePrice } from "@/lib/package-price";
 import {
   createPreparedPackage,
+  getAgentOrderHandoffLink,
   getLiveTicketOffers,
   getPackageBuilderInventory,
   searchLiveFlights,
@@ -64,11 +75,14 @@ export function PackageWizard({
   events,
   initialEventId,
   commissionTerms,
+  isAgent = false,
 }: {
   events: BuilderEvent[];
   /** Deep entry from the unified packages page - lands straight on tickets. */
   initialEventId?: number;
   commissionTerms?: BuilderCommissionTerms | null;
+  /** Agents also get "order for the customer" + "send offer" on the success screen. */
+  isAgent?: boolean;
 }) {
   const [step, setStep] = useState(0);
   const [returnToSummary, setReturnToSummary] = useState(false);
@@ -84,8 +98,10 @@ export function PackageWizard({
   const [allowEdit, setAllowEdit] = useState(true);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
+  const [createdId, setCreatedId] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [handoffPending, startHandoffTransition] = useTransition();
 
   // Live flight search
   const [fsDepart, setFsDepart] = useState("");
@@ -499,8 +515,10 @@ export function PackageWizard({
               ? { mode: "live-offer", offer: hotelChoice.option.snapshot }
               : hotelChoice,
       });
-      if (result.ok) setLink(result.link);
-      else setSubmitError(result.error);
+      if (result.ok) {
+        setLink(result.link);
+        setCreatedId(result.packageId);
+      } else setSubmitError(result.error);
     });
   };
 
@@ -706,6 +724,23 @@ export function PackageWizard({
 
   // ------- success screen -------
   if (link) {
+    // Same popup-blocker-safe pattern as the packages list: open the window
+    // synchronously, fill in the short-lived handoff URL once it's minted.
+    const orderForCustomer = () => {
+      if (createdId == null) return;
+      const win = window.open("about:blank", "_blank");
+      startHandoffTransition(async () => {
+        const result = await getAgentOrderHandoffLink(createdId);
+        if (!result.ok) {
+          win?.close();
+          setSubmitError(result.error);
+          return;
+        }
+        if (win) win.location.href = result.url;
+        else window.open(result.url, "_blank");
+      });
+    };
+
     return (
       <div className="mx-auto max-w-xl rounded-2xl border bg-card p-8 text-center shadow-card">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-mint">
@@ -728,6 +763,32 @@ export function PackageWizard({
             {copied ? "הועתק" : "העתקה"}
           </Button>
         </div>
+        {isAgent && createdId != null && (
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={orderForCustomer}
+              disabled={handoffPending}
+            >
+              {handoffPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ExternalLink className="h-4 w-4" />
+              )}
+              הזמנה עבור הלקוח
+            </Button>
+            <Button asChild variant="outline">
+              <Link href={`/portal/quotes/new?package=${createdId}`}>
+                <FileText className="h-4 w-4" />
+                שלח הצעה ללקוח
+              </Link>
+            </Button>
+          </div>
+        )}
+        {submitError && (
+          <p className="mt-3 text-sm font-medium text-destructive">{submitError}</p>
+        )}
         <div className="mt-6 flex justify-center gap-3">
           <Button asChild variant="outline">
             <Link href="/portal/packages">לרשימת החבילות</Link>
@@ -737,6 +798,8 @@ export function PackageWizard({
             variant="ghost"
             onClick={() => {
               setLink(null);
+              setCreatedId(null);
+              setSubmitError(null);
               setStep(0);
               setEvent(null);
               setQuery("");

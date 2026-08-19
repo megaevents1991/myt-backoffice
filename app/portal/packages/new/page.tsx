@@ -3,6 +3,7 @@ import {
   getMyCommissionTerms,
   getPackageBuilderEvents,
 } from "@/lib/actions/portal-package-actions";
+import { SELLER_ROLES } from "@/types/auth.types";
 import { PackageWizard } from "./package-wizard";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +40,7 @@ export default async function NewPackagePage({
         events={events}
         initialEventId={Number.isFinite(initialEventId) ? initialEventId : undefined}
         commissionTerms={commissionTerms}
+        isAgent={SELLER_ROLES.includes(session.role)}
       />
     </main>
   );

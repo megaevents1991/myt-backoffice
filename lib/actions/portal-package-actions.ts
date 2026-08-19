@@ -5,6 +5,8 @@ import { requirePartner } from "@/lib/auth/guards";
 import { mintPartnerHandoffToken } from "@/lib/auth/partner-handoff";
 import { supabase } from "@/lib/supabase-server";
 import { partnerLink, PUBLIC_SITE_URL } from "@/lib/site";
+import { getAgentSlugForUser, agentUtmContent } from "@/lib/portal-attribution";
+import { SELLER_ROLES } from "@/types/auth.types";
 import {
   computePackagePrice,
   computePerPersonPackagePrice,
@@ -202,12 +204,17 @@ async function lockedFlightSoldOutSet(
 export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
   await requirePartner();
 
+  // Events starting inside the next 3 days are too close to sell a package
+  // for (flights/hotel/ticket fulfilment can't be guaranteed) - keep them out
+  // of the build-package and send-link lists.
+  const minStart = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from("events")
     .select(EVENT_COLUMNS)
     .is("is_deleted", null)
-    .gte("date", new Date().toISOString())
+    .gte("date", minStart)
     .order("date", { ascending: true })
     .limit(300);
 
@@ -1264,7 +1271,7 @@ export type CreatePackageInput = {
 };
 
 export type CreatePackageResult =
-  | { ok: true; link: string }
+  | { ok: true; link: string; packageId: number }
   | { ok: false; error: string };
 
 export async function createPreparedPackage(
@@ -1562,7 +1569,7 @@ export async function createPreparedPackage(
   let { data: inserted, error: insertError } = await (supabase as any)
     .from("prepared_packages")
     .insert({ ...baseRow, allow_edit: input.allowEdit !== false })
-    .select("share_token")
+    .select("id, share_token")
     .single();
 
   // Deploy/migration race: if allow_edit hasn't landed yet, save without it
@@ -1575,7 +1582,7 @@ export async function createPreparedPackage(
     ({ data: inserted, error: insertError } = await (supabase as any)
       .from("prepared_packages")
       .insert(baseRow)
-      .select("share_token")
+      .select("id, share_token")
       .single());
   }
 
@@ -1585,8 +1592,14 @@ export async function createPreparedPackage(
   }
 
   revalidatePath(PORTAL_PACKAGES_PATH);
-  const token = (inserted as { share_token: string }).share_token;
-  return { ok: true, link: partnerLink(session.partner_code, event.id, token) };
+  const row = inserted as { id: number; share_token: string };
+  const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
+  return {
+    ok: true,
+    link: partnerLink(session.partner_code, event.id, row.share_token, agentUtm),
+    // The success screen's "הזמנה עבור הלקוח" / "שלח הצעה" need the row id.
+    packageId: row.id,
+  };
 }
 
 export interface PreparedPackageListItem {
@@ -1674,6 +1687,10 @@ export async function getMyPreparedPackages(): Promise<
     return [];
   }
 
+  // The VIEWER's slug on every row is intentional - credit follows whoever
+  // distributes the link, not whoever originally built the package.
+  const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
+
   return ((data ?? []) as PreparedPackageRow[]).map((row) => {
     const info = row.event_order_info ?? {};
     const flightMode = row.flight_skipped
@@ -1688,7 +1705,12 @@ export async function getMyPreparedPackages(): Promise<
         : "live";
     return {
       id: row.id,
-      link: partnerLink(session.partner_code, row.event_id, row.share_token),
+      link: partnerLink(
+        session.partner_code,
+        row.event_id,
+        row.share_token,
+        agentUtm,
+      ),
       created_at: row.created_at,
       event_id: row.event_id,
       event_name: info.name ?? `אירוע ${row.event_id}`,
@@ -1802,7 +1824,7 @@ export async function getAgentOrderHandoffLink(
 ): Promise<AgentOrderLinkResult> {
   const session = await requirePartner();
   // Ordering on a customer's behalf is an agent tool - mirrors main's requireAgent.
-  if (session.role !== "agent")
+  if (!SELLER_ROLES.includes(session.role))
     return { ok: false, error: "זמין לסוכנים בלבד" };
 
   const id = Number(packageId);
@@ -1830,7 +1852,7 @@ export async function getAgentOrderHandoffLink(
     .from("user_profiles")
     .select("id")
     .eq("id", session.sub)
-    .in("role", ["agent", "affiliate"])
+    .in("role", ["agent", "affiliate", "office_manager"])
     .maybeSingle();
   if (!profileRow) {
     return {
@@ -1842,6 +1864,8 @@ export async function getAgentOrderHandoffLink(
 
   let token: string;
   try {
+    // Always minted as "agent": main's requireAgent doesn't know office_manager
+    // and doesn't need to.
     token = await mintPartnerHandoffToken({
       sub: session.sub,
       email: session.email,
@@ -1856,9 +1880,12 @@ export async function getAgentOrderHandoffLink(
     return { ok: false, error: "החתימה לא מוגדרת - פנו לתמיכה" };
   }
 
+  const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
   const next = `/order/${data.event_id}?utm_source=${encodeURIComponent(
     session.partner_code,
-  )}&utm_medium=influencer&pkg=${encodeURIComponent(data.share_token)}`;
+  )}&utm_medium=influencer${
+    agentUtm ? `&utm_content=${encodeURIComponent(agentUtm)}` : ""
+  }&pkg=${encodeURIComponent(data.share_token)}`;
   const url = `${PUBLIC_SITE_URL}/api/partner-handoff?token=${encodeURIComponent(
     token,
   )}&next=${encodeURIComponent(next)}`;
