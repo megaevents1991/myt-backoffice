@@ -2,6 +2,7 @@
 
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
+import { fetchPaged } from "@/lib/supabase-paged";
 import type { Event } from "@/types/app.types";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 import { applyTagRules } from "@/lib/services/auto-tagger";
@@ -18,13 +19,23 @@ const EVENT_LIST_COLUMNS =
 
 export async function getEvents() {
   await requireStaff();
-  const { data, error } = await supabase
-    .from("events")
-    .select(EVENT_LIST_COLUMNS)
-    .order("date", { ascending: true });
+  // Paged: PostgREST hard-caps every response at 1000 rows, and the table is
+  // closing in on it (878 rows as of 2026-08-19) - a single fetch would then
+  // silently drop every event past the cap. id tiebreaks same-date rows so
+  // pages never overlap or skip.
+  const { rows, truncated, error } = await fetchPaged<Event>(
+    () =>
+      supabase
+        .from("events")
+        .select(EVENT_LIST_COLUMNS)
+        .order("date", { ascending: true })
+        .order("id", { ascending: true }),
+    10000,
+  );
 
   if (error) throw error;
-  return data as unknown as Event[];
+  if (truncated) console.error("getEvents: hit the 10k paging cap - raise it");
+  return rows as unknown as Event[];
 }
 
 export async function getEvent(id: number) {
@@ -47,9 +58,11 @@ export async function createEvent(event: Omit<Event, "id">) {
     is_deleted: event.is_deleted === "" ? null : event.is_deleted,
   };
 
+  // `as never`: the shared client is untyped (no generated DB generics yet -
+  // see the db:types regen TODO), so PostgREST write params collapse to never.
   const { data, error } = await supabase
     .from("events")
-    .insert(eventData)
+    .insert(eventData as never)
     .select();
 
   if (error) throw error;
@@ -74,7 +87,7 @@ export async function updateEvent(id: number, event: Partial<Event>) {
   const before = await fetchBefore("events", "id", id, event);
   const { data, error } = await supabase
     .from("events")
-    .update(event)
+    .update(event as never)
     .eq("id", id)
     .select();
 
@@ -95,7 +108,7 @@ export async function softDeleteEvent(id: number) {
 
   const { data, error } = await supabase
     .from("events")
-    .update({ is_deleted: formattedDate })
+    .update({ is_deleted: formattedDate } as never)
     .eq("id", id)
     .select();
 
@@ -116,7 +129,7 @@ export async function bulkSoftDeleteEvents(ids: number[]) {
 
   const { data, error } = await supabase
     .from("events")
-    .update({ is_deleted: formattedDate })
+    .update({ is_deleted: formattedDate } as never)
     .in("id", ids)
     .select();
 
@@ -146,18 +159,19 @@ export async function duplicateEvent(
   if (fetchError) throw fetchError;
 
   // Remove the id and modify the name to indicate it's a copy
-  const { id: _, ...eventWithoutId } = eventToDuplicate;
-  const newEvent = {
-    ...eventWithoutId,
-    name: `${eventWithoutId.name} (Copy)`,
-    name_english: `${eventWithoutId.name_english} (Copy)`,
+  const source = eventToDuplicate as Event;
+  const newEvent: Record<string, unknown> = {
+    ...source,
+    name: `${source.name} (Copy)`,
+    name_english: `${source.name_english} (Copy)`,
     is_deleted: null, // Ensure the copy is not deleted
   };
+  delete newEvent.id;
 
   // Insert the new event
   const { data: newEventData, error: insertError } = await supabase
     .from("events")
-    .insert(newEvent)
+    .insert(newEvent as never)
     .select();
 
   if (insertError) throw insertError;
@@ -167,20 +181,18 @@ export async function duplicateEvent(
   // too, since a category is composed of tags (event_category_links is a
   // derived view). Tolerant: a copy failure must not break duplication itself.
   try {
-    const { data: tagLinks, error: tagErr } = await (supabase as any)
+    const { data: tagLinks, error: tagErr } = await supabase
       .from("event_tag_links")
       .select("tag_id")
       .eq("event_id", id);
     if (tagErr) throw tagErr;
-    if (tagLinks?.length) {
-      const { error } = await (supabase as any)
+    const links = ((tagLinks ?? []) as unknown as { tag_id: number }[]).map(
+      (r) => ({ event_id: created.id, tag_id: r.tag_id }),
+    );
+    if (links.length) {
+      const { error } = await supabase
         .from("event_tag_links")
-        .insert(
-          tagLinks.map((r: { tag_id: number }) => ({
-            event_id: created.id,
-            tag_id: r.tag_id,
-          })),
-        );
+        .insert(links as never);
       if (error) throw error;
     }
   } catch (linkError) {
@@ -204,7 +216,7 @@ export async function bulkUpdateEvents(ids: number[], update: Partial<Event>) {
   await requireStaff();
   const { data, error } = await supabase
     .from("events")
-    .update(update)
+    .update(update as never)
     .in("id", ids)
     .select();
 

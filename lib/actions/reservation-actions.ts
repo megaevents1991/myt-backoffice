@@ -2,20 +2,52 @@
 
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
-import type { Reservation } from "@/types/reservation.types";
+import { fetchPaged } from "@/lib/supabase-paged";
+import type {
+  Reservation,
+  ReservationListRow,
+} from "@/types/reservation.types";
 import type { UtmTouch } from "@/types/utm.types";
 import { revalidatePath } from "next/cache";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 
-export async function getReservations() {
+// Exactly the columns the reservations LIST page renders (reservations-table.tsx).
+// The fat JSONB blobs (event/flight/hotel order info, pax list) are detail-only -
+// they were ~90% of the old select("*") payload (8.4MB for 1000 rows).
+// payment_info is fetched only to derive has_payment_info and never leaves the
+// server. Rows are ordered newest-first with id as tiebreaker so paging is stable.
+const RESERVATION_LIST_COLUMNS =
+  "id,created_at,main_contact_first_name,main_contact_last_name," +
+  "main_contact_phone_number,main_contact_email,user_shown_price," +
+  "aff_partner_tracking_code,event_id,status,accounting_number,comments," +
+  "offline_flight_id,offline_hotel_id,partner_settlement_method,payment_info";
+
+type ReservationListDbRow = Omit<ReservationListRow, "has_payment_info"> & {
+  payment_info: unknown;
+};
+
+export async function getReservations(): Promise<ReservationListRow[]> {
   await requireStaff();
-  const { data, error } = await supabase
-    .from("reservations")
-    .select("*")
-    .order("created_at", { ascending: false });
+  // Paged: PostgREST hard-caps every response at 1000 rows, so the old single
+  // fetch silently dropped everything past the cap once the table outgrew it
+  // (1331 rows as of 2026-08-19 → the 331 oldest were invisible).
+  const { rows, truncated, error } = await fetchPaged<ReservationListDbRow>(
+    () =>
+      supabase
+        .from("reservations")
+        .select(RESERVATION_LIST_COLUMNS)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false }),
+    20000,
+  );
 
   if (error) throw error;
-  return data as Reservation[];
+  if (truncated)
+    console.error("getReservations: hit the 20k paging cap - raise it");
+  return rows.map(({ payment_info, ...row }) => ({
+    ...row,
+    has_payment_info: payment_info != null,
+  }));
 }
 
 /** Row count only (head request, no payload) - for the new-reservations poll. */

@@ -78,3 +78,29 @@ export type Reservation = {
   // Staff stamp - travel material sent to the customer (חומר ללקוח in the portal).
   travel_materials_sent_at?: string | null;
 };
+
+/**
+ * Slim row for the reservations LIST page (reservations-table.tsx). The fat
+ * JSONB blobs (event/flight/hotel order info, pax list, payment_info) stay on
+ * the per-row detail fetch (getReservation) - they were ~90% of the old
+ * select("*") list payload. `has_payment_info` stands in for `payment_info`,
+ * which the list only ever read as a truthiness flag ("Card" vs "Phone").
+ */
+export type ReservationListRow = Pick<
+  Reservation,
+  | "id"
+  | "created_at"
+  | "main_contact_first_name"
+  | "main_contact_last_name"
+  | "main_contact_phone_number"
+  | "main_contact_email"
+  | "user_shown_price"
+  | "aff_partner_tracking_code"
+  | "event_id"
+  | "status"
+  | "accounting_number"
+  | "comments"
+  | "offline_flight_id"
+  | "offline_hotel_id"
+  | "partner_settlement_method"
+> & { has_payment_info: boolean };

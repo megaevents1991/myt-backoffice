@@ -8,16 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/data-table";
-import type { Reservation } from "@/types/reservation.types";
+import type { ReservationListRow } from "@/types/reservation.types";
 import { getReservations, getReservationsCount, updateReservation, updateReservationsStatus } from "@/lib/actions/reservation-actions";
 import { useToast } from "@/hooks/use-toast";
 
-function isOfflineReservation(r: Reservation) {
+function isOfflineReservation(r: ReservationListRow) {
   return r.offline_flight_id != null || r.offline_hotel_id != null;
 }
 
 export function ReservationsTable() {
-  const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [reservations, setReservations] = useState<ReservationListRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [isIdle, setIsIdle] = useState(false);
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
@@ -142,11 +142,9 @@ export function ReservationsTable() {
 
   async function handleInlineUpdate(
     id: number,
-    field: keyof Pick<Reservation, "comments" | "accounting_number">,
+    field: keyof Pick<ReservationListRow, "comments" | "accounting_number">,
     value: string
   ) {
-    // Prepare payload
-    const payload: Partial<Reservation> = {};
     if (field === "accounting_number") {
       // Keep only digits
       const digits = (value || "").replace(/\D/g, "");
@@ -155,7 +153,7 @@ export function ReservationsTable() {
         try {
           await updateReservation(id, { accounting_number: (null as unknown as number) });
           toast({ title: "Updated", description: "Accounting number cleared." });
-        } catch (e) {
+        } catch {
           toast({ variant: "destructive", title: "Error", description: "Failed to clear accounting number." });
         }
         return;
@@ -178,7 +176,7 @@ export function ReservationsTable() {
         setReservations((prev) => prev.map((r) => (r.id === id ? { ...r, accounting_number: (num as unknown as number) } : r)));
         await updateReservation(id, { accounting_number: (num as unknown as number) });
         toast({ title: "Updated", description: "Accounting number saved." });
-      } catch (e) {
+      } catch {
         toast({ variant: "destructive", title: "Error", description: "Failed to save accounting number." });
       }
       return;
@@ -190,7 +188,7 @@ export function ReservationsTable() {
       try {
         await updateReservation(id, { comments });
         toast({ title: "Updated", description: "Comment saved." });
-      } catch (e) {
+      } catch {
         setReservations((prev) => prev);
         toast({ variant: "destructive", title: "Error", description: "Failed to save comment." });
       }
@@ -213,12 +211,12 @@ export function ReservationsTable() {
       setReservations((prev) => prev.map((r) => (selectedIds.includes(r.id) ? { ...r, status: bulkStatus } : r)));
       toast({ title: "Status updated", description: `Updated ${selectedIds.length} reservation(s).` });
       setBulkStatus("");
-    } catch (e) {
+    } catch {
       toast({ variant: "destructive", title: "Error", description: "Failed to update statuses." });
     }
   }
 
-  const columns: ColumnDef<Reservation>[] = [
+  const columns: ColumnDef<ReservationListRow>[] = [
     {
       accessorKey: "id",
       header: "ID",
@@ -351,7 +349,7 @@ export function ReservationsTable() {
       header: "Payment Type",
       cell: ({ row }) => {
         const reservation = row.original;
-        const paymentType = reservation.payment_info ? "Card" : "Phone";
+        const paymentType = reservation.has_payment_info ? "Card" : "Phone";
         return <div>{paymentType}</div>;
       },
     },
