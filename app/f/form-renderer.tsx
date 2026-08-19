@@ -11,9 +11,10 @@
  */
 
 import { useMemo, useState, useTransition } from "react";
-import { Check, Star } from "lucide-react";
+import { Check, Lock, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { submitFormResponse } from "@/lib/actions/form-response-actions";
+import type { StaffSummaryItem } from "@/lib/actions/form-response-actions";
 import {
   dirFor,
   fieldHelp,
@@ -40,6 +41,8 @@ type Props = {
   payload: PublicForm;
   initialLang: FormLang;
   prefill?: AnswerMap;
+  /** Escort answers from a trip link - rendered as a read-only trip ticket. */
+  staffSummary?: StaffSummaryItem[];
   slug?: string;
   token?: string;
   /** Builder preview: renders identically but never submits, single column. */
@@ -51,6 +54,7 @@ export function FormRenderer({
   payload,
   initialLang,
   prefill,
+  staffSummary,
   slug,
   token,
   preview = false,
@@ -179,7 +183,7 @@ export function FormRenderer({
           <BrandGlow accent={theme.accent} />
           <div className="relative text-center">
             <span
-              className="mx-auto mb-8 flex h-16 w-16 items-center justify-center rounded-full"
+              className="mx-auto mb-8 flex h-16 w-16 animate-in zoom-in-75 items-center justify-center rounded-full duration-500 motion-reduce:animate-none"
               style={{ background: theme.accent, color: theme.onAccent }}
             >
               <Check className="h-8 w-8" strokeWidth={3} />
@@ -318,12 +322,15 @@ export function FormRenderer({
               </label>
             </div>
 
+            {staffSummary && staffSummary.length > 0 && (
+              <TripTicket items={staffSummary} lang={lang} />
+            )}
+
             <div className="space-y-3">
               {visibleFields.map((field) => (
                 <FieldBlock
                   key={field.id}
                   field={field}
-                  index={questions.findIndex((q) => q.id === field.id)}
                   lang={lang}
                   accent={theme.accent}
                   onAccentColor={theme.onAccent}
@@ -371,16 +378,18 @@ function useThemeTokens(theme: PublicForm["form"]["theme"], accentInput: string)
     const accent = /^#[0-9a-f]{6}$/i.test(accentInput ?? "") ? accentInput : DEFAULT_ACCENT;
     const dark = theme !== "light";
 
-    const canvas = dark ? CANVAS : "#FAFAF5";
-    const ink = dark ? INK : "#0B0A1F";
-    const inkRgb = dark ? "250, 250, 245" : "11, 10, 31";
+    // Light canvas leans warm paper, not clinical white - these are feedback
+    // and lead forms, not admin screens.
+    const canvas = dark ? CANVAS : "#FAF8F4";
+    const ink = dark ? INK : "#141019";
+    const inkRgb = dark ? "250, 250, 245" : "20, 16, 25";
 
     return {
       accent,
       onAccent: onAccent(accent),
       coverScrim: dark
         ? `linear-gradient(180deg, rgba(7,6,24,0.72) 0%, rgba(7,6,24,0.92) 100%)`
-        : `linear-gradient(180deg, rgba(250,250,245,0.78) 0%, rgba(250,250,245,0.94) 100%)`,
+        : `linear-gradient(180deg, rgba(250,248,244,0.78) 0%, rgba(250,248,244,0.94) 100%)`,
       vars: {
         "--canvas": canvas,
         "--ink": ink,
@@ -404,6 +413,62 @@ function StaffBadge({ label }: { label: string }) {
   );
 }
 
+/** "2026-09-12" reads as a date to a machine; people get "12.09.2026". */
+function formatStaffValue(item: StaffSummaryItem, lang: FormLang): string {
+  const { field, value } = item;
+  if (field.type === "date" && typeof value === "string") {
+    const [y, m, d] = value.split("-");
+    if (y && m && d) return `${d}.${m}.${y}`;
+  }
+  if (typeof value === "boolean") return value ? strings(lang).yes : strings(lang).no;
+  if (Array.isArray(value)) return value.join(", ");
+  return String(value);
+}
+
+/**
+ * The trip ticket: the escort's details rendered as a boarding-pass stub -
+ * dashed tear line, punched notches, deliberately grey. Read-only on purpose:
+ * these values identify the trip being rated and belong to staff, so nothing
+ * here is focusable or editable.
+ */
+function TripTicket({ items, lang }: { items: StaffSummaryItem[]; lang: FormLang }) {
+  const t = strings(lang);
+  return (
+    <section
+      aria-label={t.tripDetails}
+      className="relative mb-8 overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)]"
+    >
+      {/* Stub: what this ticket is, and the lock that says "not yours to edit". */}
+      <div className="flex items-center justify-between gap-3 px-5 pb-3 pt-4">
+        <span className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
+          {t.tripDetails}
+        </span>
+        <Lock aria-hidden className="h-3.5 w-3.5 text-[var(--muted)]" />
+      </div>
+
+      {/* Tear line with punched notches at both ends. */}
+      <div aria-hidden className="relative">
+        <div className="mx-5 border-t border-dashed border-[var(--line)]" />
+        <span className="absolute -start-2 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border border-[var(--line)] bg-[var(--canvas)]" />
+        <span className="absolute -end-2 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border border-[var(--line)] bg-[var(--canvas)]" />
+      </div>
+
+      <dl className="grid gap-x-6 gap-y-3 px-5 pb-5 pt-4 sm:grid-cols-3">
+        {items.map((item) => (
+          <div key={item.field.id} className="min-w-0">
+            <dt className="text-[11px] font-medium text-[var(--muted)]">
+              {fieldLabel(item.field, lang)}
+            </dt>
+            <dd className="mt-0.5 truncate text-[15px] font-bold tabular-nums text-[var(--ink)] opacity-80">
+              {formatStaffValue(item, lang)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
 const CONTROL_BASE =
   "w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 text-[16px] text-[var(--ink)] " +
   "placeholder:text-[var(--muted)] transition-colors duration-150 " +
@@ -411,7 +476,6 @@ const CONTROL_BASE =
 
 function FieldBlock({
   field,
-  index,
   lang,
   accent,
   onAccentColor,
@@ -421,7 +485,6 @@ function FieldBlock({
   staffBadge = false,
 }: {
   field: FormField;
-  index: number;
   lang: FormLang;
   accent: string;
   onAccentColor: string;
@@ -437,15 +500,26 @@ function FieldBlock({
   const help = fieldHelp(field, lang);
   const placeholder = fieldPlaceholder(field, lang);
 
+  // A conditional question mounts the moment its Yes/No flips - ease it in so
+  // the form reads as opening up, not jumping.
+  const conditional = Boolean(field.config.show_if);
+  const revealClass = conditional
+    ? "animate-in fade-in slide-in-from-top-2 duration-300 motion-reduce:animate-none"
+    : undefined;
+
   if (field.type === "section") {
     return (
-      <div className="pb-2 pt-12 first:pt-2">
-        <h2 className="flex items-center gap-2 text-xl font-extrabold tracking-tight">
+      <div className={cn("pb-2 pt-12 first:pt-2", revealClass)}>
+        <h2 className="flex items-center gap-2.5 text-xl font-extrabold tracking-tight">
+          <span
+            aria-hidden
+            className="h-5 w-1.5 shrink-0 rounded-full"
+            style={{ background: accent }}
+          />
           {label}
           {staffBadge && <StaffBadge label={t.staffBadge} />}
         </h2>
-        {help && <p className="mt-1.5 text-sm text-[var(--muted)]">{help}</p>}
-        <div className="mt-5 h-px w-full bg-[var(--line)]" />
+        {help && <p className="mt-1.5 ps-4 text-sm text-[var(--muted)]">{help}</p>}
       </div>
     );
   }
@@ -453,44 +527,36 @@ function FieldBlock({
   return (
     <div
       id={`field-${field.id}`}
-      className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 transition-colors duration-200 focus-within:border-[var(--accent)] sm:p-6"
+      className={cn(
+        "rounded-3xl border border-transparent bg-[var(--surface)] p-5 transition-colors duration-200 focus-within:border-[var(--accent)] sm:p-6",
+        revealClass,
+      )}
     >
-      <div className="flex gap-3">
-        {/* A questionnaire is a real sequence, so the index carries order. */}
-        <span
-          aria-hidden
-          className="mt-0.5 shrink-0 text-xs font-bold tabular-nums"
-          style={{ color: accent }}
+      <div className="min-w-0">
+        <label
+          htmlFor={`input-${field.id}`}
+          className="block text-[17px] font-bold leading-snug"
         >
-          {String(index + 1).padStart(2, "0")}
-        </span>
-
-        <div className="min-w-0 flex-1">
-          <label
-            htmlFor={`input-${field.id}`}
-            className="block text-[17px] font-bold leading-snug"
-          >
-            {label}
-            {field.required && <span style={{ color: accent }}> *</span>}
-            {staffBadge && (
-              <span className="ms-2 align-middle">
-                <StaffBadge label={t.staffBadge} />
-              </span>
-            )}
-          </label>
-          {!field.required && (
-            <span className="mt-0.5 block text-xs text-[var(--muted)]">{t.optional}</span>
+          {label}
+          {field.required && <span style={{ color: accent }}> *</span>}
+          {staffBadge && (
+            <span className="ms-2 align-middle">
+              <StaffBadge label={t.staffBadge} />
+            </span>
           )}
-          {help && <p className="mt-1.5 text-sm text-[var(--muted)]">{help}</p>}
+        </label>
+        {!field.required && (
+          <span className="mt-0.5 block text-xs text-[var(--muted)]">{t.optional}</span>
+        )}
+        {help && <p className="mt-1.5 text-sm text-[var(--muted)]">{help}</p>}
 
-          <div className="mt-4">{renderControl()}</div>
+        <div className="mt-4">{renderControl()}</div>
 
-          {error && (
-            <p role="alert" className="mt-2.5 text-sm font-medium text-[#FF8A94]">
-              {error}
-            </p>
-          )}
-        </div>
+        {error && (
+          <p role="alert" className="mt-2.5 text-sm font-medium text-[#FF8A94]">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -675,7 +741,7 @@ function FieldBlock({
         const max = field.config.max ?? 5;
         const current = typeof value === "number" ? value : 0;
         return (
-          <div className="flex gap-1.5">
+          <div className="flex gap-1">
             {Array.from({ length: max }, (_, i) => i + 1).map((star) => (
               <button
                 key={star}
@@ -683,14 +749,18 @@ function FieldBlock({
                 aria-label={`${star}`}
                 aria-pressed={star <= current}
                 onClick={() => onChange(star === current ? null : star)}
-                className="rounded-lg p-1.5 transition-transform duration-150 hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-soft)] motion-reduce:hover:scale-100"
+                className="group rounded-xl p-1.5 transition-transform duration-150 hover:scale-110 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-soft)] motion-reduce:transition-none motion-reduce:hover:scale-100"
               >
                 <Star
-                  className="h-7 w-7"
-                  strokeWidth={1.75}
+                  className={cn(
+                    "h-8 w-8 transition-all duration-150 sm:h-9 sm:w-9",
+                    star <= current && "drop-shadow-sm",
+                  )}
+                  strokeWidth={1.5}
                   style={{
                     color: star <= current ? accent : "var(--muted)",
                     fill: star <= current ? accent : "transparent",
+                    opacity: star <= current ? 1 : 0.55,
                   }}
                 />
               </button>

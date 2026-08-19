@@ -10,6 +10,7 @@ import { strings } from "@/lib/forms/i18n";
 import { resolveLang } from "@/types/form.types";
 import type {
   AnswerMap,
+  AnswerValue,
   FormField,
   FormLang,
   FormResponseRow,
@@ -40,6 +41,9 @@ const RATE_LIMIT_PER_HOUR = 40;
 /** Guards against a client posting thousands of keys. */
 const MAX_SUBMITTED_KEYS = 300;
 
+/** A staff-only answer shown to the client read-only (the trip ticket). */
+export type StaffSummaryItem = { field: FormField; value: AnswerValue };
+
 export type PublicFormLoad =
   | { state: "not_found" }
   | { state: "closed" }
@@ -49,6 +53,12 @@ export type PublicFormLoad =
       payload: PublicForm;
       inviteToken: string | null;
       prefill: AnswerMap;
+      /**
+       * Escort answers from a trip link's prefill, for DISPLAY only - the
+       * fields stay out of `payload.fields`, so the client can read which trip
+       * this is but can neither edit nor submit them.
+       */
+      staffSummary: StaffSummaryItem[];
       recipientName: string | null;
       lang: FormLang;
     };
@@ -104,6 +114,17 @@ function clientPrefill(fields: FormField[], prefill: AnswerMap): AnswerMap {
   );
 }
 
+/** Staff answers a trip link carries, in field order, for the trip ticket. */
+function staffSummary(fields: FormField[], prefill: AnswerMap): StaffSummaryItem[] {
+  return fields
+    .filter((field) => field.staff_only && field.type !== "section")
+    .map((field) => ({ field, value: prefill[String(field.id)] }))
+    .filter(
+      (item): item is StaffSummaryItem =>
+        item.value !== undefined && item.value !== null && item.value !== "",
+    );
+}
+
 /**
  * Public read of a form by its shared slug. Only `live`, non-deleted forms are
  * ever returned - the publish state is re-checked on submit too.
@@ -130,6 +151,7 @@ export async function getPublicFormBySlug(
     payload: { form: data, fields: clientFields(await loadFields(data.id)) },
     inviteToken: null,
     prefill: {},
+    staffSummary: [],
     recipientName: null,
     lang: resolveLang(
       data.languages,
@@ -189,11 +211,13 @@ export async function getPublicFormByToken(
   }
 
   const fields = await loadFields(form.id);
+  const invitePrefill = (invite.prefill ?? {}) as AnswerMap;
   return {
     state: "ok",
     payload: { form, fields: clientFields(fields) },
     inviteToken: token,
-    prefill: clientPrefill(fields, (invite.prefill ?? {}) as AnswerMap),
+    prefill: clientPrefill(fields, invitePrefill),
+    staffSummary: staffSummary(fields, invitePrefill),
     recipientName: invite.recipient_name ?? null,
     lang,
   };

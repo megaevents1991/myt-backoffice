@@ -90,6 +90,7 @@ export const FILL_STRINGS = {
     reviewCta: "Rate us on Google",
     reviewHint: "Loved it? A short Google review helps us a lot:",
     staffBadge: "Staff only",
+    tripDetails: "Trip details",
   },
   he: {
     submit: "שליחה",
@@ -112,6 +113,7 @@ export const FILL_STRINGS = {
     reviewCta: "דרגו אותנו ב-Google",
     reviewHint: "נהניתם? ביקורת קצרה בגוגל עוזרת לנו מאוד:",
     staffBadge: "לצוות בלבד",
+    tripDetails: "פרטי הטיול",
   },
 } as const;
 

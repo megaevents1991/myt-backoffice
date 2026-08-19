@@ -49,6 +49,7 @@ export default async function InviteFormPage({ params, searchParams }: PageProps
       payload={loaded.payload}
       initialLang={lang}
       prefill={loaded.prefill}
+      staffSummary={loaded.staffSummary}
       token={token}
     />
   );
