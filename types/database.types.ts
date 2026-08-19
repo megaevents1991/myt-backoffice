@@ -2202,6 +2202,7 @@ export type Database = {
       }
       user_profiles: {
         Row: {
+          agent_slug: string | null
           contract_url: string | null
           created_at: string
           created_by: string | null
@@ -2215,6 +2216,7 @@ export type Database = {
           role: string
         }
         Insert: {
+          agent_slug?: string | null
           contract_url?: string | null
           created_at?: string
           created_by?: string | null
@@ -2228,6 +2230,7 @@ export type Database = {
           role: string
         }
         Update: {
+          agent_slug?: string | null
           contract_url?: string | null
           created_at?: string
           created_by?: string | null
