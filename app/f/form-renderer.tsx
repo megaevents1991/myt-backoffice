@@ -105,7 +105,10 @@ export function FormRenderer({
 
   // Progress counts required questions only - optional ones would make a form
   // look unfinished when the client has done everything that is actually asked.
-  const requiredIds = questions.filter((f) => f.required).map((f) => String(f.id));
+  // Staff-only fields never count: the client is not the one filling them.
+  const requiredIds = questions
+    .filter((f) => f.required && !f.staff_only)
+    .map((f) => String(f.id));
   const answeredRequired = requiredIds.filter((id) => {
     const value = answers[id];
     if (Array.isArray(value)) return value.length > 0;
@@ -157,6 +160,14 @@ export function FormRenderer({
           message: response.thankYou,
           reviewLink: response.reviewLink ?? null,
         });
+        // Perfect score → carry the client straight to Google. Same-tab on
+        // purpose: an async window.open lands after the click gesture expired,
+        // so popup blockers eat it. A short pause lets the ✓ register first,
+        // and the button stays for anyone who navigates back.
+        if (response.reviewLink) {
+          const link = response.reviewLink;
+          setTimeout(() => window.location.assign(link), 1600);
+        }
         return;
       }
       if (response.errors) setErrors(response.errors);
@@ -194,7 +205,9 @@ export function FormRenderer({
             </p>
             {done.reviewLink && (
               <div className="mt-10">
-                <p className="text-sm text-[var(--muted)]">{t.reviewHint}</p>
+                <p className="text-sm font-medium text-[var(--muted)]">
+                  {t.reviewRedirect}
+                </p>
                 <a
                   href={done.reviewLink}
                   target="_blank"
@@ -360,7 +373,11 @@ export function FormRenderer({
             <button
               type="submit"
               disabled={pending || preview}
-              style={{ background: theme.accent, color: theme.onAccent }}
+              style={{
+                background: theme.accent,
+                color: theme.onAccent,
+                boxShadow: `0 14px 30px -12px rgba(${hexToRgb(theme.accent)}, 0.5)`,
+              }}
               className="mt-10 inline-flex h-14 min-w-[200px] items-center justify-center rounded-full px-10 text-base font-bold transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-4 focus-visible:ring-offset-[var(--canvas)] motion-reduce:transition-none motion-reduce:hover:scale-100"
             >
               {pending ? t.submitting : t.submit}
@@ -379,7 +396,8 @@ function useThemeTokens(theme: PublicForm["form"]["theme"], accentInput: string)
     const dark = theme !== "light";
 
     // Light canvas leans warm paper, not clinical white - these are feedback
-    // and lead forms, not admin screens.
+    // and lead forms, not admin screens. Cards go pure white and cast a real
+    // shadow so the light theme reads as layered paper, not tinted rectangles.
     const canvas = dark ? CANVAS : "#FAF8F4";
     const ink = dark ? INK : "#141019";
     const inkRgb = dark ? "250, 250, 245" : "20, 16, 25";
@@ -387,18 +405,23 @@ function useThemeTokens(theme: PublicForm["form"]["theme"], accentInput: string)
     return {
       accent,
       onAccent: onAccent(accent),
+      // Strong enough for the title to sit on, weak enough that the cover
+      // photo stays a photo - a near-opaque wash just deletes the upload.
       coverScrim: dark
-        ? `linear-gradient(180deg, rgba(7,6,24,0.72) 0%, rgba(7,6,24,0.92) 100%)`
-        : `linear-gradient(180deg, rgba(250,248,244,0.78) 0%, rgba(250,248,244,0.94) 100%)`,
+        ? `linear-gradient(180deg, rgba(7,6,24,0.35) 0%, rgba(7,6,24,0.88) 100%)`
+        : `linear-gradient(180deg, rgba(250,248,244,0.35) 0%, rgba(250,248,244,0.93) 100%)`,
       vars: {
         "--canvas": canvas,
         "--ink": ink,
         "--muted": `rgba(${inkRgb}, 0.64)`,
-        "--surface": `rgba(${inkRgb}, ${dark ? 0.045 : 0.028})`,
-        "--surface-strong": `rgba(${inkRgb}, ${dark ? 0.1 : 0.07})`,
-        "--line": `rgba(${inkRgb}, ${dark ? 0.14 : 0.13})`,
+        "--surface": dark ? `rgba(${inkRgb}, 0.045)` : "#FFFFFF",
+        "--surface-strong": `rgba(${inkRgb}, ${dark ? 0.1 : 0.06})`,
+        "--line": `rgba(${inkRgb}, ${dark ? 0.14 : 0.1})`,
         "--accent": accent,
         "--accent-soft": `rgba(${hexToRgb(accent)}, 0.14)`,
+        "--card-shadow": dark
+          ? "none"
+          : "0 1px 2px rgba(20,16,25,0.05), 0 12px 32px -16px rgba(20,16,25,0.18)",
       } as React.CSSProperties,
     };
   }, [theme, accentInput]);
@@ -470,7 +493,7 @@ function TripTicket({ items, lang }: { items: StaffSummaryItem[]; lang: FormLang
 }
 
 const CONTROL_BASE =
-  "w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 text-[16px] text-[var(--ink)] " +
+  "w-full rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] px-4 text-[16px] text-[var(--ink)] " +
   "placeholder:text-[var(--muted)] transition-colors duration-150 " +
   "focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)]";
 
@@ -528,7 +551,7 @@ function FieldBlock({
     <div
       id={`field-${field.id}`}
       className={cn(
-        "rounded-3xl border border-transparent bg-[var(--surface)] p-5 transition-colors duration-200 focus-within:border-[var(--accent)] sm:p-6",
+        "rounded-3xl border border-transparent bg-[var(--surface)] p-5 shadow-[var(--card-shadow)] transition-colors duration-200 focus-within:border-[var(--accent)] sm:p-6",
         revealClass,
       )}
     >

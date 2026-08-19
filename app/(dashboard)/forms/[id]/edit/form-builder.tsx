@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
+  ArrowLeft,
   BarChart3,
   ExternalLink,
   Image as ImageIcon,
@@ -412,6 +413,12 @@ export function FormBuilder({ form, initialFields }: Props) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
+          <Button variant="ghost" size="sm" asChild className="-ml-2 mb-1">
+            <Link href="/forms">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              All forms
+            </Link>
+          </Button>
           <h1 className="truncate text-2xl font-bold tracking-tight">
             {adminLabel(titleEn, titleHe) || "Untitled form"}
           </h1>
