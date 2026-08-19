@@ -41,6 +41,11 @@ export interface CategoryPageContent {
   seo_text?: string;
   /** Gallery image URLs. */
   gallery?: string[];
+  /**
+   * Rotating background photos for the category's picker tile (יעדים grid on
+   * the site). Multiple images crossfade; one image renders static.
+   */
+  tile_images?: string[];
   stadiums?: CategoryStadium[];
   /** "מידע מעניין" (leagues/genres) / "טוב לדעת" (destinations) cards. */
   facts?: CategoryFactCard[];
@@ -65,6 +70,7 @@ export function isEmptyPageContent(c: CategoryPageContent): boolean {
     !c.seo_title?.trim() &&
     !c.seo_text?.trim() &&
     !c.gallery?.length &&
+    !c.tile_images?.length &&
     !c.stadiums?.length &&
     !c.facts?.length &&
     !c.faq?.length &&

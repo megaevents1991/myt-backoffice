@@ -36,6 +36,7 @@ export function PageContentField({
     !!value.seo_text ||
     !!value.seo_title ||
     !!value.gallery?.length ||
+    !!value.tile_images?.length ||
     !!value.stadiums?.length ||
     !!value.facts?.length ||
     !!value.faq?.length ||
@@ -119,6 +120,19 @@ export function PageContentField({
             <GalleryField
               value={value.gallery ?? []}
               onChange={(urls) => patch({ gallery: urls })}
+            />
+          </section>
+
+          {/* ---- picker-tile rotating backgrounds ---- */}
+          <section className="space-y-2">
+            <label className="text-sm font-medium">תמונות רקע לטייל (מתחלפות)</label>
+            <p className="text-xs text-muted-foreground">
+              הרקע של ריבוע הקטגוריה בעמוד היעדים באתר - כמה תמונות מתחלפות
+              בהדרגה; תמונה אחת = רקע קבוע. ריק = עיצוב אוטומטי.
+            </p>
+            <GalleryField
+              value={value.tile_images ?? []}
+              onChange={(urls) => patch({ tile_images: urls })}
             />
           </section>
 
