@@ -1,6 +1,11 @@
 "use server";
 
-import { requirePartner } from "@/lib/auth/guards";
+import { requirePartner, requireCreditAccess } from "@/lib/auth/guards";
+import {
+  resolvePortalScope,
+  getReservationAttribution,
+  visibleToAgent,
+} from "@/lib/portal-attribution";
 import { supabase } from "@/lib/supabase-server";
 import {
   commissionForReservation,
@@ -98,6 +103,9 @@ export interface PortalReservation {
    *  plain tracking link. Older rows (before the attribution columns) read
    *  as "link". */
   source: PortalReservationSource;
+  /** The office user credited with this booking's primary UTM touch, by
+   *  display name (falling back to email) - null when unattributed. */
+  agent_name: string | null;
   /** The customer's picks, for the expandable row. Null per part when the
    *  customer skipped it (or the order predates the data). */
   choices: ReservationChoices;
@@ -183,6 +191,8 @@ export interface PortalReservationsPage {
   rows: PortalReservation[];
   /** True when older bookings exist beyond the page returned. */
   truncated: boolean;
+  /** Manager only - the office roster for the per-agent filter. Empty otherwise. */
+  officeAgents: { sub: string; name: string }[];
 }
 
 export async function getPortalProfile(): Promise<PortalProfile | null> {
@@ -217,6 +227,7 @@ export async function getPortalProfile(): Promise<PortalProfile | null> {
 
 export async function getPortalStats(): Promise<PortalStats> {
   const session = await requirePartner();
+  const scope = await resolvePortalScope(session);
   const empty: PortalStats = {
     totalReservations: 0,
     paidReservations: 0,
@@ -288,10 +299,23 @@ export async function getPortalStats(): Promise<PortalStats> {
     rate: partnerResult.data?.commission ?? null,
   };
 
-  const paid = reservations.filter(isPaid);
+  // Agent isolation: only reservations credited to me (solo offices keep
+  // unattributed rows - pre-slug history; spec §5).
+  let scoped = reservations;
+  if (!scope.isManager && session.role === "agent") {
+    const attribution = await getReservationAttribution(
+      reservations.map((r) => r.id),
+      scope.officeUsers,
+    );
+    scoped = reservations.filter((r) =>
+      visibleToAgent(attribution.get(r.id), session.sub, scope.soloOffice),
+    );
+  }
+
+  const paid = scoped.filter(isPaid);
 
   return {
-    totalReservations: reservations.length,
+    totalReservations: scoped.length,
     paidReservations: paid.length,
     totalSalesUsd: sumSales(paid),
     commissionLabel: describeCommission(terms),
@@ -303,7 +327,7 @@ export async function getPortalStats(): Promise<PortalStats> {
 }
 
 export async function getPortalCoupons(): Promise<PortalCoupon[]> {
-  const session = await requirePartner();
+  const session = await requireCreditAccess();
   const fetchCoupons = (columns: string) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
@@ -369,8 +393,11 @@ const PORTAL_RESERVATION_COLUMNS =
 const PORTAL_RESERVATION_SOURCE_COLUMNS =
   ",partner_settlement_method,source_share_token,quote_id,voucher_state,travel_materials_sent_at,commission_type,commission_rate";
 
-export async function getPortalReservations(): Promise<PortalReservationsPage> {
+export async function getPortalReservations(
+  filterAgentSub?: string | null,
+): Promise<PortalReservationsPage> {
   const session = await requirePartner();
+  const scope = await resolvePortalScope(session);
 
   const fetchReservations = (columns: string) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -408,7 +435,7 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
       "getPortalReservations:",
       JSON.stringify(reservationsResult.error),
     );
-    return { rows: [], truncated: false };
+    return { rows: [], truncated: false, officeAgents: [] };
   }
   if (partnerResult.error) {
     // Never let a lookup failure quietly render every booking as $0 commission.
@@ -455,8 +482,26 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
   };
 
   const all = (reservationsResult.data ?? []) as Row[];
-  const truncated = all.length > RESERVATIONS_PAGE_SIZE;
-  const rows = all.slice(0, RESERVATIONS_PAGE_SIZE).map((r) => {
+  const attribution = await getReservationAttribution(
+    all.map((r) => r.id),
+    scope.officeUsers,
+  );
+  const nameBySub = new Map(
+    scope.officeUsers.map((u) => [u.id, u.display_name || u.email]),
+  );
+  let visible = all;
+  if (!scope.isManager && session.role === "agent") {
+    visible = all.filter((r) =>
+      visibleToAgent(attribution.get(r.id), session.sub, scope.soloOffice),
+    );
+  } else if (scope.isManager && filterAgentSub) {
+    visible =
+      filterAgentSub === "none"
+        ? all.filter((r) => (attribution.get(r.id) ?? null) === null)
+        : all.filter((r) => attribution.get(r.id) === filterAgentSub);
+  }
+  const truncated = visible.length > RESERVATIONS_PAGE_SIZE;
+  const rows = visible.slice(0, RESERVATIONS_PAGE_SIZE).map((r) => {
     // The order-info JSON holds one item or { events: [...] }; the title field
     // is `name`. Ticket counts and category are already in here - the portal
     // used to fetch this and throw all but the title away.
@@ -514,6 +559,10 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
           : r.source_share_token
             ? "package"
             : "link") as PortalReservationSource,
+      agent_name: (() => {
+        const owner = attribution.get(r.id) ?? null;
+        return owner ? (nameBySub.get(owner) ?? null) : null;
+      })(),
       // Deliberately NOT the customer's recovery link. Opening it loads the
       // saved order through the main app's find-order endpoint, which returns
       // the customer's phone, email and every passenger name - the exact data
@@ -523,5 +572,11 @@ export async function getPortalReservations(): Promise<PortalReservationsPage> {
     };
   });
 
-  return { rows, truncated };
+  return {
+    rows,
+    truncated,
+    officeAgents: scope.isManager
+      ? scope.officeUsers.map((u) => ({ sub: u.id, name: u.display_name || u.email }))
+      : [],
+  };
 }

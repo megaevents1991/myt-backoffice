@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>בדיקות משרד סוכנים</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Rubik:wght@500;600;800&display=swap">
+<style>
+  :root{
+    --paper:#f4f7f4;
+    --card:#ffffff;
+    --ink:#122a20;
+    --muted:#5b6f64;
+    --line:#dbe5dd;
+    --forest:#0a1a14;
+    --mint:#5bff95;
+    --mint-ink:#0a1a14;
+    --mint-soft:#e2fbea;
+    --warn-bg:#fdf3dc;
+    --warn-ink:#7a5a12;
+    --info-bg:#e8f1fb;
+    --info-ink:#1f4e79;
+    --done:#12813f;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#0a1a14;
+      --card:#11241c;
+      --ink:#e8f3ec;
+      --muted:#93a89c;
+      --line:#23392f;
+      --forest:#0a1a14;
+      --mint:#5bff95;
+      --mint-ink:#0a1a14;
+      --mint-soft:#173324;
+      --warn-bg:#33290f;
+      --warn-ink:#e8c877;
+      --info-bg:#12283d;
+      --info-ink:#9cc4e8;
+      --done:#5bff95;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0a1a14;
+    --card:#11241c;
+    --ink:#e8f3ec;
+    --muted:#93a89c;
+    --line:#23392f;
+    --forest:#0a1a14;
+    --mint:#5bff95;
+    --mint-ink:#0a1a14;
+    --mint-soft:#173324;
+    --warn-bg:#33290f;
+    --warn-ink:#e8c877;
+    --info-bg:#12283d;
+    --info-ink:#9cc4e8;
+    --done:#5bff95;
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Assistant","Segoe UI",Arial,sans-serif;
+    font-size:16px;
+    line-height:1.55;
+  }
+  .wrap{max-width:780px;margin:0 auto;padding:24px 20px 96px}
+
+  /* ── masthead ── */
+  header.mast{
+    background:var(--forest);
+    color:#e8f3ec;
+    border-radius:18px;
+    padding:28px 26px 22px;
+    position:relative;
+    overflow:hidden;
+  }
+  header.mast::after{
+    content:"";
+    position:absolute;inset-inline-start:-70px;top:-90px;
+    width:230px;height:230px;border-radius:50%;
+    background:radial-gradient(closest-side,rgba(91,255,149,.28),transparent 70%);
+    pointer-events:none;
+  }
+  .kicker{
+    font-family:"Rubik",sans-serif;font-weight:600;font-size:12px;
+    letter-spacing:.14em;color:var(--mint);
+  }
+  h1{
+    font-family:"Rubik",sans-serif;font-weight:800;
+    font-size:clamp(26px,5vw,34px);margin:6px 0 4px;line-height:1.15;
+    text-wrap:balance;color:#fff;
+  }
+  .mast p.lede{margin:0;color:#b9cec2;max-width:60ch}
+  .mast .meta{
+    display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;
+  }
+  .chip{
+    font-size:12.5px;font-weight:600;color:#cfe6d7;
+    border:1px solid rgba(91,255,149,.35);
+    border-radius:999px;padding:3px 11px;white-space:nowrap;
+  }
+  .chip code{font-family:Consolas,monospace;color:var(--mint);font-size:12px}
+
+  /* ── progress ── */
+  .progress{
+    position:sticky;top:0;z-index:5;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:14px;
+    margin:14px 0 26px;
+    padding:12px 16px;
+    display:flex;align-items:center;gap:14px;
+    box-shadow:0 6px 18px -14px rgba(10,26,20,.45);
+  }
+  .progress .num{
+    font-family:"Rubik",sans-serif;font-weight:800;font-size:20px;
+    font-variant-numeric:tabular-nums;white-space:nowrap;
+  }
+  .bar{flex:1;height:10px;border-radius:999px;background:var(--mint-soft);overflow:hidden}
+  .bar i{display:block;height:100%;width:0%;background:var(--mint);border-radius:999px;transition:width .25s}
+  .progress button{
+    font-family:inherit;font-size:12.5px;font-weight:600;color:var(--muted);
+    background:none;border:1px solid var(--line);border-radius:999px;
+    padding:4px 12px;cursor:pointer;
+  }
+  .progress button:hover{color:var(--ink)}
+  .progress button:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+
+  /* ── sections ── */
+  section{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:16px;
+    margin-bottom:22px;
+    overflow:hidden;
+  }
+  .sec-head{
+    display:flex;align-items:baseline;gap:12px;
+    padding:16px 20px 12px;border-bottom:1px solid var(--line);
+  }
+  .sec-mark{
+    font-family:"Rubik",sans-serif;font-weight:800;font-size:14px;
+    background:var(--mint);color:var(--mint-ink);
+    border-radius:8px;padding:2px 9px;flex:none;transform:translateY(-1px);
+  }
+  .sec-head h2{
+    font-family:"Rubik",sans-serif;font-weight:600;font-size:19px;margin:0;
+    text-wrap:balance;
+  }
+  .sec-head .count{margin-inline-start:auto;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .sec-note{padding:10px 20px 0;color:var(--muted);font-size:14px}
+  .sec-note code{font-family:Consolas,monospace;font-size:13px;background:var(--mint-soft);border-radius:5px;padding:1px 5px;direction:ltr;unicode-bidi:embed}
+
+  /* ── items ── */
+  ol.items{list-style:none;margin:0;padding:8px 10px 14px}
+  .item{
+    display:grid;grid-template-columns:30px 1fr;gap:2px 12px;
+    padding:11px 10px;border-radius:12px;
+  }
+  .item + .item{border-top:1px dashed var(--line)}
+  .item:has(input:checked){background:var(--mint-soft)}
+  .item:has(input:checked) .act{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--done);text-decoration-thickness:1.5px}
+  .tick{grid-row:1/span 2;align-self:start;padding-top:2px}
+  .tick input{
+    appearance:none;-webkit-appearance:none;
+    width:21px;height:21px;margin:0;cursor:pointer;
+    border:2px solid var(--muted);border-radius:7px;background:var(--card);
+    display:grid;place-content:center;
+  }
+  .tick input:checked{background:var(--mint);border-color:var(--mint)}
+  .tick input:checked::before{
+    content:"";width:11px;height:6px;
+    border:2.5px solid var(--mint-ink);border-top:none;border-inline-end:none;
+    transform:rotate(45deg) translate(1px,-2px);
+  }
+  .tick input:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+  label.act{font-weight:700;cursor:pointer}
+  .exp{color:var(--muted);font-size:14.5px}
+  .exp b{color:var(--ink);font-weight:600}
+  .item code{font-family:Consolas,monospace;font-size:13px;background:var(--mint-soft);border-radius:5px;padding:1px 5px;direction:ltr;unicode-bidi:embed}
+
+  .tag{
+    display:inline-block;font-size:11.5px;font-weight:700;border-radius:6px;
+    padding:1px 7px;margin-inline-start:6px;vertical-align:1px;
+  }
+  .tag.warn{background:var(--warn-bg);color:var(--warn-ink)}
+
+  .callout{
+    margin:12px 20px 4px;border-radius:12px;padding:11px 14px;font-size:14px;
+  }
+  .callout.info{background:var(--info-bg);color:var(--info-ink)}
+  .callout b{font-weight:700}
+
+  /* ── known gaps / footer ── */
+  .gaps ul{margin:8px 0 0;padding:0 20px 18px 0;color:var(--muted);font-size:14.5px;list-style-position:inside}
+  .gaps li{margin-bottom:7px}
+  .gaps li b{color:var(--ink)}
+  footer{
+    color:var(--muted);font-size:13px;text-align:center;margin-top:34px;line-height:1.9;
+  }
+  footer code{font-family:Consolas,monospace;font-size:12px}
+
+  @media print{
+    .progress button{display:none}
+    body{background:#fff}
+    section{break-inside:avoid}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .bar i{transition:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <div class="kicker">MYT · פורטל שותפים · QA</div>
+  <h1>בדיקות משרד סוכנים</h1>
+  <p class="lede">משרד נסיעות אחד, הסכם עמלות אחד, כמה סוכנים: תפקיד מנהל משרד, שיוך מכירות פר־סוכן דרך צינור ה־UTM, ובידוד מלא בין סוכנים. בנוסף — תיקוני אזור הסוכן מ־19.08.</p>
+  <div class="meta">
+    <span class="chip">19.08.2026</span>
+    <span class="chip">מיגרציה <code>20260819095423</code></span>
+    <span class="chip">38 קבצים · backoffice בלבד</span>
+    <span class="chip">myt-main — ללא שינוי</span>
+  </div>
+</header>
+
+<div class="progress" role="status">
+  <span class="num"><span id="done">0</span>/<span id="total">0</span></span>
+  <div class="bar" aria-hidden="true"><i id="fill"></i></div>
+  <button type="button" id="reset">איפוס סימונים</button>
+</div>
+
+<!-- ════════ 0 ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">0</span><h2>תנאים מקדימים</h2><span class="count"></span></div>
+  <div class="sec-note">לפני הכל. בלי אלה אף בדיקה לא תקפה.</div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="p1"></span>
+      <label class="act" for="p1">הפיצ'ר קומט ונדחף ל־master; Vercel פרס את הבאקאופיס</label>
+      <span class="exp">צפוי: המיגרציה <code>office_manager_role</code> רצה אוטומטית ב־CI (Apply DB Migrations ירוק).</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="p2"></span>
+      <label class="act" for="p2">אחרי המיגרציה: <code>npm run db:types</code> על master מסונכרן</label>
+      <span class="exp">צפוי: <code>types/database.types.ts</code> מתעדכן. זהירות: ריצה כושלת דורסת את הקובץ — משחזרים מגיט.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="p3"></span>
+      <label class="act" for="p3">להכין משרד בדיקה: partner קיים מסוג agent + לפחות 2 יוזרים חדשים עליו</label>
+      <span class="exp">צפוי: superadmin יוצר ב־<code>/users</code> מנהל משרד אחד + סוכן אחד על אותו קוד מעקב.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="p4"></span>
+      <label class="act" for="p4">לוודא שקיימים גם שותף־יחיד ותיק ומשפיען פעיל — לבדיקות רגרסיה</label>
+      <span class="exp">צפוי: לא נוגעים בהם — רק משווים התנהגות לפני/אחרי.</span></li>
+  </ol>
+</section>
+
+<!-- ════════ A ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">א</span><h2>תפקידים והרשאות אדמין</h2><span class="count"></span></div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="a1"></span>
+      <label class="act" for="a1">superadmin יוצר יוזר <code>office_manager</code> ב־<code>/users</code> עם קוד משרד</label>
+      <span class="exp">צפוי: נוצר, מקבל <b>מזהה לינק</b> (<code>ag-xxxxxx</code>) אוטומטית, מופיע ברשימה.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="a2"></span>
+      <label class="act" for="a2">להתחבר כ־admin רגיל ולפתוח את טופס יצירת/עריכת יוזר</label>
+      <span class="exp">צפוי: <code>office_manager</code> <b>לא מופיע</b> ברשימת התפקידים; שורה של מנהל קיים — בלי אפשרויות ניהול.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="a3"></span>
+      <label class="act" for="a3">superadmin משנה role של סוכן קיים למנהל משרד (קידום)</label>
+      <span class="exp">צפוי: עובד; ה־slug הקיים נשמר (לינקים ישנים ממשיכים לשייך אליו).</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="a4"></span>
+      <label class="act" for="a4">לבדוק ב־Supabase: שורת ה־partner של המשרד אחרי יצירת מנהל</label>
+      <span class="exp">צפוי: <code>partners.type = 'agent'</code> — <b>לעולם לא</b> office_manager (ה־classifier של main תלוי בזה).</span></li>
+  </ol>
+</section>
+
+<!-- ════════ B ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">ב</span><h2>מנהל משרד — פורטל וניהול צוות</h2><span class="count"></span></div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="b1"></span>
+      <label class="act" for="b1">להתחבר כמנהל משרד</label>
+      <span class="exp">צפוי: נוחת ב־<code>/portal</code>; תווית "מנהל משרד"; בתפריט מופיעים <b>הצוות שלי</b>, הצבירה, הקופונים.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="b2"></span>
+      <label class="act" for="b2">דשבורד: מתג "כל המשרד / המכירות שלי"</label>
+      <span class="exp">צפוי: ברירת מחדל כל המשרד; "שלי" מסנן את המספרים; החלפת טווח זמן שומרת על המצב שנבחר.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="b3"></span>
+      <label class="act" for="b3">דשבורד: טבלת "מכירות לפי סוכן"</label>
+      <span class="exp">צפוי: שורה לכל איש צוות + "לא משויך" בסוף; מתחת לכותרת הבהרה שהטבלה לפי כל ההיסטוריה ולא לפי הטווח.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="b4"></span>
+      <label class="act" for="b4">"הצוות שלי": הוספת סוכן חדש (שם, אימייל, סיסמה)</label>
+      <span class="exp">צפוי: נוצר עם <code>ag-</code> slug; מסוגל להתחבר מיד; הפעולה מופיעה ב־audit log.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="b5"></span>
+      <label class="act" for="b5">"הצוות שלי": איפוס סיסמה לסוכן + השבתה והפעלה מחדש</label>
+      <span class="exp">צפוי: הפעולות קיימות רק על שורות סוכן (לא על מנהל אחר); סוכן מושבת לא מצליח להתחבר.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="b6"></span>
+      <label class="act" for="b6">ניסיון זדוני: לשלוח ל־action של הצוות id של יוזר ממשרד אחר</label>
+      <span class="exp">צפוי: "המשתמש לא נמצא במשרד שלך" — אותה שגיאה גם ל־id לא קיים; שום דלף.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="b7"></span>
+      <label class="act" for="b7">הזמנות: פילטר לפי סוכן + עמודת "סוכן"</label>
+      <span class="exp">צפוי: גלולות סינון (כל המשרד / כל סוכן / לא משויך); העמודה מציגה שם או "לא משויך".</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="b8"></span>
+      <label class="act" for="b8">חבילות: המנהל רואה את כל חבילות המשרד עם "נוצר ע"י"</label>
+      <span class="exp">צפוי: תג יוצר על כל כרטיס; חבילות ישנות בלי יוצר — "-"; המנהל מוחק/נועל כל חבילה של המשרד.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="b9"></span>
+      <label class="act" for="b9">הצעות מחיר: המנהל רואה את כל הצעות המשרד ומוריד PDF של כולן</label>
+      <span class="exp">צפוי: כולל הצעות שסוכנים יצרו.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="b10"></span>
+      <label class="act" for="b10">"הזמנה עבור הלקוח" כמנהל (handoff למיין)</label>
+      <span class="exp">צפוי: מיין נפתח במצב סוכן; סליקת סוכן/שובר זמינה; ההזמנה שתיווצר משויכת <b>למנהל</b> בפילוח.</span></li>
+  </ol>
+</section>
+
+<!-- ════════ C ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">ג</span><h2>סוכן במשרד מרובה־יוזרים — בידוד</h2><span class="count"></span></div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="c1"></span>
+      <label class="act" for="c1">להתחבר כסוכן (לא מנהל) במשרד עם 2+ יוזרים</label>
+      <span class="exp">צפוי: <code>/portal</code> נטען <b>בלי שגיאה</b>; בתפריט <b>אין</b> צבירה / קופונים / הצוות שלי; אין אריח צבירה בדשבורד.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c2"></span>
+      <label class="act" for="c2">גלישה ישירה ל־<code>/portal/credit</code>, <code>/portal/coupons</code>, <code>/portal/team</code></label>
+      <span class="exp">צפוי: redirect חזרה ל־<code>/portal</code> בשלושתם.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c3"></span>
+      <label class="act" for="c3">חבילות + הצעות מחיר: הסוכן רואה רק את שלו</label>
+      <span class="exp">צפוי: חבילות/הצעות של קולגות לא מופיעות; אין תג "נוצר ע"י".</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c4"></span>
+      <label class="act" for="c4">ניסיון זדוני: להוריד PDF של הצעת מחיר של קולגה לפי מזהה רץ (<code>/api/quotes/&lt;id&gt;/pdf</code>)</label>
+      <span class="exp">צפוי: 404 — לא PDF ולא לינק חתום.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c5"></span>
+      <label class="act" for="c5">ניסיון זדוני: <code>?agent=&lt;sub של קולגה&gt;</code> או <code>?view=mine</code> ב־URL אצל סוכן</label>
+      <span class="exp">צפוי: שום שינוי — הסינון נכפה בשרת, הפרמטרים מתעלמים.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c6"></span>
+      <label class="act" for="c6">הלינקים של הסוכן (כללי, אירוע, חבילה) מכילים <code>utm_content=ag-…</code> שלו</label>
+      <span class="exp">צפוי: בכל לינק שמועתק מהפורטל; הערך תואם ל"מזהה לינק" שלו במסך הצוות.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c7"></span>
+      <label class="act" for="c7">"עדכונים" (פיד): רק פעילות של הסוכן עצמו</label>
+      <span class="exp">צפוי: הצעות/חבילות של קולגות לא בפיד; אין פעימות קופונים.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c8"></span>
+      <label class="act" for="c8">ההזמנות של הסוכן: רק מה שמשויך אליו</label>
+      <span class="exp">צפוי: הזמנה מלינק של קולגה — לא מופיעה לו; כן למנהל.</span></li>
+  </ol>
+</section>
+
+<!-- ════════ D ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">ד</span><h2>שיוך מכירות (צינור UTM, מקצה לקצה)</h2><span class="count"></span></div>
+  <div class="callout info"><b>איך בודקים:</b> כל בדיקה = קליק על לינק בדפדפן נקי (גלישה בסתר) ← הזמנה אמיתית במיין (אפשר 24Save) ← רענון בפורטל/באקאופיס.</div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="d1"></span>
+      <label class="act" for="d1">לינק אירוע של סוכן א' ← הזמנה במיין</label>
+      <span class="exp">צפוי: ההזמנה אצל סוכן א'; בפילוח המנהל — בשורה של א'; בכרטיס "מקור הגעה" בבאקאופיס — <code>utm_content=ag-…</code> שלו.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d2"></span>
+      <label class="act" for="d2">לינק חבילה (עם <code>pkg=</code>) של סוכן ← הזמנה</label>
+      <span class="exp">צפוי: שיוך זהה — גם דרך לינק חבילה.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d3"></span>
+      <label class="act" for="d3">אותו דפדפן: קליק על לינק של א', אחר כך של ב', ואז הזמנה</label>
+      <span class="exp">צפוי: <b>ב' מקבל את הקרדיט</b> (הנגיעה האחרונה מנצחת — אותו חוק כמו בין משרדים).</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d4"></span>
+      <label class="act" for="d4">לינק ישן של המשרד (בלי <code>utm_content</code>) ← הזמנה</label>
+      <span class="exp">צפוי: נופלת ל"לא משויך"; נספרת במשרד; לא אצל אף סוכן ספציפי.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d5"></span>
+      <label class="act" for="d5">הזמנה דרך handoff ("הזמנה עבור הלקוח") של סוכן</label>
+      <span class="exp">צפוי: משויכת לסוכן שביצע — ה־utm עובר גם במסלול הזה.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d6"></span>
+      <label class="act" for="d6">ולידציה במיין: קליק על לינק עם <code>utm_content</code> לא שובר כלום</label>
+      <span class="exp">צפוי: עמוד ההזמנה נטען רגיל; עוגיית <code>myt_utm</code> מכילה את המזהה; אפס שינוי בקוד מיין.</span></li>
+  </ol>
+</section>
+
+<!-- ════════ E ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">ה</span><h2>רגרסיה: שותף־יחיד, משפיען, קצוות</h2><span class="count"></span></div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="e1"></span>
+      <label class="act" for="e1">שותף־יחיד ותיק: לעבור על כל הפורטל</label>
+      <span class="exp">צפוי: <b>זהה לאתמול</b> — כל ההזמנות כולל ישנות, צבירה וקופונים במקום, הצעות וחבילות מלאות.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="e2"></span>
+      <label class="act" for="e2">משפיען: פורטל מלא</label>
+      <span class="exp">צפוי: שום שינוי — דשבורד, צבירה, קופונים, הזמנות. אין עמודת סוכן, אין פילוח.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="e3"></span>
+      <label class="act" for="e3">superadmin: "כניסה כשותף" (impersonation) למשרד סוכנים</label>
+      <span class="exp">צפוי: נכנס <b>בתצוגת מנהל</b> — רואה הכל כולל מסך צוות ופילוח; audit נרשם על האדמין האמיתי.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="e4"></span>
+      <label class="act" for="e4">להשבית יוזר שמחובר עכשיו (עוגייה חיה) ולרענן אצלו</label>
+      <span class="exp">צפוי: עמוד שגיאה מעוצב של הפורטל ("משהו השתבש" + ניסיון נוסף/חזרה) — <b>לא</b> מסך 500 לבן.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="e5"></span>
+      <label class="act" for="e5">מעבר משרד מיוזר אחד לשניים: להוסיף מנהל למשרד של שותף־יחיד</label>
+      <span class="exp">צפוי: מרגע ההוספה הסוכן המקורי מאבד צבירה/קופונים והיסטוריה לא־משויכת (עוברים למנהל) — מתוכנן; לוודא שאין קריסה.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="e6"></span>
+      <label class="act" for="e6">דשבורד אדמין (מסכים שאינם פורטל): אירועים, הזמנות, שותפים</label>
+      <span class="exp">צפוי: אפס שינוי — הפיצ'ר לא נוגע במסכי staff.</span></li>
+  </ol>
+</section>
+
+<!-- ════════ F ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">ו</span><h2>תיקוני אזור סוכן — סשן 19.08 (כבר קומטו)</h2><span class="count"></span></div>
+  <div class="sec-note">באקאופיס: <code>e9a8d83</code> + <code>049e8cc</code> — בפרודקשן. מיין: <code>9d2ee55</code> על <code>feat/vertical-hubs</code>.</div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="f1"></span>
+      <label class="act" for="f1">פילטר 3 ימים: אירוע שמתחיל בתוך 3 הימים הקרובים</label>
+      <span class="exp">צפוי: לא מופיע בבורר של בניית חבילה, לא ב"קישור או חבילה לכל אירוע" ולא ב"הלינקים שלי". אירוע מהיום הרביעי ואילך — כן.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="f2"></span>
+      <label class="act" for="f2">מסך "החבילה מוכנה!" בסוף הוויזרד — כפתורי המשך לסוכנים</label>
+      <span class="exp">צפוי: <b>"הזמנה עבור הלקוח"</b> (פותח מיין במצב סוכן, popup-safe) + <b>"שלח הצעה ללקוח"</b> (← הצעת מחיר חדשה עם החבילה טעונה). למשפיען — לא מופיעים.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="f3"></span>
+      <label class="act" for="f3">שלב המלון בוויזרד — זהות מול מיין</label>
+      <span class="exp">צפוי: אותן תוצאות חיפוש כמו במיין (רשימה מלאה), תמונות נטענות, תג ביטול חינם כשרלוונטי.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="f4"></span>
+      <label class="act" for="f4">מיין, מצב שובר: כפתור ראשי אחד <span class="tag warn">בענף — לא בפרוד</span></label>
+      <span class="exp">צפוי (אחרי מיזוג <code>feat/vertical-hubs</code>): כפתור אחד "שלח הזמנה עם שובר" בדסקטופ, מובייל ופוטר דביק; "דברו עם נציג" / "24 שעות" מוסתרים; ההזמנה נשלחת בנתיב שובר ללא סליקה.</span></li>
+  </ol>
+</section>
+
+<!-- ════════ known gaps ════════ -->
+<section class="gaps">
+  <div class="sec-head"><span class="sec-mark">!</span><h2>ידוע ומכוון — לא לפתוח כבאגים</h2></div>
+  <ul>
+    <li><b>היסטוריה:</b> שיוך פר־סוכן מתחיל מיום הדיפלוי. הזמנות ולינקים מלפני — "לא משויך". הזמנה בקופון בלבד (בלי קליק) — גם.</li>
+    <li><b>רשימת הזמנות של סוכן:</b> נשלפת מ־500 ההזמנות האחרונות של <i>המשרד</i> — סוכן דליל במשרד עמוס עלול לא לראות היסטוריה ישנה מאוד.</li>
+    <li><b>אנליטיקת מבקרים</b> (קליקים/משפכים) בדשבורד — ברמת משרד גם אצל סוכן מבודד; אין מפתח פר־סוכן בדאטה.</li>
+    <li><b>טבלת "מכירות לפי סוכן"</b> — לפי כל ההיסטוריה בכוונה (יש הבהרה במסך); לא מגיבה לבורר הטווח.</li>
+    <li><b>עמודת "פעילות אחרונה"</b> במסך הצוות — נדחתה ל־v2.</li>
+    <li><b>כסף</b> — עמלה וקרדיט נשארים ברמת משרד; הפילוח הוא דוח בלבד. זה הפיצ'ר, לא באג.</li>
+  </ul>
+</section>
+
+<footer>
+  ספק: <code>docs/superpowers/specs/2026-08-19-office-agents-design.md</code> · תוכנית: <code>docs/superpowers/plans/2026-08-19-office-agents.md</code><br>
+  הסימונים נשמרים בדפדפן הזה בלבד (localStorage). MYT · מגה אירועים
+</footer>
+
+</div>
+<script>
+(function(){
+  var KEY="myt-office-agents-qa-v1";
+  var boxes=[].slice.call(document.querySelectorAll('.item input[type="checkbox"]'));
+  var saved={};
+  try{saved=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){}
+  boxes.forEach(function(b){ if(saved[b.id]) b.checked=true; });
+
+  var doneEl=document.getElementById("done"),
+      totalEl=document.getElementById("total"),
+      fill=document.getElementById("fill");
+  totalEl.textContent=boxes.length;
+
+  function refresh(){
+    var d=boxes.filter(function(b){return b.checked}).length;
+    doneEl.textContent=d;
+    fill.style.width=(boxes.length?100*d/boxes.length:0)+"%";
+    document.querySelectorAll("section").forEach(function(sec){
+      var c=sec.querySelector(".count"); if(!c) return;
+      var bs=[].slice.call(sec.querySelectorAll('input[type="checkbox"]'));
+      c.textContent=bs.filter(function(b){return b.checked}).length+"/"+bs.length;
+    });
+  }
+  function save(){
+    var o={};
+    boxes.forEach(function(b){ if(b.checked) o[b.id]=1; });
+    try{localStorage.setItem(KEY,JSON.stringify(o))}catch(e){}
+  }
+  boxes.forEach(function(b){ b.addEventListener("change",function(){refresh();save();}); });
+  document.getElementById("reset").addEventListener("click",function(){
+    if(!confirm("לאפס את כל הסימונים?")) return;
+    boxes.forEach(function(b){b.checked=false});
+    refresh(); save();
+  });
+  refresh();
+})();
+</script>
+</body>
+</html>

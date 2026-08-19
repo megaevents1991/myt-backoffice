@@ -42,7 +42,7 @@ export const PORTAL_IMPERSONATION_MAX_AGE = 60 * 60 * 2; // 2 hours
  */
 export const PORTAL_MEMBER_HINT_COOKIE = "portal_member";
 
-import type { Role } from "@/types/auth.types";
+import { ROLES, type Role } from "@/types/auth.types";
 
 export type SessionPayload = {
   sub: string; // auth.users uuid
@@ -160,12 +160,7 @@ export async function verifySessionValue(
       new TextDecoder().decode(fromBase64Url(body)),
     ) as SessionPayload;
     if (typeof payload.sub !== "string" || !payload.sub) return null;
-    if (
-      !["superadmin", "admin", "editor", "agent", "affiliate"].includes(
-        payload.role,
-      )
-    )
-      return null;
+    if (!(ROLES as readonly string[]).includes(payload.role)) return null;
     if (typeof payload.exp !== "number" || Date.now() > payload.exp)
       return null;
     return payload;

@@ -4,6 +4,7 @@ import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
+import { PARTNER_ROLES } from "@/types/auth.types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -28,7 +29,7 @@ function LoginForm() {
   useEffect(() => {
     if (user) {
       router.push(
-        user.role === "agent" || user.role === "affiliate" ? "/portal" : "/dashboard"
+        (PARTNER_ROLES as readonly string[]).includes(user.role) ? "/portal" : "/dashboard"
       );
     }
   }, [user, router]);
@@ -43,10 +44,11 @@ function LoginForm() {
       const result = await login(email, password);
 
       if ("user" in result) {
-        const home =
-          result.user.role === "agent" || result.user.role === "affiliate"
-            ? "/portal"
-            : "/dashboard";
+        const home = (PARTNER_ROLES as readonly string[]).includes(
+          result.user.role
+        )
+          ? "/portal"
+          : "/dashboard";
         console.log("Login successful, redirecting to", home);
         toast({
           title: "Login successful",

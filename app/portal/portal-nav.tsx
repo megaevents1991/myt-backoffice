@@ -5,22 +5,31 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type NavItem = { name: string; href: string; agentOnly?: boolean };
+type NavItem = { name: string; href: string; roles?: string[]; creditGated?: boolean };
 
 const navItems: NavItem[] = [
   { name: "דשבורד", href: "/portal" },
   { name: "החבילות והלינקים שלי", href: "/portal/packages" },
-  { name: "הצבירה שלי", href: "/portal/credit" },
-  { name: "הקופונים שלי", href: "/portal/coupons" },
+  // Office money - manager + affiliate; a solo-office agent keeps access
+  // (creditGated resolves via the showCredit prop computed server-side).
+  { name: "הצבירה שלי", href: "/portal/credit", creditGated: true },
+  { name: "הקופונים שלי", href: "/portal/coupons", creditGated: true },
   { name: "ההזמנות שלי", href: "/portal/reservations" },
-  // Agents only - an influencer promotes a link and never prices a package
+  // Sellers only - an influencer promotes a link and never prices a package
   // for a named customer. The server action enforces it too.
-  { name: "הצעות מחיר", href: "/portal/quotes", agentOnly: true },
+  { name: "הצעות מחיר", href: "/portal/quotes", roles: ["agent", "office_manager"] },
+  { name: "הצוות שלי", href: "/portal/team", roles: ["office_manager"] },
   { name: "עדכונים", href: "/portal/activity" },
   { name: "הפרופיל שלי", href: "/portal/profile" },
 ];
 
-export function PortalNav({ role }: { role?: string | null }) {
+export function PortalNav({
+  role,
+  showCredit,
+}: {
+  role?: string | null;
+  showCredit?: boolean;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   // Role comes from the LAYOUT's server session, not the client auth context:
@@ -28,7 +37,6 @@ export function PortalNav({ role }: { role?: string | null }) {
   // /api/auth/session endpoint never receives (multi-session - a staff
   // session may be signed in beside it), so the context would report the
   // wrong identity here.
-  const isAgent = role === "agent";
 
   const handleLogout = async () => {
     try {
@@ -49,7 +57,8 @@ export function PortalNav({ role }: { role?: string | null }) {
   return (
     <nav className="flex flex-wrap items-center gap-1">
       {navItems
-        .filter((item) => !item.agentOnly || isAgent)
+        .filter((item) => !item.roles || (role != null && item.roles.includes(role)))
+        .filter((item) => !item.creditGated || showCredit)
         .map((item) => {
         const isActive =
           pathname === item.href ||

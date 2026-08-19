@@ -1,6 +1,6 @@
 "use server";
 
-import { requirePartner, requireStaff } from "@/lib/auth/guards";
+import { requireCreditAccess, requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import {
@@ -264,7 +264,7 @@ async function loadCredit(trackingCode: string): Promise<PartnerCredit> {
 
 /** The signed-in partner's own credit. */
 export async function getMyCredit(): Promise<PartnerCredit> {
-  const session = await requirePartner();
+  const session = await requireCreditAccess();
   return loadCredit(session.partner_code);
 }
 
@@ -307,7 +307,7 @@ const VOUCHER_COLLECTION_WINDOW_DAYS = 30;
 /** Voucher-settlement aging for the signed-in agent. Empty for influencers -
  *  the voucher settlement method is an agent-only flow. */
 export async function getMyVoucherSettlement(): Promise<VoucherSettlement> {
-  const session = await requirePartner();
+  const session = await requireCreditAccess();
   const empty: VoucherSettlement = {
     dueSoonCount: 0,
     dueSoonUsd: 0,
@@ -317,7 +317,7 @@ export async function getMyVoucherSettlement(): Promise<VoucherSettlement> {
     settledUsd: 0,
     openRows: [],
   };
-  if (session.role !== "agent") return empty;
+  if (session.role === "affiliate") return empty;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let { data, error } = await (supabase as any)
@@ -432,7 +432,7 @@ function normaliseCode(raw: string): string {
 export async function convertCreditToCoupon(
   options: ConvertOptions = {},
 ): Promise<ConvertResult> {
-  const session = await requirePartner();
+  const session = await requireCreditAccess();
   return convertFor(session.partner_code, session.sub, options);
 }
 

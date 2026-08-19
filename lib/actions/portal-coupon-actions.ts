@@ -1,6 +1,6 @@
 "use server";
 
-import { requirePartner } from "@/lib/auth/guards";
+import { requireCreditAccess } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { fundedCodeSet } from "@/lib/partner-commission";
@@ -30,7 +30,7 @@ export interface MyCouponTerms {
 }
 
 export async function getMyCouponTerms(): Promise<MyCouponTerms | null> {
-  const session = await requirePartner();
+  const session = await requireCreditAccess();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let { data, error } = await (supabase as any)
     .from("partners")
@@ -199,7 +199,7 @@ function generateCouponCode(trackingCode: string): string {
 export async function createPartnerCoupon(
   input: CreateCouponInput,
 ): Promise<CreateCouponResult> {
-  const session = await requirePartner();
+  const session = await requireCreditAccess();
   const terms = await getMyCouponTerms();
   if (!terms) {
     return { ok: false, error: "לא הצלחנו לקרוא את תנאי העמלה שלכם. נסו שוב." };

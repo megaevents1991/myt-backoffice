@@ -9,6 +9,7 @@ import {
   describeCommission,
   isPaid,
   round2,
+  saleValue,
   sumSales,
   type CommissionTerms,
 } from "@/lib/partner-commission";
@@ -31,6 +32,13 @@ import {
   type InsightsRange,
 } from "@/lib/actions/partner-performance-actions";
 import { partnerLink } from "@/lib/site";
+import {
+  getAgentSlugForUser,
+  agentUtmContent,
+  resolvePortalScope,
+  getReservationAttribution,
+  visibleToAgent,
+} from "@/lib/portal-attribution";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import type { CommissionType } from "@/types/partner.types";
 import type { ReservationEventOrderInfo } from "@/types/reservation.types";
@@ -90,6 +98,17 @@ export interface PortalNewEvent {
   href: string;
 }
 
+/** One row of the manager's "per agent" breakdown table (office view). Built
+ *  from PAID rows only, using the same sale-value accessor as the headline
+ *  totalSalesUsd tile so the two never disagree. */
+export interface AgentBreakdownRow {
+  sub: string;
+  name: string;
+  totalReservations: number;
+  paidReservations: number;
+  totalSalesUsd: number;
+}
+
 export interface PortalDashboard {
   range: InsightsRange;
   totalReservations: number;
@@ -117,6 +136,9 @@ export interface PortalDashboard {
     hotels: TopPick[];
     tickets: TopPick[];
   };
+  /** Manager only - per office-user cut of the activity above (lifetime, not
+   *  range-filtered). Null for agent/affiliate sessions. */
+  agentBreakdown: AgentBreakdownRow[] | null;
 }
 
 type ReservationRow = {
@@ -163,9 +185,12 @@ function describeUserDiscount(discount: number | null | undefined): string {
 
 export async function getPortalDashboard(
   range: InsightsRange = "all",
+  view: "office" | "mine" = "office",
 ): Promise<PortalDashboard> {
   const session = await requirePartner();
   const code = session.partner_code;
+  const scope = await resolvePortalScope(session);
+  const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
   const { from, to } = await rangeWindowISO(range);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -294,14 +319,36 @@ export async function getPortalDashboard(
 
   const allRows = (reservationsResult.data ??
     []) as unknown as ReservationRow[];
+
+  // Agent isolation (spec §5): an agent sees only reservations credited to
+  // them (solo offices keep unattributed - pre-slug history). A manager sees
+  // the whole office by default, or just their own attributed rows in "mine"
+  // - no solo fallback for a manager, they always have a real slug. Affiliates
+  // are untouched: isManager is false and role isn't "agent", so neither
+  // branch fires and scopedRows stays the full set, exactly as today.
+  const attribution = await getReservationAttribution(
+    allRows.map((r) => r.id),
+    scope.officeUsers,
+  );
+  let scopedRows = allRows;
+  if (!scope.isManager && session.role === "agent") {
+    scopedRows = allRows.filter((r) =>
+      visibleToAgent(attribution.get(r.id), session.sub, scope.soloOffice),
+    );
+  } else if (scope.isManager && view === "mine") {
+    scopedRows = allRows.filter(
+      (r) => attribution.get(r.id) === session.sub,
+    );
+  }
+
   // Money tiles bill on the whole history; the activity tiles follow the
   // selected window. ISO strings compare correctly as strings.
-  const rangedRows = allRows.filter(
+  const rangedRows = scopedRows.filter(
     (r) =>
       (!from || (r.created_at ?? "") >= from) &&
       (!to || (r.created_at ?? "") < to),
   );
-  const paidAll = allRows.filter(isPaid);
+  const paidAll = scopedRows.filter(isPaid);
   const paidRanged = rangedRows.filter(isPaid);
 
   const yearPrefix = String(new Date().getUTCFullYear());
@@ -394,7 +441,7 @@ export async function getPortalDashboard(
     const key = (label ?? "").trim();
     if (key) map.set(key, (map.get(key) ?? 0) + 1);
   };
-  for (const row of allRows) {
+  for (const row of scopedRows) {
     if (row.status !== "Paid") continue;
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -455,7 +502,7 @@ export async function getPortalDashboard(
         date: event.date,
         location: event.location?.name ?? null,
         image_url: event.card_image_url ?? event.art_image_url,
-        href: partnerLink(code, event.id),
+        href: partnerLink(code, event.id, undefined, agentUtm),
       }));
 
   // One card PER ARTIST/TEAM, not per event - the rail was "הכל אותו אומן"
@@ -643,7 +690,7 @@ export async function getPortalDashboard(
           id: raw.id,
           date: raw.date,
           location: raw.location?.name ?? null,
-          href: partnerLink(code, raw.id),
+          href: partnerLink(code, raw.id, undefined, agentUtm),
         });
         groupsByKey.set(key, group);
       }
@@ -656,6 +703,50 @@ export async function getPortalDashboard(
       (a.date ?? "").localeCompare(b.date ?? ""),
     ),
   }));
+
+  // Manager's per-agent cut - lifetime, like the commission money tiles below
+  // (NOT range-filtered, unlike the paidReservations/totalSalesUsd activity
+  // tiles) - and always the WHOLE office regardless of the office/mine
+  // toggle, so switching to "mine" never hides colleagues from this table.
+  // isPaid/saleValue are the same accessors paidAll (and its derived
+  // totalSalesUsd) use above, so this table's totals agree with paidAll to
+  // the cent - they just don't match the range-scoped headline tiles.
+  const agentBreakdown: AgentBreakdownRow[] | null = scope.isManager
+    ? (() => {
+        const rows = new Map<string, AgentBreakdownRow>();
+        for (const u of scope.officeUsers) {
+          rows.set(u.id, {
+            sub: u.id,
+            name: u.display_name || u.email,
+            totalReservations: 0,
+            paidReservations: 0,
+            totalSalesUsd: 0,
+          });
+        }
+        const unattributed: AgentBreakdownRow = {
+          sub: "",
+          name: "לא משויך",
+          totalReservations: 0,
+          paidReservations: 0,
+          totalSalesUsd: 0,
+        };
+        for (const r of allRows) {
+          const owner = attribution.get(r.id) ?? null;
+          const row = owner ? rows.get(owner) : unattributed;
+          if (!row) continue;
+          row.totalReservations += 1;
+          if (isPaid(r)) {
+            row.paidReservations += 1;
+            row.totalSalesUsd += saleValue(r);
+          }
+        }
+        const list = [...rows.values()].sort(
+          (a, b) => b.totalSalesUsd - a.totalSalesUsd,
+        );
+        if (unattributed.totalReservations > 0) list.push(unattributed);
+        return list;
+      })()
+    : null;
 
   return {
     range,
@@ -709,5 +800,6 @@ export async function getPortalDashboard(
       hotels: topOf(hotelCounts),
       tickets: topOf(ticketCounts),
     },
+    agentBreakdown,
   };
 }

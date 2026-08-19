@@ -4,10 +4,16 @@ import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { PAID_STATUS } from "@/lib/partner-commission";
 import {
+  resolvePortalScope,
+  getReservationAttribution,
+  visibleToAgent,
+} from "@/lib/portal-attribution";
+import {
   rangeWindowISO,
   type InsightsRange,
 } from "@/lib/actions/partner-performance-actions";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
+import { SELLER_ROLES } from "@/types/auth.types";
 import type { ReservationEventOrderInfo } from "@/types/reservation.types";
 
 /**
@@ -45,25 +51,35 @@ const FEED_LIMIT = 60;
 export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
   const session = await requirePartner();
   const code = session.partner_code;
+  const scope = await resolvePortalScope(session);
+  // An agent in a multi-user office only ever sees their OWN activity;
+  // managers and solo agents see the whole office's feed.
+  const isolate = session.role === "agent" && !scope.soloOffice;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let quotesQuery = (supabase as any)
+    .from("quotes")
+    .select("id,created_at,customer_name,title")
+    .eq("partner_tracking_code", code)
+    .order("created_at", { ascending: false })
+    .limit(FEED_LIMIT);
+  if (isolate) quotesQuery = quotesQuery.eq("created_by", session.sub);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let packagesQuery = (supabase as any)
+    .from("prepared_packages")
+    .select("id,created_at,event_order_info")
+    .eq("partner_tracking_code", code)
+    .order("created_at", { ascending: false })
+    .limit(FEED_LIMIT);
+  if (isolate) packagesQuery = packagesQuery.eq("created_by", session.sub);
 
   const [quotesResult, packagesResult, reservationsResult, couponsResult] =
     await Promise.all([
-      session.role === "agent"
-        ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (supabase as any)
-            .from("quotes")
-            .select("id,created_at,customer_name,title")
-            .eq("partner_tracking_code", code)
-            .order("created_at", { ascending: false })
-            .limit(FEED_LIMIT)
+      SELLER_ROLES.includes(session.role)
+        ? quotesQuery
         : Promise.resolve({ data: [], error: null }),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any)
-        .from("prepared_packages")
-        .select("id,created_at,event_order_info")
-        .eq("partner_tracking_code", code)
-        .order("created_at", { ascending: false })
-        .limit(FEED_LIMIT),
+      packagesQuery,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any)
         .from("reservations")
@@ -73,15 +89,19 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
         .eq("aff_partner_tracking_code", code)
         .order("created_at", { ascending: false })
         .limit(FEED_LIMIT),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any)
-        .from("coupons")
-        .select(
-          "code,created_at,discount_type,discount_value,funded_by_commission",
-        )
-        .eq("partner_tracking_code", code)
-        .order("created_at", { ascending: false })
-        .limit(FEED_LIMIT),
+      // Coupons are office-level (no creator column) - an isolated agent gets
+      // none of them rather than a filter that can't be expressed.
+      isolate
+        ? Promise.resolve({ data: [], error: null })
+        : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (supabase as any)
+            .from("coupons")
+            .select(
+              "code,created_at,discount_type,discount_value,funded_by_commission",
+            )
+            .eq("partner_tracking_code", code)
+            .order("created_at", { ascending: false })
+            .limit(FEED_LIMIT),
     ]);
 
   for (const [label, result] of [
@@ -158,7 +178,7 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
     });
   }
 
-  for (const reservation of (reservationsResult.data ?? []) as {
+  const reservationRows = (reservationsResult.data ?? []) as {
     id: number;
     created_at: string;
     status: string | null;
@@ -166,7 +186,23 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
     event_order_info: ReservationEventOrderInfo | null;
     voucher_state?: "sent" | "received" | "collected" | null;
     coupon_code?: string | null;
-  }[]) {
+  }[];
+  // Reservations carry no created_by (attribution rides the UTM pipeline
+  // instead) - filter the fetched rows against the attribution map rather
+  // than the query itself.
+  const attribution = isolate
+    ? await getReservationAttribution(
+        reservationRows.map((r) => r.id),
+        scope.officeUsers,
+      )
+    : null;
+  const visibleReservations = attribution
+    ? reservationRows.filter((r) =>
+        visibleToAgent(attribution.get(r.id), session.sub, scope.soloOffice),
+      )
+    : reservationRows;
+
+  for (const reservation of visibleReservations) {
     const eventName =
       normalizeReservationEventOrderInfo(reservation.event_order_info)[0]
         ?.name ?? null;

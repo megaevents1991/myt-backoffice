@@ -18,9 +18,11 @@ const usd = (value: number) => `$${Math.round(value).toLocaleString("en-US")}`;
 export function EventLinks({
   trackingCode,
   events,
+  agentUtm,
 }: {
   trackingCode: string;
   events: BuilderEvent[];
+  agentUtm?: string | null;
 }) {
   const [query, setQuery] = useState("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -39,7 +41,9 @@ export function EventLinks({
 
   const copyLink = async (eventId: number) => {
     try {
-      await navigator.clipboard.writeText(partnerLink(trackingCode, eventId));
+      await navigator.clipboard.writeText(
+        partnerLink(trackingCode, eventId, undefined, agentUtm)
+      );
       setCopiedId(eventId);
       setTimeout(() => setCopiedId((prev) => (prev === eventId ? null : prev)), 2000);
     } catch (error) {

@@ -3,7 +3,8 @@ import { getSession } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { renderQuoteHtml } from "@/lib/quote-pdf-template";
-import { STAFF_ROLES } from "@/types/auth.types";
+import { resolvePortalScope } from "@/lib/portal-attribution";
+import { STAFF_ROLES, SELLER_ROLES } from "@/types/auth.types";
 
 export const maxDuration = 30;
 
@@ -60,16 +61,30 @@ export async function POST(
     // 404 (not 403) for both "doesn't exist" and "not yours" - don't confirm foreign quote ids.
     if (!quote)
       return NextResponse.json({ error: "Not found" }, { status: 404 });
-    // Non-staff must be an AGENT and own the quote. Role first: without it an
-    // influencer could still mint PDFs for legacy quotes on their code, and a
-    // null partner_code would match a quote whose code is also null.
+    // Non-staff must be a SELLER (agent/office_manager) and own the quote. Role
+    // first: without it an influencer could still mint PDFs for legacy quotes
+    // on their code, and a null partner_code would match a quote whose code is
+    // also null.
     if (!STAFF_ROLES.includes(session.role)) {
       const ownsIt =
-        session.role === "agent" &&
+        SELLER_ROLES.includes(session.role) &&
         !!session.partner_code &&
         quote.partner_tracking_code === session.partner_code;
       if (!ownsIt) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      // An agent in a multi-user office may only fetch their OWN quote's PDF -
+      // same-office colleagues must not be able to probe each other's quotes
+      // by walking integer ids. Managers/staff and solo-office agents unchanged.
+      if (session.role === "agent" && session.partner_code) {
+        const scope = await resolvePortalScope({
+          sub: session.sub,
+          role: session.role,
+          partner_code: session.partner_code,
+        });
+        if (!scope.soloOffice && quote.created_by !== session.sub) {
+          return NextResponse.json({ error: "Not found" }, { status: 404 });
+        }
       }
     }
 

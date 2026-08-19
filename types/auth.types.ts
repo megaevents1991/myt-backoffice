@@ -8,6 +8,7 @@ export const ROLES = [
   "superadmin",
   "admin",
   "editor",
+  "office_manager",
   "agent",
   "affiliate",
 ] as const;
@@ -16,7 +17,10 @@ export type Role = (typeof ROLES)[number];
 export const STAFF_ROLES: Role[] = ["superadmin", "admin", "editor"];
 /** Roles allowed into user management. Only superadmin may manage these roles' accounts. */
 export const ADMIN_ROLES: Role[] = ["superadmin", "admin"];
-export const PARTNER_ROLES: Role[] = ["agent", "affiliate"];
+/** Partner-linked, portal-confined roles. */
+export const PARTNER_ROLES: Role[] = ["office_manager", "agent", "affiliate"];
+/** Partner roles that SELL (build packages, quote, order for a customer). */
+export const SELLER_ROLES: Role[] = ["agent", "office_manager"];
 
 /** Row shape of public.user_profiles (hand-typed until `npm run db:types` regen). */
 export interface UserProfile {
@@ -25,6 +29,8 @@ export interface UserProfile {
   display_name: string | null;
   role: Role;
   partner_tracking_code: string | null;
+  /** Short stable id carried as utm_content=ag-<slug> on this user's links. Never regenerated. */
+  agent_slug: string | null;
   logo_url: string | null;
   phone: string | null;
   /** Storage path in the private `user-contracts` bucket (not a public URL). */

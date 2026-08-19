@@ -193,12 +193,14 @@ export function UsersClient({
   const [isPending, startTransition] = useTransition();
 
   const isSuper = me?.role === "superadmin";
-  // Admins cannot assign or touch admin/superadmin accounts - superadmin only.
-  const assignableRoles = isSuper
-    ? ROLES
-    : ROLES.filter((r) => !ADMIN_ROLES.includes(r));
+  // Admins cannot assign or touch admin/superadmin/office_manager accounts -
+  // appointing office managers is superadmin-only (server-enforced too).
+  const assignableRoles = ROLES.filter((r) =>
+    isSuper ? true : !ADMIN_ROLES.includes(r) && r !== "office_manager",
+  );
   const canManageRow = (target: UserProfile) =>
-    isSuper || !ADMIN_ROLES.includes(target.role);
+    isSuper ||
+    (!ADMIN_ROLES.includes(target.role) && target.role !== "office_manager");
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<UserProfile | null>(null);

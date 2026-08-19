@@ -7,7 +7,7 @@ import {
   SESSION_MAX_AGE,
 } from "@/lib/auth/session";
 import { verifyPassword, getProfile } from "@/lib/auth/supabase-auth";
-import type { UserProfile } from "@/types/auth.types";
+import { PARTNER_ROLES, type UserProfile } from "@/types/auth.types";
 import { logAudit, requestIp } from "@/lib/audit";
 
 async function respondWithSession(profile: UserProfile, request: Request) {
@@ -34,7 +34,7 @@ async function respondWithSession(profile: UserProfile, request: Request) {
     role: profile.role,
     partner_code: profile.partner_tracking_code,
   });
-  const isPartner = profile.role === "agent" || profile.role === "affiliate";
+  const isPartner = PARTNER_ROLES.includes(profile.role);
   // Partners live in their own /portal-scoped cookie so a partner login in one
   // tab never logs out a staff `session` in another (multi-session, same
   // Chrome). Staff keep the site-wide cookie. See lib/auth/session.ts.

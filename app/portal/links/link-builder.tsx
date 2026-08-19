@@ -40,9 +40,11 @@ function CopyField({ value, label }: { value: string; label: string }) {
 export function LinkBuilder({
   trackingCode,
   events,
+  agentUtm,
 }: {
   trackingCode: string;
   events: QuoteEventOption[];
+  agentUtm?: string | null;
 }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<QuoteEventOption | null>(null);
@@ -57,7 +59,10 @@ export function LinkBuilder({
 
   return (
     <div className="space-y-6">
-      <CopyField label="הלינק הכללי שלכם" value={partnerLink(trackingCode)} />
+      <CopyField
+        label="הלינק הכללי שלכם"
+        value={partnerLink(trackingCode, undefined, undefined, agentUtm)}
+      />
 
       <div className="space-y-3">
         <Label htmlFor="event-search">לינק לאירוע מסוים</Label>
@@ -118,7 +123,7 @@ export function LinkBuilder({
             </div>
             <CopyField
               label="לינק ישיר לאירוע"
-              value={partnerLink(trackingCode, selected.id)}
+              value={partnerLink(trackingCode, selected.id, undefined, agentUtm)}
             />
           </div>
         )}

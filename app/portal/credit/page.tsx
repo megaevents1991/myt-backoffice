@@ -1,9 +1,11 @@
+import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/guards";
 import {
   getMyCredit,
   getMyVoucherSettlement,
 } from "@/lib/actions/partner-credit-actions";
-import { PARTNER_ROLES } from "@/types/auth.types";
+import { resolvePortalScope } from "@/lib/portal-attribution";
+import { PARTNER_ROLES, SELLER_ROLES } from "@/types/auth.types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -29,7 +31,18 @@ export default async function PortalCreditPage() {
   // throws for any non-partner role.
   if (!isPartner) return null;
 
-  const isAgent = session.role === "agent";
+  const scope = await resolvePortalScope({
+    sub: session.sub,
+    role: session.role,
+    partner_code: session.partner_code!,
+  });
+  const creditAllowed =
+    session.role === "office_manager" ||
+    session.role === "affiliate" ||
+    scope.soloOffice;
+  if (!creditAllowed) redirect("/portal");
+
+  const isAgent = SELLER_ROLES.includes(session.role);
   const [credit, settlement] = await Promise.all([
     getMyCredit(),
     // Voucher settlement is an agent-only flow; the action returns empty for

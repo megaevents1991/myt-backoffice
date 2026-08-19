@@ -138,7 +138,14 @@ function ChoicesPanel({ reservation }: { reservation: PortalReservation }) {
   );
 }
 
-export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
+export function ReservationsTable({
+  rows,
+  showAgentColumn,
+}: {
+  rows: PortalReservation[];
+  /** Manager view only - adds the "סוכן" column crediting each row. */
+  showAgentColumn: boolean;
+}) {
   const [futureOnly, setFutureOnly] = useState(false);
   const [status, setStatus] = useState<string>("all");
   const [sort, setSort] = useState<SortKey>("created");
@@ -229,6 +236,7 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                 <TableHead className="text-center">נוסעים</TableHead>
                 <TableHead>סטטוס</TableHead>
                 <TableHead>מקור</TableHead>
+                {showAgentColumn && <TableHead>סוכן</TableHead>}
                 <TableHead>חומר ללקוח</TableHead>
                 <TableHead className="text-left">סכום</TableHead>
                 <TableHead className="text-left">העמלה שלי</TableHead>
@@ -311,6 +319,13 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                       {SOURCE_LABELS[reservation.source]}
                     </Badge>
                   </TableCell>
+                  {showAgentColumn && (
+                    <TableCell className="max-w-[7rem]">
+                      <span className="block truncate">
+                        {reservation.agent_name ?? "לא משויך"}
+                      </span>
+                    </TableCell>
+                  )}
                   <TableCell>
                     {reservation.materials_sent ? (
                       <span className="text-sm">נשלח</span>
@@ -342,7 +357,7 @@ export function ReservationsTable({ rows }: { rows: PortalReservation[] }) {
                 </TableRow>
                 {expandedId === reservation.id && (
                   <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableCell colSpan={14} className="px-6">
+                    <TableCell colSpan={showAgentColumn ? 15 : 14} className="px-6">
                       <ChoicesPanel reservation={reservation} />
                     </TableCell>
                   </TableRow>

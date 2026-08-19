@@ -6,8 +6,7 @@ import {
   SESSION_COOKIE,
   verifySessionValue,
 } from "@/lib/auth/session";
-
-const PARTNER_ROLES = ["agent", "affiliate"];
+import { PARTNER_ROLES } from "@/types/auth.types";
 
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;

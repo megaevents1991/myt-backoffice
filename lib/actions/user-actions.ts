@@ -5,12 +5,14 @@ import { supabase } from "@/lib/supabase-server";
 import type { Role, UserProfile } from "@/types/auth.types";
 import { ADMIN_ROLES, PARTNER_ROLES } from "@/types/auth.types";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
+import { createManagedUser, resetPasswordById } from "@/lib/auth/user-create";
+import { generateAgentSlug } from "@/lib/portal-attribution";
 
 type Result = { ok: true } | { ok: false; error: string };
 type CreateResult = { ok: true; id: string } | { ok: false; error: string };
 
 const PROFILE_COLUMNS =
-  "id,email,display_name,role,partner_tracking_code,logo_url,phone,contract_url,is_active,created_at,created_by";
+  "id,email,display_name,role,partner_tracking_code,agent_slug,logo_url,phone,contract_url,is_active,created_at,created_by";
 
 const CONTRACTS_BUCKET = "user-contracts";
 const CONTRACT_MAX_BYTES = 10 * 1024 * 1024; // 10MB
@@ -24,83 +26,13 @@ const CONTRACT_TYPES: Record<string, string> = {
 };
 
 /**
- * Hierarchy: superadmin manages everyone; admin manages only non-admin roles.
- * An admin can never create, modify, disable or reset an admin/superadmin account.
+ * Hierarchy: superadmin manages everyone; admin manages only editor/agent/
+ * affiliate. Admins can never touch admin, superadmin or office_manager
+ * accounts - appointing/managing office managers is a superadmin call (Dor).
  */
 function canManage(actorRole: Role, targetRole: Role): boolean {
   if (actorRole === "superadmin") return true;
-  return !ADMIN_ROLES.includes(targetRole);
-}
-
-/**
- * Make sure the `partners` row an agent/affiliate login points at exists.
- * Existing codes are left untouched - commercial terms are edited on the
- * partner screen, and silently rewriting a live commission from the user form
- * is not something an admin picking a name from a dropdown is asking for.
- */
-async function ensurePartnerForUser(args: {
-  trackingCode: string;
-  role: Role;
-  email: string;
-  name: string;
-}): Promise<{ ok: true; created: boolean } | { ok: false; error: string }> {
-  const trackingCode = args.trackingCode.trim();
-  const { data: existing, error: lookupError } = await supabase
-    .from("partners")
-    .select("partner_tracking_code")
-    .eq("partner_tracking_code", trackingCode)
-    .maybeSingle();
-  if (lookupError) {
-    console.error("ensurePartnerForUser lookup:", JSON.stringify(lookupError));
-    return { ok: false, error: "Could not check the partner for this user" };
-  }
-  if (existing) return { ok: true, created: false };
-
-  const { error: insertError } = await supabase.from("partners").insert({
-    partner_tracking_code: trackingCode,
-    name_hebrew: args.name || null,
-    email: args.email,
-    // Legacy plaintext column the main app reads for affiliate auth. The login
-    // is Supabase Auth, so this gets an unusable sentinel - never "".
-    password: `disabled-${crypto.randomUUID()}`,
-    // Zeroed on purpose: an unconfigured partner must never quietly start
-    // earning. Terms are set on the partner screen.
-    commission: 0,
-    commission_type: "fixed_per_ticket",
-    user_discount: 0,
-    type: args.role,
-    is_active: true,
-    created_at: new Date().toISOString().slice(0, 10),
-  });
-  if (insertError) {
-    console.error("ensurePartnerForUser insert:", JSON.stringify(insertError));
-    return { ok: false, error: "Could not create the partner for this user" };
-  }
-
-  await logAudit({
-    action: "create",
-    entityType: "partner",
-    entityId: trackingCode,
-    metadata: { created_with_user: true, commission: 0 },
-  });
-  return { ok: true, created: true };
-}
-
-/** Undo a partner created moments ago for a user that then failed to be created. */
-async function rollbackCreatedPartner(
-  trackingCode: string | null,
-): Promise<void> {
-  if (!trackingCode) return;
-  const { error } = await supabase
-    .from("partners")
-    .delete()
-    .eq("partner_tracking_code", trackingCode);
-  if (error) {
-    console.error(
-      `createUser rollback failed (orphan partner "${trackingCode}"):`,
-      JSON.stringify(error),
-    );
-  }
+  return !ADMIN_ROLES.includes(targetRole) && targetRole !== "office_manager";
 }
 
 async function getTargetRole(id: string): Promise<Role | null> {
@@ -114,6 +46,21 @@ async function getTargetRole(id: string): Promise<Role | null> {
     return null;
   }
   return (data?.role as Role) ?? null;
+}
+
+/** The target's current slug, for the role-change backfill in updateUser. */
+async function getTargetAgentSlug(id: string): Promise<string | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("user_profiles")
+    .select("agent_slug")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) {
+    console.error("getTargetAgentSlug:", JSON.stringify(error));
+    return null;
+  }
+  return (data?.agent_slug as string | null) ?? null;
 }
 
 export async function listUsers(): Promise<UserProfile[]> {
@@ -138,90 +85,38 @@ export async function createUser(input: {
   phone?: string | null;
 }): Promise<CreateResult> {
   const actor = await requireAdmin();
-  if (ADMIN_ROLES.includes(input.role) && actor.role !== "superadmin") {
-    return { ok: false, error: "Only a superadmin can create admin users" };
-  }
-
-  const email = input.email?.trim().toLowerCase();
-  if (!email || !input.password || input.password.length < 8) {
+  if (
+    (ADMIN_ROLES.includes(input.role) || input.role === "office_manager") &&
+    actor.role !== "superadmin"
+  ) {
     return {
       ok: false,
-      error: "Email and a password of 8+ characters are required",
-    };
-  }
-  if (PARTNER_ROLES.includes(input.role) && !input.partner_tracking_code) {
-    return { ok: false, error: "Agent/affiliate users need a partner link" };
-  }
-
-  // An agent/affiliate login is meaningless without the partner row it points
-  // at - the portal reads every figure from it, and the FK would reject the
-  // profile anyway. Create it here so picking a brand-new code just works.
-  let createdPartnerCode: string | null = null;
-  if (PARTNER_ROLES.includes(input.role) && input.partner_tracking_code) {
-    const ensured = await ensurePartnerForUser({
-      trackingCode: input.partner_tracking_code,
-      role: input.role,
-      email,
-      name: input.display_name,
-    });
-    if (!ensured.ok) return { ok: false, error: ensured.error };
-    if (ensured.created)
-      createdPartnerCode = input.partner_tracking_code.trim();
-  }
-
-  const { data: created, error: authError } =
-    await supabase.auth.admin.createUser({
-      email,
-      password: input.password,
-      email_confirm: true,
-    });
-  if (authError || !created.user) {
-    console.error("createUser auth:", JSON.stringify(authError));
-    await rollbackCreatedPartner(createdPartnerCode);
-    return {
-      ok: false,
-      error: authError?.message ?? "Auth user creation failed",
+      error: "Only a superadmin can create admin or office-manager users",
     };
   }
 
-  const { error: profileError } = await (supabase as any)
-    .from("user_profiles")
-    .insert({
-      id: created.user.id,
-      email,
-      display_name: input.display_name || null,
-      role: input.role,
-      partner_tracking_code: input.partner_tracking_code || null,
-      phone: input.phone || null,
-      is_active: true,
-      created_by: actor.sub,
-    });
-  if (profileError) {
-    console.error("createUser profile:", JSON.stringify(profileError));
-    // Roll back the orphan auth user so the email isn't locked.
-    await supabase.auth.admin
-      .deleteUser(created.user.id)
-      .catch((e) =>
-        console.error(
-          "createUser rollback failed (orphan auth user):",
-          JSON.stringify(e),
-        ),
-      );
-    await rollbackCreatedPartner(createdPartnerCode);
-    return { ok: false, error: "Profile creation failed" };
-  }
+  const created = await createManagedUser({
+    email: input.email,
+    password: input.password,
+    display_name: input.display_name,
+    role: input.role,
+    partner_tracking_code: input.partner_tracking_code ?? null,
+    phone: input.phone ?? null,
+    created_by: actor.sub,
+  });
+  if (!created.ok) return created;
   await logAudit({
     action: "user_created",
     entityType: "user",
-    entityId: created.user.id,
+    entityId: created.id,
     changes: {
-      email,
+      email: input.email?.trim().toLowerCase(),
       role: input.role,
       partner_tracking_code: input.partner_tracking_code || null,
       display_name: input.display_name || null,
     },
   });
-  return { ok: true, id: created.user.id };
+  return { ok: true, id: created.id };
 }
 
 export async function updateUser(
@@ -251,10 +146,13 @@ export async function updateUser(
   }
   if (
     input.role &&
-    ADMIN_ROLES.includes(input.role) &&
+    (ADMIN_ROLES.includes(input.role) || input.role === "office_manager") &&
     actor.role !== "superadmin"
   ) {
-    return { ok: false, error: "Only a superadmin can grant admin roles" };
+    return {
+      ok: false,
+      error: "Only a superadmin can grant admin or office-manager roles",
+    };
   }
 
   // Map columns explicitly - never spread client input.
@@ -267,12 +165,33 @@ export async function updateUser(
   if (input.phone !== undefined) update.phone = input.phone;
   if (input.is_active !== undefined) update.is_active = input.is_active;
 
+  // A role change INTO a partner role must leave the user with a slug, or
+  // their links carry no utm_content and every sale lands unattributed.
+  // Never touch an existing non-null slug - old links must keep attributing.
+  if (input.role !== undefined && PARTNER_ROLES.includes(input.role)) {
+    const currentSlug = await getTargetAgentSlug(id);
+    if (!currentSlug) {
+      update.agent_slug = generateAgentSlug();
+    }
+  }
+
   const before = await fetchBefore("user_profiles", "id", id, update);
 
-  const { error } = await (supabase as any)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let { error } = await (supabase as any)
     .from("user_profiles")
     .update(update)
     .eq("id", id);
+  if (error?.code === "23505" && update.agent_slug !== undefined) {
+    // agent_slug unique-index collision (astronomically rare) - one retry,
+    // mirroring createManagedUser's retry.
+    update.agent_slug = generateAgentSlug();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ error } = await (supabase as any)
+      .from("user_profiles")
+      .update(update)
+      .eq("id", id));
+  }
   if (error) {
     console.error("updateUser:", JSON.stringify(error));
     return { ok: false, error: "Update failed" };
@@ -291,9 +210,6 @@ export async function resetUserPassword(
   newPassword: string,
 ): Promise<Result> {
   const actor = await requireAdmin();
-  if (!newPassword || newPassword.length < 8) {
-    return { ok: false, error: "Password must be 8+ characters" };
-  }
   const targetRole = await getTargetRole(id);
   if (!targetRole) {
     return { ok: false, error: "User not found" };
@@ -304,13 +220,8 @@ export async function resetUserPassword(
       error: "Only a superadmin can reset an admin's password",
     };
   }
-  const { error } = await supabase.auth.admin.updateUserById(id, {
-    password: newPassword,
-  });
-  if (error) {
-    console.error("resetUserPassword:", JSON.stringify(error));
-    return { ok: false, error: error.message };
-  }
+  const result = await resetPasswordById(id, newPassword);
+  if (!result.ok) return result;
   await logAudit({
     action: "password_reset",
     entityType: "user",

@@ -16,7 +16,8 @@ import {
   verifySessionValue,
   type SessionPayload,
 } from "./session";
-import { STAFF_ROLES, type Role } from "@/types/auth.types";
+import { PARTNER_ROLES, STAFF_ROLES, type Role } from "@/types/auth.types";
+import { supabase } from "@/lib/supabase-server";
 
 /**
  * Verified session payload from the request cookie, or null.
@@ -33,7 +34,7 @@ export async function getSession(): Promise<SessionPayload | null> {
   const portal = await verifySessionValue(
     store.get(PORTAL_SESSION_COOKIE)?.value,
   );
-  if (portal && (portal.role === "agent" || portal.role === "affiliate")) {
+  if (portal && PARTNER_ROLES.includes(portal.role)) {
     return portal;
   }
   const cookie = store.get(SESSION_COOKIE);
@@ -64,12 +65,46 @@ export async function requireSuperadmin(): Promise<SessionPayload> {
   return requireRole("superadmin");
 }
 
-/** agent or affiliate with a linked partner code - portal actions. */
+/** office_manager, agent or affiliate with a linked partner code - portal actions. */
 export async function requirePartner(): Promise<
   SessionPayload & { partner_code: string }
 > {
-  const session = await requireRole("agent", "affiliate");
+  const session = await requireRole("office_manager", "agent", "affiliate");
   if (!session.partner_code) throw new Error("Unauthorized");
+  return session as SessionPayload & { partner_code: string };
+}
+
+/**
+ * Fail-closed actor check shared by requireOfficeManager and
+ * requireCreditAccess: a disabled user's still-valid signed cookie must not
+ * keep working. Query error and "row missing" are treated the same as
+ * is_active === false - only a confirmed active row passes. NOT added to
+ * requirePartner - that guard runs on every portal render, and this adds a
+ * query on top of it.
+ */
+async function assertActorActive(sub: string): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("user_profiles")
+    .select("is_active")
+    .eq("id", sub)
+    .maybeSingle();
+  if (error) {
+    console.error("assertActorActive:", JSON.stringify(error));
+    throw new Error("Unauthorized");
+  }
+  if (!data || data.is_active === false) {
+    throw new Error("Unauthorized");
+  }
+}
+
+/** office_manager only - team management, office-wide views, credit/coupons. */
+export async function requireOfficeManager(): Promise<
+  SessionPayload & { partner_code: string }
+> {
+  const session = await requireRole("office_manager");
+  if (!session.partner_code) throw new Error("Unauthorized");
+  await assertActorActive(session.sub);
   return session as SessionPayload & { partner_code: string };
 }
 
@@ -119,4 +154,32 @@ export async function guardCronRoute(
   }
 
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+/**
+ * Credit + coupons are OFFICE money: office_manager and affiliate always;
+ * an agent only when they are the office's sole active portal user (legacy
+ * solo partners keep today's behavior - spec §5).
+ */
+export async function requireCreditAccess(): Promise<
+  SessionPayload & { partner_code: string }
+> {
+  const session = await requirePartner();
+  await assertActorActive(session.sub);
+  if (session.role === "office_manager" || session.role === "affiliate") {
+    return session;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { count, error } = await (supabase as any)
+    .from("user_profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("partner_tracking_code", session.partner_code)
+    .in("role", PARTNER_ROLES)
+    .eq("is_active", true);
+  if (error) {
+    console.error("requireCreditAccess:", JSON.stringify(error));
+    throw new Error("Unauthorized");
+  }
+  if ((count ?? 0) > 1) throw new Error("Unauthorized");
+  return session;
 }

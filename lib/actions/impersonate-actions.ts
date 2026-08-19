@@ -45,15 +45,22 @@ export async function impersonatePartner(
   }
   if (!partner) return { ok: false, error: "Partner not found" };
 
-  const role = partner.type === "agent" ? "agent" : "affiliate";
+  // Agent-type offices are entered as office_manager: portal isolation keys
+  // "own" views on created_by/slug, which an admin's sub never matches - the
+  // manager view (whole office) is the only one that renders correctly.
+  const role =
+    partner.type === "agent" ? ("office_manager" as const) : ("affiliate" as const);
 
-  // Prefer the partner's real portal login identity when they have one.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: profile } = await (supabase as any)
     .from("user_profiles")
     .select("id, email")
     .eq("partner_tracking_code", code)
-    .in("role", ["agent", "affiliate"])
+    .in("role", ["office_manager", "agent", "affiliate"])
+    // 'office_manager' > 'agent' > 'affiliate' alphabetically - descending
+    // puts a real manager first, so the minted sub gets the fullest view.
+    .order("role", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   // TTL passed explicitly: the SIGNED exp must match the cookie's 2h maxAge -
@@ -147,7 +154,11 @@ export async function switchToMyPartnerPortal(): Promise<ImpersonateResult> {
     return { ok: false, error: "השותף המקושר אינו פעיל" };
   }
 
-  const role = partner.type === "agent" ? "agent" : "affiliate";
+  // Agent-type offices are entered as office_manager: portal isolation keys
+  // "own" views on created_by/slug, which an admin's sub never matches - the
+  // manager view (whole office) is the only one that renders correctly.
+  const role =
+    partner.type === "agent" ? ("office_manager" as const) : ("affiliate" as const);
 
   // Prefer the partner's real portal login identity when one exists - flows
   // keyed on `sub` (main-site handoff, profile actions) then behave exactly as
@@ -158,7 +169,11 @@ export async function switchToMyPartnerPortal(): Promise<ImpersonateResult> {
     .from("user_profiles")
     .select("id, email")
     .eq("partner_tracking_code", code)
-    .in("role", ["agent", "affiliate"])
+    .in("role", ["office_manager", "agent", "affiliate"])
+    // 'office_manager' > 'agent' > 'affiliate' alphabetically - descending
+    // puts a real manager first, so the minted sub gets the fullest view.
+    .order("role", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   const value = await createSessionValue(

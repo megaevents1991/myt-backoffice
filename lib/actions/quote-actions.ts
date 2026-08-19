@@ -3,6 +3,7 @@
 import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
+import { resolvePortalScope } from "@/lib/portal-attribution";
 import {
   computePackagePrice,
   computePerPersonPackagePrice,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/partner-commission";
 import { signQuoteLink } from "@/lib/quote-link-sig";
 import { PUBLIC_SITE_URL } from "@/lib/site";
+import { SELLER_ROLES } from "@/types/auth.types";
 import type { CommissionType } from "@/types/partner.types";
 
 export interface QuoteEventOption {
@@ -236,7 +238,7 @@ export async function getMyAgentTerms(): Promise<{
   rate: number;
 } | null> {
   const session = await requirePartner();
-  if (session.role !== "agent") return null;
+  if (!SELLER_ROLES.includes(session.role)) return null;
   const terms = await commissionTermsFor(session.partner_code);
   return terms
     ? { type: terms.type ?? "fixed_per_ticket", rate: terms.rate ?? 0 }
@@ -246,15 +248,23 @@ export async function getMyAgentTerms(): Promise<{
 export async function getPortalQuotes(): Promise<PortalQuote[]> {
   const session = await requirePartner();
   // Server gate, not just a hidden tab - the page guard and the nav are UI.
-  if (session.role !== "agent") return [];
+  if (!SELLER_ROLES.includes(session.role)) return [];
+  const scope = await resolvePortalScope(session);
+
+  // An agent in a multi-user office only ever sees quotes they created;
+  // managers and solo agents see the whole office.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  let query = (supabase as any)
     .from("quotes")
     .select(
       "id,created_at,customer_name,title,total,valid_until,status,pdf_storage_path,event_id",
     )
     .eq("partner_tracking_code", session.partner_code)
     .order("created_at", { ascending: false });
+  if (session.role === "agent" && !scope.soloOffice) {
+    query = query.eq("created_by", session.sub);
+  }
+  const { data, error } = await query;
   if (error) {
     console.error("getPortalQuotes:", JSON.stringify(error));
     return [];
@@ -281,7 +291,7 @@ export async function getPortalQuotesOverview(): Promise<PortalQuotesOverview> {
     },
   };
   const session = await requirePartner();
-  if (session.role !== "agent") return empty;
+  if (!SELLER_ROLES.includes(session.role)) return empty;
 
   const [quotes, linkedResult] = await Promise.all([
     getPortalQuotes(),
@@ -348,23 +358,28 @@ export async function updateQuoteStatus(
   status: PartnerQuoteStatus,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = await requirePartner();
-  if (session.role !== "agent") {
+  if (!SELLER_ROLES.includes(session.role)) {
     return { ok: false, error: "הצעות מחיר זמינות לסוכנים בלבד" };
   }
+  const scope = await resolvePortalScope(session);
   if (!Number.isInteger(quoteId) || quoteId <= 0) {
     return { ok: false, error: "הצעה לא תקינה" };
   }
   if (!["final", "closed", "not_relevant"].includes(status)) {
     return { ok: false, error: "סטטוס לא מוכר" };
   }
+  // An agent in a multi-user office may only update their OWN quotes;
+  // managers may update any office quote.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  let updateQuery = (supabase as any)
     .from("quotes")
     .update({ status })
     .eq("id", quoteId)
-    .eq("partner_tracking_code", session.partner_code)
-    .select("id")
-    .maybeSingle();
+    .eq("partner_tracking_code", session.partner_code);
+  if (session.role === "agent" && !scope.soloOffice) {
+    updateQuery = updateQuery.eq("created_by", session.sub);
+  }
+  const { data, error } = await updateQuery.select("id").maybeSingle();
   if (error) {
     console.error("updateQuoteStatus:", JSON.stringify(error));
     return { ok: false, error: "העדכון נכשל. נסו שוב." };
@@ -401,7 +416,7 @@ export async function createQuote(input: {
   // Reading `partners.type` here instead would have rejected an agent whose
   // partner row predates the type column and defaulted to 'affiliate' - after
   // letting them fill in the whole quote.
-  if (session.role !== "agent") {
+  if (!SELLER_ROLES.includes(session.role)) {
     return { ok: false, error: "הצעות מחיר זמינות לסוכנים בלבד" };
   }
   const terms = await commissionTermsFor(session.partner_code);

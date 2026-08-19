@@ -6,6 +6,8 @@ import {
   getPackageBuilderEvents,
 } from "@/lib/actions/portal-package-actions";
 import { getPortalProfile } from "@/lib/actions/portal-actions";
+import { getAgentSlugForUser, agentUtmContent } from "@/lib/portal-attribution";
+import { SELLER_ROLES } from "@/types/auth.types";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -24,6 +26,8 @@ export const dynamic = "force-dynamic";
 export default async function PortalPackagesPage() {
   const session = await getSession();
   if (!session?.partner_code) return null;
+
+  const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
 
   const [packages, events, profile] = await Promise.all([
     getMyPreparedPackages(),
@@ -67,11 +71,19 @@ export default async function PortalPackagesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <EventLinks trackingCode={session.partner_code} events={events} />
+          <EventLinks
+            trackingCode={session.partner_code}
+            events={events}
+            agentUtm={agentUtm}
+          />
         </CardContent>
       </Card>
 
-      <PackagesList packages={packages} isAgent={session.role === "agent"} />
+      <PackagesList
+        packages={packages}
+        isAgent={SELLER_ROLES.includes(session.role)}
+        isManager={session.role === "office_manager"}
+      />
 
       <Card>
         <CardHeader>
@@ -91,6 +103,7 @@ export default async function PortalPackagesPage() {
               location: e.location_name || null,
               suggested_price: e.site_price,
             }))}
+            agentUtm={agentUtm}
           />
         </CardContent>
       </Card>

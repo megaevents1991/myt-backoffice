@@ -1,16 +1,26 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth/guards";
+import { resolvePortalScope } from "@/lib/portal-attribution";
 import { getPortalDashboard } from "@/lib/actions/portal-dashboard-actions";
 import {
   getMyCredit,
   getMyVoucherSettlement,
+  type PartnerCredit,
   type VoucherSettlement,
 } from "@/lib/actions/partner-credit-actions";
 import { getPortalUserActivity } from "@/lib/actions/portal-activity-actions";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
-import { PARTNER_ROLES } from "@/types/auth.types";
+import { PARTNER_ROLES, SELLER_ROLES } from "@/types/auth.types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { PortalEntryFunnels } from "./entry-funnels";
 import { UserActivityLog } from "./user-activity";
@@ -50,10 +60,21 @@ const RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
   { key: "all", label: "הכול" },
 ];
 
+/** Builds a /portal link carrying whichever of range/view isn't the default -
+ *  both the range pills and the manager's office/mine toggle link through
+ *  here so switching one filter never resets the other. */
+function portalHref(range: InsightsRange, view: "office" | "mine"): string {
+  const params = new URLSearchParams();
+  if (range !== "all") params.set("range", range);
+  if (view === "mine") params.set("view", view);
+  const qs = params.toString();
+  return qs ? `/portal?${qs}` : "/portal";
+}
+
 export default async function PortalDashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  searchParams: Promise<{ range?: string; view?: string }>;
 }) {
   const session = await getSession();
   const isPartner = !!session && PARTNER_ROLES.includes(session.role);
@@ -62,19 +83,46 @@ export default async function PortalDashboardPage({
   // actions for them (they throw for non-agent/affiliate roles).
   if (!isPartner) return null;
 
-  const { range: rawRange } = await searchParams;
+  const { range: rawRange, view: rawView } = await searchParams;
   const range: InsightsRange = RANGE_OPTIONS.some((o) => o.key === rawRange)
     ? (rawRange as InsightsRange)
     : "all";
 
-  const isAgent = session.role === "agent";
+  const isManager = session.role === "office_manager";
+  // The office/mine toggle only exists for managers - force "office" for
+  // everyone else so an agent/affiliate can never get "mine" scoping from a
+  // hand-typed ?view=mine (getPortalDashboard also ignores "mine" unless
+  // scope.isManager, but keep the two in agreement rather than rely on that
+  // alone).
+  const view: "office" | "mine" =
+    isManager && rawView === "mine" ? "mine" : "office";
+
+  const isAgent = SELLER_ROLES.includes(session.role);
+  // Credit + voucher settlement are OFFICE money (spec §5): office_manager and
+  // affiliate always see it, an agent only when solo in their office -
+  // requireCreditAccess() (called inside getMyCredit/getMyVoucherSettlement)
+  // THROWS for a non-solo agent, so skip the calls entirely instead of
+  // letting that reach the page as an unhandled 500.
+  const scope = session.partner_code
+    ? await resolvePortalScope({
+        sub: session.sub,
+        role: session.role,
+        partner_code: session.partner_code,
+      })
+    : null;
+  const creditAllowed =
+    session.role === "office_manager" ||
+    session.role === "affiliate" ||
+    (scope?.soloOffice ?? false);
   const [dashboard, credit, userActivity, settlement] = await Promise.all([
-    getPortalDashboard(range),
-    getMyCredit(),
+    getPortalDashboard(range, view),
+    creditAllowed ? getMyCredit() : Promise.resolve<PartnerCredit | null>(null),
     getPortalUserActivity(range),
     // Agents see their open voucher settlement where the funnel card sits for
     // influencers (הורד לבקשת אלון ודור - יש כבר שלושה משפכים למטה).
-    isAgent ? getMyVoucherSettlement() : Promise.resolve<VoucherSettlement | null>(null),
+    isAgent && creditAllowed
+      ? getMyVoucherSettlement()
+      : Promise.resolve<VoucherSettlement | null>(null),
   ]);
 
   const money = [
@@ -100,15 +148,21 @@ export default async function PortalDashboardPage({
       hint: dashboard.commission.label,
       icon: DollarSign,
     },
-    {
-      label: "צבירה לחופשה",
-      value: usdExact.format(credit.balanceUsd),
-      hint:
-        credit.creditPerTicket > 0
-          ? `${usdExact.format(credit.creditPerTicket)} על כל כרטיס`
-          : "אין הסכם צבירה",
-      icon: Ticket,
-    },
+    // Office money (spec §5) - hidden entirely for an isolated agent in a
+    // multi-user office, never shown zeroed/blocked.
+    ...(credit
+      ? [
+          {
+            label: "צבירה לחופשה",
+            value: usdExact.format(credit.balanceUsd),
+            hint:
+              credit.creditPerTicket > 0
+                ? `${usdExact.format(credit.creditPerTicket)} על כל כרטיס`
+                : "אין הסכם צבירה",
+            icon: Ticket,
+          },
+        ]
+      : []),
   ];
 
   // The activity row follows the range filter. An influencer sees their
@@ -134,11 +188,38 @@ export default async function PortalDashboardPage({
 
   return (
     <div className="space-y-6">
+      {isManager && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Link
+            href={portalHref(range, "office")}
+            className={cn(
+              "rounded-full border px-3 py-1 text-sm transition-colors",
+              view === "office"
+                ? "border-transparent bg-brand-mint text-brand-forest"
+                : "text-muted-foreground hover:bg-muted"
+            )}
+          >
+            כל המשרד
+          </Link>
+          <Link
+            href={portalHref(range, "mine")}
+            className={cn(
+              "rounded-full border px-3 py-1 text-sm transition-colors",
+              view === "mine"
+                ? "border-transparent bg-brand-mint text-brand-forest"
+                : "text-muted-foreground hover:bg-muted"
+            )}
+          >
+            המכירות שלי
+          </Link>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-1.5">
         {RANGE_OPTIONS.map((option) => (
           <Link
             key={option.key}
-            href={option.key === "all" ? "/portal" : `/portal?range=${option.key}`}
+            href={portalHref(option.key, view)}
             className={cn(
               "rounded-full border px-3 py-1 text-sm transition-colors",
               option.key === range
@@ -193,6 +274,50 @@ export default async function PortalDashboardPage({
           );
         })}
       </div>
+
+      {isManager &&
+        view === "office" &&
+        dashboard.agentBreakdown &&
+        dashboard.agentBreakdown.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>מכירות לפי סוכן</CardTitle>
+              <CardDescription>
+                לפי כל ההיסטוריה - לא מסונן לפי הטווח שנבחר למעלה.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto rounded-md border bg-background">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>שם</TableHead>
+                      <TableHead className="text-center">הזמנות</TableHead>
+                      <TableHead className="text-center">שולמו</TableHead>
+                      <TableHead className="text-left">מכירות ($)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {dashboard.agentBreakdown.map((row) => (
+                      <TableRow key={row.sub || row.name}>
+                        <TableCell className="font-medium">{row.name}</TableCell>
+                        <TableCell className="text-center tabular-nums">
+                          {row.totalReservations}
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums">
+                          {row.paidReservations}
+                        </TableCell>
+                        <TableCell className="text-left tabular-nums">
+                          {usd.format(row.totalSalesUsd)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
       {dashboard.newGroups.length > 0 && (
         <Card>

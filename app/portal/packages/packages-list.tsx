@@ -156,10 +156,14 @@ function PartBadge({
 export function PackagesList({
   packages,
   isAgent = false,
+  isManager = false,
 }: {
   packages: PreparedPackageListItem[];
   /** Agents also get "send offer" and "order for the customer" per package. */
   isAgent?: boolean;
+  /** Managers get a "נוצר ע"י" column - agents in a multi-user office only
+   *  ever see their own packages, so the column would be redundant for them. */
+  isManager?: boolean;
 }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -224,6 +228,14 @@ export function PackagesList({
                 <PartBadge mode={pkg.flight} offlineLabel="טיסה מוצמדת" summary={pkg.flight_summary} />
                 <span className="ms-2 text-muted-foreground">מלון:</span>
                 <PartBadge mode={pkg.hotel} offlineLabel="מלון מוצמד" summary={pkg.hotel_summary} />
+                {isManager && (
+                  <>
+                    <span className="ms-2 text-muted-foreground">{'נוצר ע"י:'}</span>
+                    <Badge variant="outline" className="font-normal">
+                      {pkg.creator_name ?? "-"}
+                    </Badge>
+                  </>
+                )}
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">

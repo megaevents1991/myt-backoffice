@@ -1,6 +1,7 @@
 import { Assistant, Rubik } from "next/font/google";
 import { getSession } from "@/lib/auth/guards";
 import { getPortalProfile } from "@/lib/actions/portal-actions";
+import { resolvePortalScope } from "@/lib/portal-attribution";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { PortalNav } from "./portal-nav";
 
@@ -26,7 +27,25 @@ export default async function PortalLayout({
   const session = await getSession();
   const isPartner = !!session && PARTNER_ROLES.includes(session.role);
   const profile = isPartner ? await getPortalProfile() : null;
-  const roleLabel = session?.role === "agent" ? "סוכן" : "משפיען";
+  const scope =
+    isPartner && session?.partner_code
+      ? await resolvePortalScope({
+          sub: session.sub,
+          role: session.role,
+          partner_code: session.partner_code,
+        })
+      : null;
+  const showCredit =
+    !!session &&
+    (session.role === "office_manager" ||
+      session.role === "affiliate" ||
+      (session.role === "agent" && (scope?.soloOffice ?? false)));
+  const roleLabel =
+    session?.role === "office_manager"
+      ? "מנהל משרד"
+      : session?.role === "agent"
+        ? "סוכן"
+        : "משפיען";
 
   return (
     <div
@@ -70,7 +89,7 @@ export default async function PortalLayout({
               </div>
             </div>
           </div>
-          <PortalNav role={session?.role ?? null} />
+          <PortalNav role={session?.role ?? null} showCredit={showCredit} />
         </div>
       </header>
 

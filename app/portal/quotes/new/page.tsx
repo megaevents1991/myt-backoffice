@@ -7,7 +7,7 @@ import {
   getQuotePackageUnitPrice,
 } from "@/lib/actions/quote-actions";
 import { getMyPreparedPackages } from "@/lib/actions/portal-package-actions";
-import { PARTNER_ROLES } from "@/types/auth.types";
+import { PARTNER_ROLES, SELLER_ROLES } from "@/types/auth.types";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -31,8 +31,8 @@ export default async function NewPortalQuotePage({
 }) {
   const session = await getSession();
   const isPartner = !!session && PARTNER_ROLES.includes(session.role);
-  // Quotes are an agent tool; an influencer only promotes a link.
-  if (!isPartner || session.role !== "agent") return null;
+  // Quotes are a seller tool (agent/office_manager); an influencer only promotes a link.
+  if (!isPartner || !SELLER_ROLES.includes(session.role)) return null;
 
   const { package: packageParam } = await searchParams;
 

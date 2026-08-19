@@ -1,6 +1,8 @@
+import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/guards";
 import { getPortalCoupons } from "@/lib/actions/portal-actions";
 import { getMyCouponTerms } from "@/lib/actions/portal-coupon-actions";
+import { resolvePortalScope } from "@/lib/portal-attribution";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { Badge } from "@/components/ui/badge";
 import { CreateCoupon } from "./create-coupon";
@@ -32,6 +34,17 @@ export default async function PortalCouponsPage() {
   // Staff visiting /portal see the layout's notice only - never call partner
   // actions for them (getPortalCoupons throws for non-agent/affiliate roles).
   if (!isPartner) return null;
+
+  const scope = await resolvePortalScope({
+    sub: session.sub,
+    role: session.role,
+    partner_code: session.partner_code!,
+  });
+  const creditAllowed =
+    session.role === "office_manager" ||
+    session.role === "affiliate" ||
+    scope.soloOffice;
+  if (!creditAllowed) redirect("/portal");
 
   const [coupons, terms] = await Promise.all([
     getPortalCoupons(),

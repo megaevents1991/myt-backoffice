@@ -5,7 +5,11 @@ import { requirePartner } from "@/lib/auth/guards";
 import { mintPartnerHandoffToken } from "@/lib/auth/partner-handoff";
 import { supabase } from "@/lib/supabase-server";
 import { partnerLink, PUBLIC_SITE_URL } from "@/lib/site";
-import { getAgentSlugForUser, agentUtmContent } from "@/lib/portal-attribution";
+import {
+  getAgentSlugForUser,
+  agentUtmContent,
+  resolvePortalScope,
+} from "@/lib/portal-attribution";
 import { SELLER_ROLES } from "@/types/auth.types";
 import {
   computePackagePrice,
@@ -1623,6 +1627,9 @@ export interface PreparedPackageListItem {
   hotel_summary: string | null;
   /** False = the customer cannot change the pinned composition. */
   allow_edit: boolean;
+  /** Manager-only "נוצר ע"י" column - display name of the office user who
+   *  built the package; null when unattributed (legacy row) or unresolved. */
+  creator_name: string | null;
 }
 
 type PreparedPackageRow = {
@@ -1630,6 +1637,7 @@ type PreparedPackageRow = {
   share_token: string;
   created_at: string;
   event_id: number;
+  created_by?: string | null;
   event_order_info: {
     name?: string;
     date?: string;
@@ -1662,24 +1670,34 @@ export async function getMyPreparedPackages(): Promise<
   PreparedPackageListItem[]
 > {
   const session = await requirePartner();
+  const scope = await resolvePortalScope(session);
+  // An agent in a multi-user office only ever sees packages they built
+  // themselves; managers and solo agents see the whole office (solo-office
+  // legacy packages may predate `created_by` - never hide them from the only
+  // user on the code).
+  const isolate = session.role === "agent" && !scope.soloOffice;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let { data, error } = await (supabase as any)
+  let query = (supabase as any)
     .from("prepared_packages")
-    .select(`${LIST_COLUMNS}, allow_edit`)
+    .select(`${LIST_COLUMNS}, allow_edit, created_by`)
     .eq("partner_tracking_code", session.partner_code)
     .order("created_at", { ascending: false })
     .limit(200);
+  if (isolate) query = query.eq("created_by", session.sub);
+  let { data, error } = await query;
 
   // Migration race: fall back to the pre-allow_edit column list.
   if (error && (error.code === "42703" || error.code === "PGRST204")) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ({ data, error } = await (supabase as any)
+    let fallbackQuery = (supabase as any)
       .from("prepared_packages")
-      .select(LIST_COLUMNS)
+      .select(`${LIST_COLUMNS}, created_by`)
       .eq("partner_tracking_code", session.partner_code)
       .order("created_at", { ascending: false })
-      .limit(200));
+      .limit(200);
+    if (isolate) fallbackQuery = fallbackQuery.eq("created_by", session.sub);
+    ({ data, error } = await fallbackQuery);
   }
 
   if (error) {
@@ -1690,6 +1708,9 @@ export async function getMyPreparedPackages(): Promise<
   // The VIEWER's slug on every row is intentional - credit follows whoever
   // distributes the link, not whoever originally built the package.
   const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
+  const nameBySub = new Map(
+    scope.officeUsers.map((u) => [u.id, u.display_name || u.email]),
+  );
 
   return ((data ?? []) as PreparedPackageRow[]).map((row) => {
     const info = row.event_order_info ?? {};
@@ -1735,6 +1756,9 @@ export async function getMyPreparedPackages(): Promise<
             }`
           : null,
       allow_edit: row.allow_edit !== false,
+      creator_name: row.created_by
+        ? (nameBySub.get(row.created_by) ?? null)
+        : null,
     };
   });
 }
@@ -1745,6 +1769,7 @@ export async function deletePreparedPackage(
   id: number,
 ): Promise<DeletePackageResult> {
   const session = await requirePartner();
+  const scope = await resolvePortalScope(session);
 
   const packageId = Number(id);
   if (!Number.isFinite(packageId))
@@ -1752,13 +1777,19 @@ export async function deletePreparedPackage(
 
   // Scoped to the caller's own tracking code - a partner can only ever kill
   // their own links. Deleting a link only invalidates it; main answers 404 and
-  // falls back to a normal order flow for anyone still holding it.
+  // falls back to a normal order flow for anyone still holding it. In a
+  // multi-user office an agent may only kill their OWN links; managers may
+  // kill any office link.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  let deleteQuery = (supabase as any)
     .from("prepared_packages")
     .delete()
     .eq("id", packageId)
     .eq("partner_tracking_code", session.partner_code);
+  if (session.role === "agent" && !scope.soloOffice) {
+    deleteQuery = deleteQuery.eq("created_by", session.sub);
+  }
+  const { error } = await deleteQuery;
 
   if (error) {
     console.error("deletePreparedPackage:", JSON.stringify(error));
@@ -1783,18 +1814,25 @@ export async function setPackageAllowEdit(
   allowEdit: boolean,
 ): Promise<SetPackageAllowEditResult> {
   const session = await requirePartner();
+  const scope = await resolvePortalScope(session);
 
   const packageId = Number(id);
   if (!Number.isFinite(packageId))
     return { ok: false, error: "חבילה לא תקינה" };
 
-  // Scoped to the caller's own tracking code - same posture as delete.
+  // Scoped to the caller's own tracking code - same posture as delete. An
+  // agent in a multi-user office may only lock/unlock their OWN packages;
+  // managers may manage any office package.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  let updateQuery = (supabase as any)
     .from("prepared_packages")
     .update({ allow_edit: allowEdit })
     .eq("id", packageId)
     .eq("partner_tracking_code", session.partner_code);
+  if (session.role === "agent" && !scope.soloOffice) {
+    updateQuery = updateQuery.eq("created_by", session.sub);
+  }
+  const { error } = await updateQuery;
 
   if (error) {
     console.error("setPackageAllowEdit:", JSON.stringify(error));
@@ -1826,17 +1864,23 @@ export async function getAgentOrderHandoffLink(
   // Ordering on a customer's behalf is an agent tool - mirrors main's requireAgent.
   if (!SELLER_ROLES.includes(session.role))
     return { ok: false, error: "זמין לסוכנים בלבד" };
+  const scope = await resolvePortalScope(session);
 
   const id = Number(packageId);
   if (!Number.isFinite(id)) return { ok: false, error: "חבילה לא תקינה" };
 
+  // An agent in a multi-user office may hand off only their OWN package;
+  // managers may hand off any office package.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  let lookupQuery = (supabase as any)
     .from("prepared_packages")
     .select("event_id, share_token")
     .eq("id", id)
-    .eq("partner_tracking_code", session.partner_code)
-    .maybeSingle();
+    .eq("partner_tracking_code", session.partner_code);
+  if (session.role === "agent" && !scope.soloOffice) {
+    lookupQuery = lookupQuery.eq("created_by", session.sub);
+  }
+  const { data, error } = await lookupQuery.maybeSingle();
   if (error || !data) {
     if (error)
       console.error("getAgentOrderHandoffLink:", JSON.stringify(error));
