@@ -13,6 +13,8 @@
 import { useMemo, useState } from "react";
 import {
   BedDouble,
+  CalendarCheck,
+  CalendarX2,
   DollarSign,
   Loader2,
   MapPin,
@@ -46,6 +48,33 @@ type HsSort = "price" | "stars" | "distance";
 
 const hasMeal = (meal: string | null | undefined) => !!meal && meal !== "nomeal";
 
+/**
+ * Agent-only cancellation banner (main's customer cards don't show it) - the
+ * one term an agent must know before pinning a hotel into a package.
+ */
+function CancellationBadge({ freeUntil }: { freeUntil: string | null }) {
+  if (!freeUntil) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+        <CalendarX2 className="h-3 w-3" /> ללא ביטול חינם
+      </span>
+    );
+  }
+  const d = new Date(freeUntil);
+  const label = Number.isNaN(d.getTime())
+    ? freeUntil
+    : d.toLocaleDateString("he-IL", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+      <CalendarCheck className="h-3 w-3" /> ביטול חינם עד {label}
+    </span>
+  );
+}
+
 function StarsRow({ rating }: { rating: number }) {
   if (!rating || rating <= 0) return null;
   return (
@@ -73,6 +102,9 @@ export function HotelStep() {
   const [breakfastOnly, setBreakfastOnly] = useState(false);
   const [minStars, setMinStars] = useState(0);
   const [nameQuery, setNameQuery] = useState("");
+  // The full offer is ~800 rate cards for a big city - render incrementally so
+  // the DOM stays light; sorting/filtering still runs over the whole list.
+  const [visibleCount, setVisibleCount] = useState(80);
 
   const { event } = w;
 
@@ -331,12 +363,22 @@ export function HotelStep() {
             </div>
           ) : (
             <div className="grid grid-cols-1 items-start gap-6 py-2 lg:gap-4 lg:py-0">
-              {list.map((h) =>
+              {list.slice(0, visibleCount).map((h) =>
                 h.kind === "offline" ? (
                   <OfflineHotelCard key={h.key} groupKey={h.key} group={h.group} />
                 ) : (
                   <LiveHotelCard key={h.key} option={h.option} perPerson={h.perPerson} />
                 ),
+              )}
+
+              {list.length > visibleCount && (
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount((v) => v + 80)}
+                  className="w-full rounded-lg border-2 border-dashed border-border bg-card px-4 py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-brand-forest hover:text-foreground dark:hover:border-brand-mint"
+                >
+                  הצג עוד מלונות ({list.length - visibleCount} אופציות נוספות)
+                </button>
               )}
 
               {list.length === 0 && (w.hotels.length > 0 || w.hsResults != null) && (
@@ -436,6 +478,11 @@ function OfflineHotelCard({ groupKey, group }: { groupKey: string; group: Builde
                         <Utensils className="h-3.5 w-3.5" /> כולל ארוחת בוקר
                       </span>
                     )}
+                    {room.last_cancellation_date && (
+                      <span className="ms-2 inline-flex align-middle">
+                        <CancellationBadge freeUntil={room.last_cancellation_date} />
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -528,6 +575,9 @@ function LiveHotelCard({ option, perPerson }: { option: LiveHotelOption; perPers
                     <Utensils size={16} /> כולל ארוחת בוקר
                   </span>
                 )}
+              </p>
+              <p className="mt-1.5">
+                <CancellationBadge freeUntil={option.free_cancellation_before} />
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {`סה"כ ${usd(option.price)} לכל השהות`}

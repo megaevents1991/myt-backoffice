@@ -475,6 +475,8 @@ export interface BuilderHotelRoom {
   remaining: number;
   meal_plan: string | null;
   stars: number;
+  /** Date the room cancels free until (offline inventory terms); null = none. */
+  last_cancellation_date: string | null;
 }
 
 export interface BuilderInventory {
@@ -648,6 +650,7 @@ export async function getPackageBuilderInventory(
       remaining: (h.num_rooms ?? 0) - (h.consumed_rooms ?? 0),
       meal_plan: h.meal_plan,
       stars: meta.find((m) => m.hid === h.hid)?.star_rating ?? 0,
+      last_cancellation_date: h.last_cancellation_date,
     }))
     .filter((h) => h.remaining > 0);
 
@@ -987,6 +990,8 @@ export interface LiveHotelOption {
   image: string | null;
   room_name: string;
   meal: string;
+  /** ISO datetime the rate cancels free until; null = non-refundable. */
+  free_cancellation_before: string | null;
   /** Total stay price, USD (rate show_amount). */
   price: number;
   /** The stay window this option was priced for (what the snapshot carries). */
@@ -1003,7 +1008,12 @@ export type LiveHotelSearchResult =
 type WorldotaRate = {
   room_name?: string;
   meal?: string;
-  payment_options?: { payment_types?: { show_amount?: string }[] };
+  payment_options?: {
+    payment_types?: {
+      show_amount?: string;
+      cancellation_penalties?: { free_cancellation_before?: string | null };
+    }[];
+  };
   [key: string]: unknown;
 };
 
@@ -1105,16 +1115,18 @@ export async function searchLiveHotels(input: {
     }
 
     // Main shows EVERY hotel the serp returned - a hard cap here is why agents
-    // couldn't find hotels the customer flow shows (the 2026-08 Tavistock gap).
-    // Still capped for payload size, but higher, and a name query filters the
-    // full list BEFORE the cap so a searched-for hotel always survives it.
+    // couldn't find hotels the customer flow shows (the 2026-08 Tavistock gap:
+    // central London returns ~224 hotels; a 20/60 cap hid most of them). The
+    // 250 cap is a payload safety net (one rate ≈ 2KB, ≤4 rates per hotel kept)
+    // that in practice lets the whole serp result through. A name query filters
+    // the full list BEFORE the cap so a searched-for hotel always survives it.
     const allHotels = search.data.hotels ?? [];
     const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
     const q = slug(input.query ?? "");
     const pool = q
       ? allHotels.filter((h) => slug(h.id).includes(q))
       : allHotels;
-    const hotels = pool.slice(0, q ? 30 : 60);
+    const hotels = pool.slice(0, q ? 50 : 250);
     if (hotels.length === 0) {
       return {
         ok: true,
@@ -1202,9 +1214,15 @@ export async function searchLiveHotels(input: {
           stars: entry.metadata.rating ?? 0,
           address: entry.metadata.address ?? "",
           distance_m: entry.metadata.distanceFromCenter ?? 0,
-          image: entry.general?.images?.[0] ?? null,
+          // Worldota image URLs carry a literal "{size}" placeholder - main's
+          // hotelCard substitutes it too; without this the <img> 404s.
+          image:
+            entry.general?.images?.[0]?.replace("{size}", "x500") ?? null,
           room_name: roomName,
           meal: rate.meal ?? "nomeal",
+          free_cancellation_before:
+            rate.payment_options?.payment_types?.[0]?.cancellation_penalties
+              ?.free_cancellation_before ?? null,
           price: amount,
           checkin,
           checkout,
@@ -1214,9 +1232,9 @@ export async function searchLiveHotels(input: {
     }
 
     options.sort((a, b) => a.price - b.price);
-    // Up to ~4 rates per hotel; 240 keeps every hotel the cap above let through
-    // (60 hotels) instead of silently dropping the pricier half of them.
-    return { ok: true, options: options.slice(0, 240), checkin, checkout };
+    // Up to ~4 rates per hotel; 1000 keeps every hotel the cap above let
+    // through instead of silently dropping the pricier half of them.
+    return { ok: true, options: options.slice(0, 1000), checkin, checkout };
   } catch (err) {
     console.error("searchLiveHotels:", err);
     return { ok: false, error: "חיפוש המלונות נכשל. נסו שוב." };
