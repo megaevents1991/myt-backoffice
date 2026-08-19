@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { GalleryField } from "@/components/templates/gallery-field";
 import { HeroImageField } from "@/components/templates/HeroImageField";
 import type {
+  CategoryFactCard,
   CategoryFaqItem,
   CategoryPageContent,
   CategoryStadium,
@@ -31,22 +32,33 @@ export function PageContentField({
   onChange: (next: CategoryPageContent) => void;
 }) {
   const hasContent =
+    !!value.intro ||
     !!value.seo_text ||
     !!value.seo_title ||
     !!value.gallery?.length ||
     !!value.stadiums?.length ||
-    !!value.faq?.length;
+    !!value.facts?.length ||
+    !!value.faq?.length ||
+    !!value.city_info ||
+    !!value.matchday?.length ||
+    !!value.honours?.length;
   const [open, setOpen] = useState(hasContent);
 
   const patch = (p: Partial<CategoryPageContent>) => onChange({ ...value, ...p });
 
   const stadiums = value.stadiums ?? [];
   const faq = value.faq ?? [];
+  const facts = value.facts ?? [];
+  const matchday = value.matchday ?? [];
 
   const setStadium = (i: number, p: Partial<CategoryStadium>) =>
     patch({ stadiums: stadiums.map((s, idx) => (idx === i ? { ...s, ...p } : s)) });
   const setFaq = (i: number, p: Partial<CategoryFaqItem>) =>
     patch({ faq: faq.map((f, idx) => (idx === i ? { ...f, ...p } : f)) });
+  const setFact = (i: number, p: Partial<CategoryFactCard>) =>
+    patch({ facts: facts.map((f, idx) => (idx === i ? { ...f, ...p } : f)) });
+  const setMatchday = (i: number, p: Partial<CategoryFactCard>) =>
+    patch({ matchday: matchday.map((f, idx) => (idx === i ? { ...f, ...p } : f)) });
 
   return (
     <div className="rounded-lg border md:col-span-2">
@@ -70,6 +82,17 @@ export function PageContentField({
 
       {open && (
         <div className="space-y-6 border-t px-4 py-4">
+          {/* ---- cover intro ---- */}
+          <section className="space-y-2">
+            <label className="text-sm font-medium">פתיח על הקאבר</label>
+            <Textarea
+              rows={3}
+              value={value.intro ?? ""}
+              onChange={(e) => patch({ intro: e.target.value })}
+              placeholder="הטקסט שעל הבאנר - עמודי ליגה / ז'אנר / יעד (בוורטיקלים מחליף את הפסקה הראשונה)"
+            />
+          </section>
+
           {/* ---- marketing text ---- */}
           <section className="space-y-2">
             <label className="text-sm font-medium">כותרת הטקסט השיווקי</label>
@@ -167,6 +190,131 @@ export function PageContentField({
                 />
               </div>
             ))}
+          </section>
+
+          {/* ---- fact cards ---- */}
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">
+                כרטיסי מידע (&quot;מידע מעניין&quot; / &quot;טוב לדעת&quot;)
+              </label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => patch({ facts: [...facts, { title: "", text: "" }] })}
+              >
+                <Plus className="ml-1 size-4" aria-hidden />
+                הוסף
+              </Button>
+            </div>
+            {facts.map((f, i) => (
+              <div key={i} className="space-y-2 rounded-md border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">כרטיס {i + 1}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => patch({ facts: facts.filter((_, idx) => idx !== i) })}
+                  >
+                    <Trash2 className="size-4 text-destructive" aria-hidden />
+                  </Button>
+                </div>
+                <Input
+                  value={f.title}
+                  onChange={(e) => setFact(i, { title: e.target.value })}
+                  placeholder="כותרת"
+                />
+                <Textarea
+                  rows={2}
+                  value={f.text}
+                  onChange={(e) => setFact(i, { text: e.target.value })}
+                  placeholder="הטקסט"
+                />
+              </div>
+            ))}
+          </section>
+
+          {/* ---- team-page extras (עמוד קבוצה) ---- */}
+          <section className="space-y-3 rounded-md border border-dashed p-3">
+            <p className="text-sm font-medium">עמוד קבוצה (רלוונטי רק לקטגוריות קבוצה)</p>
+            <label className="block text-xs text-muted-foreground">העיר - כותרת + טקסט</label>
+            <Input
+              value={value.city_info?.title ?? ""}
+              onChange={(e) =>
+                patch({ city_info: { title: e.target.value, text: value.city_info?.text ?? "" } })
+              }
+              placeholder="שם העיר"
+            />
+            <Textarea
+              rows={2}
+              value={value.city_info?.text ?? ""}
+              onChange={(e) =>
+                patch({
+                  city_info:
+                    e.target.value || value.city_info?.title
+                      ? { title: value.city_info?.title ?? "", text: e.target.value }
+                      : undefined,
+                })
+              }
+              placeholder="על העיר"
+            />
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground">טיפים ליום המשחק</label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => patch({ matchday: [...matchday, { title: "", text: "" }] })}
+              >
+                <Plus className="ml-1 size-4" aria-hidden />
+                הוסף
+              </Button>
+            </div>
+            {matchday.map((f, i) => (
+              <div key={i} className="space-y-2 rounded-md border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">טיפ {i + 1}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      patch({ matchday: matchday.filter((_, idx) => idx !== i) })
+                    }
+                  >
+                    <Trash2 className="size-4 text-destructive" aria-hidden />
+                  </Button>
+                </div>
+                <Input
+                  value={f.title}
+                  onChange={(e) => setMatchday(i, { title: e.target.value })}
+                  placeholder="כותרת (למשל: דרכי הגעה)"
+                />
+                <Textarea
+                  rows={2}
+                  value={f.text}
+                  onChange={(e) => setMatchday(i, { text: e.target.value })}
+                  placeholder="הטקסט"
+                />
+              </div>
+            ))}
+            <label className="block text-xs text-muted-foreground">
+              הישגים (מופרדים בפסיק)
+            </label>
+            <Input
+              value={(value.honours ?? []).join(", ")}
+              onChange={(e) =>
+                patch({
+                  honours: e.target.value
+                    .split(",")
+                    .map((h) => h.trim())
+                    .filter(Boolean),
+                })
+              }
+              placeholder="20 אליפויות אנגליה, 3 גביעי אלופות"
+            />
           </section>
 
           {/* ---- FAQ ---- */}

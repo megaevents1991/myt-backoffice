@@ -26,7 +26,15 @@ export interface CategoryFaqItem {
   answer: string;
 }
 
+/** Generic title+text card - league/genre facts, destination tips, matchday info. */
+export interface CategoryFactCard {
+  title: string;
+  text: string;
+}
+
 export interface CategoryPageContent {
+  /** Cover lede - league/genre/destination pages ("טקסט על הבאנר"). */
+  intro?: string;
   /** Heading above the marketing text. */
   seo_title?: string;
   /** Long-form marketing/SEO text. Blank line = new paragraph. */
@@ -34,16 +42,27 @@ export interface CategoryPageContent {
   /** Gallery image URLs. */
   gallery?: string[];
   stadiums?: CategoryStadium[];
+  /** "מידע מעניין" (leagues/genres) / "טוב לדעת" (destinations) cards. */
+  facts?: CategoryFactCard[];
   faq?: CategoryFaqItem[];
+  /** Team-category extras (עמוד קבוצה). */
+  city_info?: CategoryFactCard;
+  matchday?: CategoryFactCard[];
+  honours?: string[];
 }
 
 /** True when nothing was filled in - stored as NULL rather than an empty object. */
 export function isEmptyPageContent(c: CategoryPageContent): boolean {
   return (
+    !c.intro?.trim() &&
     !c.seo_title?.trim() &&
     !c.seo_text?.trim() &&
     !c.gallery?.length &&
     !c.stadiums?.length &&
-    !c.faq?.length
+    !c.facts?.length &&
+    !c.faq?.length &&
+    !c.city_info &&
+    !c.matchday?.length &&
+    !c.honours?.length
   );
 }
