@@ -30,12 +30,12 @@ const responsesTable = () => (supabase as any).from("form_responses");
 
 const FORM_COLUMNS =
   "id,slug,title_en,title_he,description_en,description_he,status,languages,default_lang," +
-  "allow_multiple,thank_you_en,thank_you_he,theme,accent_color,logo_url,cover_image_url," +
-  "created_by,created_at,updated_at,is_deleted";
+  "allow_multiple,thank_you_en,thank_you_he,review_link_url,theme,accent_color,logo_url," +
+  "cover_image_url,created_by,created_at,updated_at,is_deleted";
 
 const FIELD_COLUMNS =
   "id,form_id,type,position,label_en,label_he,help_en,help_he," +
-  "placeholder_en,placeholder_he,required,options,config";
+  "placeholder_en,placeholder_he,required,staff_only,options,config";
 
 /** House soft-delete convention: "MM-DD-YYYY". */
 function todayStamp(): string {
@@ -165,6 +165,7 @@ export type FormMetaInput = {
   description_he: string | null;
   thank_you_en: string | null;
   thank_you_he: string | null;
+  review_link_url: string | null;
   slug: string;
   languages: FormLanguages;
   default_lang: FormLang;
@@ -203,6 +204,12 @@ export async function updateFormMeta(
   const requestedSlug = await slugify(input.slug || titleEn || titleHe);
   const slug = await uniqueSlug(requestedSlug, id);
 
+  // Rendered as a plain <a href> on the thank-you screen - accept http(s) only.
+  const reviewLink = input.review_link_url?.trim() || null;
+  if (reviewLink && !/^https?:\/\//i.test(reviewLink)) {
+    throw new Error("Review link must start with http:// or https://");
+  }
+
   const patch = {
     title_en: titleEn,
     title_he: input.title_he?.trim() || null,
@@ -210,6 +217,7 @@ export async function updateFormMeta(
     description_he: input.description_he?.trim() || null,
     thank_you_en: input.thank_you_en?.trim() || null,
     thank_you_he: input.thank_you_he?.trim() || null,
+    review_link_url: reviewLink,
     slug,
     languages,
     default_lang: defaultLang,
@@ -275,6 +283,30 @@ export async function setFormStatus(
   return data[0] as Form;
 }
 
+/**
+ * Config keys mapped explicitly - a client object is never spread into the row.
+ * `show_if` must point at a persisted field (positive id); a reference to an
+ * unsaved draft would break the moment the draft gets its real id on insert.
+ */
+function normalizeConfig(config: FormFieldDraft["config"] | undefined) {
+  const raw = config ?? {};
+  const out: FormFieldDraft["config"] = {};
+  if (typeof raw.min === "number") out.min = raw.min;
+  if (typeof raw.max === "number") out.max = raw.max;
+  if (typeof raw.step === "number") out.step = raw.step;
+  if (typeof raw.rows === "number") out.rows = raw.rows;
+  if (
+    raw.show_if &&
+    typeof raw.show_if.field === "number" &&
+    raw.show_if.field > 0 &&
+    (typeof raw.show_if.equals === "boolean" ||
+      typeof raw.show_if.equals === "string")
+  ) {
+    out.show_if = { field: raw.show_if.field, equals: raw.show_if.equals };
+  }
+  return out;
+}
+
 function normalizeField(field: FormFieldDraft, position: number) {
   const type: FormFieldType = FORM_FIELD_TYPES.includes(field.type)
     ? field.type
@@ -290,12 +322,13 @@ function normalizeField(field: FormFieldDraft, position: number) {
     placeholder_en: field.placeholder_en?.trim() || null,
     placeholder_he: field.placeholder_he?.trim() || null,
     required: Boolean(field.required),
+    staff_only: Boolean(field.staff_only),
     options: (field.options ?? []).map((option) => ({
       value: String(option.value ?? "").trim(),
       label_en: String(option.label_en ?? "").trim(),
       label_he: option.label_he?.trim() || null,
     })),
-    config: field.config ?? {},
+    config: normalizeConfig(field.config),
   };
 }
 
@@ -395,6 +428,7 @@ export async function duplicateForm(id: number): Promise<Form> {
       description_he: loaded.form.description_he,
       thank_you_en: loaded.form.thank_you_en,
       thank_you_he: loaded.form.thank_you_he,
+      review_link_url: loaded.form.review_link_url,
       status: "draft",
       languages: loaded.form.languages,
       default_lang: loaded.form.default_lang,
@@ -419,13 +453,45 @@ export async function duplicateForm(id: number): Promise<Form> {
       ...normalizeField(field as FormFieldDraft, index),
       form_id: created.id,
     }));
-    const { error: fieldsError } = await fieldsTable().insert(rows);
+    const { data: inserted, error: fieldsError } = await fieldsTable()
+      .insert(rows)
+      .select("id");
     if (fieldsError) {
       console.error(
         "duplicateForm fields failed:",
         JSON.stringify(fieldsError),
       );
       throw fieldsError;
+    }
+
+    // show_if still points at the ORIGINAL form's field ids - remap onto the
+    // new rows (returned in insert order) so conditions survive duplication.
+    const idMap = new Map<number, number>(
+      loaded.fields.map((field, index) => [
+        field.id,
+        (inserted?.[index] as { id: number } | undefined)?.id ?? 0,
+      ]),
+    );
+    for (const [index, field] of loaded.fields.entries()) {
+      const cond = field.config?.show_if;
+      const newId = idMap.get(field.id);
+      if (!cond || !newId) continue;
+      const mappedSource = idMap.get(cond.field);
+      const { error: remapError } = await fieldsTable()
+        .update({
+          config: mappedSource
+            ? { ...rows[index].config, show_if: { field: mappedSource, equals: cond.equals } }
+            : // Source wasn't copied (shouldn't happen) - drop the condition
+              // rather than leave it pointing into another form.
+              Object.fromEntries(
+                Object.entries(rows[index].config).filter(([k]) => k !== "show_if"),
+              ),
+        })
+        .eq("id", newId);
+      if (remapError) {
+        console.error("duplicateForm show_if remap failed:", JSON.stringify(remapError));
+        throw remapError;
+      }
     }
   }
 

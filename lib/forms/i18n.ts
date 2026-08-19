@@ -87,6 +87,9 @@ export const FILL_STRINGS = {
     fixErrors: "Please fix the highlighted answers.",
     sendFailed: "Could not send your answers. Please try again.",
     switchLang: "עברית",
+    reviewCta: "Rate us on Google",
+    reviewHint: "Loved it? A short Google review helps us a lot:",
+    staffBadge: "Staff only",
   },
   he: {
     submit: "שליחה",
@@ -106,6 +109,9 @@ export const FILL_STRINGS = {
     fixErrors: "נא לתקן את התשובות המסומנות.",
     sendFailed: "לא הצלחנו לשלוח את התשובות. נסו שוב.",
     switchLang: "English",
+    reviewCta: "דרגו אותנו ב-Google",
+    reviewHint: "נהניתם? ביקורת קצרה בגוגל עוזרת לנו מאוד:",
+    staffBadge: "לצוות בלבד",
   },
 } as const;
 

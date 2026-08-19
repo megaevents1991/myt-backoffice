@@ -45,6 +45,9 @@ export default async function FormInvitesPage({
         formId={formId}
         formStatus={loaded.form.status}
         defaultLang={loaded.form.default_lang}
+        staffFields={loaded.fields.filter(
+          (field) => field.staff_only && field.type !== "section",
+        )}
         initialInvites={invites}
       />
     </div>

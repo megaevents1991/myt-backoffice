@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Link2, RotateCw, Send, Trash2 } from "lucide-react";
+import { Link2, RotateCw, Send, Trash2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -24,10 +25,18 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   createAndSendInvites,
+  createTripLink,
   deleteInvite,
   resendInvite,
 } from "@/lib/actions/form-invite-actions";
-import type { FormInvite, FormLang, FormStatus } from "@/types/form.types";
+import { fieldAdminLabel } from "@/lib/forms/i18n";
+import type {
+  AnswerMap,
+  FormField,
+  FormInvite,
+  FormLang,
+  FormStatus,
+} from "@/types/form.types";
 
 /** One recipient per line: "Name, email@example.com" or just the address. */
 function parseRecipients(raw: string, lang: FormLang) {
@@ -48,6 +57,8 @@ type Props = {
   formId: number;
   formStatus: FormStatus;
   defaultLang: FormLang;
+  /** Staff-only questions - the escort details captured once per trip link. */
+  staffFields: FormField[];
   initialInvites: FormInvite[];
 };
 
@@ -55,16 +66,42 @@ export function InvitesClient({
   formId,
   formStatus,
   defaultLang,
+  staffFields,
   initialInvites,
 }: Props) {
   const { toast } = useToast();
   const [invites, setInvites] = useState(initialInvites);
   const [raw, setRaw] = useState("");
   const [lang, setLang] = useState<FormLang>(defaultLang);
+  const [tripLabel, setTripLabel] = useState("");
+  const [staffAnswers, setStaffAnswers] = useState<AnswerMap>({});
   const [pending, startTransition] = useTransition();
 
   const isLive = formStatus === "live";
   const parsed = parseRecipients(raw, lang);
+
+  function handleTripLink() {
+    startTransition(async () => {
+      try {
+        const { url } = await createTripLink(formId, {
+          label: tripLabel || null,
+          lang,
+          staffAnswers,
+        });
+        await navigator.clipboard.writeText(url);
+        toast({ title: "Trip link copied - share it with the group", description: url });
+        setTripLabel("");
+        setStaffAnswers({});
+        window.location.reload();
+      } catch (error) {
+        toast({
+          title: "Could not create the trip link",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "destructive",
+        });
+      }
+    });
+  }
 
   function handleSend() {
     if (parsed.length === 0) {
@@ -135,6 +172,9 @@ export function InvitesClient({
   }
 
   function statusBadge(invite: FormInvite) {
+    // A trip link stays open however many people answer through it, so its
+    // submitted_at is "last answer", not "done".
+    if (invite.multi_use) return <Badge variant="secondary">Trip link</Badge>;
     if (invite.submitted_at) return <Badge>Filled</Badge>;
     if (invite.opened_at) return <Badge variant="secondary">Opened</Badge>;
     if (invite.send_error) return <Badge variant="destructive">Failed</Badge>;
@@ -149,6 +189,62 @@ export function InvitesClient({
           This form is <strong>{formStatus}</strong>. Set it to <strong>Live</strong> on
           the form page before sending invites.
         </p>
+      )}
+
+      {staffFields.length > 0 && (
+        <div className="space-y-4 rounded-lg border bg-card p-4">
+          <div>
+            <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <Users className="h-4 w-4" />
+              Trip link
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Fill in the escort details once, get one link the whole group can
+              use. Every answer that comes back carries these details.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">
+                Trip name (internal, optional)
+              </Label>
+              <Input
+                dir="rtl"
+                className="text-right"
+                placeholder="פראג 12.09"
+                value={tripLabel}
+                onChange={(e) => setTripLabel(e.target.value)}
+              />
+            </div>
+
+            {staffFields.map((field) => (
+              <div key={field.id} className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground">
+                  {fieldAdminLabel(field)}
+                  {field.required && <span className="text-destructive"> *</span>}
+                </Label>
+                <Input
+                  type={field.type === "date" ? "date" : "text"}
+                  dir={field.type === "date" ? "ltr" : "rtl"}
+                  className={field.type === "date" ? undefined : "text-right"}
+                  value={String(staffAnswers[String(field.id)] ?? "")}
+                  onChange={(e) =>
+                    setStaffAnswers((prev) => ({
+                      ...prev,
+                      [String(field.id)]: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+
+          <Button onClick={handleTripLink} disabled={pending || !isLive}>
+            <Link2 className="mr-2 h-4 w-4" />
+            {pending ? "Creating…" : "Create trip link & copy"}
+          </Button>
+        </div>
       )}
 
       <div className="space-y-4 rounded-lg border bg-card p-4">
@@ -214,9 +310,13 @@ export function InvitesClient({
             {invites.map((invite) => (
               <TableRow key={invite.id}>
                 <TableCell>
-                  <div className="font-medium">{invite.recipient_name ?? "-"}</div>
+                  <div className="font-medium">
+                    {invite.label ?? invite.recipient_name ?? "-"}
+                  </div>
                   <div className="text-xs text-muted-foreground">
-                    {invite.recipient_email ?? "no email"}
+                    {invite.multi_use
+                      ? "shared with the group"
+                      : (invite.recipient_email ?? "no email")}
                   </div>
                   {invite.send_error && (
                     <div className="text-xs text-destructive">{invite.send_error}</div>
@@ -229,7 +329,9 @@ export function InvitesClient({
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-muted-foreground">
                   {invite.submitted_at
-                    ? new Date(invite.submitted_at).toLocaleDateString()
+                    ? `${invite.multi_use ? "last " : ""}${new Date(
+                        invite.submitted_at,
+                      ).toLocaleDateString()}`
                     : "-"}
                 </TableCell>
                 <TableCell>

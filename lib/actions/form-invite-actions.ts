@@ -6,9 +6,16 @@ import { supabase } from "@/lib/supabase-server";
 import { requireStaff } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import { appOrigin, sendMail } from "@/lib/email";
-import { pickLang } from "@/lib/forms/i18n";
+import { pickLang, fieldAdminLabel } from "@/lib/forms/i18n";
+import { buildFieldSchema, isEmptyAnswer } from "@/lib/forms/validation";
 import { resolveLang } from "@/types/form.types";
-import type { FormInvite, FormLang } from "@/types/form.types";
+import type {
+  AnswerMap,
+  AnswerValue,
+  FormField,
+  FormInvite,
+  FormLang,
+} from "@/types/form.types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const formsTable = () => (supabase as any).from("forms");
@@ -17,7 +24,8 @@ const invitesTable = () => (supabase as any).from("form_invites");
 
 const INVITE_COLUMNS =
   "id,form_id,token,recipient_name,recipient_email,recipient_phone,lang," +
-  "prefill,reservation_id,event_id,sent_at,opened_at,submitted_at,send_error,created_at";
+  "multi_use,label,prefill,reservation_id,event_id,sent_at,opened_at,submitted_at," +
+  "send_error,created_at";
 
 /** One recipient sent at a time keeps a bad address from aborting the batch. */
 const MAX_RECIPIENTS_PER_SEND = 200;
@@ -267,6 +275,95 @@ export async function resendInvite(inviteId: number): Promise<boolean> {
 
   revalidatePath(`/forms/${invite.form_id}/invites`);
   return true;
+}
+
+/**
+ * Create a TRIP LINK: one multi-use token for a whole travel group.
+ *
+ * The escort's staff-only answers (escort name, trip code, departure date…)
+ * are validated against the field definitions and stored on the invite's
+ * `prefill`; the submit action merges them into every response that comes
+ * through this token. Clients never see these fields or values.
+ */
+export async function createTripLink(
+  formId: number,
+  input: { label: string | null; lang: FormLang; staffAnswers: AnswerMap },
+): Promise<{ url: string; invite: FormInvite }> {
+  await requireStaff();
+
+  const { data: form, error: formError } = await formsTable()
+    .select("id,is_deleted,languages,default_lang")
+    .eq("id", formId)
+    .maybeSingle();
+  if (formError) throw formError;
+  if (!form || form.is_deleted) throw new Error("Form not found");
+
+  const { data: staffFields, error: fieldsError } = await (supabase as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+    .from("form_fields")
+    .select("id,form_id,type,label_en,label_he,required,staff_only,options,config")
+    .eq("form_id", formId)
+    .eq("staff_only", true)
+    .order("position", { ascending: true });
+  if (fieldsError) {
+    console.error("createTripLink fields failed:", JSON.stringify(fieldsError));
+    throw fieldsError;
+  }
+
+  // Only staff-field ids may land in prefill, and each value must satisfy the
+  // field's own schema - the same rules a client submission faces.
+  const prefill: AnswerMap = {};
+  for (const field of (staffFields ?? []) as FormField[]) {
+    const key = String(field.id);
+    const value = input.staffAnswers?.[key];
+    if (isEmptyAnswer(value)) {
+      if (field.required) {
+        throw new Error(`Missing: ${fieldAdminLabel(field)}`);
+      }
+      continue;
+    }
+    const schema = buildFieldSchema(field);
+    if (!schema) continue;
+    const parsed = schema.safeParse(value);
+    if (!parsed.success) {
+      throw new Error(`Invalid value for: ${fieldAdminLabel(field)}`);
+    }
+    prefill[key] = parsed.data as AnswerValue;
+  }
+
+  const lang = resolveLang(
+    form.languages,
+    input.lang === "he" ? "he" : "en",
+    (form.default_lang as FormLang) ?? "en",
+  );
+
+  const token = newToken();
+  const { data, error } = await invitesTable()
+    .insert({
+      form_id: formId,
+      token,
+      lang,
+      multi_use: true,
+      label: input.label?.trim() || null,
+      prefill,
+    })
+    .select(INVITE_COLUMNS);
+
+  if (error) {
+    console.error("createTripLink failed:", JSON.stringify(error));
+    throw error;
+  }
+
+  await logAudit({
+    action: "create",
+    entityType: "form_invite",
+    entityId: (data[0] as FormInvite).id,
+    metadata: { trip_link: true, label: input.label ?? null },
+  });
+  revalidatePath(`/forms/${formId}/invites`);
+  return {
+    url: `${appOrigin()}/f/i/${token}?lang=${lang}`,
+    invite: data[0] as FormInvite,
+  };
 }
 
 /** Create a link without emailing it - for sending over WhatsApp yourself. */

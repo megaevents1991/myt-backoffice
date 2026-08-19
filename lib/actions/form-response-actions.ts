@@ -29,10 +29,14 @@ const PUBLIC_FORM_COLUMNS =
 
 const FIELD_COLUMNS =
   "id,form_id,type,position,label_en,label_he,help_en,help_he," +
-  "placeholder_en,placeholder_he,required,options,config";
+  "placeholder_en,placeholder_he,required,staff_only,options,config";
 
-/** Submissions allowed from one IP to one form per hour. */
-const RATE_LIMIT_PER_HOUR = 10;
+/**
+ * Submissions allowed from one IP to one form per hour. Sized for a whole trip
+ * group answering a trip link from the same hotel/bus wifi (one NAT'd IP) -
+ * the honeypot and per-field validation still stand between us and bots.
+ */
+const RATE_LIMIT_PER_HOUR = 40;
 /** Guards against a client posting thousands of keys. */
 const MAX_SUBMITTED_KEYS = 300;
 
@@ -50,7 +54,17 @@ export type PublicFormLoad =
     };
 
 export type SubmitResult =
-  | { ok: true; thankYou: string }
+  | {
+      ok: true;
+      thankYou: string;
+      /**
+       * External review URL, present only when every answered star rating
+       * scored full marks and the form has one configured. Deliberately not
+       * part of the public form payload - the client sees it only after
+       * earning it.
+       */
+      reviewLink?: string | null;
+    }
   | { ok: false; message: string; errors?: Record<string, string> };
 
 async function clientIp(): Promise<string | null> {
@@ -71,6 +85,23 @@ async function loadFields(formId: number): Promise<FormField[]> {
     throw error;
   }
   return (data ?? []) as FormField[];
+}
+
+/**
+ * What the CLIENT may see: staff-only fields (and their prefilled values) are
+ * the escort's, attached server-side on submit - they never leave the server.
+ */
+function clientFields(fields: FormField[]): FormField[] {
+  return fields.filter((field) => !field.staff_only);
+}
+
+function clientPrefill(fields: FormField[], prefill: AnswerMap): AnswerMap {
+  const staffIds = new Set(
+    fields.filter((f) => f.staff_only).map((f) => String(f.id)),
+  );
+  return Object.fromEntries(
+    Object.entries(prefill).filter(([key]) => !staffIds.has(key)),
+  );
 }
 
 /**
@@ -96,7 +127,7 @@ export async function getPublicFormBySlug(
 
   return {
     state: "ok",
-    payload: { form: data, fields: await loadFields(data.id) },
+    payload: { form: data, fields: clientFields(await loadFields(data.id)) },
     inviteToken: null,
     prefill: {},
     recipientName: null,
@@ -117,7 +148,7 @@ export async function getPublicFormByToken(
 ): Promise<PublicFormLoad> {
   const { data: invite, error } = await invitesTable()
     .select(
-      "id,form_id,token,lang,prefill,recipient_name,submitted_at,opened_at",
+      "id,form_id,token,lang,prefill,recipient_name,submitted_at,opened_at,multi_use",
     )
     .eq("token", token)
     .maybeSingle();
@@ -144,7 +175,8 @@ export async function getPublicFormByToken(
     (form.default_lang as FormLang) ?? "en",
   );
 
-  if (invite.submitted_at && !form.allow_multiple) {
+  // A trip link is shared by a whole group - it never locks after a submission.
+  if (invite.submitted_at && !form.allow_multiple && !invite.multi_use) {
     return { state: "already_submitted", lang };
   }
   if (form.status === "draft") return { state: "not_found" };
@@ -156,11 +188,12 @@ export async function getPublicFormByToken(
       .eq("id", invite.id);
   }
 
+  const fields = await loadFields(form.id);
   return {
     state: "ok",
-    payload: { form, fields: await loadFields(form.id) },
+    payload: { form, fields: clientFields(fields) },
     inviteToken: token,
-    prefill: (invite.prefill ?? {}) as AnswerMap,
+    prefill: clientPrefill(fields, (invite.prefill ?? {}) as AnswerMap),
     recipientName: invite.recipient_name ?? null,
     lang,
   };
@@ -211,21 +244,26 @@ export async function submitFormResponse(
     // --- Resolve the form server-side from the link credential only ---
     let formId: number | null = null;
     let inviteId: number | null = null;
+    let invitePrefill: AnswerMap = {};
     let allowMultiple = false;
     let thankYouEn: string | null = null;
     let thankYouHe: string | null = null;
+    let reviewLinkUrl: string | null = null;
 
     if (input.token) {
       const { data: invite } = await invitesTable()
-        .select("id,form_id,submitted_at")
+        .select("id,form_id,submitted_at,multi_use,prefill")
         .eq("token", input.token)
         .maybeSingle();
       if (!invite) return { ok: false, message: t.sendFailed };
       inviteId = invite.id;
       formId = invite.form_id;
+      invitePrefill = (invite.prefill ?? {}) as AnswerMap;
 
       const { data: form } = await formsTable()
-        .select("id,status,is_deleted,allow_multiple,thank_you_en,thank_you_he")
+        .select(
+          "id,status,is_deleted,allow_multiple,thank_you_en,thank_you_he,review_link_url",
+        )
         .eq("id", invite.form_id)
         .maybeSingle();
       if (!form || form.is_deleted || form.status !== "live") {
@@ -234,13 +272,16 @@ export async function submitFormResponse(
       allowMultiple = Boolean(form.allow_multiple);
       thankYouEn = form.thank_you_en;
       thankYouHe = form.thank_you_he;
+      reviewLinkUrl = form.review_link_url;
 
-      if (invite.submitted_at && !allowMultiple) {
+      if (invite.submitted_at && !allowMultiple && !invite.multi_use) {
         return { ok: false, message: t.alreadySubmitted };
       }
     } else if (input.slug) {
       const { data: form } = await formsTable()
-        .select("id,status,is_deleted,allow_multiple,thank_you_en,thank_you_he")
+        .select(
+          "id,status,is_deleted,allow_multiple,thank_you_en,thank_you_he,review_link_url",
+        )
         .eq("slug", input.slug)
         .maybeSingle();
       if (!form || form.is_deleted || form.status !== "live") {
@@ -249,6 +290,7 @@ export async function submitFormResponse(
       formId = form.id;
       thankYouEn = form.thank_you_en;
       thankYouHe = form.thank_you_he;
+      reviewLinkUrl = form.review_link_url;
     }
 
     if (!formId) return { ok: false, message: t.sendFailed };
@@ -272,6 +314,16 @@ export async function submitFormResponse(
     const result = validateAnswers(fields, raw, lang);
     if (!result.ok) {
       return { ok: false, message: t.fixErrors, errors: result.errors };
+    }
+
+    // Staff-only answers (escort name, trip code…) come exclusively from the
+    // invite's prefill - validateAnswers already dropped any client-sent value.
+    for (const field of fields) {
+      if (!field.staff_only) continue;
+      const key = String(field.id);
+      if (invitePrefill[key] !== undefined && invitePrefill[key] !== null) {
+        result.values[key] = invitePrefill[key];
+      }
     }
 
     const h = await headers();
@@ -298,7 +350,29 @@ export async function submitFormResponse(
     revalidatePath(`/forms/${formId}/responses`);
     const custom =
       lang === "he" ? thankYouHe || thankYouEn : thankYouEn || thankYouHe;
-    return { ok: true, thankYou: custom?.trim() || t.thankYou };
+
+    // Perfect score → offer the external review link. "Perfect" means every
+    // star rating that was answered scored its maximum (hidden conditional
+    // ratings were dropped by validation, so they cannot count).
+    let reviewLink: string | null = null;
+    if (reviewLinkUrl) {
+      const answeredRatings = fields.filter(
+        (field) =>
+          field.type === "rating" &&
+          !field.staff_only &&
+          typeof result.values[String(field.id)] === "number",
+      );
+      const allTop =
+        answeredRatings.length > 0 &&
+        answeredRatings.every(
+          (field) =>
+            result.values[String(field.id)] ===
+            (typeof field.config.max === "number" ? field.config.max : 5),
+        );
+      if (allTop) reviewLink = reviewLinkUrl;
+    }
+
+    return { ok: true, thankYou: custom?.trim() || t.thankYou, reviewLink };
   } catch (e) {
     console.error("submitFormResponse failed:", e);
     return { ok: false, message: t.sendFailed };

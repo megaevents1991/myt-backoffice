@@ -77,6 +77,12 @@ export type FormFieldConfig = {
   step?: number;
   /** long_text textarea height */
   rows?: number;
+  /**
+   * Conditional visibility: render (and require) this field only when the
+   * referenced field's answer equals `equals`. The source must be a field of
+   * the same form with a persisted id (a saved row, never a builder draft).
+   */
+  show_if?: { field: number; equals: boolean | string };
 };
 
 export type FormField = {
@@ -91,6 +97,11 @@ export type FormField = {
   placeholder_en: string | null;
   placeholder_he: string | null;
   required: boolean;
+  /**
+   * Filled by staff (trip escort) through an invite's prefill, never by the
+   * client - stripped from the public payload and ignored in submissions.
+   */
+  staff_only: boolean;
   options: FormFieldOption[];
   config: FormFieldConfig;
   created_at?: string;
@@ -114,6 +125,12 @@ export type Form = {
   cover_image_url: string | null;
   thank_you_en: string | null;
   thank_you_he: string | null;
+  /**
+   * External review URL (e.g. Google reviews). Shown on the thank-you screen
+   * only when every answered star rating scored full marks - the submit action
+   * decides; the link never reaches the client beforehand.
+   */
+  review_link_url: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -134,6 +151,13 @@ export type FormInvite = {
   recipient_email: string | null;
   recipient_phone: string | null;
   lang: FormLang;
+  /**
+   * Trip link: one token shared with a whole group, submittable any number of
+   * times; `prefill` carries the escort's staff-field answers and `label`
+   * names the trip in the invites table.
+   */
+  multi_use: boolean;
+  label: string | null;
   prefill: Record<string, AnswerValue>;
   reservation_id: number | null;
   event_id: number | null;

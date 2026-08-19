@@ -33,6 +33,28 @@ export function isEmptyAnswer(value: unknown): boolean {
   return false;
 }
 
+/**
+ * Conditional visibility (`config.show_if`): a field renders - and is required -
+ * only while the referenced field's answer equals the expected value.
+ *
+ * Runs against the RAW answer map on purpose: the renderer evaluates live
+ * client state, and the server evaluates the submitted payload before
+ * validation. Yes/No may arrive as a boolean or its "true"/"false" wire form,
+ * so booleans compare against both.
+ */
+export function isFieldVisible(
+  field: FormField,
+  answers: Record<string, unknown>,
+): boolean {
+  const cond = field.config?.show_if;
+  if (!cond || typeof cond.field !== "number") return true;
+  const value = answers[String(cond.field)];
+  if (typeof cond.equals === "boolean") {
+    return value === cond.equals || value === String(cond.equals);
+  }
+  return value === cond.equals;
+}
+
 /** Yes/No arrives as a boolean from React, or "true"/"false" over the wire. */
 const booleanish = z.union([
   z.boolean(),
@@ -133,6 +155,12 @@ export function validateAnswers(
 
   for (const field of fields) {
     if (field.type === "section") continue;
+    // Staff-only answers come from the invite's prefill server-side - a value
+    // sent by the client for one is forged and must never be stored.
+    if (field.staff_only) continue;
+    // A hidden conditional field is neither required nor stored - a stale
+    // answer left from before its condition flipped is dropped here.
+    if (!isFieldVisible(field, raw)) continue;
 
     const key = String(field.id);
     const value = raw[key];

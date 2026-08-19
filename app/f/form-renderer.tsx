@@ -24,7 +24,7 @@ import {
   pickLang,
   strings,
 } from "@/lib/forms/i18n";
-import { validateAnswers } from "@/lib/forms/validation";
+import { isFieldVisible, validateAnswers } from "@/lib/forms/validation";
 import { CANVAS, DEFAULT_ACCENT, INK, hexToRgb, onAccent } from "@/lib/forms/brand";
 import { BrandGlow } from "./brand-glow";
 import { Wordmark } from "./wordmark";
@@ -61,7 +61,10 @@ export function FormRenderer({
   const [answers, setAnswers] = useState<AnswerMap>(() => ({ ...(prefill ?? {}) }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [banner, setBanner] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
+  const [done, setDone] = useState<{
+    message: string;
+    reviewLink: string | null;
+  } | null>(null);
   const [hp, setHp] = useState("");
   const [pending, startTransition] = useTransition();
 
@@ -80,9 +83,20 @@ export function FormRenderer({
     [form.description_en, form.description_he, lang],
   );
 
+  // The public payload never contains staff-only fields; the builder preview
+  // does, so staff can see (and badge) them. Conditional fields render only
+  // while their condition holds - in the preview too, so it can be tried live.
+  const visibleFields = useMemo(
+    () =>
+      fields
+        .filter((field) => preview || !field.staff_only)
+        .filter((field) => isFieldVisible(field, answers)),
+    [fields, answers, preview],
+  );
+
   const questions = useMemo(
-    () => fields.filter((field) => field.type !== "section"),
-    [fields],
+    () => visibleFields.filter((field) => field.type !== "section"),
+    [visibleFields],
   );
 
   // Progress counts required questions only - optional ones would make a form
@@ -135,7 +149,10 @@ export function FormRenderer({
         hp,
       });
       if (response.ok) {
-        setDone(response.thankYou);
+        setDone({
+          message: response.thankYou,
+          reviewLink: response.reviewLink ?? null,
+        });
         return;
       }
       if (response.errors) setErrors(response.errors);
@@ -169,8 +186,23 @@ export function FormRenderer({
             </span>
             <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{title}</h1>
             <p className="mt-5 whitespace-pre-line text-lg leading-relaxed text-[var(--muted)]">
-              {done}
+              {done.message}
             </p>
+            {done.reviewLink && (
+              <div className="mt-10">
+                <p className="text-sm text-[var(--muted)]">{t.reviewHint}</p>
+                <a
+                  href={done.reviewLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ background: theme.accent, color: theme.onAccent }}
+                  className="mt-4 inline-flex h-13 items-center justify-center gap-2 rounded-full px-8 py-3.5 text-base font-bold transition-transform duration-150 hover:scale-[1.03] active:scale-[0.98] motion-reduce:transition-none motion-reduce:hover:scale-100"
+                >
+                  <Star className="h-5 w-5" fill="currentColor" />
+                  {t.reviewCta}
+                </a>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -287,7 +319,7 @@ export function FormRenderer({
             </div>
 
             <div className="space-y-3">
-              {fields.map((field) => (
+              {visibleFields.map((field) => (
                 <FieldBlock
                   key={field.id}
                   field={field}
@@ -298,11 +330,12 @@ export function FormRenderer({
                   value={answers[String(field.id)]}
                   error={errors[String(field.id)]}
                   onChange={(value) => setAnswer(field, value)}
+                  staffBadge={preview && field.staff_only}
                 />
               ))}
             </div>
 
-            {fields.length === 0 && (
+            {visibleFields.length === 0 && (
               <p className="rounded-2xl border border-dashed border-[var(--line)] p-12 text-center text-sm text-[var(--muted)]">
                 No questions yet.
               </p>
@@ -362,6 +395,15 @@ function useThemeTokens(theme: PublicForm["form"]["theme"], accentInput: string)
   }, [theme, accentInput]);
 }
 
+/** Builder-preview marker for fields the client never receives. */
+function StaffBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-dashed border-[var(--line)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+      {label}
+    </span>
+  );
+}
+
 const CONTROL_BASE =
   "w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 text-[16px] text-[var(--ink)] " +
   "placeholder:text-[var(--muted)] transition-colors duration-150 " +
@@ -376,6 +418,7 @@ function FieldBlock({
   value,
   error,
   onChange,
+  staffBadge = false,
 }: {
   field: FormField;
   index: number;
@@ -385,6 +428,8 @@ function FieldBlock({
   value: AnswerValue | undefined;
   error?: string;
   onChange: (value: AnswerValue) => void;
+  /** Builder preview only: mark a staff-only field clients will never see. */
+  staffBadge?: boolean;
 }) {
   const t = strings(lang);
   const rtl = isRtl(lang);
@@ -395,7 +440,10 @@ function FieldBlock({
   if (field.type === "section") {
     return (
       <div className="pb-2 pt-12 first:pt-2">
-        <h2 className="text-xl font-extrabold tracking-tight">{label}</h2>
+        <h2 className="flex items-center gap-2 text-xl font-extrabold tracking-tight">
+          {label}
+          {staffBadge && <StaffBadge label={t.staffBadge} />}
+        </h2>
         {help && <p className="mt-1.5 text-sm text-[var(--muted)]">{help}</p>}
         <div className="mt-5 h-px w-full bg-[var(--line)]" />
       </div>
@@ -424,6 +472,11 @@ function FieldBlock({
           >
             {label}
             {field.required && <span style={{ color: accent }}> *</span>}
+            {staffBadge && (
+              <span className="ms-2 align-middle">
+                <StaffBadge label={t.staffBadge} />
+              </span>
+            )}
           </label>
           {!field.required && (
             <span className="mt-0.5 block text-xs text-[var(--muted)]">{t.optional}</span>

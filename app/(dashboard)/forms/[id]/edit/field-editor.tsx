@@ -60,6 +60,11 @@ type Props = {
   total: number;
   /** Languages the parent form offers - drives which tabs appear. */
   langs: FormLang[];
+  /**
+   * Saved Yes/No questions above this one, offered as `show_if` sources. Only
+   * persisted fields qualify: a draft's negative id changes on insert.
+   */
+  conditionSources: { id: number; label: string }[];
   onChange: (patch: Partial<FormFieldDraft>) => void;
   onMove: (direction: -1 | 1) => void;
   onDuplicate: () => void;
@@ -71,6 +76,7 @@ export function FieldEditor({
   index,
   total,
   langs,
+  conditionSources,
   onChange,
   onMove,
   onDuplicate,
@@ -105,6 +111,12 @@ export function FieldEditor({
 
   function setConfig(patch: Record<string, number | undefined>) {
     onChange({ config: { ...field.config, ...patch } });
+  }
+
+  function setCondition(next: FormFieldDraft["config"]["show_if"]) {
+    const rest = { ...field.config };
+    delete rest.show_if;
+    onChange({ config: next ? { ...rest, show_if: next } : rest });
   }
 
   return (
@@ -195,18 +207,99 @@ export function FieldEditor({
             </div>
 
             {!isSection && (
-              <div className="flex items-end gap-2 pb-2">
-                <Switch
-                  id={`req-${field.id}`}
-                  checked={field.required}
-                  onCheckedChange={(checked) => onChange({ required: checked })}
-                />
-                <Label htmlFor={`req-${field.id}`} className="text-sm">
-                  Required
-                </Label>
+              <div className="flex items-end gap-4 pb-2">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id={`req-${field.id}`}
+                    checked={field.required}
+                    onCheckedChange={(checked) => onChange({ required: checked })}
+                  />
+                  <Label htmlFor={`req-${field.id}`} className="text-sm">
+                    Required
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id={`staff-${field.id}`}
+                    checked={field.staff_only}
+                    onCheckedChange={(checked) => onChange({ staff_only: checked })}
+                  />
+                  <Label htmlFor={`staff-${field.id}`} className="text-sm">
+                    Staff field
+                  </Label>
+                </div>
               </div>
             )}
           </div>
+
+          {field.staff_only && (
+            <p className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              Filled once per trip when you create a trip link. Clients never see
+              this question, and its answer is attached to every response.
+            </p>
+          )}
+
+          {!field.staff_only && conditionSources.length > 0 && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground">
+                  Show only if
+                </Label>
+                <Select
+                  value={
+                    field.config.show_if ? String(field.config.show_if.field) : "always"
+                  }
+                  onValueChange={(next) =>
+                    setCondition(
+                      next === "always"
+                        ? undefined
+                        : {
+                            field: Number(next),
+                            equals: field.config.show_if?.equals ?? true,
+                          },
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="always">Always shown</SelectItem>
+                    {conditionSources.map((source) => (
+                      <SelectItem key={source.id} value={String(source.id)}>
+                        {source.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {field.config.show_if && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Answer is
+                  </Label>
+                  <Select
+                    value={field.config.show_if.equals === false ? "no" : "yes"}
+                    onValueChange={(next) =>
+                      setCondition({
+                        field: field.config.show_if!.field,
+                        equals: next === "yes",
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="yes">Yes</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
 
           <BilingualInput
             label={isSection ? "Section title" : "Question"}

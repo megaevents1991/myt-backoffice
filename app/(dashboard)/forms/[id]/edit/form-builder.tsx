@@ -133,6 +133,7 @@ function newField(type: FormFieldType, id: number, position: number): FormFieldD
     placeholder_en: null,
     placeholder_he: null,
     required: false,
+    staff_only: false,
     options: CHOICE_TYPES.includes(type)
       ? [
           { value: "", label_en: "", label_he: null },
@@ -186,6 +187,7 @@ export function FormBuilder({ form, initialFields }: Props) {
   const [descriptionHe, setDescriptionHe] = useState(form.description_he ?? "");
   const [thankYouEn, setThankYouEn] = useState(form.thank_you_en ?? "");
   const [thankYouHe, setThankYouHe] = useState(form.thank_you_he ?? "");
+  const [reviewLink, setReviewLink] = useState(form.review_link_url ?? "");
   const [slug, setSlug] = useState(form.slug);
   const [languages, setLanguages] = useState<FormLanguages>(form.languages ?? "both");
   const [defaultLang, setDefaultLang] = useState<FormLang>(form.default_lang);
@@ -261,6 +263,21 @@ export function FormBuilder({ form, initialFields }: Props) {
   function deleteField(index: number) {
     setDirty(true);
     setFields((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  /**
+   * Yes/No questions above `index` that a conditional field may depend on.
+   * Drafts are excluded: their negative id is replaced on insert, so a
+   * condition pointing at one would dangle. Save first, then wire it up.
+   */
+  function conditionSources(index: number) {
+    return fields
+      .slice(0, index)
+      .filter((field) => field.type === "yes_no" && field.id > 0 && !field.staff_only)
+      .map((field) => ({
+        id: field.id,
+        label: adminLabel(field.label_en, field.label_he) || `Question ${field.id}`,
+      }));
   }
 
   const previewPayload = useMemo(
@@ -339,6 +356,7 @@ export function FormBuilder({ form, initialFields }: Props) {
           description_he: descriptionHe || null,
           thank_you_en: thankYouEn || null,
           thank_you_he: thankYouHe || null,
+          review_link_url: reviewLink || null,
           slug,
           languages,
           default_lang: defaultLang,
@@ -479,6 +497,22 @@ export function FormBuilder({ form, initialFields }: Props) {
               onChangeEn={touch(setThankYouEn)}
               onChangeHe={touch(setThankYouHe)}
             />
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">
+                Review link (optional)
+              </Label>
+              <Input
+                dir="ltr"
+                placeholder="https://www.google.com/search?q=…"
+                value={reviewLink}
+                onChange={(e) => touch(setReviewLink)(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Offered on the thank-you screen only when every star rating the
+                client answered got full marks.
+              </p>
+            </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
@@ -632,6 +666,7 @@ export function FormBuilder({ form, initialFields }: Props) {
                 index={index}
                 total={fields.length}
                 langs={langs}
+                conditionSources={conditionSources(index)}
                 onChange={(patch) => updateField(index, patch)}
                 onMove={(direction) => moveField(index, direction)}
                 onDuplicate={() => duplicateField(index)}
