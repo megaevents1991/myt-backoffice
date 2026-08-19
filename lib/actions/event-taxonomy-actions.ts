@@ -328,6 +328,56 @@ export async function searchEventsForTag(query: string): Promise<TagEventRow[]> 
   return (data ?? []) as TagEventRow[];
 }
 
+/**
+ * Upcoming live events inside a category - the candidate pool for the
+ * category form's בולטים/מומלצות pickers. Walks the node's DESCENDANTS too,
+ * because the vertical hubs (כדורגל/מוזיקה) render the whole subtree on the
+ * site (myt-main passes includeDescendants there), soonest first.
+ */
+export async function listCategoryEvents(
+  categoryId: number,
+): Promise<TagEventRow[]> {
+  await requireStaff();
+
+  // Category ids: the node + everything beneath it.
+  const { data: cats, error: catErr } = await tbl("categories")
+    .select("id,parent_id")
+    .eq("is_deleted", false);
+  if (catErr) throw catErr;
+  const childrenOf = new Map<number | null, number[]>();
+  (cats ?? []).forEach((c: { id: number; parent_id: number | null }) => {
+    const list = childrenOf.get(c.parent_id) ?? [];
+    list.push(c.id);
+    childrenOf.set(c.parent_id, list);
+  });
+  const ids: number[] = [categoryId];
+  for (let i = 0; i < ids.length; i++) {
+    ids.push(...(childrenOf.get(ids[i]) ?? []));
+  }
+
+  const { data: links, error: linkErr } = await tbl("event_category_links")
+    .select("event_id")
+    .in("category_id", ids);
+  if (linkErr) throw linkErr;
+  const eventIds = [
+    ...new Set((links ?? []).map((r: { event_id: number }) => r.event_id)),
+  ];
+  if (!eventIds.length) return [];
+
+  const today = new Date().toISOString().slice(0, 10);
+  const rows: TagEventRow[] = [];
+  for (let i = 0; i < eventIds.length; i += 200) {
+    const { data, error } = await tbl("events")
+      .select("id,name,name_english,date")
+      .in("id", eventIds.slice(i, i + 200))
+      .is("is_deleted", null)
+      .gte("date", today);
+    if (error) throw error;
+    rows.push(...((data ?? []) as TagEventRow[]));
+  }
+  return rows.sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+}
+
 export async function bulkAssignTags(
   eventIds: number[],
   tagIds: number[],

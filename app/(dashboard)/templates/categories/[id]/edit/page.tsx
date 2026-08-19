@@ -30,6 +30,7 @@ import { ArtBlobPicker } from "@/components/art-blob-picker";
 import { CategoryTagsField } from "@/components/templates/CategoryTagsField";
 import { HeroImageField } from "@/components/templates/HeroImageField";
 import { PageContentField } from "@/components/templates/PageContentField";
+import { FeaturedEventsPicker } from "@/components/templates/FeaturedEventsPicker";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import {
   isEmptyPageContent,
@@ -353,6 +354,24 @@ export default function EditCategoryPage({
           <CategoryTagsField value={catTagIds} onChange={setCatTagIds} />
 
           <PageContentField value={pageContent} onChange={setPageContent} />
+
+          <FeaturedEventsPicker
+            categoryId={templateId}
+            featuredIds={pageContent.featured_event_ids ?? []}
+            recommendedIds={pageContent.recommended_event_ids ?? []}
+            onFeaturedChange={(ids) =>
+              setPageContent((p) => ({
+                ...p,
+                featured_event_ids: ids.length ? ids : undefined,
+              }))
+            }
+            onRecommendedChange={(ids) =>
+              setPageContent((p) => ({
+                ...p,
+                recommended_event_ids: ids.length ? ids : undefined,
+              }))
+            }
+          />
 
           <FormField control={form.control} name="is_active" render={({ field }) => (
             <FormItem className="flex items-center gap-2 space-y-0">

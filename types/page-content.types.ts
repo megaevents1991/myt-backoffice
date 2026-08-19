@@ -49,6 +49,13 @@ export interface CategoryPageContent {
   city_info?: CategoryFactCard;
   matchday?: CategoryFactCard[];
   honours?: string[];
+  /**
+   * Hand-picked "בולטים" events (ordered event ids). Empty/missing = the site
+   * picks automatically ("בולט" tag, else soonest available).
+   */
+  featured_event_ids?: number[];
+  /** Hand-picked "חבילות מומלצות" (vertical hubs). Empty/missing = automatic. */
+  recommended_event_ids?: number[];
 }
 
 /** True when nothing was filled in - stored as NULL rather than an empty object. */
@@ -63,6 +70,8 @@ export function isEmptyPageContent(c: CategoryPageContent): boolean {
     !c.faq?.length &&
     !c.city_info &&
     !c.matchday?.length &&
-    !c.honours?.length
+    !c.honours?.length &&
+    !c.featured_event_ids?.length &&
+    !c.recommended_event_ids?.length
   );
 }
