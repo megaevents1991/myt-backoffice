@@ -29,7 +29,11 @@ function LoginForm() {
   useEffect(() => {
     if (user) {
       router.push(
-        (PARTNER_ROLES as readonly string[]).includes(user.role) ? "/portal" : "/dashboard"
+        (PARTNER_ROLES as readonly string[]).includes(user.role)
+          ? "/portal"
+          : user.role === "forms_operator"
+            ? "/forms"
+            : "/dashboard"
       );
     }
   }, [user, router]);
@@ -48,7 +52,9 @@ function LoginForm() {
           result.user.role
         )
           ? "/portal"
-          : "/dashboard";
+          : result.user.role === "forms_operator"
+            ? "/forms"
+            : "/dashboard";
         console.log("Login successful, redirecting to", home);
         toast({
           title: "Login successful",

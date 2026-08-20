@@ -3,7 +3,11 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/supabase-server";
-import { requireStaff } from "@/lib/auth/guards";
+import {
+  requireFormVisible,
+  requireFormsAccess,
+  requireStaff,
+} from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import { validateAnswers } from "@/lib/forms/validation";
 import { strings } from "@/lib/forms/i18n";
@@ -59,6 +63,8 @@ export type PublicFormLoad =
        * this is but can neither edit nor submit them.
        */
       staffSummary: StaffSummaryItem[];
+      /** Trip-link identity ("BBC" + "124") for the ticket header, if any. */
+      tripCode: { prefix: string; num: string } | null;
       recipientName: string | null;
       lang: FormLang;
     };
@@ -152,6 +158,7 @@ export async function getPublicFormBySlug(
     inviteToken: null,
     prefill: {},
     staffSummary: [],
+    tripCode: null,
     recipientName: null,
     lang: resolveLang(
       data.languages,
@@ -170,7 +177,8 @@ export async function getPublicFormByToken(
 ): Promise<PublicFormLoad> {
   const { data: invite, error } = await invitesTable()
     .select(
-      "id,form_id,token,lang,prefill,recipient_name,submitted_at,opened_at,multi_use",
+      "id,form_id,token,lang,prefill,recipient_name,submitted_at,opened_at," +
+        "multi_use,trip_code_prefix,trip_code_num",
     )
     .eq("token", token)
     .maybeSingle();
@@ -218,6 +226,10 @@ export async function getPublicFormByToken(
     inviteToken: token,
     prefill: clientPrefill(fields, invitePrefill),
     staffSummary: staffSummary(fields, invitePrefill),
+    tripCode:
+      invite.trip_code_prefix && invite.trip_code_num
+        ? { prefix: invite.trip_code_prefix, num: invite.trip_code_num }
+        : null,
     recipientName: invite.recipient_name ?? null,
     lang,
   };
@@ -273,6 +285,7 @@ export async function submitFormResponse(
     let thankYouEn: string | null = null;
     let thankYouHe: string | null = null;
     let reviewLinkUrl: string | null = null;
+    let reviewMinAvg: number | null = null;
 
     if (input.token) {
       const { data: invite } = await invitesTable()
@@ -286,7 +299,7 @@ export async function submitFormResponse(
 
       const { data: form } = await formsTable()
         .select(
-          "id,status,is_deleted,allow_multiple,thank_you_en,thank_you_he,review_link_url",
+          "id,status,is_deleted,allow_multiple,thank_you_en,thank_you_he,review_link_url,review_min_avg",
         )
         .eq("id", invite.form_id)
         .maybeSingle();
@@ -297,6 +310,7 @@ export async function submitFormResponse(
       thankYouEn = form.thank_you_en;
       thankYouHe = form.thank_you_he;
       reviewLinkUrl = form.review_link_url;
+      reviewMinAvg = form.review_min_avg;
 
       if (invite.submitted_at && !allowMultiple && !invite.multi_use) {
         return { ok: false, message: t.alreadySubmitted };
@@ -304,7 +318,7 @@ export async function submitFormResponse(
     } else if (input.slug) {
       const { data: form } = await formsTable()
         .select(
-          "id,status,is_deleted,allow_multiple,thank_you_en,thank_you_he,review_link_url",
+          "id,status,is_deleted,allow_multiple,thank_you_en,thank_you_he,review_link_url,review_min_avg",
         )
         .eq("slug", input.slug)
         .maybeSingle();
@@ -315,6 +329,7 @@ export async function submitFormResponse(
       thankYouEn = form.thank_you_en;
       thankYouHe = form.thank_you_he;
       reviewLinkUrl = form.review_link_url;
+      reviewMinAvg = form.review_min_avg;
     }
 
     if (!formId) return { ok: false, message: t.sendFailed };
@@ -375,25 +390,29 @@ export async function submitFormResponse(
     const custom =
       lang === "he" ? thankYouHe || thankYouEn : thankYouEn || thankYouHe;
 
-    // Perfect score → offer the external review link. "Perfect" means every
-    // star rating that was answered scored its maximum (hidden conditional
-    // ratings were dropped by validation, so they cannot count).
+    // Review gate: the average of the scored rating pool decides whether the
+    // thank-you screen offers the external review link. Pool = rating fields
+    // flagged config.review_score (none flagged → all rating fields). Only
+    // ANSWERED values count - hidden conditional ratings were dropped by
+    // validation and unanswered optional ones do not drag the average down.
     let reviewLink: string | null = null;
     if (reviewLinkUrl) {
-      const answeredRatings = fields.filter(
-        (field) =>
-          field.type === "rating" &&
-          !field.staff_only &&
-          typeof result.values[String(field.id)] === "number",
+      const ratings = fields.filter(
+        (field) => field.type === "rating" && !field.staff_only,
       );
-      const allTop =
-        answeredRatings.length > 0 &&
-        answeredRatings.every(
-          (field) =>
-            result.values[String(field.id)] ===
-            (typeof field.config.max === "number" ? field.config.max : 5),
-        );
-      if (allTop) reviewLink = reviewLinkUrl;
+      const flagged = ratings.filter((field) => field.config.review_score === true);
+      const pool = flagged.length > 0 ? flagged : ratings;
+      const answered = pool
+        .map((field) => result.values[String(field.id)])
+        .filter((value): value is number => typeof value === "number");
+      const minAvg =
+        typeof reviewMinAvg === "number" && reviewMinAvg >= 1 && reviewMinAvg <= 5
+          ? reviewMinAvg
+          : 5;
+      if (answered.length > 0) {
+        const avg = answered.reduce((sum, value) => sum + value, 0) / answered.length;
+        if (avg >= minAvg) reviewLink = reviewLinkUrl;
+      }
     }
 
     return { ok: true, thankYou: custom?.trim() || t.thankYou, reviewLink };
@@ -403,11 +422,12 @@ export async function submitFormResponse(
   }
 }
 
-/** Admin: every response for a form, with the invite recipient when there is one. */
+/** Staff/operator: every response for a form, with the invite recipient when there is one. */
 export async function getFormResponses(
   formId: number,
 ): Promise<FormResponseRow[]> {
-  await requireStaff();
+  const actor = await requireFormsAccess();
+  await requireFormVisible(actor, formId);
 
   const { data, error } = await responsesTable()
     .select(

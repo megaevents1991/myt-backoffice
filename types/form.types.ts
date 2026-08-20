@@ -83,6 +83,12 @@ export type FormFieldConfig = {
    * the same form with a persisted id (a saved row, never a builder draft).
    */
   show_if?: { field: number; equals: boolean | string };
+  /**
+   * Rating fields only: counts toward the review-gate average that decides
+   * whether the thank-you screen offers the external (Google) review link.
+   * When NO field of a form is flagged, every rating field counts.
+   */
+  review_score?: boolean;
 };
 
 export type FormField = {
@@ -131,6 +137,10 @@ export type Form = {
    * decides; the link never reaches the client beforehand.
    */
   review_link_url: string | null;
+  /** Review-gate threshold: average of the flagged ratings must reach this. null = 5. */
+  review_min_avg: number | null;
+  /** Whether forms_operator accounts may see and run this form. */
+  operator_visible: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -158,6 +168,9 @@ export type FormInvite = {
    */
   multi_use: boolean;
   label: string | null;
+  /** Split trip code ("BBC" + "124") - the trip identity trip reports group by. */
+  trip_code_prefix: string | null;
+  trip_code_num: string | null;
   prefill: Record<string, AnswerValue>;
   reservation_id: number | null;
   event_id: number | null;

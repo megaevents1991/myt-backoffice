@@ -55,6 +55,40 @@ export async function requireStaff(): Promise<SessionPayload> {
   return requireRole("superadmin", "admin", "editor");
 }
 
+/**
+ * Staff or forms_operator - the READ/RUN side of the forms area: list, view,
+ * duplicate, trip links, responses, trips report. Anything that edits or
+ * publishes a questionnaire stays behind requireStaff.
+ */
+export async function requireFormsAccess(): Promise<SessionPayload> {
+  return requireRole("superadmin", "admin", "editor", "forms_operator");
+}
+
+/**
+ * Deep check for per-form actions: staff pass; a forms_operator passes only
+ * when the form is flagged operator_visible. Fail-closed on query errors.
+ * Guards the ACTIONS (trip links, invites, responses, report) - list/read
+ * filtering alone would still leave direct action calls open.
+ */
+export async function requireFormVisible(
+  actor: SessionPayload,
+  formId: number,
+): Promise<void> {
+  if (actor.role !== "forms_operator") return;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("forms")
+    .select("operator_visible")
+    .eq("id", formId)
+    .is("is_deleted", null)
+    .maybeSingle();
+  if (error) {
+    console.error("requireFormVisible:", JSON.stringify(error));
+    throw new Error("Unauthorized");
+  }
+  if (!data?.operator_visible) throw new Error("Unauthorized");
+}
+
 /** superadmin or admin - user management. Per-target hierarchy enforced in user-actions. */
 export async function requireAdmin(): Promise<SessionPayload> {
   return requireRole("superadmin", "admin");

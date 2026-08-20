@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/supabase-server";
-import { requireStaff } from "@/lib/auth/guards";
+import { requireFormsAccess, requireStaff } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import type {
   Form,
@@ -30,8 +30,8 @@ const responsesTable = () => (supabase as any).from("form_responses");
 
 const FORM_COLUMNS =
   "id,slug,title_en,title_he,description_en,description_he,status,languages,default_lang," +
-  "allow_multiple,thank_you_en,thank_you_he,review_link_url,theme,accent_color,logo_url," +
-  "cover_image_url,created_by,created_at,updated_at,is_deleted";
+  "allow_multiple,thank_you_en,thank_you_he,review_link_url,review_min_avg,operator_visible," +
+  "theme,accent_color,logo_url,cover_image_url,created_by,created_at,updated_at,is_deleted";
 
 const FIELD_COLUMNS =
   "id,form_id,type,position,label_en,label_he,help_en,help_he," +
@@ -72,11 +72,16 @@ async function uniqueSlug(base: string, ignoreId?: number): Promise<string> {
 }
 
 export async function getForms(): Promise<FormSummary[]> {
-  await requireStaff();
-  const { data, error } = await formsTable()
+  const actor = await requireFormsAccess();
+  let query = formsTable()
     .select(`${FORM_COLUMNS},form_fields(count),form_responses(count)`)
     .is("is_deleted", null)
     .order("created_at", { ascending: false });
+  // Operators see only forms explicitly opened to them.
+  if (actor.role === "forms_operator") {
+    query = query.eq("operator_visible", true);
+  }
+  const { data, error } = await query;
 
   if (error) {
     console.error("getForms failed:", JSON.stringify(error));
@@ -98,7 +103,7 @@ export async function getForms(): Promise<FormSummary[]> {
 export async function getForm(
   id: number,
 ): Promise<{ form: Form; fields: FormField[] } | null> {
-  await requireStaff();
+  const actor = await requireFormsAccess();
 
   const { data: form, error } = await formsTable()
     .select(FORM_COLUMNS)
@@ -111,6 +116,8 @@ export async function getForm(
     throw error;
   }
   if (!form) return null;
+  // To an operator, a form not opened to them does not exist.
+  if (actor.role === "forms_operator" && !form.operator_visible) return null;
 
   const { data: fields, error: fieldsError } = await fieldsTable()
     .select(FIELD_COLUMNS)
@@ -166,6 +173,8 @@ export type FormMetaInput = {
   thank_you_en: string | null;
   thank_you_he: string | null;
   review_link_url: string | null;
+  review_min_avg: number | null;
+  operator_visible: boolean;
   slug: string;
   languages: FormLanguages;
   default_lang: FormLang;
@@ -218,6 +227,13 @@ export async function updateFormMeta(
     thank_you_en: input.thank_you_en?.trim() || null,
     thank_you_he: input.thank_you_he?.trim() || null,
     review_link_url: reviewLink,
+    review_min_avg:
+      typeof input.review_min_avg === "number" &&
+      input.review_min_avg >= 1 &&
+      input.review_min_avg <= 5
+        ? input.review_min_avg
+        : null,
+    operator_visible: Boolean(input.operator_visible),
     slug,
     languages,
     default_lang: defaultLang,
@@ -304,6 +320,7 @@ function normalizeConfig(config: FormFieldDraft["config"] | undefined) {
   ) {
     out.show_if = { field: raw.show_if.field, equals: raw.show_if.equals };
   }
+  if (raw.review_score === true) out.review_score = true;
   return out;
 }
 
@@ -414,7 +431,9 @@ export async function saveFormFields(
 }
 
 export async function duplicateForm(id: number): Promise<Form> {
-  const actor = await requireStaff();
+  // Operators may duplicate (of forms they can see - getForm enforces that);
+  // the copy lands as a draft only staff can publish.
+  const actor = await requireFormsAccess();
   const loaded = await getForm(id);
   if (!loaded) throw new Error("Form not found");
 
@@ -429,6 +448,8 @@ export async function duplicateForm(id: number): Promise<Form> {
       thank_you_en: loaded.form.thank_you_en,
       thank_you_he: loaded.form.thank_you_he,
       review_link_url: loaded.form.review_link_url,
+      review_min_avg: loaded.form.review_min_avg,
+      operator_visible: loaded.form.operator_visible,
       status: "draft",
       languages: loaded.form.languages,
       default_lang: loaded.form.default_lang,
@@ -523,7 +544,7 @@ export async function softDeleteForm(id: number): Promise<boolean> {
 
 /** Counts for the responses page header. */
 export async function getFormResponseCount(formId: number): Promise<number> {
-  await requireStaff();
+  await requireFormsAccess();
   const { count, error } = await responsesTable()
     .select("id", { count: "exact", head: true })
     .eq("form_id", formId);

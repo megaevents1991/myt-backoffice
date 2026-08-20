@@ -48,17 +48,33 @@ const FORM = {
   thank_you_en: null,
   thank_you_he: "תודה רבה על המשוב! נשמח לראותכם שוב בטיול הבא.",
   review_link_url: REVIEW_URL,
+  // Google gate: average of the five core ratings (flagged review_score
+  // below) must reach 4. Both editable in the builder.
+  review_min_avg: 4,
+  // The Mega coordinator (forms_operator role) runs this form's trip links.
+  operator_visible: true,
   theme: "light",
   // The brand purple from megatr.co.il (rgba(83,49,93) in its homepage styles).
   accent_color: "#53315D",
   logo_url: "/brands/mega-travel-logo.svg",
 };
 
-/** `star(label)` - a 1-5 rating; `yesno(label)` - a Yes/No question. */
+/**
+ * `star(label)` - a 1-5 rating counted in the Google-gate average;
+ * `condStar` - a conditional rating kept OUT of the gate;
+ * `yesno(label)` - a Yes/No question.
+ */
 const star = (he, extra = {}) => ({
   type: "rating",
   label_he: he,
   required: true,
+  config: { max: 5, review_score: true },
+  ...extra,
+});
+const condStar = (he, extra = {}) => ({
+  type: "rating",
+  label_he: he,
+  required: false,
   config: { max: 5 },
   ...extra,
 });
@@ -73,6 +89,8 @@ const yesno = (he, extra = {}) => ({
 // `showIfLabel` names the Yes/No question a conditional rating depends on -
 // resolved to the real field id in pass 2, once every row exists.
 const FIELDS = [
+  // NOTE: the trip code is NOT a field - it lives on the trip link itself
+  // (form_invites.trip_code_prefix/num), entered when the link is created.
   {
     type: "section",
     label_he: "פרטי הטיול",
@@ -80,7 +98,6 @@ const FIELDS = [
     staff_only: true,
   },
   { type: "short_text", label_he: "שם המלווה", required: true, staff_only: true },
-  { type: "short_text", label_he: "קוד טיול", required: true, staff_only: true },
   { type: "date", label_he: "מועד יציאה", required: true, staff_only: true },
 
   { type: "section", label_he: "פרטי הנוסע" },
@@ -101,8 +118,7 @@ const FIELDS = [
   star("בתי המלון בטיול"),
 
   yesno("נכחת במפגש הקבוצה?"),
-  star("איך היה מפגש הקבוצה?", {
-    required: false,
+  condStar("איך היה מפגש הקבוצה?", {
     showIfLabel: "נכחת במפגש הקבוצה?",
     showIfEquals: true,
   }),
@@ -110,12 +126,18 @@ const FIELDS = [
   yesno("האם נסעת בעבר עם מגה?"),
 
   yesno("האם ביקרת באתר מגה תיירות?"),
-  star("נוחות השימוש באתר", {
-    required: false,
+  condStar("נוחות השימוש באתר", {
     showIfLabel: "האם ביקרת באתר מגה תיירות?",
     showIfEquals: true,
   }),
 ];
+
+/**
+ * Fields that used to be seeded and are now retired. Deleted ONLY when no
+ * stored response carries an answer for them - `answers` is keyed by field id,
+ * so deleting an answered field would orphan real data.
+ */
+const RETIRED_LABELS = ["קוד טיול"];
 
 async function main() {
   const { data: existing, error: readError } = await supabase
@@ -203,6 +225,30 @@ async function main() {
       })
       .eq("id", targetId);
     if (error) throw error;
+  }
+
+  // Retire fields no longer in the template - only if nothing answered them.
+  for (const label of RETIRED_LABELS) {
+    const id = byLabel.get(label);
+    if (!id) continue;
+    const { data: rows, error: respError } = await supabase
+      .from("form_responses")
+      .select("id,answers")
+      .eq("form_id", formId);
+    if (respError) throw respError;
+    const answered = (rows ?? []).some(
+      (row) => row.answers && row.answers[String(id)] !== undefined,
+    );
+    if (answered) {
+      console.log(`Kept retired field "${label}" (#${id}) - it has answers.`);
+      continue;
+    }
+    const { error: delError } = await supabase
+      .from("form_fields")
+      .delete()
+      .eq("id", id);
+    if (delError) throw delError;
+    console.log(`Removed retired field "${label}" (#${id}).`);
   }
 
   console.log(

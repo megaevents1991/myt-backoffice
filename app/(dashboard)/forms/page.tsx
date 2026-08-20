@@ -1,10 +1,13 @@
 import { getForms } from "@/lib/actions/form-actions";
+import { getSession } from "@/lib/auth/guards";
 import { FormsClient } from "./forms-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function FormsPage() {
   const forms = await getForms();
+  const session = await getSession();
+  const isOperator = session?.role === "forms_operator";
 
   return (
     <div className="space-y-6">
@@ -17,7 +20,7 @@ export default async function FormsPage() {
         </p>
       </div>
 
-      <FormsClient initialForms={forms} />
+      <FormsClient initialForms={forms} isOperator={isOperator} />
     </div>
   );
 }

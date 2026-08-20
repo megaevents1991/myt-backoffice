@@ -59,6 +59,8 @@ type Props = {
   defaultLang: FormLang;
   /** Staff-only questions - the escort details captured once per trip link. */
   staffFields: FormField[];
+  /** Emailing personal invites is a staff tool; operators only mint trip links. */
+  canEmail: boolean;
   initialInvites: FormInvite[];
 };
 
@@ -67,13 +69,15 @@ export function InvitesClient({
   formStatus,
   defaultLang,
   staffFields,
+  canEmail,
   initialInvites,
 }: Props) {
   const { toast } = useToast();
   const [invites, setInvites] = useState(initialInvites);
   const [raw, setRaw] = useState("");
   const [lang, setLang] = useState<FormLang>(defaultLang);
-  const [tripLabel, setTripLabel] = useState("");
+  const [codePrefix, setCodePrefix] = useState("");
+  const [codeNum, setCodeNum] = useState("");
   const [staffAnswers, setStaffAnswers] = useState<AnswerMap>({});
   const [pending, startTransition] = useTransition();
 
@@ -84,13 +88,15 @@ export function InvitesClient({
     startTransition(async () => {
       try {
         const { url } = await createTripLink(formId, {
-          label: tripLabel || null,
+          tripCodePrefix: codePrefix,
+          tripCodeNum: codeNum,
           lang,
           staffAnswers,
         });
         await navigator.clipboard.writeText(url);
         toast({ title: "Trip link copied - share it with the group", description: url });
-        setTripLabel("");
+        setCodePrefix("");
+        setCodeNum("");
         setStaffAnswers({});
         window.location.reload();
       } catch (error) {
@@ -207,15 +213,31 @@ export function InvitesClient({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-muted-foreground">
-                Trip name (internal, optional)
+                Trip code <span className="text-destructive">*</span>
               </Label>
-              <Input
-                dir="rtl"
-                className="text-right"
-                placeholder="פראג 12.09"
-                value={tripLabel}
-                onChange={(e) => setTripLabel(e.target.value)}
-              />
+              <div dir="ltr" className="flex items-center gap-1.5">
+                <Input
+                  className="w-24 font-mono uppercase"
+                  placeholder="BBC"
+                  maxLength={8}
+                  value={codePrefix}
+                  onChange={(e) =>
+                    setCodePrefix(e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase())
+                  }
+                />
+                <span className="text-muted-foreground">-</span>
+                <Input
+                  className="w-24 font-mono"
+                  placeholder="124"
+                  inputMode="numeric"
+                  maxLength={8}
+                  value={codeNum}
+                  onChange={(e) => setCodeNum(e.target.value.replace(/\D/g, ""))}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Letters + number. The report groups and filters by both parts.
+              </p>
             </div>
 
             {staffFields.map((field) => (
@@ -240,13 +262,17 @@ export function InvitesClient({
             ))}
           </div>
 
-          <Button onClick={handleTripLink} disabled={pending || !isLive}>
+          <Button
+            onClick={handleTripLink}
+            disabled={pending || !isLive || !codePrefix || !codeNum}
+          >
             <Link2 className="mr-2 h-4 w-4" />
             {pending ? "Creating…" : "Create trip link & copy"}
           </Button>
         </div>
       )}
 
+      {canEmail && (
       <div className="space-y-4 rounded-lg border bg-card p-4">
         <div className="space-y-1.5">
           <Label className="text-xs font-medium text-muted-foreground">
@@ -285,6 +311,7 @@ export function InvitesClient({
           </Button>
         </div>
       </div>
+      )}
 
       <div className="rounded-lg border">
         <Table>
@@ -344,25 +371,29 @@ export function InvitesClient({
                     >
                       <Link2 className="h-4 w-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      disabled={pending || !invite.recipient_email || !isLive}
-                      onClick={() => handleResend(invite)}
-                      aria-label="Resend"
-                    >
-                      <RotateCw className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-destructive"
-                      disabled={pending}
-                      onClick={() => handleDelete(invite)}
-                      aria-label="Delete invite"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canEmail && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={pending || !invite.recipient_email || !isLive}
+                          onClick={() => handleResend(invite)}
+                          aria-label="Resend"
+                        >
+                          <RotateCw className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive"
+                          disabled={pending}
+                          onClick={() => handleDelete(invite)}
+                          aria-label="Delete invite"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

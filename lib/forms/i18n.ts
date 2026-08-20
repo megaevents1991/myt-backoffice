@@ -92,6 +92,7 @@ export const FILL_STRINGS = {
     reviewRedirect: "Taking you to Google to leave a review…",
     staffBadge: "Staff only",
     tripDetails: "Trip details",
+    tripCodeLabel: "Trip code",
   },
   he: {
     submit: "שליחה",
@@ -116,6 +117,7 @@ export const FILL_STRINGS = {
     reviewRedirect: "מעבירים אתכם לגוגל להשאיר ביקורת…",
     staffBadge: "לצוות בלבד",
     tripDetails: "פרטי הטיול",
+    tripCodeLabel: "קוד טיול",
   },
 } as const;
 

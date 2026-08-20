@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Image as ImageIcon,
   Link2,
+  Map,
   Plus,
   Save,
   Send,
@@ -189,6 +190,10 @@ export function FormBuilder({ form, initialFields }: Props) {
   const [thankYouEn, setThankYouEn] = useState(form.thank_you_en ?? "");
   const [thankYouHe, setThankYouHe] = useState(form.thank_you_he ?? "");
   const [reviewLink, setReviewLink] = useState(form.review_link_url ?? "");
+  const [reviewMinAvg, setReviewMinAvg] = useState(
+    form.review_min_avg === null ? "5" : String(form.review_min_avg),
+  );
+  const [operatorVisible, setOperatorVisible] = useState(form.operator_visible);
   const [slug, setSlug] = useState(form.slug);
   const [languages, setLanguages] = useState<FormLanguages>(form.languages ?? "both");
   const [defaultLang, setDefaultLang] = useState<FormLang>(form.default_lang);
@@ -358,6 +363,8 @@ export function FormBuilder({ form, initialFields }: Props) {
           thank_you_en: thankYouEn || null,
           thank_you_he: thankYouHe || null,
           review_link_url: reviewLink || null,
+          review_min_avg: Number(reviewMinAvg) || null,
+          operator_visible: operatorVisible,
           slug,
           languages,
           default_lang: defaultLang,
@@ -466,6 +473,13 @@ export function FormBuilder({ form, initialFields }: Props) {
             </Link>
           </Button>
 
+          <Button variant="outline" asChild>
+            <Link href={`/forms/${form.id}/report`}>
+              <Map className="mr-2 h-4 w-4" />
+              Trips report
+            </Link>
+          </Button>
+
           <Button onClick={handleSave} disabled={pending}>
             <Save className="mr-2 h-4 w-4" />
             {pending ? "Saving…" : "Save"}
@@ -505,20 +519,52 @@ export function FormBuilder({ form, initialFields }: Props) {
               onChangeHe={touch(setThankYouHe)}
             />
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground">
-                Review link (optional)
-              </Label>
-              <Input
-                dir="ltr"
-                placeholder="https://www.google.com/search?q=…"
-                value={reviewLink}
-                onChange={(e) => touch(setReviewLink)(e.target.value)}
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_150px]">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground">
+                  Review link (optional)
+                </Label>
+                <Input
+                  dir="ltr"
+                  placeholder="https://www.google.com/search?q=…"
+                  value={reviewLink}
+                  onChange={(e) => touch(setReviewLink)(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Offered after submit when the average of the scored star
+                  questions (mark them per question with “Google score”)
+                  reaches the threshold. No question marked = all count.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground">
+                  Min. average
+                </Label>
+                <Select
+                  value={reviewMinAvg}
+                  onValueChange={(next) => touch(setReviewMinAvg)(next)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="4">4.0</SelectItem>
+                    <SelectItem value="4.5">4.5</SelectItem>
+                    <SelectItem value="5">5.0</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Switch
+                id="operator-visible"
+                checked={operatorVisible}
+                onCheckedChange={touch(setOperatorVisible)}
               />
-              <p className="text-xs text-muted-foreground">
-                Offered on the thank-you screen only when every star rating the
-                client answered got full marks.
-              </p>
+              <Label htmlFor="operator-visible" className="text-sm font-normal">
+                Visible to forms operators (trip links, responses, report)
+              </Label>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">

@@ -43,6 +43,8 @@ type Props = {
   prefill?: AnswerMap;
   /** Escort answers from a trip link - rendered as a read-only trip ticket. */
   staffSummary?: StaffSummaryItem[];
+  /** Split trip identity from the trip link, leading the ticket. */
+  tripCode?: { prefix: string; num: string } | null;
   slug?: string;
   token?: string;
   /** Builder preview: renders identically but never submits, single column. */
@@ -55,6 +57,7 @@ export function FormRenderer({
   initialLang,
   prefill,
   staffSummary,
+  tripCode,
   slug,
   token,
   preview = false,
@@ -335,8 +338,12 @@ export function FormRenderer({
               </label>
             </div>
 
-            {staffSummary && staffSummary.length > 0 && (
-              <TripTicket items={staffSummary} lang={lang} />
+            {((staffSummary && staffSummary.length > 0) || tripCode) && (
+              <TripTicket
+                items={staffSummary ?? []}
+                tripCode={tripCode ?? null}
+                lang={lang}
+              />
             )}
 
             <div className="space-y-3">
@@ -454,7 +461,15 @@ function formatStaffValue(item: StaffSummaryItem, lang: FormLang): string {
  * these values identify the trip being rated and belong to staff, so nothing
  * here is focusable or editable.
  */
-function TripTicket({ items, lang }: { items: StaffSummaryItem[]; lang: FormLang }) {
+function TripTicket({
+  items,
+  tripCode,
+  lang,
+}: {
+  items: StaffSummaryItem[];
+  tripCode: { prefix: string; num: string } | null;
+  lang: FormLang;
+}) {
   const t = strings(lang);
   return (
     <section
@@ -477,6 +492,19 @@ function TripTicket({ items, lang }: { items: StaffSummaryItem[]; lang: FormLang
       </div>
 
       <dl className="grid gap-x-6 gap-y-3 px-5 pb-5 pt-4 sm:grid-cols-3">
+        {tripCode && (
+          <div className="min-w-0">
+            <dt className="text-[11px] font-medium text-[var(--muted)]">
+              {t.tripCodeLabel}
+            </dt>
+            <dd
+              dir="ltr"
+              className="mt-0.5 truncate font-mono text-[15px] font-bold tracking-wide text-[var(--ink)] opacity-80"
+            >
+              {tripCode.prefix}-{tripCode.num}
+            </dd>
+          </div>
+        )}
         {items.map((item) => (
           <div key={item.field.id} className="min-w-0">
             <dt className="text-[11px] font-medium text-[var(--muted)]">

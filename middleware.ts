@@ -48,7 +48,11 @@ export async function middleware(req: NextRequest) {
   const isAuthPage = pathname.startsWith("/auth");
 
   const home =
-    session && PARTNER_ROLES.includes(session.role) ? "/portal" : "/dashboard";
+    session && PARTNER_ROLES.includes(session.role)
+      ? "/portal"
+      : session?.role === "forms_operator"
+        ? "/forms"
+        : "/dashboard";
 
   // Signed-in user hitting an auth page → send to their home.
   if (session && isAuthPage) {
@@ -80,6 +84,16 @@ export async function middleware(req: NextRequest) {
     // Partner roles may ONLY use /portal (staff may also enter /portal to debug).
     if (PARTNER_ROLES.includes(session.role) && !isPortal && pathname !== "/") {
       return NextResponse.redirect(new URL("/portal", req.url));
+    }
+    // forms_operator may ONLY use /forms - same confinement pattern. The
+    // builder page is additionally staff-gated inside its own server page.
+    if (
+      session.role === "forms_operator" &&
+      pathname !== "/" &&
+      pathname !== "/forms" &&
+      !pathname.startsWith("/forms/")
+    ) {
+      return NextResponse.redirect(new URL("/forms", req.url));
     }
     // /users is for superadmin/admin only.
     if (

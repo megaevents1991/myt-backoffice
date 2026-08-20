@@ -3,7 +3,11 @@
 import { randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/supabase-server";
-import { requireStaff } from "@/lib/auth/guards";
+import {
+  requireFormVisible,
+  requireFormsAccess,
+  requireStaff,
+} from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import { appOrigin, sendMail } from "@/lib/email";
 import { pickLang, fieldAdminLabel } from "@/lib/forms/i18n";
@@ -24,8 +28,8 @@ const invitesTable = () => (supabase as any).from("form_invites");
 
 const INVITE_COLUMNS =
   "id,form_id,token,recipient_name,recipient_email,recipient_phone,lang," +
-  "multi_use,label,prefill,reservation_id,event_id,sent_at,opened_at,submitted_at," +
-  "send_error,created_at";
+  "multi_use,label,trip_code_prefix,trip_code_num,prefill,reservation_id,event_id," +
+  "sent_at,opened_at,submitted_at,send_error,created_at";
 
 /** One recipient sent at a time keeps a bad address from aborting the batch. */
 const MAX_RECIPIENTS_PER_SEND = 200;
@@ -89,7 +93,8 @@ function escapeHtml(value: string): string {
 const newToken = () => randomBytes(16).toString("hex");
 
 export async function getFormInvites(formId: number): Promise<FormInvite[]> {
-  await requireStaff();
+  const actor = await requireFormsAccess();
+  await requireFormVisible(actor, formId);
   const { data, error } = await invitesTable()
     .select(INVITE_COLUMNS)
     .eq("form_id", formId)
@@ -287,9 +292,26 @@ export async function resendInvite(inviteId: number): Promise<boolean> {
  */
 export async function createTripLink(
   formId: number,
-  input: { label: string | null; lang: FormLang; staffAnswers: AnswerMap },
+  input: {
+    tripCodePrefix: string;
+    tripCodeNum: string;
+    lang: FormLang;
+    staffAnswers: AnswerMap;
+  },
 ): Promise<{ url: string; invite: FormInvite }> {
-  await requireStaff();
+  const actor = await requireFormsAccess();
+  await requireFormVisible(actor, formId);
+
+  // Trip identity: free letters + digits, normalized once here so the report
+  // groups "bbc-1" and "BBC-1" as the same trip.
+  const prefix = (input.tripCodePrefix ?? "").trim().toUpperCase();
+  const num = (input.tripCodeNum ?? "").trim();
+  if (!/^[A-Z]{1,8}$/.test(prefix)) {
+    throw new Error("Trip code letters: 1-8 English letters");
+  }
+  if (!/^\d{1,8}$/.test(num)) {
+    throw new Error("Trip code number: digits only");
+  }
 
   const { data: form, error: formError } = await formsTable()
     .select("id,is_deleted,languages,default_lang")
@@ -343,7 +365,9 @@ export async function createTripLink(
       token,
       lang,
       multi_use: true,
-      label: input.label?.trim() || null,
+      label: `${prefix}-${num}`,
+      trip_code_prefix: prefix,
+      trip_code_num: num,
       prefill,
     })
     .select(INVITE_COLUMNS);
@@ -357,7 +381,7 @@ export async function createTripLink(
     action: "create",
     entityType: "form_invite",
     entityId: (data[0] as FormInvite).id,
-    metadata: { trip_link: true, label: input.label ?? null },
+    metadata: { trip_link: true, trip_code: `${prefix}-${num}` },
   });
   revalidatePath(`/forms/${formId}/invites`);
   return {

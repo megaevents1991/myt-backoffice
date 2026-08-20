@@ -117,7 +117,17 @@ export function Sidebar() {
   const [isOpen, setIsOpen] = useState(false);
 
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
-  const visibleGroups = navGroups.filter((group) => !group.adminOnly || isAdmin);
+  // forms_operator lives in /forms only - the rest of the nav would just be a
+  // wall of middleware redirects, so don't show it.
+  const isFormsOperator = user?.role === "forms_operator";
+  const visibleGroups = isFormsOperator
+    ? navGroups
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) => item.href === "/forms"),
+        }))
+        .filter((group) => group.items.length > 0)
+    : navGroups.filter((group) => !group.adminOnly || isAdmin);
 
   // Only the MOST SPECIFIC matching item lights up. A plain prefix test marks
   // every ancestor active too, so on /templates/categories both "Templates"
@@ -198,7 +208,9 @@ export function Sidebar() {
               </div>
             )}
             {/* Dual-role: a staff user linked to a partner code opens /portal
-                as that partner in a new tab - the dashboard session stays. */}
+                as that partner in a new tab - the dashboard session stays.
+                Not for forms operators - they have no partner identity. */}
+            {!isFormsOperator && (
             <Button
               variant="ghost"
               className="w-full justify-start text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -218,6 +230,7 @@ export function Sidebar() {
               <ArrowLeftRight className="mr-3 h-5 w-5" />
               מצב סוכן
             </Button>
+            )}
             <Button
               variant="ghost"
               className="w-full justify-start text-muted-foreground hover:bg-muted hover:text-foreground"

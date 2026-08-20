@@ -50,6 +50,7 @@ export default async function InviteFormPage({ params, searchParams }: PageProps
       initialLang={lang}
       prefill={loaded.prefill}
       staffSummary={loaded.staffSummary}
+      tripCode={loaded.tripCode}
       token={token}
     />
   );

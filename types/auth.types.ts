@@ -11,10 +11,17 @@ export const ROLES = [
   "office_manager",
   "agent",
   "affiliate",
+  "forms_operator",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
 export const STAFF_ROLES: Role[] = ["superadmin", "admin", "editor"];
+/**
+ * forms_operator: a restricted account (e.g. Mega Travel's coordinator) that
+ * lives entirely inside /forms - creates trip links, reads responses and the
+ * trips report, duplicates forms. Never edits or publishes a questionnaire.
+ */
+export const FORMS_ACCESS_ROLES: Role[] = [...STAFF_ROLES, "forms_operator"];
 /** Roles allowed into user management. Only superadmin may manage these roles' accounts. */
 export const ADMIN_ROLES: Role[] = ["superadmin", "admin"];
 /** Partner-linked, portal-confined roles. */

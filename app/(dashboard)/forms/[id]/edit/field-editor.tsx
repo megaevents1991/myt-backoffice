@@ -228,6 +228,23 @@ export function FieldEditor({
                     Staff field
                   </Label>
                 </div>
+                {field.type === "rating" && !field.staff_only && (
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id={`score-${field.id}`}
+                      checked={field.config.review_score === true}
+                      onCheckedChange={(checked) => {
+                        const config = { ...field.config };
+                        if (checked) config.review_score = true;
+                        else delete config.review_score;
+                        onChange({ config });
+                      }}
+                    />
+                    <Label htmlFor={`score-${field.id}`} className="text-sm">
+                      Google score
+                    </Label>
+                  </div>
+                )}
               </div>
             )}
           </div>

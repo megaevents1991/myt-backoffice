@@ -7,6 +7,7 @@ import {
   BarChart3,
   Copy,
   Link2,
+  Map,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -50,7 +51,14 @@ const STATUS_VARIANT: Record<FormStatus, "default" | "secondary" | "outline"> = 
   closed: "outline",
 };
 
-export function FormsClient({ initialForms }: { initialForms: FormSummary[] }) {
+export function FormsClient({
+  initialForms,
+  isOperator = false,
+}: {
+  initialForms: FormSummary[];
+  /** forms_operator view: run forms (links/responses/report/duplicate), never edit. */
+  isOperator?: boolean;
+}) {
   const router = useRouter();
   const { toast } = useToast();
   const [forms, setForms] = useState(initialForms);
@@ -72,7 +80,11 @@ export function FormsClient({ initialForms }: { initialForms: FormSummary[] }) {
     startTransition(async () => {
       try {
         const copy = await duplicateForm(form.id);
-        router.push(`/forms/${copy.id}/edit`);
+        // The copy is a draft; an operator can't open the builder, so land
+        // them on the copy's invites page instead.
+        router.push(
+          isOperator ? `/forms/${copy.id}/invites` : `/forms/${copy.id}/edit`,
+        );
       } catch {
         toast({ title: "Could not duplicate the form", variant: "destructive" });
       }
@@ -103,12 +115,14 @@ export function FormsClient({ initialForms }: { initialForms: FormSummary[] }) {
 
   return (
     <>
-      <div className="flex justify-end">
-        <Button onClick={handleCreate} disabled={pending}>
-          <Plus className="mr-2 h-4 w-4" />
-          New form
-        </Button>
-      </div>
+      {!isOperator && (
+        <div className="flex justify-end">
+          <Button onClick={handleCreate} disabled={pending}>
+            <Plus className="mr-2 h-4 w-4" />
+            New form
+          </Button>
+        </div>
+      )}
 
       <div className="rounded-lg border">
         <Table>
@@ -134,7 +148,14 @@ export function FormsClient({ initialForms }: { initialForms: FormSummary[] }) {
             {forms.map((form) => (
               <TableRow key={form.id}>
                 <TableCell>
-                  <Link href={`/forms/${form.id}/edit`} className="font-medium hover:underline">
+                  <Link
+                    href={
+                      isOperator
+                        ? `/forms/${form.id}/invites`
+                        : `/forms/${form.id}/edit`
+                    }
+                    className="font-medium hover:underline"
+                  >
                     {adminLabel(form.title_en, form.title_he) || "Untitled form"}
                   </Link>
                   {form.title_en && form.title_he && (
@@ -171,11 +192,16 @@ export function FormsClient({ initialForms }: { initialForms: FormSummary[] }) {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => router.push(`/forms/${form.id}/edit`)}>
-                        <Pencil className="mr-2 h-4 w-4" /> Edit
-                      </DropdownMenuItem>
+                      {!isOperator && (
+                        <DropdownMenuItem onClick={() => router.push(`/forms/${form.id}/edit`)}>
+                          <Pencil className="mr-2 h-4 w-4" /> Edit
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onClick={() => router.push(`/forms/${form.id}/responses`)}>
                         <BarChart3 className="mr-2 h-4 w-4" /> Responses
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => router.push(`/forms/${form.id}/report`)}>
+                        <Map className="mr-2 h-4 w-4" /> Trips report
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => router.push(`/forms/${form.id}/invites`)}>
                         <Send className="mr-2 h-4 w-4" /> Send / invites
@@ -186,12 +212,14 @@ export function FormsClient({ initialForms }: { initialForms: FormSummary[] }) {
                       <DropdownMenuItem onClick={() => handleDuplicate(form)}>
                         <Copy className="mr-2 h-4 w-4" /> Duplicate
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => setDeleting(form)}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" /> Delete
-                      </DropdownMenuItem>
+                      {!isOperator && (
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={() => setDeleting(form)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Delete
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>

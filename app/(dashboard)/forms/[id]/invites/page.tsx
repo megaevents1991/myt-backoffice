@@ -4,6 +4,8 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getForm } from "@/lib/actions/form-actions";
 import { getFormInvites } from "@/lib/actions/form-invite-actions";
+import { getSession } from "@/lib/auth/guards";
+import { STAFF_ROLES } from "@/types/auth.types";
 import { adminLabel } from "@/lib/forms/i18n";
 import { InvitesClient } from "./invites-client";
 
@@ -22,6 +24,9 @@ export default async function FormInvitesPage({
   if (!loaded) notFound();
 
   const invites = await getFormInvites(formId);
+  // Operators run trip links; emailing personal invites stays a staff tool.
+  const session = await getSession();
+  const canEmail = Boolean(session && STAFF_ROLES.includes(session.role));
 
   return (
     <div className="space-y-6">
@@ -48,6 +53,7 @@ export default async function FormInvitesPage({
         staffFields={loaded.fields.filter(
           (field) => field.staff_only && field.type !== "section",
         )}
+        canEmail={canEmail}
         initialInvites={invites}
       />
     </div>
