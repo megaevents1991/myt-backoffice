@@ -48,6 +48,9 @@ export default async function FormReportPage({
       <ReportClient
         report={report}
         ratingFields={ratingFields}
+        fields={loaded.fields.filter(
+          (field) => !field.staff_only && field.type !== "section",
+        )}
         responses={responses}
       />
     </div>

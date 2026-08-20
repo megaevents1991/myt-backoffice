@@ -1178,6 +1178,8 @@ export type Database = {
           sent_at: string | null
           submitted_at: string | null
           token: string
+          trip_code_num: string | null
+          trip_code_prefix: string | null
         }
         Insert: {
           created_at?: string
@@ -1197,6 +1199,8 @@ export type Database = {
           sent_at?: string | null
           submitted_at?: string | null
           token: string
+          trip_code_num?: string | null
+          trip_code_prefix?: string | null
         }
         Update: {
           created_at?: string
@@ -1216,6 +1220,8 @@ export type Database = {
           sent_at?: string | null
           submitted_at?: string | null
           token?: string
+          trip_code_num?: string | null
+          trip_code_prefix?: string | null
         }
         Relationships: [
           {
@@ -1289,7 +1295,9 @@ export type Database = {
           is_deleted: string | null
           languages: string
           logo_url: string | null
+          operator_visible: boolean
           review_link_url: string | null
+          review_min_avg: number | null
           slug: string
           status: string
           thank_you_en: string | null
@@ -1312,7 +1320,9 @@ export type Database = {
           is_deleted?: string | null
           languages?: string
           logo_url?: string | null
+          operator_visible?: boolean
           review_link_url?: string | null
+          review_min_avg?: number | null
           slug: string
           status?: string
           thank_you_en?: string | null
@@ -1335,7 +1345,9 @@ export type Database = {
           is_deleted?: string | null
           languages?: string
           logo_url?: string | null
+          operator_visible?: boolean
           review_link_url?: string | null
+          review_min_avg?: number | null
           slug?: string
           status?: string
           thank_you_en?: string | null

@@ -1,11 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, Star, Users } from "lucide-react";
+import { ChevronDown, StickyNote, Star, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -14,16 +20,53 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { adminLabel } from "@/lib/forms/i18n";
 import type { TripReport, TripRow } from "@/lib/forms/report";
-import type { FormResponseRow } from "@/types/form.types";
+import type { AnswerValue, FormField, FormResponseRow } from "@/types/form.types";
 
 type RatingFieldInfo = { id: number; label: string; reviewScore: boolean };
 
 type Props = {
   report: TripReport;
   ratingFields: RatingFieldInfo[];
+  /** Every client-facing question, in form order - powers the response popup. */
+  fields: FormField[];
   responses: FormResponseRow[];
 };
+
+/** First answered value of a given field type - e.g. the traveler's name. */
+function answerOfType(
+  fields: FormField[],
+  answers: FormResponseRow["answers"],
+  type: FormField["type"],
+): AnswerValue | undefined {
+  for (const field of fields) {
+    if (field.type !== type) continue;
+    const value = answers[String(field.id)];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
+/** True when any free-text answer (long_text) came back non-empty. */
+function hasNote(fields: FormField[], answers: FormResponseRow["answers"]): boolean {
+  return fields.some(
+    (field) =>
+      field.type === "long_text" &&
+      typeof answers[String(field.id)] === "string" &&
+      (answers[String(field.id)] as string).trim() !== "",
+  );
+}
+
+function formatAnswer(field: FormField, value: AnswerValue): string {
+  if (typeof value === "boolean") return value ? "כן" : "לא";
+  if (field.type === "date" && typeof value === "string") {
+    const [y, m, d] = value.split("-");
+    if (y && m && d) return `${d}.${m}.${y}`;
+  }
+  if (Array.isArray(value)) return value.join(", ");
+  return String(value);
+}
 
 const fmtDate = (iso: string | null) => {
   if (!iso) return "-";
@@ -52,13 +95,14 @@ function AvgBadge({ avg }: { avg: number | null }) {
   );
 }
 
-export function ReportClient({ report, ratingFields, responses }: Props) {
+export function ReportClient({ report, ratingFields, fields, responses }: Props) {
   const [prefix, setPrefix] = useState("");
   const [num, setNum] = useState("");
   const [escort, setEscort] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [openTrip, setOpenTrip] = useState<number | null | undefined>(undefined);
+  const [viewing, setViewing] = useState<FormResponseRow | null>(null);
 
   const trips = useMemo(() => {
     const p = prefix.trim().toUpperCase();
@@ -182,32 +226,107 @@ export function ReportClient({ report, ratingFields, responses }: Props) {
                 key={trip.inviteId ?? "bucket"}
                 trip={trip}
                 ratingFields={ratingFields}
+                fields={fields}
                 open={openTrip === trip.inviteId}
                 onToggle={() =>
                   setOpenTrip(openTrip === trip.inviteId ? undefined : trip.inviteId)
                 }
                 responses={responsesOf(trip.inviteId)}
+                onView={setViewing}
               />
             ))}
           </TableBody>
         </Table>
       </div>
+
+      <ResponseDialog
+        response={viewing}
+        fields={fields}
+        onClose={() => setViewing(null)}
+      />
     </div>
+  );
+}
+
+/** The full submission, question by question, in form order. */
+function ResponseDialog({
+  response,
+  fields,
+  onClose,
+}: {
+  response: FormResponseRow | null;
+  fields: FormField[];
+  onClose: () => void;
+}) {
+  const name = response ? answerOfType(fields, response.answers, "short_text") : null;
+  return (
+    <Dialog open={response !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle dir="rtl" className="text-right">
+            {name ? String(name) : "תשובה"}
+            <span className="ms-2 text-sm font-normal text-muted-foreground">
+              {response && new Date(response.submitted_at).toLocaleString()}
+            </span>
+          </DialogTitle>
+        </DialogHeader>
+        {response && (
+          <div dir="rtl" className="space-y-1.5">
+            {fields.map((field) => {
+              const value = response.answers[String(field.id)];
+              const answered =
+                value !== undefined && value !== null && value !== "";
+              return (
+                <div
+                  key={field.id}
+                  className={cn(
+                    "flex items-start justify-between gap-4 rounded-md border px-3 py-2 text-sm",
+                    !answered && "opacity-45",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 text-right font-medium">
+                    {adminLabel(field.label_en, field.label_he)}
+                  </span>
+                  <span className="shrink-0 text-left">
+                    {!answered ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : field.type === "rating" ? (
+                      <span className="inline-flex items-center gap-1 font-bold tabular-nums">
+                        <Star className="h-3.5 w-3.5 text-amber-500" fill="currentColor" />
+                        {String(value)}
+                      </span>
+                    ) : (
+                      <span className="max-w-[220px] whitespace-pre-wrap break-words font-semibold">
+                        {formatAnswer(field, value)}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
 function TripRows({
   trip,
   ratingFields,
+  fields,
   open,
   onToggle,
   responses,
+  onView,
 }: {
   trip: TripRow;
   ratingFields: RatingFieldInfo[];
+  fields: FormField[];
   open: boolean;
   onToggle: () => void;
   responses: FormResponseRow[];
+  onView: (response: FormResponseRow) => void;
 }) {
   return (
     <>
@@ -300,21 +419,43 @@ function TripRows({
                         ratings.length > 0
                           ? ratings.reduce((s, v) => s + v, 0) / ratings.length
                           : null;
+                      const name = answerOfType(fields, response.answers, "short_text");
+                      const passengers = answerOfType(fields, response.answers, "number");
                       return (
-                        <div
+                        <button
                           key={response.id}
-                          className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-1.5 text-sm"
+                          type="button"
+                          onClick={() => onView(response)}
+                          title="Full answers"
+                          className="flex w-full items-center justify-between gap-3 rounded-md border bg-background px-3 py-1.5 text-left text-sm transition-colors hover:border-primary/50 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
-                          <span className="text-muted-foreground">
-                            {new Date(response.submitted_at).toLocaleString()}
+                          <span className="flex min-w-0 items-center gap-2.5">
+                            <span dir="rtl" className="max-w-[160px] truncate font-semibold">
+                              {name ? String(name) : "ללא שם"}
+                            </span>
+                            {passengers !== undefined && (
+                              <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                                <Users className="h-3 w-3" />
+                                {String(passengers)}
+                              </span>
+                            )}
+                            {hasNote(fields, response.answers) && (
+                              <Badge
+                                variant="outline"
+                                className="shrink-0 gap-1 px-1.5 text-[10px] text-amber-600"
+                              >
+                                <StickyNote className="h-3 w-3" />
+                                NOTE
+                              </Badge>
+                            )}
                           </span>
-                          <span className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">
-                              {ratings.length} ratings
+                          <span className="flex shrink-0 items-center gap-2">
+                            <span className="hidden text-xs text-muted-foreground sm:inline">
+                              {new Date(response.submitted_at).toLocaleString()}
                             </span>
                             <AvgBadge avg={avg} />
                           </span>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>

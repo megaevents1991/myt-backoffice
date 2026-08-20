@@ -130,6 +130,15 @@ const FIELDS = [
     showIfLabel: "האם ביקרת באתר מגה תיירות?",
     showIfEquals: true,
   }),
+
+  // Free text - answers surface as a NOTE badge in the trips report.
+  {
+    type: "long_text",
+    label_he: "משהו נוסף שתרצו לספר לנו?",
+    help_he: "הערות, שבחים, דברים לשיפור - הכול מתקבל באהבה",
+    required: false,
+    config: { rows: 4 },
+  },
 ];
 
 /**
