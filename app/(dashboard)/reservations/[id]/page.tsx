@@ -30,6 +30,7 @@ import type { Reservation } from "@/types/reservation.types";
 import type { UtmTouch } from "@/types/utm.types";
 import {
   getReservation,
+  getReservationAgentLabel,
   getReservationUtmTouches,
   setReservationVoucherState,
   setTravelMaterialsSent,
@@ -83,6 +84,9 @@ export default function ReservationDetailsPage({
   const [utmTouches, setUtmTouches] = useState<UtmTouch[]>([]);
   // Collapsed by default - attribution is "when a question comes up" info.
   const [utmOpen, setUtmOpen] = useState(false);
+  // Which office agent this booking is credited to (resolved across every
+  // office by slug) - null when unattributed, so the line just stays hidden.
+  const [agentLabel, setAgentLabel] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchReservation() {
@@ -104,6 +108,9 @@ export default function ReservationDetailsPage({
     fetchReservation();
     getReservationUtmTouches(Number.parseInt(resolvedParams.id))
       .then(setUtmTouches)
+      .catch(() => {});
+    getReservationAgentLabel(Number.parseInt(resolvedParams.id))
+      .then(setAgentLabel)
       .catch(() => {});
   }, [resolvedParams.id, toast]);
 
@@ -326,6 +333,11 @@ export default function ReservationDetailsPage({
                   <p className="text-lg">
                     {reservation.aff_partner_tracking_code}
                   </p>
+                  {agentLabel && (
+                    <p className="text-sm text-muted-foreground">
+                      סוכן: {agentLabel}
+                    </p>
+                  )}
                 </div>
               )}
 

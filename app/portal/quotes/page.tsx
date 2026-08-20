@@ -11,5 +11,11 @@ export default async function PortalQuotesPage() {
 
   const { quotes, stats } = await getPortalQuotesOverview();
 
-  return <QuotesClient initialQuotes={quotes} stats={stats} />;
+  return (
+    <QuotesClient
+      initialQuotes={quotes}
+      stats={stats}
+      isManager={session.role === "office_manager"}
+    />
+  );
 }

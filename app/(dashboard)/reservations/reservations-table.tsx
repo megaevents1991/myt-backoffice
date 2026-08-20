@@ -400,6 +400,14 @@ export function ReservationsTable() {
       },
     },
     {
+      accessorKey: "agent_label",
+      header: "סוכן",
+      cell: ({ row }) => {
+        const label = row.getValue("agent_label") as string | null;
+        return <div>{label || "-"}</div>;
+      },
+    },
+    {
       id: "actions",
       cell: ({ row }) => {
         const reservation = row.original;

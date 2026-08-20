@@ -44,6 +44,11 @@ export interface PortalQuote {
   status: string;
   pdf_storage_path: string | null;
   event_id: number | null;
+  /** Manager-only "נוצר ע"י" column - display name (falling back to email) of
+   *  the office user who created the quote. Null for a non-manager viewer
+   *  (agents in a multi-user office only ever see their own quotes anyway) or
+   *  an unattributed/legacy row. */
+  creator_name: string | null;
 }
 
 /** A quote's lifecycle as the agent manages it. `final` = still open/sent;
@@ -245,6 +250,10 @@ export async function getMyAgentTerms(): Promise<{
     : null;
 }
 
+type PortalQuoteRow = Omit<PortalQuote, "creator_name"> & {
+  created_by: string | null;
+};
+
 export async function getPortalQuotes(): Promise<PortalQuote[]> {
   const session = await requirePartner();
   // Server gate, not just a hidden tab - the page guard and the nav are UI.
@@ -257,7 +266,7 @@ export async function getPortalQuotes(): Promise<PortalQuote[]> {
   let query = (supabase as any)
     .from("quotes")
     .select(
-      "id,created_at,customer_name,title,total,valid_until,status,pdf_storage_path,event_id",
+      "id,created_at,customer_name,title,total,valid_until,status,pdf_storage_path,event_id,created_by",
     )
     .eq("partner_tracking_code", session.partner_code)
     .order("created_at", { ascending: false });
@@ -269,7 +278,16 @@ export async function getPortalQuotes(): Promise<PortalQuote[]> {
     console.error("getPortalQuotes:", JSON.stringify(error));
     return [];
   }
-  return (data as PortalQuote[]) ?? [];
+  // Only a manager sees who created each quote - an agent already sees only
+  // their own (or the whole solo office, where the column would be redundant).
+  const nameBySub = scope.isManager
+    ? new Map(scope.officeUsers.map((u) => [u.id, u.display_name || u.email]))
+    : null;
+  return ((data ?? []) as PortalQuoteRow[]).map(({ created_by, ...quote }) => ({
+    ...quote,
+    creator_name:
+      nameBySub && created_by ? (nameBySub.get(created_by) ?? null) : null,
+  }));
 }
 
 /**

@@ -184,11 +184,22 @@ export type OrderHotel = {
  * How an agent-entered booking gets settled - mirror of main's
  * lib/app.types.ts (resolveAgentSettlement there). Stored on
  * reservations.partner_settlement_method.
+ *
+ * "payment_link" added 2026-08-20 (main "wave3-main-paylink"): "אשראי הלקוח"
+ * removed from the agent settlement UI (legal - an agent must never type the
+ * customer's card) and replaced with a copyable link the customer pays
+ * through themselves; the underlying reservation is created exactly like a
+ * 24Save hold. "customer_card" itself is kept for historical rows only - it
+ * is no longer written by main's agent settlement UI. Backoffice display
+ * surfaces (reservations table/detail) have no dedicated case for it yet -
+ * they fall through to the generic "Customer's card" label - flagged as a
+ * follow-up, not fixed here (out of this task's main-only scope).
  */
 export const SETTLEMENT_METHODS = [
   "customer_card",
   "agent_card",
   "voucher",
+  "payment_link",
 ] as const;
 export type SettlementMethod = (typeof SETTLEMENT_METHODS)[number];
 

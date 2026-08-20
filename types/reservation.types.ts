@@ -77,6 +77,11 @@ export type Reservation = {
   voucher_state?: "sent" | "received" | "collected" | null;
   // Staff stamp - travel material sent to the customer (חומר ללקוח in the portal).
   travel_materials_sent_at?: string | null;
+  // Manager-set override (migration 20260820104625, QA wave 2): which office
+  // user (user_profiles.id) this booking is credited to. Wins over the
+  // UTM-derived attribution everywhere - see lib/portal-attribution.ts. Null
+  // = let the UTM attribution decide / unattributed. Main never writes this.
+  agent_user_id?: string | null;
 };
 
 /**
@@ -103,4 +108,9 @@ export type ReservationListRow = Pick<
   | "offline_flight_id"
   | "offline_hotel_id"
   | "partner_settlement_method"
-> & { has_payment_info: boolean };
+> & {
+  has_payment_info: boolean;
+  /** Which office agent the booking is credited to (utm_touches, resolved
+   *  across every office) - null when unattributed. See getAgentLabelsForReservations. */
+  agent_label: string | null;
+};

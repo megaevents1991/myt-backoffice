@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
@@ -13,6 +13,7 @@ import {
   Copy,
   Power,
   PowerOff,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,9 +32,12 @@ import {
   bulkDeletePartners,
   bulkDuplicatePartners,
   setPartnersActive,
+  getPartnerTeams,
   type CustomerRefundPartners,
   type PartnerListItem,
+  type PartnerTeamMember,
 } from "@/lib/actions/partner-actions";
+import { CreateOfficeManagerDialog } from "./create-office-manager-dialog";
 import { impersonatePartner } from "@/lib/actions/impersonate-actions";
 import { describeCommission } from "@/lib/partner-commission";
 import { ADMIN_ROLES } from "@/types/auth.types";
@@ -91,6 +95,52 @@ export function PartnersTable() {
   const { user: me } = useAuth();
   const canManage = !!me && ADMIN_ROLES.includes(me.role);
   const isSuperadmin = me?.role === "superadmin";
+
+  // Office team (QA item 1, 20.08 - "office manager belongs to the partners
+  // world"): one bulk query for every agent-type code on the page, grouped
+  // here client-side into a Map - never getOfficeUsers per row.
+  const [teams, setTeams] = useState<Map<string, PartnerTeamMember[]>>(new Map());
+  const [teamsLoading, setTeamsLoading] = useState(false);
+  const [managerTarget, setManagerTarget] = useState<PartnerListItem | null>(null);
+
+  const agentCodes = useMemo(
+    () =>
+      partners
+        .filter((p) => partnerType(p) === "agent")
+        .map((p) => p.partner_tracking_code),
+    [partners]
+  );
+  // Stable primitive key so the effect below only refires when the actual set
+  // of agent codes changes (add/remove/duplicate), not on every unrelated
+  // `partners` state update.
+  const agentCodesKey = agentCodes.join(",");
+
+  const fetchTeams = useCallback(async (codes: string[]) => {
+    if (codes.length === 0) {
+      setTeams(new Map());
+      return;
+    }
+    setTeamsLoading(true);
+    try {
+      const rows = await getPartnerTeams(codes);
+      const grouped = new Map<string, PartnerTeamMember[]>();
+      for (const row of rows) {
+        const list = grouped.get(row.partner_tracking_code);
+        if (list) list.push(row);
+        else grouped.set(row.partner_tracking_code, [row]);
+      }
+      setTeams(grouped);
+    } catch (error) {
+      console.error("Error fetching partner teams:", error);
+    } finally {
+      setTeamsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTeams(agentCodesKey === "" ? [] : agentCodesKey.split(","));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentCodesKey, fetchTeams]);
 
   // Superadmin "login as partner": mint the /portal-scoped impersonation
   // cookie, then open the portal in a fresh window - the dashboard session in
@@ -378,6 +428,44 @@ export function PartnersTable() {
       },
     },
     {
+      id: "team",
+      header: "צוות",
+      // Office team is an agent-type-partner concept - affiliates and refund
+      // rows never show one, same scope as the "create manager" action below.
+      cell: ({ row }) => {
+        const partner = row.original;
+        if (partnerType(partner) !== "agent") {
+          return <span className="text-muted-foreground">-</span>;
+        }
+        const members = teams.get(partner.partner_tracking_code) ?? [];
+        if (members.length === 0) {
+          return teamsLoading ? (
+            <span className="text-xs text-muted-foreground">טוען...</span>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          );
+        }
+        const manager = members.find((m) => m.role === "office_manager");
+        const agentCount = members.filter((m) => m.role === "agent").length;
+        return (
+          <div className="flex flex-col gap-1">
+            {manager ? (
+              <Badge variant="default" className="w-fit font-normal">
+                {manager.display_name || manager.email}
+              </Badge>
+            ) : (
+              <span className="text-xs text-muted-foreground">ללא מנהל</span>
+            )}
+            {agentCount > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {agentCount} סוכנים
+              </span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
       accessorKey: "partner_tracking_code",
       header: "Tracking Code",
       cell: ({ row }) => (
@@ -489,6 +577,17 @@ export function PartnersTable() {
                   >
                     <LogIn className="mr-2 h-4 w-4" />
                     <span>Login as {type === "agent" ? "agent" : "affiliate"}</span>
+                  </DropdownMenuItem>
+                )}
+                {/* Office manager is an agent-office concept - appointing one
+                    is superadmin-only, same rule as /users. */}
+                {isSuperadmin && type === "agent" && (
+                  <DropdownMenuItem
+                    className="flex items-center"
+                    onClick={() => setManagerTarget(row.original)}
+                  >
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    <span>צור מנהל משרד</span>
                   </DropdownMenuItem>
                 )}
                 {canManage && (
@@ -647,6 +746,27 @@ export function PartnersTable() {
         </div>
         }
       />
+
+      {isSuperadmin && (
+        <CreateOfficeManagerDialog
+          open={managerTarget !== null}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setManagerTarget(null);
+          }}
+          trackingCode={managerTarget?.partner_tracking_code ?? ""}
+          partnerLabel={
+            managerTarget ? managerTarget.name_hebrew || managerTarget.email : ""
+          }
+          existingManagers={
+            managerTarget
+              ? (teams.get(managerTarget.partner_tracking_code) ?? []).filter(
+                  (m) => m.role === "office_manager"
+                )
+              : []
+          }
+          onCreated={() => fetchTeams(agentCodes)}
+        />
+      )}
     </div>
   );
 }

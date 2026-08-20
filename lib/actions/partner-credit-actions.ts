@@ -1,6 +1,6 @@
 "use server";
 
-import { requireCreditAccess, requireStaff } from "@/lib/auth/guards";
+import { requireCreditAccess, requireOfficeManager, requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import {
@@ -11,6 +11,13 @@ import {
   round2,
   wasSettledAtCutoff,
 } from "@/lib/partner-commission";
+import {
+  getOfficeUsers,
+  getReservationAttribution,
+  resolvePortalScope,
+  type OfficeUser,
+} from "@/lib/portal-attribution";
+import type { SessionPayload } from "@/lib/auth/session";
 import type { ReservationEventOrderInfo } from "@/types/reservation.types";
 
 /**
@@ -64,6 +71,10 @@ type ReservationRow = {
   /** ISO timestamp; compared as a string against the accrual start date. */
   created_at: string | null;
   billed_at: string | null;
+  /** Only selected (and only meaningful) in a scoped loadCredit call - see
+   *  CreditScope below. */
+  id?: number;
+  agent_user_id?: string | null;
 };
 
 /** One row per coupon code, from the partner_coupon_usage RPC. */
@@ -158,26 +169,60 @@ function settleRedemptions(
   return { settled, returnedUsd: round2(returnedUsd) };
 }
 
-async function loadCredit(trackingCode: string): Promise<PartnerCredit> {
-  const [partnerResult, reservationsResult, redemptionsResult] =
+/**
+ * Which bucket of the OFFICE's money loadCredit computes (QA wave 2, 20.08 -
+ * "the accrual is per-agent, not per-office"). Undefined = today's
+ * unscoped office-level total (solo offices / affiliates - byte-identical to
+ * the pre-wave-2 behavior, zero extra queries). `officeUsers` is passed in
+ * by the caller (already fetched via resolvePortalScope) rather than
+ * refetched here.
+ */
+interface CreditScope {
+  /** Bucket owner: paid reservations / redemptions attributed to this user. */
+  agentSub: string;
+  /** Manager buckets only - also fold in reservations/redemptions with no
+   *  resolved owner ("לא משויך"). */
+  includeUnattributed: boolean;
+  officeUsers: OfficeUser[];
+}
+
+async function loadCredit(
+  trackingCode: string,
+  scope?: CreditScope,
+): Promise<PartnerCredit> {
+  const reservationColumns = scope
+    ? "id,status,event_order_info,created_at,billed_at,agent_user_id"
+    : "status,event_order_info,created_at,billed_at";
+  const [partnerResult, reservationsInitial, redemptionsResult] =
     await Promise.all([
       supabase
         .from("partners")
         .select("credit_per_ticket,credit_accrual_start")
         .eq("partner_tracking_code", trackingCode)
         .maybeSingle(),
-      supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
         .from("reservations")
-        .select("status,event_order_info,created_at,billed_at")
+        .select(reservationColumns)
         .eq("aff_partner_tracking_code", trackingCode),
       supabase
         .from("partner_credit_redemptions")
-        .select("id,amount_usd,coupon_code,created_at")
+        .select("id,amount_usd,coupon_code,coupon_id,created_at,created_by")
         .eq("partner_tracking_code", trackingCode)
         .order("created_at", { ascending: false }),
     ]);
 
   if (partnerResult.error) throw partnerResult.error;
+  let reservationsResult = reservationsInitial;
+  if (scope && reservationsResult.error?.code === "42703") {
+    // agent_user_id not migrated yet - retry without it; every reservation
+    // simply merges to its UTM attribution below (override contributes
+    // nothing until the migration lands).
+    reservationsResult = await supabase
+      .from("reservations")
+      .select("id,status,event_order_info,created_at,billed_at")
+      .eq("aff_partner_tracking_code", trackingCode);
+  }
   if (reservationsResult.error) throw reservationsResult.error;
   if (redemptionsResult.error) throw redemptionsResult.error;
 
@@ -201,14 +246,72 @@ async function loadCredit(trackingCode: string): Promise<PartnerCredit> {
   // balance for no visible reason.
   const allReservations = (reservationsResult.data ??
     []) as unknown as ReservationRow[];
-  const reservations = accrualStart
+  let reservations = accrualStart
     ? allReservations.filter(
         (r) =>
           (r.created_at ?? "") >= accrualStart ||
           !wasSettledAtCutoff(r.billed_at),
       )
     : allReservations;
-  const rawHistory = (redemptionsResult.data ?? []) as unknown as LedgerRow[];
+
+  if (scope) {
+    // Manager-set override wins over the UTM-derived attribution, same as
+    // every other consumer (QA wave 2, 20.08).
+    const attribution = await getReservationAttribution(
+      reservations.map((r) => r.id ?? -1),
+      scope.officeUsers,
+    );
+    // An override can point at a user who has since left this office (staff
+    // moved them elsewhere) - treat that the same as unattributed rather
+    // than losing the money into a bucket nobody's view ever sums, so the
+    // manager's own bucket + everyone else's still totals the office figure.
+    const officeUserIds = new Set(scope.officeUsers.map((u) => u.id));
+    reservations = reservations.filter((r) => {
+      const rawOwner = r.agent_user_id ?? (attribution.get(r.id ?? -1) ?? null);
+      const owner = rawOwner && officeUserIds.has(rawOwner) ? rawOwner : null;
+      return (
+        owner === scope.agentSub || (owner === null && scope.includeUnattributed)
+      );
+    });
+  }
+
+  const rawHistory = (redemptionsResult.data ??
+    []) as unknown as (LedgerRow & {
+    coupon_id: number | null;
+    created_by: string | null;
+  })[];
+
+  // Per-agent redemption scoping (QA wave 2, 20.08; rebucketed in the 20.08
+  // fix batch - the original version joined coupons.created_by, which 42703s
+  // during the deploy<->migration window: every redemption then read as
+  // unowned, so a non-manager agent's OWN redemptions vanished from their
+  // scoped history, their computed redeemedUsd read as 0, and the balance
+  // check let them convert their full accrued balance again - a double
+  // spend. Also, any coupon created in that window kept coupons.created_by
+  // NULL forever.).
+  //
+  // partner_credit_redemptions.created_by fixes both: it is stamped with the
+  // actor on every conversion insert below, and - unlike coupons.created_by,
+  // added later - it has existed since the original credit migration
+  // (20260729195000), so it is never behind an unapplied migration. Null
+  // only for legacy rows that predate this feature, which fall into the
+  // manager bucket exactly like any other unresolved owner.
+  let scopedHistory: (LedgerRow & {
+    coupon_id: number | null;
+    created_by: string | null;
+  })[] = rawHistory;
+  if (scope) {
+    // Same "left the office" fallback as the reservations filter above.
+    const officeUserIds = new Set(scope.officeUsers.map((u) => u.id));
+    scopedHistory = rawHistory.filter((row) => {
+      const rawOwner = row.created_by ?? null;
+      const owner =
+        rawOwner && officeUserIds.has(rawOwner) ? rawOwner : null;
+      return (
+        owner === scope.agentSub || (owner === null && scope.includeUnattributed)
+      );
+    });
+  }
 
   // Anyone can redeem a partner's coupon, so usage is NOT scoped to the
   // partner's own attributed reservations - it is keyed on the coupon codes.
@@ -216,7 +319,7 @@ async function loadCredit(trackingCode: string): Promise<PartnerCredit> {
   // because `reservations.coupon_code` stores whatever the customer typed; a
   // case-sensitive match would miss a lower-case entry and the partner would
   // simply lose the unspent remainder.
-  const codes = rawHistory
+  const codes = scopedHistory
     .map((row) => (row.coupon_code ?? "").trim())
     .filter(Boolean);
 
@@ -238,7 +341,7 @@ async function loadCredit(trackingCode: string): Promise<PartnerCredit> {
   }
 
   const { settled, returnedUsd } = settleRedemptions(
-    rawHistory,
+    scopedHistory,
     couponUses,
     couponStates,
   );
@@ -262,10 +365,181 @@ async function loadCredit(trackingCode: string): Promise<PartnerCredit> {
   };
 }
 
-/** The signed-in partner's own credit. */
+/**
+ * Resolves which bucket the signed-in session should see (QA wave 2, 20.08):
+ * affiliate or a solo office keep today's office-level total untouched
+ * (undefined scope - zero extra queries in loadCredit); a multi-user office's
+ * agent sees only their own bucket; its manager sees their own bucket PLUS
+ * whatever has no resolved owner ("לא משויך" absorbs into the manager, per
+ * Dor - "הצבירה היא לכל סוכן לא למנהל המשרד").
+ *
+ * Shared by getMyCredit and convertCreditToCoupon so a conversion is checked
+ * and recorded against the EXACT balance the partner is looking at.
+ */
+async function creditScopeForSession(
+  session: SessionPayload & { partner_code: string },
+): Promise<CreditScope | undefined> {
+  if (session.role === "affiliate") return undefined;
+  const scope = await resolvePortalScope(session);
+  if (scope.soloOffice) return undefined;
+  return {
+    agentSub: session.sub,
+    includeUnattributed: session.role === "office_manager",
+    officeUsers: scope.officeUsers,
+  };
+}
+
+/** The signed-in partner's own credit (their own bucket in a multi-user
+ *  office - see creditScopeForSession). */
 export async function getMyCredit(): Promise<PartnerCredit> {
   const session = await requireCreditAccess();
-  return loadCredit(session.partner_code);
+  const scope = await creditScopeForSession(session);
+  return loadCredit(session.partner_code, scope);
+}
+
+/**
+ * Manager-only leaderboard: every office user's accrued / redeemed / balance,
+ * in one pass over the office's paid reservations + attribution + redemptions
+ * (not N calls to loadCredit). The manager's own row already absorbs
+ * unattributed money - same rule getMyCredit uses for them - so this table's
+ * balances sum to the office total loadCredit(trackingCode) (unscoped) would
+ * report.
+ */
+export interface AgentCreditBreakdownRow {
+  sub: string;
+  name: string;
+  accruedUsd: number;
+  redeemedUsd: number;
+  balanceUsd: number;
+}
+
+export async function getOfficeCreditBreakdown(): Promise<
+  AgentCreditBreakdownRow[]
+> {
+  const session = await requireOfficeManager();
+  const code = session.partner_code;
+
+  const [officeUsers, partnerResult, reservationsInitial, redemptionsResult] =
+    await Promise.all([
+      getOfficeUsers(code),
+      supabase
+        .from("partners")
+        .select("credit_per_ticket,credit_accrual_start")
+        .eq("partner_tracking_code", code)
+        .maybeSingle(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from("reservations")
+        .select("id,status,event_order_info,created_at,billed_at,agent_user_id")
+        .eq("aff_partner_tracking_code", code),
+      supabase
+        .from("partner_credit_redemptions")
+        .select("amount_usd,created_by")
+        .eq("partner_tracking_code", code),
+    ]);
+
+  // getOfficeUsers fails CLOSED (null on a query error) - mirror that here
+  // rather than showing a leaderboard that might be missing rows.
+  if (officeUsers === null) return [];
+  if (partnerResult.error) {
+    console.error(
+      "getOfficeCreditBreakdown partner:",
+      JSON.stringify(partnerResult.error),
+    );
+    return [];
+  }
+
+  let reservationsResult = reservationsInitial;
+  if (reservationsResult.error?.code === "42703") {
+    reservationsResult = await supabase
+      .from("reservations")
+      .select("id,status,event_order_info,created_at,billed_at")
+      .eq("aff_partner_tracking_code", code);
+  }
+  if (reservationsResult.error) {
+    console.error(
+      "getOfficeCreditBreakdown reservations:",
+      JSON.stringify(reservationsResult.error),
+    );
+    return [];
+  }
+
+  if (redemptionsResult.error) {
+    console.error(
+      "getOfficeCreditBreakdown redemptions:",
+      JSON.stringify(redemptionsResult.error),
+    );
+  }
+
+  const partnerRow = partnerResult.data as {
+    credit_per_ticket: number;
+    credit_accrual_start: string | null;
+  } | null;
+  const creditPerTicket = partnerRow?.credit_per_ticket ?? 0;
+  const accrualStart = partnerRow?.credit_accrual_start ?? null;
+
+  const allReservations = (reservationsResult.data ??
+    []) as unknown as ReservationRow[];
+  const reservations = accrualStart
+    ? allReservations.filter(
+        (r) =>
+          (r.created_at ?? "") >= accrualStart ||
+          !wasSettledAtCutoff(r.billed_at),
+      )
+    : allReservations;
+
+  const attribution = await getReservationAttribution(
+    reservations.map((r) => r.id ?? -1),
+    officeUsers,
+  );
+
+  // Manager absorbs anything with no resolved owner - same rule
+  // creditScopeForSession applies to getMyCredit, so this leaderboard and
+  // the manager's own card always agree. An owner who has since left this
+  // office (staff moved them elsewhere) falls back the same way, so every
+  // row's money still lands in a bucket this table actually sums.
+  const managerSub = session.sub;
+  const officeUserIds = new Set(officeUsers.map((u) => u.id));
+  const inOffice = (id: string | null): string | null =>
+    id && officeUserIds.has(id) ? id : null;
+
+  const reservationsByOwner = new Map<string, ReservationRow[]>();
+  for (const r of reservations) {
+    const owner = inOffice(r.agent_user_id ?? (attribution.get(r.id ?? -1) ?? null));
+    const bucket = owner ?? managerSub;
+    const list = reservationsByOwner.get(bucket) ?? [];
+    list.push(r);
+    reservationsByOwner.set(bucket, list);
+  }
+
+  const redeemedByOwner = new Map<string, number>();
+  for (const row of (redemptionsResult.data ?? []) as unknown as {
+    amount_usd: number;
+    created_by: string | null;
+  }[]) {
+    const owner = inOffice(row.created_by ?? null);
+    const bucket = owner ?? managerSub;
+    redeemedByOwner.set(
+      bucket,
+      (redeemedByOwner.get(bucket) ?? 0) + Number(row.amount_usd ?? 0),
+    );
+  }
+
+  const rows: AgentCreditBreakdownRow[] = officeUsers.map((u) => {
+    const accruedUsd = round2(
+      creditAccrued(reservationsByOwner.get(u.id) ?? [], creditPerTicket),
+    );
+    const redeemedUsd = round2(redeemedByOwner.get(u.id) ?? 0);
+    return {
+      sub: u.id,
+      name: u.display_name || u.email,
+      accruedUsd,
+      redeemedUsd,
+      balanceUsd: Math.max(0, round2(accruedUsd - redeemedUsd)),
+    };
+  });
+
+  return rows.sort((a, b) => b.balanceUsd - a.balanceUsd);
 }
 
 /** One voucher-settled order in the agent's settlement view. */
@@ -318,6 +592,13 @@ export async function getMyVoucherSettlement(): Promise<VoucherSettlement> {
     openRows: [],
   };
   if (session.role === "affiliate") return empty;
+  // Voucher settlement is OFFICE money (spec §5), unlike credit which is now
+  // per-agent (QA wave 2, 20.08) - restrict to office_manager or a solo
+  // office; a non-solo agent gets the same empty view as an affiliate.
+  if (session.role === "agent") {
+    const scope = await resolvePortalScope(session);
+    if (!scope.soloOffice) return empty;
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let { data, error } = await (supabase as any)
@@ -433,42 +714,65 @@ export async function convertCreditToCoupon(
   options: ConvertOptions = {},
 ): Promise<ConvertResult> {
   const session = await requireCreditAccess();
-  return convertFor(session.partner_code, session.sub, options);
+  const scope = await creditScopeForSession(session);
+  return convertFor(session.partner_code, session.sub, options, scope);
 }
 
 /**
  * Insert the coupon switched off. A generated code retries on collision; a code
  * the partner chose is reported back instead, so they can pick another rather
  * than silently getting a different one.
+ *
+ * `createdBy` stamps who converted the credit (QA wave 2, 20.08 - per-agent
+ * coupon lists in getPortalCoupons key off it; redemption bucketing does NOT
+ * - that keys off partner_credit_redemptions.created_by instead, stamped
+ * separately on the ledger insert in convertFor below). A not-yet-migrated
+ * `created_by` retries the SAME code without it, so a conversion still works
+ * before the migration lands - it just isn't attributable in the coupon list
+ * yet.
  */
 async function insertCoupon(
   firstCode: string,
   amountUsd: number,
   trackingCode: string,
   custom: boolean,
+  createdBy: string | null,
 ): Promise<
   { ok: true; id: number; code: string } | { ok: false; error: string }
 > {
   let code = firstCode;
+  let includeCreatedBy = true;
   for (let attempt = 0; attempt < 3; attempt++) {
+    const payload: Record<string, unknown> = {
+      code,
+      discount_type: "fixed",
+      discount_value: amountUsd,
+      max_uses: 1,
+      is_active: false,
+      partner_tracking_code: trackingCode,
+    };
+    if (includeCreatedBy && createdBy) payload.created_by = createdBy;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from("coupons")
-      .insert({
-        code,
-        discount_type: "fixed",
-        discount_value: amountUsd,
-        max_uses: 1,
-        is_active: false,
-        partner_tracking_code: trackingCode,
-      })
+      .insert(payload)
       .select("id")
       .single();
 
     if (!error) return { ok: true, id: (data as { id: number }).id, code };
 
+    const errorCode = (error as { code?: string }).code;
+    if (errorCode === "42703" && includeCreatedBy) {
+      console.warn(
+        "convertCreditToCoupon: coupons.created_by not migrated yet - inserting without it",
+      );
+      includeCreatedBy = false;
+      attempt -= 1; // retry the SAME code, not a new collision-retry attempt
+      continue;
+    }
     // 23505 = unique violation. Anything else is not worth retrying.
-    if ((error as { code?: string }).code !== "23505") {
+    if (errorCode !== "23505") {
       console.error("convertCreditToCoupon coupon:", JSON.stringify(error));
       return { ok: false, error: "לא הצלחנו ליצור את הקופון. נסו שוב." };
     }
@@ -484,8 +788,9 @@ async function convertFor(
   trackingCode: string,
   actorId: string | null,
   options: ConvertOptions,
+  scope?: CreditScope,
 ): Promise<ConvertResult> {
-  const credit = await loadCredit(trackingCode);
+  const credit = await loadCredit(trackingCode, scope);
 
   const requested =
     options.amountUsd == null ? credit.balanceUsd : Number(options.amountUsd);
@@ -525,7 +830,7 @@ async function convertFor(
 
   // Created switched OFF: until the ledger records it, this coupon must not be
   // spendable, because the balance still offers the same credit.
-  const coupon = await insertCoupon(code, amountUsd, trackingCode, custom);
+  const coupon = await insertCoupon(code, amountUsd, trackingCode, custom, actorId);
   if (!coupon.ok) return { ok: false, error: coupon.error };
   const { id: couponId, code: finalCode } = coupon;
 
@@ -557,11 +862,19 @@ async function convertFor(
   // partner who has converted once has older rows, and testing for their mere
   // presence would make a legitimate conversion undo itself.
   //
-  // If this read fails the credit is already committed against a coupon that is
-  // still switched off, so undo both rather than leaving the partner short.
+  // The bucketing above now keys on partner_credit_redemptions.created_by,
+  // which the ledger insert above always stamps regardless of the
+  // coupons.created_by migration state - so this re-read sees the
+  // just-inserted row and buckets it correctly even mid-deploy, closing the
+  // race this check exists to catch.
+  //
+  // If this read fails - including the redemptions re-read itself erroring -
+  // the credit is already committed against a coupon that is still switched
+  // off and we cannot prove the balance still holds. Fail CLOSED: undo both
+  // rather than risk a double-spend.
   let after: PartnerCredit;
   try {
-    after = await loadCredit(trackingCode);
+    after = await loadCredit(trackingCode, scope);
   } catch (error) {
     console.error("convertCreditToCoupon post-check:", error);
     await supabase
@@ -569,7 +882,7 @@ async function convertFor(
       .delete()
       .eq("id", ledgerId);
     await supabase.from("coupons").delete().eq("id", couponId);
-    return { ok: false, error: "לא הצלחנו להשלים את ההמרה. נסו שוב." };
+    return { ok: false, error: "יתרה השתנתה - נסו שוב" };
   }
 
   const available = round2(after.accruedUsd + after.returnedUsd);

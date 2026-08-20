@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronLeft, Hotel, Plane, Ticket } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -24,6 +25,8 @@ import type {
   PortalReservation,
   PortalReservationSource,
 } from "@/lib/actions/portal-actions";
+import { assignReservationAgent } from "@/lib/actions/portal-team-actions";
+import { useToast } from "@/hooks/use-toast";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -141,15 +144,37 @@ function ChoicesPanel({ reservation }: { reservation: PortalReservation }) {
 export function ReservationsTable({
   rows,
   showAgentColumn,
+  officeAgents,
 }: {
   rows: PortalReservation[];
   /** Manager view only - adds the "סוכן" column crediting each row. */
   showAgentColumn: boolean;
+  /** Manager view only - the office roster for the assignment Select's
+   *  options (unused, and safe to omit, when showAgentColumn is false). */
+  officeAgents?: { sub: string; name: string }[];
 }) {
+  const router = useRouter();
+  const { toast } = useToast();
   const [futureOnly, setFutureOnly] = useState(false);
   const [status, setStatus] = useState<string>("all");
   const [sort, setSort] = useState<SortKey>("created");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [savingId, setSavingId] = useState<number | null>(null);
+
+  const handleAgentChange = async (reservationId: number, value: string) => {
+    setSavingId(reservationId);
+    const result = await assignReservationAgent(
+      reservationId,
+      value === "none" ? null : value,
+    );
+    setSavingId(null);
+    if (!result.ok) {
+      toast({ variant: "destructive", title: "השיוך נכשל", description: result.error });
+      return;
+    }
+    toast({ title: "הסוכן עודכן" });
+    router.refresh();
+  };
 
   const filtered = useMemo(() => {
     const today = new Date();
@@ -320,10 +345,29 @@ export function ReservationsTable({
                     </Badge>
                   </TableCell>
                   {showAgentColumn && (
-                    <TableCell className="max-w-[7rem]">
-                      <span className="block truncate">
-                        {reservation.agent_name ?? "לא משויך"}
-                      </span>
+                    <TableCell
+                      className="max-w-[9rem]"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Select
+                        value={reservation.agent_sub ?? "none"}
+                        onValueChange={(value) =>
+                          handleAgentChange(reservation.id, value)
+                        }
+                        disabled={savingId === reservation.id}
+                      >
+                        <SelectTrigger className="h-8 w-full text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">לא משויך</SelectItem>
+                          {(officeAgents ?? []).map((agent) => (
+                            <SelectItem key={agent.sub} value={agent.sub}>
+                              {agent.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                   )}
                   <TableCell>

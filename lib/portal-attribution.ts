@@ -68,6 +68,38 @@ export async function getOfficeUsers(
   return (data as OfficeUser[]) ?? [];
 }
 
+/**
+ * Bulk sibling of getOfficeUsers - one query for MANY partner codes at once,
+ * instead of N calls to getOfficeUsers (staff partners screen, QA item 1,
+ * 20.08). Each row carries its own `partner_tracking_code` so callers can
+ * group by partner (the list groups client-side into a Map; the single-code
+ * view page just reads the one array).
+ *
+ * Fails OPEN (empty array) on a query error, unlike getOfficeUsers/
+ * resolvePortalScope which fail closed - this is a staff-facing display, not
+ * a security scope, so the safe direction is "show nothing" rather than
+ * blocking the page.
+ */
+export async function getOfficeUsersForPartners(
+  partnerCodes: string[],
+): Promise<(OfficeUser & { partner_tracking_code: string })[]> {
+  if (partnerCodes.length === 0) return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("user_profiles")
+    .select(
+      "id,email,display_name,role,agent_slug,is_active,created_at,partner_tracking_code",
+    )
+    .in("partner_tracking_code", partnerCodes)
+    .in("role", PARTNER_ROLES)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("getOfficeUsersForPartners:", JSON.stringify(error));
+    return [];
+  }
+  return (data as (OfficeUser & { partner_tracking_code: string })[]) ?? [];
+}
+
 /** The viewer's own slug (for building their links). */
 export async function getAgentSlugForUser(sub: string): Promise<string | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -164,6 +196,160 @@ export async function getReservationAttribution(
     }
   }
   return map;
+}
+
+/**
+ * ADMIN-side bulk attribution: reservation id → agent display label, resolved
+ * across ALL offices by slug (unlike getReservationAttribution above, which is
+ * scoped to a single office's officeUsers). Staff-facing reservation views use
+ * this to show which agent a booking is credited to, whichever office they
+ * belong to.
+ *
+ * The manager-set `reservations.agent_user_id` override (QA wave 2, 20.08)
+ * wins over the UTM-derived attribution here too, same as everywhere else -
+ * resolved first so the utm_touches lookup below only fills the gaps it
+ * leaves. Missing key = unattributed (no override, no agent-prefixed touch,
+ * or neither resolves to a user_profiles row).
+ */
+export async function getAgentLabelsForReservations(
+  reservationIds: number[],
+): Promise<Map<number, string>> {
+  const labelByReservation = new Map<number, string>();
+  if (reservationIds.length === 0) return labelByReservation;
+
+  // Both loops below fan their chunks out with Promise.all instead of
+  // awaiting one at a time - at 20k admin-reservation-page rows that was
+  // ~200 sequential round-trips (100 chunks x 2 loops), now 2 parallel waves.
+  // The two loops stay sequential RELATIVE TO EACH OTHER (the second reads
+  // overrideByReservation, populated by the first) - only the chunks within
+  // each loop run concurrently. Fail-open per-chunk error handling is
+  // unchanged - `return` from the map callback is this loop's `continue`.
+  const overrideByReservation = new Map<number, string>();
+  const overrideChunks: number[][] = [];
+  for (let i = 0; i < reservationIds.length; i += TOUCH_CHUNK) {
+    overrideChunks.push(reservationIds.slice(i, i + TOUCH_CHUNK));
+  }
+  await Promise.all(
+    overrideChunks.map(async (chunk) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from("reservations")
+        .select("id,agent_user_id")
+        .in("id", chunk);
+      if (error) {
+        // 42703 = migration not landed yet - routine, not an error. Either
+        // way, fall through to UTM-only attribution for this chunk.
+        if (error.code !== "42703") {
+          console.error(
+            "getAgentLabelsForReservations override:",
+            JSON.stringify(error),
+          );
+        }
+        return;
+      }
+      for (const row of (data ?? []) as {
+        id: number;
+        agent_user_id: string | null;
+      }[]) {
+        if (row.agent_user_id) overrideByReservation.set(row.id, row.agent_user_id);
+      }
+    }),
+  );
+
+  const slugByReservation = new Map<number, string>();
+  const touchChunks: number[][] = [];
+  for (let i = 0; i < reservationIds.length; i += TOUCH_CHUNK) {
+    touchChunks.push(reservationIds.slice(i, i + TOUCH_CHUNK));
+  }
+  await Promise.all(
+    touchChunks.map(async (chunk) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from("utm_touches")
+        .select("reservation_id,utm_content")
+        .eq("position", 0)
+        .in("reservation_id", chunk);
+      if (error) {
+        // Fail open to "unattributed" - a report gap, never a broken page.
+        console.error(
+          "getAgentLabelsForReservations touches:",
+          JSON.stringify(error),
+        );
+        return;
+      }
+      for (const row of (data ?? []) as {
+        reservation_id: number;
+        utm_content: string | null;
+      }[]) {
+        // The override already wins for this row - no need to resolve its slug.
+        if (overrideByReservation.has(row.reservation_id)) continue;
+        if (row.utm_content?.startsWith(AGENT_UTM_PREFIX)) {
+          slugByReservation.set(
+            row.reservation_id,
+            row.utm_content.slice(AGENT_UTM_PREFIX.length),
+          );
+        }
+      }
+    }),
+  );
+
+  const overrideIds = Array.from(new Set(overrideByReservation.values()));
+  const slugs = Array.from(new Set(slugByReservation.values()));
+  if (overrideIds.length === 0 && slugs.length === 0) return labelByReservation;
+
+  const [byIdResult, bySlugResult] = await Promise.all([
+    overrideIds.length > 0
+      ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from("user_profiles")
+          .select("id,display_name,email")
+          .in("id", overrideIds)
+      : Promise.resolve({ data: [] as unknown[], error: null }),
+    slugs.length > 0
+      ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from("user_profiles")
+          .select("display_name,email,agent_slug")
+          .in("agent_slug", slugs)
+      : Promise.resolve({ data: [] as unknown[], error: null }),
+  ]);
+
+  if (byIdResult.error) {
+    console.error(
+      "getAgentLabelsForReservations override users:",
+      JSON.stringify(byIdResult.error),
+    );
+  }
+  if (bySlugResult.error) {
+    console.error("getAgentLabelsForReservations users:", JSON.stringify(bySlugResult.error));
+  }
+
+  const labelById = new Map<string, string>();
+  for (const u of (byIdResult.data ?? []) as {
+    id: string;
+    display_name: string | null;
+    email: string;
+  }[]) {
+    labelById.set(u.id, u.display_name || u.email);
+  }
+  const labelBySlug = new Map<string, string>();
+  for (const u of (bySlugResult.data ?? []) as {
+    display_name: string | null;
+    email: string;
+    agent_slug: string | null;
+  }[]) {
+    if (u.agent_slug) labelBySlug.set(u.agent_slug, u.display_name || u.email);
+  }
+
+  for (const [reservationId, ownerId] of overrideByReservation) {
+    const label = labelById.get(ownerId);
+    if (label) labelByReservation.set(reservationId, label);
+  }
+  for (const [reservationId, slug] of slugByReservation) {
+    const label = labelBySlug.get(slug);
+    if (label) labelByReservation.set(reservationId, label);
+  }
+  return labelByReservation;
 }
 
 /** The agent-isolation rule, in one place. */

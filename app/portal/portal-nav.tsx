@@ -10,10 +10,13 @@ type NavItem = { name: string; href: string; roles?: string[]; creditGated?: boo
 const navItems: NavItem[] = [
   { name: "דשבורד", href: "/portal" },
   { name: "החבילות והלינקים שלי", href: "/portal/packages" },
-  // Office money - manager + affiliate; a solo-office agent keeps access
-  // (creditGated resolves via the showCredit prop computed server-side).
+  // Credit is per-agent now, gated only by whether the office has a credit
+  // agreement at all (creditGated resolves via the showCredit prop computed
+  // server-side - see app/portal/layout.tsx).
   { name: "הצבירה שלי", href: "/portal/credit", creditGated: true },
-  { name: "הקופונים שלי", href: "/portal/coupons", creditGated: true },
+  // Coupons stay open to every partner role regardless of the credit
+  // agreement - affiliates lean on them for their audience discount.
+  { name: "הקופונים שלי", href: "/portal/coupons" },
   { name: "ההזמנות שלי", href: "/portal/reservations" },
   // Sellers only - an influencer promotes a link and never prices a package
   // for a named customer. The server action enforces it too.

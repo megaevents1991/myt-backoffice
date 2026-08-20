@@ -142,7 +142,11 @@ export default async function PortalReservationsPage({
         </p>
       )}
 
-      <ReservationsTable rows={rows} showAgentColumn={isManager} />
+      <ReservationsTable
+        rows={rows}
+        showAgentColumn={isManager}
+        officeAgents={officeAgents}
+      />
     </div>
   );
 }

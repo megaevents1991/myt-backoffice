@@ -3,8 +3,9 @@ import { getSession } from "@/lib/auth/guards";
 import {
   getMyCredit,
   getMyVoucherSettlement,
+  getOfficeCreditBreakdown,
 } from "@/lib/actions/partner-credit-actions";
-import { resolvePortalScope } from "@/lib/portal-attribution";
+import { getPortalProfile } from "@/lib/actions/portal-actions";
 import { PARTNER_ROLES, SELLER_ROLES } from "@/types/auth.types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,23 +32,21 @@ export default async function PortalCreditPage() {
   // throws for any non-partner role.
   if (!isPartner) return null;
 
-  const scope = await resolvePortalScope({
-    sub: session.sub,
-    role: session.role,
-    partner_code: session.partner_code!,
-  });
-  const creditAllowed =
-    session.role === "office_manager" ||
-    session.role === "affiliate" ||
-    scope.soloOffice;
+  const profile = await getPortalProfile();
+  // "0 = no agreement" (spec) - now the only gate, same rule the nav item
+  // enforces (app/portal/layout.tsx). Credit itself is per-agent (QA wave 2,
+  // 20.08); every partner role reaches this page once the office has a rate.
+  const creditAllowed = (profile?.credit_per_ticket ?? 0) > 0;
   if (!creditAllowed) redirect("/portal");
 
   const isAgent = SELLER_ROLES.includes(session.role);
-  const [credit, settlement] = await Promise.all([
+  const isManager = session.role === "office_manager";
+  const [credit, settlement, breakdown] = await Promise.all([
     getMyCredit(),
     // Voucher settlement is an agent-only flow; the action returns empty for
     // influencers anyway - skip the call entirely for them.
     isAgent ? getMyVoucherSettlement() : Promise.resolve(null),
+    isManager ? getOfficeCreditBreakdown() : Promise.resolve(null),
   ]);
 
   const hasSettlement =
@@ -92,6 +91,46 @@ export default async function PortalCreditPage() {
           </div>
         </CardContent>
       </Card>
+
+      {isManager && breakdown && breakdown.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>צבירה לפי סוכן</CardTitle>
+            <CardDescription>
+              היתרה של הכרטיס למעלה היא שלכם בלבד (כולל הזמנות לא משויכות) -
+              כאן הפירוט של כל המשרד.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>שם</TableHead>
+                  <TableHead className="text-left">נצבר</TableHead>
+                  <TableHead className="text-left">מומש</TableHead>
+                  <TableHead className="text-left">יתרה</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {breakdown.map((row) => (
+                  <TableRow key={row.sub}>
+                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="text-left tabular-nums">
+                      {usd.format(row.accruedUsd)}
+                    </TableCell>
+                    <TableCell className="text-left tabular-nums">
+                      {usd.format(row.redeemedUsd)}
+                    </TableCell>
+                    <TableCell className="text-left font-medium tabular-nums">
+                      {usd.format(row.balanceUsd)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {hasSettlement && settlement && (
         <Card>

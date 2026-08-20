@@ -65,9 +65,13 @@ const pct = (part: number, total: number) =>
 export function QuotesClient({
   initialQuotes,
   stats: initialStats,
+  isManager = false,
 }: {
   initialQuotes: PortalQuoteWithState[];
   stats: PortalQuoteStats;
+  /** Managers get a "נוצר ע"י" column - agents in a multi-user office only
+   *  ever see their own quotes, so it would be redundant for them. */
+  isManager?: boolean;
 }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -204,6 +208,7 @@ export function QuotesClient({
                 <TableHead>סה&quot;כ ($)</TableHead>
                 <TableHead>בתוקף עד</TableHead>
                 <TableHead>סטטוס</TableHead>
+                {isManager && <TableHead>{'נוצר ע"י'}</TableHead>}
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -260,6 +265,9 @@ export function QuotesClient({
                       </div>
                     )}
                   </TableCell>
+                  {isManager && (
+                    <TableCell>{quote.creator_name ?? "-"}</TableCell>
+                  )}
                   <TableCell>
                     <Button
                       variant="outline"

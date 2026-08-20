@@ -74,7 +74,7 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
     .limit(FEED_LIMIT);
   if (isolate) packagesQuery = packagesQuery.eq("created_by", session.sub);
 
-  const [quotesResult, packagesResult, reservationsResult, couponsResult] =
+  const [quotesResult, packagesResult, reservationsInitial, couponsResult] =
     await Promise.all([
       SELLER_ROLES.includes(session.role)
         ? quotesQuery
@@ -84,7 +84,7 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
       (supabase as any)
         .from("reservations")
         .select(
-          "id,created_at,status,main_contact_first_name,event_order_info,voucher_state,coupon_code",
+          "id,created_at,status,main_contact_first_name,event_order_info,voucher_state,coupon_code,agent_user_id",
         )
         .eq("aff_partner_tracking_code", code)
         .order("created_at", { ascending: false })
@@ -103,6 +103,21 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
             .order("created_at", { ascending: false })
             .limit(FEED_LIMIT),
     ]);
+
+  let reservationsResult = reservationsInitial;
+  if (reservationsResult.error?.code === "42703") {
+    // agent_user_id not migrated yet - retry without it; the isolation
+    // filter below then relies on UTM attribution alone (override
+    // contributes nothing until the migration lands).
+    reservationsResult = await supabase
+      .from("reservations")
+      .select(
+        "id,created_at,status,main_contact_first_name,event_order_info,voucher_state,coupon_code",
+      )
+      .eq("aff_partner_tracking_code", code)
+      .order("created_at", { ascending: false })
+      .limit(FEED_LIMIT);
+  }
 
   for (const [label, result] of [
     ["quotes", quotesResult],
@@ -186,10 +201,12 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
     event_order_info: ReservationEventOrderInfo | null;
     voucher_state?: "sent" | "received" | "collected" | null;
     coupon_code?: string | null;
+    agent_user_id?: string | null;
   }[];
   // Reservations carry no created_by (attribution rides the UTM pipeline
   // instead) - filter the fetched rows against the attribution map rather
-  // than the query itself.
+  // than the query itself. The manager-set agent_user_id override (QA wave
+  // 2, 20.08) wins over that attribution, same as everywhere else.
   const attribution = isolate
     ? await getReservationAttribution(
         reservationRows.map((r) => r.id),
@@ -197,9 +214,10 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
       )
     : null;
   const visibleReservations = attribution
-    ? reservationRows.filter((r) =>
-        visibleToAgent(attribution.get(r.id), session.sub, scope.soloOffice),
-      )
+    ? reservationRows.filter((r) => {
+        const owner = r.agent_user_id ?? (attribution.get(r.id) ?? null);
+        return visibleToAgent(owner, session.sub, scope.soloOffice);
+      })
     : reservationRows;
 
   for (const reservation of visibleReservations) {

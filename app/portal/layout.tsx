@@ -1,7 +1,6 @@
 import { Assistant, Rubik } from "next/font/google";
 import { getSession } from "@/lib/auth/guards";
 import { getPortalProfile } from "@/lib/actions/portal-actions";
-import { resolvePortalScope } from "@/lib/portal-attribution";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { PortalNav } from "./portal-nav";
 
@@ -27,19 +26,13 @@ export default async function PortalLayout({
   const session = await getSession();
   const isPartner = !!session && PARTNER_ROLES.includes(session.role);
   const profile = isPartner ? await getPortalProfile() : null;
-  const scope =
-    isPartner && session?.partner_code
-      ? await resolvePortalScope({
-          sub: session.sub,
-          role: session.role,
-          partner_code: session.partner_code,
-        })
-      : null;
-  const showCredit =
-    !!session &&
-    (session.role === "office_manager" ||
-      session.role === "affiliate" ||
-      (session.role === "agent" && (scope?.soloOffice ?? false)));
+  // Credit is per-agent now (QA wave 2, 20.08) - every partner role may reach
+  // it, gated only by whether the OFFICE has a credit agreement at all ("0 =
+  // no agreement", now enforced in the nav too, not just the page). Coupons
+  // stay open to every partner role regardless (affiliates lean on them for
+  // their audience discount) - see PortalNav, which no longer gates them on
+  // showCredit.
+  const showCredit = isPartner && (profile?.credit_per_ticket ?? 0) > 0;
   const roleLabel =
     session?.role === "office_manager"
       ? "מנהל משרד"
@@ -65,13 +58,13 @@ export default async function PortalLayout({
               />
             ) : (
               <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-mint font-display text-lg font-bold text-brand-forest">
-                {(profile?.name_hebrew || profile?.display_name || "M").slice(0, 1)}
+                {(profile?.display_name || profile?.name_hebrew || "M").slice(0, 1)}
               </div>
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="truncate font-display text-lg font-bold">
-                  {profile?.name_hebrew || profile?.display_name || "פורטל שותפים"}
+                  {profile?.display_name || profile?.name_hebrew || "פורטל שותפים"}
                 </span>
                 {isPartner && (
                   <span className="rounded-full bg-brand-mint px-2 py-0.5 text-xs font-semibold text-brand-forest">

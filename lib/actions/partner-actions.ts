@@ -1,17 +1,23 @@
 "use server";
 
-import { requireStaff } from "@/lib/auth/guards";
+import { requireStaff, requireSuperadmin } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import {
   COMMISSION_TYPES,
   CUSTOMER_REFUND_NAME_MARKER,
   PARTNER_TYPES,
+  isCustomerRefundPartner,
   type CommissionType,
   type Partner,
   type PartnerInput,
   type PartnerType,
 } from "@/types/partner.types";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
+import { createManagedUser } from "@/lib/auth/user-create";
+import {
+  getOfficeUsersForPartners,
+  type OfficeUser,
+} from "@/lib/portal-attribution";
 
 /** Columns a staff user is allowed to write. Anything else is dropped. */
 const WRITABLE_COLUMNS = [
@@ -549,4 +555,101 @@ export async function bulkDuplicatePartners(trackingCodes: string[]) {
     metadata: { ids: trackingCodes, count: trackingCodes.length },
   });
   return duplicatedPartners;
+}
+
+/** A portal user row joined with the partner code it's linked to - see getPartnerTeams. */
+export type PartnerTeamMember = OfficeUser & { partner_tracking_code: string };
+
+/**
+ * Bulk team lookup for the partners screen (QA item 1, 20.08 - "office
+ * manager belongs to the partners world"): one query for every agent-type
+ * partner code passed in, never getOfficeUsers per row. The list groups the
+ * flat result client-side by partner_tracking_code; the single-partner VIEW
+ * page just passes a 1-element array and reads it directly.
+ */
+export async function getPartnerTeams(
+  trackingCodes: string[],
+): Promise<PartnerTeamMember[]> {
+  await requireStaff();
+  return getOfficeUsersForPartners(trackingCodes);
+}
+
+export type CreateOfficeManagerInput = {
+  display_name: string;
+  email: string;
+  password: string;
+  phone?: string | null;
+};
+
+/**
+ * Superadmin creates an office_manager for an EXISTING agent-type partner,
+ * from the partners screen (QA item 1 part 2, 20.08). Appointing managers is
+ * superadmin-only - same rule enforced in /users (users-client.tsx's isSuper
+ * gate: assignableRoles/canManageRow both exclude office_manager for a plain
+ * admin) and on the manager's own team page, which can only ever create
+ * role="agent" (lib/actions/portal-team-actions.ts createOfficeAgent).
+ *
+ * Deliberately does NOT block when a manager already exists for this code -
+ * multiple managers per office are allowed. The caller (the dialog) shows the
+ * existing manager(s) first so adding another is a conscious choice, not a
+ * server-side restriction.
+ */
+export async function createOfficeManagerForPartner(
+  trackingCode: string,
+  input: CreateOfficeManagerInput,
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const actor = await requireSuperadmin();
+  const code = trackingCode.trim();
+  if (!code) return { ok: false, error: "קוד שותף חסר" };
+
+  const { data, error } = await supabase
+    .from("partners")
+    .select("partner_tracking_code,type,name_hebrew")
+    .eq("partner_tracking_code", code)
+    .maybeSingle();
+  if (error) {
+    console.error("createOfficeManagerForPartner lookup:", JSON.stringify(error));
+    return { ok: false, error: "טעינת השותף נכשלה" };
+  }
+  // Cast like getPartner/duplicatePartner above - the generated row type for
+  // a partial select() resolves oddly on this table, same reason those use
+  // `as unknown as X` instead of trusting inference.
+  const partner = data as unknown as {
+    partner_tracking_code: string;
+    type: PartnerType | null;
+    name_hebrew: string | null;
+  } | null;
+  // Same rule as partnerType() in partners-table.tsx: a legacy row with
+  // type=null displays (and is treated) as an affiliate, never an agent.
+  if (!partner || isCustomerRefundPartner(partner) || partner.type !== "agent") {
+    return {
+      ok: false,
+      error: "ניתן ליצור מנהל משרד רק עבור שותף מסוג סוכן",
+    };
+  }
+
+  const created = await createManagedUser({
+    email: input.email,
+    password: input.password,
+    display_name: input.display_name,
+    role: "office_manager",
+    partner_tracking_code: code,
+    phone: input.phone ?? null,
+    created_by: actor.sub,
+  });
+  if (!created.ok) return created;
+
+  await logAudit({
+    action: "user_created",
+    entityType: "user",
+    entityId: created.id,
+    changes: {
+      email: input.email?.trim().toLowerCase(),
+      role: "office_manager",
+      partner_tracking_code: code,
+      display_name: input.display_name || null,
+    },
+    metadata: { via: "partners_screen" },
+  });
+  return created;
 }

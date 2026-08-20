@@ -30,7 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getPartner } from "@/lib/actions/partner-actions";
+import { getPartner, getPartnerTeams } from "@/lib/actions/partner-actions";
 import {
   getPartnerPerformance,
   type InsightsRange,
@@ -40,7 +40,10 @@ import { getPartnerCredit } from "@/lib/actions/partner-credit-actions";
 import { getUnbilledPaidReservations } from "@/lib/actions/partner-billing-actions";
 import { describeCommission } from "@/lib/partner-commission";
 import { PARTNER_TYPE_LABELS, isCustomerRefundPartner } from "@/types/partner.types";
+import { PARTNER_ROLES } from "@/types/auth.types";
+import { getSession } from "@/lib/auth/guards";
 import { EntryFunnelsGrid } from "../../entry-funnel-cards";
+import { CreateOfficeManagerButton } from "../../create-office-manager-dialog";
 import { PendingCommissionPanel } from "./pending-commission-panel";
 import { PerformanceChart } from "./performance-chart";
 import { ReservationsTable } from "./reservations-table";
@@ -88,17 +91,22 @@ export default async function ViewPartnerPage({
   });
   if (!partner) notFound();
 
-  const [performance, credit, unbilled] = await Promise.all([
-    getPartnerPerformance(code, range),
-    getPartnerCredit(code),
-    getUnbilledPaidReservations(code),
-  ]);
-
   const type = isCustomerRefundPartner(partner)
     ? "customer_refund"
     : partner.type === "agent"
       ? "agent"
       : "affiliate";
+
+  const [performance, credit, unbilled, session, team] = await Promise.all([
+    getPartnerPerformance(code, range),
+    getPartnerCredit(code),
+    getUnbilledPaidReservations(code),
+    getSession(),
+    // Office team is an agent-office concept - skip the query for
+    // affiliate/refund partners, which never have one.
+    type === "agent" ? getPartnerTeams([code]) : Promise.resolve([]),
+  ]);
+  const isSuperadmin = session?.role === "superadmin";
   const stats = [
     {
       label: "Commission earned",
@@ -291,6 +299,56 @@ export default async function ViewPartnerPage({
           </CardContent>
         </Card>
       </div>
+
+      {type === "agent" && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle>צוות המשרד</CardTitle>
+              <CardDescription>משתמשי הפורטל המקושרים לשותף זה.</CardDescription>
+            </div>
+            {isSuperadmin && (
+              <CreateOfficeManagerButton
+                trackingCode={partner.partner_tracking_code}
+                partnerLabel={partner.name_hebrew || partner.email}
+                existingManagers={team.filter((u) => u.role === "office_manager")}
+              />
+            )}
+          </CardHeader>
+          <CardContent>
+            {team.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                אין עדיין משתמשי פורטל למשרד הזה.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {[...team]
+                  .sort(
+                    (a, b) =>
+                      PARTNER_ROLES.indexOf(a.role) - PARTNER_ROLES.indexOf(b.role)
+                  )
+                  .map((u) => (
+                    <div
+                      key={u.id}
+                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                    >
+                      <div>
+                        <p className="font-medium">{u.display_name || u.email}</p>
+                        <p className="text-xs text-muted-foreground">{u.email}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={u.role === "office_manager" ? "default" : "secondary"}>
+                          {u.role === "office_manager" ? "מנהל משרד" : "סוכן"}
+                        </Badge>
+                        {!u.is_active && <Badge variant="outline">מושבת</Badge>}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

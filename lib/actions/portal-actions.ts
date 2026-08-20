@@ -34,6 +34,9 @@ export interface PortalProfile {
   logo_url: string | null;
   display_name: string | null;
   email: string;
+  /** USD accrued per ticket on the office's credit agreement - 0 = none.
+   *  Gates the credit nav item + page (coupons stays open regardless). */
+  credit_per_ticket: number;
 }
 
 export interface PortalStats {
@@ -106,6 +109,9 @@ export interface PortalReservation {
   /** The office user credited with this booking's primary UTM touch, by
    *  display name (falling back to email) - null when unattributed. */
   agent_name: string | null;
+  /** Same owner as agent_name, as a user_profiles id - what the manager's
+   *  assignment Select needs to preselect the current value. */
+  agent_sub: string | null;
   /** The customer's picks, for the expandable row. Null per part when the
    *  customer skipped it (or the order predates the data). */
   choices: ReservationChoices;
@@ -202,7 +208,7 @@ export async function getPortalProfile(): Promise<PortalProfile | null> {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any)
         .from("partners")
-        .select("name_hebrew,partner_tracking_code,commission")
+        .select("name_hebrew,partner_tracking_code,commission,credit_per_ticket")
         .eq("partner_tracking_code", session.partner_code)
         .maybeSingle(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -222,6 +228,7 @@ export async function getPortalProfile(): Promise<PortalProfile | null> {
     logo_url: profile?.logo_url ?? null,
     display_name: profile?.display_name ?? null,
     email: profile?.email ?? session.email,
+    credit_per_ticket: Number(partner.credit_per_ticket ?? 0) || 0,
   };
 }
 
@@ -244,7 +251,7 @@ export async function getPortalStats(): Promise<PortalStats> {
     (supabase as any)
       .from("reservations")
       .select(
-        "id,status,user_shown_price,event_order_info,commission_type,commission_rate",
+        "id,status,user_shown_price,event_order_info,commission_type,commission_rate,agent_user_id",
       )
       .eq("aff_partner_tracking_code", session.partner_code),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -260,11 +267,19 @@ export async function getPortalStats(): Promise<PortalStats> {
       .maybeSingle(),
   ]);
 
-  if (resResult.error) {
-    console.error(
-      "getPortalStats reservations:",
-      JSON.stringify(resResult.error),
-    );
+  let resData = resResult;
+  if (resData.error?.code === "42703") {
+    // agent_user_id not migrated yet - retry without it; every row simply
+    // merges to its UTM attribution below (override contributes nothing).
+    resData = await supabase
+      .from("reservations")
+      .select(
+        "id,status,user_shown_price,event_order_info,commission_type,commission_rate",
+      )
+      .eq("aff_partner_tracking_code", session.partner_code);
+  }
+  if (resData.error) {
+    console.error("getPortalStats reservations:", JSON.stringify(resData.error));
     return empty;
   }
   if (couponResult.error) {
@@ -281,11 +296,12 @@ export async function getPortalStats(): Promise<PortalStats> {
     );
   }
 
-  const reservations = (resResult.data ?? []) as {
+  const reservations = (resData.data ?? []) as {
     id: number;
     status: string;
     user_shown_price: number | null;
     event_order_info: ReservationEventOrderInfo | null;
+    agent_user_id?: string | null;
   }[];
   const coupons = (couponResult.data ?? []) as {
     id: number;
@@ -300,16 +316,18 @@ export async function getPortalStats(): Promise<PortalStats> {
   };
 
   // Agent isolation: only reservations credited to me (solo offices keep
-  // unattributed rows - pre-slug history; spec §5).
+  // unattributed rows - pre-slug history; spec §5). The manager-set
+  // agent_user_id override (QA wave 2, 20.08) wins over the UTM attribution.
   let scoped = reservations;
   if (!scope.isManager && session.role === "agent") {
     const attribution = await getReservationAttribution(
       reservations.map((r) => r.id),
       scope.officeUsers,
     );
-    scoped = reservations.filter((r) =>
-      visibleToAgent(attribution.get(r.id), session.sub, scope.soloOffice),
-    );
+    scoped = reservations.filter((r) => {
+      const owner = r.agent_user_id ?? (attribution.get(r.id) ?? null);
+      return visibleToAgent(owner, session.sub, scope.soloOffice);
+    });
   }
 
   const paid = scoped.filter(isPaid);
@@ -326,24 +344,44 @@ export async function getPortalStats(): Promise<PortalStats> {
   };
 }
 
+/**
+ * Coupon LIST scoping (QA wave 2, 20.08): a non-solo agent sees only the
+ * coupons THEY created (credit conversions + commission-funded coupons both
+ * stamp `coupons.created_by`); manager/solo/affiliate keep seeing every
+ * office coupon, same as before. Fails CLOSED on a not-yet-migrated
+ * `created_by` - an isolated agent gets an empty list rather than the whole
+ * office's coupons.
+ */
 export async function getPortalCoupons(): Promise<PortalCoupon[]> {
   const session = await requireCreditAccess();
-  const fetchCoupons = (columns: string) =>
+  const scope = await resolvePortalScope(session);
+  const isolate = session.role === "agent" && !scope.soloOffice;
+
+  const fetchCoupons = (columns: string) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    let query = (supabase as any)
       .from("coupons")
       .select(columns)
       .eq("partner_tracking_code", session.partner_code)
       .order("created_at", { ascending: false });
+    if (isolate) query = query.eq("created_by", session.sub);
+    return query;
+  };
 
   let { data, error } = await fetchCoupons(
     "id,code,discount_type,discount_value,valid_until,max_uses,times_used,times_paid,is_active,event_id,funded_by_commission",
   );
   if (error?.code === "42703") {
-    // funded_by_commission not migrated yet - the badge simply doesn't show.
+    // Either funded_by_commission or created_by isn't migrated yet - drop
+    // funded_by_commission first (cosmetic) and keep the created_by filter
+    // for an isolated agent, so a still-missing created_by 42703s again below
+    // instead of silently widening to the whole office.
     ({ data, error } = await fetchCoupons(
       "id,code,discount_type,discount_value,valid_until,max_uses,times_used,times_paid,is_active,event_id",
     ));
+    if (isolate && error?.code === "42703") {
+      return [];
+    }
   }
   if (error) {
     console.error("getPortalCoupons:", JSON.stringify(error));
@@ -393,6 +431,11 @@ const PORTAL_RESERVATION_COLUMNS =
 const PORTAL_RESERVATION_SOURCE_COLUMNS =
   ",partner_settlement_method,source_share_token,quote_id,voucher_state,travel_materials_sent_at,commission_type,commission_rate";
 
+/** Manager-set attribution override (migration 20260820104625, QA wave 2) -
+ *  selected separately so a DB that only has one of the two migrations
+ *  applied still falls back cleanly instead of blanking the whole page. */
+const PORTAL_RESERVATION_OVERRIDE_COLUMN = ",agent_user_id";
+
 export async function getPortalReservations(
   filterAgentSub?: string | null,
 ): Promise<PortalReservationsPage> {
@@ -412,7 +455,9 @@ export async function getPortalReservations(
   const [initialReservationsResult, partnerResult, fundedCodes, quoteUplifts] =
     await Promise.all([
       fetchReservations(
-        PORTAL_RESERVATION_COLUMNS + PORTAL_RESERVATION_SOURCE_COLUMNS,
+        PORTAL_RESERVATION_COLUMNS +
+          PORTAL_RESERVATION_SOURCE_COLUMNS +
+          PORTAL_RESERVATION_OVERRIDE_COLUMN,
       ),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any)
@@ -426,8 +471,15 @@ export async function getPortalReservations(
   let reservationsResult = initialReservationsResult;
 
   if (reservationsResult.error?.code === "42703") {
-    // Attribution columns not migrated yet - every row simply reads as "link".
-    reservationsResult = await fetchReservations(PORTAL_RESERVATION_COLUMNS);
+    // Either the source-attribution columns or agent_user_id isn't migrated
+    // yet - drop the override column first (the more recent migration) and
+    // keep the source columns; if THOSE are also missing, fall back further.
+    reservationsResult = await fetchReservations(
+      PORTAL_RESERVATION_COLUMNS + PORTAL_RESERVATION_SOURCE_COLUMNS,
+    );
+    if (reservationsResult.error?.code === "42703") {
+      reservationsResult = await fetchReservations(PORTAL_RESERVATION_COLUMNS);
+    }
   }
 
   if (reservationsResult.error) {
@@ -479,6 +531,7 @@ export async function getPortalReservations(
     quote_id?: number | null;
     voucher_state?: "sent" | "received" | "collected" | null;
     travel_materials_sent_at?: string | null;
+    agent_user_id?: string | null;
   };
 
   const all = (reservationsResult.data ?? []) as Row[];
@@ -486,19 +539,23 @@ export async function getPortalReservations(
     all.map((r) => r.id),
     scope.officeUsers,
   );
+  // Manager-set override wins over the UTM-derived attribution everywhere
+  // below (QA wave 2, 20.08).
+  const mergedOwner = (r: Row): string | null =>
+    r.agent_user_id ?? (attribution.get(r.id) ?? null);
   const nameBySub = new Map(
     scope.officeUsers.map((u) => [u.id, u.display_name || u.email]),
   );
   let visible = all;
   if (!scope.isManager && session.role === "agent") {
     visible = all.filter((r) =>
-      visibleToAgent(attribution.get(r.id), session.sub, scope.soloOffice),
+      visibleToAgent(mergedOwner(r), session.sub, scope.soloOffice),
     );
   } else if (scope.isManager && filterAgentSub) {
     visible =
       filterAgentSub === "none"
-        ? all.filter((r) => (attribution.get(r.id) ?? null) === null)
-        : all.filter((r) => attribution.get(r.id) === filterAgentSub);
+        ? all.filter((r) => mergedOwner(r) === null)
+        : all.filter((r) => mergedOwner(r) === filterAgentSub);
   }
   const truncated = visible.length > RESERVATIONS_PAGE_SIZE;
   const rows = visible.slice(0, RESERVATIONS_PAGE_SIZE).map((r) => {
@@ -559,8 +616,9 @@ export async function getPortalReservations(
           : r.source_share_token
             ? "package"
             : "link") as PortalReservationSource,
+      agent_sub: mergedOwner(r),
       agent_name: (() => {
-        const owner = attribution.get(r.id) ?? null;
+        const owner = mergedOwner(r);
         return owner ? (nameBySub.get(owner) ?? null) : null;
       })(),
       // Deliberately NOT the customer's recovery link. Opening it loads the

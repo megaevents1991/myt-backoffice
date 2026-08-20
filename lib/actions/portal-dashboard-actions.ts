@@ -154,6 +154,7 @@ type ReservationRow = {
   billed_at: string | null;
   coupon_code: string | null;
   coupon_discount_usd: number | null;
+  agent_user_id?: string | null;
 };
 
 /** One "most picked" line: a flight route / hotel / ticket category + count. */
@@ -198,7 +199,7 @@ export async function getPortalDashboard(
 
   const [
     partnerResult,
-    reservationsResult,
+    reservationsInitial,
     couponsResult,
     funnelResult,
     clicksResult,
@@ -215,7 +216,7 @@ export async function getPortalDashboard(
     supabase
       .from("reservations")
       .select(
-        "id,created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,partner_settlement_method,billed_at,coupon_code,coupon_discount_usd,commission_type,commission_rate",
+        "id,created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,partner_settlement_method,billed_at,coupon_code,coupon_discount_usd,commission_type,commission_rate,agent_user_id",
       )
       .eq("aff_partner_tracking_code", code),
     supabase
@@ -254,6 +255,18 @@ export async function getPortalDashboard(
     fundedCouponCodesFor(code),
     quoteUpliftsFor(code),
   ]);
+
+  let reservationsResult = reservationsInitial;
+  if (reservationsResult.error?.code === "42703") {
+    // agent_user_id not migrated yet - retry without it; every row simply
+    // merges to its UTM attribution below (override contributes nothing).
+    reservationsResult = await supabase
+      .from("reservations")
+      .select(
+        "id,created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,partner_settlement_method,billed_at,coupon_code,coupon_discount_usd,commission_type,commission_rate",
+      )
+      .eq("aff_partner_tracking_code", code);
+  }
 
   // A thrown error here used to take the WHOLE portal down with a bare
   // "Application error" page. Log loudly and degrade instead - a dashboard of
@@ -330,15 +343,17 @@ export async function getPortalDashboard(
     allRows.map((r) => r.id),
     scope.officeUsers,
   );
+  // Manager-set override wins over the UTM-derived attribution everywhere
+  // below (QA wave 2, 20.08).
+  const mergedOwner = (r: ReservationRow): string | null =>
+    r.agent_user_id ?? (attribution.get(r.id) ?? null);
   let scopedRows = allRows;
   if (!scope.isManager && session.role === "agent") {
     scopedRows = allRows.filter((r) =>
-      visibleToAgent(attribution.get(r.id), session.sub, scope.soloOffice),
+      visibleToAgent(mergedOwner(r), session.sub, scope.soloOffice),
     );
   } else if (scope.isManager && view === "mine") {
-    scopedRows = allRows.filter(
-      (r) => attribution.get(r.id) === session.sub,
-    );
+    scopedRows = allRows.filter((r) => mergedOwner(r) === session.sub);
   }
 
   // Money tiles bill on the whole history; the activity tiles follow the
@@ -731,9 +746,11 @@ export async function getPortalDashboard(
           totalSalesUsd: 0,
         };
         for (const r of allRows) {
-          const owner = attribution.get(r.id) ?? null;
-          const row = owner ? rows.get(owner) : unattributed;
-          if (!row) continue;
+          const owner = mergedOwner(r);
+          // A non-null owner missing from the roster (staff moved them to a
+          // different office after this reservation was attributed) folds
+          // into "לא משויך" too, same as no owner at all - never dropped.
+          const row = (owner ? rows.get(owner) : undefined) ?? unattributed;
           row.totalReservations += 1;
           if (isPaid(r)) {
             row.paidReservations += 1;

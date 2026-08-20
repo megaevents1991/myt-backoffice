@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth/guards";
-import { resolvePortalScope } from "@/lib/portal-attribution";
+import { getPortalProfile } from "@/lib/actions/portal-actions";
 import { getPortalDashboard } from "@/lib/actions/portal-dashboard-actions";
 import {
   getMyCredit,
@@ -98,22 +98,12 @@ export default async function PortalDashboardPage({
     isManager && rawView === "mine" ? "mine" : "office";
 
   const isAgent = SELLER_ROLES.includes(session.role);
-  // Credit + voucher settlement are OFFICE money (spec §5): office_manager and
-  // affiliate always see it, an agent only when solo in their office -
-  // requireCreditAccess() (called inside getMyCredit/getMyVoucherSettlement)
-  // THROWS for a non-solo agent, so skip the calls entirely instead of
-  // letting that reach the page as an unhandled 500.
-  const scope = session.partner_code
-    ? await resolvePortalScope({
-        sub: session.sub,
-        role: session.role,
-        partner_code: session.partner_code,
-      })
-    : null;
-  const creditAllowed =
-    session.role === "office_manager" ||
-    session.role === "affiliate" ||
-    (scope?.soloOffice ?? false);
+  // Credit is per-agent now (QA wave 2, 20.08) - getMyCredit is safe to call
+  // for every partner role (no more solo-only throw). The tile just needs to
+  // know whether the OFFICE has a credit agreement at all ("0 = no
+  // agreement"), same rule the nav item and the credit page enforce.
+  const profile = await getPortalProfile();
+  const creditAllowed = (profile?.credit_per_ticket ?? 0) > 0;
   const [dashboard, credit, userActivity, settlement] = await Promise.all([
     getPortalDashboard(range, view),
     creditAllowed ? getMyCredit() : Promise.resolve<PartnerCredit | null>(null),

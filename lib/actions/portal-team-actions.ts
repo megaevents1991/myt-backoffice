@@ -135,3 +135,67 @@ export async function setOfficeAgentActive(
   });
   return { ok: true };
 }
+
+/**
+ * Manual attribution override (QA item 9, 20.08): the manager assigns a
+ * reservation to an office user directly, overriding whatever the UTM
+ * pipeline resolved (or filling in a booking that never carried an
+ * agent-prefixed link at all). Wins over UTM everywhere - see the merge in
+ * lib/portal-attribution.ts and every reservations/credit consumer.
+ *
+ * `agentSub: null` clears the override back to "let UTM attribution decide".
+ */
+export async function assignReservationAgent(
+  reservationId: number,
+  agentSub: string | null,
+): Promise<Result> {
+  const session = await requireOfficeManager();
+
+  // Fetched fresh, never trusting a client-sent office - same pattern as
+  // getManagedAgent above.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: reservation, error: resError } = await (supabase as any)
+    .from("reservations")
+    .select("id,aff_partner_tracking_code")
+    .eq("id", reservationId)
+    .maybeSingle();
+  if (resError) {
+    console.error("assignReservationAgent reservation:", JSON.stringify(resError));
+    return { ok: false, error: "טעינת ההזמנה נכשלה" };
+  }
+  if (!reservation || reservation.aff_partner_tracking_code !== session.partner_code) {
+    // Same message for "not found" and "other office" - don't confirm
+    // foreign reservation ids exist.
+    return { ok: false, error: "ההזמנה לא נמצאה במשרד שלך" };
+  }
+
+  if (agentSub != null) {
+    const officeUsers = await getOfficeUsers(session.partner_code);
+    const target = officeUsers?.find((u) => u.id === agentSub && u.is_active);
+    if (!target) {
+      return { ok: false, error: "המשתמש הזה לא נמצא כסוכן פעיל במשרד" };
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from("reservations")
+    .update({ agent_user_id: agentSub })
+    .eq("id", reservationId);
+  if (error) {
+    if (error.code === "42703") {
+      return { ok: false, error: "המיגרציה טרם הוחלה - נסו אחרי הדיפלוי" };
+    }
+    console.error("assignReservationAgent update:", JSON.stringify(error));
+    return { ok: false, error: "העדכון נכשל" };
+  }
+
+  await logAudit({
+    action: "reservation_agent_assigned",
+    entityType: "reservation",
+    entityId: reservationId,
+    changes: { agent_user_id: agentSub },
+    metadata: { via: "portal_reservations" },
+  });
+  return { ok: true };
+}

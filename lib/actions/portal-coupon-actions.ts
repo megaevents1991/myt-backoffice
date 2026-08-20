@@ -4,6 +4,7 @@ import { requireCreditAccess } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { fundedCodeSet } from "@/lib/partner-commission";
+import { resolvePortalScope } from "@/lib/portal-attribution";
 import type { CommissionType } from "@/types/partner.types";
 
 /**
@@ -200,6 +201,18 @@ export async function createPartnerCoupon(
   input: CreateCouponInput,
 ): Promise<CreateCouponResult> {
   const session = await requireCreditAccess();
+  // Commission-funded coupons stay manager-or-solo-only (QA wave 2, 20.08) -
+  // requireCreditAccess() no longer blocks a non-solo agent by itself, so the
+  // restriction is reinstated here, scoped to just this action.
+  if (session.role === "agent") {
+    const scope = await resolvePortalScope(session);
+    if (!scope.soloOffice) {
+      return {
+        ok: false,
+        error: "רק מנהל המשרד יכול ליצור קופון על חשבון העמלה",
+      };
+    }
+  }
   const terms = await getMyCouponTerms();
   if (!terms) {
     return { ok: false, error: "לא הצלחנו לקרוא את תנאי העמלה שלכם. נסו שוב." };
@@ -273,20 +286,30 @@ export async function createPartnerCoupon(
     };
   }
 
+  // `created_by` stamps who created the coupon - what getPortalCoupons keys
+  // off for a non-solo agent's own coupon list (portal-actions.ts). A
+  // not-yet-migrated `created_by` retries the SAME attempt without it, same
+  // fallback the credit-conversion insert uses (insertCoupon,
+  // partner-credit-actions.ts) - the coupon still gets created, it just
+  // isn't attributable to a specific agent yet.
+  let includeCreatedBy = true;
   for (let attempt = 0; attempt < 3; attempt++) {
+    const payload: Record<string, unknown> = {
+      code,
+      discount_type: input.discount_type,
+      discount_value: value,
+      max_uses: maxUses,
+      valid_until: validUntil,
+      is_active: true,
+      partner_tracking_code: session.partner_code,
+      funded_by_commission: true,
+    };
+    if (includeCreatedBy) payload.created_by = session.sub;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from("coupons")
-      .insert({
-        code,
-        discount_type: input.discount_type,
-        discount_value: value,
-        max_uses: maxUses,
-        valid_until: validUntil,
-        is_active: true,
-        partner_tracking_code: session.partner_code,
-        funded_by_commission: true,
-      })
+      .insert(payload)
       .select("id")
       .single();
 
@@ -307,6 +330,14 @@ export async function createPartnerCoupon(
     }
 
     const errorCode = (error as { code?: string }).code;
+    if ((errorCode === "42703" || errorCode === "PGRST204") && includeCreatedBy) {
+      console.warn(
+        "createPartnerCoupon: coupons.created_by not migrated yet - inserting without it",
+      );
+      includeCreatedBy = false;
+      attempt -= 1; // retry the SAME code, not a new collision-retry attempt
+      continue;
+    }
     if (errorCode === "42703" || errorCode === "PGRST204") {
       // The funded_by_commission migration hasn't landed. Fail CLOSED: without
       // the flag the discount would never come out of the commission, which is

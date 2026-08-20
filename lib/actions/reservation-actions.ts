@@ -3,6 +3,7 @@
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
+import { getAgentLabelsForReservations } from "@/lib/portal-attribution";
 import type {
   Reservation,
   ReservationListRow,
@@ -44,9 +45,17 @@ export async function getReservations(): Promise<ReservationListRow[]> {
   if (error) throw error;
   if (truncated)
     console.error("getReservations: hit the 20k paging cap - raise it");
+
+  // Staff-facing "סוכן" column - which office agent the booking is credited
+  // to, resolved across every office by slug (see getAgentLabelsForReservations).
+  const agentLabels = await getAgentLabelsForReservations(
+    rows.map((r) => r.id),
+  );
+
   return rows.map(({ payment_info, ...row }) => ({
     ...row,
     has_payment_info: payment_info != null,
+    agent_label: agentLabels.get(row.id) ?? null,
   }));
 }
 
@@ -96,6 +105,17 @@ export async function getReservationUtmTouches(
     return [];
   }
   return (data ?? []) as UtmTouch[];
+}
+
+/** Staff-facing: which agent this single reservation is credited to (see
+ *  getAgentLabelsForReservations), or null when unattributed. Reservation-detail
+ *  counterpart to the bulk lookup the list page uses. */
+export async function getReservationAgentLabel(
+  reservationId: number,
+): Promise<string | null> {
+  await requireStaff();
+  const labels = await getAgentLabelsForReservations([reservationId]);
+  return labels.get(reservationId) ?? null;
 }
 
 export async function createReservation(

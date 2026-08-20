@@ -105,16 +105,19 @@ export async function requirePartner(): Promise<
 > {
   const session = await requireRole("office_manager", "agent", "affiliate");
   if (!session.partner_code) throw new Error("Unauthorized");
+  // A disabled user's still-signed cookie must not keep working for the rest
+  // of its week-long life - this re-checks is_active on every portal action.
+  // One extra indexed PK query per action, accepted (QA item 10, 20.08).
+  await assertActorActive(session.sub);
   return session as SessionPayload & { partner_code: string };
 }
 
 /**
- * Fail-closed actor check shared by requireOfficeManager and
- * requireCreditAccess: a disabled user's still-valid signed cookie must not
- * keep working. Query error and "row missing" are treated the same as
- * is_active === false - only a confirmed active row passes. NOT added to
- * requirePartner - that guard runs on every portal render, and this adds a
- * query on top of it.
+ * Fail-closed actor check behind requirePartner (and requireOfficeManager,
+ * which does NOT route through requirePartner - it calls requireRole
+ * directly, so it asserts separately): a disabled user's still-valid signed
+ * cookie must not keep working. Query error and "row missing" are treated the
+ * same as is_active === false - only a confirmed active row passes.
  */
 async function assertActorActive(sub: string): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -191,29 +194,16 @@ export async function guardCronRoute(
 }
 
 /**
- * Credit + coupons are OFFICE money: office_manager and affiliate always;
- * an agent only when they are the office's sole active portal user (legacy
- * solo partners keep today's behavior - spec §5).
+ * Credit + coupons are per-agent now (QA wave 2, 20.08): office money is
+ * split by attribution (lib/actions/partner-credit-actions.ts loadCredit
+ * scoping), so every partner role may reach these screens/actions - this is
+ * now a plain alias for requirePartner(). Kept as its own export so the call
+ * sites read as an intent ("this needs credit/coupons access") rather than
+ * the generic partner guard, and so the solo-only restriction can come back
+ * here alone if that ever changes again.
  */
 export async function requireCreditAccess(): Promise<
   SessionPayload & { partner_code: string }
 > {
-  const session = await requirePartner();
-  await assertActorActive(session.sub);
-  if (session.role === "office_manager" || session.role === "affiliate") {
-    return session;
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count, error } = await (supabase as any)
-    .from("user_profiles")
-    .select("id", { count: "exact", head: true })
-    .eq("partner_tracking_code", session.partner_code)
-    .in("role", PARTNER_ROLES)
-    .eq("is_active", true);
-  if (error) {
-    console.error("requireCreditAccess:", JSON.stringify(error));
-    throw new Error("Unauthorized");
-  }
-  if ((count ?? 0) > 1) throw new Error("Unauthorized");
-  return session;
+  return requirePartner();
 }

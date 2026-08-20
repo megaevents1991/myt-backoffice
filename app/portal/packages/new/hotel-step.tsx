@@ -15,6 +15,7 @@ import {
   BedDouble,
   CalendarCheck,
   CalendarX2,
+  ChevronDown,
   DollarSign,
   Loader2,
   MapPin,
@@ -47,6 +48,21 @@ import {
 type HsSort = "price" | "stars" | "distance";
 
 const hasMeal = (meal: string | null | undefined) => !!meal && meal !== "nomeal";
+
+/**
+ * Group live Ratehawk rate options by hotel so the list shows one card per
+ * hotel instead of one per room offer (was rendering "Thanet Hotel Annex" 3x,
+ * once per room type). Worldota's slug id travels in `snapshot.id` (the same
+ * value `key` is prefixed with) and is stable across merged search calls
+ * (initial load + a name-query dig, see runHotelSearch) - fall back to the
+ * normalized hotel name on the rare chance it's missing.
+ */
+function liveHotelGroupKey(option: LiveHotelOption): string {
+  const snapshotId = option.snapshot.id;
+  return typeof snapshotId === "string" && snapshotId
+    ? `id:${snapshotId}`
+    : `name:${option.name.trim().toLowerCase()}`;
+}
 
 /**
  * Agent-only cancellation banner (main's customer cards don't show it) - the
@@ -93,7 +109,9 @@ function StarsRow({ rating }: { rating: number }) {
 
 type DisplayHotel =
   | { kind: "offline"; key: string; group: BuilderHotelRoom[]; perPerson: number; stars: number }
-  | { kind: "live"; key: string; option: LiveHotelOption; perPerson: number; stars: number };
+  /** `group` is every room offer for that hotel, sorted cheapest-first - the
+   *  card shows group[0] as the headline and the rest in an expander. */
+  | { kind: "live"; key: string; group: LiveHotelOption[]; perPerson: number; stars: number };
 
 export function HotelStep() {
   const w = useWizard();
@@ -118,6 +136,20 @@ export function HotelStep() {
     return [...groups.entries()];
   }, [w.hotels]);
 
+  // Same grouping as offline, over the live search results - kept as its own
+  // memo (independent of the filter/sort state below) so ~800 rate cards
+  // aren't re-grouped on every filter keystroke.
+  const liveHotelGroups = useMemo(() => {
+    const groups = new Map<string, LiveHotelOption[]>();
+    for (const option of w.hsResults ?? []) {
+      const key = liveHotelGroupKey(option);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(option);
+    }
+    for (const options of groups.values()) options.sort((a, b) => a.price - b.price);
+    return [...groups.entries()];
+  }, [w.hsResults]);
+
   const list = useMemo<DisplayHotel[]>(() => {
     const term = nameQuery.trim().toLowerCase();
     const offline: DisplayHotel[] = hotelGroups
@@ -140,31 +172,36 @@ export function HotelStep() {
           h.stars >= minStars &&
           (!term || h.group[0].hotel_name.toLowerCase().includes(term)),
       );
-    const live: DisplayHotel[] = (w.hsResults ?? [])
+    const live: DisplayHotel[] = liveHotelGroups
+      .map(([key, options]) => {
+        // options is already price-sorted ascending (built in liveHotelGroups),
+        // and filter() preserves order, so rooms[0] stays the cheapest survivor.
+        const rooms = breakfastOnly ? options.filter((o) => hasMeal(o.meal)) : options;
+        return {
+          kind: "live" as const,
+          key,
+          group: rooms,
+          perPerson: rooms.length ? rooms[0].price / Math.max(1, w.qty) : Infinity,
+          stars: rooms[0]?.stars ?? 0,
+        };
+      })
       .filter(
-        (o) =>
-          (!breakfastOnly || hasMeal(o.meal)) &&
-          o.stars >= minStars &&
-          (!term || o.name.toLowerCase().includes(term)),
-      )
-      .map((o) => ({
-        kind: "live" as const,
-        key: o.key,
-        option: o,
-        perPerson: o.price / Math.max(1, w.qty),
-        stars: o.stars,
-      }));
+        (h) =>
+          h.group.length > 0 &&
+          h.stars >= minStars &&
+          (!term || h.group[0].name.toLowerCase().includes(term)),
+      );
     const merged = [...offline, ...live];
     if (sort === "stars") {
       return merged.sort((a, b) => b.stars - a.stars || a.perPerson - b.perPerson);
     }
     if (sort === "distance") {
       const dist = (h: DisplayHotel) =>
-        h.kind === "live" && h.option.distance_m > 0 ? h.option.distance_m : 0;
+        h.kind === "live" && h.group[0].distance_m > 0 ? h.group[0].distance_m : 0;
       return merged.sort((a, b) => dist(a) - dist(b) || a.perPerson - b.perPerson);
     }
     return merged.sort((a, b) => a.perPerson - b.perPerson);
-  }, [hotelGroups, w.hsResults, w.qty, breakfastOnly, minStars, nameQuery, sort]);
+  }, [hotelGroups, liveHotelGroups, w.qty, breakfastOnly, minStars, nameQuery, sort]);
 
   if (!event) return null;
 
@@ -367,7 +404,7 @@ export function HotelStep() {
                 h.kind === "offline" ? (
                   <OfflineHotelCard key={h.key} groupKey={h.key} group={h.group} />
                 ) : (
-                  <LiveHotelCard key={h.key} option={h.option} perPerson={h.perPerson} />
+                  <LiveHotelCard key={h.key} group={h.group} perPerson={h.perPerson} />
                 ),
               )}
 
@@ -526,28 +563,42 @@ function OfflineHotelCard({ groupKey, group }: { groupKey: string; group: Builde
   );
 }
 
-/** Live Ratehawk result - main's hotelCard layout. */
-function LiveHotelCard({ option, perPerson }: { option: LiveHotelOption; perPerson: number }) {
+/**
+ * Live Ratehawk result - main's hotelCard layout, one card per HOTEL. `group`
+ * is that hotel's room offers sorted cheapest-first: group[0] is the headline
+ * (image/stars/distance/cancellation, same as before), the rest sit behind an
+ * expander, each selectable and priced as a delta vs the headline.
+ */
+function LiveHotelCard({ group, perPerson }: { group: LiveHotelOption[]; perPerson: number }) {
   const w = useWizard();
-  const isSelected =
-    w.hotelChoice.mode === "live-offer" && w.hotelChoice.option.key === option.key;
+  const cheapest = group[0];
+  const others = group.slice(1);
+  const selectedOption = w.hotelChoice.mode === "live-offer" ? w.hotelChoice.option : null;
+  const selectedIndex = selectedOption
+    ? group.findIndex((o) => o.key === selectedOption.key)
+    : -1;
+  const isGroupSelected = selectedIndex >= 0;
+  // Lazy init only - if an agent returns to this step (edit-from-summary) with
+  // a non-cheapest room already picked, open the expander so the pick is
+  // visible; afterwards the toggle is a plain accordion, never forced shut.
+  const [expanded, setExpanded] = useState(() => selectedIndex > 0);
   const delta = deltaVsBase(perPerson, w.event?.base_hotel_price);
 
   return (
     <div className="relative">
-      <MobileDeltaPill delta={delta} per="אורח" selected={isSelected} />
-      <CardWrapper
-        isSelected={isSelected}
-        onClick={() => w.setHotelChoice({ mode: "live-offer", option })}
-        className="pt-4 lg:pt-2"
-      >
-        <div className="flex w-full flex-col gap-2 py-1 lg:flex-row lg:items-center">
+      <MobileDeltaPill delta={delta} per="אורח" selected={isGroupSelected} />
+      <CardWrapper isSelected={isGroupSelected} className="flex-col items-stretch gap-0 pt-4 lg:pt-2">
+        <button
+          type="button"
+          onClick={() => w.setHotelChoice({ mode: "live-offer", option: cheapest })}
+          className="flex w-full flex-col gap-2 py-1 text-right lg:flex-row lg:items-center"
+        >
           <div className="flex w-full min-w-0 flex-col gap-2 lg:w-4/5 lg:flex-row lg:items-center">
-            {option.image ? (
+            {cheapest.image ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={option.image}
-                alt={option.name}
+                src={cheapest.image}
+                alt={cheapest.name}
                 className="h-[180px] w-full shrink-0 rounded-lg border object-cover lg:h-[150px] lg:w-[240px]"
               />
             ) : (
@@ -557,37 +608,97 @@ function LiveHotelCard({ option, perPerson }: { option: LiveHotelOption; perPers
             )}
             <div className="min-w-0 flex-1">
               <div className="flex w-full flex-row flex-wrap items-center gap-2">
-                <span className="text-lg font-bold lg:text-2xl">{option.name}</span>
-                <StarsRow rating={option.stars} />
+                <span className="text-lg font-bold lg:text-2xl">{cheapest.name}</span>
+                <StarsRow rating={cheapest.stars} />
               </div>
               <p className="mt-0.5 flex items-center gap-1 text-[14px]">
                 <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                {option.distance_m > 0
-                  ? `${(option.distance_m / 1000).toFixed(1)} ק"מ מהאירוע`
-                  : option.address}
+                {cheapest.distance_m > 0
+                  ? `${(cheapest.distance_m / 1000).toFixed(1)} ק"מ מהאירוע`
+                  : cheapest.address}
               </p>
               <p className="mt-1 flex items-center gap-2 text-sm">
                 <span className="font-bold" dir="ltr">
-                  {option.room_name}
+                  {cheapest.room_name}
                 </span>
-                {hasMeal(option.meal) && (
+                {hasMeal(cheapest.meal) && (
                   <span className="flex items-center gap-1 text-muted-foreground">
                     <Utensils size={16} /> כולל ארוחת בוקר
                   </span>
                 )}
               </p>
               <p className="mt-1.5">
-                <CancellationBadge freeUntil={option.free_cancellation_before} />
+                <CancellationBadge freeUntil={cheapest.free_cancellation_before} />
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {`סה"כ ${usd(option.price)} לכל השהות`}
+                {`סה"כ ${usd(cheapest.price)} לכל השהות`}
               </p>
             </div>
           </div>
           <div className="hidden items-center justify-center border-r border-border pr-2 lg:flex lg:w-1/5">
             <DeltaPrice delta={delta} per="אורח" />
           </div>
-        </div>
+        </button>
+
+        {others.length > 0 && (
+          <div className="mt-2 border-t border-border pt-2" dir="rtl">
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+              className="flex w-full items-center gap-1.5 rounded-md px-1 py-1.5 text-sm font-semibold text-brand-forest transition-colors hover:bg-brand-forest/5 dark:text-brand-mint dark:hover:bg-brand-mint/10"
+            >
+              <ChevronDown
+                className={cn("h-4 w-4 transition-transform", expanded && "rotate-180")}
+              />
+              חדרים נוספים ({others.length})
+            </button>
+            {expanded && (
+              <ul className="mt-1.5 space-y-1.5">
+                {others.map((room) => {
+                  const roomSelected = selectedOption?.key === room.key;
+                  // Delta vs the headline's total stay price, not the package
+                  // baseline - group is price-sorted so this is never negative.
+                  const deltaTotal = room.price - cheapest.price;
+                  return (
+                    <li key={room.key}>
+                      <button
+                        type="button"
+                        onClick={() => w.setHotelChoice({ mode: "live-offer", option: room })}
+                        className={cn(
+                          "flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-right transition-colors",
+                          roomSelected
+                            ? "border-brand-forest bg-brand-mint/10 dark:border-brand-mint"
+                            : "border-border hover:border-brand-forest dark:hover:border-brand-mint",
+                        )}
+                      >
+                        <span className="min-w-0 text-sm">
+                          <span dir="ltr" className="font-bold">
+                            {room.room_name}
+                          </span>
+                          {hasMeal(room.meal) && (
+                            <span className="ms-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                              <Utensils className="h-3.5 w-3.5" /> כולל ארוחת בוקר
+                            </span>
+                          )}
+                          <span className="ms-2 inline-flex align-middle">
+                            <CancellationBadge freeUntil={room.free_cancellation_before} />
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-sm font-semibold tabular-nums">
+                          {deltaTotal > 0 ? `+${usd(deltaTotal)}` : usd(room.price)}
+                          <span className="ms-1 text-xs font-normal text-muted-foreground">
+                            לכל השהות
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        )}
       </CardWrapper>
     </div>
   );
