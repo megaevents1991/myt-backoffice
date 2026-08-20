@@ -61,7 +61,17 @@ export async function requireStaff(): Promise<SessionPayload> {
  * publishes a questionnaire stays behind requireStaff.
  */
 export async function requireFormsAccess(): Promise<SessionPayload> {
-  return requireRole("superadmin", "admin", "editor", "forms_operator");
+  const session = await requireRole(
+    "superadmin",
+    "admin",
+    "editor",
+    "forms_operator",
+  );
+  // An external operator's still-signed cookie must stop working the moment
+  // the account is disabled in /users - same decision as requirePartner
+  // (QA 20.08). Staff roles skip the extra query.
+  if (session.role === "forms_operator") await assertActorActive(session.sub);
+  return session;
 }
 
 /**

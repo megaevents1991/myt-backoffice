@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth/guards";
 import { getPortalProfile } from "@/lib/actions/portal-actions";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { PortalNav } from "./portal-nav";
+import { SessionWatch } from "./session-watch";
 
 // Main-app brand fonts (Assistant body / Rubik display), loaded only for the
 // portal subtree - the admin dashboard keeps its own look.
@@ -45,6 +46,11 @@ export default async function PortalLayout({
       dir="rtl"
       className={`portal-theme min-h-screen ${assistant.variable} ${rubik.variable}`}
     >
+      {/* Idle-tab kick (QA item 10 upgrade, 20.08) - partner sessions only.
+          Staff debugging the portal have no partner_code, so their own
+          requirePartner check would read alive: false and kick them out of
+          their own dashboard context. */}
+      {isPartner && <SessionWatch />}
       {/* Forest brand band - same near-black green the main site headers use */}
       <header className="portal-hero text-primary-foreground">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4">

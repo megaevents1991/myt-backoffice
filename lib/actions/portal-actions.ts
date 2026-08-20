@@ -201,6 +201,25 @@ export interface PortalReservationsPage {
   officeAgents: { sub: string; name: string }[];
 }
 
+/**
+ * Session-alive heartbeat for an idle open portal tab (QA item 10 upgrade,
+ * Dor 20.08). Every server action already re-checks is_active via
+ * requirePartner (fail-closed - lib/auth/guards.ts) on every click/refresh;
+ * this exposes that same check as a poll target so a DISABLED user's
+ * already-open tab gets kicked too, instead of staying visually "logged in"
+ * until they next click something. Always resolves - never throws to the
+ * client, so a denial is a plain { alive: false } result, not an
+ * error-boundary trip (see app/portal/session-watch.tsx, the poller).
+ */
+export async function checkPortalSessionAlive(): Promise<{ alive: boolean }> {
+  try {
+    await requirePartner();
+    return { alive: true };
+  } catch {
+    return { alive: false };
+  }
+}
+
 export async function getPortalProfile(): Promise<PortalProfile | null> {
   const session = await requirePartner();
   const [{ data: partner, error: pErr }, { data: profile, error: prErr }] =
