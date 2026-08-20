@@ -359,13 +359,53 @@
   </ol>
 </section>
 
+<!-- ════════ ד: included + upsell ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">ד</span><h2>מה כלול + תוספות בתשלום — סיכום הזמנה (נבנה 20.08)</h2><span class="count"></span></div>
+  <div class="sec-note">ההחלטות: ארוחת בוקר = מעבר לתעריף עם־בוקר של אותו חדר (Ratehawk) · מזוודה/טרולי = מחיר חי מ־Amadeus (אין מחיר ← הכפתור מוסתר) · התוספת מצטרפת לסה"כ לפני התשלום ולבסיס העמלה · בהצעת מחיר חתומה אין upsell (המחיר נעול על ההרכב שהוצע).</div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="d1"></span>
+      <label class="act" for="d1">תצוגת מה־כלול — מלון וטיסה</label>
+      <span class="exp">צפוי: שורת מלון עם סטטוס ארוחות ("כולל ארוחת בוקר"/"ללא ארוחות"); שורת טיסה עם מזוודה/טרולי לכל כיוון. גם בטיסות אופליין (שם — תצוגה בלבד, בלי כפתורי הוספה).</span>
+      <span class="how"><b>איך:</b> לפתוח הזמנה עם מלון בלי בוקר וטיסת לייב; ואז הזמנה עם טיסת אופליין להשוואה.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d2"></span>
+      <label class="act" for="d2">הוספת ארוחת בוקר — החלפת תעריף</label>
+      <span class="exp">צפוי: כפתור "+$X" (ההפרש לכל השהות) כשקיים תעריף עם־בוקר לאותו חדר; קליק מחליף תעריף, הסה"כ מתעדכן, השורה הופכת ל"כולל ארוחת בוקר"; כשאין תעריף כזה — אין כפתור.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d3"></span>
+      <label class="act" for="d3">הוספת מזוודה (וטרולי אם קיים) — מחיר Amadeus חי</label>
+      <span class="exp">צפוי: הכפתור מציג מחיר × מספר נוסעים; קליק מוסיף "מזוודות (N) +$X" לסיכום ולסה"כ; חברה בלי מחירי כבודה ← אין כפתור בכלל.</span>
+      <span class="how"><b>איך:</b> טיסה של חברה סדירה (לרוב מחזירה מחירי כבודה) מול לואוקוסט; לוודא שהמחיר בכפתור = מה שנוסף בפועל.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d4"></span>
+      <label class="act" for="d4">הסה"כ מתעדכן בכל המקומות + בסיס העמלה</label>
+      <span class="exp">צפוי: דסקטופ, מובייל ופוטר דביק — אותו סכום עם התוספת; במצב סוכן העמלה על הסה"כ החדש; ההזמנה נשמרת עם התוספת.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d5"></span>
+      <label class="act" for="d5">לינק תשלום ללקוח נושא את התוספות</label>
+      <span class="exp">צפוי: סוכן מוסיף מזוודה ← יוצר לינק ← הלקוח רואה את התוספת ומשלם את הסה"כ הכולל; בעמוד הלינק עצמו <b>אין</b> כפתורי הוספה חדשים.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d6"></span>
+      <label class="act" for="d6">הצעת מחיר חתומה — אין upsell</label>
+      <span class="exp">צפוי: בכניסה מלינק הצעה אין כפתורי הוספה; אחרי "עריכה" (המחיר חוזר לתמחור חי) — הכפתורים מופיעים.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d7"></span>
+      <label class="act" for="d7">החלפת טיסה מאפסת מזוודות שנבחרו</label>
+      <span class="exp">צפוי: בחרתי מזוודה ← החלפתי טיסה ← התוספת נעלמת מהסיכום ומהסה"כ; החלפת ארוחת בוקר לא מוחקת מזוודות.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d8"></span>
+      <label class="act" for="d8">הצוות רואה את התוספות</label>
+      <span class="exp">צפוי: בפירוט הזמנה באדמין — "מזוודות שנוספו: N לכל נוסע · $X"; בשורת ההזמנה בפורטל הסוכן — שורה תמציתית.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d9"></span>
+      <label class="act" for="d9">עיצוב — שני המצבים</label>
+      <span class="exp">צפוי: תואם עיצוב גם ב־light וגם ב־dark; RTL תקין; מובייל לא נשבר.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d10"></span>
+      <label class="act" for="d10">רגרסיה: הזמנה בלי תוספות</label>
+      <span class="exp">צפוי: סכומים זהים לחלוטין לקודם; שובר/אשראי־סוכן ללא שינוי.</span></li>
+  </ol>
+</section>
+
 <!-- ════════ ז: open ════════ -->
 <section>
-  <div class="sec-head"><span class="sec-mark">ז</span><h2>פתוח — ממתין לאפיון</h2></div>
+  <div class="sec-head"><span class="sec-mark">ז</span><h2>פתוח</h2></div>
   <ol class="items">
     <li class="item"><span class="tick"><input type="checkbox" id="q13"></span>
-      <label class="act" for="q13">נושא חדש: ארוחת בוקר/מזוודות בסיכום ההזמנה — אושר, ממתין לאפיון</label>
-      <span class="exp">הוחלט (20.08): גם תצוגת מה־כלול וגם <b>upsell בתשלום</b>; מחירים מ־<b>Amadeus</b> (טיסה) ו־<b>Ratehawk</b> (מלון). ייכנס לתכנון נפרד — יכולות API, תמחור, זרימת תשלום תוספות.</span></li>
+      <label class="act" for="q13">אין שאלות פתוחות 🎉 — כל 12 סעיפי המשוב + הנושא החדש טופלו</label>
+      <span class="exp">נשאר רק להריץ את הבדיקות שבמסמך.</span></li>
   </ol>
 </section>
 

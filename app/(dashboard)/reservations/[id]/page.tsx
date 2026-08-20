@@ -747,6 +747,26 @@ export default function ReservationDetailsPage({
                         : "No"}
                     </p>
                   </div>
+
+                  {(() => {
+                    const addedBags = (reservation.flight_order_info as { added_bags?: { checked_qty_per_pax?: number; unit_price_usd?: number; total_usd?: number; cabin?: { qty_per_pax?: number; unit_price_usd?: number; total_usd?: number } } })?.added_bags;
+                    if (!addedBags) return null;
+                    return (
+                      <div className="mt-4 border-t pt-4">
+                        <p className="text-sm font-medium mb-2">מזוודות שנוספו</p>
+                        {addedBags.checked_qty_per_pax ? (
+                          <p className="text-sm text-muted-foreground">
+                            {addedBags.checked_qty_per_pax} לכל נוסע · ${addedBags.total_usd?.toFixed(2)}
+                          </p>
+                        ) : null}
+                        {addedBags.cabin?.qty_per_pax ? (
+                          <p className="text-sm text-muted-foreground">
+                            טרולי שנוסף: {addedBags.cabin.qty_per_pax} לכל נוסע · ${addedBags.cabin.total_usd?.toFixed(2)}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             ) : (
