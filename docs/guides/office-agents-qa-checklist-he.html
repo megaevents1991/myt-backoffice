@@ -413,38 +413,79 @@
   </ol>
 </section>
 
-<!-- ════════ QA questions (wave 2) ════════ -->
+<!-- ════════ Deep E2E: wave 3 features ════════ -->
 <section>
-  <div class="sec-head"><span class="sec-mark">ז</span><h2>שאלות פתוחות אליך (רשמת את המסמך) — 20.08</h2></div>
-  <div class="sec-note">כל 12 הסעיפים טופלו או ממתינים לתשובה שלך. מה שתוקן — מסומן; מה שפתוח — שאלה.</div>
+  <div class="sec-head"><span class="sec-mark">ח</span><h2>בדיקות עומק — לינק תשלום ללקוח + מסך שותפים (גל 3)</h2><span class="count"></span></div>
+  <div class="sec-note">ההחלטות שנקבעו: תוקף 24 שעות (מחיר נעול) · "אשראי הלקוח" הוסר לגמרי · הלקוח עורך פרטי נוסעים בלבד · התראה = סטטוס בפורטל + מייל לסוכן.</div>
   <ol class="items">
-    <li class="item"><span class="tick"><input type="checkbox" id="q1"></span>
-      <label class="act" for="q1">סעיף 1: "נפתח כיוזר ולא כפרטנר חדש" — מה בדיוק ציפית לראות?</label>
-      <span class="exp">האם ציפית שיצירת מנהל משרד תיצור <b>שותף/משרד חדש</b> ברשימת השותפים? באיזה מסך ראית את הבעיה? צילום או שחזור מדויק יעזור.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h1"></span>
+      <label class="act" for="h1">האופציה "לינק תשלום ללקוח" מופיעה רק במצב סוכן</label>
+      <span class="exp">צפוי: לקוח רגיל לא רואה אותה; סוכן/מנהל במצב סוכן — כן, כברירת מחדל; חיווי "ההזמנה תישמר 24 שעות" צמוד לאופציה.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h2"></span>
+      <label class="act" for="h2">"אשראי הלקוח" נעלם לגמרי</label>
+      <span class="exp">צפוי: לא קיים באף תצוגה — דסקטופ, מובייל, פוטר דביק. שובר ו"אשראי שלי (הסוכן)" נשארו ועובדים.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h3"></span>
+      <label class="act" for="h3">יצירת לינק: מילוי הזמנה מלאה ← בחירת לינק ← שליחה</label>
+      <span class="exp">צפוי: מסך הצלחה עם שדה העתקה + "תקף ל־24 שעות"; ההזמנה מופיעה בפורטל הסוכן כ־hold ממתין; באדמין עם settlement=payment_link.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h4"></span>
+      <label class="act" for="h4">הלקוח פותח את הלינק בדפדפן נקי (מכשיר אחר)</label>
+      <span class="exp">צפוי: רואה את סיכום ההזמנה; <b>יכול לערוך</b> שם/מייל/טלפון של נוסעים; <b>לא יכול</b> לשנות חבילה/מחיר.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h5"></span>
+      <label class="act" for="h5">תשלום מוצלח בכרטיס של הלקוח</label>
+      <span class="exp">צפוי: סטטוס Paid; השיוך לסוכן היוצר נשמר (פילוח מנהל + "מקור הגעה"); עמלה רגילה — <b>בלי</b> ניכוי כמו באשראי־סוכן.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h6"></span>
+      <label class="act" for="h6">מייל "ההזמנה שולמה" הגיע לסוכן היוצר</label>
+      <span class="exp">צפוי: נמען = הסוכן שיצר (לא המשרד, אלא אם אין slug — אז מייל השותף); מכיל מספר הזמנה, אירוע, סכום, שם לקוח. מייל אחד בלבד (בלי כפולים).</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h7"></span>
+      <label class="act" for="h7">פקיעה: לפתוח את הלינק אחרי 25+ שעות</label>
+      <span class="exp">צפוי: הודעת פג־תוקף; אי אפשר לשלם; הסוכן יוצר הזמנה חדשה במקום.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h8"></span>
+      <label class="act" for="h8">אבטחה: סשן סוכן שפג באמצע</label>
+      <span class="exp">צפוי: שליחה עם לינק־תשלום ← שגיאה "להתחבר מחדש לאזור הסוכן"; לחיצה נוספת <b>לא</b> ממשיכה למסך הקלדת אשראי (התיקון הקריטי מה־review).</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h9"></span>
+      <label class="act" for="h9">אבטחה: ניסיון לזייף resumed_order_id</label>
+      <span class="exp">צפוי: POST עם id של hold זר/ישן/ששולם — לא יורש payment_link, לא נשלח מייל; ההזמנה נוצרת כרגילה. (בדיקת dev.)</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h10"></span>
+      <label class="act" for="h10">רגרסיה: hold רגיל של לקוח ("הבטיחו מחיר ל־24 שעות")</label>
+      <span class="exp">צפוי: עובד כרגיל, שחזור ותשלום — <b>בלי</b> מייל לסוכן ובלי תיוג payment_link.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h11"></span>
+      <label class="act" for="h11">מסך שותפים: עמודת צוות לשותפי agent</label>
+      <span class="exp">צפוי: מנהל ראשון עם תג "מנהל משרד" + סוכנים עם סטטוס, ברשימה ובעמוד השותף; משפיענים/החזר־לקוח — בלי עמודה.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h12"></span>
+      <label class="act" for="h12">"צור מנהל משרד" מתוך מסך השותפים — superadmin בלבד</label>
+      <span class="exp">צפוי: אדמין רגיל לא רואה את הכפתור (וגם ה־action נחסם); יצירה על קוד קיים עובדת; הדיאלוג מציג מנהלים קיימים לפני יצירת נוסף; נרשם ב־audit.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h13"></span>
+      <label class="act" for="h13">היוזר החדש מהשותפים = מנהל מלא</label>
+      <span class="exp">צפוי: מתחבר לפורטל כמנהל משרד (צוות, פילוח, צבירה) ומופיע גם ב־/users וגם בצוות במסך השותפים.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h14"></span>
+      <label class="act" for="h14">חזרה על תיקוני גל 2 אחרי הדיפלוי</label>
+      <span class="exp">שם משתמש בכותרת · "נוצר ע"י" בהצעות · צבירה+קופונים לכל סוכן (לפי המכירות שלו, מנהל רואה "צבירה לפי סוכן") · עמודת סוכן בהזמנות אדמין · שיוך ידני של הזמנה לסוכן (dropdown למנהל) · ניתוק יוזר מושבת · קיבוץ מלונות בוויזרד (כרטיס אחד + "חדרים נוספים").</span></li>
+  </ol>
+</section>
+
+<!-- ════════ QA questions (updated 20.08) ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">ז</span><h2>שאלות פתוחות אליך (רשמת את המסמך) — עדכון 20.08</h2></div>
+  <div class="sec-note">סעיפים 1 ו־3 נבנו (פרק ח). נשארו 6 פתוחות:</div>
+  <ol class="items">
     <li class="item"><span class="tick"><input type="checkbox" id="q2"></span>
-      <label class="act" for="q2">סעיף 4: ניכוי תוספת־הצעה באשראי סוכן — <b>כבר מיושם בקוד מ־09.08</b>. איזו הצעה בדקת?</label>
-      <span class="exp">הנוסחה מנכה עמלה + תוספת שהסוכן הוסיף. ייתכן שההצעה שבדקת נבנתה בלי מחיר בסיס (תוספת=0) או שהצילום ישן. תן מספר הצעה/לינק לשחזור.</span></li>
+      <label class="act" for="q2">סעיף 2: פיצול תצוגת סוכן־משנה — "עדיין מברר" (דור)</label>
+      <span class="exp">מחכה להחלטה. מה שכבר תוקן: שם המשתמש מוצג נכון + צבירה פר־סוכן קיימת.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="q3"></span>
-      <label class="act" for="q3">סעיף 6: תוקן (מנהל משרד ב־handoff + לוגו) — לשחזר אחרי דיפלוי מיין</label>
-      <span class="exp">בדפדפן נקי: "הזמנה עבור הלקוח" ← אמור להיפתח מצב סוכן עם המיתוג הנכון. ה"בשיתוף אלון" הגיע מעוגייה ישנה בדפדפן. אם חוזר — צילום + אותו דפדפן/סתר.</span></li>
+      <label class="act" for="q3">סעיף 4: ניכוי תוספת־הצעה באשראי סוכן — <b>כבר מיושם מ־09.08</b>. איזו הצעה בדקת?</label>
+      <span class="exp">תן מספר הצעה/לינק מהצילום — כנראה הצעה בלי מחיר בסיס (תוספת 0) או צילום ישן. לשחזר אחרי הדיפלוי.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="q4"></span>
-      <label class="act" for="q4">סעיף 9: איזו הזמנה "לא מופיעה בכל המשרד"? (מספר ME…)</label>
-      <span class="exp">בצילום שצירפת שתי ההזמנות כן מוצגות. ייתכן שהכוונה להזמנה מסעיף 6 — היא <b>לא נוצרה בכלל</b> (וידאנו ב־DB). שיוך ידני למנהל — נוסף ✔.</span></li>
+      <label class="act" for="q4">סעיף 9: איזו הזמנה "לא מופיעה בכל המשרד"? (ME…)</label>
+      <span class="exp">בצילום שתיהן מופיעות; כנראה ההזמנה מסעיף 6 שכלל לא נוצרה (וידאנו ב־DB). אם יש מקרה אמיתי — מספר הזמנה.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="q5"></span>
-      <label class="act" for="q5">סעיף 10: מומש ניתוק בכל פעולה + עמוד שגיאה. צריך גם זריקה מיידית של מסך פתוח?</label>
-      <span class="exp">היום: יוזר מושבת נחסם בכל קליק/רענון. זריקה אוטומטית בלי שום פעולה מצידו דורשת מנגנון polling — להגיד אם זה נדרש.</span></li>
+      <label class="act" for="q5">סעיף 10: צריך גם זריקה מיידית של מסך פתוח (בלי שום קליק)?</label>
+      <span class="exp">היום כל פעולה/רענון נחסמים מיידית. זריקה ללא פעולה = polling — להגיד אם נדרש.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="q6"></span>
-      <label class="act" for="q6">סעיף 12: "שסוכן יוכל להזמין פה את החבילה" — לפרט את הכוונה</label>
-      <span class="exp">לסגור הזמנה מלאה מתוך הפורטל בלי מעבר למיין? עם איזה אמצעי תשלום (אשראי סוכן / שובר / לינק ללקוח)? או רק קיצור לכפתור "הזמנה עבור הלקוח"?</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="q7"></span>
-      <label class="act" for="q7">סעיף 3: לינק תשלום ללקוח — צריך אפיון קצר לפני פיתוח</label>
-      <span class="exp">איך נשלח (מייל/וואטסאפ/העתקה)? תוקף הלינק? מה קורה אחרי תשלום (סטטוס/חשבונית)? האם מחליף לגמרי את "אשראי הלקוח" או לצידו?</span></li>
+      <label class="act" for="q6">סעיף 12: "שסוכן יוכל להזמין פה את החבילה" — לפרט</label>
+      <span class="exp">הזמנה מלאה מתוך הפורטל? עם איזה תשלום (אשראי סוכן / שובר / לינק ללקוח)? או קיצור ל"הזמנה עבור הלקוח"?</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="q8"></span>
-      <label class="act" for="q8">נושא חדש: ארוחת בוקר/מזוודה בסיכום ההזמנה — תצוגה בלבד או גם הוספה בתשלום?</label>
-      <span class="exp">אם upsell — מאיפה המחירים (Ratehawk/חברת תעופה)? נאפיין בנפרד.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="q9"></span>
-      <label class="act" for="q9">אחרי הדיפלוי הבא: לחזור על סעיפים 2, 5, 7, 8, 9, 10, 11</label>
-      <span class="exp">מה שתוקן בגל 2: שם משתמש בכותרת, "נוצר ע"י" בהצעות, צבירה+קופונים לכל סוכן (לפי המכירות שלו), סוכן בהזמנות אדמין, שיוך ידני, ניתוק מושבתים, קיבוץ מלונות בוויזרד.</span></li>
+      <label class="act" for="q8">נושא חדש: ארוחת בוקר/מזוודה בסיכום — תצוגה בלבד או upsell בתשלום?</label>
+      <span class="exp">אם upsell — מקור מחירים (Ratehawk/תעופה)? נאפיין בנפרד.</span></li>
   </ol>
 </section>
 
