@@ -46,6 +46,8 @@ export interface CategoryPageContent {
    * the site). Multiple images crossfade; one image renders static.
    */
   tile_images?: string[];
+  /** Competition logo overlaid on the league tile on the site (transparent PNG). */
+  logo_url?: string;
   stadiums?: CategoryStadium[];
   /** "מידע מעניין" (leagues/genres) / "טוב לדעת" (destinations) cards. */
   facts?: CategoryFactCard[];
@@ -71,6 +73,7 @@ export function isEmptyPageContent(c: CategoryPageContent): boolean {
     !c.seo_text?.trim() &&
     !c.gallery?.length &&
     !c.tile_images?.length &&
+    !c.logo_url?.trim() &&
     !c.stadiums?.length &&
     !c.facts?.length &&
     !c.faq?.length &&
