@@ -130,13 +130,16 @@ export type Flight = {
 
 /** Mirrors main lib/app.types.ts - keep in sync. */
 export type AddedBagsInfo = {
-  /** Checked bags per traveler - 1 or 2. */
-  checked_qty_per_pax: number;
-  /** Effective per-bag price (per-pax total / qty). */
+  /** TOTAL checked bags on the booking (new shape, 20.8 quantity fix). */
+  checked_qty?: number;
+  /** LEGACY (older reservations): bags per traveler - total is
+   *  checked_qty_per_pax × numOfTravelers. */
+  checked_qty_per_pax?: number;
+  /** Effective per-bag price (total / qty). */
   unit_price_usd: number;
-  /** Checked-bag component total for ALL travelers. */
+  /** Checked-bag component total. */
   total_usd: number;
-  /** Optional cabin/trolley add-on, priced independently. */
+  /** Optional cabin/trolley add-on, priced independently (per traveler). */
   cabin?: {
     qty_per_pax: number;
     unit_price_usd: number;

@@ -117,10 +117,12 @@ function ChoicesPanel({ reservation }: { reservation: PortalReservation }) {
                 </div>
               ) : null}
               {(() => {
-                const addedBags = (flight as { added_bags?: { checked_qty_per_pax?: number; total_usd?: number; cabin?: { qty_per_pax?: number; total_usd?: number } } })?.added_bags;
+                const addedBags = (flight as { added_bags?: { checked_qty?: number; checked_qty_per_pax?: number; total_usd?: number; cabin?: { qty_per_pax?: number; total_usd?: number } } })?.added_bags;
                 if (!addedBags) return null;
                 const parts = [];
-                if (addedBags.checked_qty_per_pax) parts.push(`מזוודות: ${addedBags.checked_qty_per_pax} × $${addedBags.total_usd?.toFixed(0)}`);
+                // New shape (20.8): checked_qty = booking total; legacy = per pax.
+                const bagsQty = addedBags.checked_qty ?? addedBags.checked_qty_per_pax;
+                if (bagsQty) parts.push(`מזוודות: ${bagsQty} × $${addedBags.total_usd?.toFixed(0)}`);
                 if (addedBags.cabin?.qty_per_pax) parts.push(`טרולי: ${addedBags.cabin.qty_per_pax} × $${addedBags.cabin.total_usd?.toFixed(0)}`);
                 return parts.length > 0 ? <div className="text-xs mt-1">{parts.join(" · ")}</div> : null;
               })()}
