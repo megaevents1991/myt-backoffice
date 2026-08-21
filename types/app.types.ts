@@ -123,6 +123,25 @@ export type Flight = {
   isOffline?: boolean;
   offlineId?: number;
   offlineRawPrice?: number;
+  // Paid baggage upsell chosen on main's order summary - rides into
+  // reservations.flight_order_info so ops can fulfill it (mirrors main).
+  added_bags?: AddedBagsInfo | null;
+};
+
+/** Mirrors main lib/app.types.ts - keep in sync. */
+export type AddedBagsInfo = {
+  /** Checked bags per traveler - 1 or 2. */
+  checked_qty_per_pax: number;
+  /** Effective per-bag price (per-pax total / qty). */
+  unit_price_usd: number;
+  /** Checked-bag component total for ALL travelers. */
+  total_usd: number;
+  /** Optional cabin/trolley add-on, priced independently. */
+  cabin?: {
+    qty_per_pax: number;
+    unit_price_usd: number;
+    total_usd: number;
+  };
 };
 
 export type FlightSegment = {
@@ -169,6 +188,9 @@ export type OrderHotel = {
   offlineId?: number;
   offlineIds?: number[];
   offlineRawPrice?: number;
+  // Breakfast upsell applied on main's summary (rate swap). Persisted WITHOUT
+  // prev_rate (in-session only on main) - ops sees the delta it added.
+  breakfast_upgrade?: { delta_usd: number; prev_price: string } | null;
   // Display block main renders on the summary; the portal's package builder
   // writes it too (buildHotelSnapshot).
   hotelInformation?: {

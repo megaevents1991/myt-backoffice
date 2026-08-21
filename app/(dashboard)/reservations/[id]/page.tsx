@@ -881,6 +881,18 @@ export default function ReservationDetailsPage({
                         ? "Includes Breakfast"
                         : "No Meal Included"}
                     </p>
+                    {/* Breakfast bought as an upsell on the order summary -
+                        the rate above already includes it; this flags the
+                        paid delta so ops knows it was an add-on. */}
+                    {reservation.hotel_order_info?.breakfast_upgrade && (
+                      <p className="text-sm text-muted-foreground">
+                        ארוחת בוקר נוספה כשדרוג · +$
+                        {Number(
+                          reservation.hotel_order_info.breakfast_upgrade
+                            .delta_usd
+                        ).toFixed(0)}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
