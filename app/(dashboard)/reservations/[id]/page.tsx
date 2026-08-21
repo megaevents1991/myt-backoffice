@@ -749,6 +749,18 @@ export default function ReservationDetailsPage({
                   </div>
 
                   {(() => {
+                    const fareUpgrade = (reservation.flight_order_info as { fare_upgrade?: { brand?: string; delta_total_usd?: number } })?.fare_upgrade;
+                    if (!fareUpgrade) return null;
+                    return (
+                      <div className="mt-4 border-t pt-4">
+                        <p className="text-sm font-medium mb-2">שדרוג כרטיס</p>
+                        <p className="text-sm text-muted-foreground">
+                          {fareUpgrade.brand || "CLASSIC"} (כולל מזוודה) · +${Number(fareUpgrade.delta_total_usd || 0).toFixed(0)}
+                        </p>
+                      </div>
+                    );
+                  })()}
+                  {(() => {
                     const addedBags = (reservation.flight_order_info as { added_bags?: { checked_qty?: number; checked_qty_per_pax?: number; unit_price_usd?: number; total_usd?: number; cabin?: { qty_per_pax?: number; unit_price_usd?: number; total_usd?: number } } })?.added_bags;
                     if (!addedBags) return null;
                     return (

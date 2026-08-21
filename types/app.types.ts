@@ -126,6 +126,9 @@ export type Flight = {
   // Paid baggage upsell chosen on main's order summary - rides into
   // reservations.flight_order_info so ops can fulfill it (mirrors main).
   added_bags?: AddedBagsInfo | null;
+  // Branded-fare upgrade ("שדרוג כרטיס" - El Al Classic) applied on main's
+  // summary. Persisted WITHOUT the in-session prev_offer anchor (mirrors main).
+  fare_upgrade?: { brand: string; delta_total_usd: number } | null;
 };
 
 /** Mirrors main lib/app.types.ts - keep in sync. */
