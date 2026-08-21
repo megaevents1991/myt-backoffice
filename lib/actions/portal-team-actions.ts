@@ -12,7 +12,11 @@
 import { requireOfficeManager } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { createManagedUser, resetPasswordById } from "@/lib/auth/user-create";
-import { getOfficeUsers, type OfficeUser } from "@/lib/portal-attribution";
+import {
+  getOfficeUsers,
+  UNASSIGNED_AGENT_SENTINEL,
+  type OfficeUser,
+} from "@/lib/portal-attribution";
 import { logAudit } from "@/lib/audit";
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -137,13 +141,25 @@ export async function setOfficeAgentActive(
 }
 
 /**
- * Manual attribution override (QA item 9, 20.08): the manager assigns a
- * reservation to an office user directly, overriding whatever the UTM
- * pipeline resolved (or filling in a booking that never carried an
- * agent-prefixed link at all). Wins over UTM everywhere - see the merge in
- * lib/portal-attribution.ts and every reservations/credit consumer.
+ * Manual attribution override (QA item 9, 20.08; forced-unassign fixed QA
+ * item 3, 21.08): the manager assigns a reservation to an office user
+ * directly, overriding whatever the UTM pipeline resolved (or filling in a
+ * booking that never carried an agent-prefixed link at all). Wins over UTM
+ * everywhere - see mergedOwner in lib/portal-attribution.ts and every
+ * reservations/credit consumer.
  *
- * `agentSub: null` clears the override back to "let UTM attribution decide".
+ * `agentSub` is one of three client-facing shapes:
+ *  - a real user_profiles id -> that agent, validated as an active office
+ *    user below.
+ *  - the literal string "none" -> writes UNASSIGNED_AGENT_SENTINEL. The
+ *    manager explicitly wants this unattributed. Previously this path wrote
+ *    plain NULL, which every consumer's merge falls back to the UTM-derived
+ *    owner - so the row silently kept showing whichever agent's link the
+ *    customer used ("לא משויך" didn't stick). The sentinel wins over UTM the
+ *    same way a real override id does.
+ *  - `null` -> clears the override back to plain NULL, i.e. "let UTM
+ *    attribution decide" (the "אוטומטי" option - distinct from "none"/"לא
+ *    משויך" above).
  */
 export async function assignReservationAgent(
   reservationId: number,
@@ -169,18 +185,24 @@ export async function assignReservationAgent(
     return { ok: false, error: "ההזמנה לא נמצאה במשרד שלך" };
   }
 
-  if (agentSub != null) {
+  let valueToWrite: string | null;
+  if (agentSub === "none") {
+    valueToWrite = UNASSIGNED_AGENT_SENTINEL;
+  } else if (agentSub != null) {
     const officeUsers = await getOfficeUsers(session.partner_code);
     const target = officeUsers?.find((u) => u.id === agentSub && u.is_active);
     if (!target) {
       return { ok: false, error: "המשתמש הזה לא נמצא כסוכן פעיל במשרד" };
     }
+    valueToWrite = agentSub;
+  } else {
+    valueToWrite = null;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from("reservations")
-    .update({ agent_user_id: agentSub })
+    .update({ agent_user_id: valueToWrite })
     .eq("id", reservationId);
   if (error) {
     if (error.code === "42703") {
@@ -194,7 +216,9 @@ export async function assignReservationAgent(
     action: "reservation_agent_assigned",
     entityType: "reservation",
     entityId: reservationId,
-    changes: { agent_user_id: agentSub },
+    // The value actually WRITTEN, not the raw client input - logging "none"
+    // would misleadingly suggest the column itself stores that string.
+    changes: { agent_user_id: valueToWrite },
     metadata: { via: "portal_reservations" },
   });
   return { ok: true };

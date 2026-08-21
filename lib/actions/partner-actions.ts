@@ -16,8 +16,11 @@ import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 import { createManagedUser } from "@/lib/auth/user-create";
 import {
   getOfficeUsersForPartners,
+  getReservationAttribution,
+  mergedOwner,
   type OfficeUser,
 } from "@/lib/portal-attribution";
+import { isPaid, saleValue } from "@/lib/partner-commission";
 
 /** Columns a staff user is allowed to write. Anything else is dropped. */
 const WRITABLE_COLUMNS = [
@@ -572,6 +575,96 @@ export async function getPartnerTeams(
 ): Promise<PartnerTeamMember[]> {
   await requireStaff();
   return getOfficeUsersForPartners(trackingCodes);
+}
+
+export interface OfficeAgentStats {
+  totalReservations: number;
+  paidReservations: number;
+  totalSalesUsd: number;
+}
+
+export interface OfficeTeamReservationStats {
+  /** Keyed by user_profiles id - one entry per team member with any activity. */
+  bySub: Map<string, OfficeAgentStats>;
+  /** Reservations with no resolved owner, including a manager-forced "לא
+   *  משויך" (lib/portal-attribution.ts's UNASSIGNED_AGENT_SENTINEL) - its own
+   *  summary row, never folded into a team member's numbers. Unlike the
+   *  portal's credit bucket (which absorbs unattributed money into the
+   *  manager - see partner-credit-actions.ts), this is a staff readout of who
+   *  booked what, so it stays a separate, honest bucket. */
+  unattributed: OfficeAgentStats;
+}
+
+const emptyOfficeAgentStats = (): OfficeAgentStats => ({
+  totalReservations: 0,
+  paidReservations: 0,
+  totalSalesUsd: 0,
+});
+
+/**
+ * Per-agent reservation stats for the partners screen's team card (QA item 1,
+ * 21.08 - Dor wants each team agent's own numbers, not just the office
+ * total, visible from the staff side). One bulk pass over the office's
+ * reservations + one bulk attribution lookup - never a query per team member.
+ * Same bucketing math as the portal dashboard's agentBreakdown
+ * (getPortalDashboard, lib/actions/portal-dashboard-actions.ts): paid-only
+ * sales, mergedOwner resolves override-or-UTM (sentinel-aware).
+ *
+ * `officeUsers` is passed in rather than refetched - the caller (the view
+ * page) already has it from getPartnerTeams for the roster list itself.
+ */
+export async function getOfficeAgentStats(
+  trackingCode: string,
+  officeUsers: OfficeUser[],
+): Promise<OfficeTeamReservationStats> {
+  await requireStaff();
+
+  const fetchReservations = (columns: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("reservations")
+      .select(columns)
+      .eq("aff_partner_tracking_code", trackingCode);
+
+  let { data, error } = await fetchReservations(
+    "id,status,user_shown_price,agent_user_id",
+  );
+  if (error?.code === "42703") {
+    // agent_user_id not migrated yet - retry without it; every row simply
+    // merges to its UTM attribution below (override contributes nothing).
+    ({ data, error } = await fetchReservations("id,status,user_shown_price"));
+  }
+  if (error) {
+    console.error("getOfficeAgentStats:", JSON.stringify(error));
+    return { bySub: new Map(), unattributed: emptyOfficeAgentStats() };
+  }
+
+  const rows = (data ?? []) as {
+    id: number;
+    status: string | null;
+    user_shown_price: number | null;
+    agent_user_id?: string | null;
+  }[];
+
+  const attribution = await getReservationAttribution(
+    rows.map((r) => r.id),
+    officeUsers,
+  );
+
+  const bySub = new Map<string, OfficeAgentStats>();
+  const unattributed = emptyOfficeAgentStats();
+  for (const row of rows) {
+    const owner = mergedOwner(row.agent_user_id, attribution.get(row.id) ?? null);
+    const bucket = owner ? (bySub.get(owner) ?? emptyOfficeAgentStats()) : unattributed;
+    bucket.totalReservations += 1;
+    if (isPaid(row)) {
+      bucket.paidReservations += 1;
+      bucket.totalSalesUsd += saleValue(row);
+    }
+    if (owner) bySub.set(owner, bucket);
+  }
+
+  return { bySub, unattributed };
 }
 
 export type CreateOfficeManagerInput = {

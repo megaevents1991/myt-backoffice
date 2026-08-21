@@ -15,6 +15,7 @@ import {
   getOfficeUsers,
   getReservationAttribution,
   resolvePortalScope,
+  mergedOwner as computeMergedOwner,
   type OfficeUser,
 } from "@/lib/portal-attribution";
 import type { SessionPayload } from "@/lib/auth/session";
@@ -267,7 +268,7 @@ async function loadCredit(
     // manager's own bucket + everyone else's still totals the office figure.
     const officeUserIds = new Set(scope.officeUsers.map((u) => u.id));
     reservations = reservations.filter((r) => {
-      const rawOwner = r.agent_user_id ?? (attribution.get(r.id ?? -1) ?? null);
+      const rawOwner = computeMergedOwner(r.agent_user_id, attribution.get(r.id ?? -1) ?? null);
       const owner = rawOwner && officeUserIds.has(rawOwner) ? rawOwner : null;
       return (
         owner === scope.agentSub || (owner === null && scope.includeUnattributed)
@@ -505,7 +506,7 @@ export async function getOfficeCreditBreakdown(): Promise<
 
   const reservationsByOwner = new Map<string, ReservationRow[]>();
   for (const r of reservations) {
-    const owner = inOffice(r.agent_user_id ?? (attribution.get(r.id ?? -1) ?? null));
+    const owner = inOffice(computeMergedOwner(r.agent_user_id, attribution.get(r.id ?? -1) ?? null));
     const bucket = owner ?? managerSub;
     const list = reservationsByOwner.get(bucket) ?? [];
     list.push(r);

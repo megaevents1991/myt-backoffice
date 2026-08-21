@@ -183,19 +183,11 @@
   .item code{font-family:Consolas,monospace;font-size:13px;background:var(--mint-soft);border-radius:5px;padding:1px 5px;direction:ltr;unicode-bidi:embed}
   .how code{background:var(--card)}
 
-  .tag{
-    display:inline-block;font-size:11.5px;font-weight:700;border-radius:6px;
-    padding:1px 7px;margin-inline-start:6px;vertical-align:1px;
-  }
-  .tag.warn{background:var(--warn-bg);color:var(--warn-ink)}
-
   .callout{
     margin:12px 20px 4px;border-radius:12px;padding:11px 14px;font-size:14px;
   }
   .callout.info{background:var(--info-bg);color:var(--info-ink)}
   .callout b{font-weight:700}
-  .callout ol{margin:6px 0 0;padding-inline-start:18px}
-  .callout li{margin-bottom:3px}
 
   .gaps ul{margin:8px 0 0;padding:0 20px 18px 0;color:var(--muted);font-size:14.5px;list-style-position:inside}
   .gaps li{margin-bottom:7px}
@@ -219,13 +211,12 @@
 <div class="wrap">
 
 <header class="mast">
-  <div class="kicker">MYT · פורטל שותפים · QA — סבב 2</div>
+  <div class="kicker">MYT · פורטל שותפים · QA — סבב 3</div>
   <h1>בדיקות משרד סוכנים</h1>
-  <p class="lede">סבב 1 (19.08) עבר ✔ והוסר מהמסמך. הסבב הזה: תיקוני משוב ה־QA (גל 2), לינק תשלום ללקוח + מסך שותפים (גל 3), ובדיקות עומק — כולל מה צריך להכין לפני כל בדיקה.</p>
+  <p class="lede">סבבים 1-2 עברו והוסרו. הסבב הזה בודק רק את תיקוני טאב "אזור סוכן" מ־20.08: מסך תשלום סוכן חדש, תיקון שיוך ידני, נתוני סוכן בעמוד השותף, פילטרים בוויזרד ותיקוני הצעת מחיר.</p>
   <div class="meta">
-    <span class="chip">עודכן 20.08.2026</span>
-    <span class="chip">מיגרציות <code>0819</code>+<code>0820</code> הוחלו ✔</span>
-    <span class="chip">main: לינק תשלום — בפרוד</span>
+    <span class="chip">עודכן 20.08.2026 ערב</span>
+    <span class="chip">6 סעיפי משוב · 22 בדיקות</span>
   </div>
 </header>
 
@@ -237,201 +228,132 @@
 
 <!-- ════════ 0 ════════ -->
 <section>
-  <div class="sec-head"><span class="sec-mark">0</span><h2>הכנה — מה צריך שיהיה לפני שבודקים</h2><span class="count"></span></div>
-  <div class="callout info"><b>המדריך הקטן:</b> תכינו את אלה פעם אחת — כל הבדיקות בהמשך מפנות לכאן.
-    <ol>
-      <li><b>משרד בדיקה</b>: שותף מסוג agent עם מנהל משרד + 2 סוכנים פעילים (מסך שותפים ← "צור מנהל משרד"; המנהל מוסיף סוכנים ב"הצוות שלי").</li>
-      <li><b>הסכם צבירה</b>: על שורת השותף credit_per_ticket &gt; 0 (אחרת מסכי הצבירה מוסתרים בכוונה).</li>
-      <li><b>הצעת מחיר עם תוספת</b>: המנהל בונה הצעה מחבילה עם <b>מחיר בסיס</b> ותוספת ידועה (למשל +$25) — לבדיקת הניכוי.</li>
-      <li><b>לינק ישן</b>: לשמור בצד לינק של המשרד בפורמט הישן (בלי <code>utm_content</code>) — לבדיקת "לא משויך".</li>
-      <li><b>דפדפן לקוח</b>: חלון גלישה בסתר / מכשיר שני נקי מעוגיות.</li>
-      <li><b>כרטיס בדיקה</b> של CreditGuard + גישה לתיבת המייל של הסוכן.</li>
-    </ol>
-  </div>
+  <div class="sec-head"><span class="sec-mark">0</span><h2>הכנה</h2><span class="count"></span></div>
   <ol class="items">
     <li class="item"><span class="tick"><input type="checkbox" id="p1"></span>
       <label class="act" for="p1">הדיפלוי האחרון באוויר בשני האתרים</label>
-      <span class="exp">צפוי: backoffice master + main main פרוסים; Apply DB Migrations ירוק (עבר ✔ 20.08).</span></li>
+      <span class="exp">backoffice master + main main אחרי ה־push של סבב 3.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="p2"></span>
-      <label class="act" for="p2">כל פריטי ההכנה מהמדריך למעלה מוכנים</label>
-      <span class="exp">משרד+צוות, הסכם צבירה, הצעה עם תוספת, לינק ישן, דפדפן נקי, כרטיס בדיקה.</span></li>
+      <label class="act" for="p2">משרד בדיקה (מנהל + 2 סוכנים) + הצעה עם מחיר בסיס ותוספת ידועה + דפדפן לקוח נקי</label>
+      <span class="exp">אותו סט מהסבבים הקודמים.</span></li>
   </ol>
 </section>
 
-<!-- ════════ א: wave-2 fixes ════════ -->
+<!-- ════════ א: 3 buttons ════════ -->
 <section>
-  <div class="sec-head"><span class="sec-mark">א</span><h2>תיקוני משוב ה־QA (גל 2)</h2><span class="count"></span></div>
+  <div class="sec-head"><span class="sec-mark">א</span><h2>מסך תשלום סוכן — 3 כפתורים במקום טוגל (סעיפים 2+5)</h2><span class="count"></span></div>
   <ol class="items">
     <li class="item"><span class="tick"><input type="checkbox" id="a1"></span>
-      <label class="act" for="a1">שם המשתמש בכותרת הפורטל</label>
-      <span class="exp">צפוי: אביב מחובר ← רואה "אביב" (לא "איציק פנסו"). גם באות של האווטאר.</span>
-      <span class="how"><b>איך:</b> התחברות כסוכן־משנה מהמשרד שהוכן ב־0.</span></li>
+      <label class="act" for="a1">הטוגל נעלם; שלושה כפתורים ישירים בתחתית</label>
+      <span class="exp">צפוי: <b>שלח לינק תשלום ללקוח</b> (ראשי, עם "ההזמנה תישמר 24 שעות") · <b>שלם באשראי שלי (הסוכן)</b> עם סכום החיוב בניכוי · <b>שלם בשובר</b> (רק כשמותר בהסכם). בדסקטופ, מובייל ובפוטר הדביק.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="a2"></span>
-      <label class="act" for="a2">צבירה אישית לכל סוכן</label>
-      <span class="exp">צפוי: לסוכן יש "הצבירה שלי"; היתרה = הזמנות ששולמו <b>המשויכות אליו</b> × קרדיט לכרטיס; המרה לקופון מוגבלת ליתרה שלו בלבד.</span>
-      <span class="how"><b>איך:</b> הזמנה משולמת דרך לינק של סוכן א' ← היתרה גדלה אצל א' בלבד — לא אצל ב' ולא אצל המנהל.</span></li>
+      <label class="act" for="a2">כל כפתור מבצע ישירות את הפעולה שלו</label>
+      <span class="exp">צפוי: לינק ← נוצר hold + שדה העתקה; אשראי שלי ← חיוב אמיתי בסכום המוצג; שובר ← הזמנת Pending. בלי שלב בחירה.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="a3"></span>
-      <label class="act" for="a3">מנהל: "צבירה לפי סוכן"</label>
-      <span class="exp">צפוי: בעמוד הצבירה של המנהל טבלת יתרות לכל איש צוות; "לא משויך" נצבר אצל המנהל; הסך הכולל = צבירת המשרד.</span></li>
+      <label class="act" for="a3">דאבל־קליק מהיר = הזמנה אחת בלבד</label>
+      <span class="exp">צפוי: הכפתורים ננעלים בזמן שליחה; אין כפולות.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="a4"></span>
-      <label class="act" for="a4">"נוצר ע"י" בהצעות מחיר (מנהל)</label>
-      <span class="exp">צפוי: סוכן יוצר הצעה ← המנהל רואה עמודת יוצר; הסוכן לא רואה את העמודה.</span></li>
+      <label class="act" for="a4">סשן סוכן שפג — עדיין בטוח</label>
+      <span class="exp">צפוי: "להתחבר מחדש לאזור הסוכן"; שום לחיצה לא מגיעה למסך הקלדת אשראי.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="a5"></span>
-      <label class="act" for="a5">אדמין: עמודת "סוכן" בהזמנות + בפירוט</label>
-      <span class="exp">צפוי: ברשימת ההזמנות בדשבורד ובעמוד הזמנה — שם הסוכן המשויך (או "-").</span></li>
+      <label class="act" for="a5">לקוח רגיל (לא סוכן) — ללא שינוי</label>
+      <span class="exp">צפוי: כפתור יחיד רגיל; אין 3 כפתורים.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="a6"></span>
-      <label class="act" for="a6">שיוך ידני: מנהל מצמיד הזמנה לסוכן</label>
-      <span class="exp">צפוי: בהזמנות הפורטל של המנהל dropdown על כל שורה; שיוך "לא משויך"←סוכן מעדכן פילוח+צבירה; ניקוי מחזיר ל"לא משויך".</span>
-      <span class="how"><b>איך:</b> על ההזמנה מהלינק הישן (הכנה 4). לוודא רישום ב־audit log.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="a7"></span>
-      <label class="act" for="a7">שלמות "לא משויך" — מגיע רק בדרכים לגיטימיות (סעיף 9)</label>
-      <span class="exp">צפוי: הזמנה מלינק חדש של סוכן — <b>תמיד</b> משויכת. "לא משויך" מופיע <b>רק</b> עבור: לינק ישן, הזמנת קופון בלי קליק, או תנועה אורגנית.</span>
-      <span class="how"><b>מדריך:</b> 1) לוודא שכל לינק חי בפורטל מכיל <code>utm_content=ag-</code>. 2) שלוש הזמנות: לינק חדש של א' · לינק ישן · קופון בלבד. 3) צפוי בפילוח: אחת אצל א', שתיים ב"לא משויך". 4) הזמנה מלינק חדש שנחתה "לא משויך" = באג — לצלם URL מלא + כרטיס "מקור הגעה".</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="a8"></span>
-      <label class="act" for="a8">ניתוק יוזר מושבת — כולל מסך פתוח (סעיף 10)</label>
-      <span class="exp">צפוי: אחרי השבתה כל פעולה נחסמת מיידית; <b>ומסך פתוח ברקע נזרק לבד</b> ללוגין תוך עד דקה, או מיידית בחזרה לטאב.</span>
-      <span class="how"><b>איך:</b> סוכן מחובר בטאב פתוח ← superadmin משבית ← בלי לגעת בטאב: עד 60 שניות עובר ללוגין; או לעבור טאב ולחזור — מיידי.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="a9"></span>
-      <label class="act" for="a9">ויזרד — קיבוץ מלונות</label>
-      <span class="exp">צפוי: כרטיס אחד לכל מלון (החדר הזול ככותרת) + "חדרים נוספים (N)" עם הפרשי מחיר; מיון/פילטרים על המלון; בחירת חדר נקלטת בסיכום.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="a10"></span>
-      <label class="act" for="a10">ניכוי תוספת־הצעה באשראי סוכן (סעיף 4 — אימות שקיים)</label>
-      <span class="exp">צפוי: בהזמנה שמקורה <b>בהצעה עם תוספת</b>, ב"אשראי שלי (הסוכן)": יחויב = מחיר − עמלת בסיס − <b>התוספת</b>; התווית מציגה את הניכוי המלא.</span>
-      <span class="how"><b>מדריך:</b> 1) ההצעה מהכנה 3 (בסיס + $25). 2) לפתוח את לינק ההצעה כלקוח או "הזמנה עבור הלקוח". 3) לבחור אשראי סוכן ולצלם סכומים. 4) אם הניכוי חסר — לרשום מספר הצעה ולבדוק שיש לה מחיר בסיס (בלי בסיס ← תוספת 0, לא תקלה).</span></li>
+      <label class="act" for="a6">סעיף 5: הלקוח פותח את הלינק — מסך סופי מלא בשמות</label>
+      <span class="exp">צפוי: שמות/מייל/טלפון מלאים מראש (ניתנים לתיקון) + כפתור מעבר לתשלום. אומת בקוד — לוודא חי.</span></li>
   </ol>
 </section>
 
-<!-- ════════ ב: wave-3 paylink ════════ -->
+<!-- ════════ ב: manual assign ════════ -->
 <section>
-  <div class="sec-head"><span class="sec-mark">ב</span><h2>לינק תשלום ללקוח — קצה לקצה (גל 3)</h2><span class="count"></span></div>
-  <div class="sec-note">ההחלטות: תוקף 24 שעות (מחיר נעול) · "אשראי הלקוח" הוסר לגמרי · הלקוח עורך פרטי נוסעים בלבד · התראה = סטטוס בפורטל + מייל לסוכן. הזרימה מהפורטל: חבילה ← "הזמנה עבור הלקוח" ← מיין במצב סוכן ← לינק תשלום (סעיף 12 — הוחלט: בלי checkout בבקאופיס).</div>
+  <div class="sec-head"><span class="sec-mark">ב</span><h2>שיוך ידני — תוקן "לא משויך" (סעיף 3)</h2><span class="count"></span></div>
+  <div class="sec-note">ה־dropdown עכשיו 3 מצבים: <b>אוטומטי (לפי הלינק)</b> · שם סוכן · <b>לא משויך</b> (כפוי).</div>
   <ol class="items">
     <li class="item"><span class="tick"><input type="checkbox" id="b1"></span>
-      <label class="act" for="b1">האופציה מופיעה רק במצב סוכן + חיווי 24 שעות צמוד</label>
-      <span class="exp">צפוי: לקוח רגיל לא רואה; במצב סוכן היא ברירת המחדל עם "ההזמנה תישמר 24 שעות" לידה.</span>
-      <span class="how"><b>איך:</b> לפתוח עמוד הזמנה פעם כלקוח (סתר) ופעם דרך "הזמנה עבור הלקוח" מהפורטל.</span></li>
+      <label class="act" for="b1">הבאג: "לא משויך" על הזמנה עם שיוך UTM — עכשיו נתפס</label>
+      <span class="exp">צפוי: השורה מציגה "לא משויך" <b>גם אחרי רענון</b>; נספרת ב"לא משויך" בפילוח ובצבירת המנהל.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="b2"></span>
-      <label class="act" for="b2">"אשראי הלקוח" לא קיים יותר</label>
-      <span class="exp">צפוי: נעלם מדסקטופ, מובייל ופוטר דביק. "אשראי שלי (הסוכן)" ושובר נשארו תקינים.</span></li>
+      <label class="act" for="b2">"אוטומטי (לפי הלינק)" מחזיר לשיוך המקורי</label>
+      <span class="exp">צפוי: הזמנה שהוצמדה ידנית וחוזרת לאוטומטי — מציגה שוב את הסוכן מה־UTM.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="b3"></span>
-      <label class="act" for="b3">יצירת הלינק</label>
-      <span class="exp">צפוי: מילוי נוסעים ← בחירה ← שליחה ← מסך הצלחה עם שדה העתקה + "תקף ל־24 שעות"; בפורטל כהזמנה ממתינה; באדמין settlement=<code>payment_link</code>.</span></li>
+      <label class="act" for="b3">החלפה בין סוכנים ממשיכה לעבוד</label>
+      <span class="exp">צפוי: אביב↔איציק — מתעדכן בפילוח, בצבירה ובעמודת האדמין.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="b4"></span>
-      <label class="act" for="b4">הלקוח פותח בדפדפן נקי</label>
-      <span class="exp">צפוי: רואה את ההזמנה; <b>יכול לתקן</b> שם/מייל/טלפון של נוסעים; <b>לא</b> חבילה/מחיר.</span>
-      <span class="how"><b>איך:</b> להדביק את הלינק בחלון סתר (הכנה 5), בלי להתחבר לכלום.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="b5"></span>
-      <label class="act" for="b5">תשלום בכרטיס הלקוח ← Paid + שיוך נשמר</label>
-      <span class="exp">צפוי: Paid; משויכת לסוכן היוצר (פילוח + "מקור הגעה"); עמלה רגילה — בלי ניכוי אשראי־סוכן.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="b6"></span>
-      <label class="act" for="b6">מייל "ההזמנה שולמה" לסוכן — פעם אחת</label>
-      <span class="exp">צפוי: נמען = הסוכן היוצר; מספר הזמנה, אירוע, סכום, שם לקוח; רענון עמוד האישור לא שולח כפול.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="b7"></span>
-      <label class="act" for="b7">פקיעה אחרי 25+ שעות</label>
-      <span class="exp">צפוי: הלינק מציג פג־תוקף; אי אפשר לשלם.</span>
-      <span class="how"><b>איך:</b> ליצור לינק ולחזור למחרת; או ב־dev לאחר את created_at של ה־hold.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="b8"></span>
-      <label class="act" for="b8">אבטחה: סשן סוכן שפג באמצע</label>
-      <span class="exp">צפוי: שליחה ← "להתחבר מחדש לאזור הסוכן"; לחיצה נוספת <b>לא</b> מגיעה למסך הקלדת כרטיס.</span>
-      <span class="how"><b>איך:</b> למלא הזמנה במצב סוכן, למחוק את עוגיית הסוכן (DevTools ← Application ← Cookies) או להתנתק בטאב אחר, ולשלוח פעמיים.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="b9"></span>
-      <label class="act" for="b9">אבטחה: זיוף resumed_order_id (בדיקת dev)</label>
-      <span class="exp">צפוי: POST ל־confirm-order עם id של hold זר/ישן/ששולם — לא יורש payment_link ולא שולח מייל.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="b10"></span>
-      <label class="act" for="b10">רגרסיה: hold רגיל של לקוח</label>
-      <span class="exp">צפוי: "הבטיחו מחיר ל־24 שעות" עובד כרגיל — בלי מייל סוכן ובלי תיוג payment_link.</span></li>
+      <label class="act" for="b4">audit log מתעד כל שינוי שיוך</label>
+      <span class="exp">צפוי: רשומה עם הערך שנכתב (סוכן / לא־משויך / אוטומטי).</span></li>
   </ol>
 </section>
 
-<!-- ════════ ג: partners screen ════════ -->
+<!-- ════════ ג: partner view stats ════════ -->
 <section>
-  <div class="sec-head"><span class="sec-mark">ג</span><h2>מסך שותפים — צוות המשרד (גל 3)</h2><span class="count"></span></div>
+  <div class="sec-head"><span class="sec-mark">ג</span><h2>נתוני סוכן בעמוד השותף (סעיף 1)</h2><span class="count"></span></div>
   <ol class="items">
     <li class="item"><span class="tick"><input type="checkbox" id="g1"></span>
-      <label class="act" for="g1">עמודת צוות לשותפי agent</label>
-      <span class="exp">צפוי: מנהל ראשון (תג "מנהל משרד") + סוכנים וסטטוס — ברשימה ובעמוד השותף; משפיענים/החזר־לקוח בלי עמודה.</span></li>
+      <label class="act" for="g1">כרטיס הצוות מציג נתונים לכל סוכן</label>
+      <span class="exp">צפוי: לכל איש צוות — הזמנות / שולמו / מכירות $; ושורת "לא משויך" נפרדת.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="g2"></span>
-      <label class="act" for="g2">"צור מנהל משרד" — superadmin בלבד</label>
-      <span class="exp">צפוי: אדמין רגיל לא רואה את הכפתור וקריאה ישירה נחסמת; הדיאלוג מציג מנהלים קיימים; נרשם ב־audit.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="g3"></span>
-      <label class="act" for="g3">המנהל החדש מתפקד מלא</label>
-      <span class="exp">צפוי: מתחבר לפורטל כמנהל (צוות, פילוח, צבירה); מופיע ב־/users ובצוות במסך השותפים.</span></li>
+      <label class="act" for="g2">המספרים תואמים לפילוח בפורטל המנהל</label>
+      <span class="exp">צפוי: זהים ל"מכירות לפי סוכן" בדשבורד המנהל, כולל שיוכים ידניים.</span></li>
   </ol>
 </section>
 
-<!-- ════════ ד: included + upsell ════════ -->
+<!-- ════════ ד: wizard filters ════════ -->
 <section>
-  <div class="sec-head"><span class="sec-mark">ד</span><h2>מה כלול + תוספות בתשלום — סיכום הזמנה (נבנה 20.08)</h2><span class="count"></span></div>
-  <div class="sec-note">ההחלטות: ארוחת בוקר = מעבר לתעריף עם־בוקר של אותו חדר (Ratehawk) · מזוודה/טרולי = מחיר חי מ־Amadeus (אין מחיר ← הכפתור מוסתר) · התוספת מצטרפת לסה"כ לפני התשלום ולבסיס העמלה · בהצעת מחיר חתומה אין upsell (המחיר נעול על ההרכב שהוצע).</div>
+  <div class="sec-head"><span class="sec-mark">ד</span><h2>וויזרד מלונות — איכות ופילטרים (סעיף 4)</h2><span class="count"></span></div>
   <ol class="items">
     <li class="item"><span class="tick"><input type="checkbox" id="d1"></span>
-      <label class="act" for="d1">תצוגת מה־כלול — מלון וטיסה</label>
-      <span class="exp">צפוי: שורת מלון עם סטטוס ארוחות ("כולל ארוחת בוקר"/"ללא ארוחות"); שורת טיסה עם מזוודה/טרולי לכל כיוון. גם בטיסות אופליין (שם — תצוגה בלבד, בלי כפתורי הוספה).</span>
-      <span class="how"><b>איך:</b> לפתוח הזמנה עם מלון בלי בוקר וטיסת לייב; ואז הזמנה עם טיסת אופליין להשוואה.</span></li>
+      <label class="act" for="d1">אין יותר מלונות 2★ ומטה</label>
+      <span class="exp">צפוי: תוצאות מ־3★ בלבד; פילטר הכוכבים 3/4/5.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="d2"></span>
-      <label class="act" for="d2">הוספת ארוחת בוקר — החלפת תעריף</label>
-      <span class="exp">צפוי: כפתור "+$X" (ההפרש לכל השהות) כשקיים תעריף עם־בוקר לאותו חדר; קליק מחליף תעריף, הסה"כ מתעדכן, השורה הופכת ל"כולל ארוחת בוקר"; כשאין תעריף כזה — אין כפתור.</span></li>
+      <label class="act" for="d2">פילטר "ביטול חינם"</label>
+      <span class="exp">צפוי: מדליקים ← רק מלונות עם חדר בביטול חינם; רשימת החדרים מציגה את המבטלים.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="d3"></span>
-      <label class="act" for="d3">הוספת מזוודה (וטרולי אם קיים) — מחיר Amadeus חי</label>
-      <span class="exp">צפוי: הכפתור מציג מחיר × מספר נוסעים; קליק מוסיף "מזוודות (N) +$X" לסיכום ולסה"כ; חברה בלי מחירי כבודה ← אין כפתור בכלל.</span>
-      <span class="how"><b>איך:</b> טיסה של חברה סדירה (לרוב מחזירה מחירי כבודה) מול לואוקוסט; לוודא שהמחיר בכפתור = מה שנוסף בפועל.</span></li>
+      <label class="act" for="d3">סליידר "מחיר מקסימלי לאדם"</label>
+      <span class="exp">צפוי: מסנן כרטיסים; עובד יחד עם שאר הפילטרים.</span></li>
     <li class="item"><span class="tick"><input type="checkbox" id="d4"></span>
-      <label class="act" for="d4">הסה"כ מתעדכן בכל המקומות + בסיס העמלה</label>
-      <span class="exp">צפוי: דסקטופ, מובייל ופוטר דביק — אותו סכום עם התוספת; במצב סוכן העמלה על הסה"כ החדש; ההזמנה נשמרת עם התוספת.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="d5"></span>
-      <label class="act" for="d5">לינק תשלום ללקוח נושא את התוספות</label>
-      <span class="exp">צפוי: סוכן מוסיף מזוודה ← יוצר לינק ← הלקוח רואה את התוספת ומשלם את הסה"כ הכולל; בעמוד הלינק עצמו <b>אין</b> כפתורי הוספה חדשים.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="d6"></span>
-      <label class="act" for="d6">הצעת מחיר חתומה — אין upsell</label>
-      <span class="exp">צפוי: בכניסה מלינק הצעה אין כפתורי הוספה; אחרי "עריכה" (המחיר חוזר לתמחור חי) — הכפתורים מופיעים.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="d7"></span>
-      <label class="act" for="d7">החלפת טיסה מאפסת מזוודות שנבחרו</label>
-      <span class="exp">צפוי: בחרתי מזוודה ← החלפתי טיסה ← התוספת נעלמת מהסיכום ומהסה"כ; החלפת ארוחת בוקר לא מוחקת מזוודות.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="d8"></span>
-      <label class="act" for="d8">הצוות רואה את התוספות</label>
-      <span class="exp">צפוי: בפירוט הזמנה באדמין — "מזוודות שנוספו: N לכל נוסע · $X"; בשורת ההזמנה בפורטל הסוכן — שורה תמציתית.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="d9"></span>
-      <label class="act" for="d9">עיצוב — שני המצבים</label>
-      <span class="exp">צפוי: תואם עיצוב גם ב־light וגם ב־dark; RTL תקין; מובייל לא נשבר.</span></li>
-    <li class="item"><span class="tick"><input type="checkbox" id="d10"></span>
-      <label class="act" for="d10">רגרסיה: הזמנה בלי תוספות</label>
-      <span class="exp">צפוי: סכומים זהים לחלוטין לקודם; שובר/אשראי־סוכן ללא שינוי.</span></li>
+      <label class="act" for="d4">רגרסיה: הקיבוץ מהסבב הקודם תקין</label>
+      <span class="exp">צפוי: כרטיס אחד למלון + "חדרים נוספים" עם הפרשים; בחירה נקלטת בסיכום.</span></li>
   </ol>
 </section>
 
-<!-- ════════ ז: open ════════ -->
+<!-- ════════ ה: quote fixes ════════ -->
 <section>
-  <div class="sec-head"><span class="sec-mark">ז</span><h2>פתוח</h2></div>
+  <div class="sec-head"><span class="sec-mark">ה</span><h2>הצעת מחיר — פח, תקרה, אחוזים (סעיף 6)</h2><span class="count"></span></div>
   <ol class="items">
-    <li class="item"><span class="tick"><input type="checkbox" id="q13"></span>
-      <label class="act" for="q13">אין שאלות פתוחות 🎉 — כל 12 סעיפי המשוב + הנושא החדש טופלו</label>
-      <span class="exp">נשאר רק להריץ את הבדיקות שבמסמך.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h1"></span>
+      <label class="act" for="h1">אי אפשר למחוק את שורת הבסיס</label>
+      <span class="exp">צפוי: הפח על שורת החבילה מנוטרל + tooltip "שורת הבסיס של החבילה"; מחיקת שורות אחרות מחשבת סה"כ נכון.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h2"></span>
+      <label class="act" for="h2">הנחה נחסמת בתקרה</label>
+      <span class="exp">צפוי: הקלדה מעל המקסימום ננעלת + "עד $X / עד X%"; שליחה מעל התקרה נדחית גם בשרת.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h3"></span>
+      <label class="act" for="h3">מצב הנחה ב־$ או ב־%</label>
+      <span class="exp">צפוי: טוגל ליד שדה ההנחה בשורת החבילה; ב־% מוצג הסכום המחושב; מעבר מצבים שומר את ההנחה בפועל.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="h4"></span>
+      <label class="act" for="h4">רגרסיה: הצעה רגילה + PDF</label>
+      <span class="exp">צפוי: הצעה בלי הנחה נשלחת כרגיל; PDF תקין; לינק ההצעה ללקוח עובד.</span></li>
   </ol>
 </section>
 
-<!-- ════════ known gaps ════════ -->
+<!-- ════════ decisions ════════ -->
 <section class="gaps">
-  <div class="sec-head"><span class="sec-mark">!</span><h2>הוחלט / ידוע ומכוון — לא לפתוח כבאגים</h2></div>
+  <div class="sec-head"><span class="sec-mark">!</span><h2>הוחלט בסבב הזה</h2></div>
   <ul>
-    <li><b>סעיף 2 נסגר</b> (דור, 20.08): אין שינוי נוסף בתצוגת סוכן־משנה מעבר למה שתוקן.</li>
-    <li><b>סעיף 12 נסגר</b> (דור, 20.08): הזמנה מהפורטל = כפתור "הזמנה עבור הלקוח" ששולח למיין לתשלום (כולל לינק תשלום ללקוח). אין checkout בתוך הבקאופיס.</li>
-    <li><b>היסטוריה:</b> שיוך פר־סוכן מיום הדיפלוי; ישן = "לא משויך" (ניתן לשיוך ידני).</li>
-    <li><b>רשימת הזמנות של סוכן:</b> מ־500 האחרונות של המשרד — סוכן דליל במשרד עמוס עלול לא לראות היסטוריה ישנה מאוד.</li>
-    <li><b>אנליטיקת מבקרים</b> (קליקים/משפכים) — ברמת משרד; אין מפתח פר־סוכן בדאטה.</li>
-    <li><b>"מכירות לפי סוכן"</b> — כל ההיסטוריה בכוונה (יש הבהרה במסך).</li>
-    <li><b>כסף</b> — עמלה ברמת משרד; הצבירה פר־סוכן היא חלוקה פנימית של אותו הסכם.</li>
+    <li><b>סעיף 1:</b> לא נפתח partner נפרד לכל סוכן (שובר את מודל ההסכם־האחד) — הנתונים מוצגים בעמוד השותף. אם רוצים שורות partner אמיתיות — דיון נפרד.</li>
+    <li><b>שיוך ידני:</b> "לא משויך" = כפוי (גובר על ה־UTM); "אוטומטי" = לפי הלינק. שני מצבים נפרדים בכוונה.</li>
+    <li><b>מסך הסוכן במיין:</b> כל אמצעי תשלום הוא כפתור ישיר; המודגש = לינק תשלום ללקוח.</li>
   </ul>
 </section>
 
 <footer>
-  ספק: <code>docs/superpowers/specs/2026-08-19-office-agents-design.md</code> · תוכנית: <code>docs/superpowers/plans/2026-08-19-office-agents.md</code><br>
-  הסימונים נשמרים בדפדפן הזה בלבד (localStorage). MYT · מגה אירועים
+  סבב 3 · טאב "אזור סוכן" 20.08 · MYT — מגה אירועים<br>
+  הסימונים נשמרים בדפדפן הזה בלבד (localStorage).
 </footer>
 
 </div>
 <script>
 (function(){
-  var KEY="myt-office-agents-qa-v2";
+  var KEY="myt-office-agents-qa-v3";
   var boxes=[].slice.call(document.querySelectorAll('.item input[type="checkbox"]'));
   var saved={};
   try{saved=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){}

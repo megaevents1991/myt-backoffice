@@ -7,6 +7,7 @@ import {
   resolvePortalScope,
   getReservationAttribution,
   visibleToAgent,
+  mergedOwner as computeMergedOwner,
 } from "@/lib/portal-attribution";
 import {
   rangeWindowISO,
@@ -215,7 +216,7 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
     : null;
   const visibleReservations = attribution
     ? reservationRows.filter((r) => {
-        const owner = r.agent_user_id ?? (attribution.get(r.id) ?? null);
+        const owner = computeMergedOwner(r.agent_user_id, attribution.get(r.id) ?? null);
         return visibleToAgent(owner, session.sub, scope.soloOffice);
       })
     : reservationRows;

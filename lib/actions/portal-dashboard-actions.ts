@@ -38,6 +38,7 @@ import {
   resolvePortalScope,
   getReservationAttribution,
   visibleToAgent,
+  mergedOwner as computeMergedOwner,
 } from "@/lib/portal-attribution";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import type { CommissionType } from "@/types/partner.types";
@@ -344,9 +345,9 @@ export async function getPortalDashboard(
     scope.officeUsers,
   );
   // Manager-set override wins over the UTM-derived attribution everywhere
-  // below (QA wave 2, 20.08).
+  // below (QA wave 2, 20.08; sentinel-aware since QA item 3, 21.08).
   const mergedOwner = (r: ReservationRow): string | null =>
-    r.agent_user_id ?? (attribution.get(r.id) ?? null);
+    computeMergedOwner(r.agent_user_id, attribution.get(r.id) ?? null);
   let scopedRows = allRows;
   if (!scope.isManager && session.role === "agent") {
     scopedRows = allRows.filter((r) =>

@@ -173,9 +173,13 @@ export function ReservationsTable({
 
   const handleAgentChange = async (reservationId: number, value: string) => {
     setSavingId(reservationId);
+    // "auto" (no override - let UTM attribution decide) is the only value
+    // translated client-side; "none" (forced-unassign) and a real agent id
+    // both pass straight through - assignReservationAgent turns "none" into
+    // the sentinel that makes it stick (QA item 3, 21.08).
     const result = await assignReservationAgent(
       reservationId,
-      value === "none" ? null : value,
+      value === "auto" ? null : value,
     );
     setSavingId(null);
     if (!result.ok) {
@@ -360,7 +364,7 @@ export function ReservationsTable({
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Select
-                        value={reservation.agent_sub ?? "none"}
+                        value={reservation.agent_override}
                         onValueChange={(value) =>
                           handleAgentChange(reservation.id, value)
                         }
@@ -370,12 +374,13 @@ export function ReservationsTable({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">לא משויך</SelectItem>
+                          <SelectItem value="auto">אוטומטי (לפי הלינק)</SelectItem>
                           {(officeAgents ?? []).map((agent) => (
                             <SelectItem key={agent.sub} value={agent.sub}>
                               {agent.name}
                             </SelectItem>
                           ))}
+                          <SelectItem value="none">לא משויך</SelectItem>
                         </SelectContent>
                       </Select>
                     </TableCell>

@@ -5,6 +5,8 @@ import {
   resolvePortalScope,
   getReservationAttribution,
   visibleToAgent,
+  mergedOwner as computeMergedOwner,
+  UNASSIGNED_AGENT_SENTINEL,
 } from "@/lib/portal-attribution";
 import { supabase } from "@/lib/supabase-server";
 import {
@@ -109,9 +111,24 @@ export interface PortalReservation {
   /** The office user credited with this booking's primary UTM touch, by
    *  display name (falling back to email) - null when unattributed. */
   agent_name: string | null;
-  /** Same owner as agent_name, as a user_profiles id - what the manager's
-   *  assignment Select needs to preselect the current value. */
+  /** Same owner as agent_name, as a user_profiles id - the MERGED (override
+   *  ?? UTM) owner. Not what the assignment Select preselects - see
+   *  agent_override below (QA item 3, 21.08). */
   agent_sub: string | null;
+  /**
+   * The raw manager override, collapsed to exactly what the assignment
+   * Select needs to render correctly - never the raw sentinel uuid (that
+   * constant is server-only, see lib/portal-attribution.ts's "never import
+   * VALUES from a client component" rule). One of:
+   *  - "auto": no override set - automatic/UTM-derived (agent_sub above,
+   *    possibly null).
+   *  - "none": manager explicitly forced this unattributed.
+   *  - a user_profiles id: manager assigned that agent.
+   * agent_sub alone cannot tell "automatic, resolved to nobody" apart from
+   * "manager forced unassigned" - both merge to null - which is exactly the
+   * bug this field fixes.
+   */
+  agent_override: "auto" | "none" | string;
   /** The customer's picks, for the expandable row. Null per part when the
    *  customer skipped it (or the order predates the data). */
   choices: ReservationChoices;
@@ -344,7 +361,7 @@ export async function getPortalStats(): Promise<PortalStats> {
       scope.officeUsers,
     );
     scoped = reservations.filter((r) => {
-      const owner = r.agent_user_id ?? (attribution.get(r.id) ?? null);
+      const owner = computeMergedOwner(r.agent_user_id, attribution.get(r.id) ?? null);
       return visibleToAgent(owner, session.sub, scope.soloOffice);
     });
   }
@@ -559,9 +576,9 @@ export async function getPortalReservations(
     scope.officeUsers,
   );
   // Manager-set override wins over the UTM-derived attribution everywhere
-  // below (QA wave 2, 20.08).
+  // below (QA wave 2, 20.08; sentinel-aware since QA item 3, 21.08).
   const mergedOwner = (r: Row): string | null =>
-    r.agent_user_id ?? (attribution.get(r.id) ?? null);
+    computeMergedOwner(r.agent_user_id, attribution.get(r.id) ?? null);
   const nameBySub = new Map(
     scope.officeUsers.map((u) => [u.id, u.display_name || u.email]),
   );
@@ -640,6 +657,10 @@ export async function getPortalReservations(
         const owner = mergedOwner(r);
         return owner ? (nameBySub.get(owner) ?? null) : null;
       })(),
+      agent_override:
+        r.agent_user_id === UNASSIGNED_AGENT_SENTINEL
+          ? "none"
+          : (r.agent_user_id ?? "auto"),
       // Deliberately NOT the customer's recovery link. Opening it loads the
       // saved order through the main app's find-order endpoint, which returns
       // the customer's phone, email and every passenger name - the exact data

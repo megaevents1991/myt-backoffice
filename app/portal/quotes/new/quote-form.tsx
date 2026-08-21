@@ -21,6 +21,13 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import {
   createQuote,
@@ -128,6 +135,12 @@ export function QuoteForm({
       : [{ label: "", qty: "1", unit_price: "0", _key: newKey() }],
   );
 
+  // Discount UI for the package row (QA-6): mode + raw input, same
+  // string-while-typing convention as qty/unit_price above. Component-level,
+  // not per-row - there is only ever one `fromEvent` row at a time.
+  const [discountMode, setDiscountMode] = useState<"amount" | "percent">("amount");
+  const [discountInput, setDiscountInput] = useState("0");
+
   const selectedEvent =
     eventId && eventId !== "" ? events.find((e) => String(e.id) === eventId) : undefined;
 
@@ -152,6 +165,10 @@ export function QuoteForm({
         fromEvent: true,
       },
     ]);
+    // A discount typed against the PREVIOUS event's price no longer means
+    // anything against this one's - reset to "no discount" rather than
+    // silently reapplying a stale $/% figure to the new baseline.
+    setDiscountInput("0");
   };
 
   const updateLineItem = (key: number, patch: Partial<Omit<LineItemRow, "_key">>) => {
@@ -222,6 +239,48 @@ export function QuoteForm({
     baseUnit == null || !Number.isFinite(packageUnitPrice)
       ? null
       : Math.round((baseUnit - packageUnitPrice) * 100) / 100;
+
+  // Same cap, expressed as a % of the package price - the discount input's
+  // ceiling when the agent is working in percent mode.
+  const maxDiscountPercent =
+    maxDiscountPerTraveller == null || baseUnit == null || baseUnit <= 0
+      ? null
+      : Math.round(((maxDiscountPerTraveller / baseUnit) * 100) * 100) / 100;
+
+  const maxDiscountForMode =
+    discountMode === "percent" ? maxDiscountPercent : maxDiscountPerTraveller;
+
+  // Switching $ <-> % keeps the same effective discount instead of resetting
+  // to 0, so toggling mid-entry doesn't throw away what the agent typed.
+  const switchDiscountMode = (nextMode: "amount" | "percent") => {
+    if (nextMode === discountMode) return;
+    if (baseUnit != null && baseUnit > 0) {
+      const current = Number(discountInput);
+      if (Number.isFinite(current)) {
+        const converted =
+          nextMode === "percent" ? (current / baseUnit) * 100 : (current / 100) * baseUnit;
+        setDiscountInput(String(Math.round(converted * 100) / 100));
+      }
+    }
+    setDiscountMode(nextMode);
+  };
+
+  // The discount input can never go PAST the agent's commission cap (QA-6 #2)
+  // - clamped here on every keystroke rather than only warned about after the
+  // fact. Mirrors the server's own math (createQuote), which re-validates
+  // independently against whatever unit_price actually lands in the DB.
+  const applyDiscount = (key: number, raw: string, mode: "amount" | "percent") => {
+    setDiscountInput(raw);
+    if (baseUnit == null) return;
+    const num = Number(raw);
+    if (!raw.trim() || !Number.isFinite(num)) return; // mid-typing - leave unit_price as last valid value
+    const max = mode === "percent" ? maxDiscountPercent : maxDiscountPerTraveller;
+    const clamped = max != null ? Math.min(num, max) : num;
+    if (clamped !== num) setDiscountInput(String(clamped));
+    const finalPrice =
+      mode === "percent" ? baseUnit * (1 - clamped / 100) : baseUnit - clamped;
+    updateLineItem(key, { unit_price: String(Math.max(0, Math.round(finalPrice * 100) / 100)) });
+  };
 
   const onSubmit = () => {
     const trimmedCustomer = customerName.trim();
@@ -301,6 +360,8 @@ export function QuoteForm({
   };
 
   return (
+    // Provider for the disabled-trash tooltip on the package row below.
+    <TooltipProvider>
     <div className="max-w-2xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">הצעת מחיר חדשה</h1>
@@ -407,64 +468,148 @@ export function QuoteForm({
       <div className="space-y-3 rounded-md border p-4">
         <Label>שורות</Label>
         <div className="space-y-2">
-          {lineItems.map((item) => (
-            <div key={item._key} className="flex items-end gap-2">
-              <div className="flex-1">
-                <Label
-                  htmlFor={`qf-li-${item._key}-label`}
-                  className="text-xs text-muted-foreground"
-                >
-                  תיאור
-                </Label>
-                <Input
-                  id={`qf-li-${item._key}-label`}
-                  value={item.label}
-                  onChange={(e) => updateLineItem(item._key, { label: e.target.value })}
-                />
+          {lineItems.map((item) => {
+            const isPackageRow = item.fromEvent === true;
+            // Without a known baseline (no suggested_price on the event)
+            // there is nothing to discount against - fall back to a plain,
+            // directly-editable price like any other row.
+            const showDiscountUi = isPackageRow && baseUnit != null;
+            return (
+              <div key={item._key} className="flex flex-wrap items-end gap-2">
+                <div className="min-w-[8rem] flex-1">
+                  <Label
+                    htmlFor={`qf-li-${item._key}-label`}
+                    className="text-xs text-muted-foreground"
+                  >
+                    תיאור
+                  </Label>
+                  <Input
+                    id={`qf-li-${item._key}-label`}
+                    value={item.label}
+                    onChange={(e) => updateLineItem(item._key, { label: e.target.value })}
+                  />
+                </div>
+                <div className="w-20">
+                  <Label
+                    htmlFor={`qf-li-${item._key}-qty`}
+                    className="text-xs text-muted-foreground"
+                  >
+                    כמות
+                  </Label>
+                  <Input
+                    id={`qf-li-${item._key}-qty`}
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={item.qty}
+                    onChange={(e) => updateLineItem(item._key, { qty: e.target.value })}
+                  />
+                </div>
+
+                {showDiscountUi ? (
+                  <div className="w-60">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <Label
+                        htmlFor={`qf-li-${item._key}-discount`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        הנחה
+                      </Label>
+                      <ToggleGroup
+                        type="single"
+                        size="sm"
+                        value={discountMode}
+                        onValueChange={(v) => v && switchDiscountMode(v as "amount" | "percent")}
+                        className="gap-0.5"
+                      >
+                        <ToggleGroupItem
+                          value="amount"
+                          className="h-6 px-2 text-xs"
+                          aria-label="הנחה בדולרים"
+                        >
+                          $
+                        </ToggleGroupItem>
+                        <ToggleGroupItem
+                          value="percent"
+                          className="h-6 px-2 text-xs"
+                          aria-label="הנחה באחוזים"
+                        >
+                          %
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    </div>
+                    <Input
+                      id={`qf-li-${item._key}-discount`}
+                      type="number"
+                      min={0}
+                      step={discountMode === "percent" ? 1 : 0.01}
+                      value={discountInput}
+                      onChange={(e) => applyDiscount(item._key, e.target.value, discountMode)}
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {maxDiscountForMode != null &&
+                        `עד ${
+                          discountMode === "percent"
+                            ? `${maxDiscountForMode}%`
+                            : usd.format(maxDiscountForMode)
+                        } לנוסע`}
+                      {discountMode === "percent" &&
+                        ` · מחיר סופי: ${usd.format(Number(item.unit_price) || 0)} לנוסע`}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="w-28">
+                    <Label
+                      htmlFor={`qf-li-${item._key}-price`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      מחיר יחידה ($)
+                    </Label>
+                    <Input
+                      id={`qf-li-${item._key}-price`}
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={item.unit_price}
+                      onChange={(e) => updateLineItem(item._key, { unit_price: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                {isPackageRow ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      {/* A disabled button alone won't fire the hover events
+                          Radix's tooltip trigger needs - wrap it in a span. */}
+                      <span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled
+                          aria-label="לא ניתן להסיר את שורת הבסיס של החבילה"
+                          className="cursor-not-allowed opacity-40"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>שורת הבסיס של החבילה</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeLineItem(item._key)}
+                    aria-label="הסר שורה"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
-              <div className="w-20">
-                <Label
-                  htmlFor={`qf-li-${item._key}-qty`}
-                  className="text-xs text-muted-foreground"
-                >
-                  כמות
-                </Label>
-                <Input
-                  id={`qf-li-${item._key}-qty`}
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={item.qty}
-                  onChange={(e) => updateLineItem(item._key, { qty: e.target.value })}
-                />
-              </div>
-              <div className="w-28">
-                <Label
-                  htmlFor={`qf-li-${item._key}-price`}
-                  className="text-xs text-muted-foreground"
-                >
-                  מחיר יחידה ($)
-                </Label>
-                <Input
-                  id={`qf-li-${item._key}-price`}
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={item.unit_price}
-                  onChange={(e) => updateLineItem(item._key, { unit_price: e.target.value })}
-                />
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => removeLineItem(item._key)}
-                aria-label="הסר שורה"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <Button type="button" variant="outline" size="sm" onClick={addLineItem}>
           <Plus className="ml-2 h-4 w-4" />
@@ -492,11 +637,12 @@ export function QuoteForm({
                 : `הוספתם ${usd.format(delta)} - הסכום יתווסף לעמלה שלכם`}
             </div>
           )}
-          {/* The server refuses a discount larger than the commission - say so
-              here rather than letting them finish the quote and be rejected. */}
+          {/* Defensive display only - the discount input above is clamped to
+              this same cap, so this should never actually fire. Kept as a
+              safety net (e.g. float rounding) with the server's own epsilon. */}
           {maxDiscountPerTraveller != null &&
             discountPerTraveller != null &&
-            discountPerTraveller > maxDiscountPerTraveller && (
+            discountPerTraveller > maxDiscountPerTraveller + 0.001 && (
               <div className="flex justify-end text-sm font-medium text-destructive">
                 ההנחה המקסימלית שלכם היא{" "}
                 {usd.format(maxDiscountPerTraveller)} לנוסע
@@ -509,5 +655,6 @@ export function QuoteForm({
         {isPending ? "שומר..." : "צור הצעת מחיר"}
       </Button>
     </div>
+    </TooltipProvider>
   );
 }

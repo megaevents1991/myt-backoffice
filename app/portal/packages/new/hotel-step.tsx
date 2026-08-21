@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import type { BuilderHotelRoom, LiveHotelOption } from "@/lib/actions/portal-package-actions";
 import { useWizard } from "./wizard-context";
@@ -48,6 +49,16 @@ import {
 type HsSort = "price" | "stars" | "distance";
 
 const hasMeal = (meal: string | null | undefined) => !!meal && meal !== "nomeal";
+const hasFreeCancellation = (freeUntil: string | null | undefined) => !!freeUntil;
+
+/**
+ * Quality floor "כמו בראשי" (QA-4) - main's HotelSelection defaults to
+ * `DEFAULT_RATING = [false, false, true, true, true]` (2★ and below excluded
+ * unless the default-filtered set comes back empty, in which case it relaxes).
+ * The agent wizard doesn't need that relax fallback - 2★-and-below never
+ * appear here, full stop, so `minStars` can never go below this.
+ */
+const STAR_FLOOR = 3;
 
 /**
  * Group live Ratehawk rate options by hotel so the list shows one card per
@@ -118,8 +129,13 @@ export function HotelStep() {
   const [sort, setSort] = useState<HsSort>("price");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [breakfastOnly, setBreakfastOnly] = useState(false);
-  const [minStars, setMinStars] = useState(0);
+  const [freeCancelOnly, setFreeCancelOnly] = useState(false);
+  const [minStars, setMinStars] = useState(STAR_FLOOR);
   const [nameQuery, setNameQuery] = useState("");
+  // % of the current filtered set's most expensive per-person price. 100 (the
+  // default) means "no cap" - a percentage rather than a dollar figure so it
+  // never needs resetting when a new search changes the price range entirely.
+  const [maxPricePct, setMaxPricePct] = useState(100);
   // The full offer is ~800 rate cards for a big city - render incrementally so
   // the DOM stays light; sorting/filtering still runs over the whole list.
   const [visibleCount, setVisibleCount] = useState(80);
@@ -150,11 +166,18 @@ export function HotelStep() {
     return [...groups.entries()];
   }, [w.hsResults]);
 
-  const list = useMemo<DisplayHotel[]>(() => {
+  // Star floor, breakfast, free-cancellation and name filters - everything
+  // except the price cap, which needs THIS result (for its ceiling) and so is
+  // applied in a second pass below.
+  const filteredMerged = useMemo<DisplayHotel[]>(() => {
     const term = nameQuery.trim().toLowerCase();
+    const starFloor = Math.max(STAR_FLOOR, minStars);
     const offline: DisplayHotel[] = hotelGroups
       .map(([key, group]) => {
-        const rooms = breakfastOnly ? group.filter((r) => hasMeal(r.meal_plan)) : group;
+        let rooms = group;
+        if (breakfastOnly) rooms = rooms.filter((r) => hasMeal(r.meal_plan));
+        if (freeCancelOnly)
+          rooms = rooms.filter((r) => hasFreeCancellation(r.last_cancellation_date));
         const cheapestPerPerson = rooms.length
           ? Math.min(...rooms.map((r) => r.price / Math.max(1, r.capacity)))
           : Infinity;
@@ -169,14 +192,17 @@ export function HotelStep() {
       .filter(
         (h) =>
           h.group.length > 0 &&
-          h.stars >= minStars &&
+          h.stars >= starFloor &&
           (!term || h.group[0].hotel_name.toLowerCase().includes(term)),
       );
     const live: DisplayHotel[] = liveHotelGroups
       .map(([key, options]) => {
         // options is already price-sorted ascending (built in liveHotelGroups),
         // and filter() preserves order, so rooms[0] stays the cheapest survivor.
-        const rooms = breakfastOnly ? options.filter((o) => hasMeal(o.meal)) : options;
+        let rooms = options;
+        if (breakfastOnly) rooms = rooms.filter((o) => hasMeal(o.meal));
+        if (freeCancelOnly)
+          rooms = rooms.filter((o) => hasFreeCancellation(o.free_cancellation_before));
         return {
           kind: "live" as const,
           key,
@@ -188,20 +214,37 @@ export function HotelStep() {
       .filter(
         (h) =>
           h.group.length > 0 &&
-          h.stars >= minStars &&
+          h.stars >= starFloor &&
           (!term || h.group[0].name.toLowerCase().includes(term)),
       );
-    const merged = [...offline, ...live];
+    return [...offline, ...live];
+  }, [hotelGroups, liveHotelGroups, w.qty, breakfastOnly, freeCancelOnly, minStars, nameQuery]);
+
+  // The most expensive per-person price in the current filtered set - the
+  // slider's 100% mark, so it always tracks whatever event/city is loaded.
+  const priceCeiling = useMemo(() => {
+    let max = 0;
+    for (const h of filteredMerged) {
+      if (Number.isFinite(h.perPerson) && h.perPerson > max) max = h.perPerson;
+    }
+    return max;
+  }, [filteredMerged]);
+
+  const list = useMemo<DisplayHotel[]>(() => {
+    const capped =
+      maxPricePct >= 100 || priceCeiling <= 0
+        ? filteredMerged
+        : filteredMerged.filter((h) => h.perPerson <= (priceCeiling * maxPricePct) / 100);
     if (sort === "stars") {
-      return merged.sort((a, b) => b.stars - a.stars || a.perPerson - b.perPerson);
+      return [...capped].sort((a, b) => b.stars - a.stars || a.perPerson - b.perPerson);
     }
     if (sort === "distance") {
       const dist = (h: DisplayHotel) =>
         h.kind === "live" && h.group[0].distance_m > 0 ? h.group[0].distance_m : 0;
-      return merged.sort((a, b) => dist(a) - dist(b) || a.perPerson - b.perPerson);
+      return [...capped].sort((a, b) => dist(a) - dist(b) || a.perPerson - b.perPerson);
     }
-    return merged.sort((a, b) => a.perPerson - b.perPerson);
-  }, [hotelGroups, liveHotelGroups, w.qty, breakfastOnly, minStars, nameQuery, sort]);
+    return [...capped].sort((a, b) => a.perPerson - b.perPerson);
+  }, [filteredMerged, priceCeiling, maxPricePct, sort]);
 
   if (!event) return null;
 
@@ -316,9 +359,28 @@ export function HotelStep() {
             </label>
           </div>
           <div className="px-1">
+            <h3 className="mb-2 text-lg font-semibold">ביטול</h3>
+            <label
+              htmlFor="hf-free-cancel"
+              className="flex cursor-pointer items-center gap-2 py-1 text-sm"
+            >
+              <Checkbox
+                id="hf-free-cancel"
+                checked={freeCancelOnly}
+                onCheckedChange={(v) => setFreeCancelOnly(v === true)}
+              />
+              <span className="flex items-center gap-1.5">
+                <CalendarCheck className="h-4 w-4" /> ביטול חינם
+              </span>
+            </label>
+          </div>
+          <div className="px-1">
             <h3 className="mb-2 text-lg font-semibold">דירוג כוכבים</h3>
+            <p className="mb-2 text-xs text-muted-foreground">
+              כמו באתר - מוצגים מלונות בדירוג 3 כוכבים ומעלה בלבד
+            </p>
             <div className="flex flex-wrap gap-2">
-              {[0, 3, 4, 5].map((stars) => (
+              {[3, 4, 5].map((stars) => (
                 <button
                   key={stars}
                   type="button"
@@ -330,17 +392,28 @@ export function HotelStep() {
                       : "bg-card hover:bg-muted",
                   )}
                 >
-                  {stars === 0 ? (
-                    "הכל"
-                  ) : (
-                    <>
-                      {stars}
-                      <Star size={12} fill="currentColor" /> ומעלה
-                    </>
-                  )}
+                  {stars}
+                  <Star size={12} fill="currentColor" /> ומעלה
                 </button>
               ))}
             </div>
+          </div>
+          <div className="px-1">
+            <h3 className="mb-2 text-lg font-semibold">מחיר מקסימלי לאדם</h3>
+            <Slider
+              value={[maxPricePct]}
+              onValueChange={([v]) => setMaxPricePct(v)}
+              min={0}
+              max={100}
+              step={5}
+              disabled={priceCeiling <= 0}
+              aria-label="מחיר מקסימלי לאדם"
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {maxPricePct >= 100 || priceCeiling <= 0
+                ? "ללא הגבלה"
+                : `עד ${usd((priceCeiling * maxPricePct) / 100)} לאדם`}
+            </p>
           </div>
           <div className="px-1">
             <h3 className="mb-2 text-lg font-semibold">חיפוש מלון</h3>

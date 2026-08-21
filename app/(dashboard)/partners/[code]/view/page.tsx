@@ -30,7 +30,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getPartner, getPartnerTeams } from "@/lib/actions/partner-actions";
+import {
+  getPartner,
+  getPartnerTeams,
+  getOfficeAgentStats,
+  type OfficeAgentStats,
+} from "@/lib/actions/partner-actions";
 import {
   getPartnerPerformance,
   type InsightsRange,
@@ -106,6 +111,14 @@ export default async function ViewPartnerPage({
     // affiliate/refund partners, which never have one.
     type === "agent" ? getPartnerTeams([code]) : Promise.resolve([]),
   ]);
+  // Depends on `team` above (the roster getOfficeAgentStats attributes
+  // against), so it can't join the Promise.all - one extra sequential round
+  // trip, still a single bulk query (no N+1 per team member). Skipped
+  // entirely when there's no team to show numbers next to.
+  const teamStats =
+    type === "agent" && team.length > 0
+      ? await getOfficeAgentStats(code, team)
+      : null;
   const isSuperadmin = session?.role === "superadmin";
   const stats = [
     {
@@ -327,23 +340,33 @@ export default async function ViewPartnerPage({
                     (a, b) =>
                       PARTNER_ROLES.indexOf(a.role) - PARTNER_ROLES.indexOf(b.role)
                   )
-                  .map((u) => (
-                    <div
-                      key={u.id}
-                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                    >
-                      <div>
-                        <p className="font-medium">{u.display_name || u.email}</p>
-                        <p className="text-xs text-muted-foreground">{u.email}</p>
+                  .map((u) => {
+                    const stats = teamStats?.bySub.get(u.id);
+                    return (
+                      <div
+                        key={u.id}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm"
+                      >
+                        <div>
+                          <p className="font-medium">{u.display_name || u.email}</p>
+                          <p className="text-xs text-muted-foreground">{u.email}</p>
+                        </div>
+                        {teamStats && <AgentStatsRow stats={stats ?? null} />}
+                        <div className="flex items-center gap-2">
+                          <Badge variant={u.role === "office_manager" ? "default" : "secondary"}>
+                            {u.role === "office_manager" ? "מנהל משרד" : "סוכן"}
+                          </Badge>
+                          {!u.is_active && <Badge variant="outline">מושבת</Badge>}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={u.role === "office_manager" ? "default" : "secondary"}>
-                          {u.role === "office_manager" ? "מנהל משרד" : "סוכן"}
-                        </Badge>
-                        {!u.is_active && <Badge variant="outline">מושבת</Badge>}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+                {teamStats && teamStats.unattributed.totalReservations > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed px-3 py-2 text-sm">
+                    <p className="font-medium text-muted-foreground">לא משויך</p>
+                    <AgentStatsRow stats={teamStats.unattributed} />
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
@@ -552,6 +575,28 @@ function Detail({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-muted-foreground">{label}</p>
       <p className="font-medium">{value}</p>
+    </div>
+  );
+}
+
+/** Compact הזמנות/שולמו/מכירות readout for one team-card row (a team member
+ *  or the "לא משויך" summary row) - `stats` null just means zero activity. */
+function AgentStatsRow({ stats }: { stats: OfficeAgentStats | null }) {
+  const s = stats ?? { totalReservations: 0, paidReservations: 0, totalSalesUsd: 0 };
+  return (
+    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+      <span>
+        <span className="font-medium text-foreground">{s.totalReservations}</span>{" "}
+        הזמנות
+      </span>
+      <span>
+        <span className="font-medium text-foreground">{s.paidReservations}</span>{" "}
+        שולמו
+      </span>
+      <span>
+        <span className="font-medium text-foreground">{usd.format(s.totalSalesUsd)}</span>{" "}
+        מכירות
+      </span>
     </div>
   );
 }

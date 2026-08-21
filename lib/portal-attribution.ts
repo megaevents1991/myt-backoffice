@@ -251,6 +251,10 @@ export async function getAgentLabelsForReservations(
         id: number;
         agent_user_id: string | null;
       }[]) {
+        // A forced-unassign still wins over UTM (recorded so the slug loop
+        // below skips it via overrideByReservation.has), it just never
+        // resolves to a label - explicit, rather than relying on the sentinel
+        // incidentally matching no real user_profiles row.
         if (row.agent_user_id) overrideByReservation.set(row.id, row.agent_user_id);
       }
     }),
@@ -293,7 +297,15 @@ export async function getAgentLabelsForReservations(
     }),
   );
 
-  const overrideIds = Array.from(new Set(overrideByReservation.values()));
+  // The sentinel is never a real user_profiles id - excluded here so it never
+  // rides along into the `.in("id", ...)` lookup below for nothing.
+  const overrideIds = Array.from(
+    new Set(
+      Array.from(overrideByReservation.values()).filter(
+        (id) => id !== UNASSIGNED_AGENT_SENTINEL,
+      ),
+    ),
+  );
   const slugs = Array.from(new Set(slugByReservation.values()));
   if (overrideIds.length === 0 && slugs.length === 0) return labelByReservation;
 
@@ -342,6 +354,9 @@ export async function getAgentLabelsForReservations(
   }
 
   for (const [reservationId, ownerId] of overrideByReservation) {
+    // Forced-unassign -> no label, same as "missing key" for every other
+    // unattributed reservation (see the doc comment above).
+    if (ownerId === UNASSIGNED_AGENT_SENTINEL) continue;
     const label = labelById.get(ownerId);
     if (label) labelByReservation.set(reservationId, label);
   }
@@ -350,6 +365,40 @@ export async function getAgentLabelsForReservations(
     if (label) labelByReservation.set(reservationId, label);
   }
   return labelByReservation;
+}
+
+/**
+ * Forced-unassigned sentinel (QA item 3, 21.08 - CONFIRMED BUG: manually
+ * setting a reservation to "לא משויך" didn't stick). `assignReservationAgent`
+ * writes this instead of plain NULL when a manager deliberately clears a
+ * reservation's agent override. NULL alone cannot carry that meaning - every
+ * merge below falls a NULL override back to the UTM-derived owner, so
+ * clearing an override used to silently "revert" to whichever agent's link
+ * the customer originally used instead of sticking as unattributed. This
+ * value is never a real user_profiles id - just a marker `mergedOwner`
+ * recognizes.
+ */
+export const UNASSIGNED_AGENT_SENTINEL = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * THE merge rule for "who owns this reservation" - every consumer (portal
+ * stats/reservations, dashboard, activity feed, credit buckets, admin agent
+ * labels) must call this instead of inlining `row.agent_user_id ?? utmOwner`.
+ * That inline form cannot distinguish "manager explicitly unassigned" from
+ * "never touched" - both read as NULL - which was the root cause of the "לא
+ * משויך" bug above.
+ *
+ * - `UNASSIGNED_AGENT_SENTINEL` -> null (forced unattributed - wins over UTM).
+ * - a real uuid -> that uuid (manager override wins over UTM).
+ * - null / undefined -> utmOwner (no override set - automatic, UTM-derived).
+ */
+export function mergedOwner(
+  agentUserId: string | null | undefined,
+  utmOwner: string | null,
+): string | null {
+  if (agentUserId === UNASSIGNED_AGENT_SENTINEL) return null;
+  if (agentUserId != null) return agentUserId;
+  return utmOwner;
 }
 
 /** The agent-isolation rule, in one place. */
