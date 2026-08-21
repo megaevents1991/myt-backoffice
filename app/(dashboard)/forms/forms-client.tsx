@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import {
-  BarChart3,
   Copy,
   Link2,
   Map,
@@ -56,7 +55,7 @@ export function FormsClient({
   isOperator = false,
 }: {
   initialForms: FormSummary[];
-  /** forms_operator view: run forms (links/responses/report/duplicate), never edit. */
+  /** forms_operator view: run forms (links/report/duplicate), never edit. */
   isOperator?: boolean;
 }) {
   const router = useRouter();
@@ -172,7 +171,7 @@ export function FormsClient({
                 <TableCell className="text-right">
                   {form.response_count > 0 ? (
                     <Link
-                      href={`/forms/${form.id}/responses`}
+                      href={`/forms/${form.id}/report`}
                       className="font-medium hover:underline"
                     >
                       {form.response_count}
@@ -197,9 +196,6 @@ export function FormsClient({
                           <Pencil className="mr-2 h-4 w-4" /> Edit
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuItem onClick={() => router.push(`/forms/${form.id}/responses`)}>
-                        <BarChart3 className="mr-2 h-4 w-4" /> Responses
-                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => router.push(`/forms/${form.id}/report`)}>
                         <Map className="mr-2 h-4 w-4" /> Trips report
                       </DropdownMenuItem>

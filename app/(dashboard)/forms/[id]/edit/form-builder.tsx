@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
-  BarChart3,
   ExternalLink,
   Image as ImageIcon,
   Link2,
@@ -463,13 +462,6 @@ export function FormBuilder({ form, initialFields }: Props) {
             <Link href={`/forms/${form.id}/invites`}>
               <Send className="mr-2 h-4 w-4" />
               Send
-            </Link>
-          </Button>
-
-          <Button variant="outline" asChild>
-            <Link href={`/forms/${form.id}/responses`}>
-              <BarChart3 className="mr-2 h-4 w-4" />
-              Responses
             </Link>
           </Button>
 

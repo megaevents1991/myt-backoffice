@@ -7,6 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -100,9 +107,18 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
   const [num, setNum] = useState("");
   const [escort, setEscort] = useState("");
   const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [year, setYear] = useState("all");
   const [openTrip, setOpenTrip] = useState<number | null | undefined>(undefined);
   const [viewing, setViewing] = useState<FormResponseRow | null>(null);
+
+  // Departure years present in the data, newest first - the annual filter.
+  const yearOptions = useMemo(() => {
+    const years = new Set<string>();
+    for (const trip of report.trips) {
+      if (trip.departure) years.add(trip.departure.slice(0, 4));
+    }
+    return [...years].sort().reverse();
+  }, [report.trips]);
 
   const trips = useMemo(() => {
     const p = prefix.trim().toUpperCase();
@@ -112,14 +128,15 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
       if (p && !(trip.prefix ?? "").startsWith(p)) return false;
       if (n && !(trip.num ?? "").startsWith(n)) return false;
       if (e && !(trip.escort ?? "").includes(e)) return false;
-      // Departure range: a trip without a departure only survives when no
-      // date filter is set - a date filter means "trips of that period".
-      if ((fromDate || toDate) && !trip.departure) return false;
+      // A trip without a departure only survives when no date/year filter is
+      // set - such a filter means "trips of that period".
+      if ((fromDate || year !== "all") && !trip.departure) return false;
       if (fromDate && trip.departure && trip.departure < fromDate) return false;
-      if (toDate && trip.departure && trip.departure > toDate) return false;
+      if (year !== "all" && trip.departure && trip.departure.slice(0, 4) !== year)
+        return false;
       return true;
     });
-  }, [report.trips, prefix, num, escort, fromDate, toDate]);
+  }, [report.trips, prefix, num, escort, fromDate, year]);
 
   // The summary reflects what is FILTERED, so a year filter = an annual report.
   const filtered = useMemo(() => {
@@ -193,8 +210,20 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
           <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Departure to</Label>
-          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          <Label className="text-xs text-muted-foreground">Year</Label>
+          <Select value={year} onValueChange={setYear}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All years</SelectItem>
+              {yearOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
