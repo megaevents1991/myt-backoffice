@@ -142,6 +142,7 @@ export async function quoteUpliftsFor(
   const { data: settling, error: settlingError } = await (supabase as any)
     .from("reservations")
     .select("id,quote_id,status,created_at")
+    .is("is_deleted", null)
     .eq("aff_partner_tracking_code", trackingCode)
     .in("quote_id", [...byQuote.keys()])
     .order("created_at", { ascending: true });

@@ -20,6 +20,7 @@ import {
 } from "@/lib/actions/reservation-actions";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/confirm-provider";
+import { useAuth } from "@/contexts/auth-context";
 
 function isOfflineReservation(r: ReservationListRow) {
   return r.offline_flight_id != null || r.offline_hotel_id != null;
@@ -35,6 +36,8 @@ export function ReservationsTable() {
   const [showDeleted, setShowDeleted] = useState(false);
   const { toast } = useToast();
   const confirm = useConfirm();
+  const { user } = useAuth();
+  const isSuperadmin = user?.role === "superadmin";
   const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   // Refs mirror state for the poll interval, so the effect below can run once
@@ -492,7 +495,7 @@ export function ReservationsTable() {
                 <Edit className="h-4 w-4" />
               </Button>
             </Link>
-            {!isDeleted && (
+            {isSuperadmin && !isDeleted && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -528,9 +531,15 @@ export function ReservationsTable() {
     .filter((r) => showDeleted || !r.is_deleted)
     .filter((r) => !offlineOnly || isOfflineReservation(r));
 
+  // Non-superadmins never see the Deleted column - they can't reveal deleted
+  // rows via the toggle, so it would only ever read "-".
+  const visibleColumns = isSuperadmin
+    ? columns
+    : columns.filter((c) => c.id !== "is_deleted" && (c as { accessorKey?: string }).accessorKey !== "is_deleted");
+
   return (
     <DataTable
-      columns={columns}
+      columns={visibleColumns}
       data={visibleReservations}
       searchColumns={[
         "id",
@@ -562,27 +571,31 @@ export function ReservationsTable() {
           <Button size="sm" onClick={applyBulkStatus} disabled={!bulkStatus}>
             Apply
           </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={handleBulkDelete}
-          >
-            Delete
-          </Button>
+          {isSuperadmin && (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleBulkDelete}
+            >
+              Delete
+            </Button>
+          )}
         </div>
       }
       rightActions={
         <div className="flex items-center gap-4">
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="show-deleted-reservations"
-              checked={showDeleted}
-              onCheckedChange={(checked) => setShowDeleted(checked as boolean)}
-            />
-            <label htmlFor="show-deleted-reservations" className="text-sm font-medium">
-              Show deleted
-            </label>
-          </div>
+          {isSuperadmin && (
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="show-deleted-reservations"
+                checked={showDeleted}
+                onCheckedChange={(checked) => setShowDeleted(checked as boolean)}
+              />
+              <label htmlFor="show-deleted-reservations" className="text-sm font-medium">
+                Show deleted
+              </label>
+            </div>
+          )}
           <Button
             variant={offlineOnly ? "default" : "outline"}
             size="sm"

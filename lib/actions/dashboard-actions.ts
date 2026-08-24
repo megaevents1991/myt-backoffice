@@ -10,6 +10,7 @@ async function countReservationsByStatus(status: string): Promise<number> {
     const { count, error } = await supabase
       .from("reservations")
       .select("*", { count: "exact", head: true })
+      .is("is_deleted", null)
       .eq("status", status);
     if (error) throw error;
     return count || 0;
@@ -113,6 +114,7 @@ export async function getDashboardStats() {
       supabase
         .from("reservations")
         .select("more_pax_info")
+        .is("is_deleted", null)
         .eq("status", "Paid"),
       supabase
         .from("partners")
@@ -124,6 +126,7 @@ export async function getDashboardStats() {
         .select(
           "created_at,more_pax_info,event_order_info,aff_partner_tracking_code",
         )
+        .is("is_deleted", null)
         .gte("created_at", thirtyDaysAgo.toISOString())
         .eq("status", "Paid"),
       supabase
@@ -131,12 +134,14 @@ export async function getDashboardStats() {
         .select(
           "created_at,more_pax_info,event_order_info,aff_partner_tracking_code",
         )
+        .is("is_deleted", null)
         .gte("created_at", firstOfLast.toISOString())
         .lt("created_at", firstOfCurrent.toISOString())
         .eq("status", "Paid"),
       supabase
         .from("reservations")
         .select("created_at,more_pax_info")
+        .is("is_deleted", null)
         .gte("created_at", sevenDaysAgo.toISOString())
         .eq("status", "Paid"),
       supabase
@@ -144,6 +149,7 @@ export async function getDashboardStats() {
         .select(
           "created_at,more_pax_info,event_order_info,aff_partner_tracking_code",
         )
+        .is("is_deleted", null)
         .gte("created_at", firstOfCurrent.toISOString())
         .lt("created_at", firstOfNextMonth.toISOString())
         .eq("status", "Paid"),

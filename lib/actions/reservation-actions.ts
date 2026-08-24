@@ -1,6 +1,6 @@
 "use server";
 
-import { requireStaff } from "@/lib/auth/guards";
+import { requireStaff, requireSuperadmin } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { getAgentLabelsForReservations } from "@/lib/portal-attribution";
@@ -97,7 +97,7 @@ const todayStamp = () => {
  * direct-by-id lookups (getReservation) still work.
  */
 export async function softDeleteReservation(id: number) {
-  await requireStaff();
+  await requireSuperadmin();
   const formattedDate = todayStamp();
 
   const { data, error } = await supabase
@@ -117,7 +117,7 @@ export async function softDeleteReservation(id: number) {
 }
 
 export async function bulkSoftDeleteReservations(ids: number[]) {
-  await requireStaff();
+  await requireSuperadmin();
   const formattedDate = todayStamp();
 
   const { data, error } = await supabase

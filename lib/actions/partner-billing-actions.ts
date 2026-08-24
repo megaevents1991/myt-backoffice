@@ -68,6 +68,7 @@ export async function getUnbilledPaidReservations(
       .select(
         "id,created_at,main_contact_first_name,main_contact_last_name,status,user_shown_price,event_order_info,coupon_code,coupon_discount_usd,quote_id,partner_settlement_method,commission_type,commission_rate",
       )
+      .is("is_deleted", null)
       .eq("aff_partner_tracking_code", trackingCode)
       .eq("status", PAID_STATUS)
       .is("billed_at", null)

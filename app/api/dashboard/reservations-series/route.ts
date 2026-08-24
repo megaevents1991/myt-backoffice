@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
     let query = supabase
       .from("reservations")
       .select("created_at")
+      .is("is_deleted", null)
       .gte("created_at", start.toISOString())
       .lt("created_at", end.toISOString());
     if (status) {

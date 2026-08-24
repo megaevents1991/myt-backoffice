@@ -205,6 +205,7 @@ async function loadCredit(
       (supabase as any)
         .from("reservations")
         .select(reservationColumns)
+        .is("is_deleted", null)
         .eq("aff_partner_tracking_code", trackingCode),
       supabase
         .from("partner_credit_redemptions")
@@ -222,6 +223,7 @@ async function loadCredit(
     reservationsResult = await supabase
       .from("reservations")
       .select("id,status,event_order_info,created_at,billed_at")
+      .is("is_deleted", null)
       .eq("aff_partner_tracking_code", trackingCode);
   }
   if (reservationsResult.error) throw reservationsResult.error;
@@ -432,6 +434,7 @@ export async function getOfficeCreditBreakdown(): Promise<
       (supabase as any)
         .from("reservations")
         .select("id,status,event_order_info,created_at,billed_at,agent_user_id")
+        .is("is_deleted", null)
         .eq("aff_partner_tracking_code", code),
       supabase
         .from("partner_credit_redemptions")
@@ -455,6 +458,7 @@ export async function getOfficeCreditBreakdown(): Promise<
     reservationsResult = await supabase
       .from("reservations")
       .select("id,status,event_order_info,created_at,billed_at")
+      .is("is_deleted", null)
       .eq("aff_partner_tracking_code", code);
   }
   if (reservationsResult.error) {
@@ -605,6 +609,7 @@ export async function getMyVoucherSettlement(): Promise<VoucherSettlement> {
   let { data, error } = await (supabase as any)
     .from("reservations")
     .select("id,created_at,status,user_shown_price,voucher_state")
+    .is("is_deleted", null)
     .eq("aff_partner_tracking_code", session.partner_code)
     .eq("partner_settlement_method", "voucher")
     .order("created_at", { ascending: true });
@@ -614,6 +619,7 @@ export async function getMyVoucherSettlement(): Promise<VoucherSettlement> {
     ({ data, error } = await (supabase as any)
       .from("reservations")
       .select("id,created_at,status,user_shown_price")
+      .is("is_deleted", null)
       .eq("aff_partner_tracking_code", session.partner_code)
       .eq("partner_settlement_method", "voucher")
       .order("created_at", { ascending: true }));

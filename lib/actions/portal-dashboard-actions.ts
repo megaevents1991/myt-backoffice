@@ -219,6 +219,7 @@ export async function getPortalDashboard(
       .select(
         "id,created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,partner_settlement_method,billed_at,coupon_code,coupon_discount_usd,commission_type,commission_rate,agent_user_id",
       )
+      .is("is_deleted", null)
       .eq("aff_partner_tracking_code", code),
     supabase
       .from("coupons")
@@ -266,6 +267,7 @@ export async function getPortalDashboard(
       .select(
         "id,created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,partner_settlement_method,billed_at,coupon_code,coupon_discount_usd,commission_type,commission_rate",
       )
+      .is("is_deleted", null)
       .eq("aff_partner_tracking_code", code);
   }
 

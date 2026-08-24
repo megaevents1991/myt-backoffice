@@ -317,6 +317,7 @@ export async function getPortalQuotesOverview(): Promise<PortalQuotesOverview> {
     (supabase as any)
       .from("reservations")
       .select("quote_id,status")
+      .is("is_deleted", null)
       .eq("aff_partner_tracking_code", session.partner_code)
       .not("quote_id", "is", null),
   ]);

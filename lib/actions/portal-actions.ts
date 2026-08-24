@@ -289,6 +289,7 @@ export async function getPortalStats(): Promise<PortalStats> {
       .select(
         "id,status,user_shown_price,event_order_info,commission_type,commission_rate,agent_user_id",
       )
+      .is("is_deleted", null)
       .eq("aff_partner_tracking_code", session.partner_code),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
@@ -312,6 +313,7 @@ export async function getPortalStats(): Promise<PortalStats> {
       .select(
         "id,status,user_shown_price,event_order_info,commission_type,commission_rate",
       )
+      .is("is_deleted", null)
       .eq("aff_partner_tracking_code", session.partner_code);
   }
   if (resData.error) {
@@ -483,6 +485,7 @@ export async function getPortalReservations(
     (supabase as any)
       .from("reservations")
       .select(columns)
+      .is("is_deleted", null)
       .eq("aff_partner_tracking_code", session.partner_code)
       .order("created_at", { ascending: false })
       // One more than the page, purely to detect that older rows exist.

@@ -61,6 +61,7 @@ export async function GET(req: Request) {
     const { data: reservations, error } = (await supabase
       .from("reservations")
       .select("*")
+      .is("is_deleted", null)
       .eq("status", "Paid")
       .not("aff_partner_tracking_code", "is", null) // Exclude null tracking codes
       .neq("aff_partner_tracking_code", "") // Also exclude empty string tracking codes

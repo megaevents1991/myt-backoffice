@@ -209,6 +209,7 @@ export async function getPartnersOverview(
       .select(
         "id,created_at,status,user_shown_price,event_order_info,aff_partner_tracking_code,coupon_discount_usd,event_id,offline_flight_cost,offline_hotel_cost,offline_hotel_ids,commission_type,commission_rate,flight_price:flight_order_info->price,flight_offline:flight_order_info->isOffline,hotel_price:hotel_order_info->price,hotel_offline:hotel_order_info->isOffline",
       )
+      .is("is_deleted", null)
       .not("aff_partner_tracking_code", "is", null)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false });

@@ -624,6 +624,7 @@ export async function getOfficeAgentStats(
     (supabase as any)
       .from("reservations")
       .select(columns)
+      .is("is_deleted", null)
       .eq("aff_partner_tracking_code", trackingCode);
 
   let { data, error } = await fetchReservations(

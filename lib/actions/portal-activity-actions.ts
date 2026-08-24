@@ -87,6 +87,7 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
         .select(
           "id,created_at,status,main_contact_first_name,event_order_info,voucher_state,coupon_code,agent_user_id",
         )
+        .is("is_deleted", null)
         .eq("aff_partner_tracking_code", code)
         .order("created_at", { ascending: false })
         .limit(FEED_LIMIT),
@@ -115,6 +116,7 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
       .select(
         "id,created_at,status,main_contact_first_name,event_order_info,voucher_state,coupon_code",
       )
+      .is("is_deleted", null)
       .eq("aff_partner_tracking_code", code)
       .order("created_at", { ascending: false })
       .limit(FEED_LIMIT);
@@ -495,6 +497,7 @@ export async function getPortalUserActivity(
   let ordersQuery = (supabase as any)
     .from("reservations")
     .select("status,created_at,event_order_info")
+    .is("is_deleted", null)
     .eq("aff_partner_tracking_code", session.partner_code)
     .order("created_at", { ascending: false })
     .limit(500);
