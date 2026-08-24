@@ -3,14 +3,23 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, Edit, Eye } from "lucide-react";
+import { ArrowUpDown, Edit, Eye, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/data-table";
 import type { ReservationListRow } from "@/types/reservation.types";
-import { getReservations, getReservationsCount, updateReservation, updateReservationsStatus } from "@/lib/actions/reservation-actions";
+import {
+  getReservations,
+  getReservationsCount,
+  updateReservation,
+  updateReservationsStatus,
+  softDeleteReservation,
+  bulkSoftDeleteReservations,
+} from "@/lib/actions/reservation-actions";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/confirm-provider";
 
 function isOfflineReservation(r: ReservationListRow) {
   return r.offline_flight_id != null || r.offline_hotel_id != null;
@@ -23,7 +32,9 @@ export function ReservationsTable() {
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [bulkStatus, setBulkStatus] = useState<string>("");
   const [offlineOnly, setOfflineOnly] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
   const { toast } = useToast();
+  const confirm = useConfirm();
   const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   // Refs mirror state for the poll interval, so the effect below can run once
@@ -192,6 +203,54 @@ export function ReservationsTable() {
         setReservations((prev) => prev);
         toast({ variant: "destructive", title: "Error", description: "Failed to save comment." });
       }
+    }
+  }
+
+  async function handleDelete(id: number) {
+    try {
+      const formattedDate = await softDeleteReservation(id).then(
+        (r) => r.is_deleted as string,
+      );
+      setReservations((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, is_deleted: formattedDate } : r))
+      );
+      toast({ title: "Deleted", description: "Reservation marked as deleted." });
+    } catch (error) {
+      console.error("Error deleting reservation:", error);
+      toast({ variant: "destructive", title: "Error", description: "Failed to delete reservation." });
+    }
+  }
+
+  async function handleBulkDelete() {
+    const selectedIndexes = Object.keys(rowSelection).filter((k) => rowSelection[k]);
+    const selectedIds = selectedIndexes
+      .map((k) => Number.parseInt(k, 10))
+      .filter((i) => !Number.isNaN(i))
+      .map((i) => reservations[i]?.id)
+      .filter((id): id is number => typeof id === "number");
+    if (selectedIds.length === 0) return;
+    if (
+      !(await confirm({
+        title: `Delete ${selectedIds.length} reservation(s)?`,
+        description:
+          "They are soft-deleted (marked as deleted) and stay recoverable.",
+        confirmLabel: "Delete",
+        destructive: true,
+      }))
+    )
+      return;
+    try {
+      await bulkSoftDeleteReservations(selectedIds);
+      const formattedDate = new Date();
+      const stamp = `${(formattedDate.getMonth() + 1).toString().padStart(2, "0")}-${formattedDate.getDate().toString().padStart(2, "0")}-${formattedDate.getFullYear()}`;
+      setReservations((prev) =>
+        prev.map((r) => (selectedIds.includes(r.id) ? { ...r, is_deleted: stamp } : r))
+      );
+      setRowSelection({});
+      toast({ title: "Deleted", description: `${selectedIds.length} reservation(s) marked as deleted.` });
+    } catch (error) {
+      console.error("Bulk delete failed:", error);
+      toast({ variant: "destructive", title: "Error", description: "Bulk delete failed." });
     }
   }
 
@@ -408,9 +467,18 @@ export function ReservationsTable() {
       },
     },
     {
+      accessorKey: "is_deleted",
+      header: "Deleted",
+      cell: ({ row }) => {
+        const deletedDate = row.getValue("is_deleted") as string | null | undefined;
+        return deletedDate ? <div>{String(deletedDate)}</div> : <div>-</div>;
+      },
+    },
+    {
       id: "actions",
       cell: ({ row }) => {
         const reservation = row.original;
+        const isDeleted = Boolean(reservation.is_deleted);
 
         return (
           <div className="flex items-center gap-2">
@@ -424,6 +492,28 @@ export function ReservationsTable() {
                 <Edit className="h-4 w-4" />
               </Button>
             </Link>
+            {!isDeleted && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-destructive hover:text-destructive"
+                onClick={async () => {
+                  if (
+                    !(await confirm({
+                      title: "Delete this reservation?",
+                      description:
+                        "It is soft-deleted (marked as deleted) and stays recoverable.",
+                      confirmLabel: "Delete",
+                      destructive: true,
+                    }))
+                  )
+                    return;
+                  handleDelete(reservation.id);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         );
       },
@@ -434,9 +524,9 @@ export function ReservationsTable() {
     return <div>Loading reservations...</div>;
   }
 
-  const visibleReservations = offlineOnly
-    ? reservations.filter(isOfflineReservation)
-    : reservations;
+  const visibleReservations = reservations
+    .filter((r) => showDeleted || !r.is_deleted)
+    .filter((r) => !offlineOnly || isOfflineReservation(r));
 
   return (
     <DataTable
@@ -472,10 +562,27 @@ export function ReservationsTable() {
           <Button size="sm" onClick={applyBulkStatus} disabled={!bulkStatus}>
             Apply
           </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={handleBulkDelete}
+          >
+            Delete
+          </Button>
         </div>
       }
       rightActions={
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="show-deleted-reservations"
+              checked={showDeleted}
+              onCheckedChange={(checked) => setShowDeleted(checked as boolean)}
+            />
+            <label htmlFor="show-deleted-reservations" className="text-sm font-medium">
+              Show deleted
+            </label>
+          </div>
           <Button
             variant={offlineOnly ? "default" : "outline"}
             size="sm"

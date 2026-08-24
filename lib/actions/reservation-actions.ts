@@ -21,7 +21,8 @@ const RESERVATION_LIST_COLUMNS =
   "id,created_at,main_contact_first_name,main_contact_last_name," +
   "main_contact_phone_number,main_contact_email,user_shown_price," +
   "aff_partner_tracking_code,event_id,status,accounting_number,comments," +
-  "offline_flight_id,offline_hotel_id,partner_settlement_method,payment_info";
+  "offline_flight_id,offline_hotel_id,partner_settlement_method,payment_info," +
+  "is_deleted";
 
 type ReservationListDbRow = Omit<ReservationListRow, "has_payment_info"> & {
   payment_info: unknown;
@@ -80,6 +81,59 @@ export async function getReservation(id: number) {
 
   if (error) throw error;
   return data as Reservation;
+}
+
+const todayStamp = () => {
+  const today = new Date();
+  return `${(today.getMonth() + 1).toString().padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}-${today.getFullYear()}`;
+};
+
+/**
+ * Soft delete - same convention as events (softDeleteEvent): stamps
+ * is_deleted with today's "MM-DD-YYYY" date, never a hard DELETE. Recoverable
+ * (no UI for un-delete yet, but the row and every FK to it - utm_touches,
+ * quote_id, etc - stay intact). Removes the row from the LIST page only
+ * (reservations-table.tsx filters client-side, mirroring events-table.tsx);
+ * direct-by-id lookups (getReservation) still work.
+ */
+export async function softDeleteReservation(id: number) {
+  await requireStaff();
+  const formattedDate = todayStamp();
+
+  const { data, error } = await supabase
+    .from("reservations")
+    .update({ is_deleted: formattedDate } as never)
+    .eq("id", id)
+    .select();
+
+  if (error) throw error;
+  await logAudit({
+    action: "delete",
+    entityType: "reservation",
+    entityId: id,
+    changes: { is_deleted: formattedDate },
+  });
+  return data[0] as Reservation;
+}
+
+export async function bulkSoftDeleteReservations(ids: number[]) {
+  await requireStaff();
+  const formattedDate = todayStamp();
+
+  const { data, error } = await supabase
+    .from("reservations")
+    .update({ is_deleted: formattedDate } as never)
+    .in("id", ids)
+    .select();
+
+  if (error) throw error;
+  await logAudit({
+    action: "delete",
+    entityType: "reservation",
+    entityId: ids.join(","),
+    changes: { is_deleted: formattedDate, count: ids.length },
+  });
+  return data as Reservation[];
 }
 
 /**

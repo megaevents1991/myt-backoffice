@@ -197,6 +197,12 @@ export default function ReservationDetailsPage({
         </Link>
       </div>
 
+      {reservation.is_deleted && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+          This reservation is marked as deleted on {reservation.is_deleted}
+        </div>
+      )}
+
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>

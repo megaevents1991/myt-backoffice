@@ -82,6 +82,9 @@ export type Reservation = {
   // UTM-derived attribution everywhere - see lib/portal-attribution.ts. Null
   // = let the UTM attribution decide / unattributed. Main never writes this.
   agent_user_id?: string | null;
+  // Soft delete, same convention as events - "MM-DD-YYYY" date string, null =
+  // not deleted. See softDeleteReservation/bulkSoftDeleteReservations.
+  is_deleted?: string | null;
 };
 
 /**
@@ -108,6 +111,7 @@ export type ReservationListRow = Pick<
   | "offline_flight_id"
   | "offline_hotel_id"
   | "partner_settlement_method"
+  | "is_deleted"
 > & {
   has_payment_info: boolean;
   /** Which office agent the booking is credited to (utm_touches, resolved
