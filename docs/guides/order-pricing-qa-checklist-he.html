@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>בדיקות תמחור ומחיקת הזמנות</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Rubik:wght@500;600;800&display=swap">
+<style>
+  :root{
+    --paper:#f4f7f4;
+    --card:#ffffff;
+    --ink:#122a20;
+    --muted:#5b6f64;
+    --line:#dbe5dd;
+    --forest:#0a1a14;
+    --mint:#5bff95;
+    --mint-ink:#0a1a14;
+    --mint-soft:#e2fbea;
+    --warn-bg:#fdf3dc;
+    --warn-ink:#7a5a12;
+    --info-bg:#e8f1fb;
+    --info-ink:#1f4e79;
+    --alert-bg:#fbe9e7;
+    --alert-ink:#8c2f22;
+    --done:#12813f;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#0a1a14;
+      --card:#11241c;
+      --ink:#e8f3ec;
+      --muted:#93a89c;
+      --line:#23392f;
+      --forest:#0a1a14;
+      --mint:#5bff95;
+      --mint-ink:#0a1a14;
+      --mint-soft:#173324;
+      --warn-bg:#33290f;
+      --warn-ink:#e8c877;
+      --info-bg:#12283d;
+      --info-ink:#9cc4e8;
+      --alert-bg:#3a1a15;
+      --alert-ink:#f0a99b;
+      --done:#5bff95;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0a1a14;
+    --card:#11241c;
+    --ink:#e8f3ec;
+    --muted:#93a89c;
+    --line:#23392f;
+    --forest:#0a1a14;
+    --mint:#5bff95;
+    --mint-ink:#0a1a14;
+    --mint-soft:#173324;
+    --warn-bg:#33290f;
+    --warn-ink:#e8c877;
+    --info-bg:#12283d;
+    --info-ink:#9cc4e8;
+    --alert-bg:#3a1a15;
+    --alert-ink:#f0a99b;
+    --done:#5bff95;
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Assistant","Segoe UI",Arial,sans-serif;
+    font-size:16px;
+    line-height:1.55;
+  }
+  .wrap{max-width:780px;margin:0 auto;padding:24px 20px 96px}
+
+  header.mast{
+    background:var(--forest);
+    color:#e8f3ec;
+    border-radius:18px;
+    padding:28px 26px 22px;
+    position:relative;
+    overflow:hidden;
+  }
+  header.mast::after{
+    content:"";
+    position:absolute;inset-inline-start:-70px;top:-90px;
+    width:230px;height:230px;border-radius:50%;
+    background:radial-gradient(closest-side,rgba(91,255,149,.28),transparent 70%);
+    pointer-events:none;
+  }
+  .kicker{
+    font-family:"Rubik",sans-serif;font-weight:600;font-size:12px;
+    letter-spacing:.14em;color:var(--mint);
+  }
+  h1{
+    font-family:"Rubik",sans-serif;font-weight:800;
+    font-size:clamp(26px,5vw,34px);margin:6px 0 4px;line-height:1.15;
+    text-wrap:balance;color:#fff;
+  }
+  .mast p.lede{margin:0;color:#b9cec2;max-width:60ch}
+  .mast .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .chip{
+    font-size:12.5px;font-weight:600;color:#cfe6d7;
+    border:1px solid rgba(91,255,149,.35);
+    border-radius:999px;padding:3px 11px;white-space:nowrap;
+  }
+  .chip code{font-family:Consolas,monospace;color:var(--mint);font-size:12px}
+
+  .progress{
+    position:sticky;top:0;z-index:5;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:14px;
+    margin:14px 0 26px;
+    padding:12px 16px;
+    display:flex;align-items:center;gap:14px;
+    box-shadow:0 6px 18px -14px rgba(10,26,20,.45);
+  }
+  .progress .num{
+    font-family:"Rubik",sans-serif;font-weight:800;font-size:20px;
+    font-variant-numeric:tabular-nums;white-space:nowrap;
+  }
+  .bar{flex:1;height:10px;border-radius:999px;background:var(--mint-soft);overflow:hidden}
+  .bar i{display:block;height:100%;width:0%;background:var(--mint);border-radius:999px;transition:width .25s}
+  .progress button{
+    font-family:inherit;font-size:12.5px;font-weight:600;color:var(--muted);
+    background:none;border:1px solid var(--line);border-radius:999px;
+    padding:4px 12px;cursor:pointer;
+  }
+  .progress button:hover{color:var(--ink)}
+  .progress button:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+
+  section{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:16px;
+    margin-bottom:22px;
+    overflow:hidden;
+  }
+  .sec-head{
+    display:flex;align-items:baseline;gap:12px;
+    padding:16px 20px 12px;border-bottom:1px solid var(--line);
+  }
+  .sec-mark{
+    font-family:"Rubik",sans-serif;font-weight:800;font-size:14px;
+    background:var(--mint);color:var(--mint-ink);
+    border-radius:8px;padding:2px 9px;flex:none;transform:translateY(-1px);
+  }
+  .sec-head h2{
+    font-family:"Rubik",sans-serif;font-weight:600;font-size:19px;margin:0;
+    text-wrap:balance;
+  }
+  .sec-head .count{margin-inline-start:auto;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .sec-note{padding:10px 20px 0;color:var(--muted);font-size:14px}
+  .sec-note code{font-family:Consolas,monospace;font-size:13px;background:var(--mint-soft);border-radius:5px;padding:1px 5px;direction:ltr;unicode-bidi:embed}
+
+  ol.items{list-style:none;margin:0;padding:8px 10px 14px}
+  .item{
+    display:grid;grid-template-columns:30px 1fr;gap:2px 12px;
+    padding:11px 10px;border-radius:12px;
+  }
+  .item + .item{border-top:1px dashed var(--line)}
+  .item:has(input:checked){background:var(--mint-soft)}
+  .item:has(input:checked) .act{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--done);text-decoration-thickness:1.5px}
+  .tick{grid-row:1/span 3;align-self:start;padding-top:2px}
+  .tick input{
+    appearance:none;-webkit-appearance:none;
+    width:21px;height:21px;margin:0;cursor:pointer;
+    border:2px solid var(--muted);border-radius:7px;background:var(--card);
+    display:grid;place-content:center;
+  }
+  .tick input:checked{background:var(--mint);border-color:var(--mint)}
+  .tick input:checked::before{
+    content:"";width:11px;height:6px;
+    border:2.5px solid var(--mint-ink);border-top:none;border-inline-end:none;
+    transform:rotate(45deg) translate(1px,-2px);
+  }
+  .tick input:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+  label.act{font-weight:700;cursor:pointer}
+  .exp{color:var(--muted);font-size:14.5px}
+  .exp b{color:var(--ink);font-weight:600}
+  .how{
+    color:var(--muted);font-size:13.5px;background:var(--mint-soft);
+    border-radius:9px;padding:7px 11px;margin-top:5px;
+  }
+  .how b{color:var(--ink)}
+  .item code{font-family:Consolas,monospace;font-size:13px;background:var(--mint-soft);border-radius:5px;padding:1px 5px;direction:ltr;unicode-bidi:embed}
+  .how code{background:var(--card)}
+
+  table.nums{
+    width:100%;border-collapse:collapse;
+    font-size:14px;font-variant-numeric:tabular-nums;
+  }
+  table.nums th,table.nums td{
+    text-align:start;padding:7px 11px;border-bottom:1px solid var(--line);
+  }
+  table.nums th{
+    font-family:"Rubik",sans-serif;font-weight:600;font-size:12.5px;
+    color:var(--muted);letter-spacing:.03em;
+  }
+  table.nums td:not(:first-child){direction:ltr;unicode-bidi:embed;text-align:end}
+  table.nums tr:last-child td{border-bottom:none}
+  .tbl-wrap{overflow-x:auto;margin:10px 20px 16px;border:1px solid var(--line);border-radius:12px}
+
+  .callout{
+    margin:12px 20px 4px;border-radius:12px;padding:11px 14px;font-size:14px;
+  }
+  .callout.info{background:var(--info-bg);color:var(--info-ink)}
+  .callout.warn{background:var(--warn-bg);color:var(--warn-ink)}
+  .callout.alert{background:var(--alert-bg);color:var(--alert-ink)}
+  .callout b{font-weight:700}
+  .callout code{font-family:Consolas,monospace;font-size:12.5px;direction:ltr;unicode-bidi:embed}
+
+  .gaps ul{margin:8px 0 0;padding:0 20px 18px 0;color:var(--muted);font-size:14.5px;list-style-position:inside}
+  .gaps li{margin-bottom:7px}
+  .gaps li b{color:var(--ink)}
+  footer{
+    color:var(--muted);font-size:13px;text-align:center;margin-top:34px;line-height:1.9;
+  }
+  footer code{font-family:Consolas,monospace;font-size:12px}
+
+  @media print{
+    .progress button{display:none}
+    body{background:#fff}
+    section{break-inside:avoid}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .bar i{transition:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <div class="kicker">MYT · תמחור הזמנה · QA — סבב 4</div>
+  <h1>בדיקות תמחור ומחיקת הזמנות</h1>
+  <p class="lede">הסבב בודק את תיקוני 23-24.08: חמישה באגי תמחור בזרימת ההזמנה באתר הלקוחות, כלל חדש לדמי ביטול מלון, מחיקה רכה להזמנות בבקאופיס, והחרגת הזמנות מחוקות מכל הדוחות והעמלות.</p>
+  <div class="meta">
+    <span class="chip">עודכן 24.08.2026</span>
+    <span class="chip">6 פרקים · 27 בדיקות</span>
+    <span class="chip">אירוע בדיקה <code>907</code> — פיטבול פראג</span>
+  </div>
+</header>
+
+<div class="progress" role="status">
+  <span class="num"><span id="done">0</span>/<span id="total">0</span></span>
+  <div class="bar" aria-hidden="true"><i id="fill"></i></div>
+  <button type="button" id="reset">איפוס סימונים</button>
+</div>
+
+<!-- ════════ 0 ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">0</span><h2>הכנה</h2><span class="count"></span></div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="p1"></span>
+      <label class="act" for="p1">הדיפלוי האחרון באוויר בשני האתרים</label>
+      <span class="exp">main אחרי <code>ebc7ef8</code>, backoffice אחרי <code>63608df</code>.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="p2"></span>
+      <label class="act" for="p2">דפדפן נקי, בלי לינק שותף</label>
+      <span class="exp">בלי <code>utm_source</code> ובלי <code>?quote</code> — מחירי סוכן שונים ויבלבלו את המספרים בטבלה למטה.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="p3"></span>
+      <label class="act" for="p3">משתמש superadmin לבקאופיס + משתמש admin/editor רגיל</label>
+      <span class="exp">צריך את שניהם — פרק ג בודק שהמחיקה מוסתרת ממי שאינו superadmin.</span></li>
+  </ol>
+  <div class="callout info">
+    <b>המספרים בטבלאות</b> נמדדו על אירוע 907 (פיטבול פראג), כרטיס <b>Lower Tier</b>, <b>2 כרטיסים</b>, טיסת SMARTWINGS ומלון EA Hotel Populus. מחירי טיסות ומלונות חיים משתנים — אם המספר המוחלט זז, מה שנבדק הוא <b>כיוון השינוי וההפרש</b>, לא הסכום המדויק.
+  </div>
+</section>
+
+<!-- ════════ א: order flow pricing ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">א</span><h2>חמשת באגי התמחור בזרימת ההזמנה</h2><span class="count"></span></div>
+  <div class="sec-note">אתר הלקוחות, <code>/order/907</code>. כל סעיף כאן היה באג בפרודקשן ותוקן.</div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="a1"></span>
+      <label class="act" for="a1">שלב הטיסות — הסכום לא "מאבד" את המלון</label>
+      <span class="exp">צפוי: אחרי בחירת טיסה הבר מציג <b>~$1,298</b> לנוסע. הבאג: הסכום צנח ל-$1,078 (מחיר המלון נעלם) וחזר לבד בשלב המלון.</span>
+      <span class="how"><b>איך:</b> כרטיס Lower Tier ← המשך ← בחר טיסה. השווה את הבר לפני ואחרי — הוא אמור <b>לעלות</b> ב-$5, לא לרדת ב-$215.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="a2"></span>
+      <label class="act" for="a2">הסרת מלון מורידה את הסכום</label>
+      <span class="exp">צפוי: "לא צריך מלון" ← הסה״כ יורד מ-<b>$2,351</b> ל-<b>$2,156</b>. הבאג: הסכום <b>עלה</b> ל-$2,356.</span>
+      <span class="how"><b>איך:</b> בשלב המלון לחץ "לא צריך מלון" והשווה סה״כ לפני/אחרי. חייב לרדת.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="a3"></span>
+      <label class="act" for="a3">ארוחת בוקר מייקרת, לא מוזילה</label>
+      <span class="exp">צפוי: "הוסף ארוחת בוקר +$35" ← הסה״כ <b>עולה</b> בדיוק ב-$35. הבאג: במלונות מסוימים המחיר ירד.</span>
+      <span class="how"><b>איך:</b> בסיכום ההזמנה, שורת הלינה. אם הכפתור מציג <b>"חינם"</b> — זה תקין (התוספת אפס), ואז הסה״כ לא זז בכלל.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="a4"></span>
+      <label class="act" for="a4">מזוודה — הסה״כ עולה במלוא הסכום</label>
+      <span class="exp">צפוי: "+$47 למזוודה" ← הסה״כ עולה ב-$47 בדיוק, ו<b>"לאדם" נשאר $1,176</b>. הבאג: התצוגה לאדם התחלקה ב-2 וקפצה ב-$24.</span>
+      <span class="how"><b>איך:</b> הוסף מזוודה, אחר כך לחץ "+" לשתי מזוודות (+$94). שורת "לאדם" לא זזה בשני המקרים — מזוודה היא תוספת להזמנה, לא לנוסע.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="a5"></span>
+      <label class="act" for="a5">"התחל מחדש" אחרי שהזמן נגמר — מנקה הכל</label>
+      <span class="exp">צפוי: מסך "הזמן אזל" ← "שננסה מחדש?" ← חוזרים לשלב 1 <b>ריק לגמרי</b>. הבאג: הכרטיס, הטיסה והמלון נשארו בטאבים.</span>
+      <span class="how"><b>איך:</b> הגע לסיכום והמתן 15 דקות. אחרי האיפוס ודא שהבר לא מציג טיסה/מלון, ושהמזוודה וארוחת הבוקר לא חזרו.</span></li>
+  </ol>
+  <div class="tbl-wrap">
+    <table class="nums">
+      <thead><tr><th>מצב</th><th>סה״כ</th><th>לאדם</th></tr></thead>
+      <tbody>
+        <tr><td>חבילה מלאה (כרטיס+טיסה+מלון)</td><td>$2,351</td><td>$1,176</td></tr>
+        <tr><td>בלי מלון</td><td>$2,156</td><td>$1,078</td></tr>
+        <tr><td>+ מזוודה אחת</td><td>$2,398</td><td>$1,176</td></tr>
+        <tr><td>+ ארוחת בוקר</td><td>$2,433</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ════════ ב: skip fee rule ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">ב</span><h2>דמי ביטול מלון — הכלל החדש</h2><span class="count"></span></div>
+  <div class="sec-note">הכלל: <b>מלון זול = בלי דמי ביטול.</b> אם המלון הזול ביותר הזמין לאירוע עולה פחות מדמי הביטול לנוסע ($100/$150) — לא נגבים דמים בכלל. אחרת הדמים מוגבלים לעלות המלון. התוצאה: הסרת מלון <b>לעולם לא מייקרת</b> את החבילה.</div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="b1"></span>
+      <label class="act" for="b1">אירוע עם מלונות זולים — הסרה חוסכת את מלוא הסכום</label>
+      <span class="exp">צפוי: אירוע 907, המלון הזול ~$97.5 לאורח ← דמי הביטול <b>מבוטלים</b>, הסרה חוסכת $195.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="b2"></span>
+      <label class="act" for="b2">אירוע עם מלונות יקרים — דמי ביטול כן נגבים</label>
+      <span class="exp">צפוי: באירוע שבו המלון הזול עולה יותר מ-$100 לאורח, ההסרה עדיין מורידה את המחיר אבל פחות — הדמים נגבים כרגיל.</span>
+      <span class="how"><b>איך:</b> בחר אירוע יעד יקר (לונדון/פריז) וחזור על הבדיקה. המספר המדויק פחות חשוב — <b>העיקרון: הסרת מלון אף פעם לא מעלה את הסה״כ.</b></span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="b3"></span>
+      <label class="act" for="b3">אותו מחיר בוויזרד הסוכן ובתשלום הלקוח</label>
+      <span class="exp">צפוי: חבילה שנבנתה ב<b>פורטל ← חבילות ← חדשה</b> עם "בלי מלון" — המחיר שהסוכן רואה זהה למחיר שהלקוח רואה כשהוא פותח את הלינק.</span>
+      <span class="how"><b>איך:</b> בנה חבילה בלי מלון, שמור, פתח את הלינק בדפדפן נקי והשווה את הסה״כ לנוסע. <b>זו הבדיקה הכי חשובה בפרק.</b></span></li>
+  </ol>
+</section>
+
+<!-- ════════ ג: soft delete ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">ג</span><h2>מחיקת הזמנות — חדש, superadmin בלבד</h2><span class="count"></span></div>
+  <div class="sec-note">מחיקה היא <b>רכה</b>: השורה מסומנת בתאריך ונעלמת מהרשימה, אבל נשמרת במסד ואפשר להחזיר אותה. אין מחיקה קשה.</div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="c1"></span>
+      <label class="act" for="c1">superadmin רואה את כלי המחיקה</label>
+      <span class="exp">צפוי: בעמוד ההזמנות — אייקון פח בכל שורה, כפתור <b>Delete</b> אדום בפעולות המרובות, צ׳קבוקס <b>Show deleted</b> ועמודת <b>Deleted</b>.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c2"></span>
+      <label class="act" for="c2">admin / editor לא רואה כלום מזה</label>
+      <span class="exp">צפוי: אותו עמוד בדיוק בלי אייקון פח, בלי כפתור Delete, בלי Show deleted ובלי עמודת Deleted.</span>
+      <span class="how"><b>איך:</b> התחבר כמשתמש admin או editor רגיל. <b>קריטי לאבטחה</b> — אם משהו מזה מופיע, עצור ודווח.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c3"></span>
+      <label class="act" for="c3">מחיקת שורה בודדת</label>
+      <span class="exp">צפוי: אייקון פח ← דיאלוג אישור ← השורה נעלמת מהרשימה, טוסט "Deleted".</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c4"></span>
+      <label class="act" for="c4">"Show deleted" מחזיר את השורה לתצוגה עם תאריך</label>
+      <span class="exp">צפוי: סימון הצ׳קבוקס ← ההזמנה חוזרת לרשימה, בעמודת Deleted מופיע התאריך (<code>08-24-2026</code>), ואייקון הפח כבר לא מוצג עליה.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c5"></span>
+      <label class="act" for="c5">מחיקה מרובה</label>
+      <span class="exp">צפוי: סימון כמה שורות ← Delete ← אישור ← כולן נעלמות יחד, טוסט עם המספר הנכון.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c6"></span>
+      <label class="act" for="c6">עמוד ההזמנה עצמו מציג באנר "נמחקה"</label>
+      <span class="exp">צפוי: כניסה להזמנה מחוקה ← באנר אדום "marked as deleted on …". ההזמנה עצמה עדיין נפתחת ונקראת.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="c7"></span>
+      <label class="act" for="c7">21 הזמנות הבדיקה כבר מחוקות</label>
+      <span class="exp">צפוי: מזהים <code>1820-1849</code> (הרשימה שנמחקה ב-24.08) לא מופיעים ברשימה הרגילה, ומופיעים עם תאריך כש-Show deleted מסומן.</span></li>
+  </ol>
+</section>
+
+<!-- ════════ ד: dashboards ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">ד</span><h2>הזמנות מחוקות לא נספרות בשום דוח</h2><span class="count"></span></div>
+  <div class="sec-note">הוחרגו 22 שאילתות ב-16 קבצים: דשבורד ראשי, גרפים, קרונים של חיוב שותפים, עמלות, קרדיט, שוברים וכל מסכי הפורטל.</div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="d1"></span>
+      <label class="act" for="d1">דשבורד ראשי — המונים ירדו</label>
+      <span class="exp">צפוי: "הזמנות Paid/Pending" והסטטיסטיקות לא סופרים את 21 הזמנות הבדיקה שנמחקו.</span>
+      <span class="how"><b>איך:</b> רשום את המספרים לפני שאתה מוחק הזמנה נוספת, מחק, רענן — המונה יורד ב-1.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d2"></span>
+      <label class="act" for="d2">גרף ההזמנות לאורך זמן</label>
+      <span class="exp">צפוי: העמודות של 20-24.08 נמוכות יותר — הזמנות הבדיקה לא נספרות.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d3"></span>
+      <label class="act" for="d3">עמוד שותף — ביצועים, עמלות וקרדיט</label>
+      <span class="exp">צפוי: הזמנה מחוקה שהייתה משויכת לשותף <b>לא מופיעה</b> ולא נספרת בעמלה, בקרדיט ובשוברים.</span>
+      <span class="how"><b>איך:</b> קח שותף עם הזמנת בדיקה מחוקה, פתח <code>/partners/[code]/view</code> ובדוק את שלושת הטאבים.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d4"></span>
+      <label class="act" for="d4">הפורטל של השותף — אותם מספרים</label>
+      <span class="exp">צפוי: הסוכן שמתחבר לפורטל רואה בדיוק את אותם נתונים כמו הצוות — בלי ההזמנות המחוקות, גם ברשימת ההזמנות וגם בפיד הפעילות.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="d5"></span>
+      <label class="act" for="d5">חיוב חודשי לשותפים — לא כולל מחוקות</label>
+      <span class="exp">צפוי: ברשימת "עמלות לתשלום" בעמוד השותף אין הזמנות מחוקות.</span>
+      <span class="how"><b>איך:</b> בדיקה חשובה — זה כסף אמיתי שיוצא לשותפים בקרון החודשי.</span></li>
+  </ol>
+</section>
+
+<!-- ════════ ה: selection regression ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">ה</span><h2>עדכון סטטוס — הבאג שנתפס בפרודקשן</h2><span class="count"></span></div>
+  <div class="callout alert">
+    <b>הבאג החמור של הסבב.</b> בחירת השורות עבדה לפי <b>מיקום בטבלה</b> ולא לפי מזהה. כשהפילטר החדש הסתיר 21 שורות, המיקומים זזו — סימון הזמנה 1843 עדכן בפועל את <b>1847 ו-1850</b>, כולל לקוח ששילם באמת. תוקן: הבחירה מבוססת מזהה. <b>הפרק הזה חייב לעבור במלואו.</b>
+  </div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="e1"></span>
+      <label class="act" for="e1">עדכון סטטוס משנה בדיוק את השורה שסומנה</label>
+      <span class="exp">צפוי: סמן הזמנה אחת ← בחר סטטוס ← Apply ← <b>אותה שורה</b> משנה סטטוס, מיד ואחרי רענון.</span>
+      <span class="how"><b>איך:</b> רשום את מספר ההזמנה לפני הלחיצה וּודא אחרי הרענון שדווקא הוא השתנה — ושאף הזמנה אחרת לא זזה.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="e2"></span>
+      <label class="act" for="e2">אותה בדיקה עם "Show deleted" מסומן</label>
+      <span class="exp">צפוי: זהה. <b>זה התרחיש שגרם לבאג</b> — הפילטר משנה את סדר השורות.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="e3"></span>
+      <label class="act" for="e3">אותה בדיקה עם הפילטר "Mega only"</label>
+      <span class="exp">צפוי: זהה. גם הפילטר הזה הזיז מיקומים.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="e4"></span>
+      <label class="act" for="e4">אחרי חיפוש חופשי או מיון בעמודה</label>
+      <span class="exp">צפוי: חפש שם, סמן שורה, עדכן — משתנה ההזמנה הנכונה. אותו דבר אחרי מיון לפי תאריך או סטטוס.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="e5"></span>
+      <label class="act" for="e5">בחירה מרובה בין עמודי הטבלה</label>
+      <span class="exp">צפוי: סמן שורה בעמוד 1, עבור לעמוד 2, סמן עוד אחת, Apply — <b>שתיהן</b> משתנות ולא אף אחת אחרת.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="e6"></span>
+      <label class="act" for="e6">הסימון מתאפס אחרי עדכון</label>
+      <span class="exp">צפוי: אחרי Apply הצ׳קבוקסים מתנקים — אי אפשר ללחוץ שוב בטעות על בחירה ישנה.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="e7"></span>
+      <label class="act" for="e7">מחיקה מרובה מוחקת את הנכונות</label>
+      <span class="exp">צפוי: אותה בדיקה בדיוק על כפתור Delete — נמחקות רק השורות שסומנו.</span></li>
+  </ol>
+  <div class="callout warn">
+    <b>אם משהו כאן נכשל — עצור מיד ודווח.</b> באג בבחירת שורות פוגע בהזמנות של לקוחות אמיתיים, ולא תמיד רואים את זה על המסך.
+  </div>
+</section>
+
+<!-- ════════ ו: regression ════════ -->
+<section>
+  <div class="sec-head"><span class="sec-mark">ו</span><h2>רגרסיה — מה שלא היה אמור להשתנות</h2><span class="count"></span></div>
+  <ol class="items">
+    <li class="item"><span class="tick"><input type="checkbox" id="f1"></span>
+      <label class="act" for="f1">הזמנה מלאה רגילה עד תשלום</label>
+      <span class="exp">צפוי: כרטיס ← טיסה ← מלון ← סיכום ← תשלום, בלי שינוי בהתנהגות ובמחירים.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="f2"></span>
+      <label class="act" for="f2">הזמנה בלי טיסה</label>
+      <span class="exp">צפוי: "לא צריך טיסה" עדיין עובד, והמחיר יורד בהתאם.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="f3"></span>
+      <label class="act" for="f3">עריכה מהסיכום חזרה לסיכום</label>
+      <span class="exp">צפוי: כפתור "עריכה" ← שינוי ← "שמור וחזור לסיכום" ← המחיר מתעדכן נכון.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="f4"></span>
+      <label class="act" for="f4">מצב סוכן — לינק שותף</label>
+      <span class="exp">צפוי: פתיחה עם <code>utm_source</code> של סוכן — העמלה והמחירים מוצגים כרגיל, ושלושת כפתורי התשלום עובדים.</span></li>
+    <li class="item"><span class="tick"><input type="checkbox" id="f5"></span>
+      <label class="act" for="f5">הערות ומספר הנהלת חשבונות בטבלה</label>
+      <span class="exp">צפוי: עריכה ישירה בשדות בטבלת ההזמנות נשמרת על השורה הנכונה — גם כשפילטר פעיל.</span></li>
+  </ol>
+</section>
+
+<!-- ════════ פתוח ════════ -->
+<section class="gaps">
+  <div class="sec-head"><span class="sec-mark">!</span><h2>פתוח לטיפול</h2></div>
+  <ul>
+    <li><b>הזמנה 1850</b> — ARIE LEON ALMOZLINO, ₪16,103. הוחזרה ל-Pending אחרי הבאג, אבל הלקוח <b>שילם בפועל</b> (עסקה תקינה באשראית). צריך להחליט אם לסמן Paid ולשייך מספר הנהלת חשבונות.</li>
+    <li><b>הזמנה 1847</b> — Shahd bdarna, ₪12,103. גם היא הוחזרה ל-Pending. לוודא שהסטטוס נכון.</li>
+    <li><b>אין מסך "שחזור"</b> להזמנה מחוקה — הביטול נעשה כרגע רק ישירות במסד. אם צריך כפתור בממשק, זו משימה נפרדת.</li>
+  </ul>
+</section>
+
+<footer>
+  MYT · בדיקות תמחור ומחיקת הזמנות · סבב 4 · 24.08.2026<br>
+  main <code>ebc7ef8</code> · backoffice <code>63608df</code>
+</footer>
+
+</div>
+
+<script>
+(function(){
+  var KEY="myt-order-pricing-qa-v4";
+  var boxes=[].slice.call(document.querySelectorAll('.item input[type="checkbox"]'));
+  var saved={};
+  try{saved=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){}
+  boxes.forEach(function(b){ if(saved[b.id]) b.checked=true; });
+
+  var doneEl=document.getElementById("done"),
+      totalEl=document.getElementById("total"),
+      fill=document.getElementById("fill");
+  totalEl.textContent=boxes.length;
+
+  function refresh(){
+    var d=boxes.filter(function(b){return b.checked}).length;
+    doneEl.textContent=d;
+    fill.style.width=(boxes.length?100*d/boxes.length:0)+"%";
+    document.querySelectorAll("section").forEach(function(sec){
+      var c=sec.querySelector(".count"); if(!c) return;
+      var bs=[].slice.call(sec.querySelectorAll('input[type="checkbox"]'));
+      if(!bs.length){c.textContent="";return;}
+      c.textContent=bs.filter(function(b){return b.checked}).length+"/"+bs.length;
+    });
+  }
+  function save(){
+    var o={};
+    boxes.forEach(function(b){ if(b.checked) o[b.id]=1; });
+    try{localStorage.setItem(KEY,JSON.stringify(o))}catch(e){}
+  }
+  boxes.forEach(function(b){ b.addEventListener("change",function(){refresh();save();}); });
+  document.getElementById("reset").addEventListener("click",function(){
+    if(!confirm("לאפס את כל הסימונים?")) return;
+    boxes.forEach(function(b){b.checked=false});
+    refresh(); save();
+  });
+  refresh();
+})();
+</script>
+</body>
+</html>
