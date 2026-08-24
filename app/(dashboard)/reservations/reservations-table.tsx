@@ -209,6 +209,20 @@ export function ReservationsTable() {
     }
   }
 
+  /**
+   * The SELECTED reservation ids. Keys come straight from rowSelection because
+   * the table is keyed by reservation id (getRowId below) - they were row
+   * INDEXES before, looked up against the unfiltered `reservations` array, so
+   * any active filter (Show deleted / Mega only) shifted them and the action
+   * hit a different booking than the one ticked (prod, 24.8).
+   */
+  function selectedReservationIds(): number[] {
+    return Object.keys(rowSelection)
+      .filter((key) => rowSelection[key])
+      .map((key) => Number.parseInt(key, 10))
+      .filter((id) => Number.isFinite(id));
+  }
+
   async function handleDelete(id: number) {
     try {
       const formattedDate = await softDeleteReservation(id).then(
@@ -225,12 +239,7 @@ export function ReservationsTable() {
   }
 
   async function handleBulkDelete() {
-    const selectedIndexes = Object.keys(rowSelection).filter((k) => rowSelection[k]);
-    const selectedIds = selectedIndexes
-      .map((k) => Number.parseInt(k, 10))
-      .filter((i) => !Number.isNaN(i))
-      .map((i) => reservations[i]?.id)
-      .filter((id): id is number => typeof id === "number");
+    const selectedIds = selectedReservationIds();
     if (selectedIds.length === 0) return;
     if (
       !(await confirm({
@@ -258,14 +267,8 @@ export function ReservationsTable() {
   }
 
   async function applyBulkStatus() {
-    const selectedIndexes = Object.keys(rowSelection).filter((k) => rowSelection[k]);
-    if (selectedIndexes.length === 0 || !bulkStatus) return;
-    const selectedIds = selectedIndexes
-      .map((k) => Number.parseInt(k, 10))
-      .filter((i) => !Number.isNaN(i))
-      .map((i) => reservations[i]?.id)
-      .filter((id): id is number => typeof id === "number");
-
+    if (!bulkStatus) return;
+    const selectedIds = selectedReservationIds();
     if (selectedIds.length === 0) return;
 
     try {
@@ -273,6 +276,7 @@ export function ReservationsTable() {
       setReservations((prev) => prev.map((r) => (selectedIds.includes(r.id) ? { ...r, status: bulkStatus } : r)));
       toast({ title: "Status updated", description: `Updated ${selectedIds.length} reservation(s).` });
       setBulkStatus("");
+      setRowSelection({});
     } catch {
       toast({ variant: "destructive", title: "Error", description: "Failed to update statuses." });
     }
@@ -554,6 +558,11 @@ export function ReservationsTable() {
   pageSizeOptions={[10, 25, 50, 100]}
       dense
       enableRowSelection
+      // Selection keyed by reservation id, NOT row index - filters (Show
+      // deleted / Mega only) reorder the rendered rows, and index-keyed
+      // selection then resolved to the wrong booking.
+      getRowId={(row) => String(row.id)}
+      rowSelection={rowSelection}
       onRowSelectionChange={(selection) => setRowSelection(selection)}
       bulkActions={
         <div className="flex items-center gap-2">
