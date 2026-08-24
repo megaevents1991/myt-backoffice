@@ -4,12 +4,23 @@ import { supabase } from "@/lib/supabase-server";
 import nodemailer from "nodemailer";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { guardCronRoute } from "@/lib/auth/guards";
+import type { ReservationEventOrderInfo } from "@/types/reservation.types";
+import type { PostgrestError } from "@supabase/supabase-js";
 
 interface Reservation {
   main_contact_first_name: string;
-  event_order_info: any;
+  event_order_info: ReservationEventOrderInfo;
   created_at: string;
   accounting_number: number;
+  aff_partner_tracking_code: string;
+}
+
+/** Only the columns this route reads off `partners`. */
+interface PromoterPartnerRow {
+  email: string;
+  name_hebrew: string | null;
+  commission: number;
+  created_at: string;
 }
 
 interface PromoterData {
@@ -67,8 +78,8 @@ export async function GET(req: Request) {
       .neq("aff_partner_tracking_code", "") // Also exclude empty string tracking codes
       .gte("created_at", firstDayOfMonth.toISOString()) // Greater than or equal to first day of month
       .lte("created_at", lastDayOfMonth.toISOString())) as {
-      data: any[] | null;
-      error: any;
+      data: Reservation[] | null;
+      error: PostgrestError | null;
     }; // Less than or equal to last day of month
 
     if (error) {
@@ -109,7 +120,7 @@ export async function GET(req: Request) {
         .select("*")
         .eq("partner_tracking_code", trackingCode)
         .eq("created_at", target_date)
-        .single()) as { data: any | null; error: any };
+        .single()) as { data: PromoterPartnerRow | null; error: PostgrestError | null };
 
       if (!promoterData) {
         console.log(

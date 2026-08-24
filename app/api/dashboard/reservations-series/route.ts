@@ -75,8 +75,8 @@ export async function GET(req: NextRequest) {
       counts.set(toDateKey(cur), 0);
       cur.setDate(cur.getDate() + 1);
     }
-    for (const row of data || []) {
-      const key = toDateKey(new Date((row as any).created_at));
+    for (const row of (data ?? []) as { created_at: string }[]) {
+      const key = toDateKey(new Date(row.created_at));
       counts.set(key, (counts.get(key) || 0) + 1);
     }
     const series = Array.from(counts.entries())

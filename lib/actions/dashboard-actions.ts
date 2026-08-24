@@ -4,6 +4,7 @@ import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { getReservationEventOrderInfoPrimaryName } from "@/lib/utils";
 import { isCustomerRefundPartner } from "@/types/partner.types";
+import type { ReservationEventOrderInfo } from "@/types/reservation.types";
 
 async function countReservationsByStatus(status: string): Promise<number> {
   try {
@@ -89,7 +90,7 @@ export async function getDashboardStats() {
       created_at?: string;
       more_pax_info: { first_name?: string; last_name?: string }[] | null;
       status?: string;
-      event_order_info?: any | null;
+      event_order_info?: ReservationEventOrderInfo | null;
       aff_partner_tracking_code?: string | null;
     };
 
