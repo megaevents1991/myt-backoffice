@@ -1262,6 +1262,11 @@ export type CreatePackageInput = {
   qty: number;
   /** May the customer change the pinned composition? Default true (editable). */
   allowEdit?: boolean;
+  /** Cheapest hotel available for the event, per guest, as the wizard saw it -
+   *  the hotel-skip-fee reference (Dor 24.8, mirrors main). Only consulted
+   *  when hotel.mode === "none"; keeps the stamped price_per_person equal to
+   *  the wizard's preview and to what main will charge at checkout. */
+  hotelSkipRefPerGuest?: number | null;
   flight:
     | { mode: "offline"; flightId: number }
     | { mode: "live-offer"; offer: LiveFlightOffer }
@@ -1539,6 +1544,7 @@ export async function createPreparedPackage(
   // quote flow's baseline (מחיר היחידה חייב לשקף את החבילה, לא את האירוע).
   // Deltas are the chosen component vs the event baseline, exactly like the
   // wizard's preview; a live-picked component contributes no delta.
+  const hotelSkipRefRaw = Number(input.hotelSkipRefPerGuest);
   const pricePerPerson = computePerPersonPackagePrice(event, {
     ticketPrice: Number(liveTicket.price) || 0,
     flightSkipped,
@@ -1551,6 +1557,10 @@ export async function createPreparedPackage(
       hotelPerPerson != null
         ? hotelPerPerson - (event.base_hotel_price ?? 0)
         : 0,
+    hotelSkipRefPerGuest:
+      Number.isFinite(hotelSkipRefRaw) && hotelSkipRefRaw > 0
+        ? hotelSkipRefRaw
+        : null,
   });
 
   // Opaque token - main looks packages up by this, never by the row id.

@@ -341,6 +341,25 @@ export function PackageWizard({
     return null;
   })();
 
+  // Cheapest hotel available for this event, per guest - the hotel-skip-fee
+  // reference (Dor 24.8, mirrors main's hotelSkipRefPerGuest): a market at or
+  // under the fee waives it, above it caps it. Live search results when the
+  // agent ran one, offline inventory rooms otherwise; null → fee as before.
+  const hotelSkipRefPerGuest = (() => {
+    let min = Infinity;
+    for (const o of hsResults ?? []) {
+      const per = o.price / Math.max(1, qty);
+      if (Number.isFinite(per) && per > 0) min = Math.min(min, per);
+    }
+    for (const room of hotels) {
+      if (room.capacity > 0 && room.remaining > 0) {
+        const per = room.price / room.capacity;
+        if (Number.isFinite(per) && per > 0) min = Math.min(min, per);
+      }
+    }
+    return Number.isFinite(min) ? min : null;
+  })();
+
   // The price main really charges, per person - calculateBaseTotal's mirror.
   // For a full package this equals base + ticket/flight/hotel deltas; skipped
   // components drop their base and charge the skip fee instead (the additive
@@ -354,6 +373,7 @@ export function PackageWizard({
       hotelSkipped: hotelChoice.mode === "none",
       flightDelta: flightDelta ? deltaAmount(flightDelta) : 0,
       hotelDelta: hotelDelta ? deltaAmount(hotelDelta) : 0,
+      hotelSkipRefPerGuest,
     });
   })();
 
@@ -498,6 +518,7 @@ export function PackageWizard({
         category,
         qty,
         allowEdit,
+        hotelSkipRefPerGuest,
         flight:
           flightChoice.mode === "live-offer"
             ? { mode: "live-offer", offer: flightChoice.offer }

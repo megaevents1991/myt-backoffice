@@ -94,6 +94,12 @@ export type PerPersonPriceInput = {
   /** Per-person upgrade delta vs the base (0 = at base / within the included band). */
   flightDelta?: number;
   hotelDelta?: number;
+  /** Skip-fee reference per guest (Dor 24.8): the cheapest hotel available
+   *  for the event (or the specific hotel that was removed). At or under the
+   *  fee → the hotel-skip fee is waived entirely; above it → caps the fee.
+   *  Mirrors main's hotelSkipRefPerGuest (app/order/hooks.tsx). Omit/null =
+   *  unknown → the fee applies as before. */
+  hotelSkipRefPerGuest?: number | null;
 };
 
 /**
@@ -115,6 +121,16 @@ export function computePerPersonPackagePrice(
   const { ticketPrice, flightSkipped, hotelSkipped } = input;
   const flightDelta = input.flightDelta ?? 0;
   const hotelDelta = input.hotelDelta ?? 0;
+  const hotelSkipRef = Number.isFinite(Number(input.hotelSkipRefPerGuest))
+    ? Number(input.hotelSkipRefPerGuest)
+    : null;
+  // Waive/cap a hotel-skip fee by the reference hotel cost (main's rule).
+  const applySkipRef = (fee: number): number =>
+    hotelSkipRef != null
+      ? hotelSkipRef <= fee
+        ? 0
+        : Math.min(fee, hotelSkipRef)
+      : fee;
 
   const ticketOnly = Number(event.ticket_only_markup ?? NaN);
   if (
@@ -145,7 +161,7 @@ export function computePerPersonPackagePrice(
       (event.markup_ticket ?? 0) +
       additional +
       (flightSkipped ? skipFlightMarkup : (event.markup_flight ?? 0)) +
-      (hotelSkipped ? skipHotelMarkup : (event.markup_hotel ?? 0));
+      (hotelSkipped ? applySkipRef(skipHotelMarkup) : (event.markup_hotel ?? 0));
     return Math.ceil(ticketPrice + markup + flightComponent + hotelComponent);
   }
 
@@ -156,9 +172,11 @@ export function computePerPersonPackagePrice(
     event.skip_flight === true && flightSkipped && skipFlightMarkup > 0;
   const hotelSkipFee =
     hotelSkipped && !suppressHotelFee
-      ? (event.base_flight_price ?? 0) < HOTEL_SKIP_FLIGHT_THRESHOLD
-        ? HOTEL_SKIP_MARKUP_LOW
-        : HOTEL_SKIP_MARKUP_HIGH
+      ? applySkipRef(
+          (event.base_flight_price ?? 0) < HOTEL_SKIP_FLIGHT_THRESHOLD
+            ? HOTEL_SKIP_MARKUP_LOW
+            : HOTEL_SKIP_MARKUP_HIGH,
+        )
       : 0;
   return Math.ceil(
     ticketPrice +
