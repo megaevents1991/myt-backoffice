@@ -419,6 +419,7 @@ export type Database = {
         Row: {
           code: string
           created_at: string
+          created_by: string | null
           discount_type: string
           discount_value: number
           event_id: number | null
@@ -434,6 +435,7 @@ export type Database = {
         Insert: {
           code: string
           created_at?: string
+          created_by?: string | null
           discount_type: string
           discount_value: number
           event_id?: number | null
@@ -449,6 +451,7 @@ export type Database = {
         Update: {
           code?: string
           created_at?: string
+          created_by?: string | null
           discount_type?: string
           discount_value?: number
           event_id?: number | null
@@ -1974,6 +1977,7 @@ export type Database = {
           accounting_number: number | null
           aff_partner_tracking_code: string | null
           agent_card_discount_ils: number | null
+          agent_user_id: string | null
           billed_at: string | null
           booking_reference: string | null
           comments: string | null
@@ -1991,6 +1995,7 @@ export type Database = {
           gtmIdnts: Json | null
           hotel_order_info: Json
           id: number
+          is_deleted: string | null
           main_contact_email: string
           main_contact_first_name: string
           main_contact_last_name: string
@@ -2014,6 +2019,7 @@ export type Database = {
           accounting_number?: number | null
           aff_partner_tracking_code?: string | null
           agent_card_discount_ils?: number | null
+          agent_user_id?: string | null
           billed_at?: string | null
           booking_reference?: string | null
           comments?: string | null
@@ -2031,6 +2037,7 @@ export type Database = {
           gtmIdnts?: Json | null
           hotel_order_info: Json
           id?: number
+          is_deleted?: string | null
           main_contact_email: string
           main_contact_first_name: string
           main_contact_last_name: string
@@ -2054,6 +2061,7 @@ export type Database = {
           accounting_number?: number | null
           aff_partner_tracking_code?: string | null
           agent_card_discount_ils?: number | null
+          agent_user_id?: string | null
           billed_at?: string | null
           booking_reference?: string | null
           comments?: string | null
@@ -2071,6 +2079,7 @@ export type Database = {
           gtmIdnts?: Json | null
           hotel_order_info?: Json
           id?: number
+          is_deleted?: string | null
           main_contact_email?: string
           main_contact_first_name?: string
           main_contact_last_name?: string
