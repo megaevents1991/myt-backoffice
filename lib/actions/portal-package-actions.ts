@@ -137,6 +137,9 @@ export interface BuilderEvent {
   is_prioritized: boolean;
   /** Event tags (comma string) - the dashboard's sport/music quick filter. */
   tags: string | null;
+  /** Taxonomy tags (league/team/genre/city) - the dashboard's advanced
+   *  search builds its mapped filter options from these. */
+  tag_list: { type: string; name: string }[];
 }
 
 type EventListRow = {
@@ -243,6 +246,59 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
   ];
   const lockedSoldOut = await lockedFlightSoldOutSet(lockedIds);
 
+  // Taxonomy tags drive the dashboard search: the "vertical" slugs
+  // (football/music) feed the genre pills, and league/team/genre/city tag
+  // NAMES feed the advanced-search selects. events.tags itself is
+  // legacy-empty. Best-effort: a failure only degrades the filters.
+  const verticalByEvent = new Map<number, string[]>();
+  const tagListByEvent = new Map<number, { type: string; name: string }[]>();
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: allTags } = await (supabase as any)
+      .from("event_tags")
+      .select("id,slug,name,type")
+      .in("type", ["vertical", "league", "team", "genre", "city", "artist"])
+      .eq("is_active", true)
+      .eq("is_deleted", false);
+    const tags = (allTags ?? []) as {
+      id: number;
+      slug: string;
+      name: string;
+      type: string;
+    }[];
+    const eventIds = rows.map((r) => r.id);
+    if (tags.length > 0 && eventIds.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: links } = await (supabase as any)
+        .from("event_tag_links")
+        .select("event_id,tag_id")
+        .in(
+          "tag_id",
+          tags.map((t) => t.id),
+        )
+        .in("event_id", eventIds);
+      const tagById = new Map(tags.map((t) => [t.id, t]));
+      for (const link of (links ?? []) as {
+        event_id: number;
+        tag_id: number;
+      }[]) {
+        const tag = tagById.get(link.tag_id);
+        if (!tag) continue;
+        if (tag.type === "vertical") {
+          const existing = verticalByEvent.get(link.event_id) ?? [];
+          existing.push(tag.slug);
+          verticalByEvent.set(link.event_id, existing);
+        } else {
+          const existing = tagListByEvent.get(link.event_id) ?? [];
+          existing.push({ type: tag.type, name: tag.name });
+          tagListByEvent.set(link.event_id, existing);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("getPackageBuilderEvents taxonomy tags:", error);
+  }
+
   const builderEvents = rows.map((row) => {
     const tickets = ((row.tickets_and_rates ?? []) as EventTicket[])
       .filter(
@@ -294,7 +350,11 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
           : null,
       tx_excluded_sections: row.tx_excluded_sections ?? null,
       is_prioritized: row.is_prioritized === true,
-      tags: row.tags ?? null,
+      tags:
+        [row.tags, ...(verticalByEvent.get(row.id) ?? [])]
+          .filter(Boolean)
+          .join(",") || null,
+      tag_list: tagListByEvent.get(row.id) ?? [],
     };
   });
 

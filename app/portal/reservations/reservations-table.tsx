@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronLeft, Hotel, Plane, Ticket } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -155,6 +156,8 @@ export function ReservationsTable({
   rows,
   showAgentColumn,
   officeAgents,
+  hideFilters = false,
+  initialLimit,
 }: {
   rows: PortalReservation[];
   /** Manager view only - adds the "סוכן" column crediting each row. */
@@ -162,6 +165,11 @@ export function ReservationsTable({
   /** Manager view only - the office roster for the assignment Select's
    *  options (unused, and safe to omit, when showAgentColumn is false). */
   officeAgents?: { sub: string; name: string }[];
+  /** V2 dashboard embed - rows arrive pre-filtered and pre-sorted by the
+   *  server, so the filter bar is noise there. */
+  hideFilters?: boolean;
+  /** Show only the first N rows with a "הצג עוד" button (dashboard: 10). */
+  initialLimit?: number;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -170,6 +178,7 @@ export function ReservationsTable({
   const [sort, setSort] = useState<SortKey>("created");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [limit, setLimit] = useState<number>(initialLimit ?? 0);
 
   const handleAgentChange = async (reservationId: number, value: string) => {
     setSavingId(reservationId);
@@ -191,6 +200,9 @@ export function ReservationsTable({
   };
 
   const filtered = useMemo(() => {
+    // Dashboard embed: the server already filtered and sorted the rows.
+    if (hideFilters) return rows;
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayMs = today.getTime();
@@ -213,10 +225,16 @@ export function ReservationsTable({
       });
     }
     return list; // Server order: newest booking first.
-  }, [rows, futureOnly, status, sort]);
+  }, [rows, futureOnly, status, sort, hideFilters]);
+
+  // 0 = no cap (the full page). The dashboard caps at 10 and reveals more in
+  // steps of 10 (doc: "הצג 10 עם אופציה של הצג עוד אם יש").
+  const visible = limit > 0 ? filtered.slice(0, limit) : filtered;
+  const hiddenCount = filtered.length - visible.length;
 
   return (
     <div className="space-y-3">
+      {!hideFilters && (
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-md border bg-background px-4 py-3">
         <label className="flex items-center gap-2 text-sm">
           <Switch checked={futureOnly} onCheckedChange={setFutureOnly} />
@@ -253,6 +271,7 @@ export function ReservationsTable({
           {filtered.length} מתוך {rows.length}
         </span>
       </div>
+      )}
 
       {filtered.length === 0 ? (
         <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
@@ -282,7 +301,7 @@ export function ReservationsTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((reservation) => (
+              {visible.map((reservation) => (
                 <Fragment key={reservation.id}>
                 <TableRow
                   className="cursor-pointer"
@@ -425,6 +444,19 @@ export function ReservationsTable({
               ))}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {hiddenCount > 0 && (
+        <div className="flex justify-center">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setLimit((current) => current + 10)}
+          >
+            הצג עוד ({hiddenCount} נוספות)
+          </Button>
         </div>
       )}
     </div>
