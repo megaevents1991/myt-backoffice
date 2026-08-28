@@ -1868,6 +1868,7 @@ export type Database = {
           event_order_info: Json
           flight_order_info: Json | null
           flight_skipped: boolean
+          follow_up_date: string | null
           hotel_order_info: Json | null
           hotel_skipped: boolean
           id: number
@@ -1883,6 +1884,7 @@ export type Database = {
           event_order_info: Json
           flight_order_info?: Json | null
           flight_skipped?: boolean
+          follow_up_date?: string | null
           hotel_order_info?: Json | null
           hotel_skipped?: boolean
           id?: never
@@ -1898,6 +1900,7 @@ export type Database = {
           event_order_info?: Json
           flight_order_info?: Json | null
           flight_skipped?: boolean
+          follow_up_date?: string | null
           hotel_order_info?: Json | null
           hotel_skipped?: boolean
           id?: never
@@ -1923,6 +1926,7 @@ export type Database = {
           currency: string
           customer_name: string | null
           event_id: number | null
+          follow_up_date: string | null
           id: number
           line_items: Json
           notes: string | null
@@ -1941,6 +1945,7 @@ export type Database = {
           currency?: string
           customer_name?: string | null
           event_id?: number | null
+          follow_up_date?: string | null
           id?: never
           line_items?: Json
           notes?: string | null
@@ -1959,6 +1964,7 @@ export type Database = {
           currency?: string
           customer_name?: string | null
           event_id?: number | null
+          follow_up_date?: string | null
           id?: never
           line_items?: Json
           notes?: string | null
