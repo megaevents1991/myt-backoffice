@@ -47,16 +47,18 @@ const usdExact = new Intl.NumberFormat("en-US", {
 });
 
 /** The activity filter - scopes the activity tiles; the commission money
- *  tiles stay whole-history, same fact the invoice bills on. */
+ *  tiles stay whole-history, same fact the invoice bills on. Default is the
+ *  current calendar month (דור, 28.08) - "הכל" is heavy and rarely needed. */
 const RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
   { key: "today", label: "היום" },
   { key: "yesterday", label: "אתמול" },
   { key: "3d", label: "3 ימים" },
   { key: "7d", label: "7 ימים" },
-  { key: "30d", label: "30 יום" },
+  { key: "month", label: "החודש" },
   { key: "90d", label: "90 יום" },
   { key: "all", label: "הכל" },
 ];
+const DEFAULT_RANGE: InsightsRange = "month";
 
 /**
  * V2 dashboard, one page for every partner role (2026-08-28 doc pass):
@@ -83,7 +85,7 @@ export default async function PortalDashboardPage({
   const { range: rawRange } = await searchParams;
   const range: InsightsRange = RANGE_OPTIONS.some((o) => o.key === rawRange)
     ? (rawRange as InsightsRange)
-    : "all";
+    : DEFAULT_RANGE;
 
   const isManager = session.role === "office_manager";
   const isSeller = SELLER_ROLES.includes(session.role);
@@ -221,7 +223,11 @@ export default async function PortalDashboardPage({
         {RANGE_OPTIONS.map((option) => (
           <Link
             key={option.key}
-            href={option.key === "all" ? "/portal" : `/portal?range=${option.key}`}
+            href={
+              option.key === DEFAULT_RANGE
+                ? "/portal"
+                : `/portal?range=${option.key}`
+            }
             className={cn(
               "rounded-full border px-3 py-1 text-sm transition-colors",
               option.key === range
@@ -286,8 +292,8 @@ export default async function PortalDashboardPage({
           <CardHeader>
             <CardTitle>מה חדש?</CardTitle>
             <CardDescription>
-              אמנים וחבילות שעלו לאתר ב-30 הימים האחרונים - לחיצה על כרטיס פותחת
-              את כל התאריכים שלו, וכל קישור כבר נושא את קוד המעקב שלכם.
+              אמנים וחבילות שעלו לאתר לאחרונה - לחיצה על כרטיס פותחת את כל
+              התאריכים שלו, וכל קישור כבר נושא את קוד המעקב שלכם.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -315,6 +321,7 @@ export default async function PortalDashboardPage({
               showAgentColumn={isManager}
               officeAgents={reservationsPage.officeAgents}
               hideFilters
+              compact
               initialLimit={10}
             />
           )}

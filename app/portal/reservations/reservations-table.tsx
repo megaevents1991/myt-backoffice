@@ -158,6 +158,7 @@ export function ReservationsTable({
   officeAgents,
   hideFilters = false,
   initialLimit,
+  compact = false,
 }: {
   rows: PortalReservation[];
   /** Manager view only - adds the "סוכן" column crediting each row. */
@@ -170,6 +171,10 @@ export function ReservationsTable({
   hideFilters?: boolean;
   /** Show only the first N rows with a "הצג עוד" button (dashboard: 10). */
   initialLimit?: number;
+  /** Dashboard density: drops the secondary columns (created date, pax,
+   *  status, source, materials) so the table fits the page with NO
+   *  horizontal scroll. The expand row still shows the full details. */
+  compact?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -285,17 +290,17 @@ export function ReservationsTable({
               <TableRow>
                 <TableHead className="w-8" aria-label="פתיחת פירוט" />
                 <TableHead>מספר</TableHead>
-                <TableHead>תאריך</TableHead>
+                {!compact && <TableHead>תאריך</TableHead>}
                 <TableHead>לקוח</TableHead>
                 <TableHead>אמן / אירוע</TableHead>
                 <TableHead>יעד</TableHead>
                 <TableHead>תאריך האירוע</TableHead>
                 <TableHead className="text-center">כרטיסים</TableHead>
-                <TableHead className="text-center">נוסעים</TableHead>
-                <TableHead>סטטוס</TableHead>
-                <TableHead>מקור</TableHead>
+                {!compact && <TableHead className="text-center">נוסעים</TableHead>}
+                {!compact && <TableHead>סטטוס</TableHead>}
+                {!compact && <TableHead>מקור</TableHead>}
                 {showAgentColumn && <TableHead>סוכן</TableHead>}
-                <TableHead>חומר ללקוח</TableHead>
+                {!compact && <TableHead>חומר ללקוח</TableHead>}
                 <TableHead className="text-left">סכום</TableHead>
                 <TableHead className="text-left">העמלה שלי</TableHead>
               </TableRow>
@@ -321,9 +326,11 @@ export function ReservationsTable({
                   <TableCell className="font-medium">
                     {reservation.booking_reference || reservation.id}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {formatDate(reservation.created_at)}
-                  </TableCell>
+                  {!compact && (
+                    <TableCell className="whitespace-nowrap">
+                      {formatDate(reservation.created_at)}
+                    </TableCell>
+                  )}
                   <TableCell className="max-w-[7rem]">
                     <span className="block truncate">
                       {reservation.customer_name || "-"}
@@ -350,33 +357,39 @@ export function ReservationsTable({
                   <TableCell className="text-center tabular-nums">
                     {reservation.tickets || "-"}
                   </TableCell>
-                  <TableCell className="text-center tabular-nums">
-                    {reservation.pax}
-                  </TableCell>
-                  <TableCell>
-                    <span className="flex flex-wrap items-center gap-1">
-                      <Badge variant={isPaid(reservation) ? "default" : "outline"}>
-                        {reservation.status}
-                      </Badge>
-                      {reservation.voucher_state && (
-                        <Badge variant="secondary" className="whitespace-nowrap">
-                          {reservation.voucher_state === "sent"
-                            ? "שובר נשלח"
-                            : reservation.voucher_state === "received"
-                              ? "שובר נקלט"
-                              : "שובר נגבה"}
+                  {!compact && (
+                    <TableCell className="text-center tabular-nums">
+                      {reservation.pax}
+                    </TableCell>
+                  )}
+                  {!compact && (
+                    <TableCell>
+                      <span className="flex flex-wrap items-center gap-1">
+                        <Badge variant={isPaid(reservation) ? "default" : "outline"}>
+                          {reservation.status}
                         </Badge>
-                      )}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={reservation.source === "link" ? "outline" : "secondary"}
-                      className="whitespace-nowrap"
-                    >
-                      {SOURCE_LABELS[reservation.source]}
-                    </Badge>
-                  </TableCell>
+                        {reservation.voucher_state && (
+                          <Badge variant="secondary" className="whitespace-nowrap">
+                            {reservation.voucher_state === "sent"
+                              ? "שובר נשלח"
+                              : reservation.voucher_state === "received"
+                                ? "שובר נקלט"
+                                : "שובר נגבה"}
+                          </Badge>
+                        )}
+                      </span>
+                    </TableCell>
+                  )}
+                  {!compact && (
+                    <TableCell>
+                      <Badge
+                        variant={reservation.source === "link" ? "outline" : "secondary"}
+                        className="whitespace-nowrap"
+                      >
+                        {SOURCE_LABELS[reservation.source]}
+                      </Badge>
+                    </TableCell>
+                  )}
                   {showAgentColumn && (
                     <TableCell
                       className="max-w-[9rem]"
@@ -404,13 +417,17 @@ export function ReservationsTable({
                       </Select>
                     </TableCell>
                   )}
-                  <TableCell>
-                    {reservation.materials_sent ? (
-                      <span className="text-sm">נשלח</span>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">טרם נשלח</span>
-                    )}
-                  </TableCell>
+                  {!compact && (
+                    <TableCell>
+                      {reservation.materials_sent ? (
+                        <span className="text-sm">נשלח</span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">
+                          טרם נשלח
+                        </span>
+                      )}
+                    </TableCell>
+                  )}
                   <TableCell className="text-left tabular-nums">
                     {usd.format(reservation.user_shown_price)}
                   </TableCell>
@@ -435,7 +452,12 @@ export function ReservationsTable({
                 </TableRow>
                 {expandedId === reservation.id && (
                   <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableCell colSpan={showAgentColumn ? 15 : 14} className="px-6">
+                    <TableCell
+                      colSpan={
+                        (compact ? 9 : 14) + (showAgentColumn ? 1 : 0)
+                      }
+                      className="px-6"
+                    >
                       <ChoicesPanel reservation={reservation} />
                     </TableCell>
                   </TableRow>

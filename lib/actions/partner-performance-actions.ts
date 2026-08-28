@@ -69,6 +69,7 @@ export type InsightsRange =
   | "7d"
   | "30d"
   | "90d"
+  | "month"
   | "all";
 
 export interface TopCount {
@@ -198,6 +199,23 @@ export async function rangeWindowISO(
     case "3d":
       // Last three calendar days, today included.
       return { from: jerusalemMidnight(2), to: null };
+    case "month": {
+      // Current calendar month (Jerusalem): the 1st, 00:00, to now.
+      const monthStart = `${JLM_DATE.format(new Date()).slice(0, 8)}01`;
+      for (const offset of ["+03:00", "+02:00"]) {
+        const candidate = new Date(`${monthStart}T00:00:00${offset}`);
+        if (
+          JLM_DATE.format(candidate) === monthStart &&
+          JLM_HOUR.format(candidate) === "00"
+        ) {
+          return { from: candidate.toISOString(), to: null };
+        }
+      }
+      return {
+        from: new Date(`${monthStart}T00:00:00+03:00`).toISOString(),
+        to: null,
+      };
+    }
     case "all":
       return { from: null, to: null };
     default: {

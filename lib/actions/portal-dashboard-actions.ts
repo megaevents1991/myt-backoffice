@@ -637,14 +637,20 @@ export async function getPortalDashboard(
     });
     groupsByKey.set(key, group);
   }
-  // Variety top-up: the 30-day window is often all music drops. When fewer
-  // than a handful of TEAM cards made it in, pull slightly older fixtures
-  // (30–90 days back, still future-dated) so sports is always represented
-  // (דור, 2026-08-09 - "שיהיה מגוון, גם אם ישנים מעט יותר").
-  const MIN_TEAM_CARDS = 4;
-  const teamCardCount = () =>
-    [...groupsByKey.keys()].filter((key) => key.startsWith("team:")).length;
-  if (teams.length > 0 && teamCardCount() < MIN_TEAM_CARDS) {
+  // Quota top-up (דור, 28.08): the rail must offer at least 10 cards -
+  // minimum 3 football and minimum 8 shows. The 30-day window is often
+  // lopsided, so pull slightly older drops (30-90 days back, still
+  // future-dated) until each quota is met; data permitting.
+  const MIN_TEAM_CARDS = 3;
+  const MIN_ARTIST_CARDS = 8;
+  const cardCount = (prefix: "team:" | "artist:") =>
+    [...groupsByKey.keys()].filter((key) => key.startsWith(prefix)).length;
+  const teamCardCount = () => cardCount("team:");
+  const artistCardCount = () => cardCount("artist:");
+  if (
+    (teams.length > 0 && teamCardCount() < MIN_TEAM_CARDS) ||
+    (artists.length > 0 && artistCardCount() < MIN_ARTIST_CARDS)
+  ) {
     const olderSince = new Date(Date.now() - 90 * 86_400_000).toISOString();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: olderRows, error: olderError } = await (supabase as any)
@@ -670,28 +676,43 @@ export async function getPortalDashboard(
         card_image_url: string | null;
         art_image_url: string | null;
       }[]) {
-        if (teamCardCount() >= MIN_TEAM_CARDS) break;
+        const teamNeeded = teamCardCount() < MIN_TEAM_CARDS;
+        const artistNeeded = artistCardCount() < MIN_ARTIST_CARDS;
+        if (!teamNeeded && !artistNeeded) break;
         const eventName = norm(raw.name);
         if (!eventName) continue;
-        // Team-matched fixtures only - the top-up exists for sports variety.
-        const match = teams
-          .map((candidate) => {
-            const positions = [candidate.he, candidate.en]
-              .filter(Boolean)
-              .map((needle) => eventName.indexOf(needle))
-              .filter((position) => position >= 0);
-            return positions.length
-              ? {
-                  candidate,
-                  pos: Math.min(...positions),
-                  len: Math.max(candidate.he.length, candidate.en.length),
-                }
-              : null;
-          })
-          .filter(Boolean)
-          .sort((a, b) => a!.pos - b!.pos || b!.len - a!.len)[0]?.candidate;
+        // Same precedence as the main pass: artist substring first, then the
+        // earliest-positioned team - but only for a kind still under quota.
+        const artist = artistNeeded
+          ? artists.find(
+              (candidate) =>
+                (candidate.he && eventName.includes(candidate.he)) ||
+                (candidate.en && eventName.includes(candidate.en)),
+            )
+          : undefined;
+        const team =
+          !artist && teamNeeded
+            ? teams
+                .map((candidate) => {
+                  const positions = [candidate.he, candidate.en]
+                    .filter(Boolean)
+                    .map((needle) => eventName.indexOf(needle))
+                    .filter((position) => position >= 0);
+                  return positions.length
+                    ? {
+                        candidate,
+                        pos: Math.min(...positions),
+                        len: Math.max(candidate.he.length, candidate.en.length),
+                      }
+                    : null;
+                })
+                .filter(Boolean)
+                .sort((a, b) => a!.pos - b!.pos || b!.len - a!.len)[0]
+                ?.candidate
+            : undefined;
+        const match = artist ?? team;
         if (!match) continue;
-        const key = `team:${match.he || match.en}`;
+        const key = `${match.kind}:${match.he || match.en}`;
         const group = groupsByKey.get(key) ?? {
           key,
           name: match.name || match.name_english || raw.name,
