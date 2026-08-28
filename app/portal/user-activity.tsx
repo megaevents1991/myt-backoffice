@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronLeft, UserRound } from "lucide-react";
+import { ChevronLeft, UserRound } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -71,11 +71,11 @@ function UserBlock({
         }`}
         aria-expanded={open}
       >
-        {open ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
-        )}
+        <ChevronLeft
+          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out ${
+            open ? "-rotate-90" : ""
+          }`}
+        />
         <UserRound className="h-4 w-4 shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate font-mono text-sm" dir="ltr">
           {userId}

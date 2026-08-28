@@ -4,6 +4,9 @@ import tailwindcssTypography from "@tailwindcss/typography";
 
 const config: Config = {
   darkMode: ["class"],
+  // Touch devices fire :hover on tap and it sticks until the next tap - gate
+  // every hover: variant behind (hover:hover) and (pointer:fine).
+  future: { hoverOnlyWhenSupported: true },
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -85,6 +88,12 @@ const config: Config = {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      // Strong curves (globals.css tokens) instead of the weak CSS built-ins -
+      // `ease-out` / `ease-in-out` utilities now resolve to these.
+      transitionTimingFunction: {
+        out: "var(--ease-out)",
+        "in-out": "var(--ease-in-out)",
       },
       boxShadow: {
         // Main-app card shadow scale (tailwind.config.ts there) - used by the portal.

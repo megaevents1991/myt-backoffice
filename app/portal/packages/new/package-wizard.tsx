@@ -182,9 +182,11 @@ export function PackageWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qty]);
 
-  // Main scrolls to the top on every step change (OrderForm.tsx).
+  // Snap to the top instantly on step change - the step body's entrance
+  // animation carries the transition; smooth-scrolling under freshly-swapped
+  // content made the page slide beneath it (and was a vestibular trigger).
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: "auto" });
   }, [step]);
 
   const matches = useMemo(() => {
@@ -936,10 +938,17 @@ export function PackageWizard({
           </section>
         )}
 
-        {step === 1 && <TicketStep />}
-        {step === 2 && <FlightStep />}
-        {step === 3 && <HotelStep />}
-        {step === 4 && <ReviewStep editStep={editStep} />}
+        {/* key={step} remounts the wrapper so each step enters with a short
+            fade+rise instead of a hard cut (the stepper dots already animate). */}
+        <div
+          key={step}
+          className="animate-in fade-in slide-in-from-bottom-2 duration-300"
+        >
+          {step === 1 && <TicketStep />}
+          {step === 2 && <FlightStep />}
+          {step === 3 && <HotelStep />}
+          {step === 4 && <ReviewStep editStep={editStep} />}
+        </div>
 
         {/* Sticky continue bar - steps 1-3, exactly like main */}
         {step >= 1 && step <= 3 && (

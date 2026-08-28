@@ -361,7 +361,7 @@ export function DashboardSearch({
       </div>
 
       {advOpen && (
-        <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
+        <div className="animate-in fade-in slide-in-from-top-2 duration-200 space-y-3 rounded-xl border bg-muted/30 p-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="space-y-1 text-sm">
               <span className="text-muted-foreground">מתאריך</span>

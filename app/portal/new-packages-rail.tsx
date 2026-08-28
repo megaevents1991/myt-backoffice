@@ -55,7 +55,11 @@ export function NewPackagesRail({ groups }: { groups: PortalNewGroup[] }) {
   const page = (direction: 1 | -1) => {
     const rail = railRef.current;
     if (!rail) return;
-    rail.scrollBy({ left: direction * -rail.clientWidth * 0.9, behavior: "smooth" });
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    rail.scrollBy({
+      left: direction * -rail.clientWidth * 0.9,
+      behavior: reduce ? "auto" : "smooth",
+    });
   };
 
   return (
@@ -74,7 +78,7 @@ export function NewPackagesRail({ groups }: { groups: PortalNewGroup[] }) {
                 type="button"
                 aria-expanded={selected}
                 onClick={() => setOpenKey(selected ? null : group.key)}
-                className={`group w-36 shrink-0 overflow-hidden rounded-xl border-2 bg-[#0A1A14] text-right transition-all duration-200 ${
+                className={`group w-36 shrink-0 overflow-hidden rounded-xl border-2 bg-[#0A1A14] text-right transition-[border-color,box-shadow] duration-200 ${
                   selected
                     ? "border-[#5BFF95] shadow-[0_0_0_3px_rgba(91,255,149,.25)]"
                     : "border-transparent hover:border-[#5BFF95]/50"
@@ -132,7 +136,7 @@ export function NewPackagesRail({ groups }: { groups: PortalNewGroup[] }) {
       </div>
 
       {open && (
-        <div className="rounded-xl border bg-muted/30 p-4">
+        <div className="animate-in fade-in slide-in-from-top-2 duration-200 rounded-xl border bg-muted/30 p-4">
           <p className="mb-2 text-sm font-semibold">
             התאריכים הקרובים של {open.name}
           </p>

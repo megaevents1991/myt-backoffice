@@ -190,7 +190,7 @@ export function PackagesList({
         </p>
         <Button
           asChild
-          className="mt-4 rounded-full bg-brand-mint px-5 font-semibold text-brand-forest transition-all duration-200 hover:bg-brand-mint/90 hover:shadow-mint-glow active:scale-[0.98]"
+          className="mt-4 rounded-full bg-brand-mint px-5 font-semibold text-brand-forest transition-[background-color,box-shadow,transform] duration-200 ease-out hover:bg-brand-mint/90 hover:shadow-mint-glow active:scale-[0.98]"
         >
           <Link href="/portal/packages/new">בניית חבילה</Link>
         </Button>

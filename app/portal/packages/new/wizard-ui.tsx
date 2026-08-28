@@ -300,6 +300,25 @@ function useCountUp(target: number, duration = 520) {
   return value;
 }
 
+/** Build bar that actually animates: mounts at scaleX(0) and fills over the
+ *  same 1700ms the "מרכיבים…" label narrates, so bar and copy agree. scaleX
+ *  (not width) keeps it off the layout path; origin-right fills RTL-correctly. */
+export function BuildProgressBar() {
+  const [grow, setGrow] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setGrow(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-border">
+      <div
+        className="h-full origin-right rounded-full bg-brand-mint transition-transform duration-[1700ms] ease-linear"
+        style={{ transform: grow ? "scaleX(1)" : "scaleX(0)" }}
+      />
+    </div>
+  );
+}
+
 const ACCENT_FG = "text-brand-forest dark:text-brand-mint";
 
 export interface ContinueSlot {
@@ -361,7 +380,7 @@ export function ContinueBar({
 
   return (
     <div className="sticky bottom-0 z-40 -mx-2 border-t border-border bg-background/85 px-2 backdrop-blur sm:mx-0 sm:px-0">
-      <style>{`@keyframes ocb-pop { from { opacity: 0; transform: scale(.4);} to { opacity: 1; transform: scale(1);} }`}</style>
+      <style>{`@keyframes ocb-pop { from { opacity: 0; transform: scale(.92);} to { opacity: 1; transform: scale(1);} }`}</style>
       <div dir="rtl" className="mx-auto w-full max-w-5xl px-0 py-2 sm:py-1.5">
         <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-[0_18px_44px_-24px_rgba(10,26,20,.35)]">
           <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3 sm:px-3 sm:py-2">
@@ -379,7 +398,7 @@ export function ContinueBar({
                       type={clickable ? "button" : undefined}
                       onClick={clickable ? () => onSlotClick(slot.target!) : undefined}
                       className={cn(
-                        "flex min-w-0 flex-1 items-center gap-2 rounded-xl border-[1.5px] px-2.5 py-2 text-right transition-colors duration-300",
+                        "flex min-w-0 flex-1 items-center gap-2 rounded-xl border-[1.5px] px-2.5 py-2 text-right transition-[color,background-color,border-color,transform] duration-200 ease-out",
                         filled
                           ? "border-brand-forest/70 bg-brand-mint/[0.13] dark:border-brand-mint/60"
                           : "border-dashed border-border bg-card",
@@ -413,7 +432,7 @@ export function ContinueBar({
                       {filled && (
                         <span
                           className={cn("mr-auto", ACCENT_FG)}
-                          style={{ animation: "ocb-pop .3s ease both" }}
+                          style={{ animation: "ocb-pop .2s var(--ease-out) both" }}
                         >
                           <Check size={16} strokeWidth={2.6} />
                         </span>
@@ -449,12 +468,7 @@ export function ContinueBar({
 
               {building ? (
                 <div className="flex min-w-56 flex-1 flex-col gap-1.5 sm:flex-none">
-                  <div className="h-2 overflow-hidden rounded-full bg-border">
-                    <div
-                      className="h-full rounded-full transition-[width] duration-[1800ms] ease-out"
-                      style={{ width: "100%", background: "hsl(var(--brand-mint))" }}
-                    />
-                  </div>
+                  <BuildProgressBar />
                   <span className={cn("text-center text-[13px] font-extrabold", ACCENT_FG)}>
                     {buildDone ? "✓ החבילה מוכנה!" : "מרכיבים את החבילה…"}
                   </span>
@@ -486,7 +500,7 @@ export function ContinueBar({
                     disabled={primaryDisabled}
                     onClick={onPrimary}
                     className={cn(
-                      "flex-[1.4] whitespace-nowrap rounded-md bg-brand-forest px-5 py-2.5 text-xs font-semibold text-white transition-all dark:bg-brand-mint dark:text-brand-forest sm:flex-none sm:px-4",
+                      "flex-[1.4] whitespace-nowrap rounded-md bg-brand-forest px-5 py-2.5 text-xs font-semibold text-white transition-[transform,box-shadow,background-color,color] duration-200 ease-out dark:bg-brand-mint dark:text-brand-forest sm:flex-none sm:px-4",
                       secondaryActions && secondaryActions.length > 0
                         ? "sm:self-stretch"
                         : "sm:py-1.5",

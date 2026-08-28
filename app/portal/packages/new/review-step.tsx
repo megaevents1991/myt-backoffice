@@ -40,7 +40,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { createQuote } from "@/lib/actions/quote-actions";
 import { cn } from "@/lib/utils";
 import { useWizard } from "./wizard-context";
-import { dateFmt, dateOnly, deltaNote, usd, type Delta } from "./wizard-ui";
+import {
+  BuildProgressBar,
+  dateFmt,
+  dateOnly,
+  deltaNote,
+  usd,
+  type Delta,
+} from "./wizard-ui";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -515,18 +522,13 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
           then the ready link + the two CTAs. */}
       {building || (w.link == null && !w.submitError) ? (
         <div className="flex flex-col gap-1.5">
-          <div className="h-2 overflow-hidden rounded-full bg-border">
-            <div
-              className="h-full rounded-full transition-[width] duration-[1800ms] ease-out"
-              style={{ width: "100%", background: "hsl(var(--brand-mint))" }}
-            />
-          </div>
+          <BuildProgressBar />
           <span className="text-center text-[13px] font-extrabold text-brand-forest dark:text-brand-mint">
             {buildDone ? "✓ החבילה כמעט מוכנה!" : "מרכיבים את החבילה…"}
           </span>
         </div>
       ) : w.link != null ? (
-        <div className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-card">
+        <div className="animate-in fade-in zoom-in-95 duration-300 space-y-3 rounded-2xl border border-border bg-card p-4 shadow-card">
           <div className="flex items-center gap-2">
             <Link2 className="size-4 shrink-0 text-brand-forest dark:text-brand-mint" />
             <p className="text-sm font-bold">הלינק לחבילה מוכן</p>
@@ -744,7 +746,7 @@ function SendOfferDialog({
         </DialogHeader>
 
         {doneMsg ? (
-          <div className="space-y-4">
+          <div className="animate-in fade-in duration-300 space-y-4">
             <p className="text-sm font-medium text-success">{doneMsg}</p>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

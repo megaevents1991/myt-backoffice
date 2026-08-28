@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronLeft, Hotel, Plane, Ticket } from "lucide-react";
+import { ChevronLeft, Hotel, Plane, Ticket } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -317,11 +317,11 @@ export function ReservationsTable({
                   }
                 >
                   <TableCell className="w-8 pe-0 text-muted-foreground">
-                    {expandedId === reservation.id ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronLeft className="h-4 w-4" />
-                    )}
+                    <ChevronLeft
+                      className={`h-4 w-4 transition-transform duration-200 ease-out ${
+                        expandedId === reservation.id ? "-rotate-90" : ""
+                      }`}
+                    />
                   </TableCell>
                   <TableCell className="font-medium">
                     {reservation.booking_reference || reservation.id}
@@ -458,7 +458,9 @@ export function ReservationsTable({
                       }
                       className="px-6"
                     >
-                      <ChoicesPanel reservation={reservation} />
+                      <div className="animate-in fade-in duration-200">
+                        <ChoicesPanel reservation={reservation} />
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}

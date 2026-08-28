@@ -94,6 +94,41 @@ body {
 }
 
 /*
+ * Motion tokens - the single source for curves (mirrors the strength of
+ * main's --ease-out). Use via `ease-out` / `ease-in-out` utilities (mapped in
+ * tailwind.config.ts) or var() in hand-written animations.
+ */
+@layer base {
+  :root {
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  }
+}
+
+@layer utilities {
+  /* tailwindcss-animate sets animation-name + duration but never a timing
+   * function, so every shadcn entrance (select, dialog, toast...) ran on the
+   * browser's weak default `ease`. Give them the strong ease-out. */
+  .animate-in,
+  .animate-out {
+    animation-timing-function: var(--ease-out);
+  }
+}
+
+/* Reduced motion - same blanket off-ramp as the main app's globals.css:
+ * every animation/transition must degrade here. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
  * Partner portal theme - the main app's brand (forest #0A1A14 + glow mint
  * #5BFF95 + the neon accent set), scoped to the /portal subtree only. The
  * admin dashboard above keeps the stock neutral tokens; shadcn primitives

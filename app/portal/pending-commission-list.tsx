@@ -8,7 +8,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronLeft } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import type { PendingCommissionRow } from "@/lib/actions/portal-dashboard-actions";
 
 const VISIBLE_ROWS = 6;
@@ -30,15 +30,16 @@ export function PendingCommissionList({ rows }: { rows: PendingCommissionRow[] }
         onClick={() => setOpen((value) => !value)}
         className="flex min-h-6 items-center gap-1 text-xs font-medium text-primary transition-colors hover:opacity-80"
       >
-        {open ? (
-          <ChevronDown className="h-3.5 w-3.5" aria-hidden />
-        ) : (
-          <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
-        )}
+        <ChevronLeft
+          aria-hidden
+          className={`h-3.5 w-3.5 transition-transform duration-200 ease-out ${
+            open ? "-rotate-90" : ""
+          }`}
+        />
         {rows.length === 1 ? "הזמנה אחת פתוחה" : `${rows.length} הזמנות פתוחות`}
       </button>
       {open && (
-        <ul className="mt-2 space-y-1 border-t pt-2">
+        <ul className="animate-in fade-in duration-200 mt-2 space-y-1 border-t pt-2">
           {rows.slice(0, VISIBLE_ROWS).map((row) => (
             <li
               key={row.id}

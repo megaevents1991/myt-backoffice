@@ -557,7 +557,7 @@ function OfflineHotelCard({ groupKey, group }: { groupKey: string; group: Builde
       <div
         dir="rtl"
         className={cn(
-          "relative rounded-lg border-2 border-border bg-card p-4 pt-5 shadow-lg transition-shadow lg:pt-4",
+          "relative rounded-lg border-2 border-border bg-card p-4 pt-5 shadow-lg transition-colors lg:pt-4",
           isSelected && "border-brand-forest bg-brand-mint/10 dark:border-brand-mint",
           otherGroupSelected && "opacity-50",
         )}
