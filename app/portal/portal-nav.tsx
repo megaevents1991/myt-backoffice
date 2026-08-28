@@ -5,24 +5,35 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type NavItem = { name: string; href: string; roles?: string[]; creditGated?: boolean };
+type NavItem = {
+  name: string;
+  href: string;
+  roles?: string[];
+  creditGated?: boolean;
+  /** Extra path prefixes that light this item up as active (V2: the hub
+   *  tabs צבירה/קופונים live on their own routes but belong to
+   *  "מידע ועדכונים"; packages belong to the dashboard's search). */
+  alsoActiveOn?: string[];
+};
 
+/**
+ * V2 menu (2026-08-27 spec): דשבורד | הצעות מחיר | ההזמנות שלי |
+ * מידע ועדכונים | הפרופיל שלי (+ הצוות שלי for office managers).
+ * חבילות/צבירה/קופונים left the bar - the dashboard's search engine covers
+ * links/packages, and credit/coupons became tabs of the מידע ועדכונים hub.
+ */
 const navItems: NavItem[] = [
-  { name: "דשבורד", href: "/portal" },
-  { name: "החבילות והלינקים שלי", href: "/portal/packages" },
-  // Credit is per-agent now, gated only by whether the office has a credit
-  // agreement at all (creditGated resolves via the showCredit prop computed
-  // server-side - see app/portal/layout.tsx).
-  { name: "הצבירה שלי", href: "/portal/credit", creditGated: true },
-  // Coupons stay open to every partner role regardless of the credit
-  // agreement - affiliates lean on them for their audience discount.
-  { name: "הקופונים שלי", href: "/portal/coupons" },
-  { name: "ההזמנות שלי", href: "/portal/reservations" },
+  { name: "דשבורד", href: "/portal", alsoActiveOn: ["/portal/packages"] },
   // Sellers only - an influencer promotes a link and never prices a package
   // for a named customer. The server action enforces it too.
   { name: "הצעות מחיר", href: "/portal/quotes", roles: ["agent", "office_manager"] },
+  { name: "ההזמנות שלי", href: "/portal/reservations" },
+  {
+    name: "מידע ועדכונים",
+    href: "/portal/activity",
+    alsoActiveOn: ["/portal/credit", "/portal/coupons"],
+  },
   { name: "הצוות שלי", href: "/portal/team", roles: ["office_manager"] },
-  { name: "עדכונים", href: "/portal/activity" },
   { name: "הפרופיל שלי", href: "/portal/profile" },
 ];
 
@@ -65,7 +76,10 @@ export function PortalNav({
         .map((item) => {
         const isActive =
           pathname === item.href ||
-          (item.href !== "/portal" && pathname.startsWith(`${item.href}/`));
+          (item.href !== "/portal" && pathname.startsWith(`${item.href}/`)) ||
+          (item.alsoActiveOn ?? []).some(
+            (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+          );
 
         return (
           <Link

@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ConvertCredit } from "./convert-credit";
+import { InfoTabs } from "../info-tabs";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -55,6 +56,8 @@ export default async function PortalCreditPage() {
 
   return (
     <div className="space-y-6">
+      {/* V2: credit reads as a tab of the "מידע ועדכונים" hub. */}
+      <InfoTabs active="credit" showCredit={creditAllowed} />
       <Card>
         <CardHeader>
           <CardTitle>הצבירה שלי</CardTitle>

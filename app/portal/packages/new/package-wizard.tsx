@@ -10,24 +10,13 @@
  */
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import Link from "next/link";
-import {
-  BedDouble,
-  Check,
-  Copy,
-  ExternalLink,
-  FileText,
-  Loader2,
-  Plane,
-  Search,
-  Ticket,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { BedDouble, Plane, Search, Ticket } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { computePerPersonPackagePrice } from "@/lib/package-price";
 import {
   createPreparedPackage,
+  updatePreparedPackage,
   getAgentOrderHandoffLink,
   getLiveTicketOffers,
   getPackageBuilderInventory,
@@ -68,9 +57,6 @@ import { ReviewStep } from "./review-step";
 
 const STEPS = ["אירוע", "כרטיסים", "טיסה", "מלון", "סיום"] as const;
 
-const MINT_CTA =
-  "rounded-full bg-brand-mint px-5 font-semibold text-brand-forest transition-all duration-200 hover:bg-brand-mint/90 hover:shadow-mint-glow active:scale-[0.98]";
-
 export function PackageWizard({
   events,
   initialEventId,
@@ -102,6 +88,10 @@ export function PackageWizard({
   const [copied, setCopied] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [handoffPending, startHandoffTransition] = useTransition();
+  // V2 summary: price adjustment per traveller (positive = extra commission,
+  // negative = discount out of the commission). Reaches the customer through
+  // the quote link/PDF only - the plain package link always prices live.
+  const [adjustPerPerson, setAdjustPerPerson] = useState(0);
 
   // Live flight search
   const [fsDepart, setFsDepart] = useState("");
@@ -217,9 +207,24 @@ export function PackageWizard({
   // offers are priced and seated for the old party, and the qty-change effect
   // just cleared the lists on purpose.
   const searchQtyRef = useRef<number>(2);
+  // V2 auto-build: the composition signature last sent to the server - the
+  // step-4 effect submits only when it changes (create once, then updates).
+  const lastSubmittedSigRef = useRef<string | null>(null);
+  // One auto-search attempt per (event, qty, dates) key - a failed search must
+  // not retry in a loop; the agent can still hit the search button manually.
+  const autoFsKeyRef = useRef<string | null>(null);
+  const autoHsKeyRef = useRef<string | null>(null);
 
   const selectEvent = (e: BuilderEvent) => {
     activeEventIdRef.current = e.id;
+    // Picking a DIFFERENT event starts a NEW package - never silently
+    // repoint a link that may already be in a customer's hands.
+    if (event && event.id !== e.id) {
+      setLink(null);
+      setCreatedId(null);
+      lastSubmittedSigRef.current = null;
+    }
+    setAdjustPerPerson(0);
     setEvent(e);
     setCategory(cheapestCategory(e.tickets));
     setFlightChoice({ mode: "live" });
@@ -508,12 +513,35 @@ export function PackageWizard({
     if (step === 4) setReturnToSummary(false);
   }, [step]);
 
-  // ------- submit -------
+  // ------- submit (V2: auto-build on the summary; edits UPDATE the row) -------
+  // What identifies a composition - when this changes on the summary, the
+  // package row is (re)written. allowEdit is part of it so flipping the lock
+  // syncs too. hotelSkipRefPerGuest is data-derived, not a choice - excluded.
+  const compositionSig = JSON.stringify({
+    e: event?.id ?? null,
+    c: category,
+    q: qty,
+    ae: allowEdit,
+    f:
+      flightChoice.mode === "offline"
+        ? ["offline", flightChoice.flightId]
+        : flightChoice.mode === "live-offer"
+          ? ["live-offer", flightChoice.offer.id]
+          : [flightChoice.mode],
+    h:
+      hotelChoice.mode === "offline"
+        ? ["offline", selectedUnits]
+        : hotelChoice.mode === "live-offer"
+          ? ["live-offer", hotelChoice.option.key]
+          : [hotelChoice.mode],
+  });
+
   const submit = () => {
     if (!event || !category) return;
     setSubmitError(null);
+    lastSubmittedSigRef.current = compositionSig;
     startTransition(async () => {
-      const result = await createPreparedPackage({
+      const input = {
         eventId: event.id,
         category,
         qty,
@@ -521,37 +549,119 @@ export function PackageWizard({
         hotelSkipRefPerGuest,
         flight:
           flightChoice.mode === "live-offer"
-            ? { mode: "live-offer", offer: flightChoice.offer }
+            ? ({ mode: "live-offer", offer: flightChoice.offer } as const)
             : flightChoice,
         hotel:
           hotelChoice.mode === "offline"
-            ? {
+            ? ({
                 mode: "offline",
                 units: Object.entries(selectedUnits).map(([rowId, count]) => ({
                   rowId: Number(rowId),
                   count,
                 })),
-              }
+              } as const)
             : hotelChoice.mode === "live-offer"
-              ? { mode: "live-offer", offer: hotelChoice.option.snapshot }
+              ? ({ mode: "live-offer", offer: hotelChoice.option.snapshot } as const)
               : hotelChoice,
-      });
+      };
+      const result =
+        createdId != null
+          ? await updatePreparedPackage(createdId, input)
+          : await createPreparedPackage(input);
       if (result.ok) {
         setLink(result.link);
         setCreatedId(result.packageId);
-      } else setSubmitError(result.error);
+      } else {
+        // Allow a manual retry (and the effect to re-fire after a change).
+        lastSubmittedSigRef.current = null;
+        setSubmitError(result.error);
+      }
     });
   };
 
-  const copyLink = async () => {
-    if (!link) return;
+  // Auto-build: entering the summary (or changing the composition on it)
+  // creates/updates the package - no "יצירת לינק" button anymore (V2 spec:
+  // "לינק יבנה אוטמטי").
+  useEffect(() => {
+    if (step !== 4 || !event || !selectedTicket || isPending) return;
+    if (lastSubmittedSigRef.current === compositionSig) return;
+    submit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, compositionSig, isPending, !!event, !!selectedTicket]);
+
+  // Auto flight search: the flight step opens with results running (V2 spec:
+  // "שכבר יופיעו התוצאות") - dates are preseeded from the event. One attempt
+  // per key; the manual search button still works after a failure.
+  useEffect(() => {
+    if (step !== 2 || !event || event.locked_flight_id != null) return;
+    if (!fsDepart || !fsReturn) return;
+    if (fsResults != null || fsLoading) return;
+    const key = `${event.id}|${qty}|${fsDepart}|${fsReturn}`;
+    if (autoFsKeyRef.current === key) return;
+    autoFsKeyRef.current = key;
+    runFlightSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, event?.id, qty, fsDepart, fsReturn, fsResults, fsLoading]);
+
+  // Auto hotel search: same for the hotel step - seed the dates first (the
+  // state lands next render, which re-runs this effect into the search).
+  useEffect(() => {
+    if (step !== 3 || !event) return;
+    if (hsResults != null || hsLoading) return;
+    if (!hsCheckin || !hsCheckout) {
+      const d = defaultHotelDates();
+      if (!d.checkin || !d.checkout) return;
+      setHsCheckin(d.checkin);
+      setHsCheckout(d.checkout);
+      return;
+    }
+    const key = `${event.id}|${qty}|${hsCheckin}|${hsCheckout}`;
+    if (autoHsKeyRef.current === key) return;
+    autoHsKeyRef.current = key;
+    runHotelSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, event?.id, qty, hsCheckin, hsCheckout, hsResults, hsLoading]);
+
+  const copyLink = async (override?: string) => {
+    const value = override ?? link;
+    if (!value) return;
     try {
-      await navigator.clipboard.writeText(link);
+      await navigator.clipboard.writeText(value);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
       setCopied(false);
     }
+  };
+
+  // "הזמן" - popup-blocker-safe: open the window synchronously, fill in the
+  // short-lived handoff URL once it's minted (same pattern as the packages
+  // list). Lands on main's order flow with a live partner session, where the
+  // agent screen (אשראי סוכן / שובר / לינק תשלום) is already open.
+  const orderForCustomer = () => {
+    if (createdId == null) return;
+    const win = window.open("about:blank", "_blank");
+    startHandoffTransition(async () => {
+      const result = await getAgentOrderHandoffLink(createdId);
+      if (!result.ok) {
+        win?.close();
+        setSubmitError(result.error);
+        return;
+      }
+      if (win) win.location.href = result.url;
+      else window.open(result.url, "_blank");
+    });
+  };
+
+  const resetWizard = () => {
+    setLink(null);
+    setCreatedId(null);
+    setSubmitError(null);
+    setAdjustPerPerson(0);
+    lastSubmittedSigRef.current = null;
+    setStep(0);
+    setEvent(null);
+    setQuery("");
   };
 
   // ------- continue bar wiring -------
@@ -630,13 +740,13 @@ export function PackageWizard({
         ? "בחר והמשך למלון"
         : "בחר והמשך לסיכום";
 
-  // Each step's compact shortcuts answer the NEXT step's question and skip
-  // straight past it: tickets decide the flight and land on hotels, flights
-  // decide the hotel and land on the summary; the hotel step has none.
-  // Mid-edit (returnToSummary) a shortcut returns to the summary once the
-  // rest of the flow is valid - same rule as goNext.
-  const decideFlightShortcut = (mode: "live" | "none") => {
-    setFlightChoice(mode === "live" ? { mode, explicit: true } : { mode });
+  // V2 bar shortcuts (2026-08-27): each step's bar answers ITS OWN skip
+  // question only - tickets/flights offer "ללא טיסה", hotels offer "ללא מלון".
+  // The "הלקוח יבחר באתר" decision moved into the steps themselves as a
+  // pinned option row above the live results. Mid-edit (returnToSummary) a
+  // shortcut returns to the summary once the rest of the flow is valid.
+  const skipFlight = () => {
+    setFlightChoice({ mode: "none" });
     if (returnToSummary && !!event && !!selectedTicket && canContinueFromHotel) {
       setReturnToSummary(false);
       setStep(4);
@@ -644,40 +754,38 @@ export function PackageWizard({
     }
     setStep(3);
   };
-  const decideHotelShortcut = (mode: "live" | "none") => {
-    setHotelChoice(mode === "live" ? { mode, explicit: true } : { mode });
+  const skipHotel = () => {
+    setHotelChoice({ mode: "none" });
     setStep(4); // the step-4 effect clears returnToSummary
   };
 
   const secondaryActions: ContinueSecondaryAction[] | null =
-    // A locked package's flight is fixed - no flight shortcuts to offer.
+    // A locked package's flight is fixed - no flight skip to offer.
     step === 1 && event?.locked_flight_id == null
       ? [
           {
-            label: "הלקוח יבחר טיסה",
-            onClick: () => decideFlightShortcut("live"),
-            disabled: !selectedTicket,
-          },
-          {
             label: "ללא טיסה",
-            onClick: () => decideFlightShortcut("none"),
+            onClick: skipFlight,
             disabled: !selectedTicket,
           },
         ]
-      : step === 2
+      : step === 2 && event?.locked_flight_id == null
         ? [
             {
-              label: "הלקוח יבחר מלון",
-              onClick: () => decideHotelShortcut("live"),
-              disabled: !flightSeatsOk,
-            },
-            {
-              label: "ללא מלון",
-              onClick: () => decideHotelShortcut("none"),
-              disabled: !flightSeatsOk,
+              label: "ללא טיסה",
+              onClick: skipFlight,
+              disabled: false,
             },
           ]
-        : null;
+        : step === 3
+          ? [
+              {
+                label: "ללא מלון",
+                onClick: skipHotel,
+                disabled: false,
+              },
+            ]
+          : null;
 
   // ------- context value -------
   const wizardState: WizardState = {
@@ -741,97 +849,17 @@ export function PackageWizard({
     submit,
     isPending,
     submitError,
+    link,
+    createdId,
+    copied,
+    copyLink,
+    orderForCustomer,
+    handoffPending,
+    isAgent,
+    adjustPerPerson,
+    setAdjustPerPerson,
+    resetWizard,
   };
-
-  // ------- success screen -------
-  if (link) {
-    // Same popup-blocker-safe pattern as the packages list: open the window
-    // synchronously, fill in the short-lived handoff URL once it's minted.
-    const orderForCustomer = () => {
-      if (createdId == null) return;
-      const win = window.open("about:blank", "_blank");
-      startHandoffTransition(async () => {
-        const result = await getAgentOrderHandoffLink(createdId);
-        if (!result.ok) {
-          win?.close();
-          setSubmitError(result.error);
-          return;
-        }
-        if (win) win.location.href = result.url;
-        else window.open(result.url, "_blank");
-      });
-    };
-
-    return (
-      <div className="mx-auto max-w-xl rounded-2xl border bg-card p-8 text-center shadow-card">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-mint">
-          <Check className="h-6 w-6 text-brand-forest" />
-        </div>
-        <h2 className="mt-4 font-display text-lg font-bold">החבילה מוכנה!</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          שתפו את הלינק - הלקוח ינחת ישר על ההרכב שבחרתם.
-        </p>
-        <div className="mt-5 flex items-center gap-2">
-          <input
-            readOnly
-            dir="ltr"
-            value={link}
-            onFocus={(e) => e.currentTarget.select()}
-            className="w-full flex-1 truncate rounded-md border bg-muted/40 px-3 py-2 text-sm"
-          />
-          <Button type="button" onClick={copyLink} className={cn("shrink-0", MINT_CTA)}>
-            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            {copied ? "הועתק" : "העתקה"}
-          </Button>
-        </div>
-        {isAgent && createdId != null && (
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={orderForCustomer}
-              disabled={handoffPending}
-            >
-              {handoffPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ExternalLink className="h-4 w-4" />
-              )}
-              הזמנה עבור הלקוח
-            </Button>
-            <Button asChild variant="outline">
-              <Link href={`/portal/quotes/new?package=${createdId}`}>
-                <FileText className="h-4 w-4" />
-                שלח הצעה ללקוח
-              </Link>
-            </Button>
-          </div>
-        )}
-        {submitError && (
-          <p className="mt-3 text-sm font-medium text-destructive">{submitError}</p>
-        )}
-        <div className="mt-6 flex justify-center gap-3">
-          <Button asChild variant="outline">
-            <Link href="/portal/packages">לרשימת החבילות</Link>
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              setLink(null);
-              setCreatedId(null);
-              setSubmitError(null);
-              setStep(0);
-              setEvent(null);
-              setQuery("");
-            }}
-          >
-            בניית חבילה נוספת
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <WizardContext.Provider value={wizardState}>

@@ -44,6 +44,9 @@ export interface PortalQuote {
   status: string;
   pdf_storage_path: string | null;
   event_id: number | null;
+  /** V2 merged table: the agent's own follow-up date for this row. Null until
+   *  set (UI falls back to created_at). Missing column pre-migration → null. */
+  follow_up_date: string | null;
   /** Manager-only "נוצר ע"י" column - display name (falling back to email) of
    *  the office user who created the quote. Null for a non-manager viewer
    *  (agents in a multi-user office only ever see their own quotes anyway) or
@@ -262,18 +265,27 @@ export async function getPortalQuotes(): Promise<PortalQuote[]> {
 
   // An agent in a multi-user office only ever sees quotes they created;
   // managers and solo agents see the whole office.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query = (supabase as any)
-    .from("quotes")
-    .select(
-      "id,created_at,customer_name,title,total,valid_until,status,pdf_storage_path,event_id,created_by",
-    )
-    .eq("partner_tracking_code", session.partner_code)
-    .order("created_at", { ascending: false });
-  if (session.role === "agent" && !scope.soloOffice) {
-    query = query.eq("created_by", session.sub);
+  const fetchQuotes = (columns: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (supabase as any)
+      .from("quotes")
+      .select(columns)
+      .eq("partner_tracking_code", session.partner_code)
+      .order("created_at", { ascending: false });
+    if (session.role === "agent" && !scope.soloOffice) {
+      query = query.eq("created_by", session.sub);
+    }
+    return query;
+  };
+
+  const BASE_COLUMNS =
+    "id,created_at,customer_name,title,total,valid_until,status,pdf_storage_path,event_id,created_by";
+  // follow_up_date ships with the V2 migration - fall back cleanly until it
+  // lands (42703 = column does not exist).
+  let { data, error } = await fetchQuotes(`${BASE_COLUMNS},follow_up_date`);
+  if (error?.code === "42703") {
+    ({ data, error } = await fetchQuotes(BASE_COLUMNS));
   }
-  const { data, error } = await query;
   if (error) {
     console.error("getPortalQuotes:", JSON.stringify(error));
     return [];
@@ -285,9 +297,44 @@ export async function getPortalQuotes(): Promise<PortalQuote[]> {
     : null;
   return ((data ?? []) as PortalQuoteRow[]).map(({ created_by, ...quote }) => ({
     ...quote,
+    follow_up_date: quote.follow_up_date ?? null,
     creator_name:
       nameBySub && created_by ? (nameBySub.get(created_by) ?? null) : null,
   }));
+}
+
+/** V2 merged table: the agent picks a follow-up date per row. */
+export async function updateQuoteFollowUp(
+  quoteId: number,
+  followUpDate: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await requirePartner();
+  if (!SELLER_ROLES.includes(session.role)) {
+    return { ok: false, error: "הצעות מחיר זמינות לסוכנים בלבד" };
+  }
+  const scope = await resolvePortalScope(session);
+  if (!Number.isInteger(quoteId) || quoteId <= 0) {
+    return { ok: false, error: "הצעה לא תקינה" };
+  }
+  if (followUpDate != null && !/^\d{4}-\d{2}-\d{2}$/.test(followUpDate)) {
+    return { ok: false, error: "תאריך לא תקין" };
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let updateQuery = (supabase as any)
+    .from("quotes")
+    .update({ follow_up_date: followUpDate })
+    .eq("id", quoteId)
+    .eq("partner_tracking_code", session.partner_code);
+  if (session.role === "agent" && !scope.soloOffice) {
+    updateQuery = updateQuery.eq("created_by", session.sub);
+  }
+  const { data, error } = await updateQuery.select("id").maybeSingle();
+  if (error) {
+    console.error("updateQuoteFollowUp:", JSON.stringify(error));
+    return { ok: false, error: "העדכון נכשל. נסו שוב." };
+  }
+  if (!data) return { ok: false, error: "ההצעה לא נמצאה" };
+  return { ok: true };
 }
 
 /**
@@ -425,7 +472,17 @@ export async function createQuote(input: {
   valid_until?: string | null;
   /** Site order link rendered as the PDF's pay CTA; null/absent = info-only. */
   payment_link?: string | null;
-}): Promise<{ ok: true; id: number } | { ok: false; error: string }> {
+}): Promise<
+  | {
+      ok: true;
+      id: number;
+      /** The signed pay link (`&quote=&qsig=`) when one was requested -
+       *  the V2 summary's "שלח לינק" copies THIS so an adjusted price
+       *  actually reaches the customer. */
+      payment_link: string | null;
+    }
+  | { ok: false; error: string }
+> {
   const session = await requirePartner();
 
   // Quotes are an agent tool. An influencer promotes a link and earns on what
@@ -615,10 +672,12 @@ export async function createQuote(input: {
   // agent's total - dearer than site price sends the delta to the agent,
   // cheaper comes out of their commission. Needs the row id, hence the
   // post-insert update; best-effort - the plain package link still works.
+  let finalPaymentLink: string | null = payment_link;
   if (payment_link) {
     try {
       const signedLink = await signQuoteLink(payment_link, data.id, total);
       if (signedLink !== payment_link) {
+        finalPaymentLink = signedLink;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { error: linkError } = await (supabase as any)
           .from("quotes")
@@ -640,5 +699,5 @@ export async function createQuote(input: {
     changes: { customer_name, title, total, event_id: input.event_id ?? null },
   });
 
-  return { ok: true, id: data.id };
+  return { ok: true, id: data.id, payment_link: finalPaymentLink };
 }

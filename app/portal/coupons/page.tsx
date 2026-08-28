@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/auth/guards";
-import { getPortalCoupons } from "@/lib/actions/portal-actions";
+import { getPortalCoupons, getPortalProfile } from "@/lib/actions/portal-actions";
 import { getMyCouponTerms } from "@/lib/actions/portal-coupon-actions";
+import { InfoTabs } from "../info-tabs";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { Badge } from "@/components/ui/badge";
 import { CreateCoupon } from "./create-coupon";
@@ -37,13 +38,19 @@ export default async function PortalCouponsPage() {
   // credit, there's no "0 = no agreement" gate here; affiliates in
   // particular lean on coupons for their audience discount regardless of any
   // credit agreement. getPortalCoupons itself scopes the LIST per-agent.
-  const [coupons, terms] = await Promise.all([
+  const [coupons, terms, profile] = await Promise.all([
     getPortalCoupons(),
     getMyCouponTerms(),
+    getPortalProfile().catch(() => null),
   ]);
 
   return (
     <div className="space-y-4">
+      {/* V2: coupons read as a tab of the "מידע ועדכונים" hub. */}
+      <InfoTabs
+        active="coupons"
+        showCredit={(profile?.credit_per_ticket ?? 0) > 0}
+      />
       {terms && <CreateCoupon terms={terms} />}
 
       {coupons.length === 0 ? (

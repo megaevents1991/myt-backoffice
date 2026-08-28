@@ -118,6 +118,25 @@ export interface WizardState {
   submit: () => void;
   isPending: boolean;
   submitError: string | null;
+
+  /* V2 summary (2026-08-27): the link auto-builds on entering the summary;
+     the summary itself carries the CTAs (הזמן / שלח הצעה). */
+  link: string | null;
+  createdId: number | null;
+  copied: boolean;
+  copyLink: (override?: string) => void;
+  /** "הזמן" - opens main via the partner-handoff so agent settlement works. */
+  orderForCustomer: () => void;
+  handoffPending: boolean;
+  /** Agent-only tools (quotes, order-for-customer) are hidden for affiliates. */
+  isAgent: boolean;
+  /** Price adjustment per traveller, USD: positive = added commission,
+   *  negative = discount out of the agent's commission. Carried to the
+   *  customer through the QUOTE link/PDF (never the plain package link). */
+  adjustPerPerson: number;
+  setAdjustPerPerson: (value: number) => void;
+  /** Start over ("בניית חבילה נוספת"). */
+  resetWizard: () => void;
 }
 
 export const WizardContext = createContext<WizardState | null>(null);

@@ -38,6 +38,17 @@ export async function getReservations(): Promise<ReservationListRow[]> {
       supabase
         .from("reservations")
         .select(RESERVATION_LIST_COLUMNS)
+        // Agent payment-link DRAFTS are not reservations yet (אזור סוכן V2,
+        // 2026-08-27: "לא פותח אצלנו הזמנה חדשה בבק אופיס - רק כאשר הלקוח
+        // שילם או ביקש לפצל תשלום"). Such a draft is a 24Save hold whose
+        // settlement method is payment_link; when the customer pays, a NEW
+        // row is created (Pending/Paid) and shows here normally. A row
+        // survives the filter if ANY branch holds - i.e. it is dropped only
+        // when status=24Save AND partner_settlement_method=payment_link.
+        // Customer self-holds (method is null) keep showing.
+        .or(
+          "status.neq.24Save,partner_settlement_method.is.null,partner_settlement_method.neq.payment_link",
+        )
         .order("created_at", { ascending: false })
         .order("id", { ascending: false }),
     20000,
@@ -65,7 +76,12 @@ export async function getReservationsCount() {
   await requireStaff();
   const { count, error } = await supabase
     .from("reservations")
-    .select("id", { count: "exact", head: true });
+    .select("id", { count: "exact", head: true })
+    // Same draft exclusion as getReservations - an agent creating a payment
+    // link must not ping staff with a "new reservation".
+    .or(
+      "status.neq.24Save,partner_settlement_method.is.null,partner_settlement_method.neq.payment_link",
+    );
 
   if (error) throw error;
   return count ?? 0;

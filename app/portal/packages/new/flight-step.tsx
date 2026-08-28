@@ -497,6 +497,72 @@ export function FlightStep() {
     }
   };
 
+  // V2 result order: mega (offline) inventory ALWAYS first, then the pinned
+  // "הלקוח יבחר טיסה באתר" row, then the live results - sorting applies
+  // within each group.
+  const visibleOffline = visible.filter((f) => f.kind === "offline");
+  const visibleLive = visible.filter((f) => f.kind === "live");
+
+  const renderFlightCard = (f: DisplayFlight) => {
+    const selected = isSelectedFlight(f);
+    const soldOutForQty = f.remaining != null && f.remaining < w.qty;
+    const delta: Delta = deltaVsBase(f.perPerson, event.base_flight_price);
+    return (
+      <div key={f.key} className="relative">
+        <MobileDeltaPill delta={delta} per="נוסע" selected={selected} />
+        {(bestKey === f.key || cheapestKey === f.key) && (
+          <span
+            className={cn(
+              "absolute left-2 top-0 z-10 -translate-y-1/2 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold",
+              bestKey === f.key
+                ? "border-amber-200 bg-amber-50 text-amber-700"
+                : "border-emerald-200 bg-emerald-50 text-emerald-700",
+            )}
+          >
+            {bestKey === f.key ? "★ הטוב ביותר" : "↓ הזול ביותר"}
+          </span>
+        )}
+        <CardWrapper
+          isSelected={selected}
+          disabled={soldOutForQty}
+          onClick={() => selectFlight(f)}
+          className="pt-4 lg:pt-2"
+        >
+          <div className="flex w-full items-center py-2">
+            <div className="w-full space-y-0 lg:w-5/6">
+              {/* Outbound */}
+              <LegRow flight={f} leg={f.out} label="הלוך" />
+              <div className="my-2 w-full border-t border-border" />
+              {/* Inbound */}
+              <LegRow flight={f} leg={f.ret} label="חזור" />
+            </div>
+            <div className="mx-4 hidden h-32 border-l border-border lg:block" />
+            <div className="hidden flex-col items-center gap-1.5 pt-2 text-center font-bold lg:flex lg:w-1/6">
+              <DeltaPrice delta={delta} per="נוסע" />
+              {f.kind === "offline" && (
+                <>
+                  <PromotedPill />
+                  <span className="text-[11px] font-normal text-muted-foreground">
+                    {soldOutForQty
+                      ? "אין מספיק מקומות"
+                      : f.remaining != null
+                        ? `נותרו ${f.remaining}`
+                        : null}
+                  </span>
+                </>
+              )}
+              {f.kind === "live" && (
+                <span className="text-[11px] font-normal text-muted-foreground">
+                  {`סה"כ ${usd(f.perPerson * w.qty)} ל-${w.qty} נוסעים`}
+                </span>
+              )}
+            </div>
+          </div>
+        </CardWrapper>
+      </div>
+    );
+  };
+
   const sortOptions: SortTabOption<FsSort>[] = [
     { key: "best", title: "הטוב ביותר", subtitle: "ערך מיטבי לכסף", icon: Star },
     { key: "cheap", title: "הזול ביותר", subtitle: "המחיר הנמוך ביותר", icon: DollarSign },
@@ -615,65 +681,22 @@ export function FlightStep() {
             </div>
           ) : (
             <div className="grid grid-cols-1 items-start gap-6 py-2 lg:gap-4 lg:py-0" role="region" aria-live="polite">
-              {visible.map((f) => {
-                const selected = isSelectedFlight(f);
-                const soldOutForQty = f.remaining != null && f.remaining < w.qty;
-                const delta: Delta = deltaVsBase(f.perPerson, event.base_flight_price);
-                return (
-                  <div key={f.key} className="relative">
-                    <MobileDeltaPill delta={delta} per="נוסע" selected={selected} />
-                    {(bestKey === f.key || cheapestKey === f.key) && (
-                      <span
-                        className={cn(
-                          "absolute left-2 top-0 z-10 -translate-y-1/2 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold",
-                          bestKey === f.key
-                            ? "border-amber-200 bg-amber-50 text-amber-700"
-                            : "border-emerald-200 bg-emerald-50 text-emerald-700",
-                        )}
-                      >
-                        {bestKey === f.key ? "★ הטוב ביותר" : "↓ הזול ביותר"}
-                      </span>
-                    )}
-                    <CardWrapper
-                      isSelected={selected}
-                      disabled={soldOutForQty}
-                      onClick={() => selectFlight(f)}
-                      className="pt-4 lg:pt-2"
-                    >
-                      <div className="flex w-full items-center py-2">
-                        <div className="w-full space-y-0 lg:w-5/6">
-                          {/* Outbound */}
-                          <LegRow flight={f} leg={f.out} label="הלוך" />
-                          <div className="my-2 w-full border-t border-border" />
-                          {/* Inbound */}
-                          <LegRow flight={f} leg={f.ret} label="חזור" />
-                        </div>
-                        <div className="mx-4 hidden h-32 border-l border-border lg:block" />
-                        <div className="hidden flex-col items-center gap-1.5 pt-2 text-center font-bold lg:flex lg:w-1/6">
-                          <DeltaPrice delta={delta} per="נוסע" />
-                          {f.kind === "offline" && (
-                            <>
-                              <PromotedPill />
-                              <span className="text-[11px] font-normal text-muted-foreground">
-                                {soldOutForQty
-                                  ? "אין מספיק מקומות"
-                                  : f.remaining != null
-                                    ? `נותרו ${f.remaining}`
-                                    : null}
-                              </span>
-                            </>
-                          )}
-                          {f.kind === "live" && (
-                            <span className="text-[11px] font-normal text-muted-foreground">
-                              {`סה"כ ${usd(f.perPerson * w.qty)} ל-${w.qty} נוסעים`}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </CardWrapper>
-                  </div>
-                );
-              })}
+              {/* V2 order: mega inventory first, then the pinned "הלקוח יבחר
+                  טיסה באתר" row ALWAYS above the first live result, then the
+                  live results. */}
+              {visibleOffline.map(renderFlightCard)}
+
+              {!isLocked && (
+                <DashedOptionRow
+                  icon={Plane}
+                  title="הלקוח יבחר טיסה באתר"
+                  subtitle="הלינק יפתח את שלב הטיסות והלקוח יבחר מהזמינות בזמן אמת"
+                  selected={w.flightChoice.mode === "live" && !!w.flightChoice.explicit}
+                  onClick={() => w.setFlightChoice({ mode: "live", explicit: true })}
+                />
+              )}
+
+              {visibleLive.map(renderFlightCard)}
 
               {isLocked && all.length === 0 && (
                 <IssueState
@@ -681,13 +704,19 @@ export function FlightStep() {
                   subtitle="לא ניתן להצמיד טיסה - אפשר להמשיך והלקוח יראה את הזמינות באתר"
                 />
               )}
-              {!isLocked && visible.length === 0 && (all.length > 0 || w.fsResults != null) && (
+              {!isLocked && visible.length === 0 && (all.length > 0 || w.fsResults != null) && !w.fsLoading && (
                 <IssueState
                   title="לא מצאנו טיסות שמתאימות למסננים"
                   subtitle="נסו לנקות חלק מהסינון או לחפש תאריכים אחרים"
                 />
               )}
-              {!isLocked && all.length === 0 && w.fsResults == null && (
+              {!isLocked && w.fsLoading && w.fsResults == null && (
+                <div className="flex items-center justify-center gap-3 p-8 text-sm text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  מחפשים טיסות לתאריכי האירוע - התוצאות מגיעות מהספקים בזמן אמת...
+                </div>
+              )}
+              {!isLocked && !w.fsLoading && all.length === 0 && w.fsResults == null && (
                 <IssueState
                   title="חפשו טיסות לתאריכים שלכם"
                   subtitle="בחרו תאריכים למעלה ולחצו חיפוש - התוצאות מגיעות מהספקים בזמן אמת, בדיוק כמו באתר"
@@ -695,14 +724,7 @@ export function FlightStep() {
               )}
 
               {!isLocked && (
-                <div className="space-y-2 pt-2">
-                  <DashedOptionRow
-                    icon={Plane}
-                    title="הלקוח יבחר טיסה באתר"
-                    subtitle="הלינק יפתח את שלב הטיסות והלקוח יבחר מהזמינות בזמן אמת"
-                    selected={w.flightChoice.mode === "live" && !!w.flightChoice.explicit}
-                    onClick={() => w.setFlightChoice({ mode: "live", explicit: true })}
-                  />
+                <div className="pt-2">
                   <DashedOptionRow
                     icon={Plane}
                     title="חבילה ללא טיסה"

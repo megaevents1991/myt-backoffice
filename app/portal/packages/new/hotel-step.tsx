@@ -473,6 +473,16 @@ export function HotelStep() {
             </div>
           ) : (
             <div className="grid grid-cols-1 items-start gap-6 py-2 lg:gap-4 lg:py-0">
+              {/* V2: "הלקוח יבחר מלון באתר" pinned ABOVE the results; mega
+                  (offline) rooms already sort first in `list`. */}
+              <DashedOptionRow
+                icon={BedDouble}
+                title="הלקוח יבחר מלון באתר"
+                subtitle="הלינק יפתח את שלב המלונות עם ההיצע החי סביב האירוע"
+                selected={w.hotelChoice.mode === "live" && !!w.hotelChoice.explicit}
+                onClick={() => w.setHotelChoice({ mode: "live", explicit: true })}
+              />
+
               {list.slice(0, visibleCount).map((h) =>
                 h.kind === "offline" ? (
                   <OfflineHotelCard key={h.key} groupKey={h.key} group={h.group} />
@@ -491,27 +501,26 @@ export function HotelStep() {
                 </button>
               )}
 
-              {list.length === 0 && (w.hotels.length > 0 || w.hsResults != null) && (
+              {list.length === 0 && (w.hotels.length > 0 || w.hsResults != null) && !w.hsLoading && (
                 <IssueState
                   title="לא מצאנו מלונות שמתאימים לחיפוש"
                   subtitle="נסו לנקות חלק מהסינון או לשנות תאריכים"
                 />
               )}
-              {w.hotels.length === 0 && w.hsResults == null && (
+              {w.hsLoading && w.hsResults == null && (
+                <div className="flex items-center justify-center gap-3 p-8 text-sm text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  מחפשים מלונות סביב האירוע - ההיצע החי, בדיוק כמו באתר...
+                </div>
+              )}
+              {!w.hsLoading && w.hotels.length === 0 && w.hsResults == null && (
                 <IssueState
                   title="חפשו מלונות לתאריכים שלכם"
                   subtitle="בחרו תאריכים למעלה ולחצו חיפוש - ההיצע החי סביב האירוע, בדיוק כמו באתר"
                 />
               )}
 
-              <div className="space-y-2 pt-2">
-                <DashedOptionRow
-                  icon={BedDouble}
-                  title="הלקוח יבחר מלון באתר"
-                  subtitle="הלינק יפתח את שלב המלונות עם ההיצע החי סביב האירוע"
-                  selected={w.hotelChoice.mode === "live" && !!w.hotelChoice.explicit}
-                  onClick={() => w.setHotelChoice({ mode: "live", explicit: true })}
-                />
+              <div className="pt-2">
                 <DashedOptionRow
                   icon={BedDouble}
                   title="חבילה ללא מלון"

@@ -1,20 +1,48 @@
 "use client";
 
 /**
- * Summary step - myt-main's OrderReview/OrderSummary, agent-side.
- * Same anatomy: one card with a dark title band, the grand-total row
- * ("סה"כ" + per-person, with the partner's expected commission where main
- * shows it), then a section per component with the exact עריכה chip that
- * jumps back to that step and returns straight here (returnToSummary).
- * Portal-specific tail: the open-vs-locked radio choice and the create-link
- * CTA with main's "מרכיבים את החבילה…" build animation.
+ * Summary step - myt-main's OrderReview/OrderSummary, agent-side. V2
+ * (2026-08-27): the link auto-builds on entry (no "יצירת לינק" button), the
+ * open/locked toggle sits at the top next to the event name, the commission
+ * row carries a "הוסף עמלה / תן הנחה ללקוח" control, and the CTAs are
+ * הזמן (handoff to main's agent screen) + שלח הצעה (copy link / PDF quote).
  */
 
-import { useEffect, useState } from "react";
-import { BedDouble, Lock, Pencil, Plane, Ticket, type LucideIcon } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
+import {
+  BedDouble,
+  Check,
+  Copy,
+  ExternalLink,
+  FileText,
+  Link2,
+  Loader2,
+  Lock,
+  Pencil,
+  Plane,
+  Plus,
+  SlidersHorizontal,
+  Ticket,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { createQuote } from "@/lib/actions/quote-actions";
 import { cn } from "@/lib/utils";
 import { useWizard } from "./wizard-context";
 import { dateFmt, dateOnly, deltaNote, usd, type Delta } from "./wizard-ui";
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 const EDIT_CHIP =
   "shrink-0 rounded-lg border border-border px-2.5 py-1 text-[12px] font-bold text-muted-foreground transition-colors hover:border-brand-forest hover:text-brand-forest dark:hover:border-brand-mint dark:hover:text-brand-mint";
@@ -106,6 +134,8 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
   const w = useWizard();
   const [building, setBuilding] = useState(false);
   const [buildDone, setBuildDone] = useState(false);
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [offerOpen, setOfferOpen] = useState(false);
 
   useEffect(() => {
     if (!w.isPending) {
@@ -121,14 +151,38 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
   const { event, selectedTicket } = w;
   if (!event || !selectedTicket) return null;
 
-  const totalPkg = w.totalPerPerson != null ? w.totalPerPerson * w.qty : null;
-  const commission = (() => {
+  // Adjusted per-person price: the site price for this composition plus the
+  // agent's uplift/discount. The adjustment reaches the customer through the
+  // quote link/PDF; the plain package link keeps pricing live.
+  const adjustedPerPerson =
+    w.totalPerPerson != null ? round2(w.totalPerPerson + w.adjustPerPerson) : null;
+  const totalPkg = adjustedPerPerson != null ? adjustedPerPerson * w.qty : null;
+  const baseTotalPkg = w.totalPerPerson != null ? w.totalPerPerson * w.qty : null;
+  const baseCommission = (() => {
     const terms = w.commissionTerms;
     if (!terms || terms.rate == null || !Number.isFinite(terms.rate) || terms.rate <= 0) return null;
     if (terms.type === "percent_of_sale") {
-      return totalPkg != null ? (totalPkg * terms.rate) / 100 : null;
+      return baseTotalPkg != null ? (baseTotalPkg * terms.rate) / 100 : null;
     }
     return w.qty * terms.rate; // fixed_per_ticket - the legacy default
+  })();
+  // Preview only - the server re-derives and enforces the real rule at quote
+  // creation (discount may never exceed the commission).
+  const commission =
+    baseCommission != null
+      ? Math.max(0, round2(baseCommission + w.adjustPerPerson * w.qty))
+      : w.adjustPerPerson > 0
+        ? round2(w.adjustPerPerson * w.qty)
+        : null;
+  const maxDiscountPerPerson = (() => {
+    const terms = w.commissionTerms;
+    if (!terms || terms.rate == null || terms.rate <= 0) return 0;
+    if (terms.type === "percent_of_sale") {
+      return w.totalPerPerson != null
+        ? round2((w.totalPerPerson * terms.rate) / 100)
+        : 0;
+    }
+    return round2(terms.rate);
   })();
 
   /* flight section content */
@@ -234,31 +288,90 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
           </div>
         </div>
 
-        {/* Grand total */}
-        {w.totalPerPerson != null && (
-          <div dir="rtl" className="flex flex-row items-center justify-between border-b border-border px-6 py-4">
-            <div className="flex flex-col items-start font-bold">
-              <span className="text-[22px]">סה&quot;כ</span>
-              {commission != null && commission > 0 && (
-                <span className="text-[14px] text-success tabular-nums">
-                  עמלה צפויה {usd(commission)}
-                </span>
-              )}
-            </div>
-            <div className="text-left">
-              <div className="flex w-full items-baseline justify-end gap-2 text-[18px] font-bold" dir="ltr">
-                <span className="text-xl tabular-nums">{totalPkg != null ? usd(totalPkg) : ""}</span>
-              </div>
-              <div className="flex w-full items-center justify-end gap-1 text-lg font-semibold text-muted-foreground">
-                <span>
-                  (לאדם{" "}
-                  <span className="tabular-nums" dir="ltr">
-                    {usd(w.totalPerPerson)}
+        {/* Grand total + עמלה/הנחה control (V2) */}
+        {adjustedPerPerson != null && (
+          <div dir="rtl" className="border-b border-border px-6 py-4">
+            <div className="flex flex-row items-center justify-between">
+              <div className="flex flex-col items-start font-bold">
+                <span className="text-[22px]">סה&quot;כ</span>
+                {commission != null && commission > 0 && (
+                  <span className="text-[14px] text-success tabular-nums">
+                    עמלה צפויה {usd(commission)}
                   </span>
-                  )
-                </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setAdjustOpen((v) => !v)}
+                  className="mt-1 flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-[12px] font-bold text-muted-foreground transition-colors hover:border-brand-forest hover:text-brand-forest dark:hover:border-brand-mint dark:hover:text-brand-mint"
+                >
+                  <SlidersHorizontal className="size-3.5" />
+                  הוסף עמלה / תן הנחה ללקוח
+                </button>
+              </div>
+              <div className="text-left">
+                <div className="flex w-full items-baseline justify-end gap-2 text-[18px] font-bold" dir="ltr">
+                  <span className="text-xl tabular-nums">{totalPkg != null ? usd(totalPkg) : ""}</span>
+                </div>
+                <div className="flex w-full items-center justify-end gap-1 text-lg font-semibold text-muted-foreground">
+                  <span>
+                    (לאדם{" "}
+                    <span className="tabular-nums" dir="ltr">
+                      {usd(adjustedPerPerson)}
+                    </span>
+                    )
+                  </span>
+                </div>
+                {w.adjustPerPerson !== 0 && w.totalPerPerson != null && (
+                  <p className="mt-0.5 text-end text-xs text-muted-foreground">
+                    מחיר האתר: <span dir="ltr" className="tabular-nums">{usd(w.totalPerPerson)}</span> לנוסע
+                  </p>
+                )}
               </div>
             </div>
+            {adjustOpen && (
+              <div className="mt-3 rounded-xl border border-dashed border-border p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <label htmlFor="pkg-adjust" className="text-sm font-medium">
+                    שינוי מחיר לנוסע ($)
+                  </label>
+                  <Input
+                    id="pkg-adjust"
+                    type="number"
+                    dir="ltr"
+                    step={5}
+                    value={w.adjustPerPerson || ""}
+                    placeholder="0"
+                    onChange={(e) => {
+                      const raw = Number(e.target.value);
+                      if (!Number.isFinite(raw)) {
+                        w.setAdjustPerPerson(0);
+                        return;
+                      }
+                      // Discount is capped by the commission; uplift is free.
+                      w.setAdjustPerPerson(
+                        round2(Math.max(-maxDiscountPerPerson, raw)),
+                      );
+                    }}
+                    className="h-9 w-28 text-center"
+                  />
+                  {w.adjustPerPerson !== 0 && (
+                    <button
+                      type="button"
+                      onClick={() => w.setAdjustPerPerson(0)}
+                      className="text-xs font-medium text-muted-foreground underline hover:text-foreground"
+                    >
+                      איפוס
+                    </button>
+                  )}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  חיובי = תוספת עמלה שלכם מעל מחיר האתר. שלילי = הנחה ללקוח על
+                  חשבון העמלה (עד {usd(maxDiscountPerPerson)} לנוסע). המחיר
+                  המעודכן מגיע ללקוח דרך &quot;שלח הצעה&quot; - לינק חתום או
+                  PDF; לינק החבילה הרגיל ממשיך להיתמחר לפי האתר.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -268,6 +381,45 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
             <p className="text-2xl font-bold leading-tight">{event.name}</p>
             <p className="text-lg text-muted-foreground">
               {[event.location_name, dateFmt(event.date)].filter(Boolean).join(" | ")}
+            </p>
+            {/* V2: the open/locked choice lives HERE, next to the event name,
+                as a compact segmented toggle (was a radio-card block at the
+                bottom). Changing it re-syncs the package automatically. */}
+            <div
+              role="radiogroup"
+              aria-label="לינק פתוח לעריכה או נעול"
+              className="mx-auto mt-2 inline-flex items-center rounded-full border border-border p-0.5"
+            >
+              {[
+                { value: true, icon: Pencil, title: "פתוחה לעריכה" },
+                { value: false, icon: Lock, title: "נעולה" },
+              ].map((opt) => {
+                const selected = w.allowEdit === opt.value;
+                const Icon = opt.icon;
+                return (
+                  <button
+                    key={opt.title}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => w.setAllowEdit(opt.value)}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-bold transition-colors",
+                      selected
+                        ? "bg-brand-forest text-white dark:bg-brand-mint dark:text-brand-forest"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-3.5 shrink-0" />
+                    {opt.title}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {w.allowEdit
+                ? "הלקוח יוכל להחליף כרטיסים, טיסה ומלון לפני התשלום."
+                : "הלקוח משלם על ההרכב שבניתם - רכיב שנשאר לבחירה חיה עדיין ייבחר על ידו."}
             </p>
           </div>
           <div className="w-full border-b border-border" />
@@ -341,88 +493,27 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
         </div>
       </div>
 
-      {/* Open-vs-locked choice - portal-specific. Two explicit radio cards
-          instead of a switch: the selected state is filled in the brand color
-          with a visible dot, so "which one is on" is never ambiguous. */}
-      <div
-        role="radiogroup"
-        aria-label="מה הלקוח יכול לעשות עם החבילה"
-        className="rounded-2xl border border-border bg-card p-4 shadow-card"
-      >
-        <p className="text-sm font-medium">מה הלקוח יכול לעשות עם החבילה?</p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          {[
-            {
-              value: true,
-              icon: Pencil,
-              title: "פתוחה לעריכה",
-              hint: "הלקוח יוכל להחליף כרטיסים, טיסה ומלון לפני התשלום.",
-            },
-            {
-              value: false,
-              icon: Lock,
-              title: "נעולה",
-              hint: "הלקוח משלם על ההרכב שבניתם. רכיב שהשארתם לבחירה חיה עדיין ייבחר על ידו.",
-            },
-          ].map((opt) => {
-            const selected = w.allowEdit === opt.value;
-            const Icon = opt.icon;
-            return (
-              <button
-                key={opt.title}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => w.setAllowEdit(opt.value)}
-                className={cn(
-                  "flex items-start gap-3 rounded-xl border-2 p-3 text-right transition-colors",
-                  selected
-                    ? "border-brand-forest bg-brand-forest/10 dark:border-brand-mint dark:bg-brand-mint/15"
-                    : "border-border hover:border-brand-forest/40 dark:hover:border-brand-mint/40",
-                )}
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border-2",
-                    selected
-                      ? "border-brand-forest dark:border-brand-mint"
-                      : "border-muted-foreground/40",
-                  )}
-                >
-                  {selected && (
-                    <span className="size-2 rounded-full bg-brand-forest dark:bg-brand-mint" />
-                  )}
-                </span>
-                <span className="min-w-0">
-                  <span
-                    className={cn(
-                      "flex items-center gap-1.5 text-sm font-bold",
-                      selected
-                        ? "text-brand-forest dark:text-brand-mint"
-                        : "text-foreground",
-                    )}
-                  >
-                    <Icon className="size-3.5 shrink-0" />
-                    {opt.title}
-                  </span>
-                  <span className="mt-0.5 block text-xs text-muted-foreground">{opt.hint}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       <p className="text-xs text-muted-foreground">
         המחיר המשוער הוא מחיר החבילה באתר לקטגוריה שנבחרה, בתוספת ההפרשים של טיסה או
         מלון ספציפיים שהוצמדו. הכל מאומת מחדש מול נתונים חיים בכל פתיחה של הלינק.
       </p>
 
-      {w.submitError && <p className="text-sm font-medium text-destructive">{w.submitError}</p>}
+      {w.submitError && (
+        <div className="flex items-center gap-3">
+          <p className="text-sm font-medium text-destructive">{w.submitError}</p>
+          <button
+            type="button"
+            onClick={w.submit}
+            className="text-sm font-bold text-brand-forest underline dark:text-brand-mint"
+          >
+            נסו שוב
+          </button>
+        </div>
+      )}
 
-      {/* Create-link CTA with main's build animation */}
-      {building ? (
+      {/* V2: the link builds itself (main's build animation while pending),
+          then the ready link + the two CTAs. */}
+      {building || (w.link == null && !w.submitError) ? (
         <div className="flex flex-col gap-1.5">
           <div className="h-2 overflow-hidden rounded-full bg-border">
             <div
@@ -434,16 +525,390 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
             {buildDone ? "✓ החבילה כמעט מוכנה!" : "מרכיבים את החבילה…"}
           </span>
         </div>
-      ) : (
-        <button
-          type="button"
-          onClick={w.submit}
-          disabled={w.isPending}
-          className="block h-[52px] w-full rounded-lg bg-brand-forest text-[18px] font-bold text-white transition-colors hover:bg-brand-forest/90 disabled:opacity-50 dark:bg-brand-mint dark:text-brand-forest dark:hover:bg-brand-mint/90"
-        >
-          יצירת לינק לחבילה
-        </button>
+      ) : w.link != null ? (
+        <div className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-card">
+          <div className="flex items-center gap-2">
+            <Link2 className="size-4 shrink-0 text-brand-forest dark:text-brand-mint" />
+            <p className="text-sm font-bold">הלינק לחבילה מוכן</p>
+            {w.isPending && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              dir="ltr"
+              value={w.link}
+              onFocus={(e) => e.currentTarget.select()}
+              className="w-full flex-1 truncate rounded-md border bg-muted/40 px-3 py-2 text-sm"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => w.copyLink()}
+              className="shrink-0"
+            >
+              {w.copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+              {w.copied ? "הועתק" : "העתקה"}
+            </Button>
+          </div>
+          {w.isAgent ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                onClick={w.orderForCustomer}
+                disabled={w.handoffPending || w.createdId == null}
+                className="h-[48px] bg-brand-forest text-[16px] font-bold text-white hover:bg-brand-forest/90 dark:bg-brand-mint dark:text-brand-forest dark:hover:bg-brand-mint/90"
+              >
+                {w.handoffPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ExternalLink className="size-4" />
+                )}
+                הזמן
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOfferOpen(true)}
+                disabled={w.createdId == null || adjustedPerPerson == null}
+                className="h-[48px] text-[16px] font-bold"
+              >
+                <FileText className="size-4" />
+                שלח הצעה
+              </Button>
+            </div>
+          ) : null}
+          <div className="flex justify-center gap-4 text-sm">
+            <Link href="/portal/packages" className="text-muted-foreground underline hover:text-foreground">
+              לרשימת החבילות
+            </Link>
+            <button
+              type="button"
+              onClick={w.resetWizard}
+              className="text-muted-foreground underline hover:text-foreground"
+            >
+              בניית חבילה נוספת
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {w.isAgent && adjustedPerPerson != null && (
+        <SendOfferDialog
+          open={offerOpen}
+          onOpenChange={setOfferOpen}
+          adjustedPerPerson={adjustedPerPerson}
+        />
       )}
     </section>
+  );
+}
+
+/**
+ * "שלח הצעה" (V2): copy the link (signed with the adjusted price when one was
+ * set) or fill a short form and get a customer-ready PDF. Both paths create a
+ * quotes row, so the offer shows up in הצעות מחיר for follow-up.
+ */
+function SendOfferDialog({
+  open,
+  onOpenChange,
+  adjustedPerPerson,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  adjustedPerPerson: number;
+}) {
+  const w = useWizard();
+  const [mode, setMode] = useState<"choice" | "pdf">("choice");
+  const [customerName, setCustomerName] = useState("");
+  const [validUntil, setValidUntil] = useState("");
+  const [notes, setNotes] = useState("");
+  const [includeLink, setIncludeLink] = useState(true);
+  const [extras, setExtras] = useState<{ label: string; qty: string; price: string }[]>([]);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [doneMsg, setDoneMsg] = useState<string | null>(null);
+
+  const { event } = w;
+  if (!event) return null;
+
+  const pkgLine = {
+    label: `חבילת ${event.name}${w.category ? ` - ${w.category}` : ""}`,
+    qty: w.qty,
+    unit_price: adjustedPerPerson,
+  };
+
+  const reset = () => {
+    setMode("choice");
+    setError(null);
+    setDoneMsg(null);
+  };
+
+  const quoteInputBase = {
+    event_id: event.id,
+    title: `הצעת מחיר - ${event.name}`,
+    package: { qty: w.qty, unit_price: adjustedPerPerson },
+    package_id: w.createdId,
+  };
+
+  // "שלח לינק": with no adjustment the plain package link is the offer; an
+  // adjusted price must ride a signed quote link, so a lightweight quote row
+  // is created behind the scenes (editable later in הצעות מחיר).
+  const sendLink = () => {
+    if (!w.link) return;
+    setError(null);
+    if (w.adjustPerPerson === 0) {
+      w.copyLink();
+      setDoneMsg("הלינק הועתק - שלחו אותו ללקוח.");
+      return;
+    }
+    startTransition(async () => {
+      const res = await createQuote({
+        ...quoteInputBase,
+        customer_name: "לקוח",
+        line_items: [pkgLine],
+        payment_link: w.link,
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      w.copyLink(res.payment_link ?? w.link ?? undefined);
+      setDoneMsg(
+        "לינק עם המחיר שקבעתם הועתק - נוצרה גם שורת הצעה למעקב בהצעות מחיר.",
+      );
+    });
+  };
+
+  const submitPdf = () => {
+    if (!w.link) return;
+    if (!customerName.trim()) {
+      setError("שם הלקוח חובה");
+      return;
+    }
+    setError(null);
+    const extraLines = extras
+      .filter((r) => r.label.trim())
+      .map((r) => ({
+        label: r.label.trim(),
+        qty: Math.max(1, Math.floor(Number(r.qty) || 1)),
+        unit_price: Math.max(0, Number(r.price) || 0),
+      }));
+    // Popup-blocker-safe: open the tab in the click, fill it once the PDF is
+    // ready (same pattern as the quotes list).
+    const win = window.open("", "_blank");
+    startTransition(async () => {
+      const res = await createQuote({
+        ...quoteInputBase,
+        customer_name: customerName.trim(),
+        line_items: [pkgLine, ...extraLines],
+        notes: notes.trim() || null,
+        valid_until: validUntil || null,
+        payment_link: includeLink ? w.link : null,
+      });
+      if (!res.ok) {
+        win?.close();
+        setError(res.error);
+        return;
+      }
+      const fallbackMsg =
+        "ההצעה נוצרה ונשמרה בהצעות מחיר, אבל יצירת ה-PDF נכשלה - אפשר להוריד אותה משם.";
+      try {
+        const pdfRes = await fetch(`/portal/api/quotes/${res.id}/pdf`, { method: "POST" });
+        const data = await pdfRes.json().catch(() => null);
+        if (pdfRes.ok && data?.ok && data.url) {
+          if (win) win.location.href = data.url;
+          else window.open(data.url, "_blank");
+          setDoneMsg("ה-PDF מוכן ונפתח - ההצעה נוספה למעקב בהצעות מחיר.");
+        } else {
+          win?.close();
+          setDoneMsg(fallbackMsg);
+        }
+      } catch {
+        win?.close();
+        setDoneMsg(fallbackMsg);
+      }
+    });
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) reset();
+      }}
+    >
+      <DialogContent dir="rtl" className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-right">שלח הצעה ללקוח</DialogTitle>
+        </DialogHeader>
+
+        {doneMsg ? (
+          <div className="space-y-4">
+            <p className="text-sm font-medium text-success">{doneMsg}</p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                סגירה
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/portal/quotes">להצעות מחיר</Link>
+              </Button>
+            </div>
+          </div>
+        ) : mode === "choice" ? (
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={sendLink}
+              disabled={pending}
+              className="flex w-full items-center gap-3 rounded-xl border-2 border-border p-3 text-right transition-colors hover:border-brand-forest dark:hover:border-brand-mint"
+            >
+              {pending ? (
+                <Loader2 className="size-5 shrink-0 animate-spin" />
+              ) : (
+                <Link2 className="size-5 shrink-0 text-brand-forest dark:text-brand-mint" />
+              )}
+              <span>
+                <span className="block font-bold">שלח לינק</span>
+                <span className="block text-xs text-muted-foreground">
+                  מעתיק את הלינק - הלקוח נכנס, רואה את החבילה ומשלים פרטים ותשלום.
+                  {w.adjustPerPerson !== 0 && " הלינק ישא את המחיר שקבעתם."}
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("pdf")}
+              disabled={pending}
+              className="flex w-full items-center gap-3 rounded-xl border-2 border-border p-3 text-right transition-colors hover:border-brand-forest dark:hover:border-brand-mint"
+            >
+              <FileText className="size-5 shrink-0 text-brand-forest dark:text-brand-mint" />
+              <span>
+                <span className="block font-bold">שלח PDF</span>
+                <span className="block text-xs text-muted-foreground">
+                  הצעת מחיר מעוצבת עם שם הלקוח, תוקף והערות - מוכנה לשליחה.
+                </span>
+              </span>
+            </button>
+            {error && <p className="text-sm font-medium text-destructive">{error}</p>}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="offer-customer" className="mb-1 block text-sm font-medium">
+                  שם הלקוח *
+                </label>
+                <Input
+                  id="offer-customer"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="ישראל ישראלי"
+                />
+              </div>
+              <div>
+                <label htmlFor="offer-valid" className="mb-1 block text-sm font-medium">
+                  בתוקף עד
+                </label>
+                <Input
+                  id="offer-valid"
+                  type="date"
+                  dir="ltr"
+                  value={validUntil}
+                  onChange={(e) => setValidUntil(e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="offer-notes" className="mb-1 block text-sm font-medium">
+                הערות
+              </label>
+              <Textarea
+                id="offer-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                placeholder="הערות שיופיעו בהצעה..."
+              />
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox
+                checked={includeLink}
+                onCheckedChange={(v) => setIncludeLink(v === true)}
+              />
+              לינק להרשמה ותשלום ב-PDF
+            </label>
+
+            {/* Extra rows on top of the package line */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">שורות נוספות</p>
+                <button
+                  type="button"
+                  onClick={() => setExtras((r) => [...r, { label: "", qty: "1", price: "0" }])}
+                  className="flex items-center gap-1 text-xs font-bold text-brand-forest dark:text-brand-mint"
+                >
+                  <Plus className="size-3.5" /> הוספת שורה
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground" dir="ltr">
+                {pkgLine.qty} × {usd(pkgLine.unit_price)} - {pkgLine.label}
+              </p>
+              {extras.map((row, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    value={row.label}
+                    onChange={(e) =>
+                      setExtras((r) => r.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))
+                    }
+                    placeholder="תיאור"
+                    className="flex-1"
+                  />
+                  <Input
+                    value={row.qty}
+                    onChange={(e) =>
+                      setExtras((r) => r.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)))
+                    }
+                    type="number"
+                    dir="ltr"
+                    className="w-16 text-center"
+                    aria-label="כמות"
+                  />
+                  <Input
+                    value={row.price}
+                    onChange={(e) =>
+                      setExtras((r) => r.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))
+                    }
+                    type="number"
+                    dir="ltr"
+                    className="w-24 text-center"
+                    aria-label="מחיר ליחידה ($)"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setExtras((r) => r.filter((_, j) => j !== i))}
+                    aria-label="מחיקת שורה"
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {error && <p className="text-sm font-medium text-destructive">{error}</p>}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="outline" onClick={() => setMode("choice")}>
+                חזרה
+              </Button>
+              <Button type="button" onClick={submitPdf} disabled={pending}>
+                {pending ? <Loader2 className="size-4 animate-spin" /> : <FileText className="size-4" />}
+                צור PDF
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

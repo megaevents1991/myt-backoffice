@@ -132,6 +132,11 @@ export interface BuilderEvent {
   tix_event_id: string | null;
   /** tx_event only: sections excluded from sale - the map greys and ignores them. */
   tx_excluded_sections: string[] | null;
+  /** Homepage-prioritized event ("קטלוג ותעדוף") - the V2 dashboard's default
+   *  8 rows are these (V2 spec: "ה-8 ששמנו בעמוד הבית כמומלצות"). */
+  is_prioritized: boolean;
+  /** Event tags (comma string) - the dashboard's sport/music quick filter. */
+  tags: string | null;
 }
 
 type EventListRow = {
@@ -160,12 +165,13 @@ type EventListRow = {
   locked_flight_id?: number | null;
   def_date_depart?: string | null;
   def_date_return?: string | null;
+  is_prioritized?: boolean | null;
 };
 
 const EVENT_COLUMNS =
   "id, name, date, location, type, tickets_and_rates, map_image_url, card_image_url, art_image_url, tx_excluded_sections, is_deleted, base_flight_price, base_hotel_price, " +
   "event_additional_markup, markup_ticket, markup_flight, markup_hotel, skip_flight, skip_flight_markup, skip_hotel_markup, ticket_only_markup, tags, locked_flight_id, " +
-  "def_date_depart, def_date_return";
+  "def_date_depart, def_date_return, is_prioritized";
 
 /**
  * Locked packages sell exactly one offline flight with no Amadeus fallback -
@@ -287,6 +293,8 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
             ).find((t) => t?.eid)?.eid ?? null)
           : null,
       tx_excluded_sections: row.tx_excluded_sections ?? null,
+      is_prioritized: row.is_prioritized === true,
+      tags: row.tags ?? null,
     };
   });
 
@@ -1283,11 +1291,25 @@ export type CreatePackageResult =
   | { ok: true; link: string; packageId: number }
   | { ok: false; error: string };
 
-export async function createPreparedPackage(
-  input: CreatePackageInput,
-): Promise<CreatePackageResult> {
-  const session = await requirePartner();
+type PackageRowCore = {
+  event_id: number;
+  event_order_info: object;
+  flight_order_info: object | null;
+  flight_skipped: boolean;
+  hotel_order_info: object | null;
+  hotel_skipped: boolean;
+  num_travelers: number;
+};
 
+/**
+ * Validates a wizard composition against LIVE data and assembles the row
+ * columns shared by create and update (V2: the summary auto-builds the link
+ * and updates the same row on later edits). Everything price-bearing is
+ * re-derived server-side - the client only ever names choices.
+ */
+async function buildPackageRowCore(
+  input: CreatePackageInput,
+): Promise<{ ok: false; error: string } | { ok: true; core: PackageRowCore }> {
   const eventId = Number(input.eventId);
   if (!Number.isFinite(eventId)) return { ok: false, error: "אירוע לא תקין" };
 
@@ -1563,6 +1585,28 @@ export async function createPreparedPackage(
         : null,
   });
 
+  return {
+    ok: true,
+    core: {
+      event_id: event.id,
+      event_order_info: { ...eventOrderInfo, price_per_person: pricePerPerson },
+      flight_order_info: flightOrderInfo,
+      flight_skipped: flightSkipped,
+      hotel_order_info: hotelOrderInfo,
+      hotel_skipped: hotelSkipped,
+      num_travelers: qty,
+    },
+  };
+}
+
+export async function createPreparedPackage(
+  input: CreatePackageInput,
+): Promise<CreatePackageResult> {
+  const session = await requirePartner();
+
+  const built = await buildPackageRowCore(input);
+  if (!built.ok) return built;
+
   // Opaque token - main looks packages up by this, never by the row id.
   const shareToken = crypto.randomUUID();
 
@@ -1570,13 +1614,7 @@ export async function createPreparedPackage(
     share_token: shareToken,
     partner_tracking_code: session.partner_code,
     created_by: session.sub,
-    event_id: event.id,
-    event_order_info: { ...eventOrderInfo, price_per_person: pricePerPerson },
-    flight_order_info: flightOrderInfo,
-    flight_skipped: flightSkipped,
-    hotel_order_info: hotelOrderInfo,
-    hotel_skipped: hotelSkipped,
-    num_travelers: qty,
+    ...built.core,
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1610,8 +1648,83 @@ export async function createPreparedPackage(
   const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
   return {
     ok: true,
-    link: partnerLink(session.partner_code, event.id, row.share_token, agentUtm),
-    // The success screen's "הזמנה עבור הלקוח" / "שלח הצעה" need the row id.
+    link: partnerLink(
+      session.partner_code,
+      baseRow.event_id,
+      row.share_token,
+      agentUtm,
+    ),
+    // The summary's "הזמן" / "שלח הצעה" CTAs need the row id.
+    packageId: row.id,
+  };
+}
+
+/**
+ * V2 summary (2026-08-27): the link auto-builds on entering the summary and
+ * later edits UPDATE the same row - the share_token (and therefore the link
+ * already copied or sent) keeps pointing at the newest composition.
+ * Same ownership posture as delete/setPackageAllowEdit.
+ */
+export async function updatePreparedPackage(
+  packageId: number,
+  input: CreatePackageInput,
+): Promise<CreatePackageResult> {
+  const session = await requirePartner();
+  const scope = await resolvePortalScope(session);
+
+  const id = Number(packageId);
+  if (!Number.isFinite(id)) return { ok: false, error: "חבילה לא תקינה" };
+
+  const built = await buildPackageRowCore(input);
+  if (!built.ok) return built;
+
+  const scoped = (q: unknown) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (q as any)
+      .eq("id", id)
+      .eq("partner_tracking_code", session.partner_code);
+    if (session.role === "agent" && !scope.soloOffice) {
+      query = query.eq("created_by", session.sub);
+    }
+    return query;
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let { data: updated, error } = await scoped(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("prepared_packages")
+      .update({ ...built.core, allow_edit: input.allowEdit !== false }),
+  )
+    .select("id, share_token")
+    .maybeSingle();
+
+  // Same allow_edit migration-race fallback as create.
+  if (error && (error.code === "PGRST204" || error.code === "42703")) {
+    ({ data: updated, error } = await scoped(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any).from("prepared_packages").update(built.core),
+    )
+      .select("id, share_token")
+      .maybeSingle());
+  }
+
+  if (error || !updated) {
+    if (error) console.error("updatePreparedPackage:", JSON.stringify(error));
+    return { ok: false, error: "עדכון החבילה נכשל. נסו שוב." };
+  }
+
+  revalidatePath(PORTAL_PACKAGES_PATH);
+  const row = updated as { id: number; share_token: string };
+  const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
+  return {
+    ok: true,
+    link: partnerLink(
+      session.partner_code,
+      built.core.event_id,
+      row.share_token,
+      agentUtm,
+    ),
     packageId: row.id,
   };
 }
@@ -1637,6 +1750,9 @@ export interface PreparedPackageListItem {
   hotel_summary: string | null;
   /** False = the customer cannot change the pinned composition. */
   allow_edit: boolean;
+  /** V2 merged table: the agent's follow-up date (null until set; UI falls
+   *  back to created_at). */
+  follow_up_date: string | null;
   /** Manager-only "נוצר ע"י" column - display name of the office user who
    *  built the package; null when unattributed (legacy row) or unresolved. */
   creator_name: string | null;
@@ -1671,6 +1787,7 @@ type PreparedPackageRow = {
   hotel_skipped: boolean;
   num_travelers: number;
   allow_edit?: boolean | null;
+  follow_up_date?: string | null;
 };
 
 const LIST_COLUMNS =
@@ -1687,27 +1804,28 @@ export async function getMyPreparedPackages(): Promise<
   // user on the code).
   const isolate = session.role === "agent" && !scope.soloOffice;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query = (supabase as any)
-    .from("prepared_packages")
-    .select(`${LIST_COLUMNS}, allow_edit, created_by`)
-    .eq("partner_tracking_code", session.partner_code)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (isolate) query = query.eq("created_by", session.sub);
-  let { data, error } = await query;
-
-  // Migration race: fall back to the pre-allow_edit column list.
-  if (error && (error.code === "42703" || error.code === "PGRST204")) {
+  const fetchList = (columns: string) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let fallbackQuery = (supabase as any)
+    let query = (supabase as any)
       .from("prepared_packages")
-      .select(`${LIST_COLUMNS}, created_by`)
+      .select(columns)
       .eq("partner_tracking_code", session.partner_code)
       .order("created_at", { ascending: false })
       .limit(200);
-    if (isolate) fallbackQuery = fallbackQuery.eq("created_by", session.sub);
-    ({ data, error } = await fallbackQuery);
+    if (isolate) query = query.eq("created_by", session.sub);
+    return query;
+  };
+
+  // Migration races: shed the newest columns first (follow_up_date is the V2
+  // migration, allow_edit the older one) before the bare column list.
+  let { data, error } = await fetchList(
+    `${LIST_COLUMNS}, allow_edit, created_by, follow_up_date`,
+  );
+  if (error && (error.code === "42703" || error.code === "PGRST204")) {
+    ({ data, error } = await fetchList(`${LIST_COLUMNS}, allow_edit, created_by`));
+  }
+  if (error && (error.code === "42703" || error.code === "PGRST204")) {
+    ({ data, error } = await fetchList(`${LIST_COLUMNS}, created_by`));
   }
 
   if (error) {
@@ -1766,11 +1884,45 @@ export async function getMyPreparedPackages(): Promise<
             }`
           : null,
       allow_edit: row.allow_edit !== false,
+      follow_up_date: row.follow_up_date ?? null,
       creator_name: row.created_by
         ? (nameBySub.get(row.created_by) ?? null)
         : null,
     };
   });
+}
+
+/** V2 merged הצעות table: the agent picks a follow-up date per package row. */
+export async function setPackageFollowUp(
+  id: number,
+  followUpDate: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await requirePartner();
+  const scope = await resolvePortalScope(session);
+
+  const packageId = Number(id);
+  if (!Number.isFinite(packageId))
+    return { ok: false, error: "חבילה לא תקינה" };
+  if (followUpDate != null && !/^\d{4}-\d{2}-\d{2}$/.test(followUpDate)) {
+    return { ok: false, error: "תאריך לא תקין" };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let updateQuery = (supabase as any)
+    .from("prepared_packages")
+    .update({ follow_up_date: followUpDate })
+    .eq("id", packageId)
+    .eq("partner_tracking_code", session.partner_code);
+  if (session.role === "agent" && !scope.soloOffice) {
+    updateQuery = updateQuery.eq("created_by", session.sub);
+  }
+  const { error } = await updateQuery;
+  if (error) {
+    console.error("setPackageFollowUp:", JSON.stringify(error));
+    return { ok: false, error: "העדכון נכשל. נסו שוב." };
+  }
+  revalidatePath(PORTAL_PACKAGES_PATH);
+  return { ok: true };
 }
 
 export type DeletePackageResult = { ok: true } | { ok: false; error: string };

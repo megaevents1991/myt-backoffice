@@ -131,6 +131,10 @@ export function TicketStep() {
         בחרו כמות כרטיסים וקטגוריה מועדפת -{" "}
         <span className="font-bold">כך בדיוק זה נראה ללקוח באתר.</span>
       </div>
+      {/* V2 spec: seating commitment shown on the ticket step. */}
+      <p className="text-sm text-muted-foreground">
+        אנחנו מתחייבים לישיבה צמודה בזוגות ובשלשות.
+      </p>
 
       {w.isTx && w.tixLoading && (
         <div className="flex items-center gap-3 p-2 text-sm text-muted-foreground">
