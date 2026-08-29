@@ -97,14 +97,26 @@ export async function GET(request: NextRequest) {
     // paged - but over the ~8k rows that survive the filters instead of ~50k,
     // and the exact count is taken once instead of once per page (each one is
     // a seq scan, and 50 of them is what tripped the statement timeout).
+    //
+    // Sequential on purpose. Every page re-runs the filter and sort, so firing
+    // the ranges concurrently instead just puts 8 of those on the database at
+    // once - each one then takes longer than it did alone and they all die on
+    // the statement timeout. Measured 2026-08-29: sequential 4.4s, parallel
+    // 500 "canceling statement due to statement timeout".
     const readPages = async () => {
       const rows: unknown[] = [];
       let total = 0;
 
       for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
         const first = from === 0;
+        // event_id breaks ties. Hundreds of events share a show_date, and with
+        // a non-total order Postgres is free to place tied rows differently
+        // per query - so an OFFSET page could repeat a row the previous page
+        // already returned and drop another entirely. Measured: 7 duplicates
+        // and 7 missing rows across 8 pages before the tiebreaker.
         const { data, error, count } = await filtered(first ? "exact" : undefined)
           .order("show_date", { ascending: true })
+          .order("event_id", { ascending: true })
           .range(from, from + PAGE_SIZE - 1);
 
         if (error) throw error;

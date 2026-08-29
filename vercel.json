@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/purgeAuditLog",
       "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/cron/purgeTixstockEvents",
+      "schedule": "45 4 * * *"
     }
   ],
   "functions": {
