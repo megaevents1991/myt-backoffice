@@ -33,6 +33,14 @@ const MAX_ROWS = 10000;
 
 const NOT_CANCELLED = '("Cancelled","Deleted")';
 
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return String(error);
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -122,12 +130,14 @@ export async function GET(request: NextRequest) {
         truncated: rows.length < total,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
+    // Supabase rejects with a plain `{ code, message, details, hint }`, not an
+    // Error - `String(error)` on that is "[object Object]".
     console.error("TixStock events fetch failed:", JSON.stringify(error));
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
+        error: errorMessage(error),
       },
       { status: 500 },
     );
