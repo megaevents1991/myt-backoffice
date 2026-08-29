@@ -183,6 +183,10 @@ export function TixStockEventsContent() {
   const [categories, setCategories] = useState<string[]>([]);
   const [performers, setPerformers] = useState<string[]>([]);
   const [tickets, setTickets] = useState<TixStockListing[]>([]);
+  // Ticketless events the server left out, counted so the checkbox can say how
+  // many are hidden without shipping the rows it is describing.
+  const [hiddenEmpty, setHiddenEmpty] = useState(0);
+  const [truncated, setTruncated] = useState(false);
   
   // Loading states
   const [isLoading, setIsLoading] = useState(true);
@@ -234,12 +238,18 @@ export function TixStockEventsContent() {
   const [ticketPage, setTicketPage] = useState(1);
   const ticketPageSize = 10;
 
-  const loadEvents = async () => {
+  // `withTickets` is a server-side filter, not a client one - flipping the
+  // checkbox refetches. Keeping it client-side meant downloading all 50k rows
+  // (49 MB) on every page load just so the 16% with tickets could be shown.
+  const loadEvents = async (withTickets: boolean) => {
     try {
       setIsLoading(true);
-      const data = await getTixStockEvents("");
+      const result = await getTixStockEvents({ withTickets });
+      const data = result.events;
       setEvents(data);
-      
+      setHiddenEmpty(result.hiddenEmpty);
+      setTruncated(result.truncated);
+
       // Extract unique categories
       const uniqueCategories = Array.from(new Set(data.map(e => e.category_name).filter(Boolean))).sort();
       setCategories(uniqueCategories);
@@ -283,8 +293,8 @@ export function TixStockEventsContent() {
   };
 
   useEffect(() => {
-    loadEvents();
-  }, []);
+    loadEvents(hideNoTickets);
+  }, [hideNoTickets]);
 
   useEffect(() => {
     if (selectedEvent) {
@@ -309,7 +319,7 @@ export function TixStockEventsContent() {
         title: "Sync Completed",
         description: "Events have been updated successfully.",
       });
-      loadEvents();
+      loadEvents(hideNoTickets);
     } catch (error) {
       toast({
         variant: "destructive",
@@ -415,6 +425,10 @@ export function TixStockEventsContent() {
     const start = (eventPage - 1) * eventPageSize;
     return filteredEvents.slice(start, start + eventPageSize);
   }, [filteredEvents, eventPage]);
+
+  // While hiding them the rows aren't loaded at all, so the count comes from
+  // the server; while showing them we can count what's on screen.
+  const emptyLabelCount = hideNoTickets ? hiddenEmpty : knownEmptyCount;
 
   // A batch is always one performer's events - reset selection when the performer changes.
   useEffect(() => setSelectedEventIds(new Set()), [selectedPerformer]);
@@ -650,8 +664,15 @@ export function TixStockEventsContent() {
                   onCheckedChange={(v) => setHideNoTickets(v === true)}
                 />
                 Hide events without tickets
-                {knownEmptyCount > 0 && ` (${knownEmptyCount})`}
+                {emptyLabelCount > 0 && ` (${emptyLabelCount})`}
               </label>
+
+              {truncated && (
+                <p className="mt-2 text-xs text-amber-600">
+                  Showing the first {events.length.toLocaleString()} events only - narrow the
+                  search or re-tick &quot;Hide events without tickets&quot; to see the full list.
+                </p>
+              )}
 
               <div className="space-y-4 mt-4">
                 {isLoading ? (
