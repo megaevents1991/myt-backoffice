@@ -26,7 +26,7 @@
     },
     {
       "path": "/api/cron/nightlyTixstockPriceSync",
-      "schedule": "0 3 * * *"
+      "schedule": "0 3,9,15,21 * * *"
     },
     {
       "path": "/api/cron/weeklyFeedHealth",
@@ -34,11 +34,11 @@
     },
     {
       "path": "/api/cron/nightlyCampaignCreatives",
-      "schedule": "30 3 * * *"
+      "schedule": "15 */4 * * *"
     },
     {
       "path": "/api/cron/publishMetaFeed",
-      "schedule": "0 6,15 * * *"
+      "schedule": "0 5,8,11,14,17,20 * * *"
     },
     {
       "path": "/api/cron/purgeAuditLog",

@@ -154,7 +154,10 @@ fallback for manual triggers:
 - `monthlyTournamentsSync` - sports tournaments monthly
 - `dailyLiveEventsSync` - live events twice daily
 - `ticketPriceSync` - ticket prices every 2 hours
-- `nightlyTixstockSync` / `nightlyTixstockPriceSync` - TixStock nightly (800s max duration)
+- `nightlyTixstockSync` - TixStock events nightly (800s max duration)
+- `nightlyTixstockPriceSync` - TixStock prices 4x/day (03,09,15,21 UTC; time-budgeted, reports `remaining`)
+- `nightlyCampaignCreatives` - feed creatives every 4h (backlog drains ~35/run)
+- `publishMetaFeed` - copies the live feed to the Storage file Meta reads, 6x/day (05,08,11,14,17,20 UTC)
 - `partnerMonthlyReport` - partner report monthly
 
 ### Environment Variables
