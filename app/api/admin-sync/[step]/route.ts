@@ -51,11 +51,17 @@ async function runStep(step: SyncStepId): Promise<SyncStepResult> {
       };
     }
     case "tixstock-prices": {
-      const r = await syncTixStockPrices();
+      // Same budget pattern as creatives: stop under the 800s ceiling, report
+      // what's left, and the client calls again until remaining hits 0.
+      const r = await syncTixStockPrices({
+        timeBudgetMs: 700_000,
+        concurrency: 4,
+      });
       const errors = r.errors.length ? `, ${r.errors.length} שגיאות` : "";
       return {
         step,
         summary: `${r.ticketsUpdated} כרטיסים עודכנו ב־${r.eventsProcessed} אירועים${errors}`,
+        remaining: r.remaining,
       };
     }
     case "ticket-prices": {

@@ -17,7 +17,13 @@ export async function GET(request: NextRequest) {
   try {
     console.log("💰 Nightly TixStock price sync cron job started");
 
-    const syncResult = await syncTixStockPrices();
+    // Budget under the 800s maxDuration so the run always finishes and
+    // reports; leftovers (syncResult.remaining) drain on the next schedule.
+    // Serial processing outgrew the ceiling at ~500 tx_events (2026-08-30).
+    const syncResult = await syncTixStockPrices({
+      timeBudgetMs: 700_000,
+      concurrency: 4,
+    });
 
     console.log("✅ Nightly TixStock price sync completed:", syncResult);
 
