@@ -20,7 +20,16 @@ import {
   updateFootballLogo,
   deleteFootballLogo,
 } from "@/lib/actions/football-logo-actions";
-import type { FootballLogo } from "@/types/football-logo.types";
+import {
+  LOGO_ACCEPT,
+  duplicateLogoMessage,
+  findDuplicateLogo,
+  validateLogoFile,
+} from "@/lib/football-logo-upload";
+import type {
+  CreateFootballLogoResult,
+  FootballLogo,
+} from "@/types/football-logo.types";
 
 export function LogoLibrary({ initialLogos }: { initialLogos: FootballLogo[] }) {
   const router = useRouter();
@@ -47,26 +56,74 @@ export function LogoLibrary({ initialLogos }: { initialLogos: FootballLogo[] }) 
   }, [logos, search]);
 
   const onUpload = async (formData: FormData) => {
-    setUploading(true);
-    try {
-      const created = await createFootballLogo(formData);
-      setLogos((prev) =>
-        [...prev, created].sort((a, b) =>
-          a.name_english.localeCompare(b.name_english)
-        )
-      );
-      formRef.current?.reset();
-      toast({ title: "Logo added", description: created.name_english });
-      router.refresh(); // picker options come from the server component
-    } catch (e) {
+    const entry = formData.get("file");
+    const file = entry instanceof File ? entry : null;
+    const nameEnglish = String(formData.get("name_english") ?? "").trim();
+
+    // Pre-flight against the same rules the action enforces: answers instantly,
+    // and catches the duplicate name against the list already in memory instead
+    // of uploading a file only for the unique index to reject it.
+    const localError = !file
+      ? "לא נבחר קובץ לוגו."
+      : !nameEnglish
+        ? "חובה למלא שם באנגלית."
+        : (validateLogoFile(file) ??
+          (findDuplicateLogo(logos, nameEnglish)
+            ? duplicateLogoMessage(nameEnglish)
+            : null));
+    if (localError) {
       toast({
         variant: "destructive",
-        title: "Upload failed",
-        description: e instanceof Error ? e.message : "Unknown error",
+        title: "הלוגו לא הועלה",
+        description: localError,
       });
+      return;
+    }
+
+    setUploading(true);
+    let result: CreateFootballLogoResult;
+    try {
+      result = await createFootballLogo(formData);
+    } catch (e) {
+      // The action never returned at all (network / platform) - our side.
+      console.error("createFootballLogo transport error:", e);
+      result = {
+        ok: false,
+        kind: "server",
+        message: "הבקשה לשרת נכשלה עוד לפני שההעלאה התחילה.",
+        detail: e instanceof Error ? e.message : String(e),
+      };
     } finally {
       setUploading(false);
     }
+
+    if (!result.ok) {
+      if (result.kind === "server") {
+        console.error("createFootballLogo failed:", result.message, result.detail);
+      }
+      toast({
+        variant: "destructive",
+        // Only "server" is ours to fix - say so, so nobody re-picks a good file.
+        title:
+          result.kind === "server"
+            ? "באג בצד השרת - לא בגלל הקובץ"
+            : "הלוגו לא הועלה",
+        description:
+          result.kind === "server" && result.detail
+            ? `${result.message} (${result.detail})`
+            : result.message,
+      });
+      return;
+    }
+
+    setLogos((prev) =>
+      [...prev, result.logo].sort((a, b) =>
+        a.name_english.localeCompare(b.name_english)
+      )
+    );
+    formRef.current?.reset();
+    toast({ title: "Logo added", description: result.logo.name_english });
+    router.refresh(); // picker options come from the server component
   };
 
   const openEdit = (logo: FootballLogo) => {
@@ -143,7 +200,7 @@ export function LogoLibrary({ initialLogos }: { initialLogos: FootballLogo[] }) 
               id="ll-file"
               name="file"
               type="file"
-              accept="image/png,image/svg+xml,image/webp,image/jpeg"
+              accept={LOGO_ACCEPT}
               required
             />
           </div>

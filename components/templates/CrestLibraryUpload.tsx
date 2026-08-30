@@ -10,7 +10,16 @@ import {
   createFootballLogo,
   getFootballLogos,
 } from "@/lib/actions/football-logo-actions";
-import type { FootballLogo } from "@/types/football-logo.types";
+import {
+  LOGO_ACCEPT,
+  duplicateLogoMessage,
+  findDuplicateLogo,
+  validateLogoFile,
+} from "@/lib/football-logo-upload";
+import type {
+  CreateFootballLogoResult,
+  FootballLogo,
+} from "@/types/football-logo.types";
 
 // Light copy of the site's clubNamesMatch (myt-main lib/eventNameMatch.ts):
 // identifying tokens equal, qualifiers ignored - "Tottenham Hotspur FC" finds
@@ -63,21 +72,60 @@ export function CrestLibraryUpload({
   );
 
   const onFile = async (file: File) => {
+    const clearInput = () => {
+      if (fileRef.current) fileRef.current.value = "";
+    };
+
+    // Same rules the action enforces, answered without a round-trip.
+    const localError = !en
+      ? "חובה למלא שם באנגלית לקבוצה לפני העלאת הסמל."
+      : (validateLogoFile(file) ??
+        (findDuplicateLogo(logos ?? [], en) ? duplicateLogoMessage(en) : null));
+    if (localError) {
+      toast.error(localError);
+      clearInput();
+      return;
+    }
+
+    setBusy(true);
+    const fd = new FormData();
+    fd.set("file", file);
+    fd.set("name_english", en);
+    fd.set("name_hebrew", he);
+
+    let result: CreateFootballLogoResult;
     try {
-      setBusy(true);
-      const fd = new FormData();
-      fd.set("file", file);
-      fd.set("name_english", en);
-      fd.set("name_hebrew", he);
-      const created = await createFootballLogo(fd);
-      setLogos((prev) => [...(prev ?? []), created]);
-      toast.success("Crest uploaded to the library - the site updates automatically.");
+      result = await createFootballLogo(fd);
     } catch (error) {
-      toast.error((error as Error)?.message || "Upload failed.");
+      console.error("createFootballLogo transport error:", error);
+      result = {
+        ok: false,
+        kind: "server",
+        message: "הבקשה לשרת נכשלה עוד לפני שההעלאה התחילה.",
+        detail: error instanceof Error ? error.message : String(error),
+      };
     } finally {
       setBusy(false);
-      if (fileRef.current) fileRef.current.value = "";
+      clearInput();
     }
+
+    if (!result.ok) {
+      // Only "server" is ours to fix; the rest is the file or the name.
+      if (result.kind === "server") {
+        console.error("createFootballLogo failed:", result.message, result.detail);
+        toast.error(
+          `באג בצד השרת - לא בגלל הקובץ: ${result.message}${
+            result.detail ? ` (${result.detail})` : ""
+          }`,
+        );
+      } else {
+        toast.error(result.message);
+      }
+      return;
+    }
+
+    setLogos((prev) => [...(prev ?? []), result.logo]);
+    toast.success("Crest uploaded to the library - the site updates automatically.");
   };
 
   return (
@@ -117,7 +165,7 @@ export function CrestLibraryUpload({
               <input
                 ref={fileRef}
                 type="file"
-                accept="image/png,image/svg+xml,image/webp,image/jpeg"
+                accept={LOGO_ACCEPT}
                 hidden
                 disabled={busy || (!en && !he)}
                 onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
