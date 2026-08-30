@@ -9,6 +9,10 @@ import {
   SESSION_MAX_AGE,
 } from "@/lib/auth/session";
 import { getProfileByEmail } from "@/lib/auth/supabase-auth";
+import {
+  newPortalSessionId,
+  setPortalSessionId,
+} from "@/lib/auth/portal-session-id";
 import { logAudit, requestIp } from "@/lib/audit";
 
 export async function GET(request: Request) {
@@ -65,9 +69,15 @@ export async function GET(request: Request) {
       metadata: { provider: "google" },
     });
 
-    const isPartner = ["agent", "affiliate"].includes(profile.role);
+    const isPartner = ["agent", "affiliate", "office_manager"].includes(
+      profile.role,
+    );
     const home = isPartner ? "/portal" : "/dashboard";
     const redirect = NextResponse.redirect(new URL(home, request.url));
+    // Same login id the password route stamps - myt-main revokes agent mode
+    // against it (lib/auth/portal-session-id.ts).
+    const sid = isPartner ? newPortalSessionId() : null;
+    if (sid) await setPortalSessionId(profile.id, sid);
     // Partners get the /portal-scoped cookie so their login coexists with a
     // staff `session` in the same browser - same split as the password login.
     redirect.cookies.set(
@@ -77,6 +87,7 @@ export async function GET(request: Request) {
         email: profile.email,
         role: profile.role,
         partner_code: profile.partner_tracking_code,
+        sid,
       }),
       {
         httpOnly: true,

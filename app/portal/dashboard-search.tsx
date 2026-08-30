@@ -31,6 +31,10 @@ import type { BuilderEvent } from "@/lib/actions/portal-package-actions";
 const dateFmt = (value: string) => new Date(value).toLocaleDateString("he-IL");
 const usd = (value: number) => `$${Math.round(value).toLocaleString("en-US")}`;
 
+/** The search has no traveler picker, so the "total" line prices the usual
+ *  couple. Named rather than inlined so the label and the maths can't drift. */
+const PRICE_PREVIEW_TRAVELERS = 2;
+
 type Genre = "all" | "sport" | "music";
 type SortMode = "recommended" | "date" | "priceAsc" | "priceDesc";
 
@@ -532,12 +536,19 @@ export function DashboardSearch({
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   {perPerson != null && (
+                    // Per-traveler is the headline number (Dor, 2026-08-30):
+                    // the big figure used to be the 2-traveler total with
+                    // "לנוסע" in small print, which read as the price of one.
+                    // The ×2 is spelled out below instead of implied.
                     <div className="text-end">
                       <p className="font-bold tabular-nums" dir="ltr">
-                        {usd(perPerson * 2)}
+                        {usd(perPerson)}
                       </p>
                       <p className="text-[11px] text-muted-foreground" dir="rtl">
-                        סה&quot;כ ({usd(perPerson)} לנוסע)
+                        לנוסע · סה&quot;כ ל-{PRICE_PREVIEW_TRAVELERS} נוסעים{" "}
+                        <span dir="ltr" className="tabular-nums">
+                          {usd(perPerson * PRICE_PREVIEW_TRAVELERS)}
+                        </span>
                         {ticketsOnly && " · כרטיס בלבד"}
                       </p>
                     </div>
@@ -566,8 +577,14 @@ export function DashboardSearch({
                     size="sm"
                     className="rounded-full bg-brand-forest font-semibold text-primary-foreground hover:bg-brand-forest/90"
                   >
-                    <Link href={`/portal/packages/new?event=${event.id}`}>
-                      בניית חבילה
+                    {/* Carries the "כרטיסים בלבד" choice into the builder, which
+                        then goes tickets → summary (doc 2026-08-30, item 10). */}
+                    <Link
+                      href={`/portal/packages/new?event=${event.id}${
+                        ticketsOnly ? "&tickets=1" : ""
+                      }`}
+                    >
+                      {ticketsOnly ? "בניית כרטיס" : "בניית חבילה"}
                     </Link>
                   </Button>
                 </div>

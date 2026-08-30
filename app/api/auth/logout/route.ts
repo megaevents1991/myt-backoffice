@@ -6,6 +6,8 @@ import {
   SESSION_COOKIE,
   verifySessionValue,
 } from "@/lib/auth/session";
+import { clearPortalSessionId } from "@/lib/auth/portal-session-id";
+import { PARTNER_ROLES } from "@/types/auth.types";
 import { logAudit } from "@/lib/audit";
 
 export async function POST(request: Request) {
@@ -16,6 +18,12 @@ export async function POST(request: Request) {
         action: "logout",
         actor: { id: session.sub, email: session.email, role: session.role },
       });
+      // Ends agent mode on myt-main too: the customer site holds its own
+      // cookie, and the only thing that can revoke it from here is this id
+      // disappearing from the profile (doc 2026-08-30, item 2).
+      if (PARTNER_ROLES.includes(session.role)) {
+        await clearPortalSessionId(session.sub, session.sid);
+      }
     }
 
     // The portal's own logout button sends { scope: "portal" }: it must end

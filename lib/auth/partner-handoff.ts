@@ -35,6 +35,13 @@ export type PartnerHandoffUser = {
   role: "agent" | "affiliate";
   partner_code: string;
   display_name?: string | null;
+  /**
+   * The portal login id (lib/auth/portal-session-id.ts). Main stores it in its
+   * own cookie and re-checks it against `user_profiles.portal_session_id` on
+   * every partner request, so logging out here - or logging in as a different
+   * agent - ends agent mode there. Without it main refuses agent mode outright.
+   */
+  sid?: string | null;
 };
 
 function signingKey(): string {
@@ -79,6 +86,7 @@ export async function mintPartnerHandoffToken(
     role: user.role,
     partner_code: user.partner_code,
     display_name: user.display_name ?? null,
+    ...(user.sid ? { sid: user.sid } : {}),
     exp: Date.now() + HANDOFF_TTL_MS,
   };
   const body = toBase64Url(new TextEncoder().encode(JSON.stringify(payload)));

@@ -7,6 +7,10 @@ import {
   SESSION_MAX_AGE,
 } from "@/lib/auth/session";
 import { verifyPassword, getProfile } from "@/lib/auth/supabase-auth";
+import {
+  newPortalSessionId,
+  setPortalSessionId,
+} from "@/lib/auth/portal-session-id";
 import { PARTNER_ROLES, type UserProfile } from "@/types/auth.types";
 import { logAudit, requestIp } from "@/lib/audit";
 
@@ -28,13 +32,23 @@ async function respondWithSession(profile: UserProfile, request: Request) {
       display_name: profile.display_name,
     },
   });
+  const isPartner = PARTNER_ROLES.includes(profile.role);
+  // Partner logins carry a login id that myt-main can revoke against (see
+  // lib/auth/portal-session-id.ts): stamping it here is what makes THIS login
+  // the only one the customer site will accept as agent mode - an older
+  // browser still holding a handoff cookie stops being an agent right now.
+  let sid: string | null = null;
+  if (isPartner) {
+    sid = newPortalSessionId();
+    await setPortalSessionId(profile.id, sid);
+  }
   const value = await createSessionValue({
     sub: profile.id,
     email: profile.email,
     role: profile.role,
     partner_code: profile.partner_tracking_code,
+    sid,
   });
-  const isPartner = PARTNER_ROLES.includes(profile.role);
   // Partners live in their own /portal-scoped cookie so a partner login in one
   // tab never logs out a staff `session` in another (multi-session, same
   // Chrome). Staff keep the site-wide cookie. See lib/auth/session.ts.

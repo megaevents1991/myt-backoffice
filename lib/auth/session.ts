@@ -49,6 +49,14 @@ export type SessionPayload = {
   email: string;
   role: Role;
   partner_code: string | null; // partners.partner_tracking_code for agent/affiliate
+  /**
+   * Portal login id, on partner sessions only (2026-08-30). Mirrored in
+   * `user_profiles.portal_session_id`: login writes it, logout clears it, and
+   * the agent handoff carries it to myt-main, which refuses agent mode once
+   * the two stop matching. That is what makes "התנתקתי בבק אופיס" and
+   * "התחברתי כסוכן אחר" end agent mode on the customer site.
+   */
+  sid?: string;
   /** Present only on superadmin-impersonated portal sessions. */
   impersonator?: { sub: string; email: string };
   exp: number; // ms epoch
@@ -118,6 +126,8 @@ export async function createSessionValue(
     email: string;
     role: Role;
     partner_code?: string | null;
+    /** Partner logins only - see SessionPayload.sid. */
+    sid?: string | null;
     /** Set on impersonated sessions - who is really acting. Audited. */
     impersonator?: { sub: string; email: string };
   },
@@ -128,6 +138,7 @@ export async function createSessionValue(
     email: user.email,
     role: user.role,
     partner_code: user.partner_code ?? null,
+    ...(user.sid ? { sid: user.sid } : {}),
     ...(user.impersonator ? { impersonator: user.impersonator } : {}),
     exp: Date.now() + ttlSeconds * 1000,
   };

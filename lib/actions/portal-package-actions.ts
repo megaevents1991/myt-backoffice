@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requirePartner } from "@/lib/auth/guards";
 import { mintPartnerHandoffToken } from "@/lib/auth/partner-handoff";
 import { supabase } from "@/lib/supabase-server";
+import { MEGA_EVENTS_CREATOR } from "@/lib/portal-labels";
 import { partnerLink, PUBLIC_SITE_URL } from "@/lib/site";
 import {
   getAgentSlugForUser,
@@ -1330,6 +1331,14 @@ export type CreatePackageInput = {
   qty: number;
   /** May the customer change the pinned composition? Default true (editable). */
   allowEdit?: boolean;
+  /**
+   * The agent's price change per traveler in USD: + uplift above site price,
+   * - discount funded from their own commission (doc 2026-08-30, item 4 -
+   * "שמשנים עמלה זה צריך להשפיע על הלינק"). Stored ON the package, so the
+   * plain link, the copied link and the quote all quote the same number. The
+   * discount side is clamped server-side to the partner's commission.
+   */
+  priceAdjustPerPerson?: number;
   /** Cheapest hotel available for the event, per guest, as the wizard saw it -
    *  the hotel-skip-fee reference (Dor 24.8, mirrors main). Only consulted
    *  when hotel.mode === "none"; keeps the stamped price_per_person equal to
@@ -1659,6 +1668,40 @@ async function buildPackageRowCore(
   };
 }
 
+/**
+ * The agent's per-traveler price change, clamped the way the wizard's own
+ * input is: an uplift is theirs to set, a DISCOUNT may never exceed the
+ * commission they earn on the package (they would be paying to sell). Done
+ * server-side because the client cap is a convenience, not a control.
+ */
+async function clampPriceAdjust(
+  input: CreatePackageInput,
+  pricePerPerson: number | null,
+): Promise<number> {
+  const raw = Number(input.priceAdjustPerPerson);
+  if (!Number.isFinite(raw) || raw === 0) return 0;
+  if (raw > 0) return Math.round(raw * 100) / 100;
+
+  const terms = await getMyCommissionTerms();
+  const rate = Number(terms?.rate);
+  if (!Number.isFinite(rate) || rate <= 0) return 0; // no commission = no room to discount
+  const perPerson =
+    terms?.type === "percentage"
+      ? ((pricePerPerson ?? 0) * rate) / 100
+      : // Fixed commission is per TICKET, and a package is one ticket per
+        // traveler - so the per-traveler ceiling is the rate itself.
+        rate;
+  const floor = -Math.max(0, Math.round(perPerson * 100) / 100);
+  return Math.max(floor, Math.round(raw * 100) / 100);
+}
+
+/** Reads the per-traveler site price the builder just stamped on the row. */
+function stampedPricePerPerson(core: PackageRowCore): number | null {
+  const info = core.event_order_info as { price_per_person?: number } | null;
+  const value = Number(info?.price_per_person);
+  return Number.isFinite(value) ? value : null;
+}
+
 export async function createPreparedPackage(
   input: CreatePackageInput,
 ): Promise<CreatePackageResult> {
@@ -1666,6 +1709,10 @@ export async function createPreparedPackage(
 
   const built = await buildPackageRowCore(input);
   if (!built.ok) return built;
+  const priceAdjust = await clampPriceAdjust(
+    input,
+    stampedPricePerPerson(built.core),
+  );
 
   // Opaque token - main looks packages up by this, never by the row id.
   const shareToken = crypto.randomUUID();
@@ -1680,12 +1727,27 @@ export async function createPreparedPackage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let { data: inserted, error: insertError } = await (supabase as any)
     .from("prepared_packages")
-    .insert({ ...baseRow, allow_edit: input.allowEdit !== false })
+    .insert({
+      ...baseRow,
+      allow_edit: input.allowEdit !== false,
+      price_adjust_per_person: priceAdjust,
+    })
     .select("id, share_token")
     .single();
 
-  // Deploy/migration race: if allow_edit hasn't landed yet, save without it
-  // (column default is true) rather than failing the whole package.
+  // Deploy/migration race: shed the newest column, then the older one, rather
+  // than failing the whole package (defaults: adjust 0, allow_edit true).
+  if (
+    insertError &&
+    (insertError.code === "PGRST204" || insertError.code === "42703")
+  ) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ data: inserted, error: insertError } = await (supabase as any)
+      .from("prepared_packages")
+      .insert({ ...baseRow, allow_edit: input.allowEdit !== false })
+      .select("id, share_token")
+      .single());
+  }
   if (
     insertError &&
     (insertError.code === "PGRST204" || insertError.code === "42703")
@@ -1737,6 +1799,10 @@ export async function updatePreparedPackage(
 
   const built = await buildPackageRowCore(input);
   if (!built.ok) return built;
+  const priceAdjust = await clampPriceAdjust(
+    input,
+    stampedPricePerPerson(built.core),
+  );
 
   const scoped = (q: unknown) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1752,14 +1818,26 @@ export async function updatePreparedPackage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let { data: updated, error } = await scoped(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
-      .from("prepared_packages")
-      .update({ ...built.core, allow_edit: input.allowEdit !== false }),
+    (supabase as any).from("prepared_packages").update({
+      ...built.core,
+      allow_edit: input.allowEdit !== false,
+      price_adjust_per_person: priceAdjust,
+    }),
   )
     .select("id, share_token")
     .maybeSingle();
 
-  // Same allow_edit migration-race fallback as create.
+  // Same migration-race fallback as create - newest column first.
+  if (error && (error.code === "PGRST204" || error.code === "42703")) {
+    ({ data: updated, error } = await scoped(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from("prepared_packages")
+        .update({ ...built.core, allow_edit: input.allowEdit !== false }),
+    )
+      .select("id, share_token")
+      .maybeSingle());
+  }
   if (error && (error.code === "PGRST204" || error.code === "42703")) {
     ({ data: updated, error } = await scoped(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1803,6 +1881,9 @@ export interface PreparedPackageListItem {
   /** Per-traveller site price of the composition (stamped at creation);
    *  null for packages built before it existed. */
   price_per_person: number | null;
+  /** The agent's change to that price, per traveller (+ uplift / - discount).
+   *  Carried by the LINK itself since 2026-08-30 - see the migration. */
+  price_adjust_per_person: number;
   /** "offline" = a specific flight is attached, "live" = customer picks, "none" = no flight. */
   flight: "offline" | "live" | "none";
   flight_summary: string | null;
@@ -1813,8 +1894,9 @@ export interface PreparedPackageListItem {
   /** V2 merged table: the agent's follow-up date (null until set; UI falls
    *  back to created_at). */
   follow_up_date: string | null;
-  /** Manager-only "נוצר ע"י" column - display name of the office user who
-   *  built the package; null when unattributed (legacy row) or unresolved. */
+  /** "בוצע ע"י" - display name of the office user who built the package, or
+   *  "מגה איבנטס" when the row is ours. Shown to every viewer since
+   *  2026-08-30 (item 5), not just managers. */
   creator_name: string | null;
 }
 
@@ -1848,6 +1930,7 @@ type PreparedPackageRow = {
   num_travelers: number;
   allow_edit?: boolean | null;
   follow_up_date?: string | null;
+  price_adjust_per_person?: number | string | null;
 };
 
 const LIST_COLUMNS =
@@ -1879,8 +1962,13 @@ export async function getMyPreparedPackages(): Promise<
   // Migration races: shed the newest columns first (follow_up_date is the V2
   // migration, allow_edit the older one) before the bare column list.
   let { data, error } = await fetchList(
-    `${LIST_COLUMNS}, allow_edit, created_by, follow_up_date`,
+    `${LIST_COLUMNS}, allow_edit, created_by, follow_up_date, price_adjust_per_person`,
   );
+  if (error && (error.code === "42703" || error.code === "PGRST204")) {
+    ({ data, error } = await fetchList(
+      `${LIST_COLUMNS}, allow_edit, created_by, follow_up_date`,
+    ));
+  }
   if (error && (error.code === "42703" || error.code === "PGRST204")) {
     ({ data, error } = await fetchList(`${LIST_COLUMNS}, allow_edit, created_by`));
   }
@@ -1929,6 +2017,8 @@ export async function getMyPreparedPackages(): Promise<
       qty: info.number_of_ticket ?? row.num_travelers,
       price_per_ticket: info.price_per_ticket ?? 0,
       price_per_person: info.price_per_person ?? null,
+      // numeric comes back as a string from PostgREST.
+      price_adjust_per_person: Number(row.price_adjust_per_person ?? 0) || 0,
       flight: flightMode,
       flight_summary:
         flightMode === "offline"
@@ -1945,9 +2035,11 @@ export async function getMyPreparedPackages(): Promise<
           : null,
       allow_edit: row.allow_edit !== false,
       follow_up_date: row.follow_up_date ?? null,
-      creator_name: row.created_by
-        ? (nameBySub.get(row.created_by) ?? null)
-        : null,
+      // Same rule as quotes (doc 2026-08-30, item 5): the agent who built it,
+      // or "מגה איבנטס" for a row that came from us.
+      creator_name:
+        (row.created_by ? nameBySub.get(row.created_by) : null) ??
+        MEGA_EVENTS_CREATOR,
     };
   });
 }
@@ -2137,6 +2229,9 @@ export async function getAgentOrderHandoffLink(
       email: session.email,
       role: "agent",
       partner_code: session.partner_code,
+      // Carries THIS portal login over to main, which keeps agent mode alive
+      // only while it still matches user_profiles.portal_session_id.
+      sid: session.sid,
     });
   } catch (e) {
     // NEXT_SECRET_SESSION_SECRET missing - the plain link still works, the

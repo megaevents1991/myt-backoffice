@@ -60,12 +60,20 @@ const STEPS = ["אירוע", "כרטיסים", "טיסה", "מלון", "סיום
 export function PackageWizard({
   events,
   initialEventId,
+  initialTicketsOnly = false,
   commissionTerms,
   isAgent = false,
 }: {
   events: BuilderEvent[];
   /** Deep entry from the unified packages page - lands straight on tickets. */
   initialEventId?: number;
+  /**
+   * "כרטיס בלבד" came in from the dashboard toggle (doc 2026-08-30, item 10):
+   * flight and hotel start as "none" and picking a ticket jumps straight to
+   * the summary - "לא לעבור את כל המסע בפלואו למישהו שרוצה כרטיס בלבד".
+   * Adding them back is one click on the summary's +להוספה chips.
+   */
+  initialTicketsOnly?: boolean;
   commissionTerms?: BuilderCommissionTerms | null;
   /** Agents also get "order for the customer" + "send offer" on the success screen. */
   isAgent?: boolean;
@@ -79,8 +87,16 @@ export function PackageWizard({
   const [flights, setFlights] = useState<BuilderFlight[]>([]);
   const [hotels, setHotels] = useState<BuilderHotelRoom[]>([]);
   const [inventoryLoading, setInventoryLoading] = useState(false);
-  const [flightChoice, setFlightChoice] = useState<FlightChoice>({ mode: "live" });
-  const [hotelChoice, setHotelChoice] = useState<HotelChoice>({ mode: "live" });
+  const [flightChoice, setFlightChoice] = useState<FlightChoice>(
+    initialTicketsOnly ? { mode: "none" } : { mode: "live" },
+  );
+  const [hotelChoice, setHotelChoice] = useState<HotelChoice>(
+    initialTicketsOnly ? { mode: "none" } : { mode: "live" },
+  );
+  // Ticket-only mode (item 10). Stays on for this build - "בניית חבילה" from
+  // a normal row is a normal build; the summary's +להוספה chips are how a
+  // flight or hotel gets added back, exactly like main's flow.
+  const [ticketsOnly, setTicketsOnly] = useState(initialTicketsOnly);
   const [allowEdit, setAllowEdit] = useState(true);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
@@ -229,8 +245,10 @@ export function PackageWizard({
     setAdjustPerPerson(0);
     setEvent(e);
     setCategory(cheapestCategory(e.tickets));
-    setFlightChoice({ mode: "live" });
-    setHotelChoice({ mode: "live" });
+    // Ticket-only entry starts with both parts OFF, so the summary is one
+    // step away; the normal entry leaves them for the customer to pick live.
+    setFlightChoice(ticketsOnly ? { mode: "none" } : { mode: "live" });
+    setHotelChoice(ticketsOnly ? { mode: "none" } : { mode: "live" });
     setFsResults(null);
     setHsResults(null);
     setFsError(null);
@@ -504,10 +522,20 @@ export function PackageWizard({
       setStep(4);
       return;
     }
+    // Ticket-only: tickets → summary, skipping flight and hotel entirely
+    // (doc 2026-08-30, item 10). They are still addable from the summary.
+    if (ticketsOnly && step === 1) {
+      setStep(4);
+      return;
+    }
     setStep((s) => Math.min(4, s + 1));
   };
   const goBack = () => setStep((s) => Math.max(0, s - 1));
   const editStep = (target: number) => {
+    // Going to the flight (2) or hotel (3) step from the summary means the
+    // agent wants that part after all - leave ticket-only mode so the flow
+    // behaves normally from here on.
+    if (target === 2 || target === 3) setTicketsOnly(false);
     setReturnToSummary(true);
     setStep(target);
   };
@@ -524,6 +552,10 @@ export function PackageWizard({
     c: category,
     q: qty,
     ae: allowEdit,
+    // The price change is part of the composition since 2026-08-30 (doc item
+    // 4): it is stored ON the package, so changing it must re-sync the row -
+    // otherwise the link keeps quoting the old price.
+    adj: adjustPerPerson,
     f:
       flightChoice.mode === "offline"
         ? ["offline", flightChoice.flightId]
@@ -549,6 +581,7 @@ export function PackageWizard({
         qty,
         allowEdit,
         hotelSkipRefPerGuest,
+        priceAdjustPerPerson: adjustPerPerson,
         flight:
           flightChoice.mode === "live-offer"
             ? ({ mode: "live-offer", offer: flightChoice.offer } as const)

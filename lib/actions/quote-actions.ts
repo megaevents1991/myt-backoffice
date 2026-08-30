@@ -15,6 +15,7 @@ import {
   round2,
   type CommissionTerms,
 } from "@/lib/partner-commission";
+import { MEGA_EVENTS_CREATOR } from "@/lib/portal-labels";
 import { signQuoteLink } from "@/lib/quote-link-sig";
 import { PUBLIC_SITE_URL } from "@/lib/site";
 import { SELLER_ROLES } from "@/types/auth.types";
@@ -47,10 +48,10 @@ export interface PortalQuote {
   /** V2 merged table: the agent's own follow-up date for this row. Null until
    *  set (UI falls back to created_at). Missing column pre-migration → null. */
   follow_up_date: string | null;
-  /** Manager-only "נוצר ע"י" column - display name (falling back to email) of
-   *  the office user who created the quote. Null for a non-manager viewer
-   *  (agents in a multi-user office only ever see their own quotes anyway) or
-   *  an unattributed/legacy row. */
+  /** "בוצע ע"י" - the office user who created the quote (display name, falling
+   *  back to email), or "מגה איבנטס" when the row came from us rather than
+   *  from the partner. Shown to every viewer since 2026-08-30 (item 5), not
+   *  just managers, and printed on the customer's PDF. */
   creator_name: string | null;
 }
 
@@ -290,16 +291,18 @@ export async function getPortalQuotes(): Promise<PortalQuote[]> {
     console.error("getPortalQuotes:", JSON.stringify(error));
     return [];
   }
-  // Only a manager sees who created each quote - an agent already sees only
-  // their own (or the whole solo office, where the column would be redundant).
-  const nameBySub = scope.isManager
-    ? new Map(scope.officeUsers.map((u) => [u.id, u.display_name || u.email]))
-    : null;
+  // Every viewer sees whose row this is (doc 2026-08-30, item 5): the agent
+  // who made it, or "מגה איבנטס" for a row that came from us - an
+  // unattributed/legacy row is ours by definition, since an agent's own rows
+  // have carried `created_by` since the office-manager release.
+  const nameBySub = new Map(
+    scope.officeUsers.map((u) => [u.id, u.display_name || u.email]),
+  );
   return ((data ?? []) as PortalQuoteRow[]).map(({ created_by, ...quote }) => ({
     ...quote,
     follow_up_date: quote.follow_up_date ?? null,
     creator_name:
-      nameBySub && created_by ? (nameBySub.get(created_by) ?? null) : null,
+      (created_by ? nameBySub.get(created_by) : null) ?? MEGA_EVENTS_CREATOR,
   }));
 }
 

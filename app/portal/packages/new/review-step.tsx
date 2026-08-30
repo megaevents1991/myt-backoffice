@@ -374,8 +374,8 @@ export function ReviewStep({ editStep }: { editStep: (target: number) => void })
                 <p className="mt-2 text-xs text-muted-foreground">
                   חיובי = תוספת עמלה שלכם מעל מחיר האתר. שלילי = הנחה ללקוח על
                   חשבון העמלה (עד {usd(maxDiscountPerPerson)} לנוסע). המחיר
-                  המעודכן מגיע ללקוח דרך &quot;שלח הצעה&quot; - לינק חתום או
-                  PDF; לינק החבילה הרגיל ממשיך להיתמחר לפי האתר.
+                  נשמר על החבילה עצמה - כל מי שיפתח את הלינק יראה אותו, וגם
+                  ההצעה וה-PDF יוצאים לפיו.
                 </p>
               </div>
             )}
@@ -652,33 +652,19 @@ function SendOfferDialog({
     package_id: w.createdId,
   };
 
-  // "שלח לינק": with no adjustment the plain package link is the offer; an
-  // adjusted price must ride a signed quote link, so a lightweight quote row
-  // is created behind the scenes (editable later in הצעות מחיר).
+  // "שלח לינק": ONE link, always. Since 2026-08-30 the price change lives on
+  // the package row itself (doc item 4 - "שמשנים עמלה זה צריך להשפיע על
+  // הלינק"), so the plain link already quotes it; no shadow quote row is
+  // created behind the agent's back any more.
   const sendLink = () => {
     if (!w.link) return;
     setError(null);
-    if (w.adjustPerPerson === 0) {
-      w.copyLink();
-      setDoneMsg("הלינק הועתק - שלחו אותו ללקוח.");
-      return;
-    }
-    startTransition(async () => {
-      const res = await createQuote({
-        ...quoteInputBase,
-        customer_name: "לקוח",
-        line_items: [pkgLine],
-        payment_link: w.link,
-      });
-      if (!res.ok) {
-        setError(res.error);
-        return;
-      }
-      w.copyLink(res.payment_link ?? w.link ?? undefined);
-      setDoneMsg(
-        "לינק עם המחיר שקבעתם הועתק - נוצרה גם שורת הצעה למעקב בהצעות מחיר.",
-      );
-    });
+    w.copyLink();
+    setDoneMsg(
+      w.adjustPerPerson === 0
+        ? "הלינק הועתק - שלחו אותו ללקוח."
+        : "הלינק הועתק - הוא נושא את המחיר שקבעתם.",
+    );
   };
 
   const submitPdf = () => {

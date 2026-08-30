@@ -74,6 +74,10 @@ export async function impersonatePartner(
       // Actions taken while impersonating are audited under the REAL actor -
       // lib/audit.ts reads this off the session.
       impersonator: { sub: admin.sub, email: admin.email },
+      // Deliberately NO `sid` (lib/auth/portal-session-id.ts): stamping one
+      // would overwrite the real partner's login id and kill THEIR agent mode
+      // on myt-main. The cost is that an impersonated "הזמנה עבור הלקוח" lands
+      // on main as a plain package link, without agent-paid settlement.
     },
     PORTAL_IMPERSONATION_MAX_AGE,
   );

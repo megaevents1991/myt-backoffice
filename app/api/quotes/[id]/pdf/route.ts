@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { renderQuoteHtml } from "@/lib/quote-pdf-template";
+import { MEGA_EVENTS_CREATOR } from "@/lib/portal-labels";
 import { resolvePortalScope } from "@/lib/portal-attribution";
 import { STAFF_ROLES, SELLER_ROLES } from "@/types/auth.types";
 
@@ -25,6 +26,7 @@ export async function POST(
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let { data: quote, error: quoteError } = await (supabase as any)
       .from("quotes")
       .select(
@@ -39,6 +41,7 @@ export async function POST(
       quoteError &&
       (quoteError.code === "42703" || quoteError.code === "PGRST204")
     ) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ({ data: quote, error: quoteError } = await (supabase as any)
         .from("quotes")
         .select(
@@ -90,6 +93,7 @@ export async function POST(
 
     let partnerName: string | null = null;
     if (quote.partner_tracking_code) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: partnerRow, error: partnerError } = await (supabase as any)
         .from("partners")
         .select("name_hebrew")
@@ -110,12 +114,17 @@ export async function POST(
       logo_url: string | null;
       phone: string | null;
       email: string | null;
+      display_name?: string | null;
     } | null = null;
+    // Whether the creator profile resolves is also what decides the customer's
+    // "בוצע ע"י" line below - a quote with no partner-side creator is ours.
+    let creatorDisplayName: string | null = null;
     const { data: creatorProfile, error: creatorError } = await (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       supabase as any
     )
       .from("user_profiles")
-      .select("logo_url,phone,email")
+      .select("logo_url,phone,email,display_name")
       .eq("id", quote.created_by)
       .maybeSingle();
     if (creatorError) {
@@ -126,12 +135,14 @@ export async function POST(
     }
     if (creatorProfile) {
       profile = creatorProfile;
+      creatorDisplayName = creatorProfile.display_name ?? null;
     } else if (quote.partner_tracking_code) {
       const { data: anyProfile, error: anyProfileError } = await (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         supabase as any
       )
         .from("user_profiles")
-        .select("logo_url,phone,email")
+        .select("logo_url,phone,email,display_name")
         .eq("partner_tracking_code", quote.partner_tracking_code)
         .limit(1)
         .maybeSingle();
@@ -168,6 +179,9 @@ export async function POST(
         notes,
         valid_until: quote.valid_until,
         payment_link: paymentLink,
+        // Item 5: the customer sees who is handling the offer - the agent by
+        // name, or us when the quote has no partner-side creator.
+        handled_by: creatorDisplayName || MEGA_EVENTS_CREATOR,
       },
       partner: {
         name_hebrew: partnerName,
@@ -183,6 +197,7 @@ export async function POST(
       // Dev fallback: try a locally installed Chrome; if unavailable, hand back
       // the raw HTML so the flow is testable without chromium installed.
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const playwright = require("playwright-core");
         const browser = await playwright.chromium.launch({
           channel: "chrome",
@@ -218,7 +233,9 @@ export async function POST(
         });
       }
     } else {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const chromium = require("@sparticuz/chromium");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const playwright = require("playwright-core");
       const browser = await playwright.chromium.launch({
         args: chromium.args,
@@ -261,6 +278,7 @@ export async function POST(
       );
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: updateError } = await (supabase as any)
       .from("quotes")
       .update({ pdf_storage_path: storagePath })

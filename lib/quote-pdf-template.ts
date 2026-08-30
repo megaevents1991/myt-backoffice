@@ -30,6 +30,12 @@ export interface QuoteForPdf {
   valid_until: string | null;
   /** Partner-coded site order link → the "register & pay" CTA; null = info-only. */
   payment_link?: string | null;
+  /**
+   * Who is handling this offer, for the customer's eyes: the agent who built
+   * it, or "מגה איבנטס" when it came from us (doc 2026-08-30, item 5 -
+   * "שיהיה רשום ללקוח יבוצע ע"י שם הסוכן"). Omitted → the chip is not shown.
+   */
+  handled_by?: string | null;
 }
 
 export interface PartnerBrandingForPdf {
@@ -293,6 +299,13 @@ export function renderQuoteHtml(args: {
   <div class="chips">
     <div class="chip"><div class="chip-label">לקוח</div><div class="chip-value">${esc(quote.customer_name || "-")}</div></div>
     <div class="chip"><div class="chip-label">תאריך ההצעה</div><div class="chip-value">${esc(fmtDate(quote.created_at))}</div></div>
+    ${
+      quote.handled_by
+        ? `<div class="chip"><div class="chip-label">בוצע ע"י</div><div class="chip-value">${esc(
+            quote.handled_by,
+          )}</div></div>`
+        : ""
+    }
     ${validityHtml}
   </div>
 
