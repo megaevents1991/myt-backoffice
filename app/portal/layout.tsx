@@ -1,23 +1,12 @@
-import { Assistant, Rubik } from "next/font/google";
 import { getSession } from "@/lib/auth/guards";
 import { getPortalProfile } from "@/lib/actions/portal-actions";
 import { PARTNER_ROLES } from "@/types/auth.types";
 import { PortalNav } from "./portal-nav";
 import { SessionWatch } from "./session-watch";
 
-// Main-app brand fonts (Assistant body / Rubik display), loaded only for the
-// portal subtree - the admin dashboard keeps its own look.
-const assistant = Assistant({
-  subsets: ["hebrew", "latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-portal-sans",
-});
-
-const rubik = Rubik({
-  subsets: ["hebrew", "latin"],
-  weight: ["600", "700", "800"],
-  variable: "--font-portal-display",
-});
+// Assistant + Rubik now load once in the ROOT layout for the whole app; the
+// .portal-theme block in globals.css aliases --font-portal-* onto them, so the
+// portal renders in the exact same faces without loading them a second time.
 
 export default async function PortalLayout({
   children,
@@ -44,7 +33,7 @@ export default async function PortalLayout({
   return (
     <div
       dir="rtl"
-      className={`portal-theme min-h-screen ${assistant.variable} ${rubik.variable}`}
+      className="portal-theme min-h-screen"
     >
       {/* Idle-tab kick (QA item 10 upgrade, 20.08) - partner sessions only.
           Staff debugging the portal have no partner_code, so their own

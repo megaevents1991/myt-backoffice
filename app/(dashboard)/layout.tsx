@@ -4,7 +4,10 @@ import React, { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { Sidebar } from "@/components/Sidebar";
+import { AppSidebar } from "@/components/app-sidebar";
+import { CommandPalette } from "@/components/command-palette";
+import { Topbar } from "@/components/topbar";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useToast } from "@/hooks/use-toast";
 
 export default function DashboardLayout({
@@ -14,6 +17,7 @@ export default function DashboardLayout({
 }) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
+  const [searchOpen, setSearchOpen] = useState(false);
   // Error state is write-only on purpose - the handler toasts; nothing renders it.
   const [, setError] = useState<Error | null>(null);
   const { toast } = useToast();
@@ -104,9 +108,13 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <div className="flex-1 overflow-auto p-8">{children}</div>
-    </div>
+    <SidebarProvider>
+      <AppSidebar onOpenSearch={() => setSearchOpen(true)} />
+      <SidebarInset className="min-w-0">
+        <Topbar onOpenSearch={() => setSearchOpen(true)} />
+        <div className="min-w-0 flex-1 p-6">{children}</div>
+      </SidebarInset>
+      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+    </SidebarProvider>
   );
 }

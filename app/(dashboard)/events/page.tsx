@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PlusCircle, RefreshCw } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import { EventsTable } from "./events-table";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -25,8 +26,6 @@ export default function EventsPage() {
         throw new Error(errorData.error || 'Failed to revalidate pages');
       }
 
-      const result = await response.json();
-
       toast({
         title: "Pages revalidated",
         description: "Static pages have been successfully regenerated.",
@@ -45,34 +44,32 @@ export default function EventsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Events</h1>
-          <p className="text-muted-foreground">
-            Manage your events and their details.
-          </p>
-        </div>
-        <div className="flex items-center space-x-4">
-          <Button
-            onClick={handleRevalidate}
-            disabled={revalidating}
-            variant="outline"
-          >
-            {revalidating ? (
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            {revalidating ? "Revalidating..." : "Revalidate Pages"}
-          </Button>
-          <Link href="/events/new">
-            <Button>
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add Event
+      <PageHeader
+        title="Events"
+        description="Every sellable event - synced in from XS2E, LiveTickets, P1 and TixStock, or created here by hand. The prices on these rows are the BASE the customer site builds its final price on, and deleting is always a soft delete."
+        actions={
+          <>
+            <Button
+              onClick={handleRevalidate}
+              disabled={revalidating}
+              variant="outline"
+            >
+              {revalidating ? (
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              {revalidating ? "Revalidating..." : "Revalidate Pages"}
             </Button>
-          </Link>
-        </div>
-      </div>
+            <Link href="/events/new">
+              <Button>
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Add Event
+              </Button>
+            </Link>
+          </>
+        }
+      />
 
       <EventsTable />
     </div>

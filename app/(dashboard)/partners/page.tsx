@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getPartnersOverview } from "@/lib/actions/partners-dashboard-actions";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
@@ -21,15 +22,11 @@ export default async function PartnersPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Partners</h1>
-          <p className="text-muted-foreground">
-            Cross-partner production first; the full list and terms one tab over.
-          </p>
-        </div>
-        <AddPartnerButton />
-      </div>
+      <PageHeader
+        title="Partners"
+        description="Agencies, affiliates and offices that send you customers - each with a tracking code, commission terms and the discount their followers get. Production first; the full list and terms are one tab over."
+        actions={<AddPartnerButton />}
+      />
 
       <Tabs defaultValue="insights">
         <TabsList>
