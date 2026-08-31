@@ -178,8 +178,8 @@ export default async function OfflineFlightDetailsPage({
             <Separator className="my-2" />
 
             {/* Outbound Details Section */}
-            <div className="px-4 py-3 sm:px-6 bg-gray-50">
-              <h4 className="text-lg font-semibold text-gray-800">
+            <div className="px-4 py-3 sm:px-6 bg-muted">
+              <h4 className="text-lg font-semibold">
                 Outbound Flight
               </h4>
             </div>
@@ -228,8 +228,8 @@ export default async function OfflineFlightDetailsPage({
             <Separator className="my-2" />
 
             {/* Inbound Details Section */}
-            <div className="px-4 py-3 sm:px-6 bg-gray-50">
-              <h4 className="text-lg font-semibold text-gray-800">
+            <div className="px-4 py-3 sm:px-6 bg-muted">
+              <h4 className="text-lg font-semibold">
                 Inbound Flight
               </h4>
             </div>
@@ -278,8 +278,8 @@ export default async function OfflineFlightDetailsPage({
             <Separator className="my-2" />
 
             {/* Metadata Details Section */}
-            <div className="px-4 py-3 sm:px-6 bg-gray-50">
-              <h4 className="text-lg font-semibold text-gray-800">
+            <div className="px-4 py-3 sm:px-6 bg-muted">
+              <h4 className="text-lg font-semibold">
                 Airline Metadata
               </h4>
             </div>
@@ -298,10 +298,10 @@ export default async function OfflineFlightDetailsPage({
               />
               {flight.metadata_logo && (
                 <div className="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
-                  <dt className="text-sm font-medium text-gray-500">
+                  <dt className="text-sm font-medium text-muted-foreground">
                     Logo Preview
                   </dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                  <dd className="mt-1 text-sm sm:mt-0 sm:col-span-2">
                     <LogoImage
                       src={flight.metadata_logo}
                       alt={`${flight.metadata_name || "Airline"} logo`}

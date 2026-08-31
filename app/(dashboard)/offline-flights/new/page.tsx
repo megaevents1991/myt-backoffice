@@ -837,7 +837,7 @@ export default function NewOfflineFlightPage() {
                     <FormLabel>Metadata Airline IATA</FormLabel>
                     <FormControl>
                       {/* Display as text instead of Input */}
-                      <div className="pt-2 text-sm font-medium text-gray-700 dark:text-gray-300 min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
+                      <div className="pt-2 text-sm font-medium text-muted-foreground min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
                         {field.value || "-"}
                       </div>
                     </FormControl>
@@ -856,7 +856,7 @@ export default function NewOfflineFlightPage() {
                     <FormLabel>Metadata Airline Name</FormLabel>
                     <FormControl>
                       {/* Display as text instead of Input */}
-                      <div className="pt-2 text-sm font-medium text-gray-700 dark:text-gray-300 min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
+                      <div className="pt-2 text-sm font-medium text-muted-foreground min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
                         {field.value || "-"}
                       </div>
                     </FormControl>
@@ -885,7 +885,7 @@ export default function NewOfflineFlightPage() {
                           {field.value}
                         </a>
                       ) : (
-                        <div className="pt-2 text-sm font-medium text-gray-700 dark:text-gray-300 min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
+                        <div className="pt-2 text-sm font-medium text-muted-foreground min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
                           -
                         </div>
                       )}

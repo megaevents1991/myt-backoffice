@@ -559,7 +559,7 @@ export function StorageClient({
                         {isFolder ? (
                           <Folder className="h-5 w-5 text-blue-500" />
                         ) : (
-                          <File className="h-5 w-5 text-gray-500" />
+                          <File className="h-5 w-5 text-muted-foreground" />
                         )}
                         <span>{file.name}</span>
 

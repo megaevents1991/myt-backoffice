@@ -37,7 +37,7 @@ export default function Dashboard() {
         <h2 className="text-xl font-bold text-red-700 dark:text-red-400">
           Error Loading Dashboard
         </h2>
-        <pre className="mt-4 p-4 bg-white dark:bg-gray-800 rounded overflow-auto">
+        <pre className="mt-4 p-4 bg-muted rounded overflow-auto">
           {error.message}
           {error.stack && `\n\n${error.stack}`}
         </pre>

@@ -64,6 +64,7 @@ import type { OfflineHotel } from "@/types/offline-hotel.types";
 import { InlineHotelForm, type StagedHotelData } from "@/components/inline-hotel-form";
 import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
 import { StickySaveBar } from "@/components/sticky-save-bar";
+import { EditorRail } from "@/components/editor-rail";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EventTaxonomySelect, type TaxonomyOption } from "@/components/taxonomy/event-taxonomy-select";
 import {
@@ -1525,7 +1526,9 @@ export default function EventPage({
         </Card>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-8">
+      <div className="flex items-start gap-6">
+        <EditorRail />
+        <form onSubmit={handleSubmit} className="min-w-0 flex-1 space-y-8">
         {isBatchCreate && (
           <div className="rounded-md border border-blue-300 bg-blue-50 p-4 dark:bg-blue-950/30">
             <p className="font-semibold text-blue-900 dark:text-blue-200">
@@ -1558,7 +1561,7 @@ export default function EventPage({
             </ol>
           </div>
         )}
-        <Card>
+        <Card id="section-basic" data-editor-section="Basic information" className="scroll-mt-20">
           <CardHeader>
             <CardTitle>Basic Information</CardTitle>
             <CardDescription>
@@ -2016,7 +2019,7 @@ export default function EventPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="section-location" data-editor-section="Location" className="scroll-mt-20">
           <CardHeader>
             <CardTitle>Location</CardTitle>
             <CardDescription>
@@ -2120,7 +2123,7 @@ export default function EventPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="section-images" data-editor-section="Images" className="scroll-mt-20">
           <CardHeader>
             <CardTitle>Images</CardTitle>
             <CardDescription>
@@ -2207,7 +2210,11 @@ export default function EventPage({
         </Card>
 
         {event.type === "tx_event" && (
-          <Card>
+          <Card
+            id="section-tixstock"
+            data-editor-section="TixStock source"
+            className="scroll-mt-20"
+          >
             <CardHeader>
               <CardTitle>TixStock Source Preview</CardTitle>
               <CardDescription>
@@ -2549,7 +2556,11 @@ export default function EventPage({
           </Card>
         )}
 
-        <Card>
+        <Card
+          id="section-flights"
+          data-editor-section="Offline flights"
+          className="scroll-mt-20"
+        >
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
@@ -2754,7 +2765,11 @@ export default function EventPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          id="section-hotels"
+          data-editor-section="Offline hotels"
+          className="scroll-mt-20"
+        >
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
@@ -3019,7 +3034,11 @@ export default function EventPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          id="section-tickets"
+          data-editor-section="Tickets & rates"
+          className="scroll-mt-20"
+        >
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle>Tickets and Rates</CardTitle>
@@ -3239,7 +3258,8 @@ export default function EventPage({
                 : "Save Event"}
           </Button>
         </div>
-      </form>
+        </form>
+      </div>
 
       <StickySaveBar
         isDirty={isDirty}
