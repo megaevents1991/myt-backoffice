@@ -35,6 +35,7 @@ import {
   WizardContext,
   type FlightChoice,
   type HotelChoice,
+  type TopFlightCandidate,
   type WizardState,
 } from "./wizard-context";
 import {
@@ -97,6 +98,14 @@ export function PackageWizard({
   // a normal row is a normal build; the summary's +להוספה chips are how a
   // flight or hotel gets added back, exactly like main's flow.
   const [ticketsOnly, setTicketsOnly] = useState(initialTicketsOnly);
+  // What each step is currently showing FIRST - "בחר והמשך" picks it when the
+  // agent tapped nothing (2026-08-31: continuing without a tap used to keep
+  // the silent "live" default, so a "full" build saved with no flight/hotel
+  // and its link dropped the customer back onto the flight step).
+  const [topFlightCandidate, setTopFlightCandidate] =
+    useState<TopFlightCandidate | null>(null);
+  const [topHotelCandidate, setTopHotelCandidate] =
+    useState<LiveHotelOption | null>(null);
   const [allowEdit, setAllowEdit] = useState(true);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
@@ -528,6 +537,33 @@ export function PackageWizard({
       setStep(4);
       return;
     }
+    // "בחר והמשך" does what it says (2026-08-31): continuing past the flight
+    // or hotel step with nothing tapped picks the offer the step is showing
+    // first - the highlighted card already reads as chosen, and the silent
+    // "live" default meant a "full" build saved with no flight/hotel and its
+    // link dropped the customer onto the flight step ("שולח להתחלה").
+    // "הלקוח יבחר באתר" and "ללא" remain explicit choices, and both survive
+    // this untouched (explicit flag / mode "none").
+    if (
+      step === 2 &&
+      flightChoice.mode === "live" &&
+      !flightChoice.explicit &&
+      topFlightCandidate
+    ) {
+      setFlightChoice(
+        topFlightCandidate.kind === "offline"
+          ? { mode: "offline", flightId: topFlightCandidate.flightId }
+          : { mode: "live-offer", offer: topFlightCandidate.offer },
+      );
+    }
+    if (
+      step === 3 &&
+      hotelChoice.mode === "live" &&
+      !hotelChoice.explicit &&
+      topHotelCandidate
+    ) {
+      setHotelChoice({ mode: "live-offer", option: topHotelCandidate });
+    }
     setStep((s) => Math.min(4, s + 1));
   };
   const goBack = () => setStep((s) => Math.max(0, s - 1));
@@ -729,7 +765,19 @@ export function PackageWizard({
   const primaryDisabled =
     (step === 1 && !selectedTicket) ||
     (step === 2 && !flightSeatsOk) ||
-    (step === 3 && !canContinueFromHotel);
+    (step === 3 && !canContinueFromHotel) ||
+    // While a search is still running and nothing is chosen yet, "בחר והמשך"
+    // has nothing to choose - letting it through here is exactly how a "full"
+    // build used to save with no flight/hotel (2026-08-31). An explicit
+    // "הלקוח יבחר באתר" / "ללא" passes immediately.
+    (step === 2 &&
+      fsLoading &&
+      flightChoice.mode === "live" &&
+      !flightChoice.explicit) ||
+    (step === 3 &&
+      hsLoading &&
+      hotelChoice.mode === "live" &&
+      !hotelChoice.explicit);
 
   const slotTarget = (target: number): number | null => {
     if (target === step) return null;
@@ -850,6 +898,7 @@ export function PackageWizard({
     inventoryLoading,
     flightChoice,
     setFlightChoice,
+    setTopFlightCandidate,
     fsDepart,
     setFsDepart,
     fsReturn,
@@ -860,6 +909,7 @@ export function PackageWizard({
     runFlightSearch,
     hotelChoice,
     setHotelChoice,
+    setTopHotelCandidate,
     selectedUnits,
     setUnitCount,
     hotelCapacity,

@@ -9,7 +9,7 @@
  * target; skip lives in the sticky continue bar, exactly like the site.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DollarSign,
   Loader2,
@@ -477,6 +477,32 @@ export function FlightStep() {
     [visible],
   );
   const bestKey = sort === "best" ? (visible[0]?.key ?? null) : null;
+
+  // Register the first-shown pickable card (render order: offline inventory
+  // first, then live) so the wizard's "בחר והמשך" can actually choose it when
+  // the agent taps nothing (2026-08-31 - the silent "live" default used to
+  // save a "full" package with no flight). Cleared on unmount = leaving the
+  // step; sold-out-for-qty cards are skipped like their buttons are.
+  useEffect(() => {
+    const ordered = [
+      ...visible.filter((f) => f.kind === "offline"),
+      ...visible.filter((f) => f.kind === "live"),
+    ];
+    const top = ordered.find(
+      (f) => !(f.remaining != null && f.remaining < w.qty),
+    );
+    w.setTopFlightCandidate(
+      !top
+        ? null
+        : top.kind === "offline" && top.offlineId != null
+          ? { kind: "offline", flightId: top.offlineId }
+          : top.offer
+            ? { kind: "live-offer", offer: top.offer }
+            : null,
+    );
+    return () => w.setTopFlightCandidate(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, w.qty]);
 
   if (!event) return null;
   const isLocked = event.locked_flight_id != null;

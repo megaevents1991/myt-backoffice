@@ -10,7 +10,7 @@
  * room + breakfast, and a per-guest price delta.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BedDouble,
   CalendarCheck,
@@ -245,6 +245,18 @@ export function HotelStep() {
     }
     return [...capped].sort((a, b) => a.perPerson - b.perPerson);
   }, [filteredMerged, priceCeiling, maxPricePct, sort]);
+
+  // Register the first-shown LIVE room so the wizard's "בחר והמשך" can choose
+  // it when the agent taps nothing (2026-08-31 - same trap as the flight
+  // step: the silent "live" default saved a "full" package with no hotel).
+  // Offline inventory is skipped on purpose - it needs a per-room unit
+  // allocation, so it stays an explicit tap. Cleared on unmount.
+  useEffect(() => {
+    const firstLive = list.find((h) => h.kind === "live");
+    w.setTopHotelCandidate(firstLive ? (firstLive.group[0] ?? null) : null);
+    return () => w.setTopHotelCandidate(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list]);
 
   if (!event) return null;
 

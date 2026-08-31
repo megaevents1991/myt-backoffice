@@ -325,7 +325,15 @@ export function QuoteForm({
         });
         return;
       }
-      parsedItems.push({ label: item.label, qty, unit_price });
+      parsedItems.push({
+        label: item.label,
+        qty,
+        unit_price,
+        // Item 5 (doc 2026-08-30): the package row is fulfilled by us; a row
+        // the agent typed themselves is theirs - the server stamps the
+        // customer-facing "יבוצע ע"י" name from this.
+        source: item.fromEvent ? "site" : "agent",
+      });
     }
 
     startTransition(async () => {

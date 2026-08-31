@@ -33,6 +33,17 @@ export type HotelChoice =
   | { mode: "live"; explicit?: boolean }
   | { mode: "none" };
 
+/**
+ * The offer the flight step is currently SHOWING first (after its own
+ * filters/sort), registered so "בחר והמשך" can actually choose it (doc
+ * 2026-08-31): continuing past the step with nothing tapped used to keep the
+ * silent {mode:"live"} - the "full" package saved with no flight, and the
+ * customer's link landed them back on the flight step ("שולח להתחלה").
+ */
+export type TopFlightCandidate =
+  | { kind: "offline"; flightId: number }
+  | { kind: "live-offer"; offer: LiveFlightOffer };
+
 export type TicketOption = {
   category: string;
   price: number;
@@ -78,6 +89,9 @@ export interface WizardState {
   /* flight step */
   flightChoice: FlightChoice;
   setFlightChoice: (choice: FlightChoice) => void;
+  /** The step's first-shown pickable offer - what "בחר והמשך" auto-picks when
+   *  the agent tapped nothing (doc 2026-08-31). Null while loading/empty. */
+  setTopFlightCandidate: (candidate: TopFlightCandidate | null) => void;
   fsDepart: string;
   setFsDepart: (value: string) => void;
   fsReturn: string;
@@ -90,6 +104,8 @@ export interface WizardState {
   /* hotel step */
   hotelChoice: HotelChoice;
   setHotelChoice: (choice: HotelChoice | ((prev: HotelChoice) => HotelChoice)) => void;
+  /** Same auto-pick contract as the flight step - the first-shown live room. */
+  setTopHotelCandidate: (candidate: LiveHotelOption | null) => void;
   selectedUnits: Record<number, number>;
   setUnitCount: (room: BuilderHotelRoom, delta: number) => void;
   hotelCapacity: number;

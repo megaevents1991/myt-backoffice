@@ -33,6 +33,16 @@ export interface QuoteLineItem {
   label: string;
   qty: number;
   unit_price: number;
+  /**
+   * Who fulfils this line, sent by the form: "site" = the package row we
+   * generate, "agent" = a row the agent added themselves. The customer-facing
+   * `performed_by` name is stamped SERVER-side from it (doc 2026-08-30 item 5:
+   * "שמוספים שורה ע"י הסוכן שיהיה רשום ללקוח יבוצע ע"י שם הסוכן, רק השורה
+   * שלנו... מגה איבנטס").
+   */
+  source?: "site" | "agent";
+  /** Stamped by createQuote - the display name the customer sees per line. */
+  performed_by?: string;
 }
 
 export interface PortalQuote {
@@ -221,6 +231,22 @@ export async function getQuotePackageUnitPrice(
  * lookup failed - the agent/influencer decision is made on the session role,
  * not here, so a legacy row still typed 'affiliate' does not block a real agent.
  */
+/** The portal user's display name, for the per-line "יבוצע ע"י" stamp. */
+async function creatorDisplayNameFor(userId: string): Promise<string | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("user_profiles")
+    .select("display_name, email")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) {
+    console.error("creatorDisplayNameFor:", JSON.stringify(error));
+    return null;
+  }
+  const row = data as { display_name?: string | null; email?: string | null } | null;
+  return row?.display_name || row?.email || null;
+}
+
 async function commissionTermsFor(
   trackingCode: string,
 ): Promise<CommissionTerms | null> {
@@ -620,13 +646,29 @@ export async function createQuote(input: {
     payment_link = link;
   }
 
+  // Per-line "יבוצע ע"י" (item 5): re-map the items explicitly (never spread
+  // client objects into storage) and stamp the fulfiller name server-side -
+  // the agent's own display name on rows they added, us on the package row.
+  // Default is "site": a caller that never sends `source` (older clients)
+  // keeps today's behavior.
+  const agentName = await creatorDisplayNameFor(session.sub);
+  const line_items: QuoteLineItem[] = input.line_items.map((item) => ({
+    label: item.label.trim(),
+    qty: item.qty,
+    unit_price: item.unit_price,
+    performed_by:
+      item.source === "agent"
+        ? agentName || MEGA_EVENTS_CREATOR
+        : MEGA_EVENTS_CREATOR,
+  }));
+
   const row = {
     created_by: session.sub,
     partner_tracking_code: session.partner_code,
     event_id: input.event_id ?? null,
     customer_name,
     title,
-    line_items: input.line_items,
+    line_items,
     currency: "USD",
     total,
     notes: input.notes ?? null,

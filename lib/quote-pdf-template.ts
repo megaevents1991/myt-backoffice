@@ -17,6 +17,10 @@ export interface QuoteLineItemInput {
   label: string;
   qty: number;
   unit_price: number;
+  /** Per-line "יבוצע ע"י" - the agent's name on rows they added, "מגה
+   *  איבנטס" on the package row (doc 2026-08-30 item 5). Optional: quotes
+   *  from before the stamp render without the line. */
+  performed_by?: string | null;
 }
 
 export interface QuoteForPdf {
@@ -107,9 +111,14 @@ export function renderQuoteHtml(args: {
       const qty = Number.isFinite(item.qty) ? item.qty : 0;
       const unitPrice = Number.isFinite(item.unit_price) ? item.unit_price : 0;
       const lineTotal = qty * unitPrice;
+      // The fulfiller sits under the label, not in its own column - the
+      // 4-column grid stays intact for old quotes without the stamp.
+      const performedBy = item.performed_by
+        ? `<div class="performed-by">יבוצע ע"י ${esc(item.performed_by)}</div>`
+        : "";
       return `
         <tr class="${i % 2 === 0 ? "even" : "odd"}">
-          <td class="item-label">${esc(item.label)}</td>
+          <td class="item-label">${esc(item.label)}${performedBy}</td>
           <td class="num">${esc(String(qty))}</td>
           <td class="num">${esc(fmtUSD(unitPrice))}</td>
           <td class="num strong">${esc(fmtUSD(lineTotal))}</td>
@@ -226,6 +235,7 @@ export function renderQuoteHtml(args: {
     border-bottom: 1px solid #d9efe1;
   }
   thead th.num { text-align: left; }
+  .performed-by { margin-top: 2px; font-size: 10px; color: #6b7671; }
   tbody td { padding: 11px 14px; font-size: 13px; border-bottom: 1px solid #eef2ef; }
   tbody tr.odd td { background: #fafcfa; }
   tbody tr:last-child td { border-bottom: none; }

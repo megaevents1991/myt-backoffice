@@ -637,6 +637,9 @@ function SendOfferDialog({
     label: `חבילת ${event.name}${w.category ? ` - ${w.category}` : ""}`,
     qty: w.qty,
     unit_price: adjustedPerPerson,
+    // The package itself is fulfilled by us; extra rows the agent types below
+    // are marked "agent" - the server stamps the per-line "יבוצע ע"י" name.
+    source: "site" as const,
   };
 
   const reset = () => {
@@ -680,6 +683,7 @@ function SendOfferDialog({
         label: r.label.trim(),
         qty: Math.max(1, Math.floor(Number(r.qty) || 1)),
         unit_price: Math.max(0, Number(r.price) || 0),
+        source: "agent" as const,
       }));
     // Popup-blocker-safe: open the tab in the click, fill it once the PDF is
     // ready (same pattern as the quotes list).
