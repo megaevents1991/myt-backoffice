@@ -228,7 +228,9 @@
 }
 
 @layer components {
-  /* Forest hero band with the main site's aurora glow - pure CSS, no images. */
+  /* Forest band with the main site's aurora glow - pure CSS, no images.
+     Two names, one rule: the portal header and the admin sign-in panel. */
+  .brand-aurora,
   .portal-hero {
     background-color: hsl(var(--brand-forest));
     background-image:
