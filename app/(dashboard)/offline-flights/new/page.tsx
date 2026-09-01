@@ -83,11 +83,14 @@ function sumIsoDurations(a: string, b: string): string {
   return `PT${minutes}M`;
 }
 
-const getValueByPath = (obj: any, path: (string | number)[]): any => {
-  let current = obj;
+const getValueByPath = (
+  obj: unknown,
+  path: (string | number)[],
+): unknown => {
+  let current: unknown = obj;
   for (const segment of path) {
     if (current && typeof current === "object" && segment in current) {
-      current = current[segment];
+      current = (current as Record<string | number, unknown>)[segment];
     } else {
       return undefined;
     }

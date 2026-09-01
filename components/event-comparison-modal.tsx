@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
-import { Search, Loader2, ExternalLink, Ticket, Calendar as CalendarIcon, ArrowLeft } from "lucide-react";
+import { Search, Loader2, ExternalLink, Calendar as CalendarIcon, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

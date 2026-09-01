@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalendarDays, Users, ClipboardList, UserCheck, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { getDashboardCounts } from "@/lib/actions/dashboard-actions";
 
 export function DashboardCards() {
   const [counts, setCounts] = useState({
