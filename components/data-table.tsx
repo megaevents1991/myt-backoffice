@@ -75,6 +75,8 @@ interface DataTableProps<TData, TValue> {
   ) => string | undefined;
   /** Tighter cell padding so wide tables fit without horizontal scroll. */
   dense?: boolean;
+  /** Initial sort, e.g. [{ id: "id", desc: true }] for newest-first. */
+  defaultSorting?: SortingState;
   /** Segmented control above the toolbar - "All / Prioritized / Deleted". */
   views?: DataTableView[];
   activeView?: string;
@@ -118,13 +120,14 @@ export function DataTable<TData, TValue>({
   pageSizeOptions = [10, 25, 50, 100],
   getRowClassName,
   dense = false,
+  defaultSorting,
   views,
   activeView,
   onViewChange,
   filters,
   emptyState,
 }: DataTableProps<TData, TValue>) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [sorting, setSorting] = useState<SortingState>(defaultSorting ?? []);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [internalRowSelection, setInternalRowSelection] = useState<RowSelectionState>(
@@ -241,7 +244,7 @@ export function DataTable<TData, TValue>({
     <div className="relative space-y-3">
       {/* Saved views - one click for the filters people actually re-apply. */}
       {views && views.length > 0 && (
-        <div className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/60 p-1">
+        <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-lg border bg-muted/60 p-1">
           {views.map((view) => {
             const isActive = view.id === activeView;
             return (
@@ -272,13 +275,13 @@ export function DataTable<TData, TValue>({
 
       <div className="flex flex-wrap items-center gap-2">
         {(searchColumn || searchColumns?.length) && (
-          <div className="relative">
+          <div className="relative w-full sm:w-[260px]">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder={searchPlaceholder}
               value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
-              className="h-9 w-[260px] pl-8"
+              className="h-9 w-full pl-8"
             />
           </div>
         )}

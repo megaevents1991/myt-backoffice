@@ -112,7 +112,7 @@ export default function DashboardLayout({
       <AppSidebar onOpenSearch={() => setSearchOpen(true)} />
       <SidebarInset className="min-w-0">
         <Topbar onOpenSearch={() => setSearchOpen(true)} />
-        <div className="min-w-0 flex-1 p-6">{children}</div>
+        <div className="min-w-0 flex-1 p-4 md:p-6">{children}</div>
       </SidebarInset>
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </SidebarProvider>
