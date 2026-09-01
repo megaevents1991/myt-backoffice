@@ -61,8 +61,21 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 
+/** The slices of Supabase Storage's bucket/object rows this screen reads. */
+interface StorageBucket {
+  name: string;
+  public?: boolean;
+}
+
+interface StorageFile {
+  name: string;
+  /** null for "folders" (prefixes) - that is how the list API marks them. */
+  id?: string | null;
+  metadata?: { mimetype?: string; size?: number } | null;
+}
+
 interface StorageClientProps {
-  initialBuckets: any[];
+  initialBuckets: StorageBucket[];
   initialBucket: string | null;
   initialPath: string;
 }
@@ -75,8 +88,8 @@ export function StorageClient({
   const router = useRouter();
   const { toast } = useToast();
 
-  const [buckets, setBuckets] = useState<any[]>(initialBuckets);
-  const [files, setFiles] = useState<any[]>([]);
+  const [buckets] = useState<StorageBucket[]>(initialBuckets);
+  const [files, setFiles] = useState<StorageFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentBucket, setCurrentBucket] = useState<string | null>(
     initialBucket
@@ -84,7 +97,7 @@ export function StorageClient({
   const [currentPath, setCurrentPath] = useState<string>(initialPath);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<any | null>(null);
+  const [selectedFile, setSelectedFile] = useState<StorageFile | null>(null);
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [filePreviewOpen, setFilePreviewOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -218,7 +231,7 @@ export function StorageClient({
   };
 
   // Get file URL for preview
-  const handleFileClick = async (file: any) => {
+  const handleFileClick = async (file: StorageFile) => {
     if (!currentBucket) return;
 
     try {
@@ -565,7 +578,7 @@ export function StorageClient({
 
                         {!isFolder && file.metadata && (
                           <span className="text-xs text-muted-foreground">
-                            {formatFileSize(file.metadata.size)}
+                            {formatFileSize(file.metadata.size ?? 0)}
                           </span>
                         )}
                       </div>
@@ -597,8 +610,8 @@ export function StorageClient({
                                 Are you absolutely sure?
                               </AlertDialogTitle>
                               <AlertDialogDescription>
-                                This will permanently delete the file "
-                                {file.name}". This action cannot be undone.
+                                This will permanently delete the file &quot;
+                                {file.name}&quot;. This action cannot be undone.
                                 <div className="mt-4">
                                   <Label
                                     htmlFor="delete-confirmation"
