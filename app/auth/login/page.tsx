@@ -106,7 +106,7 @@ function LoginForm() {
         </div>
 
         <div className="max-w-md">
-          <h2 className="font-display text-3xl font-bold leading-tight text-balance text-white">
+          <h2 className="font-display text-3xl font-bold leading-tight tracking-[-0.02em] text-balance text-white">
             The engine room behind every MYT package.
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-white/70">

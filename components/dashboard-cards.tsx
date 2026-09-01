@@ -51,7 +51,7 @@ export function DashboardCards() {
           <CalendarDays className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{loading ? "..." : counts.events}</div>
+          <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : counts.events}</div>
           <p className="text-xs text-muted-foreground">In 7+ days</p>
         </CardContent>
       </Card>
@@ -63,7 +63,7 @@ export function DashboardCards() {
           <UserCheck className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{loading ? "..." : counts.agents}</div>
+          <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : counts.agents}</div>
           <p className="text-xs text-muted-foreground">Partner type agent</p>
         </CardContent>
       </Card>
@@ -75,7 +75,7 @@ export function DashboardCards() {
           <Users className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{loading ? "..." : counts.partners}</div>
+          <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : counts.partners}</div>
           <p className="text-xs text-muted-foreground">Affiliates (filtered)</p>
         </CardContent>
       </Card>
@@ -87,7 +87,7 @@ export function DashboardCards() {
           <ClipboardList className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{loading ? "..." : counts.paidReservations}</div>
+          <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : counts.paidReservations}</div>
           <p className="text-xs text-muted-foreground">Status Paid</p>
         </CardContent>
       </Card>
@@ -99,7 +99,7 @@ export function DashboardCards() {
           <UserPlus className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{loading ? "..." : counts.pendingReservations}</div>
+          <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : counts.pendingReservations}</div>
           <p className="text-xs text-muted-foreground">Status Pending</p>
         </CardContent>
       </Card>

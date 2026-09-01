@@ -67,7 +67,7 @@ export function StickySaveBar({
         aria-hidden={!visible}
       className={cn(
         "fixed bottom-0 left-0 right-0 z-40 md:left-64",
-        "border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80",
+        "surface-chrome border-t",
         "shadow-[0_-2px_10px_rgba(0,0,0,0.06)]",
         "transition-transform duration-200 ease-in-out",
         visible ? "translate-y-0" : "pointer-events-none translate-y-full"

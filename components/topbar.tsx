@@ -21,7 +21,7 @@ export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const crumbs = breadcrumbsFor(pathname);
 
   return (
-    <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <header className="surface-chrome sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b px-3">
       <SidebarTrigger className="h-8 w-8" />
       <Separator orientation="vertical" className="mr-1 h-4" />
 

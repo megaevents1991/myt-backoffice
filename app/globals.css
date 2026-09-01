@@ -164,6 +164,40 @@
   }
 }
 
+@layer components {
+  /* Floating chrome - the topbar and the sticky save bar. A translucent
+     material that content scrolls under, rather than an opaque strip that
+     eats a fixed band of the screen. */
+  .surface-chrome {
+    background-color: hsl(var(--background) / 0.8);
+    backdrop-filter: blur(12px) saturate(180%);
+  }
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .surface-chrome {
+    background-color: hsl(var(--background) / 0.96);
+  }
+}
+
+/* Translucency is a preference, not a given: collapse the material to solid
+   when the OS asks for less transparency, and give it a defined edge when it
+   asks for more contrast. */
+@media (prefers-reduced-transparency: reduce) {
+  .surface-chrome {
+    background-color: hsl(var(--background));
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .surface-chrome {
+    background-color: hsl(var(--background));
+    backdrop-filter: none;
+    border-color: hsl(var(--foreground) / 0.45);
+  }
+}
+
 /* Reduced motion - same blanket off-ramp as the main app's globals.css:
  * every animation/transition must degrade here. */
 @media (prefers-reduced-motion: reduce) {

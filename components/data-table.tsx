@@ -345,7 +345,15 @@ export function DataTable<TData, TValue>({
                   className={getRowClassName?.(row, index, sorting)}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className={dense ? "p-2" : undefined}>
+                    <TableCell
+                    key={cell.id}
+                    className={cn(
+                      dense && "p-2",
+                      // Coarse pointers get taller rows - 32px icon buttons in
+                      // a dense row are under the comfortable touch target.
+                      "[@media(pointer:coarse)]:py-3",
+                    )}
+                  >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
@@ -455,7 +463,15 @@ export function DataTable<TData, TValue>({
 
       {/* Bulk actions follow the selection instead of hiding in the toolbar. */}
       {enableRowSelection && selectedCount > 0 && bulkActions && (
-        <div className="sticky bottom-4 z-10 mx-auto flex w-fit max-w-full flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary px-3 py-2 text-primary-foreground shadow-lg">
+        <div
+          className={cn(
+            "sticky bottom-4 z-10 mx-auto flex w-fit max-w-full flex-wrap items-center gap-2",
+            "rounded-lg border border-primary/20 bg-primary px-3 py-2 text-primary-foreground shadow-lg",
+            // Arrives as an object rising into place rather than blinking in.
+            // The blanket reduced-motion rule in globals.css flattens this.
+            "animate-in fade-in slide-in-from-bottom-2 duration-200",
+          )}
+        >
           <span className="text-sm font-medium">
             <span className="tabular">{selectedCount}</span> selected
           </span>
