@@ -1,5 +1,6 @@
 import {
   CalendarDays,
+  CheckSquare,
   ClipboardCheck,
   ClipboardList,
   Database,
@@ -62,6 +63,12 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/reservations",
         icon: ClipboardList,
         keywords: "orders bookings הזמנות",
+      },
+      {
+        name: "Tasks",
+        href: "/tasks",
+        icon: CheckSquare,
+        keywords: "todo board work queue משימות",
       },
     ],
   },

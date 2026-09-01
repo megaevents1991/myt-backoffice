@@ -7,6 +7,8 @@ import { DashboardStats } from "@/components/dashboard-stats";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { ReservationsTrend } from "@/components/reservations-trend";
+import { MyTasksWidget } from "@/components/my-tasks-widget";
+import { CreativeGapsPanel } from "@/components/creative-gaps-panel";
 
 export default function Dashboard() {
   const [error, setError] = useState<Error | null>(null);
@@ -67,6 +69,12 @@ export default function Dashboard() {
 
       {/* Reservations Trend */}
       <ReservationsTrend />
+
+      {/* Personal queue + missing visual assets */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <MyTasksWidget />
+        <CreativeGapsPanel />
+      </div>
     </div>
   );
 }
