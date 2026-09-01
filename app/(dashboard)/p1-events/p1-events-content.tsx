@@ -30,7 +30,7 @@ import {
   getP1SyncStatus,
   triggerP1Sync,
 } from "@/lib/actions/p1-events-actions";
-import { P1EventDB, P1Ticket, P1_CURRENCIES } from "@/types/p1-events.types";
+import { P1EventDB, P1Ticket } from "@/types/p1-events.types";
 import { Event, EventTicket } from "@/types/app.types";
 import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
 import {
@@ -40,6 +40,15 @@ import {
 
 
 
+
+/** Shape of the P1 sync status payload, as this screen reads it. */
+interface P1SyncStatus {
+  results?: {
+    events?: { total?: number };
+    last_synced?: string;
+    categories?: Record<string, number>;
+  };
+}
 
 export function P1EventsContent() {
   const { toast } = useToast();
@@ -58,12 +67,12 @@ export function P1EventsContent() {
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<P1EventDB | null>(null);
 
-  const [syncStatus, setSyncStatus] = useState<any>(null);
+  const [syncStatus, setSyncStatus] = useState<P1SyncStatus | null>(null);
 
   // Loading states
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
-  const [isLoadingTickets, setIsLoadingTickets] = useState(false);
+  const [isLoadingTickets] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Filtering and sorting states
@@ -141,7 +150,7 @@ export function P1EventsContent() {
   }, [filteredEvents, eventPage, eventPageSize]);
 
   const filteredTickets = useMemo(() => {
-    let filtered = tickets.filter(
+    const filtered = tickets.filter(
       (ticket) =>
         ticket.category.toLowerCase().includes(ticketFilter.toLowerCase()) &&
         ticket.stock >= 2 && // Filter out tickets with stock lower than 2
@@ -574,7 +583,7 @@ export function P1EventsContent() {
               {Object.entries(syncStatus.results.categories).map(
                 ([cat, count]) => (
                   <Badge key={cat} variant="secondary">
-                    {cat}: {count as number}
+                    {cat}: {count}
                   </Badge>
                 )
               )}

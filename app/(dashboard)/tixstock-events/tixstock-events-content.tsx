@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { 
   Calendar, 
@@ -64,7 +63,6 @@ const isKnownEmpty = (event: TixStockEventDB): boolean => {
 
 
 export function TixStockEventsContent() {
-  const router = useRouter();
   const { toast } = useToast();
   
   // Data states
@@ -209,7 +207,7 @@ export function TixStockEventsContent() {
         description: "Events have been updated successfully.",
       });
       loadEvents(hideNoTickets);
-    } catch (error) {
+    } catch {
       toast({
         variant: "destructive",
         title: "Sync Failed",

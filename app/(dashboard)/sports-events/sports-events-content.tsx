@@ -39,7 +39,7 @@ import {
   XS2Ticket,
   SyncStatusResponse,
 } from "@/types/sports-events.types";
-import { Event, EventTicket, EventType } from "@/types/app.types";
+import { Event, EventTicket } from "@/types/app.types";
 import { formatTicketNetPrice } from "@/lib/utils";
 import {
   FilterSortControls,
@@ -102,7 +102,7 @@ export function SportsEventsContent() {
 
   // Filtered and sorted data with pagination
   const filteredTournaments = useMemo(() => {
-    let filtered = tournaments.filter((tournament) =>
+    const filtered =tournaments.filter((tournament) =>
       tournament.official_name
         .toLowerCase()
         .includes(tournamentFilter.toLowerCase())
@@ -137,7 +137,7 @@ export function SportsEventsContent() {
   }, [filteredTournaments, tournamentPage, tournamentPageSize]);
 
   const filteredEvents = useMemo(() => {
-    let filtered = events.filter((event) =>
+    const filtered =events.filter((event) =>
       event.event_name.toLowerCase().includes(eventFilter.toLowerCase())
     );
 
@@ -170,7 +170,7 @@ export function SportsEventsContent() {
   }, [filteredEvents, eventPage, eventPageSize]);
 
   const filteredTickets = useMemo(() => {
-    let filtered = tickets.filter((ticket) =>
+    const filtered =tickets.filter((ticket) =>
       ticket.ticket_title.toLowerCase().includes(ticketFilter.toLowerCase())
     );
 

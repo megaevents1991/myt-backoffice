@@ -60,8 +60,10 @@ export default function EventDetailsPage() {
     try {
       setIsLoadingEvent(true);
 
-      // Fetch event details
-      const { data: eventData, error: eventError } = await supabase
+      // The xs2e_* tables are not in the generated database types, so an
+      // untyped .select("*") widens to `never`. Name the row types here - they
+      // already exist in types/sports-events.types.
+      const { data: eventRow, error: eventError } = await supabase
         .from("xs2e_events")
         .select("*")
         .eq("event_id", id)
@@ -71,35 +73,36 @@ export default function EventDetailsPage() {
         throw new Error(eventError.message);
       }
 
+      const eventData = eventRow as XS2Event | null;
+
       if (!eventData) {
         throw new Error("Event not found");
       }
 
       // Fetch tournament details (tournament_id is NOT NULL in schema)
-      let tournamentData = null;
-      const { data: tournament } = await supabase
+      const { data: tournamentRow } = await supabase
         .from("xs2e_tournaments")
         .select("*")
         .eq("tournament_id", eventData.tournament_id || "")
         .single();
-      tournamentData = tournament;
+      const tournamentData = tournamentRow as XS2Tournament | null;
 
       // Fetch sport details if tournament is available
-      let sportData = null;
+      let sportData: XS2Sport | null = null;
       if (tournamentData?.sport_type) {
         const { data: sport } = await supabase
           .from("xs2e_sports")
           .select("*")
           .eq("sport_id", tournamentData.sport_type)
           .single();
-        sportData = sport;
+        sportData = sport as XS2Sport | null;
       }
 
       // Combine all data
       const eventDetails: EventDetails = {
         ...eventData,
-        tournament: tournamentData,
-        sport: sportData,
+        tournament: tournamentData ?? undefined,
+        sport: sportData ?? undefined,
       };
 
       setEvent(eventDetails);

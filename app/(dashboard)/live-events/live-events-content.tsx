@@ -22,7 +22,6 @@ import {
   Ticket,
   ExternalLink,
   Search,
-  Trophy,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -46,12 +45,24 @@ import {
 
 
 
+/** Shape of /api/live-events/sync's status payload, as this screen reads it. */
+interface LiveSyncStatus {
+  results?: {
+    events?: { total?: number; sports?: number; music?: number };
+    categories?: { count?: number };
+    performers?: { count?: number };
+  };
+}
+
 export function LiveEventsContent() {
   const { toast } = useToast();
   const router = useRouter();
 
   // State management
-  const [eventType, setEventType] = useState<'all' | 'sports_live_event_dynamic' | 'music_live_event_dynamic'>('all');
+  // No UI sets these - the filter/sort controls for them were never built, so
+  // they stay at their initial value. Kept as state (not consts) so wiring a
+  // control back up is a one-line change.
+  const [eventType] = useState<'all' | 'sports_live_event_dynamic' | 'music_live_event_dynamic'>('all');
   const [categories1, setCategories1] = useState<string[]>([]);
   const [categories2, setCategories2] = useState<string[]>([]);
   const [categories3, setCategories3] = useState<string[]>([]);
@@ -66,23 +77,23 @@ export function LiveEventsContent() {
   const [selectedPerformer, setSelectedPerformer] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<LiveEventDB | null>(null);
 
-  const [syncStatus, setSyncStatus] = useState<any>(null);
+  const [syncStatus, setSyncStatus] = useState<LiveSyncStatus | null>(null);
 
   // Loading states
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
-  const [isLoadingPerformers, setIsLoadingPerformers] = useState(false);
+  const [isLoadingPerformers] = useState(false);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Filtering and sorting states
-  const [categoryFilter, setCategoryFilter] = useState("");
+  const [categoryFilter] = useState("");
   const [categoryPage, setCategoryPage] = useState(1);
   const categoryPageSize = 10;
 
   const [performerFilter, setPerformerFilter] = useState("");
-  const [performerSortBy, setPerformerSortBy] = useState<"name" | "classification">("name");
-  const [performerSortOrder, setPerformerSortOrder] = useState<"asc" | "desc">("asc");
+  const [performerSortBy] = useState<"name" | "classification">("name");
+  const [performerSortOrder] = useState<"asc" | "desc">("asc");
   const [performerPage, setPerformerPage] = useState(1);
   const performerPageSize = 30;
 
@@ -112,7 +123,7 @@ export function LiveEventsContent() {
   }, [filteredCategories, categoryPage, categoryPageSize]);
 
   const filteredPerformers = useMemo(() => {
-    let filtered = performers.filter((performer) => {
+    const filtered = performers.filter((performer) => {
       // Ensure performer is a string before calling toLowerCase
       if (typeof performer !== 'string') {
         console.warn('Non-string performer found:', performer);
@@ -125,7 +136,9 @@ export function LiveEventsContent() {
     filtered.sort((a, b) => a.localeCompare(b));
 
     return filtered;
-  }, [performers, performerFilter, performerSortBy, performerSortOrder]);
+    // performerSortBy/Order never change (no control sets them), so they are
+    // deliberately not dependencies.
+  }, [performers, performerFilter]);
 
   const paginatedPerformers = useMemo(() => {
     const startIndex = (performerPage - 1) * performerPageSize;
@@ -146,7 +159,7 @@ export function LiveEventsContent() {
   }, [filteredEvents, eventPage, eventPageSize]);
 
   const filteredTickets = useMemo(() => {
-    let filtered = tickets.filter((ticket) =>
+    const filtered = tickets.filter((ticket) =>
       ticket.hebTitle.toLowerCase().includes(ticketFilter.toLowerCase()) &&
       ticket.seatingMethodId !== 2 && // Filter out tickets with seatingMethodId = 2 (Singles)
       ticket.maxTicketAmount >= 2 // Filter out tickets with maxTicketAmount < 2
@@ -214,7 +227,9 @@ export function LiveEventsContent() {
     if (selectedCategory1) {
       const beforeFilter = filteredEvents.length;
       filteredEvents = filteredEvents.filter(event => {
-        const hasCategory = event.categories?.category1?.some((cat: any) => cat.name === selectedCategory1);
+        const hasCategory = event.categories?.category1?.some(
+          (cat) => cat.name === selectedCategory1,
+        );
         if (!hasCategory && event.event_name.includes('SPECIFIC_ARTIST_NAME')) { // Replace with the missing artist's event name
           console.log('Event missing from category1 filter:', event.event_name, event.categories);
         }
@@ -224,9 +239,9 @@ export function LiveEventsContent() {
       
       // Build available category2 options from filtered events
       const category2Set = new Set<string>();
-      filteredEvents.forEach((event: any) => {
+      filteredEvents.forEach((event) => {
         if (event.categories?.category2 && Array.isArray(event.categories.category2)) {
-          event.categories.category2.forEach((cat: any) => {
+          event.categories.category2.forEach((cat) => {
             if (cat.name && cat.name !== '-') {
               category2Set.add(cat.name);
             }
@@ -245,15 +260,15 @@ export function LiveEventsContent() {
 
     // Filter by category2 if selected
     if (selectedCategory1 && selectedCategory2) {
-      filteredEvents = filteredEvents.filter(event => 
-        event.categories?.category2?.some((cat: any) => cat.name === selectedCategory2)
+      filteredEvents = filteredEvents.filter((event) =>
+        event.categories?.category2?.some((cat) => cat.name === selectedCategory2),
       );
       
       // Build available category3 options from filtered events
       const category3Set = new Set<string>();
-      filteredEvents.forEach((event: any) => {
+      filteredEvents.forEach((event) => {
         if (event.categories?.category3 && Array.isArray(event.categories.category3)) {
-          event.categories.category3.forEach((cat: any) => {
+          event.categories.category3.forEach((cat) => {
             if (cat.name) {
               category3Set.add(cat.name);
             }
@@ -274,16 +289,16 @@ export function LiveEventsContent() {
 
     // Filter by category3 if selected
     if (selectedCategory1 && selectedCategory2 && selectedCategory3) {
-      filteredEvents = filteredEvents.filter(event => 
-        event.categories?.category3?.some((cat: any) => cat.name === selectedCategory3)
+      filteredEvents = filteredEvents.filter((event) =>
+        event.categories?.category3?.some((cat) => cat.name === selectedCategory3),
       );
     }
 
     // Update performers list based on filtered events
     const performerSet = new Set<string>();
-    filteredEvents.forEach((event: any) => {
+    filteredEvents.forEach((event) => {
       if (event.performers && Array.isArray(event.performers)) {
-        event.performers.forEach((performer: any) => {
+        event.performers.forEach((performer) => {
           if (performer.name) {
             performerSet.add(performer.name);
           }
@@ -303,7 +318,7 @@ export function LiveEventsContent() {
       filteredEvents = filteredEvents.filter(event => 
         event.performers && 
         Array.isArray(event.performers) && 
-        event.performers.some((performer: any) => performer.name === selectedPerformer)
+        event.performers.some((performer) => performer.name === selectedPerformer)
       );
     }
 
@@ -334,7 +349,7 @@ export function LiveEventsContent() {
 
       if (!eventsResponse.ok) throw new Error('Failed to load events');
       const eventsData = await eventsResponse.json();
-      const allEventsData = eventsData.data || [];
+      const allEventsData: LiveEventDB[] = eventsData.data || [];
 
       // Store all events
       setAllEvents(allEventsData);
@@ -342,9 +357,9 @@ export function LiveEventsContent() {
 
       // Build categories1 from events
       const category1Set = new Set<string>();
-      allEventsData.forEach((event: any) => {
+      allEventsData.forEach((event) => {
         if (event.categories?.category1 && Array.isArray(event.categories.category1)) {
-          event.categories.category1.forEach((cat: any) => {
+          event.categories.category1.forEach((cat) => {
             if (cat.name) {
               category1Set.add(cat.name);
             }
@@ -356,9 +371,9 @@ export function LiveEventsContent() {
 
       // Build performers from events
       const performerSet = new Set<string>();
-      allEventsData.forEach((event: any) => {
+      allEventsData.forEach((event) => {
         if (event.performers && Array.isArray(event.performers)) {
-          event.performers.forEach((performer: any) => {
+          event.performers.forEach((performer) => {
             if (performer.name) {
               performerSet.add(performer.name);
             }
@@ -465,7 +480,7 @@ export function LiveEventsContent() {
 
       // Convert LiveTickets tickets to EventTickets with USD conversion
       const mappedTickets: EventTicket[] = await Promise.all(
-        filteredEventTickets.map(async (ticket, index) => {
+        filteredEventTickets.map(async (ticket) => {
           const priceInUSD = Math.round(await convertPriceToUSD(ticket.cost, event.currency));
           
             const roundedPrice = Math.ceil(priceInUSD / 10) * 10 - 1;
@@ -485,7 +500,13 @@ export function LiveEventsContent() {
       );
 
       // Try to find the nearest location
-      let locationData: { latitude: number; longitude: number; name: string; city_iata: string; country_code?: string } = {
+      const locationData: {
+        latitude: number;
+        longitude: number;
+        name: string;
+        city_iata: string;
+        country_code?: string;
+      } = {
         latitude: 0,
         longitude: 0,
         name: event.city_name || "Unknown Location",
