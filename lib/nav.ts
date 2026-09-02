@@ -25,6 +25,7 @@ import {
   UserCog,
   TrendingUp,
   Factory,
+  BookOpen,
 } from "lucide-react";
 import { ADMIN_ROLES, type Role } from "@/types/auth.types";
 
@@ -214,15 +215,29 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Admin",
-    roles: ADMIN_ROLES,
     defaultCollapsed: true,
+    // Group visible to all staff so the Guide is reachable; the management
+    // screens themselves stay admin-only via per-item roles.
     items: [
-      { name: "Users", href: "/users", icon: UserCog, keywords: "roles permissions" },
+      {
+        name: "Guide",
+        href: "/guide",
+        icon: BookOpen,
+        keywords: "help manual docs מדריך הדרכה",
+      },
+      {
+        name: "Users",
+        href: "/users",
+        icon: UserCog,
+        keywords: "roles permissions",
+        roles: ADMIN_ROLES,
+      },
       {
         name: "Audit Log",
         href: "/audit-log",
         icon: ScrollText,
         keywords: "history changes",
+        roles: ADMIN_ROLES,
       },
     ],
   },
@@ -293,6 +308,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   "meta-feed": "Meta Product Feed",
   "price-changes": "Price Changes",
   factory: "Events Factory",
+  guide: "Guide",
   "event-tags": "Tags & Rules",
   templates: "Templates",
   categories: "Categories",
