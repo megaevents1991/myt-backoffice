@@ -31,12 +31,19 @@ import type {
   FootballLogo,
 } from "@/types/football-logo.types";
 
-export function LogoLibrary({ initialLogos }: { initialLogos: FootballLogo[] }) {
+export function LogoLibrary({
+  initialLogos,
+  initialQuery = "",
+}: {
+  initialLogos: FootballLogo[];
+  /** Prefills the search box - creative-gaps "Do" passes the team name. */
+  initialQuery?: string;
+}) {
   const router = useRouter();
   const { toast } = useToast();
   const confirm = useConfirm();
   const [logos, setLogos] = useState(initialLogos);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialQuery);
   const [uploading, setUploading] = useState(false);
   const [editing, setEditing] = useState<FootballLogo | null>(null);
   const [editEn, setEditEn] = useState("");

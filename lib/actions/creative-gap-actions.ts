@@ -128,9 +128,8 @@ export async function getCreativeGapCounts(): Promise<GapCounts> {
   };
 }
 
-/** Which field on the team form fixes each team-shaped gap. */
+/** Which field on the team form fixes each form-fixable team gap. */
 const TEAM_ANCHOR: Record<string, string> = {
-  team_logo: "fix-logo",
   team_hero: "fix-image",
   team_gallery: "fix-gallery",
 };
@@ -153,17 +152,29 @@ export async function listCreativeGaps(kind: GapKind): Promise<GapItem[]> {
           .order("date", { ascending: true })
           .limit(LIST_LIMIT);
         if (error) throw error;
-        return (data ?? []).map((row: Record<string, string | number | null>) => ({
-          kind,
-          table: "events",
-          row_id: row.id,
-          label: row.name,
-          url: `/events/${row.id}`,
-          fixUrl: `/creative-generator?eventId=${row.id}`,
-          detail: row.campaign_skip_reason
-            ? `${row.date} · ${row.campaign_skip_reason}`
-            : row.date,
-        }));
+        return (data ?? []).map((row: Record<string, string | number | null>) => {
+          // The pipeline records WHY it skipped. Its only remaining skip is
+          // "no computable price" (lib/creative/auto.ts) - so the fix for a
+          // missing creative is almost always the event's price fields, not
+          // the generator. Route "Do" at the actual cause.
+          const reason = String(row.campaign_skip_reason ?? "").toLowerCase();
+          const fixUrl = reason.includes("price")
+            ? `/events/${row.id}#fix-price`
+            : reason.includes("image")
+              ? `/events/${row.id}#section-images`
+              : `/creative-generator?eventId=${row.id}`;
+          return {
+            kind,
+            table: "events",
+            row_id: row.id,
+            label: row.name,
+            url: `/events/${row.id}`,
+            fixUrl,
+            detail: row.campaign_skip_reason
+              ? `${row.date} · ${row.campaign_skip_reason}`
+              : row.date,
+          };
+        });
       }
       case "event_card_image": {
         const { data, error } = await db
@@ -202,14 +213,24 @@ export async function listCreativeGaps(kind: GapKind): Promise<GapItem[]> {
               : query.eq("gallery", "[]");
         const { data, error } = await query;
         if (error) throw error;
-        return (data ?? []).map((row: Record<string, string | number | null>) => ({
-          kind,
-          table: "football_teams",
-          row_id: row.id,
-          label: row.name || row.name_english || String(row.id),
-          url: `/templates/football/${row.id}/edit`,
-          fixUrl: `/templates/football/${row.id}/edit#${TEAM_ANCHOR[kind]}`,
-        }));
+        return (data ?? []).map((row: Record<string, string | number | null>) => {
+          const label = String(row.name || row.name_english || row.id);
+          // Crests are uploaded in the shared logo library (/assets), not on
+          // the team form - send "Do" there with the search prefilled. Hero
+          // and gallery ARE edited on the form, so those keep their anchors.
+          const fixUrl =
+            kind === "team_logo"
+              ? `/assets?q=${encodeURIComponent(String(row.name_english || row.name || ""))}`
+              : `/templates/football/${row.id}/edit#${TEAM_ANCHOR[kind]}`;
+          return {
+            kind,
+            table: "football_teams",
+            row_id: row.id,
+            label,
+            url: `/templates/football/${row.id}/edit`,
+            fixUrl,
+          };
+        });
       }
       case "artist_hero":
       case "artist_gallery": {

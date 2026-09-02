@@ -1647,7 +1647,9 @@ export default function EventPage({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            {/* fix-price: creative-gaps "Do" lands here - a missing computable
+                price is why a feed event has no campaign creative. */}
+            <div id="fix-price" className="grid scroll-mt-20 grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="usual_price">Usual Price</Label>
                 <Input
