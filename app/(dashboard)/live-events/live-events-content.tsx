@@ -12,6 +12,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { liveRowToEvent } from "@/lib/provider-batch";
+import { createDraftBatch } from "@/lib/actions/factory-actions";
 import { Input } from "@/components/ui/input";
 import {
   Loader2,
@@ -69,6 +72,45 @@ export function LiveEventsContent() {
   const [categories3, setCategories3] = useState<string[]>([]);
   const [performers, setPerformers] = useState<string[]>([]);
   const [events, setEvents] = useState<LiveEventDB[]>([]);
+
+  // Batch create (spec 2026-09-02 section 7): multi-select rows -> shared wizard.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const sendToFactory = async () => {
+    const rows = events.filter((e) => selectedIds.has(String(e.event_id)));
+    if (rows.length === 0) return;
+    const result = await createDraftBatch({
+      source: "live",
+      scope: { manual: true, count: rows.length },
+      payloads: rows.map(liveRowToEvent),
+    });
+    if (!result.ok) {
+      toast({ variant: "destructive", title: "Factory intake failed" });
+      return;
+    }
+    setSelectedIds(new Set());
+    window.open("/factory", "_blank");
+  };
+  const openBatchCreate = () => {
+    const rows = events.filter((e) => selectedIds.has(String(e.event_id)));
+    if (rows.length === 0) return;
+    try {
+      window.localStorage.setItem(
+        "batch_create",
+        JSON.stringify({ provider: "live", rows }),
+      );
+    } catch (error) {
+      console.error("Failed to stash batch events:", error);
+      return;
+    }
+    window.open("/events/new?batch=1", "_blank");
+  };
   const [allEvents, setAllEvents] = useState<LiveEventDB[]>([]); // Store all events for filtering
   const [tickets, setTickets] = useState<LiveTicketCategory[]>([]);
 
@@ -1003,13 +1045,23 @@ export function LiveEventsContent() {
                 <div className="space-y-2">
                   {paginatedEvents.map((event) => (
                     <div key={event.event_id} className="relative group">
+                      <div
+                        className="absolute left-2 top-3 z-10"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Checkbox
+                          checked={selectedIds.has(String(event.event_id))}
+                          onCheckedChange={() => toggleSelected(String(event.event_id))}
+                          aria-label={`Select ${event.event_name}`}
+                        />
+                      </div>
                       <Button
                         variant={
                           selectedEvent?.event_id === event.event_id
                             ? "default"
                             : "outline"
                         }
-                        className="w-full justify-start text-left h-auto p-3 pr-20 whitespace-normal items-start"
+                        className="w-full justify-start text-left h-auto p-3 pl-9 pr-20 whitespace-normal items-start"
                         onClick={() => setSelectedEvent(event)}
                       >
                         <div className="flex flex-col items-start w-full">
@@ -1059,6 +1111,22 @@ export function LiveEventsContent() {
                   ))}
                 </div>
 
+                {selectedIds.size > 0 && (
+                  <div className="sticky bottom-0 z-20 mt-3 flex items-center justify-between rounded-md border bg-background p-3 shadow">
+                    <span className="text-sm font-medium">{selectedIds.size} selected</span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>
+                        Clear
+                      </Button>
+                      <Button size="sm" onClick={openBatchCreate}>
+                        Create {selectedIds.size} events
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={sendToFactory}>
+                        Send to factory
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <PaginationControls
                   currentPage={eventPage}
                   totalItems={filteredEvents.length}

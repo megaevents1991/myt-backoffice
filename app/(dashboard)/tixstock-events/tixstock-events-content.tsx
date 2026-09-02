@@ -31,6 +31,8 @@ import { matchesSearch } from "@/lib/search";
 import { TixStockEventDB, TixStockListing } from "@/types/tixstock.types";
 import { Checkbox } from "@/components/ui/checkbox";
 import { tixstockToEvent } from "./batch/tixstock-to-event";
+import { homeTeamOf, isHomeGame } from "@/lib/tixstock-home";
+import { createDraftBatch } from "@/lib/actions/factory-actions";
 import {
   FilterSortControls,
   PaginationControls,
@@ -89,12 +91,31 @@ export function TixStockEventsContent() {
   // Batch multi-select state (scoped to the performer-filtered events list)
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
 
+  const sendToFactory = async () => {
+    if (selectedEvents.length === 0) return;
+    const result = await createDraftBatch({
+      source: "tixstock",
+      scope: { manual: true, count: selectedEvents.length },
+      payloads: selectedEvents.map(tixstockToEvent),
+    });
+    if (!result.ok) {
+      toast({ variant: "destructive", title: "Factory intake failed" });
+      return;
+    }
+    setSelectedEventIds(new Set());
+    window.open("/factory", "_blank");
+  };
+
   // Stash the selected events and open the shared create form (real /events/new in
   // batch mode). One Save there creates one event per selected TixStock event.
   const openBatchCreate = () => {
     if (selectedEvents.length === 0) return;
     try {
-      window.localStorage.setItem("tx_batch_create", JSON.stringify(selectedEvents));
+      window.localStorage.setItem(
+        "batch_create",
+        JSON.stringify({ provider: "tixstock", rows: selectedEvents }),
+      );
+      window.localStorage.removeItem("tx_batch_create");
     } catch (error) {
       console.error("Failed to stash batch events:", error);
       toast({ variant: "destructive", title: "Error", description: "Could not start batch create." });
@@ -318,8 +339,9 @@ export function TixStockEventsContent() {
   // the server; while showing them we can count what's on screen.
   const emptyLabelCount = hideNoTickets ? hiddenEmpty : knownEmptyCount;
 
-  // A batch is always one performer's events - reset selection when the performer changes.
-  useEffect(() => setSelectedEventIds(new Set()), [selectedPerformer]);
+  // Multi-team batch (spec 2026-09-02, section 5): the selection ACCUMULATES
+  // across performers - the chips row above the table shows what came from
+  // each team. (The old one-performer reset lived here.)
 
   const toggleSelected = (id: string) =>
     setSelectedEventIds((prev) => {
@@ -330,8 +352,15 @@ export function TixStockEventsContent() {
     });
 
   const selectedEvents = useMemo(
-    () => filteredEvents.filter((e) => selectedEventIds.has(e.event_id)),
-    [filteredEvents, selectedEventIds]
+    () =>
+      events
+        .filter((e) => selectedEventIds.has(e.event_id))
+        .sort(
+          (a, b) =>
+            homeTeamOf(a).localeCompare(homeTeamOf(b)) ||
+            Date.parse(a.show_date) - Date.parse(b.show_date),
+        ),
+    [events, selectedEventIds]
   );
 
   const filteredTickets = useMemo(() => {
@@ -562,6 +591,56 @@ export function TixStockEventsContent() {
                 </p>
               )}
 
+              {selectedEventIds.size > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  {[...new Set(selectedEvents.map(homeTeamOf))].map((team) => {
+                    const count = selectedEvents.filter((e) => homeTeamOf(e) === team).length;
+                    return (
+                      <span
+                        key={team}
+                        className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs font-medium"
+                      >
+                        {team}
+                        <span className="tabular text-muted-foreground">{count}</span>
+                        <button
+                          type="button"
+                          aria-label={`Clear ${team}`}
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() =>
+                            setSelectedEventIds((prev) => {
+                              const next = new Set(prev);
+                              for (const e of selectedEvents)
+                                if (homeTeamOf(e) === team) next.delete(e.event_id);
+                              return next;
+                            })
+                          }
+                        >
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              {selectedPerformer && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() =>
+                    setSelectedEventIds((prev) => {
+                      const next = new Set(prev);
+                      for (const e of filteredEvents)
+                        if (isHomeGame(e.event_name, selectedPerformer)) next.add(e.event_id);
+                      return next;
+                    })
+                  }
+                >
+                  בחר את כל משחקי הבית של {selectedPerformer}
+                </Button>
+              )}
+
               <div className="space-y-4 mt-4">
                 {isLoading ? (
                   <div className="flex justify-center py-8">
@@ -589,6 +668,11 @@ export function TixStockEventsContent() {
                             <div className="flex items-start justify-between">
                               <h3 className="font-semibold text-sm">{event.event_name}</h3>
                               <div className="flex items-center gap-1 shrink-0">
+                                {selectedPerformer && isHomeGame(event.event_name, selectedPerformer) && (
+                                  <Badge className="bg-success-muted text-success text-xs" variant="outline">
+                                    בית
+                                  </Badge>
+                                )}
                                 {isKnownEmpty(event) ? (
                                   <Badge variant="outline" className="text-xs text-muted-foreground">
                                     No tickets
@@ -661,6 +745,9 @@ export function TixStockEventsContent() {
                     </Button>
                     <Button size="sm" onClick={openBatchCreate}>
                       Create {selectedEventIds.size} events
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={sendToFactory}>
+                      Send to factory
                     </Button>
                   </div>
                 </div>
