@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { matchesSearch } from "@/lib/search";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -199,27 +200,21 @@ export function DataTable<TData, TValue>({
     },
     enableRowSelection,
     autoResetPageIndex: false,
+    // Token search, not verbatim: "real madrid champion" must find
+    // "Real Madrid vs Arsenal - UEFA Champions League". All named columns are
+    // combined into one haystack so a query can span fields.
     globalFilterFn: (row, _columnId, filterValue) => {
-      const query = String(filterValue ?? "")
-        .toLowerCase()
-        .trim();
-      if (!query) return true;
-      const keys = Array.isArray(searchColumns) ? searchColumns : [];
-      if (keys.length === 0) {
-        // Fallback: search over all visible columns
-        return row
-          .getAllCells()
-          .some((cell) =>
-            String(cell.getValue() ?? "")
-              .toLowerCase()
-              .includes(query),
-          );
-      }
-      return keys.some((key) =>
-        String(row.getValue(key as string) ?? "")
-          .toLowerCase()
-          .includes(query),
-      );
+      const query = String(filterValue ?? "");
+      const keys = searchColumns?.length
+        ? searchColumns
+        : searchColumn
+          ? [searchColumn]
+          : [];
+      const fields =
+        keys.length === 0
+          ? row.getAllCells().map((cell) => cell.getValue())
+          : keys.map((key) => row.getValue(key as string));
+      return matchesSearch(query, ...fields);
     },
   });
 
@@ -230,15 +225,8 @@ export function DataTable<TData, TValue>({
   const pageSize = table.getState().pagination.pageSize;
   const firstRow = filteredCount === 0 ? 0 : pageIndex * pageSize + 1;
   const lastRow = Math.min((pageIndex + 1) * pageSize, filteredCount);
-  const searchValue = searchColumns?.length
-    ? ((table.getState().globalFilter as string) ?? "")
-    : searchColumn
-      ? ((table.getColumn(searchColumn)?.getFilterValue() as string) ?? "")
-      : "";
-  const setSearchValue = (value: string) => {
-    if (searchColumns?.length) table.setGlobalFilter(value);
-    else if (searchColumn) table.getColumn(searchColumn)?.setFilterValue(value);
-  };
+  const searchValue = (table.getState().globalFilter as string) ?? "";
+  const setSearchValue = (value: string) => table.setGlobalFilter(value);
 
   return (
     <div className="relative space-y-3">

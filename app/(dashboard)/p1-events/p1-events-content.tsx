@@ -33,6 +33,7 @@ import {
 import { P1EventDB, P1Ticket } from "@/types/p1-events.types";
 import { Event, EventTicket } from "@/types/app.types";
 import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
+import { matchesSearch } from "@/lib/search";
 import {
   FilterSortControls,
   PaginationControls,
@@ -102,7 +103,7 @@ export function P1EventsContent() {
   const filteredCategories = useMemo(() => {
     return categories
       .filter((category) =>
-        category.toLowerCase().includes(categoryFilter.toLowerCase())
+        matchesSearch(categoryFilter, category)
       )
       .sort((a, b) => a.localeCompare(b));
   }, [categories, categoryFilter]);
@@ -115,7 +116,7 @@ export function P1EventsContent() {
 
   const filteredSeries = useMemo(() => {
     return series
-      .filter((s) => s.toLowerCase().includes(seriesFilter.toLowerCase()))
+      .filter((s) => matchesSearch(seriesFilter, s))
       .sort((a, b) => a.localeCompare(b));
   }, [series, seriesFilter]);
 
@@ -127,7 +128,7 @@ export function P1EventsContent() {
 
   const filteredCities = useMemo(() => {
     return cities
-      .filter((city) => city.toLowerCase().includes(cityFilter.toLowerCase()))
+      .filter((city) => matchesSearch(cityFilter, city))
       .sort((a, b) => a.localeCompare(b));
   }, [cities, cityFilter]);
 
@@ -139,7 +140,7 @@ export function P1EventsContent() {
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) =>
-      event.title.toLowerCase().includes(eventFilter.toLowerCase())
+      matchesSearch(eventFilter, event.title, event.venue_city)
     );
   }, [events, eventFilter]);
 
@@ -152,7 +153,7 @@ export function P1EventsContent() {
   const filteredTickets = useMemo(() => {
     const filtered = tickets.filter(
       (ticket) =>
-        ticket.category.toLowerCase().includes(ticketFilter.toLowerCase()) &&
+        matchesSearch(ticketFilter, ticket.category) &&
         ticket.stock >= 2 && // Filter out tickets with stock lower than 2
         !ticket.tags.some(tag => tag.toLowerCase() === 'hospitality') // Filter out hospitality tickets
     );

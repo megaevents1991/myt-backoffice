@@ -30,6 +30,7 @@ import {
   triggerLiveSync,
 } from "@/lib/actions/live-events-actions";
 import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
+import { matchesSearch } from "@/lib/search";
 import {
   LiveEventDB,
   LiveTicketCategory,
@@ -111,7 +112,7 @@ export function LiveEventsContent() {
   const filteredCategories = useMemo(() => {
     return categories1
       .filter((category) =>
-        category.toLowerCase().includes(categoryFilter.toLowerCase())
+        matchesSearch(categoryFilter, category)
       )
       .sort((a, b) => a.localeCompare(b));
   }, [categories1, categoryFilter]);
@@ -129,7 +130,7 @@ export function LiveEventsContent() {
         console.warn('Non-string performer found:', performer);
         return false;
       }
-      return performer.toLowerCase().includes(performerFilter.toLowerCase());
+      return matchesSearch(performerFilter, performer);
     });
 
     // Sort performers alphabetically
@@ -148,7 +149,7 @@ export function LiveEventsContent() {
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) =>
-      event.event_name.toLowerCase().includes(eventFilter.toLowerCase())
+      matchesSearch(eventFilter, event.event_name, event.city_name)
     );
   }, [events, eventFilter]);
 
@@ -160,7 +161,7 @@ export function LiveEventsContent() {
 
   const filteredTickets = useMemo(() => {
     const filtered = tickets.filter((ticket) =>
-      ticket.hebTitle.toLowerCase().includes(ticketFilter.toLowerCase()) &&
+      matchesSearch(ticketFilter, ticket.hebTitle) &&
       ticket.seatingMethodId !== 2 && // Filter out tickets with seatingMethodId = 2 (Singles)
       ticket.maxTicketAmount >= 2 // Filter out tickets with maxTicketAmount < 2
     );

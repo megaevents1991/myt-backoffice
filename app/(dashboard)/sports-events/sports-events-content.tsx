@@ -31,6 +31,7 @@ import {
   triggerSync,
 } from "@/lib/actions/sports-events-actions";
 import { findNearestLocation } from "@/lib/actions/location-actions";
+import { matchesSearch } from "@/lib/search";
 import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
 import {
   XS2Sport,
@@ -102,10 +103,8 @@ export function SportsEventsContent() {
 
   // Filtered and sorted data with pagination
   const filteredTournaments = useMemo(() => {
-    const filtered =tournaments.filter((tournament) =>
-      tournament.official_name
-        .toLowerCase()
-        .includes(tournamentFilter.toLowerCase())
+    const filtered = tournaments.filter((tournament) =>
+      matchesSearch(tournamentFilter, tournament.official_name),
     );
 
     // Sort tournaments
@@ -138,7 +137,7 @@ export function SportsEventsContent() {
 
   const filteredEvents = useMemo(() => {
     const filtered =events.filter((event) =>
-      event.event_name.toLowerCase().includes(eventFilter.toLowerCase())
+      matchesSearch(eventFilter, event.event_name)
     );
 
     // Sort events
@@ -171,7 +170,7 @@ export function SportsEventsContent() {
 
   const filteredTickets = useMemo(() => {
     const filtered =tickets.filter((ticket) =>
-      ticket.ticket_title.toLowerCase().includes(ticketFilter.toLowerCase())
+      matchesSearch(ticketFilter, ticket.ticket_title)
     );
 
     // Sort tickets

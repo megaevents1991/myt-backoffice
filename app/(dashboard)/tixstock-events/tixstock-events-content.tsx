@@ -27,6 +27,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { getTixStockEvents, getTixStockTickets, triggerTixStockSync } from "@/lib/actions/tixstock-actions";
+import { matchesSearch } from "@/lib/search";
 import { TixStockEventDB, TixStockListing } from "@/types/tixstock.types";
 import { Checkbox } from "@/components/ui/checkbox";
 import { tixstockToEvent } from "./batch/tixstock-to-event";
@@ -251,7 +252,7 @@ export function TixStockEventsContent() {
 
   // Filtered Data Logic
   const filteredCategories = useMemo(() => {
-    return categories.filter(c => c.toLowerCase().includes(categoryFilter.toLowerCase()));
+    return categories.filter(c => matchesSearch(categoryFilter, c));
   }, [categories, categoryFilter]);
 
   const paginatedCategories = useMemo(() => {
@@ -260,7 +261,7 @@ export function TixStockEventsContent() {
   }, [filteredCategories, categoryPage]);
 
   const filteredPerformers = useMemo(() => {
-    let filtered = performers.filter(p => p.toLowerCase().includes(performerFilter.toLowerCase()));
+    let filtered = performers.filter(p => matchesSearch(performerFilter, p));
     
     // If category selected, filter performers by that category
     if (selectedCategory) {
@@ -285,10 +286,10 @@ export function TixStockEventsContent() {
       const showMs = Date.parse(e.show_date);
       // Unparseable dates stay visible rather than silently vanishing.
       if (Number.isFinite(showMs) && showMs < leadHorizon) return false;
-      const matchesSearch = e.event_name.toLowerCase().includes(eventFilter.toLowerCase());
+      const matchesQuery = matchesSearch(eventFilter, e.event_name, e.venue_name, e.city_name);
       const matchesCategory = selectedCategory ? e.category_name === selectedCategory : true;
       const matchesPerformer = selectedPerformer ? e.performers?.some(p => p.name === selectedPerformer) : true;
-      return matchesSearch && matchesCategory && matchesPerformer;
+      return matchesQuery && matchesCategory && matchesPerformer;
     });
 
     // Measured zeros + stale nulls (dropped from the feed); fresh unknowns kept.
