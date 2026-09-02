@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeftRight, ChevronRight, LogOut, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { activeHref, visibleGroups, type NavItem } from "@/lib/nav";
+import {
+  activeHref,
+  flattenNav,
+  visibleGroups,
+  type NavGroup,
+  type NavItem,
+} from "@/lib/nav";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { switchToMyPartnerPortal } from "@/lib/actions/impersonate-actions";
@@ -15,6 +21,11 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -135,12 +146,13 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
 
       <SidebarContent>
         {groups.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>{group.items.map(renderItem)}</SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          <NavGroupSection
+            key={group.label}
+            group={group}
+            active={active}
+            renderItem={renderItem}
+            onNavigate={closeOnMobile}
+          />
         ))}
       </SidebarContent>
 
@@ -206,6 +218,140 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
   );
 }
 
+
+const GROUPS_STORAGE_KEY = "myt-nav-open-groups";
+
+/**
+ * One collapsible category. Every group folds now, not just the sub-menus, so
+ * a 20-item sidebar can be reduced to six headings. While a group is folded,
+ * hovering its heading previews what is inside - you can jump straight to a
+ * screen without unfolding, which is the whole point of folding it.
+ */
+function NavGroupSection({
+  group,
+  active,
+  renderItem,
+  onNavigate,
+}: {
+  group: NavGroup;
+  active: string | undefined;
+  renderItem: (item: NavItem) => React.ReactNode;
+  onNavigate: () => void;
+}) {
+  const { state, isMobile } = useSidebar();
+  // In icon mode shadcn hides group labels entirely and each item carries its
+  // own tooltip, so the fold/preview pair only applies to the expanded rail.
+  const iconMode = state === "collapsed" && !isMobile;
+
+  const holdsActive = flattenNav([group]).some((item) => item.href === active);
+  const [open, setOpen] = useState(!group.defaultCollapsed);
+
+  // Restore the fold state after mount - reading storage during render would
+  // disagree with the server-rendered markup.
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(GROUPS_STORAGE_KEY);
+      if (!saved) return;
+      const map = JSON.parse(saved) as Record<string, boolean>;
+      if (typeof map[group.label] === "boolean") setOpen(map[group.label]);
+    } catch {
+      // Private mode / blocked storage: the default fold state is fine.
+    }
+  }, [group.label]);
+
+  const persist = (next: boolean) => {
+    setOpen(next);
+    try {
+      const saved = window.localStorage.getItem(GROUPS_STORAGE_KEY);
+      const map = saved ? (JSON.parse(saved) as Record<string, boolean>) : {};
+      map[group.label] = next;
+      window.localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(map));
+    } catch {
+      // Not worth failing a click over.
+    }
+  };
+
+  // Landing on a screen unfolds the group holding it - but only as a nudge:
+  // the dep is the flip itself, so folding it back afterwards sticks.
+  useEffect(() => {
+    if (holdsActive) setOpen(true);
+  }, [holdsActive]);
+
+  const isOpen = open || iconMode;
+  const showPreview = !isOpen && !iconMode;
+
+  const heading = (
+    <SidebarGroupLabel
+      asChild
+      className="cursor-pointer hover:text-sidebar-accent-foreground"
+    >
+      <button type="button" onClick={() => persist(!isOpen)}>
+        {group.label}
+        {!isOpen && (
+          <span className="ml-1.5 rounded-full bg-sidebar-accent px-1.5 text-[10px] tabular-nums">
+            {group.items.length}
+          </span>
+        )}
+        <ChevronRight
+          className={cn(
+            "ml-auto h-3.5 w-3.5 transition-transform duration-200 ease-out",
+            isOpen && "rotate-90",
+          )}
+        />
+      </button>
+    </SidebarGroupLabel>
+  );
+
+  return (
+    <SidebarGroup>
+      {showPreview ? (
+        <HoverCard openDelay={120} closeDelay={80}>
+          <HoverCardTrigger asChild>{heading}</HoverCardTrigger>
+          <HoverCardContent
+            side="right"
+            align="start"
+            sideOffset={8}
+            className="w-56 p-1.5"
+          >
+            <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {group.label}
+            </p>
+            {flattenNav([group])
+              // A parent that only exists to hold children is not a stop.
+              .filter((item) => !item.items?.length)
+              .map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={onNavigate}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                      item.href === active
+                        ? "bg-accent font-medium text-accent-foreground"
+                        : "hover:bg-muted",
+                    )}
+                  >
+                    <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{item.name}</span>
+                  </Link>
+                );
+              })}
+          </HoverCardContent>
+        </HoverCard>
+      ) : (
+        heading
+      )}
+
+      {isOpen && (
+        <SidebarGroupContent>
+          <SidebarMenu>{group.items.map(renderItem)}</SidebarMenu>
+        </SidebarGroupContent>
+      )}
+    </SidebarGroup>
+  );
+}
 function SubMenu({
   item,
   childActive,
