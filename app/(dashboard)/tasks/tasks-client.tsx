@@ -48,7 +48,13 @@ import {
 } from "@/lib/actions/creative-gap-actions";
 import { listUsers } from "@/lib/actions/user-actions";
 import { ADMIN_ROLES, STAFF_ROLES, type UserProfile } from "@/types/auth.types";
-import { GAP_META, gapKey, type GapItem } from "@/types/creative-gap.types";
+import {
+  GAP_KINDS,
+  GAP_META,
+  gapKey,
+  type GapItem,
+  type GapKind,
+} from "@/types/creative-gap.types";
 import {
   PRIORITY_ORDER,
   TASK_PRIORITIES,
@@ -539,6 +545,30 @@ function GapsTab({ onCreateTask }: { onCreateTask: (gap: GapItem) => void }) {
   const [taken, setTaken] = useState<Set<string>>(new Set());
   const [dismissed, setDismissed] = useState<DismissedGap[]>([]);
   const [showDismissed, setShowDismissed] = useState(false);
+  // "All" is the default; picking a type narrows the queue to that asset only.
+  const [kindFilter, setKindFilter] = useState<GapKind | "all">("all");
+
+  const countsByKind = useMemo(() => {
+    const counts = new Map<GapKind, number>();
+    for (const item of items ?? []) {
+      counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
+    }
+    return counts;
+  }, [items]);
+
+  // Fall back to "all" when the picked type empties out (fixed or dismissed).
+  const activeKind =
+    kindFilter !== "all" && (countsByKind.get(kindFilter) ?? 0) > 0
+      ? kindFilter
+      : "all";
+
+  const visible = useMemo(
+    () =>
+      activeKind === "all"
+        ? (items ?? [])
+        : (items ?? []).filter((item) => item.kind === activeKind),
+    [items, activeKind],
+  );
 
   const load = useCallback(() => {
     listAllCreativeGaps().then(setItems);
@@ -616,6 +646,27 @@ function GapsTab({ onCreateTask }: { onCreateTask: (gap: GapItem) => void }) {
         )}
       </div>
 
+      <div className="flex flex-wrap gap-1.5">
+        <FilterPill
+          active={activeKind === "all"}
+          onClick={() => setKindFilter("all")}
+          label="All"
+          count={items.length}
+        />
+        {GAP_KINDS.filter((kind) => (countsByKind.get(kind) ?? 0) > 0).map(
+          (kind) => (
+            <FilterPill
+              key={kind}
+              active={activeKind === kind}
+              onClick={() => setKindFilter(kind)}
+              label={GAP_META[kind].short}
+              count={countsByKind.get(kind) ?? 0}
+              severity={GAP_META[kind].severity}
+            />
+          ),
+        )}
+      </div>
+
       {showDismissed && dismissed.length > 0 && (
         <div className="rounded-lg border bg-muted/40 p-3">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -656,7 +707,7 @@ function GapsTab({ onCreateTask }: { onCreateTask: (gap: GapItem) => void }) {
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => {
+            {visible.map((item) => {
               const meta = GAP_META[item.kind];
               const key = gapKey(item.kind, item.table, item.row_id);
               const hasTask = taken.has(key);
@@ -714,5 +765,52 @@ function GapsTab({ onCreateTask }: { onCreateTask: (gap: GapItem) => void }) {
         </table>
       </div>
     </div>
+  );
+}
+
+function FilterPill({
+  active,
+  onClick,
+  label,
+  count,
+  severity,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+  severity?: "crit" | "warn";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        active
+          ? "border-transparent bg-primary text-primary-foreground"
+          : "bg-card text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {severity && (
+        <span
+          aria-hidden
+          className={cn(
+            "h-1.5 w-1.5 rounded-full",
+            active
+              ? "bg-primary-foreground/70"
+              : severity === "crit"
+                ? "bg-destructive"
+                : "bg-warning",
+          )}
+        />
+      )}
+      {label}
+      <span className={cn("tabular", active ? "opacity-80" : "text-muted-foreground")}>
+        {count}
+      </span>
+    </button>
   );
 }
