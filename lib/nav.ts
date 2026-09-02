@@ -23,6 +23,8 @@ import {
   TicketCheck,
   Trophy,
   UserCog,
+  TrendingUp,
+  Factory,
 } from "lucide-react";
 import { ADMIN_ROLES, type Role } from "@/types/auth.types";
 
@@ -34,6 +36,8 @@ export interface NavItem {
   keywords?: string;
   /** Nested items render as a sub-menu under this one. */
   items?: NavItem[];
+  /** Restrict a single item to these roles (group-level `roles` still applies). */
+  roles?: Role[];
 }
 
 export interface NavGroup {
@@ -80,6 +84,20 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/events",
         icon: CalendarDays,
         keywords: "catalog אירועים",
+      },
+      {
+        name: "Events Factory",
+        href: "/factory",
+        icon: Factory,
+        keywords: "drafts batch \u05de\u05e4\u05e2\u05dc \u05d8\u05d9\u05d5\u05d8\u05d5\u05ea",
+        roles: ADMIN_ROLES,
+      },
+      {
+        name: "Price Changes",
+        href: "/price-changes",
+        icon: TrendingUp,
+        keywords: "base price sync מחירים סנכרון",
+        roles: ADMIN_ROLES,
       },
       {
         name: "Offline Flights",
@@ -232,7 +250,12 @@ export function visibleGroups(role: Role | undefined | null): NavGroup[] {
   }
   return NAV_GROUPS.filter(
     (group) => !group.roles || (role && group.roles.includes(role)),
-  );
+  ).map((group) => ({
+    ...group,
+    items: group.items.filter(
+      (item) => !item.roles || (role && item.roles.includes(role)),
+    ),
+  }));
 }
 
 /**
@@ -268,6 +291,8 @@ const SEGMENT_LABELS: Record<string, string> = {
   "tixstock-events": "TixStock Events",
   "creative-generator": "Creative Generator",
   "meta-feed": "Meta Product Feed",
+  "price-changes": "Price Changes",
+  factory: "Events Factory",
   "event-tags": "Tags & Rules",
   templates: "Templates",
   categories: "Categories",
