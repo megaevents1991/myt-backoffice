@@ -71,7 +71,7 @@ export function GalleryField({
   };
 
   return (
-    <div className="space-y-3">
+    <div id="fix-gallery" className="scroll-mt-20 space-y-3">
       <div className="flex items-center gap-2">
         <StorageImageBrowser
           multiple

@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { AppSidebar } from "@/components/app-sidebar";
 import { CommandPalette } from "@/components/command-palette";
 import { Topbar } from "@/components/topbar";
+import { DeepLinkScroll } from "@/components/deep-link-scroll";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useToast } from "@/hooks/use-toast";
 
@@ -115,6 +116,7 @@ export default function DashboardLayout({
         <div className="min-w-0 flex-1 p-4 md:p-6">{children}</div>
       </SidebarInset>
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      <DeepLinkScroll />
     </SidebarProvider>
   );
 }

@@ -198,6 +198,34 @@
   }
 }
 
+/*
+ * Deep-link arrival. The creative-gaps "Do" button lands on the exact field
+ * that fixes the gap (#fix-logo, #fix-image, #section-images...); without a
+ * cue you arrive mid-form with no idea which control you were sent to.
+ */
+@layer components {
+  [id^="fix-"],
+  [id^="section-"] {
+    scroll-margin-top: 5rem;
+  }
+
+  [id^="fix-"]:target,
+  [id^="section-"]:target {
+    border-radius: var(--radius);
+    animation: deep-link-arrive 2s var(--ease-out) 1;
+  }
+}
+
+@keyframes deep-link-arrive {
+  0%,
+  60% {
+    box-shadow: 0 0 0 3px hsl(var(--ring) / 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 3px hsl(var(--ring) / 0);
+  }
+}
+
 /* Reduced motion - same blanket off-ramp as the main app's globals.css:
  * every animation/transition must degrade here. */
 @media (prefers-reduced-motion: reduce) {

@@ -292,5 +292,7 @@ export async function openTaskGapKeys(): Promise<string[]> {
   return (data ?? [])
     .map((row: { source_ref: unknown }) => row.source_ref as TaskSourceRef | null)
     .filter((ref: TaskSourceRef | null): ref is TaskSourceRef => !!ref)
-    .map((ref: TaskSourceRef) => `${ref.table}:${ref.row_id}`);
+    // Keyed by kind too: a team can need both a crest and a gallery, and one
+    // task about the crest must not silently claim the gallery as handled.
+    .map((ref: TaskSourceRef) => `${ref.kind}:${ref.table}:${ref.row_id}`);
 }

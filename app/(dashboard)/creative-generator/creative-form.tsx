@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -88,7 +89,10 @@ export function CreativeForm({
   subjects, locations, events,
 }: { subjects: SubjectOption[]; locations: Option[]; events: EventOption[] }) {
   const [kind, setKind] = useState<"match" | "artist" | "photo">("match");
-  const [eventId, setEventId] = useState<string>("");
+  // The creative-gaps "Do" button links here as ?eventId=<id>, so the event
+  // it complained about is already selected on arrival.
+  const presetEventId = useSearchParams().get("eventId") ?? "";
+  const [eventId, setEventId] = useState<string>(presetEventId);
   const [eventOpen, setEventOpen] = useState(false);
   const [homeRef, setHomeRef] = useState<string>("");
   const [awayRef, setAwayRef] = useState<string>("");

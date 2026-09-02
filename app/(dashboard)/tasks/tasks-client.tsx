@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, Pencil, Plus, RotateCcw, Trash2, Wrench } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -39,18 +40,15 @@ import {
   updateTask,
 } from "@/lib/actions/task-actions";
 import {
-  getCreativeGapCounts,
-  listCreativeGaps,
+  dismissCreativeGap,
+  listAllCreativeGaps,
+  listDismissedGaps,
+  restoreCreativeGap,
+  type DismissedGap,
 } from "@/lib/actions/creative-gap-actions";
 import { listUsers } from "@/lib/actions/user-actions";
 import { ADMIN_ROLES, STAFF_ROLES, type UserProfile } from "@/types/auth.types";
-import {
-  GAP_KINDS,
-  GAP_META,
-  type GapCounts,
-  type GapItem,
-  type GapKind,
-} from "@/types/creative-gap.types";
+import { GAP_META, gapKey, type GapItem } from "@/types/creative-gap.types";
 import {
   PRIORITY_ORDER,
   TASK_PRIORITIES,
@@ -216,10 +214,10 @@ export function TasksClient() {
             {row.original.source_ref?.url && (
               <Link
                 href={row.original.source_ref.url}
-                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
               >
-                <ExternalLink className="h-3 w-3" />
-                {row.original.source_ref.label}
+                <Wrench className="h-3 w-3" />
+                Do: {row.original.source_ref.label}
               </Link>
             )}
           </div>
@@ -414,7 +412,9 @@ function TaskEditor({
                   table: gap.table,
                   row_id: gap.row_id,
                   label: gap.label,
-                  url: gap.url,
+                  // The deep link, not the page: whoever picks this task up
+                  // lands on the control that fixes it.
+                  url: gap.fixUrl,
                 }
               : null,
           });
@@ -524,118 +524,195 @@ function TaskEditor({
   );
 }
 
+/**
+ * Everything missing on the site, as one list. No type filter on purpose - the
+ * point is a single work queue you scan top to bottom, most severe first.
+ *
+ * Two buttons per row, and the distinction matters: "Do" jumps to the exact
+ * control that fixes it (the crest field, the gallery picker, the generator
+ * with the event already chosen), while "Create task" hands the job to
+ * someone else instead.
+ */
 function GapsTab({ onCreateTask }: { onCreateTask: (gap: GapItem) => void }) {
-  const [counts, setCounts] = useState<GapCounts | null>(null);
-  const [kind, setKind] = useState<GapKind>("event_creative");
-  const [items, setItems] = useState<GapItem[]>([]);
+  const { toast } = useToast();
+  const [items, setItems] = useState<GapItem[] | null>(null);
   const [taken, setTaken] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
+  const [dismissed, setDismissed] = useState<DismissedGap[]>([]);
+  const [showDismissed, setShowDismissed] = useState(false);
 
-  useEffect(() => {
-    getCreativeGapCounts().then(setCounts);
+  const load = useCallback(() => {
+    listAllCreativeGaps().then(setItems);
     openTaskGapKeys().then((keys) => setTaken(new Set(keys)));
+    listDismissedGaps().then(setDismissed);
   }, []);
 
   useEffect(() => {
-    setLoading(true);
-    listCreativeGaps(kind)
-      .then(setItems)
-      .finally(() => setLoading(false));
-  }, [kind]);
+    load();
+  }, [load]);
+
+  /** "Already on the site" - files the gap away without touching the row. */
+  const markAlreadyDone = async (item: GapItem) => {
+    setItems((current) =>
+      current
+        ? current.filter(
+            (candidate) =>
+              gapKey(candidate.kind, candidate.table, candidate.row_id) !==
+              gapKey(item.kind, item.table, item.row_id),
+          )
+        : current,
+    );
+    const result = await dismissCreativeGap({
+      kind: item.kind,
+      table: item.table,
+      row_id: item.row_id,
+      label: item.label,
+    });
+    if (!result.ok) {
+      toast({ variant: "destructive", title: "Failed", description: result.error });
+    }
+    load();
+  };
+
+  const undoDismissal = async (key: string) => {
+    const result = await restoreCreativeGap(key);
+    if (!result.ok) {
+      toast({ variant: "destructive", title: "Failed", description: result.error });
+      return;
+    }
+    load();
+  };
+
+  if (items === null) {
+    return <Skeleton className="h-64 w-full" />;
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="rounded-lg border bg-card p-8 text-center">
+        <p className="font-medium">Nothing is missing</p>
+        <p className="text-sm text-muted-foreground">
+          Every team, artist, category and upcoming event has its visuals.
+          {dismissed.length > 0 && ` ${dismissed.length} were marked as already on the site.`}
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        {GAP_KINDS.map((gapKind) => {
-          const meta = GAP_META[gapKind];
-          const count = counts?.counts[gapKind];
-          const isActive = kind === gapKind;
-          return (
-            <button
-              key={gapKind}
-              type="button"
-              onClick={() => setKind(gapKind)}
-              className={cn(
-                "rounded-lg border bg-card p-3 text-right transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                isActive ? "border-primary" : "hover:bg-muted/60",
-              )}
-              dir="rtl"
-            >
-              <div
-                className={cn(
-                  "font-display text-xl font-bold tabular-nums",
-                  meta.severity === "crit" && (count ?? 0) > 0 && "text-destructive",
-                )}
-              >
-                {count ?? "…"}
-              </div>
-              <div className="text-xs leading-snug text-muted-foreground">
-                {meta.label}
-              </div>
-            </button>
-          );
-        })}
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+        <span>
+          <span className="font-medium tabular-nums text-foreground">{items.length}</span>{" "}
+          missing assets, most blocking first.
+        </span>
+        {dismissed.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowDismissed((open) => !open)}
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            {dismissed.length} marked as already on the site
+          </button>
+        )}
       </div>
+
+      {showDismissed && dismissed.length > 0 && (
+        <div className="rounded-lg border bg-muted/40 p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Already on the site
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {dismissed.map((entry) => (
+              <span
+                key={entry.gap_key}
+                className="inline-flex items-center gap-2 rounded-full border bg-card px-2.5 py-1 text-xs"
+              >
+                <span className="text-muted-foreground">
+                  {GAP_META[entry.kind as keyof typeof GAP_META]?.short ?? entry.kind}
+                </span>
+                <span className="font-medium">{entry.label}</span>
+                <button
+                  type="button"
+                  onClick={() => undoDismissal(entry.gap_key)}
+                  title="Put it back on the list"
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border bg-card">
         <table className="w-full text-sm">
           <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 text-left">Item</th>
-              <th className="px-3 py-2 text-left">Detail</th>
-              <th className="w-40 px-3 py-2" />
+              <th className="px-3 py-2 text-left font-semibold">Missing</th>
+              <th className="px-3 py-2 text-left font-semibold">Item</th>
+              <th className="px-3 py-2 text-left font-semibold">Detail</th>
+              <th className="w-52 px-3 py-2" />
             </tr>
           </thead>
           <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={3} className="px-3 py-8 text-center text-muted-foreground">
-                  Loading…
-                </td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td colSpan={3} className="px-3 py-8 text-center text-muted-foreground">
-                  Nothing missing here 🎉
-                </td>
-              </tr>
-            ) : (
-              items.map((item) => {
-                const key = `${item.table}:${item.row_id}`;
-                const hasTask = taken.has(key);
-                return (
-                  <tr key={key} className="border-t">
-                    <td className="px-3 py-2">
-                      <Link href={item.url} className="font-medium hover:underline">
-                        {item.label}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">
-                      {item.detail ?? ""}
-                    </td>
-                    <td className="px-3 py-2 text-right">
+            {items.map((item) => {
+              const meta = GAP_META[item.kind];
+              const key = gapKey(item.kind, item.table, item.row_id);
+              const hasTask = taken.has(key);
+              return (
+                <tr key={key} className="border-t">
+                  <td className="whitespace-nowrap px-3 py-2">
+                    <span
+                      className={cn(
+                        "inline-flex rounded-full px-2 py-0.5 text-xs font-semibold",
+                        meta.severity === "crit"
+                          ? "bg-destructive/15 text-destructive"
+                          : "bg-warning-muted text-warning",
+                      )}
+                    >
+                      {meta.short}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <Link href={item.url} className="font-medium hover:underline">
+                      {item.label}
+                    </Link>
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">{item.detail ?? ""}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" asChild>
+                        <Link href={item.fixUrl}>
+                          <Wrench className="mr-1.5 h-3.5 w-3.5" />
+                          Do
+                        </Link>
+                      </Button>
                       <Button
                         size="sm"
-                        variant={hasTask ? "outline" : "default"}
+                        variant="outline"
                         disabled={hasTask}
                         onClick={() => onCreateTask(item)}
                       >
                         {hasTask ? "Task exists" : "Create task"}
                       </Button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Already on the site - stop reporting it"
+                        onClick={() => markAlreadyDone(item)}
+                      >
+                        <Check className="mr-1.5 h-3.5 w-3.5" />
+                        Done
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
-      {items.length >= 300 && (
-        <p className="text-xs text-muted-foreground">
-          Showing the first 300 - fix some and refresh.
-        </p>
-      )}
     </div>
   );
 }

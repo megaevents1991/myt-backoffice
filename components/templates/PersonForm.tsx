@@ -302,10 +302,14 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
         </div>
 
         {kind === "football_teams" && (
-          <CrestLibraryUpload
-            nameEnglish={form.watch("name_english") ?? ""}
-            nameHebrew={form.watch("name") ?? ""}
-          />
+          // Deep-link target for the creative-gaps "Do" button - the crest
+          // library and the URL field below are one job, so the anchor sits here.
+          <div id="fix-logo" className="scroll-mt-20">
+            <CrestLibraryUpload
+              nameEnglish={form.watch("name_english") ?? ""}
+              nameHebrew={form.watch("name") ?? ""}
+            />
+          </div>
         )}
 
         {kind === "football_teams" && (
