@@ -2,8 +2,14 @@
 
 import type React from "react";
 import { useState, useEffect, use, useLayoutEffect, useRef, useMemo, useCallback } from "react";
+import { cn } from "@/lib/utils";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown, Plane, ExternalLink, BedDouble } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown, Plane, ExternalLink, BedDouble, ChevronDown } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -34,16 +40,23 @@ import { ImageFilePicker } from "@/components/image-file-picker";
 import { ArtBlobPicker } from "@/components/art-blob-picker";
 import { CampaignVideoField } from "@/components/campaign-video-field";
 import { v4 as uuidv4 } from "uuid";
-import { 
-  searchFlightPrices, 
-  isValidIATACode 
+import {
+  fetchPriceQuote,
+  isValidIATACode,
 } from "@/lib/actions/flight-actions";
 import { getLocations } from "@/lib/actions/location-actions";
 import type { Location } from "@/types/location.types";
-import { searchHotelPrices } from "@/lib/actions/hotel-actions";
 import { getTixStockTickets } from "@/lib/actions/tixstock-actions";
+import { findVenueMemoryAction, nearestIataAction } from "@/lib/actions/venue-memory-actions";
+import { homeTeamOf } from "@/lib/tixstock-home";
+import {
+  batchRowIdentity,
+  mapBatchRow,
+  type BatchEnvelope,
+  type BatchProvider,
+  type BatchRow,
+} from "@/lib/provider-batch";
 import type { TixStockListing, TixStockEventDB } from "@/types/tixstock.types";
-import { tixstockToEvent } from "../../tixstock-events/batch/tixstock-to-event";
 import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
 import {
   getFlightsByEventId,
@@ -64,6 +77,7 @@ import type { OfflineHotel } from "@/types/offline-hotel.types";
 import { InlineHotelForm, type StagedHotelData } from "@/components/inline-hotel-form";
 import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
 import { StickySaveBar } from "@/components/sticky-save-bar";
+import { EditorRail } from "@/components/editor-rail";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EventTaxonomySelect, type TaxonomyOption } from "@/components/taxonomy/event-taxonomy-select";
 import {
@@ -124,8 +138,16 @@ export default function EventPage({
 
   // Batch-create mode: a stepwise wizard over the selected TixStock events.
   // Configure/review each on the real form; Save & Next creates it and loads the next.
-  const [batchEvents, setBatchEvents] = useState<TixStockEventDB[]>([]);
+  const [batchEvents, setBatchEvents] = useState<BatchRow[]>([]);
+  const [batchProvider, setBatchProvider] = useState<BatchProvider>("tixstock");
   const [batchIndex, setBatchIndex] = useState(0);
+  // Stadium memory: which past event the current step's ticket structure came from.
+  const [memoryBanner, setMemoryBanner] = useState<{ from: string } | null>(null);
+  // Auto base-fill (spec 2026-09-02 4b): which fields the background quote just
+  // filled (drives a brief highlight) and which quotes failed (inline warning).
+  const [autoFilled, setAutoFilled] = useState<{ flight?: boolean; hotel?: boolean }>({});
+  const [quoteFailed, setQuoteFailed] = useState<{ flight?: boolean; hotel?: boolean }>({});
+  const quotedKeysRef = useRef<Set<string>>(new Set());
   const mapContainerRef = useRef<HTMLDivElement>(null);
   // baseline snapshot of the loaded event, for dirty detection + discard
   const initialEventRef = useRef<string | null>(null);
@@ -231,15 +253,33 @@ export default function EventPage({
         // Pre-fill the shared form from a representative event; Save creates them all.
         if (searchParams.get("batch") === "1") {
           try {
+            // New envelope { provider, rows } under "batch_create"; the bare
+            // tixstock array under "tx_batch_create" is the legacy stash.
             const raw =
+              typeof window !== "undefined"
+                ? window.localStorage.getItem("batch_create")
+                : null;
+            const legacy =
               typeof window !== "undefined"
                 ? window.localStorage.getItem("tx_batch_create")
                 : null;
-            const list = raw ? (JSON.parse(raw) as TixStockEventDB[]) : [];
+            const envelope = raw
+              ? (JSON.parse(raw) as BatchEnvelope)
+              : legacy
+                ? ({
+                    provider: "tixstock",
+                    rows: JSON.parse(legacy) as TixStockEventDB[],
+                  } satisfies BatchEnvelope)
+                : null;
+            const list = envelope?.rows ?? [];
+            const provider = envelope?.provider ?? "tixstock";
+            setBatchProvider(provider);
             setBatchEvents(list);
             const rep = list[0];
             if (rep) {
-              setEvent({ id: 0, ...tixstockToEvent(rep) });
+              const seeded = mapBatchRow(provider, rep);
+              setEvent({ id: 0, ...seeded });
+              void seedVenueMemory(seeded.location);
               setLoading(false);
               return;
             }
@@ -400,7 +440,9 @@ export default function EventPage({
   const tixStockEventId =
     event?.type === "tx_event"
       ? txEventIdFromQuery ??
-        (isBatchCreate ? batchEvents[batchIndex]?.event_id ?? null : null) ??
+        (isBatchCreate && batchProvider === "tixstock"
+          ? (batchEvents[batchIndex] as TixStockEventDB | undefined)?.event_id ?? null
+          : null) ??
         event.tickets_and_rates.find((t) => !!t.eid)?.eid ??
         null
       : null;
@@ -627,40 +669,37 @@ export default function EventPage({
 
     setSearchingFlights(true);
     try {
-      const originCode = "TLV";
-      const result = await searchFlightPrices({
-        originLocationCode: originCode,
-        destinationLocationCode: cityIata,
-        departureDate,
+      // Shared pricing rule: cheapest direct +$100, or the connection when the
+      // direct beats it by more than $300; rounded to tens. Same number the
+      // nightly sync writes.
+      const quote = await fetchPriceQuote({
+        kind: "flight",
+        cityIata,
+        departDate: departureDate,
         returnDate,
-        adults: 1,
-        currencyCode: "USD",
       });
 
-      if (result.success && result.cheapestPrice) {
-        // Update the base flight price with the cheapest found price
+      if (quote) {
         setEvent((prev) => {
           if (!prev) return prev;
           return {
             ...prev,
-            base_flight_price: Math.round(result.cheapestPrice!),
+            base_flight_price: quote.price,
           };
         });
 
         toast({
           title: "Flight Prices Updated",
-          description: `Found flights from ${originCode} to ${cityIata} starting at $${Math.round(result.cheapestPrice)} (${result.totalOffers} offers found)`,
-        });
-      } else if (!result.success) {
-        toast({
-          variant: "destructive",
-          title: "Flight Search Error",
-          description: result.message || "Could not fetch flight prices",
+          description:
+            quote.source === "connection"
+              ? `TLV → ${cityIata}: $${quote.price} via connection (direct costs $${Math.round(quote.raw)}+, over the $300 gap)`
+              : `TLV → ${cityIata}: $${quote.price} direct (cheapest $${Math.round(quote.raw)} + $100, rounded)`,
         });
       } else {
         toast({
+          variant: "destructive",
           title: "No Flights Found",
-          description: `No flights found for ${originCode} to ${cityIata} on the selected dates`,
+          description: `No flights found for TLV to ${cityIata} on the selected dates`,
         });
       }
     } catch (error) {
@@ -688,41 +727,31 @@ export default function EventPage({
 
     setSearchingHotels(true);
     try {
-      const result = await searchHotelPrices({
+      // Shared pricing rule: cheapest 3-star +$120, rounded to tens.
+      const quote = await fetchPriceQuote({
+        kind: "hotel",
         lat,
         lon,
         checkin,
         checkout,
       });
 
-      if (result.success && result.cheapestPrice) {
-        // Update the base hotel price with the cheapest found price
+      if (quote) {
         setEvent((prev) => {
           if (!prev) return prev;
           return {
             ...prev,
-            base_hotel_price: Math.round(result.cheapestPrice!),
+            base_hotel_price: quote.price,
           };
         });
 
-        // Show success toast with hotel details
-        const hotelInfo = result.hotelDetails;
-        const description = hotelInfo 
-          ? `Found "${hotelInfo.name}" - ${hotelInfo.room_name} (${hotelInfo.meal}) starting at $${Math.round(result.cheapestPrice)} (${result.totalOffers} hotels found)`
-          : `Found hotels starting at $${Math.round(result.cheapestPrice)} (${result.totalOffers} hotels found)`;
-
         toast({
           title: "Hotel Prices Updated",
-          description,
-        });
-      } else if (!result.success) {
-        toast({
-          variant: "destructive",
-          title: "Hotel Search Error",
-          description: result.message || "Could not fetch hotel prices",
+          description: `Cheapest 3-star $${Math.round(quote.raw)} + $120 → base $${quote.price}`,
         });
       } else {
         toast({
+          variant: "destructive",
           title: "No Hotels Found",
           description: `No hotels found for the specified location and dates`,
         });
@@ -1226,8 +1255,143 @@ export default function EventPage({
   };
 
   const batchFinish = () => {
-    if (typeof window !== "undefined") window.localStorage.removeItem("tx_batch_create");
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("batch_create");
+      window.localStorage.removeItem("tx_batch_create");
+    }
     router.push("/events");
+  };
+
+  // Artist tour mode (spec 2026-09-02 section 6): a step with coords but no
+  // city_iata resolves it from the locations table (<=50km). Filling it then
+  // triggers the base-fill effect below - per-city prices on tours for free.
+  useEffect(() => {
+    if (!isNewEvent || !event) return;
+    const lat = event.location?.latitude;
+    const lon = event.location?.longitude;
+    if (event.location?.city_iata || !lat || !lon) return;
+    const key = `${batchIndex}:iata:${lat}:${lon}`;
+    if (quotedKeysRef.current.has(key)) return;
+    quotedKeysRef.current.add(key);
+    nearestIataAction(lat, lon).then((iata) => {
+      if (!iata) return;
+      setEvent((prev) => {
+        if (!prev || prev.location?.city_iata) return prev;
+        return { ...prev, location: { ...prev.location, city_iata: iata } };
+      });
+    });
+    // Same identity-input dependency shape as the base-fill effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isNewEvent,
+    batchIndex,
+    event?.location?.latitude,
+    event?.location?.longitude,
+    event?.location?.city_iata,
+  ]);
+
+  // Auto base-fill on creation: the moment a new event has city_iata + flight
+  // dates, quote flight+hotel in the background and fill ONLY fields that are
+  // still 0. One shot per (step, kind, inputs) key; a failure leaves the field
+  // empty with a small warning and never blocks save.
+  useEffect(() => {
+    if (!isNewEvent || !event) return;
+    const iata = event.location?.city_iata;
+    const depart = event.def_date_depart;
+    const ret = event.def_date_return;
+    if (!iata || !isValidIATACode(iata) || !depart || !ret) return;
+
+    const markFilled = (kind: "flight" | "hotel") => {
+      setAutoFilled((prev) => ({ ...prev, [kind]: true }));
+      setTimeout(
+        () => setAutoFilled((prev) => ({ ...prev, [kind]: false })),
+        2500,
+      );
+    };
+
+    if (event.base_flight_price === 0) {
+      const key = `${batchIndex}:flight:${iata}:${depart}:${ret}`;
+      if (!quotedKeysRef.current.has(key)) {
+        quotedKeysRef.current.add(key);
+        fetchPriceQuote({ kind: "flight", cityIata: iata, departDate: depart, returnDate: ret }).then(
+          (quote) => {
+            if (!quote) {
+              setQuoteFailed((prev) => ({ ...prev, flight: true }));
+              return;
+            }
+            setQuoteFailed((prev) => ({ ...prev, flight: false }));
+            setEvent((prev) => {
+              if (!prev || prev.base_flight_price !== 0) return prev;
+              markFilled("flight");
+              return { ...prev, base_flight_price: quote.price };
+            });
+          },
+        );
+      }
+    }
+
+    const lat = event.location?.latitude;
+    const lon = event.location?.longitude;
+    if (event.base_hotel_price === 0 && lat && lon) {
+      const key = `${batchIndex}:hotel:${lat}:${lon}:${depart}:${ret}`;
+      if (!quotedKeysRef.current.has(key)) {
+        quotedKeysRef.current.add(key);
+        fetchPriceQuote({ kind: "hotel", lat, lon, checkin: depart, checkout: ret }).then(
+          (quote) => {
+            if (!quote) {
+              setQuoteFailed((prev) => ({ ...prev, hotel: true }));
+              return;
+            }
+            setQuoteFailed((prev) => ({ ...prev, hotel: false }));
+            setEvent((prev) => {
+              if (!prev || prev.base_hotel_price !== 0) return prev;
+              markFilled("hotel");
+              return { ...prev, base_hotel_price: quote.price };
+            });
+          },
+        );
+      }
+    }
+    // Quoting depends only on these identity inputs - not the whole event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isNewEvent,
+    batchIndex,
+    event?.location?.city_iata,
+    event?.location?.latitude,
+    event?.location?.longitude,
+    event?.def_date_depart,
+    event?.def_date_return,
+    event?.base_flight_price,
+    event?.base_hotel_price,
+  ]);
+
+  // Stadium memory (spec 2026-09-02): when a step lands with no ticket
+  // categories, pull the structure from the most recent event at the same
+  // venue. Prices come along as the fallback; the reprice mechanism replaces
+  // them from live listings wherever one matches. Dismissible via the banner.
+  const seedVenueMemory = async (location: Event["location"]) => {
+    setMemoryBanner(null);
+    try {
+      const memory = await findVenueMemoryAction(
+        location?.name ?? "",
+        location?.latitude ?? 0,
+        location?.longitude ?? 0,
+      );
+      if (!memory || memory.tickets.length === 0) return;
+      setEvent((prev) => {
+        if (!prev || prev.tickets_and_rates.length > 0) return prev;
+        setMemoryBanner({ from: memory.fromEventName });
+        return { ...prev, tickets_and_rates: memory.tickets };
+      });
+    } catch (error) {
+      console.error("venue memory seed failed:", error);
+    }
+  };
+
+  const undoVenueMemory = () => {
+    setMemoryBanner(null);
+    setEvent((prev) => (prev ? { ...prev, tickets_and_rates: [] } : prev));
   };
 
   // Batch wizard: carry the current (shared) form into event #index, swapping the
@@ -1237,23 +1401,48 @@ export default function EventPage({
     if (!event) return;
     const ev = batchEvents[index];
     if (!ev) return;
-    const identity = tixstockToEvent(ev);
+    const identity = mapBatchRow(batchProvider, ev);
+
+    // Crossing into another group's fixtures starts from the fresh mapping -
+    // the dragged form (venue, prices, images) belongs to the previous group's
+    // ground. Tixstock groups by home team; other providers by venue. Stadium
+    // memory then refires for the new one.
+    const previous = batchEvents[batchIndex];
+    const groupOf = (row: BatchRow) =>
+      batchProvider === "tixstock"
+        ? homeTeamOf(row as TixStockEventDB)
+        : batchRowIdentity(batchProvider, row).group;
+    if (previous && groupOf(previous) !== groupOf(ev)) {
+      setEvent({ id: 0, ...identity });
+      setBatchIndex(index);
+      void seedVenueMemory(identity.location);
+      setSelectedSection(null);
+      setSelectedCategory(null);
+      setExcludeSectionsMode(false);
+      return;
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id: _carriedId, ...current } = event;
     let tickets: EventTicket[] = [];
-    if (current.tickets_and_rates.length > 0) {
+    if (batchProvider === "tixstock" && current.tickets_and_rates.length > 0) {
+      const txEvent = ev as TixStockEventDB;
       await exchangeRateClientService.updateAllExchangeRates();
-      const source = await getTixStockTickets(ev.event_id).catch(() => [] as TixStockListing[]);
+      const source = await getTixStockTickets(txEvent.event_id).catch(() => [] as TixStockListing[]);
       tickets = await Promise.all(
         current.tickets_and_rates.map(async (ft) => ({
           ...ft,
           id: uuidv4(),
           price: await repriceCategoryForEvent(ft.category, source, ft.price),
-          eid: ev.event_id,
+          eid: txEvent.event_id,
           vendor: "TixStock",
           colorOnTheMap: TX_TICKET_COLOR,
         }))
       );
+    } else if (current.tickets_and_rates.length > 0) {
+      // Non-tixstock providers have no live reprice here - carry the structure
+      // with fresh ids; prices stay as reviewed on the previous step.
+      tickets = current.tickets_and_rates.map((ft) => ({ ...ft, id: uuidv4() }));
     }
     setEvent({
       id: 0,
@@ -1270,6 +1459,11 @@ export default function EventPage({
       tickets_and_rates: tickets,
     });
     setBatchIndex(index);
+    if (tickets.length === 0) {
+      void seedVenueMemory(identity.location);
+    } else {
+      setMemoryBanner(null);
+    }
     // reset per-step preview UI
     setSelectedSection(null);
     setSelectedCategory(null);
@@ -1525,7 +1719,9 @@ export default function EventPage({
         </Card>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-8">
+      <div className="flex items-start gap-6">
+        <EditorRail />
+        <form onSubmit={handleSubmit} className="min-w-0 flex-1 space-y-8">
         {isBatchCreate && (
           <div className="rounded-md border border-blue-300 bg-blue-50 p-4 dark:bg-blue-950/30">
             <p className="font-semibold text-blue-900 dark:text-blue-200">
@@ -1540,9 +1736,11 @@ export default function EventPage({
               {" "}Location fields on that step. Use <strong>Skip</strong> to not create one.
             </p>
             <ol className="mt-2 list-decimal pl-5 text-xs text-muted-foreground">
-              {batchEvents.map((ev, i) => (
+              {batchEvents.map((ev, i) => {
+                const identity = batchRowIdentity(batchProvider, ev);
+                return (
                 <li
-                  key={ev.event_id}
+                  key={identity.key}
                   className={
                     i === batchIndex
                       ? "font-semibold text-blue-900 dark:text-blue-200"
@@ -1551,14 +1749,26 @@ export default function EventPage({
                         : ""
                   }
                 >
-                  {ev.event_name} - {new Date(ev.show_date).toLocaleDateString()}
+                  {identity.name} - {new Date(identity.date).toLocaleDateString()}
                   {i < batchIndex ? " (done)" : i === batchIndex ? " (now)" : ""}
                 </li>
-              ))}
+                );
+              })}
             </ol>
           </div>
         )}
-        <Card>
+        {memoryBanner && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-success/40 bg-success-muted px-4 py-2.5 text-sm">
+            <span>
+              פירוט הכרטיסים הועתק מהאירוע הקודם באותו אצטדיון:{" "}
+              <strong>{memoryBanner.from}</strong>. המחירים יתעדכנו מהליסטינגים החיים.
+            </span>
+            <Button type="button" variant="ghost" size="sm" onClick={undoVenueMemory}>
+              בטל
+            </Button>
+          </div>
+        )}
+        <Card id="section-basic" data-editor-section="Basic information" className="scroll-mt-20">
           <CardHeader>
             <CardTitle>Basic Information</CardTitle>
             <CardDescription>
@@ -1644,18 +1854,11 @@ export default function EventPage({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="usual_price">Usual Price</Label>
-                <Input
-                  id="usual_price"
-                  name="usual_price"
-                  type="number"
-                  value={event.usual_price}
-                  onChange={handleNumberChange}
-                  required
-                />
-              </div>
+            {/* fix-price: creative-gaps "Do" lands here - a missing computable
+                price is why a feed event has no campaign creative.
+                usual_price was retired from the UI (spec 2026-09-02, decision
+                6) - the column stays for old events + main's feed fallback. */}
+            <div id="fix-price" className="grid scroll-mt-20 grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="base_flight_price">
                   Base Flight Price
@@ -1675,7 +1878,10 @@ export default function EventPage({
                     onChange={handleNumberChange}
                     disabled={searchingFlights}
                     required
-                    className="flex-1"
+                    className={cn(
+                      "flex-1 transition-colors",
+                      autoFilled.flight && "bg-success-muted",
+                    )}
                   />
                   <Button
                     type="button"
@@ -1712,6 +1918,11 @@ export default function EventPage({
                 <p className="text-xs text-muted-foreground">
                   Click &quot;Search Flights&quot; to get current prices from TLV to your destination
                 </p>
+                {quoteFailed.flight && event.base_flight_price === 0 && (
+                  <p className="text-xs font-medium text-warning">
+                    חיפוש אוטומטי נכשל — מלא ידנית או נסה שוב.
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="base_hotel_price">
@@ -1732,7 +1943,10 @@ export default function EventPage({
                     onChange={handleNumberChange}
                     disabled={searchingHotels}
                     required
-                    className="flex-1"
+                    className={cn(
+                      "flex-1 transition-colors",
+                      autoFilled.hotel && "bg-success-muted",
+                    )}
                   />
                   <Button
                     type="button"
@@ -1770,6 +1984,11 @@ export default function EventPage({
                 <p className="text-xs text-muted-foreground">
                   Click &quot;Search Hotels&quot; to get current prices near your event location
                 </p>
+                {quoteFailed.hotel && event.base_hotel_price === 0 && (
+                  <p className="text-xs font-medium text-warning">
+                    חיפוש אוטומטי נכשל — מלא ידנית או נסה שוב.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1933,12 +2152,32 @@ export default function EventPage({
               </p>
             </div>
 
-            <EventMarkupFields
-              values={event}
-              onChange={(field, value) =>
-                setEvent((prev) => (prev ? { ...prev, [field]: value } : prev))
+            {/* Legacy composed-pricing markups. Collapsed by default (spec
+                2026-09-02 form cleanup); auto-opens when an old event still
+                uses any of them so nothing gets silently hidden. */}
+            <Collapsible
+              defaultOpen={
+                event.markup_ticket != null ||
+                event.markup_flight != null ||
+                event.markup_hotel != null ||
+                event.skip_hotel_markup != null
               }
-            />
+            >
+              <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm font-medium hover:bg-muted">
+                <ChevronDown className="h-4 w-4 transition-transform group-data-[state=closed]:-rotate-90" />
+                Advanced markups (legacy composed pricing)
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-4">
+                <EventMarkupFields
+                  values={event}
+                  onChange={(field, value) =>
+                    setEvent((prev) =>
+                      prev ? { ...prev, [field]: value } : prev
+                    )
+                  }
+                />
+              </CollapsibleContent>
+            </Collapsible>
 
             <div className="space-y-2">
               <Label htmlFor="tags">Tag</Label>
@@ -2016,7 +2255,7 @@ export default function EventPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="section-location" data-editor-section="Location" className="scroll-mt-20">
           <CardHeader>
             <CardTitle>Location</CardTitle>
             <CardDescription>
@@ -2120,7 +2359,7 @@ export default function EventPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="section-images" data-editor-section="Images" className="scroll-mt-20">
           <CardHeader>
             <CardTitle>Images</CardTitle>
             <CardDescription>
@@ -2207,7 +2446,11 @@ export default function EventPage({
         </Card>
 
         {event.type === "tx_event" && (
-          <Card>
+          <Card
+            id="section-tixstock"
+            data-editor-section="TixStock source"
+            className="scroll-mt-20"
+          >
             <CardHeader>
               <CardTitle>TixStock Source Preview</CardTitle>
               <CardDescription>
@@ -2549,7 +2792,11 @@ export default function EventPage({
           </Card>
         )}
 
-        <Card>
+        <Card
+          id="section-flights"
+          data-editor-section="Offline flights"
+          className="scroll-mt-20"
+        >
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
@@ -2754,7 +3001,11 @@ export default function EventPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          id="section-hotels"
+          data-editor-section="Offline hotels"
+          className="scroll-mt-20"
+        >
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
@@ -3019,7 +3270,11 @@ export default function EventPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          id="section-tickets"
+          data-editor-section="Tickets & rates"
+          className="scroll-mt-20"
+        >
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle>Tickets and Rates</CardTitle>
@@ -3239,7 +3494,8 @@ export default function EventPage({
                 : "Save Event"}
           </Button>
         </div>
-      </form>
+        </form>
+      </div>
 
       <StickySaveBar
         isDirty={isDirty}

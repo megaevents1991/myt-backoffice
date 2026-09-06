@@ -57,7 +57,7 @@ export function HeroImageField({
   };
 
   return (
-    <div className="space-y-2">
+    <div id="fix-image" className="scroll-mt-20 space-y-2">
       <ImageFilePicker
         value={value}
         onChange={onChange}

@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
-import { Search, Loader2, ExternalLink, Ticket, Calendar as CalendarIcon, ArrowLeft } from "lucide-react";
+import { Search, Loader2, ExternalLink, Calendar as CalendarIcon, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -105,7 +105,7 @@ export function EventComparisonModal({ event }: EventComparisonModalProps) {
       case "LiveEvents": return "bg-blue-500";
       case "P1Events": return "bg-orange-500";
       case "SportsEvents": return "bg-green-500";
-      default: return "bg-gray-500";
+      default: return "bg-muted-foreground";
     }
   };
 

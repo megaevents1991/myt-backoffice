@@ -4,7 +4,14 @@ import { LogoLibrary } from "./logo-library";
 // Shared design-asset library. Currently football logos for the creative
 // generator; future sections (backgrounds, blob art, brand assets) slot in
 // here as more tabs/sections instead of new one-off pages.
-export default async function AssetsPage() {
+// ?q= prefills the search - the creative-gaps "Do" button deep-links here
+// with the team name so the missing crest is one upload away.
+export default async function AssetsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const { q } = await searchParams;
   const logos = await getFootballLogos();
 
   return (
@@ -17,7 +24,7 @@ export default async function AssetsPage() {
         <h2 className="text-xl font-semibold mb-4">
           Football Logos ({logos.length})
         </h2>
-        <LogoLibrary initialLogos={logos} />
+        <LogoLibrary initialLogos={logos} initialQuery={q ?? ""} />
       </section>
     </div>
   );

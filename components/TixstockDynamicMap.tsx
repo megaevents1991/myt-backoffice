@@ -443,8 +443,8 @@ export function TixstockDynamicMap({
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-        <span className="mr-2 text-gray-500">טוען מפת אירוע...</span>
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <span className="mr-2 text-muted-foreground">טוען מפת אירוע...</span>
       </div>
     );
   }

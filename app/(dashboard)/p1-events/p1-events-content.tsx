@@ -12,13 +12,9 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { p1RowToEvent } from "@/lib/provider-batch";
+import { createDraftBatch } from "@/lib/actions/factory-actions";
 import {
   RefreshCw,
   Loader2,
@@ -27,10 +23,6 @@ import {
   Calendar,
   Users,
   Ticket,
-  ChevronLeft,
-  ChevronRight,
-  SortAsc,
-  SortDesc,
   ExternalLink,
   Trophy,
 } from "lucide-react";
@@ -41,117 +33,26 @@ import {
   getP1SyncStatus,
   triggerP1Sync,
 } from "@/lib/actions/p1-events-actions";
-import { P1EventDB, P1Ticket, P1_CURRENCIES } from "@/types/p1-events.types";
+import { P1EventDB, P1Ticket } from "@/types/p1-events.types";
 import { Event, EventTicket } from "@/types/app.types";
 import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
+import { matchesSearch } from "@/lib/search";
+import {
+  FilterSortControls,
+  PaginationControls,
+} from "@/components/provider-browse";
 
-// Helper component for filter and sort controls
-const FilterSortControls = ({
-  filter,
-  setFilter,
-  sortBy,
-  setSortBy,
-  sortOrder,
-  setSortOrder,
-  sortOptions,
-  placeholder,
-}: {
-  filter: string;
-  setFilter: (value: string) => void;
-  sortBy: string;
-  setSortBy: (value: string) => void;
-  sortOrder: "asc" | "desc";
-  setSortOrder: (value: "asc" | "desc") => void;
-  sortOptions: { value: string; label: string }[];
-  placeholder: string;
-}) => (
-  <div className="flex gap-2 mb-4">
-    <div className="relative flex-1">
-      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-      <Input
-        placeholder={placeholder}
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        className="pl-8"
-      />
-    </div>
-    <Select value={sortBy} onValueChange={setSortBy}>
-      <SelectTrigger className="w-40">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {sortOptions.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-    <Button
-      variant="outline"
-      size="icon"
-      onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-    >
-      {sortOrder === "asc" ? (
-        <SortAsc className="h-4 w-4" />
-      ) : (
-        <SortDesc className="h-4 w-4" />
-      )}
-    </Button>
-  </div>
-);
 
-// Helper component for pagination
-const PaginationControls = ({
-  currentPage,
-  totalItems,
-  pageSize,
-  onPageChange,
-}: {
-  currentPage: number;
-  totalItems: number;
-  pageSize: number;
-  onPageChange: (page: number) => void;
-}) => {
-  const totalPages = Math.ceil(totalItems / pageSize);
 
-  if (totalPages <= 1) return null;
 
-  return (
-    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-xs sm:text-sm text-muted-foreground leading-snug">
-        Showing {(currentPage - 1) * pageSize + 1} to{" "}
-        {Math.min(currentPage * pageSize, totalItems)} of {totalItems} items
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(currentPage - 1)}
-          disabled={currentPage === 1}
-          className="flex items-center gap-1"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          <span className="hidden xs:inline">Previous</span>
-          <span className="xs:hidden">Prev</span>
-        </Button>
-        <span className="flex items-center px-2 text-xs sm:text-sm">
-          Page {currentPage} of {totalPages}
-        </span>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(currentPage + 1)}
-          disabled={currentPage === totalPages}
-          className="flex items-center gap-1"
-        >
-          <span className="hidden xs:inline">Next</span>
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  );
-};
+/** Shape of the P1 sync status payload, as this screen reads it. */
+interface P1SyncStatus {
+  results?: {
+    events?: { total?: number };
+    last_synced?: string;
+    categories?: Record<string, number>;
+  };
+}
 
 export function P1EventsContent() {
   const { toast } = useToast();
@@ -162,6 +63,45 @@ export function P1EventsContent() {
   const [series, setSeries] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [events, setEvents] = useState<P1EventDB[]>([]);
+
+  // Batch create (spec 2026-09-02 section 7): multi-select rows -> shared wizard.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const sendToFactory = async () => {
+    const rows = events.filter((e) => selectedIds.has(e.event_id));
+    if (rows.length === 0) return;
+    const result = await createDraftBatch({
+      source: "p1",
+      scope: { manual: true, count: rows.length },
+      payloads: rows.map(p1RowToEvent),
+    });
+    if (!result.ok) {
+      toast({ variant: "destructive", title: "Factory intake failed" });
+      return;
+    }
+    setSelectedIds(new Set());
+    window.open("/factory", "_blank");
+  };
+  const openBatchCreate = () => {
+    const rows = events.filter((e) => selectedIds.has(e.event_id));
+    if (rows.length === 0) return;
+    try {
+      window.localStorage.setItem(
+        "batch_create",
+        JSON.stringify({ provider: "p1", rows }),
+      );
+    } catch (error) {
+      console.error("Failed to stash batch events:", error);
+      return;
+    }
+    window.open("/events/new?batch=1", "_blank");
+  };
   const [allEvents, setAllEvents] = useState<P1EventDB[]>([]);
   const [tickets, setTickets] = useState<P1Ticket[]>([]);
 
@@ -170,12 +110,12 @@ export function P1EventsContent() {
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<P1EventDB | null>(null);
 
-  const [syncStatus, setSyncStatus] = useState<any>(null);
+  const [syncStatus, setSyncStatus] = useState<P1SyncStatus | null>(null);
 
   // Loading states
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
-  const [isLoadingTickets, setIsLoadingTickets] = useState(false);
+  const [isLoadingTickets] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Filtering and sorting states
@@ -205,7 +145,7 @@ export function P1EventsContent() {
   const filteredCategories = useMemo(() => {
     return categories
       .filter((category) =>
-        category.toLowerCase().includes(categoryFilter.toLowerCase())
+        matchesSearch(categoryFilter, category)
       )
       .sort((a, b) => a.localeCompare(b));
   }, [categories, categoryFilter]);
@@ -218,7 +158,7 @@ export function P1EventsContent() {
 
   const filteredSeries = useMemo(() => {
     return series
-      .filter((s) => s.toLowerCase().includes(seriesFilter.toLowerCase()))
+      .filter((s) => matchesSearch(seriesFilter, s))
       .sort((a, b) => a.localeCompare(b));
   }, [series, seriesFilter]);
 
@@ -230,7 +170,7 @@ export function P1EventsContent() {
 
   const filteredCities = useMemo(() => {
     return cities
-      .filter((city) => city.toLowerCase().includes(cityFilter.toLowerCase()))
+      .filter((city) => matchesSearch(cityFilter, city))
       .sort((a, b) => a.localeCompare(b));
   }, [cities, cityFilter]);
 
@@ -242,7 +182,7 @@ export function P1EventsContent() {
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) =>
-      event.title.toLowerCase().includes(eventFilter.toLowerCase())
+      matchesSearch(eventFilter, event.title, event.venue_city)
     );
   }, [events, eventFilter]);
 
@@ -253,9 +193,9 @@ export function P1EventsContent() {
   }, [filteredEvents, eventPage, eventPageSize]);
 
   const filteredTickets = useMemo(() => {
-    let filtered = tickets.filter(
+    const filtered = tickets.filter(
       (ticket) =>
-        ticket.category.toLowerCase().includes(ticketFilter.toLowerCase()) &&
+        matchesSearch(ticketFilter, ticket.category) &&
         ticket.stock >= 2 && // Filter out tickets with stock lower than 2
         !ticket.tags.some(tag => tag.toLowerCase() === 'hospitality') // Filter out hospitality tickets
     );
@@ -686,7 +626,7 @@ export function P1EventsContent() {
               {Object.entries(syncStatus.results.categories).map(
                 ([cat, count]) => (
                   <Badge key={cat} variant="secondary">
-                    {cat}: {count as number}
+                    {cat}: {count}
                   </Badge>
                 )
               )}
@@ -930,13 +870,23 @@ export function P1EventsContent() {
                   {paginatedEvents.map((event) => (
                     <div
                       key={event.event_id}
-                      className={`group relative p-3 rounded-md border cursor-pointer transition-colors ${
+                      className={`group relative p-3 pl-9 rounded-md border cursor-pointer transition-colors ${
                         selectedEvent?.event_id === event.event_id
                           ? "border-primary bg-primary/5"
                           : "hover:border-primary/50 hover:bg-accent/50"
                       }`}
                       onClick={() => setSelectedEvent(event)}
                     >
+                      <div
+                        className="absolute left-2 top-3 z-10"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Checkbox
+                          checked={selectedIds.has(event.event_id)}
+                          onCheckedChange={() => toggleSelected(event.event_id)}
+                          aria-label={`Select ${event.title}`}
+                        />
+                      </div>
                       <div className="space-y-1">
                         <p className="font-medium text-sm line-clamp-2">
                           {event.title}
@@ -991,6 +941,22 @@ export function P1EventsContent() {
                   ))}
                 </div>
 
+                {selectedIds.size > 0 && (
+                  <div className="sticky bottom-0 z-20 mt-3 flex items-center justify-between rounded-md border bg-background p-3 shadow">
+                    <span className="text-sm font-medium">{selectedIds.size} selected</span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>
+                        Clear
+                      </Button>
+                      <Button size="sm" onClick={openBatchCreate}>
+                        Create {selectedIds.size} events
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={sendToFactory}>
+                        Send to factory
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <PaginationControls
                   currentPage={eventPage}
                   totalItems={filteredEvents.length}

@@ -12,14 +12,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { sportsRowToEvent } from "@/lib/provider-batch";
+import { createDraftBatch } from "@/lib/actions/factory-actions";
 import {
   Loader2,
   RefreshCw,
@@ -28,11 +23,6 @@ import {
   Users,
   Ticket,
   ExternalLink,
-  Search,
-  SortAsc,
-  SortDesc,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -44,6 +34,7 @@ import {
   triggerSync,
 } from "@/lib/actions/sports-events-actions";
 import { findNearestLocation } from "@/lib/actions/location-actions";
+import { matchesSearch } from "@/lib/search";
 import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
 import {
   XS2Sport,
@@ -52,113 +43,15 @@ import {
   XS2Ticket,
   SyncStatusResponse,
 } from "@/types/sports-events.types";
-import { Event, EventTicket, EventType } from "@/types/app.types";
+import { Event, EventTicket } from "@/types/app.types";
 import { formatTicketNetPrice } from "@/lib/utils";
+import {
+  FilterSortControls,
+  PaginationControls,
+} from "@/components/provider-browse";
 
-// Helper component for filter and sort controls
-const FilterSortControls = ({
-  filter,
-  setFilter,
-  sortBy,
-  setSortBy,
-  sortOrder,
-  setSortOrder,
-  sortOptions,
-  placeholder,
-}: {
-  filter: string;
-  setFilter: (value: string) => void;
-  sortBy: string;
-  setSortBy: (value: string) => void;
-  sortOrder: "asc" | "desc";
-  setSortOrder: (value: "asc" | "desc") => void;
-  sortOptions: { value: string; label: string }[];
-  placeholder: string;
-}) => (
-  <div className="flex gap-2 mb-4">
-    <div className="relative flex-1">
-      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-      <Input
-        placeholder={placeholder}
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        className="pl-8"
-      />
-    </div>
-    <Select value={sortBy} onValueChange={setSortBy}>
-      <SelectTrigger className="w-40">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {sortOptions.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-    <Button
-      variant="outline"
-      size="icon"
-      onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-    >
-      {sortOrder === "asc" ? (
-        <SortAsc className="h-4 w-4" />
-      ) : (
-        <SortDesc className="h-4 w-4" />
-      )}
-    </Button>
-  </div>
-);
 
-// Helper component for pagination
-const PaginationControls = ({
-  currentPage,
-  totalItems,
-  pageSize,
-  onPageChange,
-}: {
-  currentPage: number;
-  totalItems: number;
-  pageSize: number;
-  onPageChange: (page: number) => void;
-}) => {
-  const totalPages = Math.ceil(totalItems / pageSize);
 
-  if (totalPages <= 1) return null;
-
-  return (
-    <div className="flex items-center justify-between mt-4">
-      <p className="text-sm text-muted-foreground">
-        Showing {(currentPage - 1) * pageSize + 1} to{" "}
-        {Math.min(currentPage * pageSize, totalItems)} of {totalItems} items
-      </p>
-      <div className="flex gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(currentPage - 1)}
-          disabled={currentPage === 1}
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Previous
-        </Button>
-        <span className="flex items-center px-3 text-sm">
-          Page {currentPage} of {totalPages}
-        </span>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(currentPage + 1)}
-          disabled={currentPage === totalPages}
-        >
-          Next
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  );
-};
 
 export function SportsEventsContent() {
   const { toast } = useToast();
@@ -168,6 +61,45 @@ export function SportsEventsContent() {
   const [sports, setSports] = useState<XS2Sport[]>([]);
   const [tournaments, setTournaments] = useState<XS2Tournament[]>([]);
   const [events, setEvents] = useState<XS2Event[]>([]);
+
+  // Batch create (spec 2026-09-02 section 7): multi-select rows -> shared wizard.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const sendToFactory = async () => {
+    const rows = events.filter((e) => selectedIds.has(e.event_id));
+    if (rows.length === 0) return;
+    const result = await createDraftBatch({
+      source: "sports",
+      scope: { manual: true, count: rows.length },
+      payloads: rows.map(sportsRowToEvent),
+    });
+    if (!result.ok) {
+      toast({ variant: "destructive", title: "Factory intake failed" });
+      return;
+    }
+    setSelectedIds(new Set());
+    window.open("/factory", "_blank");
+  };
+  const openBatchCreate = () => {
+    const rows = events.filter((e) => selectedIds.has(e.event_id));
+    if (rows.length === 0) return;
+    try {
+      window.localStorage.setItem(
+        "batch_create",
+        JSON.stringify({ provider: "sports", rows }),
+      );
+    } catch (error) {
+      console.error("Failed to stash batch events:", error);
+      return;
+    }
+    window.open("/events/new?batch=1", "_blank");
+  };
   const [tickets, setTickets] = useState<XS2Ticket[]>([]);
 
   const [selectedSport, setSelectedSport] = useState<XS2Sport | null>(null);
@@ -213,10 +145,8 @@ export function SportsEventsContent() {
 
   // Filtered and sorted data with pagination
   const filteredTournaments = useMemo(() => {
-    let filtered = tournaments.filter((tournament) =>
-      tournament.official_name
-        .toLowerCase()
-        .includes(tournamentFilter.toLowerCase())
+    const filtered = tournaments.filter((tournament) =>
+      matchesSearch(tournamentFilter, tournament.official_name),
     );
 
     // Sort tournaments
@@ -248,8 +178,8 @@ export function SportsEventsContent() {
   }, [filteredTournaments, tournamentPage, tournamentPageSize]);
 
   const filteredEvents = useMemo(() => {
-    let filtered = events.filter((event) =>
-      event.event_name.toLowerCase().includes(eventFilter.toLowerCase())
+    const filtered =events.filter((event) =>
+      matchesSearch(eventFilter, event.event_name)
     );
 
     // Sort events
@@ -281,8 +211,8 @@ export function SportsEventsContent() {
   }, [filteredEvents, eventPage, eventPageSize]);
 
   const filteredTickets = useMemo(() => {
-    let filtered = tickets.filter((ticket) =>
-      ticket.ticket_title.toLowerCase().includes(ticketFilter.toLowerCase())
+    const filtered =tickets.filter((ticket) =>
+      matchesSearch(ticketFilter, ticket.ticket_title)
     );
 
     // Sort tickets
@@ -666,7 +596,7 @@ export function SportsEventsContent() {
       case "returned":
         return "bg-yellow-100 text-yellow-800";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-muted text-muted-foreground";
     }
   };
 
@@ -938,13 +868,23 @@ export function SportsEventsContent() {
                 <div className="space-y-2">
                   {paginatedEvents.map((event) => (
                     <div key={event.event_id} className="relative group">
+                      <div
+                        className="absolute left-2 top-3 z-10"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Checkbox
+                          checked={selectedIds.has(event.event_id)}
+                          onCheckedChange={() => toggleSelected(event.event_id)}
+                          aria-label={`Select ${event.event_name}`}
+                        />
+                      </div>
                       <Button
                         variant={
                           selectedEvent?.event_id === event.event_id
                             ? "default"
                             : "outline"
                         }
-                        className="w-full justify-start text-left h-auto p-3 pr-20"
+                        className="w-full justify-start text-left h-auto p-3 pl-9 pr-20"
                         onClick={() => setSelectedEvent(event)}
                       >
                         <div>
@@ -994,6 +934,22 @@ export function SportsEventsContent() {
                   ))}
                 </div>
 
+                {selectedIds.size > 0 && (
+                  <div className="sticky bottom-0 z-20 mt-3 flex items-center justify-between rounded-md border bg-background p-3 shadow">
+                    <span className="text-sm font-medium">{selectedIds.size} selected</span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>
+                        Clear
+                      </Button>
+                      <Button size="sm" onClick={openBatchCreate}>
+                        Create {selectedIds.size} events
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={sendToFactory}>
+                        Send to factory
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <PaginationControls
                   currentPage={eventPage}
                   totalItems={filteredEvents.length}

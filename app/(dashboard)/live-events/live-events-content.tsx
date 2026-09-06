@@ -12,14 +12,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { liveRowToEvent } from "@/lib/provider-batch";
+import { createDraftBatch } from "@/lib/actions/factory-actions";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Loader2,
   RefreshCw,
@@ -29,11 +25,6 @@ import {
   Ticket,
   ExternalLink,
   Search,
-  SortAsc,
-  SortDesc,
-  ChevronLeft,
-  ChevronRight,
-  Trophy,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -42,6 +33,7 @@ import {
   triggerLiveSync,
 } from "@/lib/actions/live-events-actions";
 import { exchangeRateClientService } from "@/lib/services/exchange-rate-client";
+import { matchesSearch } from "@/lib/search";
 import {
   LiveEventDB,
   LiveTicketCategory,
@@ -49,125 +41,76 @@ import {
   SEATING_METHODS,
 } from "@/types/live-events.types";
 import { Event, EventTicket } from "@/types/app.types";
+import {
+  FilterSortControls,
+  PaginationControls,
+} from "@/components/provider-browse";
 
-// Helper component for filter and sort controls
-const FilterSortControls = ({
-  filter,
-  setFilter,
-  sortBy,
-  setSortBy,
-  sortOrder,
-  setSortOrder,
-  sortOptions,
-  placeholder,
-}: {
-  filter: string;
-  setFilter: (value: string) => void;
-  sortBy: string;
-  setSortBy: (value: string) => void;
-  sortOrder: "asc" | "desc";
-  setSortOrder: (value: "asc" | "desc") => void;
-  sortOptions: { value: string; label: string }[];
-  placeholder: string;
-}) => (
-  <div className="flex gap-2 mb-4">
-    <div className="relative flex-1">
-      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-      <Input
-        placeholder={placeholder}
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        className="pl-8"
-      />
-    </div>
-    <Select value={sortBy} onValueChange={setSortBy}>
-      <SelectTrigger className="w-40">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {sortOptions.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-    <Button
-      variant="outline"
-      size="icon"
-      onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-    >
-      {sortOrder === "asc" ? (
-        <SortAsc className="h-4 w-4" />
-      ) : (
-        <SortDesc className="h-4 w-4" />
-      )}
-    </Button>
-  </div>
-);
 
-// Helper component for pagination
-const PaginationControls = ({
-  currentPage,
-  totalItems,
-  pageSize,
-  onPageChange,
-}: {
-  currentPage: number;
-  totalItems: number;
-  pageSize: number;
-  onPageChange: (page: number) => void;
-}) => {
-  const totalPages = Math.ceil(totalItems / pageSize);
 
-  if (totalPages <= 1) return null;
 
-  return (
-    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-xs sm:text-sm text-muted-foreground leading-snug">
-        Showing {(currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, totalItems)} of {totalItems} items
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(currentPage - 1)}
-          disabled={currentPage === 1}
-          className="flex items-center gap-1"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          <span className="hidden xs:inline">Previous</span>
-          <span className="xs:hidden">Prev</span>
-        </Button>
-        <span className="flex items-center px-2 text-xs sm:text-sm">
-          Page {currentPage} of {totalPages}
-        </span>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(currentPage + 1)}
-          disabled={currentPage === totalPages}
-          className="flex items-center gap-1"
-        >
-          <span className="hidden xs:inline">Next</span>
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  );
-};
+/** Shape of /api/live-events/sync's status payload, as this screen reads it. */
+interface LiveSyncStatus {
+  results?: {
+    events?: { total?: number; sports?: number; music?: number };
+    categories?: { count?: number };
+    performers?: { count?: number };
+  };
+}
 
 export function LiveEventsContent() {
   const { toast } = useToast();
   const router = useRouter();
 
   // State management
-  const [eventType, setEventType] = useState<'all' | 'sports_live_event_dynamic' | 'music_live_event_dynamic'>('all');
+  // No UI sets these - the filter/sort controls for them were never built, so
+  // they stay at their initial value. Kept as state (not consts) so wiring a
+  // control back up is a one-line change.
+  const [eventType] = useState<'all' | 'sports_live_event_dynamic' | 'music_live_event_dynamic'>('all');
   const [categories1, setCategories1] = useState<string[]>([]);
   const [categories2, setCategories2] = useState<string[]>([]);
   const [categories3, setCategories3] = useState<string[]>([]);
   const [performers, setPerformers] = useState<string[]>([]);
   const [events, setEvents] = useState<LiveEventDB[]>([]);
+
+  // Batch create (spec 2026-09-02 section 7): multi-select rows -> shared wizard.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const sendToFactory = async () => {
+    const rows = events.filter((e) => selectedIds.has(String(e.event_id)));
+    if (rows.length === 0) return;
+    const result = await createDraftBatch({
+      source: "live",
+      scope: { manual: true, count: rows.length },
+      payloads: rows.map(liveRowToEvent),
+    });
+    if (!result.ok) {
+      toast({ variant: "destructive", title: "Factory intake failed" });
+      return;
+    }
+    setSelectedIds(new Set());
+    window.open("/factory", "_blank");
+  };
+  const openBatchCreate = () => {
+    const rows = events.filter((e) => selectedIds.has(String(e.event_id)));
+    if (rows.length === 0) return;
+    try {
+      window.localStorage.setItem(
+        "batch_create",
+        JSON.stringify({ provider: "live", rows }),
+      );
+    } catch (error) {
+      console.error("Failed to stash batch events:", error);
+      return;
+    }
+    window.open("/events/new?batch=1", "_blank");
+  };
   const [allEvents, setAllEvents] = useState<LiveEventDB[]>([]); // Store all events for filtering
   const [tickets, setTickets] = useState<LiveTicketCategory[]>([]);
 
@@ -177,23 +120,23 @@ export function LiveEventsContent() {
   const [selectedPerformer, setSelectedPerformer] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<LiveEventDB | null>(null);
 
-  const [syncStatus, setSyncStatus] = useState<any>(null);
+  const [syncStatus, setSyncStatus] = useState<LiveSyncStatus | null>(null);
 
   // Loading states
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
-  const [isLoadingPerformers, setIsLoadingPerformers] = useState(false);
+  const [isLoadingPerformers] = useState(false);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Filtering and sorting states
-  const [categoryFilter, setCategoryFilter] = useState("");
+  const [categoryFilter] = useState("");
   const [categoryPage, setCategoryPage] = useState(1);
   const categoryPageSize = 10;
 
   const [performerFilter, setPerformerFilter] = useState("");
-  const [performerSortBy, setPerformerSortBy] = useState<"name" | "classification">("name");
-  const [performerSortOrder, setPerformerSortOrder] = useState<"asc" | "desc">("asc");
+  const [performerSortBy] = useState<"name" | "classification">("name");
+  const [performerSortOrder] = useState<"asc" | "desc">("asc");
   const [performerPage, setPerformerPage] = useState(1);
   const performerPageSize = 30;
 
@@ -211,7 +154,7 @@ export function LiveEventsContent() {
   const filteredCategories = useMemo(() => {
     return categories1
       .filter((category) =>
-        category.toLowerCase().includes(categoryFilter.toLowerCase())
+        matchesSearch(categoryFilter, category)
       )
       .sort((a, b) => a.localeCompare(b));
   }, [categories1, categoryFilter]);
@@ -223,20 +166,22 @@ export function LiveEventsContent() {
   }, [filteredCategories, categoryPage, categoryPageSize]);
 
   const filteredPerformers = useMemo(() => {
-    let filtered = performers.filter((performer) => {
+    const filtered = performers.filter((performer) => {
       // Ensure performer is a string before calling toLowerCase
       if (typeof performer !== 'string') {
         console.warn('Non-string performer found:', performer);
         return false;
       }
-      return performer.toLowerCase().includes(performerFilter.toLowerCase());
+      return matchesSearch(performerFilter, performer);
     });
 
     // Sort performers alphabetically
     filtered.sort((a, b) => a.localeCompare(b));
 
     return filtered;
-  }, [performers, performerFilter, performerSortBy, performerSortOrder]);
+    // performerSortBy/Order never change (no control sets them), so they are
+    // deliberately not dependencies.
+  }, [performers, performerFilter]);
 
   const paginatedPerformers = useMemo(() => {
     const startIndex = (performerPage - 1) * performerPageSize;
@@ -246,7 +191,7 @@ export function LiveEventsContent() {
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) =>
-      event.event_name.toLowerCase().includes(eventFilter.toLowerCase())
+      matchesSearch(eventFilter, event.event_name, event.city_name)
     );
   }, [events, eventFilter]);
 
@@ -257,8 +202,8 @@ export function LiveEventsContent() {
   }, [filteredEvents, eventPage, eventPageSize]);
 
   const filteredTickets = useMemo(() => {
-    let filtered = tickets.filter((ticket) =>
-      ticket.hebTitle.toLowerCase().includes(ticketFilter.toLowerCase()) &&
+    const filtered = tickets.filter((ticket) =>
+      matchesSearch(ticketFilter, ticket.hebTitle) &&
       ticket.seatingMethodId !== 2 && // Filter out tickets with seatingMethodId = 2 (Singles)
       ticket.maxTicketAmount >= 2 // Filter out tickets with maxTicketAmount < 2
     );
@@ -325,7 +270,9 @@ export function LiveEventsContent() {
     if (selectedCategory1) {
       const beforeFilter = filteredEvents.length;
       filteredEvents = filteredEvents.filter(event => {
-        const hasCategory = event.categories?.category1?.some((cat: any) => cat.name === selectedCategory1);
+        const hasCategory = event.categories?.category1?.some(
+          (cat) => cat.name === selectedCategory1,
+        );
         if (!hasCategory && event.event_name.includes('SPECIFIC_ARTIST_NAME')) { // Replace with the missing artist's event name
           console.log('Event missing from category1 filter:', event.event_name, event.categories);
         }
@@ -335,9 +282,9 @@ export function LiveEventsContent() {
       
       // Build available category2 options from filtered events
       const category2Set = new Set<string>();
-      filteredEvents.forEach((event: any) => {
+      filteredEvents.forEach((event) => {
         if (event.categories?.category2 && Array.isArray(event.categories.category2)) {
-          event.categories.category2.forEach((cat: any) => {
+          event.categories.category2.forEach((cat) => {
             if (cat.name && cat.name !== '-') {
               category2Set.add(cat.name);
             }
@@ -356,15 +303,15 @@ export function LiveEventsContent() {
 
     // Filter by category2 if selected
     if (selectedCategory1 && selectedCategory2) {
-      filteredEvents = filteredEvents.filter(event => 
-        event.categories?.category2?.some((cat: any) => cat.name === selectedCategory2)
+      filteredEvents = filteredEvents.filter((event) =>
+        event.categories?.category2?.some((cat) => cat.name === selectedCategory2),
       );
       
       // Build available category3 options from filtered events
       const category3Set = new Set<string>();
-      filteredEvents.forEach((event: any) => {
+      filteredEvents.forEach((event) => {
         if (event.categories?.category3 && Array.isArray(event.categories.category3)) {
-          event.categories.category3.forEach((cat: any) => {
+          event.categories.category3.forEach((cat) => {
             if (cat.name) {
               category3Set.add(cat.name);
             }
@@ -385,16 +332,16 @@ export function LiveEventsContent() {
 
     // Filter by category3 if selected
     if (selectedCategory1 && selectedCategory2 && selectedCategory3) {
-      filteredEvents = filteredEvents.filter(event => 
-        event.categories?.category3?.some((cat: any) => cat.name === selectedCategory3)
+      filteredEvents = filteredEvents.filter((event) =>
+        event.categories?.category3?.some((cat) => cat.name === selectedCategory3),
       );
     }
 
     // Update performers list based on filtered events
     const performerSet = new Set<string>();
-    filteredEvents.forEach((event: any) => {
+    filteredEvents.forEach((event) => {
       if (event.performers && Array.isArray(event.performers)) {
-        event.performers.forEach((performer: any) => {
+        event.performers.forEach((performer) => {
           if (performer.name) {
             performerSet.add(performer.name);
           }
@@ -414,7 +361,7 @@ export function LiveEventsContent() {
       filteredEvents = filteredEvents.filter(event => 
         event.performers && 
         Array.isArray(event.performers) && 
-        event.performers.some((performer: any) => performer.name === selectedPerformer)
+        event.performers.some((performer) => performer.name === selectedPerformer)
       );
     }
 
@@ -445,7 +392,7 @@ export function LiveEventsContent() {
 
       if (!eventsResponse.ok) throw new Error('Failed to load events');
       const eventsData = await eventsResponse.json();
-      const allEventsData = eventsData.data || [];
+      const allEventsData: LiveEventDB[] = eventsData.data || [];
 
       // Store all events
       setAllEvents(allEventsData);
@@ -453,9 +400,9 @@ export function LiveEventsContent() {
 
       // Build categories1 from events
       const category1Set = new Set<string>();
-      allEventsData.forEach((event: any) => {
+      allEventsData.forEach((event) => {
         if (event.categories?.category1 && Array.isArray(event.categories.category1)) {
-          event.categories.category1.forEach((cat: any) => {
+          event.categories.category1.forEach((cat) => {
             if (cat.name) {
               category1Set.add(cat.name);
             }
@@ -467,9 +414,9 @@ export function LiveEventsContent() {
 
       // Build performers from events
       const performerSet = new Set<string>();
-      allEventsData.forEach((event: any) => {
+      allEventsData.forEach((event) => {
         if (event.performers && Array.isArray(event.performers)) {
-          event.performers.forEach((performer: any) => {
+          event.performers.forEach((performer) => {
             if (performer.name) {
               performerSet.add(performer.name);
             }
@@ -576,7 +523,7 @@ export function LiveEventsContent() {
 
       // Convert LiveTickets tickets to EventTickets with USD conversion
       const mappedTickets: EventTicket[] = await Promise.all(
-        filteredEventTickets.map(async (ticket, index) => {
+        filteredEventTickets.map(async (ticket) => {
           const priceInUSD = Math.round(await convertPriceToUSD(ticket.cost, event.currency));
           
             const roundedPrice = Math.ceil(priceInUSD / 10) * 10 - 1;
@@ -596,7 +543,13 @@ export function LiveEventsContent() {
       );
 
       // Try to find the nearest location
-      let locationData: { latitude: number; longitude: number; name: string; city_iata: string; country_code?: string } = {
+      const locationData: {
+        latitude: number;
+        longitude: number;
+        name: string;
+        city_iata: string;
+        country_code?: string;
+      } = {
         latitude: 0,
         longitude: 0,
         name: event.city_name || "Unknown Location",
@@ -1092,13 +1045,23 @@ export function LiveEventsContent() {
                 <div className="space-y-2">
                   {paginatedEvents.map((event) => (
                     <div key={event.event_id} className="relative group">
+                      <div
+                        className="absolute left-2 top-3 z-10"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Checkbox
+                          checked={selectedIds.has(String(event.event_id))}
+                          onCheckedChange={() => toggleSelected(String(event.event_id))}
+                          aria-label={`Select ${event.event_name}`}
+                        />
+                      </div>
                       <Button
                         variant={
                           selectedEvent?.event_id === event.event_id
                             ? "default"
                             : "outline"
                         }
-                        className="w-full justify-start text-left h-auto p-3 pr-20 whitespace-normal items-start"
+                        className="w-full justify-start text-left h-auto p-3 pl-9 pr-20 whitespace-normal items-start"
                         onClick={() => setSelectedEvent(event)}
                       >
                         <div className="flex flex-col items-start w-full">
@@ -1148,6 +1111,22 @@ export function LiveEventsContent() {
                   ))}
                 </div>
 
+                {selectedIds.size > 0 && (
+                  <div className="sticky bottom-0 z-20 mt-3 flex items-center justify-between rounded-md border bg-background p-3 shadow">
+                    <span className="text-sm font-medium">{selectedIds.size} selected</span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>
+                        Clear
+                      </Button>
+                      <Button size="sm" onClick={openBatchCreate}>
+                        Create {selectedIds.size} events
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={sendToFactory}>
+                        Send to factory
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <PaginationControls
                   currentPage={eventPage}
                   totalItems={filteredEvents.length}

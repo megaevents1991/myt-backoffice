@@ -592,7 +592,7 @@ export function ReservationsTable() {
         </div>
       }
       rightActions={
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {isSuperadmin && (
             <div className="flex items-center space-x-2">
               <Checkbox

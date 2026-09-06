@@ -2063,7 +2063,7 @@ export function EventsTable() {
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-wrap gap-6">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex items-center space-x-2">
           <Checkbox
             id="show-deleted"
@@ -2122,7 +2122,7 @@ export function EventsTable() {
 
         {/* Taxonomy filters - category matches its whole subtree */}
         <select
-          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+          className="h-9 max-w-full rounded-md border border-input bg-background px-2 text-sm"
           value={filterCatId}
           onChange={(e) => setFilterCatId(e.target.value)}
           aria-label="Filter by category"
@@ -2135,7 +2135,7 @@ export function EventsTable() {
           ))}
         </select>
         <select
-          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+          className="h-9 max-w-full rounded-md border border-input bg-background px-2 text-sm"
           value={filterTagId}
           onChange={(e) => setFilterTagId(e.target.value)}
           aria-label="Filter by feed tag"
@@ -2155,15 +2155,13 @@ export function EventsTable() {
         data={filteredEvents}
         searchColumn="name"
         searchPlaceholder="Search events..."
+        defaultSorting={[{ id: "id", desc: true }]}
         enableRowSelection={true}
         rowSelection={rowSelection}
         onRowSelectionChange={setRowSelection}
         getRowId={(row) => String(row.id)}
         bulkActions={
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground font-medium">
-              {selectedIds.length} selected
-            </span>
+          <div className="flex flex-wrap items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" disabled={bulkLoading}>

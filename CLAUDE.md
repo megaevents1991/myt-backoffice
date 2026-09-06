@@ -17,6 +17,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > `#0A1A14` / mint `#5BFF95`, Assistant+Rubik) via the `portal-theme` scope in
 > `app/globals.css` - the admin dashboard look is untouched.
 
+> **✅ Redesign + Events Factory + Guide (branch `feat/backoffice-redesign`, 2026-09-02).**
+> Everything below is on that branch, migrations already applied to prod.
+>
+> - **Chrome:** "MYT Admin" theme (forest sidebar / mint accent, light+dark via
+>   `next-themes`, tokens in `app/globals.css`). Navigation is ONE source -
+>   `lib/nav.ts` (groups, per-item `roles`, breadcrumbs, palette keywords).
+>   Collapsible sidebar groups with hover preview, `Ctrl+B` icon mode, `Ctrl+K`
+>   command palette. Tables use `components/data-table.tsx` v2 (saved views,
+>   bulk bar, numbered pagination, `defaultSorting`) and **token search**
+>   (`lib/search.ts` `matchesSearch` - words in any order, diacritics-insensitive,
+>   guarded subsequence for nicknames: "barca" hits Barcelona).
+> - **Deep links:** `id="fix-*"` / `id="section-*"` anchors flash on arrival
+>   (`:target` keyframes in globals.css + `components/deep-link-scroll.tsx`).
+>   Event editor sections carry `data-editor-section` for the `EditorRail`.
+> - **Tasks + creative gaps:** `/tasks` (table `tasks`, editor+ self, admins
+>   assign) and the gaps radar (9 asset kinds, live queries; false gaps filed in
+>   `creative_gap_dismissals`). A gap's **Do** button lands on the actual fix:
+>   team crest → `/assets?q=<team>`, missing creative → the event's `#fix-price`
+>   when `campaign_skip_reason` mentions price (the pipeline's only skip).
+> - **Pricing brain:** `lib/services/price-quote.ts` - see "Price Logic Chain".
+>   Nightly `base-price-sync` cron + `/price-changes` review screen
+>   (`base_price_sync_log`).
+> - **Event creation automation:** stadium memory, background base-price
+>   auto-fill, nearest-location IATA, multi-team batch, batch from every
+>   provider, and the `/factory` draft grid (`event_drafts`) - see "Event
+>   creation automation".
+> - **`/guide`:** bilingual (EN/HE toggle) system manual for staff, content in
+>   `app/(dashboard)/guide/guide-content.ts`. **When a flow described there
+>   changes, update it in the same PR.**
+> - Not yet done post-merge: `npm run db:types` and drop the `supabase as any`
+>   boundary casts in the new actions/services.
+
 > **✅ Contentful → Supabase CMS migration COMPLETE (2026-07-22).**
 > This backoffice owns the CMS under **Templates** (תבניות): per-type
 > Supabase tables (`categories`, `artists`, `football_teams`, `blog_posts`)
@@ -84,8 +116,13 @@ No test suite exists. TypeScript and ESLint errors are intentionally ignored dur
 - `lib/actions/` - Next.js Server Actions, one file per domain (e.g. `event-actions.ts`, `reservation-actions.ts`)
 - `lib/services/` - sync logic that external cron routes call (sports, live events, tixstock, ticket prices)
 - `types/` - shared TypeScript types per domain (`app.types.ts`, `reservation.types.ts`, etc.)
-- `components/` - shared UI components + `ui/` (shadcn/Radix-based)
+- `components/` - shared UI components + `ui/` (shadcn/Radix-based). Notable: `data-table.tsx` (all tables), `app-sidebar.tsx` + `topbar.tsx` + `command-palette.tsx` (chrome), `editor-rail.tsx`, `deep-link-scroll.tsx`
 - `contexts/auth-context.tsx` - React context wrapping client-side auth state
+- `lib/nav.ts` - the ONLY definition of navigation (groups, roles, breadcrumb labels, palette keywords)
+- `lib/search.ts` - `matchesSearch` token search used by every table/filter
+- `lib/services/price-quote.ts` - the pricing rule + constants; `flight-search.ts` (Amadeus, server-side), `base-price-sync.ts` (nightly cron), `venue-memory.ts`, `nearest-location.ts`, `draft-builder.ts`
+- `lib/provider-batch.ts` - per-provider identity mappers for the batch wizard + factory (`{ provider, rows }` stash envelope under localStorage `batch_create`)
+- `docs/superpowers/` - design specs + implementation plans for big features (the Events Factory one is the reference)
 
 ### Auth
 
@@ -159,6 +196,7 @@ fallback for manual triggers:
 - `nightlyCampaignCreatives` - feed creatives every 4h (backlog drains ~35/run)
 - `publishMetaFeed` - copies the live feed to the Storage file Meta reads, 6x/day (05,08,11,14,17,20 UTC)
 - `partnerMonthlyReport` - partner report monthly
+- `base-price-sync` - nightly 01:30 UTC: re-quotes every live future event through `price-quote.ts`; deviation ≥$150 per component rewrites the base, >$400 freezes as `needs_review` (`/price-changes`); skips offline-linked components, base=0, events <2 days out; ≤45 days nightly, farther weekly (`id % 7`). **`?dry_run=1` computes everything with zero writes** (no event update, no log row) - the way to test against prod from a preview. Daily summary email to `NEXT_SECRET_ADMIN_EMAIL` when anything happened. Vercel only schedules crons on production, so it is inert until merged.
 
 ### Environment Variables
 
@@ -183,6 +221,18 @@ Soft deletes use the `is_deleted` column - set to a `MM-DD-YYYY` date string (no
 Exchange rates (EUR, ILS, GBP → USD) are managed via `lib/services/exchange-rate-client.ts` and the `/api/exchange-rates` route. The sync services call this when converting ticket prices.
 
 `/api/validate-airline` uses headless Playwright + `@sparticuz/chromium` to scrape airline codes from avcodes.co.uk. It has a dedicated Vercel function config with 1024 MB memory / 30s timeout.
+
+### Event creation automation (2026-09-02)
+
+Spec: `docs/superpowers/specs/2026-09-02-events-factory-design.md`. Three paths share the same building blocks, all wired into `app/(dashboard)/events/[id]/page.tsx` (the `/events/new?batch=1` wizard) and `lib/services/draft-builder.ts` (the factory):
+
+- **Stadium memory** (`lib/services/venue-memory.ts`): a step with no ticket categories copies `tickets_and_rates` structure from the most recent live event at the same venue (normalized name, fallback coords <1km). Prices come along only as the reprice fallback; ids regenerated. Banner + undo in the wizard.
+- **Auto base-fill**: once a new event has `city_iata` + flight dates, `fetchPriceQuote` fills `base_flight_price`/`base_hotel_price` in the background - **empty (0) fields only**, one shot per step, green flash, inline warning on failure, never blocks save.
+- **Nearest IATA** (`lib/services/nearest-location.ts`): venue coords → closest `locations` row with an IATA within 50km. This is what makes artist tours price per city.
+- **Multi-team batch** (TixStock): selection accumulates across performers (chips per team); "select all home games of X" = `lib/tixstock-home.ts` `isHomeGame` (event name starts with team name); crossing teams in the wizard resets the dragged form.
+- **Batch from every provider**: Live/P1/Sports tables have multi-select + Create-N; the stash is `{ provider, rows }` (`lib/provider-batch.ts` mappers are identity-only - name/date/venue/coords/smart dates; tickets come from stadium memory, not from provider live tickets, which stay on the single-event pages).
+- **Factory** (`/factory`, `lib/actions/factory-actions.ts`, table `event_drafts`): "Send to factory" from any provider bar creates draft rows; the page loops `buildNextDraft()` one draft per call (stoppable) through the blocks above and records what stayed empty in `missing`; the grid inline-edits name/iata/prices (amber = missing), bulk-approve calls `createEvent` per draft. Drafts are a separate table on purpose - main never sees them. Terminal rows purge after 30 days.
+- **Form cleanup**: legacy composed-pricing markups (`markup_ticket/flight/hotel`, `skip_hotel_markup`) sit in a collapsed Advanced section (auto-opens when used); `usual_price` is gone from the UI but the column stays (main's feed uses it as a last-resort price fallback).
 
 ### Types
 
@@ -235,6 +285,8 @@ NEXT_SECRET_P1_TICKETS_FEED_URL=
 ## Database
 
 Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, `locations`, `p1_events`, `live_events`, `sports_events`, `offline_flights`, `tixstock_events`. Managed via Supabase (PostgreSQL).
+
+Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `event_drafts`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`. Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
 
 ### Migrations (Supabase CLI)
 
@@ -359,7 +411,8 @@ product feed. Keep both copies in sync.
 
 ### Price Logic Chain (Spans Both Projects)
 
-1. **This backoffice** sets: `base_flight_price`, `base_hotel_price`, and ticket prices on events (currency markups in `lib/services/ticket-price-sync.ts`: USD +$40, EUR +€40, GBP +£35, ILS +₪150)
+1. **This backoffice** sets: `base_flight_price`, `base_hotel_price`, and ticket prices on events (currency markups in `lib/services/ticket-price-sync.ts`: USD +$40, EUR +€40, GBP +£35, ILS +₪150).
+   **Base prices come from ONE rule** - `lib/services/price-quote.ts` (Dor, 2026-09-02): flight = cheapest **direct** Amadeus offer **+$100**, but the cheapest connection (+$100) when the direct beats it by more than **$300**; hotel = cheapest **3-star** from main's `/api/hotels` (it already filters `star_rating = 3` - its `total_4star_hotels_found` field is a legacy misnomer) **+$120**; both rounded to whole tens. The form's Search buttons, the wizard auto-fill, the nightly sync and the factory all quote through it, so every surface shows the same number. Constants live there only: `FLIGHT_MARGIN_USD 100`, `HOTEL_MARGIN_USD 120`, `DIRECT_GAP_USD 300`, `SYNC_DEVIATION_USD 150`, `SYNC_FREEZE_USD 400`. (The `/api/flights/search` route keeps its older third-cheapest rule for legacy callers only.)
 2. **Main app** calculates final customer price: `base_flight_price + base_hotel_price + min_ticket_price + 175 USD markup`
 3. Changing price/markup logic here directly affects what customers see and pay in the main app
 

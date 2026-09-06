@@ -56,6 +56,10 @@ export async function createEvent(event: Omit<Event, "id">) {
   const eventData = {
     ...event,
     is_deleted: event.is_deleted === "" ? null : event.is_deleted,
+    // Card image: fall back to the campaign creative when none was chosen -
+    // a manual pick always wins (spec 2026-09-02, form cleanup). Usually both
+    // are empty at create time and the nightly creative cron fills later.
+    card_image_url: event.card_image_url || event.campaign_image_url || "",
   };
 
   // `as never`: the shared client is untyped (no generated DB generics yet -

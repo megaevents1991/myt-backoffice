@@ -88,7 +88,7 @@ export function DashboardStats() {
             <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="font-display text-2xl font-bold tabular-nums tracking-tight">
               $
               {loading
                 ? "..."
@@ -106,7 +106,7 @@ export function DashboardStats() {
             <CardTitle className="text-sm font-medium">Reservations Last Month</CardTitle>
           </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{loading ? "..." : stats.reservationsLastMonth}</div>
+              <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : stats.reservationsLastMonth}</div>
               <p className="text-xs text-muted-foreground">PAX: {loading ? "..." : stats.paxLastMonth}</p>
             </CardContent>
         </Card>
@@ -116,7 +116,7 @@ export function DashboardStats() {
             <CardTitle className="text-sm font-medium">Reservations This Month</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "..." : stats.reservationsCurrentMonth}</div>
+            <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : stats.reservationsCurrentMonth}</div>
             <p className="text-xs text-muted-foreground">PAX: {loading ? "..." : stats.paxCurrentMonth}</p>
           </CardContent>
         </Card>
@@ -126,7 +126,7 @@ export function DashboardStats() {
             <CardTitle className="text-sm font-medium">Reservations Last 7 Days</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "..." : stats.reservationsLast7Days}</div>
+            <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : stats.reservationsLast7Days}</div>
             <p className="text-xs text-muted-foreground">PAX: {loading ? "..." : stats.paxLast7Days}</p>
           </CardContent>
         </Card>
@@ -136,7 +136,7 @@ export function DashboardStats() {
             <CardTitle className="text-sm font-medium">Reservations Last 30 Days</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "..." : stats.recentReservations}</div>
+            <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : stats.recentReservations}</div>
             <p className="text-xs text-muted-foreground">PAX: {loading ? "..." : stats.recentReservationsPax}</p>
           </CardContent>
         </Card>

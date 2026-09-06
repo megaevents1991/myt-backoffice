@@ -2,85 +2,129 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: Arial, Helvetica, sans-serif;
-}
-
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
 }
 
+/*
+ * MYT Admin theme - the brand the portal and main app already wear, tuned for
+ * a working tool: forest primary, mint reserved for accent/focus, neutrals
+ * carrying a slight green cast. Token NAMES are stock shadcn, so every
+ * existing primitive picks these up with no per-component change.
+ *
+ * Order matters: :root -> .dark -> .portal-theme (last, so the portal keeps
+ * its own palette in either theme). Never move .portal-theme above .dark.
+ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --background: 80 12% 96%; /* #F6F7F4 paper */
+    --foreground: 150 24% 11%; /* #16241D ink */
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 150 24% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --popover-foreground: 150 24% 11%;
+    --primary: 158 44% 7%; /* #0A1A14 forest - buttons, active states */
+    --primary-foreground: 80 12% 96%;
+    --secondary: 96 16% 94%; /* #EFF2ED raised surface */
+    --secondary-foreground: 150 24% 11%;
+    --muted: 96 16% 94%;
+    --muted-foreground: 140 6% 44%;
+    --accent: 141 40% 92%; /* mint tint - hovers */
+    --accent-foreground: 158 44% 7%;
+    --destructive: 0 57% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 94 12% 88%; /* #E1E5DE */
+    --input: 94 12% 88%;
+    --ring: 146 68% 37%;
     --radius: 0.5rem;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
-  }
-  .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+
+    /* Status - deliberately separate from the mint accent, so a "Live" dot
+       never reads as branding. Used by badges, pills, health chips. */
+    --success: 146 68% 32%;
+    --success-foreground: 0 0% 100%;
+    --success-muted: 146 45% 92%;
+    --warning: 33 93% 36%;
+    --warning-foreground: 0 0% 100%;
+    --warning-muted: 38 85% 92%;
+    --info: 221 83% 53%;
+    --info-foreground: 0 0% 100%;
+    --info-muted: 219 90% 95%;
+
+    /* Brand accents - previously portal-only. Declared here so `brand-*`
+       utilities resolve in the admin too (logo mark, focus glow). */
+    --brand-forest: 158 44% 7%;
+    --brand-mint: 141 100% 68%;
+    --brand-aqua: 189 100% 64%;
+    --brand-violet: 257 100% 82%;
+    --brand-coral: 354 100% 65%;
+    --brand-gold: 48 96% 53%;
+
+    --chart-1: 146 68% 37%;
+    --chart-2: 221 83% 53%;
+    --chart-3: 33 93% 45%;
+    --chart-4: 271 76% 58%;
+    --chart-5: 189 85% 38%;
+
+    /* The sidebar stays forest in BOTH themes - it anchors the product. */
+    --sidebar-background: 158 44% 7%;
+    --sidebar-foreground: 139 13% 76%;
+    --sidebar-primary: 151 37% 17%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 154 30% 13%;
+    --sidebar-accent-foreground: 130 16% 92%;
+    --sidebar-border: 155 25% 14%;
+    --sidebar-ring: 141 100% 68%;
+  }
+
+  .dark {
+    --background: 156 17% 6%; /* #0C110F night */
+    --foreground: 130 16% 92%;
+    --card: 150 16% 9%;
+    --card-foreground: 130 16% 92%;
+    --popover: 150 16% 9%;
+    --popover-foreground: 130 16% 92%;
+    /* Mint carries the primary in dark - forest on forest would vanish. */
+    --primary: 141 100% 68%;
+    --primary-foreground: 158 44% 7%;
+    --secondary: 147 15% 12%;
+    --secondary-foreground: 130 16% 92%;
+    --muted: 147 15% 12%;
+    --muted-foreground: 140 8% 62%;
+    --accent: 150 18% 15%;
+    --accent-foreground: 130 16% 92%;
+    --destructive: 0 91% 71%;
+    --destructive-foreground: 158 44% 7%;
+    --border: 145 14% 16%;
+    --input: 145 14% 16%;
+    --ring: 141 100% 68%;
+
+    --success: 141 72% 58%;
+    --success-foreground: 158 44% 7%;
+    --success-muted: 150 40% 12%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 158 44% 7%;
+    --warning-muted: 35 45% 13%;
+    --info: 218 89% 73%;
+    --info-foreground: 158 44% 7%;
+    --info-muted: 220 40% 16%;
+
+    --chart-1: 141 72% 58%;
+    --chart-2: 218 89% 73%;
+    --chart-3: 38 92% 55%;
+    --chart-4: 271 76% 74%;
+    --chart-5: 189 85% 60%;
+
+    /* Sidebar: same forest, a touch deeper so it separates from the page. */
+    --sidebar-background: 158 42% 6%;
+    --sidebar-foreground: 139 13% 76%;
+    --sidebar-primary: 151 37% 17%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 154 30% 13%;
+    --sidebar-accent-foreground: 130 16% 92%;
+    --sidebar-border: 155 25% 14%;
+    --sidebar-ring: 141 100% 68%;
   }
 }
 
@@ -90,6 +134,11 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans), "Arial Hebrew", Arial, sans-serif;
+  }
+  /* Digits that sit in columns (tables, prices, ids) must not wobble. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -115,6 +164,68 @@ body {
   }
 }
 
+@layer components {
+  /* Floating chrome - the topbar and the sticky save bar. A translucent
+     material that content scrolls under, rather than an opaque strip that
+     eats a fixed band of the screen. */
+  .surface-chrome {
+    background-color: hsl(var(--background) / 0.8);
+    backdrop-filter: blur(12px) saturate(180%);
+  }
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .surface-chrome {
+    background-color: hsl(var(--background) / 0.96);
+  }
+}
+
+/* Translucency is a preference, not a given: collapse the material to solid
+   when the OS asks for less transparency, and give it a defined edge when it
+   asks for more contrast. */
+@media (prefers-reduced-transparency: reduce) {
+  .surface-chrome {
+    background-color: hsl(var(--background));
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .surface-chrome {
+    background-color: hsl(var(--background));
+    backdrop-filter: none;
+    border-color: hsl(var(--foreground) / 0.45);
+  }
+}
+
+/*
+ * Deep-link arrival. The creative-gaps "Do" button lands on the exact field
+ * that fixes the gap (#fix-logo, #fix-image, #section-images...); without a
+ * cue you arrive mid-form with no idea which control you were sent to.
+ */
+@layer components {
+  [id^="fix-"],
+  [id^="section-"] {
+    scroll-margin-top: 5rem;
+  }
+
+  [id^="fix-"]:target,
+  [id^="section-"]:target {
+    border-radius: var(--radius);
+    animation: deep-link-arrive 2s var(--ease-out) 1;
+  }
+}
+
+@keyframes deep-link-arrive {
+  0%,
+  60% {
+    box-shadow: 0 0 0 3px hsl(var(--ring) / 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 3px hsl(var(--ring) / 0);
+  }
+}
+
 /* Reduced motion - same blanket off-ramp as the main app's globals.css:
  * every animation/transition must degrade here. */
 @media (prefers-reduced-motion: reduce) {
@@ -131,9 +242,10 @@ body {
 /*
  * Partner portal theme - the main app's brand (forest #0A1A14 + glow mint
  * #5BFF95 + the neon accent set), scoped to the /portal subtree only. The
- * admin dashboard above keeps the stock neutral tokens; shadcn primitives
- * rendered inside .portal-theme pick these up automatically.
+ * admin dashboard now shares the brand but not this palette; shadcn
+ * primitives rendered inside .portal-theme pick these up automatically.
  * Values lifted from ../myt-main/app/globals.css - keep in sync by hand.
+ * MUST stay last so it wins in dark mode too - the portal is light-only.
  */
 @layer base {
   .portal-theme {
@@ -166,6 +278,11 @@ body {
     --brand-coral: 354 100% 65%;
     --brand-gold: 48 96% 53%;
 
+    /* Assistant/Rubik are loaded once at the root layout now - the portal's
+       own variable names alias to them, so nothing else here changed. */
+    --font-portal-sans: var(--font-sans);
+    --font-portal-display: var(--font-display);
+
     font-family: var(--font-portal-sans), "Arial Hebrew", Arial, sans-serif;
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
@@ -173,7 +290,9 @@ body {
 }
 
 @layer components {
-  /* Forest hero band with the main site's aurora glow - pure CSS, no images. */
+  /* Forest band with the main site's aurora glow - pure CSS, no images.
+     Two names, one rule: the portal header and the admin sign-in panel. */
+  .brand-aurora,
   .portal-hero {
     background-color: hsl(var(--brand-forest));
     background-image:

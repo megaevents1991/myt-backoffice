@@ -16,7 +16,6 @@ import {
   Loader2,
   ArrowLeft,
   Calendar,
-  MapPin,
   Users,
   Ticket,
   RefreshCw,
@@ -61,8 +60,10 @@ export default function EventDetailsPage() {
     try {
       setIsLoadingEvent(true);
 
-      // Fetch event details
-      const { data: eventData, error: eventError } = await supabase
+      // The xs2e_* tables are not in the generated database types, so an
+      // untyped .select("*") widens to `never`. Name the row types here - they
+      // already exist in types/sports-events.types.
+      const { data: eventRow, error: eventError } = await supabase
         .from("xs2e_events")
         .select("*")
         .eq("event_id", id)
@@ -72,35 +73,36 @@ export default function EventDetailsPage() {
         throw new Error(eventError.message);
       }
 
+      const eventData = eventRow as XS2Event | null;
+
       if (!eventData) {
         throw new Error("Event not found");
       }
 
       // Fetch tournament details (tournament_id is NOT NULL in schema)
-      let tournamentData = null;
-      const { data: tournament } = await supabase
+      const { data: tournamentRow } = await supabase
         .from("xs2e_tournaments")
         .select("*")
         .eq("tournament_id", eventData.tournament_id || "")
         .single();
-      tournamentData = tournament;
+      const tournamentData = tournamentRow as XS2Tournament | null;
 
       // Fetch sport details if tournament is available
-      let sportData = null;
+      let sportData: XS2Sport | null = null;
       if (tournamentData?.sport_type) {
         const { data: sport } = await supabase
           .from("xs2e_sports")
           .select("*")
           .eq("sport_id", tournamentData.sport_type)
           .single();
-        sportData = sport;
+        sportData = sport as XS2Sport | null;
       }
 
       // Combine all data
       const eventDetails: EventDetails = {
         ...eventData,
-        tournament: tournamentData,
-        sport: sportData,
+        tournament: tournamentData ?? undefined,
+        sport: sportData ?? undefined,
       };
 
       setEvent(eventDetails);
@@ -154,12 +156,6 @@ export default function EventDetailsPage() {
     });
   };
 
-  const formatPrice = (price: number, currency: string = "EUR") => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: currency,
-    }).format(price);
-  };
 
   const getStatusColor = (status: string | undefined) => {
     switch (status?.toLowerCase()) {
@@ -171,7 +167,7 @@ export default function EventDetailsPage() {
       case "returned":
         return "bg-yellow-100 text-yellow-800";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-muted text-muted-foreground";
     }
   };
 
@@ -186,7 +182,7 @@ export default function EventDetailsPage() {
       case "collection-stadium":
         return "bg-yellow-100 text-yellow-800";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-muted text-muted-foreground";
     }
   };
 
@@ -329,10 +325,10 @@ export default function EventDetailsPage() {
   if (!event) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">
+        <h2 className="text-2xl font-bold mb-2">
           Event Not Found
         </h2>
-        <p className="text-gray-600 mb-4">
+        <p className="text-muted-foreground mb-4">
           The requested event could not be found.
         </p>
         <Button onClick={() => router.back()}>
@@ -394,25 +390,25 @@ export default function EventDetailsPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium text-gray-500">
+                  <label className="text-sm font-medium text-muted-foreground">
                     Start Date
                   </label>
                   <p className="text-lg">{formatDate(event.date_start)}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-500">
+                  <label className="text-sm font-medium text-muted-foreground">
                     Start Time
                   </label>
                   <p className="text-lg">{formatTime(event.date_start)}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-500">
+                  <label className="text-sm font-medium text-muted-foreground">
                     End Date
                   </label>
                   <p className="text-lg">{formatDate(event.date_stop)}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-500">
+                  <label className="text-sm font-medium text-muted-foreground">
                     End Time
                   </label>
                   <p className="text-lg">{formatTime(event.date_stop)}</p>
@@ -421,7 +417,7 @@ export default function EventDetailsPage() {
 
               {event.slug && (
                 <div>
-                  <label className="text-sm font-medium text-gray-500">
+                  <label className="text-sm font-medium text-muted-foreground">
                     Event Slug
                   </label>
                   <p className="text-sm font-mono rounded">{event.slug}</p>
@@ -442,14 +438,14 @@ export default function EventDetailsPage() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-medium text-gray-500">
+                    <label className="text-sm font-medium text-muted-foreground">
                       Tournament Name
                     </label>
                     <p className="text-lg">{event.tournament.official_name}</p>
                   </div>
                   {event.tournament.season && (
                     <div>
-                      <label className="text-sm font-medium text-gray-500">
+                      <label className="text-sm font-medium text-muted-foreground">
                         Season
                       </label>
                       <p className="text-lg">{event.tournament.season}</p>
@@ -457,7 +453,7 @@ export default function EventDetailsPage() {
                   )}
                   {event.tournament.tournament_type && (
                     <div>
-                      <label className="text-sm font-medium text-gray-500">
+                      <label className="text-sm font-medium text-muted-foreground">
                         Type
                       </label>
                       <p className="text-lg">
@@ -467,7 +463,7 @@ export default function EventDetailsPage() {
                   )}
                   {event.tournament.region && (
                     <div>
-                      <label className="text-sm font-medium text-gray-500">
+                      <label className="text-sm font-medium text-muted-foreground">
                         Region
                       </label>
                       <p className="text-lg">{event.tournament.region}</p>
@@ -477,13 +473,13 @@ export default function EventDetailsPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-medium text-gray-500">
+                    <label className="text-sm font-medium text-muted-foreground">
                       Tournament Start
                     </label>
                     <p>{formatDate(event.tournament.date_start)}</p>
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-gray-500">
+                    <label className="text-sm font-medium text-muted-foreground">
                       Tournament End
                     </label>
                     <p>{formatDate(event.tournament.date_stop)}</p>

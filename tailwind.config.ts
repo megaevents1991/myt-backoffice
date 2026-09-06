@@ -16,11 +16,14 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        // Resolves only inside .portal-theme (the portal layout defines the
-        // vars via next/font); elsewhere it falls through to the system stack.
+        // Loaded app-wide at the root layout. `font-display` = Rubik (headings,
+        // stat numbers), default body/UI = Assistant. The --font-portal-* names
+        // still resolve inside .portal-theme, which aliases them onto these.
+        sans: ["var(--font-sans)", "Arial Hebrew", "Arial", "sans-serif"],
         display: [
-          "var(--font-portal-display)",
-          "var(--font-portal-sans)",
+          "var(--font-display)",
+          "var(--font-sans)",
+          "Arial Hebrew",
           "sans-serif",
         ],
       },
@@ -62,6 +65,23 @@ const config: Config = {
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
+        },
+        // Status colors, kept separate from the mint brand accent so a "Live"
+        // dot never reads as branding. `*-muted` is the badge background.
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+          muted: "hsl(var(--success-muted))",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+          muted: "hsl(var(--warning-muted))",
+        },
+        info: {
+          DEFAULT: "hsl(var(--info))",
+          foreground: "hsl(var(--info-foreground))",
+          muted: "hsl(var(--info-muted))",
         },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

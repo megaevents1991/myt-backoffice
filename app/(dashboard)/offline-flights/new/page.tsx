@@ -83,11 +83,14 @@ function sumIsoDurations(a: string, b: string): string {
   return `PT${minutes}M`;
 }
 
-const getValueByPath = (obj: any, path: (string | number)[]): any => {
-  let current = obj;
+const getValueByPath = (
+  obj: unknown,
+  path: (string | number)[],
+): unknown => {
+  let current: unknown = obj;
   for (const segment of path) {
     if (current && typeof current === "object" && segment in current) {
-      current = current[segment];
+      current = (current as Record<string | number, unknown>)[segment];
     } else {
       return undefined;
     }
@@ -837,7 +840,7 @@ export default function NewOfflineFlightPage() {
                     <FormLabel>Metadata Airline IATA</FormLabel>
                     <FormControl>
                       {/* Display as text instead of Input */}
-                      <div className="pt-2 text-sm font-medium text-gray-700 dark:text-gray-300 min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
+                      <div className="pt-2 text-sm font-medium text-muted-foreground min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
                         {field.value || "-"}
                       </div>
                     </FormControl>
@@ -856,7 +859,7 @@ export default function NewOfflineFlightPage() {
                     <FormLabel>Metadata Airline Name</FormLabel>
                     <FormControl>
                       {/* Display as text instead of Input */}
-                      <div className="pt-2 text-sm font-medium text-gray-700 dark:text-gray-300 min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
+                      <div className="pt-2 text-sm font-medium text-muted-foreground min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
                         {field.value || "-"}
                       </div>
                     </FormControl>
@@ -885,7 +888,7 @@ export default function NewOfflineFlightPage() {
                           {field.value}
                         </a>
                       ) : (
-                        <div className="pt-2 text-sm font-medium text-gray-700 dark:text-gray-300 min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
+                        <div className="pt-2 text-sm font-medium text-muted-foreground min-h-[40px] flex items-center px-3 py-2 border border-transparent rounded-md">
                           -
                         </div>
                       )}

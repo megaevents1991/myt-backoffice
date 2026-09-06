@@ -781,7 +781,7 @@ function FilterGroup<T extends string>({
   options: { key: T; label: string }[];
 }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1">
       {options.map((option) => (
         <Button
           key={option.key}

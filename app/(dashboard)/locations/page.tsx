@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { Metadata } from "next";
+import { PageHeader } from "@/components/page-header";
 import LocationsContent from "./locations-content";
 
 export const metadata: Metadata = {
@@ -10,12 +11,10 @@ export const metadata: Metadata = {
 export default function LocationsPage() {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Locations</h1>
-        <p className="text-muted-foreground">
-          Manage location data for events and venues
-        </p>
-      </div>
+      <PageHeader
+        title="Locations"
+        description="The cities and countries events happen in. Events, packages and content are tagged against these, and the customer site filters by them - so renaming one changes what customers see."
+      />
 
       <Suspense fallback={<div>Loading locations...</div>}>
         <LocationsContent />
