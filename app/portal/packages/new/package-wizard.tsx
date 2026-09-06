@@ -61,20 +61,12 @@ const STEPS = ["אירוע", "כרטיסים", "טיסה", "מלון", "סיום
 export function PackageWizard({
   events,
   initialEventId,
-  initialTicketsOnly = false,
   commissionTerms,
   isAgent = false,
 }: {
   events: BuilderEvent[];
   /** Deep entry from the unified packages page - lands straight on tickets. */
   initialEventId?: number;
-  /**
-   * "כרטיס בלבד" came in from the dashboard toggle (doc 2026-08-30, item 10):
-   * flight and hotel start as "none" and picking a ticket jumps straight to
-   * the summary - "לא לעבור את כל המסע בפלואו למישהו שרוצה כרטיס בלבד".
-   * Adding them back is one click on the summary's +להוספה chips.
-   */
-  initialTicketsOnly?: boolean;
   commissionTerms?: BuilderCommissionTerms | null;
   /** Agents also get "order for the customer" + "send offer" on the success screen. */
   isAgent?: boolean;
@@ -88,16 +80,12 @@ export function PackageWizard({
   const [flights, setFlights] = useState<BuilderFlight[]>([]);
   const [hotels, setHotels] = useState<BuilderHotelRoom[]>([]);
   const [inventoryLoading, setInventoryLoading] = useState(false);
-  const [flightChoice, setFlightChoice] = useState<FlightChoice>(
-    initialTicketsOnly ? { mode: "none" } : { mode: "live" },
-  );
-  const [hotelChoice, setHotelChoice] = useState<HotelChoice>(
-    initialTicketsOnly ? { mode: "none" } : { mode: "live" },
-  );
-  // Ticket-only mode (item 10). Stays on for this build - "בניית חבילה" from
-  // a normal row is a normal build; the summary's +להוספה chips are how a
-  // flight or hotel gets added back, exactly like main's flow.
-  const [ticketsOnly, setTicketsOnly] = useState(initialTicketsOnly);
+  // Ticket-first flow (Dor, 2026-09-06): every build starts with flight and
+  // hotel OFF ("ללא"), so picking a ticket lands straight on the summary.
+  // A flight or hotel is added from there (the summary's +להוספה chips or
+  // the bar pills), never walked through by default.
+  const [flightChoice, setFlightChoice] = useState<FlightChoice>({ mode: "none" });
+  const [hotelChoice, setHotelChoice] = useState<HotelChoice>({ mode: "none" });
   // What each step is currently showing FIRST - "בחר והמשך" picks it when the
   // agent tapped nothing (2026-08-31: continuing without a tap used to keep
   // the silent "live" default, so a "full" build saved with no flight/hotel
@@ -254,10 +242,9 @@ export function PackageWizard({
     setAdjustPerPerson(0);
     setEvent(e);
     setCategory(cheapestCategory(e.tickets));
-    // Ticket-only entry starts with both parts OFF, so the summary is one
-    // step away; the normal entry leaves them for the customer to pick live.
-    setFlightChoice(ticketsOnly ? { mode: "none" } : { mode: "live" });
-    setHotelChoice(ticketsOnly ? { mode: "none" } : { mode: "live" });
+    // Every build starts with both parts OFF, so the summary is one step away.
+    setFlightChoice({ mode: "none" });
+    setHotelChoice({ mode: "none" });
     setFsResults(null);
     setHsResults(null);
     setFsError(null);
@@ -525,15 +512,20 @@ export function PackageWizard({
   const flowStillValid =
     !!event && !!selectedTicket && flightSeatsOk && canContinueFromHotel;
 
+  // The next step that still needs the agent. A flight or hotel at "ללא"
+  // (the default, or the bar's skip shortcut) is settled - stepping forward
+  // from the ticket lands on the summary, not on "בחר והמשך לטיסה". Both
+  // stay addable: the bar pill of a settled step walks onto it explicitly.
+  const nextUnresolvedStep = (from: number): number => {
+    let next = from + 1;
+    if (next === 2 && flightChoice.mode === "none") next = 3;
+    if (next === 3 && hotelChoice.mode === "none") next = 4;
+    return Math.min(4, next);
+  };
+
   const goNext = () => {
     if (returnToSummary && flowStillValid) {
       setReturnToSummary(false);
-      setStep(4);
-      return;
-    }
-    // Ticket-only: tickets → summary, skipping flight and hotel entirely
-    // (doc 2026-08-30, item 10). They are still addable from the summary.
-    if (ticketsOnly && step === 1) {
       setStep(4);
       return;
     }
@@ -564,14 +556,10 @@ export function PackageWizard({
     ) {
       setHotelChoice({ mode: "live-offer", option: topHotelCandidate });
     }
-    setStep((s) => Math.min(4, s + 1));
+    setStep(nextUnresolvedStep(step));
   };
   const goBack = () => setStep((s) => Math.max(0, s - 1));
   const editStep = (target: number) => {
-    // Going to the flight (2) or hotel (3) step from the summary means the
-    // agent wants that part after all - leave ticket-only mode so the flow
-    // behaves normally from here on.
-    if (target === 2 || target === 3) setTicketsOnly(false);
     setReturnToSummary(true);
     setStep(target);
   };
@@ -779,11 +767,14 @@ export function PackageWizard({
       hotelChoice.mode === "live" &&
       !hotelChoice.explicit);
 
+  // Pills: back to a done step, forward to the next unresolved step (the
+  // primary CTA's twin), or onto a settled "ללא" step in between to add that
+  // part after all. Never past the next unresolved step.
   const slotTarget = (target: number): number | null => {
     if (target === step) return null;
     if (target < step) return target;
-    if (target === step + 1 && !primaryDisabled) return target;
-    return null;
+    if (primaryDisabled) return null;
+    return target <= nextUnresolvedStep(step) ? target : null;
   };
 
   const slots: ContinueSlot[] = [
@@ -815,11 +806,14 @@ export function PackageWizard({
 
   // "Save & return" only while the shortcut is really taken (main's
   // editReturnActive) - an edit that invalidated a later step walks forward.
+  // The label names where "בחר והמשך" actually lands - a settled flight/hotel
+  // ("ללא") is folded in, so a ticket-only build reads "בחר והמשך לסיכום".
+  const primaryTarget = nextUnresolvedStep(step);
   const primaryLabel = returnToSummary && flowStillValid
     ? "שמור וחזור לסיכום"
-    : step === 1
+    : primaryTarget === 2
       ? "בחר והמשך לטיסה"
-      : step === 2
+      : primaryTarget === 3
         ? "בחר והמשך למלון"
         : "בחר והמשך לסיכום";
 
@@ -843,16 +837,9 @@ export function PackageWizard({
   };
 
   const secondaryActions: ContinueSecondaryAction[] | null =
-    // A locked package's flight is fixed - no flight skip to offer.
-    step === 1 && event?.locked_flight_id == null
-      ? [
-          {
-            label: "ללא טיסה",
-            onClick: skipFlight,
-            disabled: !selectedTicket,
-          },
-        ]
-      : step === 2 && event?.locked_flight_id == null
+    // The ticket step has no skip to offer - flight and hotel already start
+    // OFF. A locked package's flight is fixed - no flight skip to offer.
+    step === 2 && event?.locked_flight_id == null
         ? [
             {
               label: "ללא טיסה",
@@ -1043,7 +1030,10 @@ export function PackageWizard({
             qty={qty}
             onSlotClick={(target) => {
               if (target < step) setStep(target);
-              else if (target === step + 1 && !primaryDisabled) goNext();
+              else if (target === nextUnresolvedStep(step) && !primaryDisabled) goNext();
+              // A settled "ללא" step ahead - open it to add that part.
+              else if (target > step && target < nextUnresolvedStep(step) && !primaryDisabled)
+                setStep(target);
             }}
             primaryLabel={primaryLabel}
             primaryDisabled={primaryDisabled}

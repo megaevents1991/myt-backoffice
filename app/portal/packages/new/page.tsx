@@ -15,15 +15,12 @@ export const maxDuration = 60;
 export default async function NewPackagePage({
   searchParams,
 }: {
-  searchParams: Promise<{ event?: string; tickets?: string }>;
+  searchParams: Promise<{ event?: string }>;
 }) {
   const session = await getSession();
   if (!session?.partner_code) return null;
 
-  // `?tickets=1` comes from the dashboard's "כרטיסים בלבד" toggle: the agent
-  // already said they only want a ticket, so the wizard must not walk them
-  // through flight and hotel to get there (doc 2026-08-30, item 10).
-  const { event: eventParam, tickets: ticketsParam } = await searchParams;
+  const { event: eventParam } = await searchParams;
   const initialEventId = Number(eventParam);
   const [events, commissionTerms] = await Promise.all([
     getPackageBuilderEvents(),
@@ -35,14 +32,13 @@ export default async function NewPackagePage({
       <div>
         <h1 className="font-display text-xl font-bold">בניית חבילה</h1>
         <p className="text-sm text-muted-foreground">
-          בוחרים אירוע, כרטיסים, טיסה ומלון - בדיוק כמו שהלקוח רואה באתר -
-          ומקבלים לינק שמנחית אותו ישר על החבילה המוכנה.
+          בוחרים אירוע וכרטיסים ומגיעים ישר לסיכום - טיסה ומלון מוסיפים משם
+          רק אם צריך - ומקבלים לינק שמנחית את הלקוח ישר על החבילה המוכנה.
         </p>
       </div>
       <PackageWizard
         events={events}
         initialEventId={Number.isFinite(initialEventId) ? initialEventId : undefined}
-        initialTicketsOnly={ticketsParam === "1"}
         commissionTerms={commissionTerms}
         isAgent={SELLER_ROLES.includes(session.role)}
       />
