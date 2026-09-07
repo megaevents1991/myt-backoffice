@@ -24,7 +24,9 @@ export interface SyncLogRow {
 
 export async function listSyncLog(
   filter: "all" | "needs_review",
-  limit = 300,
+  // Every visit is logged since 2026-09-07 (~100 skip rows a night), so the
+  // window has to be wide enough that the changes among them still show.
+  limit = 1500,
 ): Promise<SyncLogRow[]> {
   await requireAdmin();
 

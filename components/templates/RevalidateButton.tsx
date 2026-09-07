@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { toast } from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 /**
  * Busts the customer site's ISR cache so freshly-saved template content (blob
@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
  */
 export function RevalidateButton() {
   const [revalidating, setRevalidating] = useState(false);
+  const { toast } = useToast();
 
   const handleRevalidate = async () => {
     setRevalidating(true);
@@ -24,11 +25,13 @@ export function RevalidateButton() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to revalidate pages");
       }
-      toast.success("Live site refreshed - pages revalidated.");
+      toast({ title: "Live site refreshed", description: "Pages revalidated." });
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Revalidation failed."
-      );
+      toast({
+        variant: "destructive",
+        title: "Revalidation failed",
+        description: error instanceof Error ? error.message : undefined,
+      });
     } finally {
       setRevalidating(false);
     }

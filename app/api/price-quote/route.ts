@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardAdminRoute } from "@/lib/auth/guards";
-import { quoteFlight, quoteHotel } from "@/lib/services/price-quote";
+import {
+  describeQuote,
+  quoteFlight,
+  quoteHotel,
+  type QuoteResult,
+} from "@/lib/services/price-quote";
+
+/** The quote plus its one-line arithmetic, for toasts (client can't import the service). */
+const withDetail = (quote: QuoteResult) =>
+  quote ? { ...quote, detail: describeQuote(quote) } : null;
 
 /**
  * Staff-only quote endpoint for the dashboard: the event form's search
@@ -23,7 +32,7 @@ export async function POST(request: NextRequest) {
         );
       }
       const quote = await quoteFlight(cityIata, departDate, returnDate);
-      return NextResponse.json({ success: true, quote });
+      return NextResponse.json({ success: true, quote: withDetail(quote) });
     }
     if (body?.kind === "hotel") {
       const { lat, lon, checkin, checkout } = body;
@@ -34,7 +43,7 @@ export async function POST(request: NextRequest) {
         );
       }
       const quote = await quoteHotel(lat, lon, checkin, checkout);
-      return NextResponse.json({ success: true, quote });
+      return NextResponse.json({ success: true, quote: withDetail(quote) });
     }
     return NextResponse.json(
       { success: false, message: "Unknown kind" },

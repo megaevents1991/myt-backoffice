@@ -50,8 +50,11 @@ export async function searchFlightPrices(
 
 export type PriceQuote = {
   price: number;
+  /** Per-person market price before the margin (hotel: room ÷ 2). */
   raw: number;
   source: "direct" | "connection" | "hotel";
+  /** One-line arithmetic from the service, e.g. "3★ room $345 ÷ 2 = $173/person + $120 → $290". */
+  detail: string;
 } | null;
 
 /**

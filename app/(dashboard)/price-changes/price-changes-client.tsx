@@ -18,14 +18,19 @@ import {
 const STATUS_STYLE: Record<string, string> = {
   applied: "bg-success-muted text-success",
   needs_review: "bg-warning-muted text-warning",
+  skipped: "bg-muted text-muted-foreground",
   error: "bg-destructive/15 text-destructive",
 };
+
+// The sync logs every visit since 2026-09-07 (skips included, so "why did
+// nothing move" has an answer). The default view hides the skips.
+const CHANGE_STATUSES = new Set(["applied", "needs_review", "error"]);
 
 export function PriceChangesClient() {
   const { toast } = useToast();
   const [rows, setRows] = useState<SyncLogRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState("all");
+  const [view, setView] = useState("changes");
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -44,7 +49,9 @@ export function PriceChangesClient() {
     () =>
       view === "needs_review"
         ? rows.filter((row) => row.status === "needs_review")
-        : rows,
+        : view === "changes"
+          ? rows.filter((row) => CHANGE_STATUSES.has(row.status))
+          : rows,
     [rows, view],
   );
 
@@ -128,6 +135,15 @@ export function PriceChangesClient() {
         ),
       },
       {
+        accessorKey: "note",
+        header: "Why",
+        cell: ({ row }) => (
+          <span className="block max-w-[28rem] truncate text-xs text-muted-foreground" title={row.original.note ?? ""}>
+            {row.original.note ?? ""}
+          </span>
+        ),
+      },
+      {
         id: "actions",
         header: "",
         cell: ({ row }) =>
@@ -151,8 +167,13 @@ export function PriceChangesClient() {
       searchColumn="event_name"
       searchPlaceholder="Search events..."
       views={[
-        { id: "all", label: "All", count: rows.length },
+        {
+          id: "changes",
+          label: "Changes",
+          count: rows.filter((row) => CHANGE_STATUSES.has(row.status)).length,
+        },
         { id: "needs_review", label: "Needs review", count: reviewCount },
+        { id: "all", label: "All visits", count: rows.length },
       ]}
       activeView={view}
       onViewChange={setView}

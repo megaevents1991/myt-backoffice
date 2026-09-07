@@ -4,6 +4,7 @@ import type React from "react";
 import { useState, useEffect, use, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useRouter, useSearchParams } from "next/navigation";
+import { RevalidateButton } from "@/components/templates/RevalidateButton";
 import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown, Plane, ExternalLink, BedDouble, ChevronDown } from "lucide-react";
 import {
   Collapsible,
@@ -690,10 +691,7 @@ export default function EventPage({
 
         toast({
           title: "Flight Prices Updated",
-          description:
-            quote.source === "connection"
-              ? `TLV → ${cityIata}: $${quote.price} via connection (direct costs $${Math.round(quote.raw)}+, over the $300 gap)`
-              : `TLV → ${cityIata}: $${quote.price} direct (cheapest $${Math.round(quote.raw)} + $100, rounded)`,
+          description: `TLV → ${cityIata}: ${quote.detail}`,
         });
       } else {
         toast({
@@ -747,7 +745,7 @@ export default function EventPage({
 
         toast({
           title: "Hotel Prices Updated",
-          description: `Cheapest 3-star $${Math.round(quote.raw)} + $120 → base $${quote.price}`,
+          description: quote.detail,
         });
       } else {
         toast({
@@ -1704,6 +1702,14 @@ export default function EventPage({
             </p>
           )}
         </div>
+        {/* Back on the editor (Dor, 2026-09-07): after saving a price or a
+            ticket change, bust main's ISR cache from right here instead of
+            walking back to the events list. */}
+        {!isNewEvent && (
+          <div className="ml-auto">
+            <RevalidateButton />
+          </div>
+        )}
       </div>
 
       {event.is_deleted && (

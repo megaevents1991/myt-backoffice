@@ -144,7 +144,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         },
         {
           label: t("Base hotel price", "מחיר בסיס מלון"),
-          sub: t("cheapest 3-star +$120, rounded to tens", "3★ הזול +120$, עיגול לעשרות"),
+          sub: t("cheapest 3-star, per person (room ÷ 2) +$120, rounded to tens", "3★ הזול לאדם (חדר ÷ 2) +120$, עיגול לעשרות"),
         },
         {
           label: t("Main site +$175", "האתר הראשי +175$"),
@@ -159,8 +159,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "כפתורי חיפוש הטיסה/מלון בטופס האירוע מתמחרים דרך אותו כלל בדיוק — המספר שהם ממלאים הוא המספר שהסנכרון הלילי היה כותב.",
       ),
       t(
-        "Nightly sync (01:30 UTC): every live future event is re-quoted. Deviation of $150+ per component updates the base (both directions); a change above $400 is FROZEN for human review instead of applied.",
-        "סנכרון לילי (01:30 UTC): כל אירוע חי עתידי מתומחר מחדש. סטייה של 150$+ לרכיב מעדכנת את הבסיס (לשני הכיוונים); שינוי מעל 400$ נעצר לבדיקה אנושית במקום להיות מוחל.",
+        "Nightly sync (01:30 UTC): live future events are re-quoted in rotation (least-recently-checked first, next 45 days ahead of the rest). Any deviation of $20+ per component updates the base (both directions); a change above $400 is FROZEN for human review instead of applied. Every visit is logged - the price-changes screen shows the arithmetic and why an event did not move.",
+        "סנכרון לילי (01:30 UTC): אירועים חיים עתידיים מתומחרים מחדש ברוטציה (מי שנבדק הכי מזמן קודם, 45 הימים הקרובים לפני השאר). כל סטייה של 20$+ לרכיב מעדכנת את הבסיס (לשני הכיוונים); שינוי מעל 400$ נעצר לבדיקה אנושית במקום להיות מוחל. כל ביקור נרשם — מסך שינויי המחיר מציג את החשבון ולמה אירוע לא זז.",
       ),
       t(
         "Events with linked offline inventory are excluded per component - fixed inventory means the price is your decision, not a market read.",

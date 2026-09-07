@@ -1,27 +1,36 @@
-// Nightly base-price sync (spec docs/superpowers/specs/2026-09-02, section 3).
+// Nightly base-price sync (spec docs/superpowers/specs/2026-09-02, section 3;
+// reworked 2026-09-07 after the first prod run).
 //
 // Replaces Dor's manual round over the site: quotes every live future event
 // through the shared price-quote rule and realigns base_flight_price /
 // base_hotel_price to the live market, both directions.
 //
-//   deviation < $150            -> nothing
-//   $150 <= deviation <= $400   -> base = live quote (already margined+rounded)
+//   deviation < $20             -> skipped (logged, so the screen shows WHY
+//                                  an event did not move)
+//   $20 <= deviation <= $400    -> base = live quote (already margined+rounded)
 //   deviation > $400            -> frozen: logged as needs_review, no write
 //
-// Exclusions: events with a linked offline flight skip the flight component,
-// offline hotel skips the hotel component (fixed inventory = the price is a
-// decision, not a market read); a component whose base is 0/null has no
-// component at all. Events within 45 days sync nightly; farther ones once a
-// week via a deterministic id bucket. dry_run computes everything and writes
+// Exclusions: events with a linked offline flight (`flights.event_ids`) skip
+// the flight component, offline hotel skips the hotel component (fixed
+// inventory = the price is a decision, not a market read); a component whose
+// base is 0/null has no component at all.
+//
+// Coverage: the 270s budget fits ~40-60 events a night, not the ~440 live
+// ones, so the run is a ROTATION. Every event's last visit is the newest log
+// row it has (skips count), and each night takes the least-recently-visited
+// first - events within 45 days ahead of the farther ones. Nothing is ever
+// stranded behind the same first N. dry_run computes everything and writes
 // NOTHING - not even log rows - so it is safe to run against prod from a
-// preview deploy.
+// preview deploy (it also does not advance the rotation).
 import { supabase } from "@/lib/supabase-server";
 import { appOrigin, sendMail } from "@/lib/email";
 import {
+  describeQuote,
   quoteFlight,
   quoteHotel,
   SYNC_FREEZE_USD,
   SYNC_DEVIATION_USD,
+  type QuoteResult,
 } from "@/lib/services/price-quote";
 
 // base_price_sync_log predates the generated database types - cast once at
@@ -30,8 +39,9 @@ import {
 const db = supabase as any;
 
 export type SyncDecision = "skip" | "apply" | "needs_review";
+export type SyncLogStatus = "applied" | "needs_review" | "skipped" | "error";
 
-/** Pure: the $150 / $400 rule, both directions. */
+/** Pure: the $20 / $400 rule, both directions. */
 export function decideSync(base: number, live: number): SyncDecision {
   const delta = Math.abs(live - base);
   if (delta < SYNC_DEVIATION_USD) return "skip";
@@ -51,6 +61,7 @@ export interface SyncSummary {
   scanned: number;
   applied: SyncChange[];
   needsReview: SyncChange[];
+  skipped: number;
   errors: { eventId: number; component: string; note: string }[];
   remaining: number;
   dryRun: boolean;
@@ -71,6 +82,8 @@ interface CandidateEvent {
   base_hotel_price: number | null;
 }
 
+const NEAR_WINDOW_DAYS = 45;
+
 function isoDaysFromNow(days: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + days);
@@ -78,7 +91,7 @@ function isoDaysFromNow(days: number): string {
 }
 
 async function offlineLinkedEventIds(
-  table: "offline_flights" | "offline_hotels",
+  table: "flights" | "offline_hotels",
 ): Promise<Set<number>> {
   const { data, error } = await db.from(table).select("event_ids");
   if (error) {
@@ -92,6 +105,55 @@ async function offlineLinkedEventIds(
   return ids;
 }
 
+/** Newest log row per event = when the rotation last visited it. */
+async function lastVisitByEvent(): Promise<Map<number, string>> {
+  const { data, error } = await db
+    .from("base_price_sync_log")
+    .select("event_id,created_at")
+    .order("created_at", { ascending: false })
+    .limit(5000);
+  if (error) {
+    console.error("base-price-sync: last-visit load failed", JSON.stringify(error));
+    return new Map();
+  }
+  const seen = new Map<number, string>();
+  for (const row of (data ?? []) as { event_id: number; created_at: string }[]) {
+    if (!seen.has(row.event_id)) seen.set(row.event_id, row.created_at);
+  }
+  return seen;
+}
+
+/** Pure: least-recently-visited first, near events ahead of far ones. */
+export function orderForRotation<T extends { id: number; date: string }>(
+  events: T[],
+  lastVisit: Map<number, string>,
+  nearWindowEnd: string,
+): T[] {
+  const key = (event: T) => lastVisit.get(event.id) ?? "";
+  const near = events.filter((event) => event.date <= nearWindowEnd);
+  const far = events.filter((event) => event.date > nearWindowEnd);
+  const byVisit = (a: T, b: T) =>
+    key(a).localeCompare(key(b)) || a.date.localeCompare(b.date);
+  return [...near.sort(byVisit), ...far.sort(byVisit)];
+}
+
+function hasFlightComponent(event: CandidateEvent, offlineFlightIds: Set<number>): boolean {
+  return (
+    (Number(event.base_flight_price) || 0) > 0 &&
+    !!event.location?.city_iata &&
+    !offlineFlightIds.has(event.id)
+  );
+}
+
+function hasHotelComponent(event: CandidateEvent, offlineHotelIds: Set<number>): boolean {
+  return (
+    (Number(event.base_hotel_price) || 0) > 0 &&
+    typeof event.location?.latitude === "number" &&
+    typeof event.location?.longitude === "number" &&
+    !offlineHotelIds.has(event.id)
+  );
+}
+
 export async function runBasePriceSync(options: {
   dryRun: boolean;
   budgetMs: number;
@@ -101,6 +163,7 @@ export async function runBasePriceSync(options: {
     scanned: 0,
     applied: [],
     needsReview: [],
+    skipped: 0,
     errors: [],
     remaining: 0,
     dryRun: options.dryRun,
@@ -119,15 +182,24 @@ export async function runBasePriceSync(options: {
     return summary;
   }
 
-  const [offlineFlightIds, offlineHotelIds] = await Promise.all([
-    offlineLinkedEventIds("offline_flights"),
+  const [offlineFlightIds, offlineHotelIds, lastVisit] = await Promise.all([
+    offlineLinkedEventIds("flights"),
     offlineLinkedEventIds("offline_hotels"),
+    lastVisitByEvent(),
   ]);
 
-  const nearWindow = isoDaysFromNow(45);
-  const weekday = new Date().getUTCDay();
-  const candidates = ((data ?? []) as CandidateEvent[]).filter(
-    (event) => event.date <= nearWindow || event.id % 7 === weekday,
+  // Only events with something to quote take a slot in the rotation.
+  const quotable = ((data ?? []) as CandidateEvent[]).filter(
+    (event) =>
+      !!event.def_date_depart &&
+      !!event.def_date_return &&
+      (hasFlightComponent(event, offlineFlightIds) ||
+        hasHotelComponent(event, offlineHotelIds)),
+  );
+  const candidates = orderForRotation(
+    quotable,
+    lastVisit,
+    isoDaysFromNow(NEAR_WINDOW_DAYS),
   );
 
   for (const [index, event] of candidates.entries()) {
@@ -138,31 +210,31 @@ export async function runBasePriceSync(options: {
     }
     summary.scanned += 1;
 
-    const depart = event.def_date_depart;
-    const ret = event.def_date_return;
-    if (!depart || !ret) continue;
+    const depart = event.def_date_depart as string;
+    const ret = event.def_date_return as string;
 
-    // --- Flight component ---
-    const flightBase = Number(event.base_flight_price) || 0;
-    const iata = event.location?.city_iata;
-    if (flightBase > 0 && iata && !offlineFlightIds.has(event.id)) {
-      await syncComponent(event, "flight", flightBase, summary, options.dryRun, () =>
-        quoteFlight(iata, depart, ret),
+    if (hasFlightComponent(event, offlineFlightIds)) {
+      const iata = event.location?.city_iata as string;
+      await syncComponent(
+        event,
+        "flight",
+        Number(event.base_flight_price),
+        summary,
+        options.dryRun,
+        () => quoteFlight(iata, depart, ret),
       );
     }
 
-    // --- Hotel component ---
-    const hotelBase = Number(event.base_hotel_price) || 0;
-    const lat = event.location?.latitude;
-    const lon = event.location?.longitude;
-    if (
-      hotelBase > 0 &&
-      typeof lat === "number" &&
-      typeof lon === "number" &&
-      !offlineHotelIds.has(event.id)
-    ) {
-      await syncComponent(event, "hotel", hotelBase, summary, options.dryRun, () =>
-        quoteHotel(lat, lon, depart, ret),
+    if (hasHotelComponent(event, offlineHotelIds)) {
+      const lat = event.location?.latitude as number;
+      const lon = event.location?.longitude as number;
+      await syncComponent(
+        event,
+        "hotel",
+        Number(event.base_hotel_price),
+        summary,
+        options.dryRun,
+        () => quoteHotel(lat, lon, depart, ret),
       );
     }
   }
@@ -186,6 +258,7 @@ async function sendSummaryEmail(summary: SyncSummary): Promise<void> {
       subject: `Base price sync: ${summary.applied.length} applied · ${summary.needsReview.length} for review · ${summary.errors.length} errors`,
       html: [
         `<p><a href="${appOrigin()}/price-changes">Open the price-changes screen</a></p>`,
+        `<p>Scanned ${summary.scanned} events · ${summary.skipped} components within $${SYNC_DEVIATION_USD} · ${summary.remaining} events wait for the next rotation.</p>`,
         summary.applied.length
           ? `<p><b>Applied</b></p><ul>${summary.applied.map(line).join("")}</ul>`
           : "",
@@ -208,21 +281,38 @@ async function syncComponent(
   base: number,
   summary: SyncSummary,
   dryRun: boolean,
-  quote: () => Promise<{ price: number } | null>,
+  quote: () => Promise<QuoteResult>,
 ): Promise<void> {
   try {
     const result = await quote();
     if (!result) {
-      summary.errors.push({
-        eventId: event.id,
-        component,
-        note: "no live price found",
-      });
+      const note = "no live price found";
+      summary.errors.push({ eventId: event.id, component, note });
+      if (!dryRun) {
+        await logRow({ eventId: event.id, component, oldPrice: base, status: "error", note });
+      }
       return;
     }
 
     const decision = decideSync(base, result.price);
-    if (decision === "skip") return;
+    const arithmetic = describeQuote(result);
+    const delta = result.price - base;
+    const signed = `${delta >= 0 ? "+" : "-"}$${Math.abs(delta)}`;
+
+    if (decision === "skip") {
+      summary.skipped += 1;
+      if (!dryRun) {
+        await logRow({
+          eventId: event.id,
+          component,
+          oldPrice: base,
+          livePrice: result.price,
+          status: "skipped",
+          note: `${signed} is under the $${SYNC_DEVIATION_USD} threshold · ${arithmetic}`,
+        });
+      }
+      return;
+    }
 
     const change: SyncChange = {
       eventId: event.id,
@@ -242,53 +332,60 @@ async function syncComponent(
           .update({ [column]: result.price })
           .eq("id", event.id);
         if (error) throw error;
-        await logRow(event.id, component, base, result.price, "applied", null);
+        await logRow({
+          eventId: event.id,
+          component,
+          oldPrice: base,
+          newPrice: result.price,
+          livePrice: result.price,
+          status: "applied",
+          note: `${signed} · ${arithmetic}`,
+        });
       }
       return;
     }
 
     summary.needsReview.push(change);
     if (!dryRun) {
-      await logRow(
-        event.id,
+      await logRow({
+        eventId: event.id,
         component,
-        base,
-        null,
-        "needs_review",
-        `change of $${Math.abs(result.price - base)} frozen (> $${SYNC_FREEZE_USD})`,
-        result.price,
-      );
+        oldPrice: base,
+        livePrice: result.price,
+        status: "needs_review",
+        note: `${signed} frozen (> $${SYNC_FREEZE_USD}) · ${arithmetic}`,
+      });
     }
   } catch (error) {
     console.error(
       `base-price-sync: event ${event.id} ${component} failed`,
       JSON.stringify(error),
     );
-    summary.errors.push({
-      eventId: event.id,
-      component,
-      note: error instanceof Error ? error.message : "unknown error",
-    });
+    const note = error instanceof Error ? error.message : "unknown error";
+    summary.errors.push({ eventId: event.id, component, note });
+    if (!dryRun) {
+      await logRow({ eventId: event.id, component, oldPrice: base, status: "error", note });
+    }
   }
 }
 
-async function logRow(
-  eventId: number,
-  component: string,
-  oldPrice: number,
-  newPrice: number | null,
-  status: "applied" | "needs_review" | "error",
-  note: string | null,
-  livePriceOverride?: number,
-): Promise<void> {
+async function logRow(row: {
+  eventId: number;
+  component: string;
+  oldPrice: number;
+  newPrice?: number | null;
+  livePrice?: number | null;
+  status: SyncLogStatus;
+  note: string | null;
+}): Promise<void> {
   const { error } = await db.from("base_price_sync_log").insert({
-    event_id: eventId,
-    component,
-    old_price: oldPrice,
-    new_price: newPrice,
-    live_price: livePriceOverride ?? newPrice,
-    status,
-    note,
+    event_id: row.eventId,
+    component: row.component,
+    old_price: row.oldPrice,
+    new_price: row.newPrice ?? null,
+    live_price: row.livePrice ?? null,
+    status: row.status,
+    note: row.note,
   });
   if (error) {
     // The sync already happened - a logging failure must not fail the run.
