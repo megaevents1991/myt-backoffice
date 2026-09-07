@@ -577,10 +577,16 @@ export function DashboardSearch({
                     size="sm"
                     className="rounded-full bg-brand-forest font-semibold text-primary-foreground hover:bg-brand-forest/90"
                   >
-                    {/* The builder always goes tickets → summary now (flight and
-                        hotel start OFF) - the toggle only changes the price shown. */}
-                    <Link href={`/portal/packages/new?event=${event.id}`}>
-                      בניית חבילה
+                    {/* Two flows (Dor, 2026-09-07): the toggle carries the
+                        "כרטיסים בלבד" choice into the builder, which then goes
+                        ticket → summary; without it the regular build walks
+                        ticket → flight → hotel → summary. */}
+                    <Link
+                      href={`/portal/packages/new?event=${event.id}${
+                        ticketsOnly ? "&tickets=1" : ""
+                      }`}
+                    >
+                      {ticketsOnly ? "בניית כרטיס" : "בניית חבילה"}
                     </Link>
                   </Button>
                 </div>

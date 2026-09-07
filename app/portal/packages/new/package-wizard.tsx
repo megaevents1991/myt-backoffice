@@ -61,12 +61,22 @@ const STEPS = ["אירוע", "כרטיסים", "טיסה", "מלון", "סיום
 export function PackageWizard({
   events,
   initialEventId,
+  initialTicketsOnly = false,
   commissionTerms,
   isAgent = false,
 }: {
   events: BuilderEvent[];
   /** Deep entry from the unified packages page - lands straight on tickets. */
   initialEventId?: number;
+  /**
+   * Two flows (Dor, 2026-09-07 - a 2026-09-06 change had collapsed them):
+   * - regular "בניית חבילה": ticket → flight → hotel → summary, flight and
+   *   hotel start "live" for the agent to pick;
+   * - "כרטיס בלבד" (`?tickets=1` from the dashboard toggle): flight and hotel
+   *   start "none" and the ticket lands straight on the summary. Adding them
+   *   back is one click on the summary's +להוספה chips or the bar pills.
+   */
+  initialTicketsOnly?: boolean;
   commissionTerms?: BuilderCommissionTerms | null;
   /** Agents also get "order for the customer" + "send offer" on the success screen. */
   isAgent?: boolean;
@@ -80,12 +90,17 @@ export function PackageWizard({
   const [flights, setFlights] = useState<BuilderFlight[]>([]);
   const [hotels, setHotels] = useState<BuilderHotelRoom[]>([]);
   const [inventoryLoading, setInventoryLoading] = useState(false);
-  // Ticket-first flow (Dor, 2026-09-06): every build starts with flight and
-  // hotel OFF ("ללא"), so picking a ticket lands straight on the summary.
-  // A flight or hotel is added from there (the summary's +להוספה chips or
-  // the bar pills), never walked through by default.
-  const [flightChoice, setFlightChoice] = useState<FlightChoice>({ mode: "none" });
-  const [hotelChoice, setHotelChoice] = useState<HotelChoice>({ mode: "none" });
+  // Ticket-only starts with both parts OFF (the summary is one step away);
+  // the regular build leaves them "live" for the agent to pick.
+  const [flightChoice, setFlightChoice] = useState<FlightChoice>(
+    initialTicketsOnly ? { mode: "none" } : { mode: "live" },
+  );
+  const [hotelChoice, setHotelChoice] = useState<HotelChoice>(
+    initialTicketsOnly ? { mode: "none" } : { mode: "live" },
+  );
+  // Stays on for this build until the agent opens the flight or hotel step
+  // (from the summary or a bar pill) - that means they want that part after all.
+  const [ticketsOnly, setTicketsOnly] = useState(initialTicketsOnly);
   // What each step is currently showing FIRST - "בחר והמשך" picks it when the
   // agent tapped nothing (2026-08-31: continuing without a tap used to keep
   // the silent "live" default, so a "full" build saved with no flight/hotel
@@ -242,9 +257,10 @@ export function PackageWizard({
     setAdjustPerPerson(0);
     setEvent(e);
     setCategory(cheapestCategory(e.tickets));
-    // Every build starts with both parts OFF, so the summary is one step away.
-    setFlightChoice({ mode: "none" });
-    setHotelChoice({ mode: "none" });
+    // Ticket-only entry starts with both parts OFF, so the summary is one
+    // step away; the regular build leaves them for the agent to pick live.
+    setFlightChoice(ticketsOnly ? { mode: "none" } : { mode: "live" });
+    setHotelChoice(ticketsOnly ? { mode: "none" } : { mode: "live" });
     setFsResults(null);
     setHsResults(null);
     setFsError(null);
@@ -560,6 +576,9 @@ export function PackageWizard({
   };
   const goBack = () => setStep((s) => Math.max(0, s - 1));
   const editStep = (target: number) => {
+    // Opening the flight (2) or hotel (3) step from the summary means the
+    // agent wants that part after all - leave ticket-only mode.
+    if (target === 2 || target === 3) setTicketsOnly(false);
     setReturnToSummary(true);
     setStep(target);
   };
@@ -837,9 +856,18 @@ export function PackageWizard({
   };
 
   const secondaryActions: ContinueSecondaryAction[] | null =
-    // The ticket step has no skip to offer - flight and hotel already start
-    // OFF. A locked package's flight is fixed - no flight skip to offer.
-    step === 2 && event?.locked_flight_id == null
+    // Regular build: the ticket step offers "ללא טיסה" as a shortcut. Ticket-
+    // only already has the flight OFF, so nothing to offer there. A locked
+    // package's flight is fixed - no flight skip to offer at all.
+    step === 1 && flightChoice.mode !== "none" && event?.locked_flight_id == null
+      ? [
+          {
+            label: "ללא טיסה",
+            onClick: skipFlight,
+            disabled: !selectedTicket,
+          },
+        ]
+      : step === 2 && event?.locked_flight_id == null
         ? [
             {
               label: "ללא טיסה",
@@ -1031,9 +1059,12 @@ export function PackageWizard({
             onSlotClick={(target) => {
               if (target < step) setStep(target);
               else if (target === nextUnresolvedStep(step) && !primaryDisabled) goNext();
-              // A settled "ללא" step ahead - open it to add that part.
-              else if (target > step && target < nextUnresolvedStep(step) && !primaryDisabled)
+              // A settled "ללא" step ahead - open it to add that part (leaves
+              // ticket-only mode, same as editStep from the summary).
+              else if (target > step && target < nextUnresolvedStep(step) && !primaryDisabled) {
+                setTicketsOnly(false);
                 setStep(target);
+              }
             }}
             primaryLabel={primaryLabel}
             primaryDisabled={primaryDisabled}

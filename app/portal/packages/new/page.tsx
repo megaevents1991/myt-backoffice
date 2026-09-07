@@ -15,12 +15,15 @@ export const maxDuration = 60;
 export default async function NewPackagePage({
   searchParams,
 }: {
-  searchParams: Promise<{ event?: string }>;
+  searchParams: Promise<{ event?: string; tickets?: string }>;
 }) {
   const session = await getSession();
   if (!session?.partner_code) return null;
 
-  const { event: eventParam } = await searchParams;
+  // Two flows (Dor, 2026-09-07): `?tickets=1` comes from the dashboard's
+  // "כרטיסים בלבד" toggle - ticket → summary. Without it, the regular build
+  // walks ticket → flight → hotel → summary.
+  const { event: eventParam, tickets: ticketsParam } = await searchParams;
   const initialEventId = Number(eventParam);
   const [events, commissionTerms] = await Promise.all([
     getPackageBuilderEvents(),
@@ -32,13 +35,16 @@ export default async function NewPackagePage({
       <div>
         <h1 className="font-display text-xl font-bold">בניית חבילה</h1>
         <p className="text-sm text-muted-foreground">
-          בוחרים אירוע וכרטיסים ומגיעים ישר לסיכום - טיסה ומלון מוסיפים משם
-          רק אם צריך - ומקבלים לינק שמנחית את הלקוח ישר על החבילה המוכנה.
+          {ticketsParam === "1"
+            ? "כרטיס בלבד: בוחרים אירוע וכרטיסים ומגיעים ישר לסיכום - טיסה ומלון מוסיפים משם רק אם צריך."
+            : "בוחרים אירוע, כרטיסים, טיסה ומלון - בדיוק כמו שהלקוח רואה באתר -"}{" "}
+          ומקבלים לינק שמנחית את הלקוח ישר על החבילה המוכנה.
         </p>
       </div>
       <PackageWizard
         events={events}
         initialEventId={Number.isFinite(initialEventId) ? initialEventId : undefined}
+        initialTicketsOnly={ticketsParam === "1"}
         commissionTerms={commissionTerms}
         isAgent={SELLER_ROLES.includes(session.role)}
       />
