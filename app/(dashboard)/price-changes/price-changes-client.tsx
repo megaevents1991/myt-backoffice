@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Check } from "lucide-react";
+import { Check, ClipboardCheck } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import {
   approveReviewRow,
   listSyncLog,
+  resolveReviewRow,
   type SyncLogRow,
 } from "@/lib/actions/base-price-log-actions";
 
@@ -68,6 +69,26 @@ export function PriceChangesClient() {
         return;
       }
       toast({ title: "עודכן", description: `${row.event_name ?? row.event_id} · ${row.component} → $${row.live_price}` });
+      reload();
+    },
+    [reload, toast],
+  );
+
+  // "עודכן באירוע" - the price was set by hand inside the event; close the
+  // row with whatever the event holds now, without touching the event.
+  const resolve = useCallback(
+    async (row: SyncLogRow) => {
+      const result = await resolveReviewRow(row.id);
+      if (!result.ok) {
+        toast({ variant: "destructive", title: "Resolve failed", description: result.error });
+        return;
+      }
+      const unchanged = row.old_price != null && result.current === row.old_price;
+      toast({
+        title: unchanged ? "סומן - אבל האירוע לא השתנה" : "סומן כעודכן",
+        description: `${row.event_name ?? row.event_id} · ${row.component} · באירוע עכשיו $${result.current}`,
+        ...(unchanged ? { variant: "destructive" as const } : {}),
+      });
       reload();
     },
     [reload, toast],
@@ -148,7 +169,16 @@ export function PriceChangesClient() {
         header: "",
         cell: ({ row }) =>
           row.original.status === "needs_review" ? (
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                title="המחיר כבר עודכן ידנית בתוך האירוע - סגור את השורה בלי לחכות ל-cron"
+                onClick={() => resolve(row.original)}
+              >
+                <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" />
+                עודכן באירוע
+              </Button>
               <Button size="sm" variant="outline" onClick={() => approve(row.original)}>
                 <Check className="mr-1.5 h-3.5 w-3.5" />
                 אשר עדכון
@@ -157,7 +187,7 @@ export function PriceChangesClient() {
           ) : null,
       },
     ],
-    [approve],
+    [approve, resolve],
   );
 
   return (

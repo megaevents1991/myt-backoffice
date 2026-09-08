@@ -114,3 +114,62 @@ export async function approveReviewRow(
   });
   return { ok: true };
 }
+
+/**
+ * Closes a frozen row after someone set the price by hand inside the event
+ * (Dor, 2026-09-08: "מי שעובד על זה נכנס לאירוע ועדכן את המספרים"). Nothing is
+ * written to the event - the row just records what the event holds NOW and
+ * turns green, so the list clears without waiting for the next cron visit.
+ */
+export async function resolveReviewRow(
+  logId: number,
+): Promise<{ ok: true; current: number } | { ok: false; error: string }> {
+  await requireAdmin();
+
+  const { data: row, error } = await db
+    .from("base_price_sync_log")
+    .select("id,event_id,component,old_price,live_price,status")
+    .eq("id", logId)
+    .single();
+  if (error || !row) {
+    console.error("price-changes: resolve load failed", JSON.stringify(error));
+    return { ok: false, error: "Log row not found" };
+  }
+  if (row.status !== "needs_review") {
+    return { ok: false, error: "Only needs-review rows can be resolved" };
+  }
+
+  const column =
+    row.component === "flight" ? "base_flight_price" : "base_hotel_price";
+  const { data: event, error: eventError } = await db
+    .from("events")
+    .select(column)
+    .eq("id", row.event_id)
+    .single();
+  if (eventError || !event) {
+    console.error("price-changes: resolve event load failed", JSON.stringify(eventError));
+    return { ok: false, error: "Event not found" };
+  }
+  const current = Number(event[column] ?? 0);
+  const unchanged = row.old_price != null && current === row.old_price;
+  const note = unchanged
+    ? `סומן כעודכן ידנית · האירוע עדיין מחזיק $${current} (ללא שינוי) · live $${row.live_price}`
+    : `עודכן ידנית באירוע → $${current} · live $${row.live_price}`;
+
+  const { error: flipError } = await db
+    .from("base_price_sync_log")
+    .update({ new_price: current, status: "applied", note })
+    .eq("id", logId);
+  if (flipError) {
+    console.error("price-changes: resolve flip failed", JSON.stringify(flipError));
+    return { ok: false, error: "Could not update the log row" };
+  }
+
+  await logAudit({
+    action: "base_price.resolve_review",
+    entityType: "event",
+    entityId: row.event_id,
+    changes: { component: row.component, from: row.old_price, to: current, live: row.live_price },
+  });
+  return { ok: true, current };
+}

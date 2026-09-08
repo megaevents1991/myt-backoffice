@@ -167,8 +167,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "אירועים עם מלאי offline מקושר מוחרגים פר רכיב — מלאי קבוע אומר שהמחיר הוא החלטה שלך, לא קריאת שוק.",
       ),
       t(
-        "The Price Changes screen shows everything the sync did and holds the frozen changes with an approve button.",
-        "מסך שינויי המחיר מראה כל מה שהסנכרון עשה ומחזיק את השינויים הקפואים עם כפתור אישור.",
+        "The Price Changes screen shows everything the sync did and holds the frozen changes with two buttons: Approve writes the live price onto the event; Updated in event closes the row after you set the price by hand inside the event (it records what the event holds now, no waiting for the next cron).",
+        "מסך שינויי המחיר מראה כל מה שהסנכרון עשה ומחזיק את השינויים הקפואים עם שני כפתורים: אשר עדכון כותב את מחיר השוק לאירוע; עודכן באירוע סוגר את השורה אחרי שעדכנת את המחיר ידנית בתוך האירוע (נרשם מה שהאירוע מחזיק עכשיו, בלי לחכות ל-cron הבא).",
       ),
     ],
     rules: [
