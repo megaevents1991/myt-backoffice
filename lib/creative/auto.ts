@@ -13,6 +13,7 @@
  * to the original card image untouched). Regeneration is hash-driven:
  * date/price/name change → new hash → re-render next run.
  */
+import { fixturePair } from "@/lib/creative/fixture";
 import { createHash } from "node:crypto";
 import { supabase } from "@/lib/supabase-server";
 import {
@@ -207,10 +208,7 @@ export async function deriveCreativeDefaults(
   // structure decides - "A - B" names are matches; a name that doesn't split
   // in two and exists in the artists table is an artist show.
   const splitsInTwo = [event.name, event.name_english].some(
-    (source) =>
-      source &&
-      source.split(/\s+[-–-]\s+|\s+vs\.?\s+/i).map((p) => p.trim()).length ===
-        2,
+    (source) => fixturePair(source) !== null,
   );
   // A per-event cut-out (art_image_url) is itself strong evidence this is a
   // single-subject show, regardless of whether an artists-table row exists -
@@ -360,8 +358,8 @@ export async function deriveCreativeDefaults(
   // Try both names; first one that splits into exactly two parts wins.
   for (const source of [event.name, event.name_english]) {
     if (!source) continue;
-    const parts = source.split(/\s+[-–-]\s+|\s+vs\.?\s+/i).map((p) => p.trim());
-    if (parts.length !== 2) continue;
+    const parts = fixturePair(source);
+    if (!parts) continue;
     const home = matchPerson(parts[0], subjects);
     const away = matchPerson(parts[1], subjects);
     if (home && away && home.ref !== away.ref) {
