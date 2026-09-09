@@ -45,9 +45,11 @@ create index if not exists google_reviews_place_published_idx
   on public.google_reviews (place_id, published_at desc);
 
 -- The Places API and the seed encode review ids differently, so the sync also
--- matches on author + publish day to avoid mirroring the same review twice.
+-- matches on author + publish day (a range on published_at) to avoid
+-- mirroring the same review twice. Plain columns: `published_at::date` is not
+-- IMMUTABLE on timestamptz, so it cannot be an index expression.
 create index if not exists google_reviews_author_day_idx
-  on public.google_reviews (place_id, author_name, (published_at::date));
+  on public.google_reviews (place_id, author_name, published_at);
 
 alter table public.google_review_sources enable row level security;
 alter table public.google_reviews enable row level security;
