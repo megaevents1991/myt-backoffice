@@ -196,6 +196,7 @@ fallback for manual triggers:
 - `nightlyCampaignCreatives` - feed creatives every 4h (backlog drains ~35/run)
 - `publishMetaFeed` - copies the live feed to the Storage file Meta reads, 6x/day (05,08,11,14,17,20 UTC)
 - `partnerMonthlyReport` - partner report monthly
+- `googleReviewsSync` - daily 04:00 UTC: mirrors the Mega Events Google Business reviews into `google_reviews` / `google_review_sources` via the Places API (New) (`lib/services/google-reviews-sync.ts`). Places returns ≤5 reviews per call, so the mirror only accumulates; the 71-review backlog was seeded once from the retired Elfsight widget's feed (`scripts/seed-google-reviews-from-elfsight.mjs`). myt-main renders "לקוחות משתפים" from these tables (its own carousel - Elfsight is gone, 2026-09-09). Needs `NEXT_SECRET_GOOGLE_PLACES_API_KEY`.
 - `base-price-sync` - nightly 01:30 UTC: re-quotes live future events through `price-quote.ts`; deviation ≥$20 per component rewrites the base, >$400 freezes as `needs_review` (`/price-changes`); skips offline-linked components (`flights.event_ids` / `offline_hotels.event_ids`), base=0, events <2 days out. **Rotation** (2026-09-07): the 270s budget covers ~50 events, so each night takes the least-recently-visited first (newest log row per event = last visit), next-45-days ahead of the rest. **Every visit is logged** - `applied` / `needs_review` / `skipped` / `error` with the arithmetic in `note` - so the screen answers "why didn't it move". **`?dry_run=1` computes everything with zero writes** (no event update, no log row, rotation not advanced) - the way to test against prod from a preview. Daily summary email to `NEXT_SECRET_ADMIN_EMAIL` when anything happened.
 
 ### Environment Variables
@@ -277,6 +278,12 @@ NEXT_SECRET_SESSION_SECRET=
 NEXT_PUBLIC_APP_URL=
 NEXT_SECRET_EMAIL_SERVER_USER=
 NEXT_SECRET_EMAIL_SERVER_PASSWORD=
+# Google Places API (New) key for the daily googleReviewsSync cron. Restrict it
+# to the Places API; without it the cron 500s and the site keeps showing the
+# mirrored reviews it already has. NEXT_SECRET_GOOGLE_PLACE_ID is optional and
+# defaults to the Mega Events profile (ChIJ4_iJNrNJZWoRHYuKTpYGzDE).
+NEXT_SECRET_GOOGLE_PLACES_API_KEY=
+NEXT_SECRET_GOOGLE_PLACE_ID=
 # Optional - P1 feed URLs have hardcoded fallback values in p1-events-sync.ts
 NEXT_SECRET_P1_EVENTS_FEED_URL=
 NEXT_SECRET_P1_TICKETS_FEED_URL=
@@ -286,7 +293,7 @@ NEXT_SECRET_P1_TICKETS_FEED_URL=
 
 Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, `locations`, `p1_events`, `live_events`, `sports_events`, `offline_flights`, `tixstock_events`. Managed via Supabase (PostgreSQL).
 
-Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `event_drafts`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`. Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
+Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `event_drafts`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`. Same shape but READ by main with its service client: `google_reviews` + `google_review_sources` (the site's "לקוחות משתפים"; `is_hidden` pulls a review off the site). Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
 
 ### Migrations (Supabase CLI)
 
