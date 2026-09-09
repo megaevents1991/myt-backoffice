@@ -467,6 +467,51 @@ function renderCompetitorPricingDescription(response: CompetitorPricingResponse)
 
 // Extracted from the usual_price column cell — hooks aren't allowed inside a
 // TanStack cell render function.
+// Quick edit of the per-event "Additional Event Markup" (USD). Commits on
+// blur / Enter, Escape restores. Empty = null (cleared), mirroring the editor.
+function AdditionalMarkupCell({
+  value,
+  onCommit,
+}: {
+  value: number | null;
+  onCommit: (next: number | null) => void;
+}) {
+  const [draft, setDraft] = useState(value == null ? "" : String(value));
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed === "") {
+      onCommit(null);
+      return;
+    }
+    const n = Number(trimmed);
+    if (!Number.isFinite(n)) {
+      setDraft(value == null ? "" : String(value));
+      return;
+    }
+    onCommit(Math.round(n));
+  };
+  return (
+    <Input
+      type="number"
+      step={1}
+      inputMode="numeric"
+      placeholder="-"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") {
+          setDraft(value == null ? "" : String(value));
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      onClick={(e) => e.stopPropagation()}
+      className={`h-8 w-[88px] tabular ${value ? "font-semibold text-teal-700 dark:text-teal-400" : ""}`}
+    />
+  );
+}
+
 function UsualPriceCell({
   event,
   price,
@@ -717,6 +762,35 @@ export function EventsTable() {
         variant: "destructive",
         title: "Error",
         description: "Failed to duplicate event. Please try again.",
+      });
+    }
+  };
+
+  // Inline edit of event_additional_markup from the table (same field as the
+  // editor's "Additional Event Markup"). null = cleared.
+  const handleUpdateAdditionalMarkup = async (id: number, value: number | null) => {
+    const original = events.find((e) => e.id === id);
+    const previous = original?.event_additional_markup ?? null;
+    if (previous === value) return;
+    setEvents((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, event_additional_markup: value } : e))
+    );
+    try {
+      await updateEvent(id, { event_additional_markup: value });
+      toast({
+        title: "Event updated",
+        description:
+          value == null ? "Additional markup cleared." : `Additional markup set to $${value}.`,
+      });
+    } catch (error) {
+      console.error("Error updating additional markup:", error);
+      setEvents((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, event_additional_markup: previous } : e))
+      );
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update additional markup.",
       });
     }
   };
@@ -1747,6 +1821,27 @@ export function EventsTable() {
           </Select>
         );
       },
+    },
+    {
+      accessorKey: "event_additional_markup",
+      header: ({ column }) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="px-0"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          Add. Markup
+          <ArrowUpDown className="ml-1 h-3 w-3" />
+        </Button>
+      ),
+      cell: ({ row }) => (
+        <AdditionalMarkupCell
+          key={`${row.original.id}-${row.original.event_additional_markup ?? ""}`}
+          value={row.original.event_additional_markup ?? null}
+          onCommit={(next) => handleUpdateAdditionalMarkup(row.original.id, next)}
+        />
+      ),
     },
     {
       accessorKey: "is_prioritized",

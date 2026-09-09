@@ -42,6 +42,7 @@ import {
 } from "@/types/form.types";
 import { adminLabel, hasAnyLang } from "@/lib/forms/i18n";
 import { BRAND_ACCENTS, DEFAULT_ACCENT } from "@/lib/forms/brand";
+import { GOOGLE_REVIEW_LINKS } from "@/lib/forms/review-links";
 import { StorageImageBrowser } from "@/components/storage-image-browser";
 import type {
   Form,
@@ -522,6 +523,35 @@ export function FormBuilder({ form, initialFields }: Props) {
                   value={reviewLink}
                   onChange={(e) => touch(setReviewLink)(e.target.value)}
                 />
+                {/* One click per business profile; any other URL still works. */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {GOOGLE_REVIEW_LINKS.map((preset) => {
+                    const active = reviewLink === preset.url;
+                    return (
+                      <Button
+                        key={preset.key}
+                        type="button"
+                        size="sm"
+                        variant={active ? "default" : "outline"}
+                        className="h-7 px-2 text-xs"
+                        onClick={() => touch(setReviewLink)(preset.url)}
+                      >
+                        Google · {preset.label}
+                      </Button>
+                    );
+                  })}
+                  {reviewLink && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => touch(setReviewLink)("")}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   Offered after submit when the average of the scored star
                   questions (mark them per question with “Google score”)
