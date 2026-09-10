@@ -92,7 +92,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   columns explicitly + validate prices/commission are positive finite (pattern:
 >   `offline-hotel-room-actions.ts` `replaceOfflineHotelRooms`).
 > - **Unauth resource-abuse proxies** (`validate-airline` headless Chromium, `flights/search`
->   Amadeus prod, `*/tickets`, `competitor-pricing`) - add auth or shared-secret + rate limit.
+>   Amadeus prod, `*/tickets`) - add auth or shared-secret + rate limit.
 > - **Secret in URL** on `hotels/search` - move to a header + rotate (cross-project with main).
 
 ## Always-on rules (auto-loaded)
@@ -219,6 +219,8 @@ fallback for manual triggers:
 - `partnerMonthlyReport` - partner report monthly
 - `googleReviewsSync` - daily 04:00 UTC: mirrors the Mega Events Google Business reviews into `google_reviews` / `google_review_sources` (`lib/services/google-reviews-sync.ts`). Source per run: Places API (New) when `NEXT_SECRET_GOOGLE_PLACES_API_KEY` is set (live rating/count, ≤5 reviews per call, no owner replies), **otherwise Elfsight's public review feed for our Place ID** (all reviews + replies; unofficial endpoint, refreshed on Elfsight's schedule - a failure lands in `google_review_sources.sync_error` and the site keeps what it has). The mirror only accumulates. Initial 71 rows seeded with `scripts/seed-google-reviews-from-elfsight.mjs`. myt-main renders "לקוחות משתפים" from these tables (its own carousel - the Elfsight widget is gone, 2026-09-09).
 - `base-price-sync` - nightly 01:30 UTC: re-quotes live future events through `price-quote.ts`; deviation ≥$20 per component rewrites the base, >$400 freezes as `needs_review` (`/price-changes`); skips offline-linked components (`flights.event_ids` / `offline_hotels.event_ids`), base=0, events <2 days out. **Rotation** (2026-09-07): the 270s budget covers ~50 events, so each night takes the least-recently-visited first (newest log row per event = last visit), next-45-days ahead of the rest. **Every visit is logged** - `applied` / `needs_review` / `skipped` / `error` with the arithmetic in `note` - so the screen answers "why didn't it move". **`?dry_run=1` computes everything with zero writes** (no event update, no log row, rotation not advanced) - the way to test against prod from a preview. Daily summary email to `NEXT_SECRET_ADMIN_EMAIL` when anything happened.
+- `price-light-crawl` - hourly tick (`7 * * * *`): crawls at most ONE competitor whose site is due (48h interval, `intervalHours` per scraper in `lib/services/competitor-scrapers/`), writing `competitor_listings`. Locking is a `competitor_crawl_runs` row in status `running` younger than 6 min - not an advisory lock. `?competitor=liveevents` forces a site (validated against `ACTIVE_COMPETITORS`), `?dry_run=1` writes nothing. Stealth is code, not a promise: one session at a time, 20-60s random pauses, blocked images/media/fonts/stylesheets, rotating Israeli UA, 45s page / 240s crawl timeout. Three consecutive `blocked`/`error` runs open a circuit for 24h (manual crawls bypass it); a listing-count drop ≥50% vs the last good run marks the run `partial` and emails `NEXT_SECRET_ADMIN_EMAIL`. `PRICE_LIGHT_SCRAPE=off` stops crawling (matching/lights still run off the stored catalog). Admin "crawl now" is `POST /api/price-light/crawl` (`guardAdminRoute`).
+- `price-light-nightly` - 00:15 UTC, before `base-price-sync`: refreshes the `livetickets` competitor table from `live_events` first (it's an API read, never crawled, budgeted at 60s so it can't eat the whole run); then pass 1 snapshots every live future event and applies the "ירידת מחיר" tag (drop ≥$50 vs ~14 days ago, shown 14 days); pass 2 rule-matches every event against the stored catalogs and recomputes `events.light_package` / `light_ticket` / `light_detail`. Both passes go least-recently-checked first and share one 270s budget measured from the top of the run, so a cutoff mid-pass-1 is recorded (`snapshotsRemaining`) rather than silently skipped. Revalidates main (both targets) once if anything changed; summary email. `?dry_run=1` = zero writes. Spec `docs/superpowers/specs/2026-09-09-price-light-design.md`; rules + constants ONLY in `lib/services/price-light.ts`.
 
 ### Environment Variables
 
@@ -255,6 +257,31 @@ Spec: `docs/superpowers/specs/2026-09-02-events-factory-design.md`. Three paths 
 - **Batch from every provider**: Live/P1/Sports tables have multi-select + Create-N; the stash is `{ provider, rows }` (`lib/provider-batch.ts` mappers are identity-only - name/date/venue/coords/smart dates; tickets come from stadium memory, not from provider live tickets, which stay on the single-event pages).
 - **Factory** (`/factory`, `lib/actions/factory-actions.ts`, table `event_drafts`): "Send to factory" from any provider bar creates draft rows; the page loops `buildNextDraft()` one draft per call (stoppable) through the blocks above and records what stayed empty in `missing`; the grid inline-edits name/iata/prices (amber = missing), bulk-approve calls `createEvent` per draft. Drafts are a separate table on purpose - main never sees them. Terminal rows purge after 30 days.
 - **Form cleanup**: legacy composed-pricing markups (`markup_ticket/flight/hotel`, `skip_hotel_markup`) sit in a collapsed Advanced section (auto-opens when used); `usual_price` is gone from the UI but the column stays (main's feed uses it as a last-resort price fallback).
+
+### Price light (רמזור) (2026-09-10, phase 0)
+
+Spec `docs/superpowers/specs/2026-09-09-price-light-design.md`; phase-0 task plan
+`docs/superpowers/plans/2026-09-10-price-light-phase-0.md`; LiveEvents site recon
+`docs/superpowers/scrapers/liveevents.md`. Own Playwright crawler per competitor site
+(no Firecrawl - rejected in the design doc), never more than one site per 48h, matched
+rule-first against our catalog and shown as two traffic-light pills (package / ticket)
+on the events table. Rules, thresholds and normalization constants live ONLY in
+`lib/services/price-light.ts` (pure, no DB/fetch - runs under plain `node` via
+`scripts/price-light-selftest.ts`); the crawl loop is `lib/services/price-light-crawl.ts`,
+matching is `lib/services/price-light-match.ts`, the nightly pass is
+`lib/services/price-light-nightly.ts`, event-column read/write is
+`lib/services/price-light-store.ts`, and each site's crawler lives in
+`lib/services/competitor-scrapers/` (phase 0: `liveevents.ts` browser-mode, `livetickets-api.ts`
+table-mode reading `live_events`). Browser acquisition (local `@sparticuz/chromium` vs remote
+CDP, UA/viewport rotation, stealth headers) is centralized in `lib/services/browser.ts` - no
+other file launches a browser. UI: `app/(dashboard)/events/price-light-cell.tsx` (pills, tooltip,
+refresh, history sheet) via `lib/actions/price-light-actions.ts`. Local tooling:
+`scripts/scrape-fixture.ts <competitor> [--save]` (parser regression on saved HTML),
+`scripts/scrape-once.ts <competitor>` (live dry-run), `scripts/livetickets-brt-check.ts` (spot-checks
+the `brt` = shelf-price assumption). The old `/api/competitor-pricing` route and its bulk-check
+dialog on `/events` are gone - `createEvent` matches new events instantly (`on_create`) instead.
+`comp_pricing` column/type is untouched here (removal is a separate PR). Phase 2 adds ISSTA,
+Golasso, OnTour and the AI judge (`PRICE_LIGHT_AI`).
 
 ### Types
 
@@ -308,13 +335,27 @@ NEXT_SECRET_GOOGLE_PLACE_ID=
 # Optional - P1 feed URLs have hardcoded fallback values in p1-events-sync.ts
 NEXT_SECRET_P1_EVENTS_FEED_URL=
 NEXT_SECRET_P1_TICKETS_FEED_URL=
+# Price light (רמזור). "off" is the kill switch - crawls report `skipped`, matching/lights
+# still run off the stored catalog. Default "on" when unset.
+PRICE_LIGHT_SCRAPE=
+# Phase 1 - AI judge for ambiguous matches (rule-match is phase 0's only matcher). "off" default.
+PRICE_LIGHT_AI=
+PRICE_LIGHT_AI_MODEL=
+# Set -> crawler connects to a remote stealth browser over CDP (Browserbase/Bright Data) and
+# that provider owns the fingerprint (UA/locale/timezone/proxy). Unset -> local @sparticuz/chromium.
+NEXT_SECRET_BROWSER_CDP_URL=
+# Optional residential proxy for the LOCAL chromium path only (ignored when CDP is set above).
+NEXT_SECRET_SCRAPE_PROXY_URL=
+# Dev-only override so `scripts/scrape-once.ts` can drive a real local Chrome instead of
+# @sparticuz/chromium; never read in production (NODE_ENV check).
+LOCAL_CHROME_PATH=
 ```
 
 ## Database
 
 Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, `locations`, `p1_events`, `live_events`, `sports_events`, `offline_flights`, `tixstock_events`. Managed via Supabase (PostgreSQL).
 
-Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `event_drafts`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`. Same shape but READ by main with its service client: `google_reviews` + `google_review_sources` (the site's "לקוחות משתפים"; `is_hidden` pulls a review off the site). Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
+Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `event_drafts`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`, `competitor_crawl_runs`, `competitor_listings`, `competitor_matches`, `event_price_snapshots`. Same shape but READ by main with its service client: `google_reviews` + `google_review_sources` (the site's "לקוחות משתפים"; `is_hidden` pulls a review off the site). Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
 
 ### Migrations (Supabase CLI)
 

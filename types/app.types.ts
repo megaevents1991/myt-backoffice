@@ -104,6 +104,18 @@ export type Event = {
     /** User-chosen color override for date_mismatch results */
     colorOverride?: "green" | "yellow" | "red" | "blue";
   } | null;
+  // Price light (רמזור) - written by the backoffice nightly/crawl crons
+  // (lib/services/price-light-store.ts). Main reads light_package + the three
+  // price_drop_* columns only (phase 3). Values: alone|green|orange|red|unchecked|na;
+  // null = unchecked. Synced to main lib/app.types.ts.
+  light_package?: string | null;
+  light_ticket?: string | null;
+  light_detail?: import("./price-light.types").LightDetail | null;
+  light_checked_at?: string | null;
+  light_silenced_until?: string | null;
+  price_drop_usd?: number | null;
+  price_drop_from?: number | null;
+  price_drop_until?: string | null; // YYYY-MM-DD
 };
 
 export type Flight = {

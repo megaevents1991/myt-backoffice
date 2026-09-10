@@ -8,14 +8,16 @@ import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 import { applyTagRules } from "@/lib/services/auto-tagger";
 
 // Exactly the columns the events LIST page reads (table cells, filters,
-// auto-calc, competitor-pricing dialog). Sole consumer is events-table.tsx;
-// the edit/view pages fetch their own full row via getEvent(). Soft-deleted
+// auto-calc, price-light column). Sole consumer is events-table.tsx; the
+// edit/view pages fetch their own full row via getEvent(). Soft-deleted
 // rows stay included - the list has a "show deleted" toggle.
 const EVENT_LIST_COLUMNS =
-  "id,name,name_english,type,date,location,usual_price,comp_pricing," +
+  "id,name,name_english,type,date,location,usual_price," +
   "tags,skip_flight,is_prioritized,is_deleted," +
   "tickets_and_rates,def_date_depart,def_date_return," +
-  "base_flight_price,base_hotel_price,event_additional_markup";
+  "base_flight_price,base_hotel_price,event_additional_markup," +
+  "light_package,light_ticket,light_detail,light_checked_at,light_silenced_until," +
+  "price_drop_usd,price_drop_from,price_drop_until";
 
 export async function getEvents() {
   await requireStaff();
@@ -83,11 +85,28 @@ export async function createEvent(event: Omit<Event, "id">) {
   } catch (e) {
     console.error("auto-tag on create failed:", e);
   }
+  // Price light: match the new event against the stored competitor catalogs
+  // right away (seconds, no browsing). Tolerant - the nightly run completes it.
+  try {
+    const { matchAllForEvent } = await import("@/lib/services/price-light-match");
+    await matchAllForEvent(created.id, "on_create");
+  } catch (e) {
+    console.error("price-light on create failed:", e);
+  }
   return created;
 }
 
-export async function updateEvent(id: number, event: Partial<Event>) {
+export async function updateEvent(id: number, input: Partial<Event>) {
   await requireStaff();
+  // The lights and the price-drop tag are owned by the price-light crons - a
+  // form save must never write them back (stale copy from page load).
+  const {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    light_package: _lp, light_ticket: _lt, light_detail: _ld, light_checked_at: _lc, light_silenced_until: _ls,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    price_drop_usd: _pu, price_drop_from: _pf, price_drop_until: _pt,
+    ...event
+  } = input;
   const before = await fetchBefore("events", "id", id, event);
   const { data, error } = await supabase
     .from("events")

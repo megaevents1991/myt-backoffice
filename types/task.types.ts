@@ -22,8 +22,9 @@ export const PRIORITY_ORDER: Record<TaskPriority, number> = {
  * creative_gap - born from the gaps radar (source_ref = the gap).
  * price_review - born from a frozen row on /price-changes (source_ref =
  *   the event: kind "price_review", table "events", row_id = event id).
+ * price_light - born from a red light on /price-light (source_ref = the event, kind = the scope).
  */
-export const TASK_SOURCES = ["manual", "creative_gap", "price_review"] as const;
+export const TASK_SOURCES = ["manual", "creative_gap", "price_review", "price_light"] as const;
 export type TaskSource = (typeof TASK_SOURCES)[number];
 
 /**

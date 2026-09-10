@@ -191,6 +191,55 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    id: "price-light",
+    title: t("Price light (רמזור)", "רמזור מחירים"),
+    intro: t(
+      "A traffic-light column on the events table (right after the usual price) shows how our price compares to competitors, per event. It never changes a price by itself - it's a read, not a rule.",
+      "עמודת רמזור בטבלת האירועים (מיד אחרי המחיר הרגיל) מראה איך המחיר שלנו עומד מול המתחרים, לכל אירוע. הרמזור לא משנה מחיר בעצמו — הוא קריאה, לא כלל.",
+    ),
+    points: [
+      t(
+        "Two pills per event: Pkg (package price vs. LiveEvents/ISSTA/Golasso) and Tkt (ticket-only price vs. LiveTickets). The number shown is our price minus the cheapest matched competitor, after normalizing their listing to look like ours (direct flight, no bag, 3-star, our number of nights, no breakfast, no transfers).",
+        "שני תגים לכל אירוע: Pkg (מחיר חבילה מול LiveEvents/ISSTA/Golasso) ו-Tkt (מחיר כרטיס בלבד מול LiveTickets). המספר המוצג הוא המחיר שלנו פחות המתחרה הזול ביותר שהותאם, אחרי נירמול המודעה שלו כך שתידמה לשלנו (טיסה ישירה, בלי מזוודה, 3 כוכבים, מספר הלילות שלנו, בלי ארוחת בוקר, בלי העברות).",
+      ),
+      t(
+        "Colors: green = we're more than $150 cheaper (after normalization), red = we're more than $150 pricier, orange = within that ±$150 band, grey \"unchecked\" = no fresh, usable match yet, \"alone\" (green-family) = every active competitor was checked and none sells it, a plain dash = not applicable (e.g. no ticket-only price is configured for that event). Unchecked is NEVER read as green - it means we don't know, not that we're fine.",
+        "צבעים: ירוק = זולים ביותר מ-150$ (אחרי נירמול), אדום = יקרים ביותר מ-150$, כתום = בטווח ה-±150$, אפור \"unchecked\" = אין עדיין התאמה טרייה ושמישה, \"alone\" (במשפחת הירוק) = כל המתחרים הפעילים נבדקו ואף אחד לא מוכר את האירוע, מקף פשוט = לא רלוונטי (למשל אין מחיר כרטיס-בלבד מוגדר לאירוע). Unchecked לעולם לא נקרא כירוק — הוא אומר שאין מידע, לא שהכול בסדר.",
+      ),
+      t(
+        "Hover a pill for the tooltip: which competitor, their raw price and currency, the normalized USD number, every adjustment applied (bag/connection/stars/nights/breakfast/transfers), and when it was crawled. Click a pill to open the history sheet - every match attempt logged for that event.",
+        "hover על תג מציג טולטיפ: איזה מתחרה, המחיר הגולמי שלו והמטבע, המספר המנורמל בדולר, כל התאמה שהופעלה (מזוודה/קונקשיין/כוכבים/לילות/ארוחת בוקר/העברות), ומתי נסרק. קליק על תג פותח את גיליון ההיסטוריה — כל ניסיון התאמה שנרשם לאירוע הזה.",
+      ),
+      t(
+        "The refresh icon re-runs matching against the catalogs already stored in the database - it does NOT browse the competitor sites live, so it's instant and safe to click often.",
+        "אייקון הרענון מריץ שוב את ההתאמה מול הקטלוגים שכבר שמורים בבסיס הנתונים — הוא לא גולש לאתרי המתחרים בזמן אמת, ולכן מהיר ובטוח ללחוץ עליו הרבה.",
+      ),
+      t(
+        "\"ירידת מחיר\" tag: when our price drops $50+ compared to about 14 days ago, the event gets tagged automatically and stays tagged for 14 days (or until the price climbs back within $50 of where it dropped from, whichever is first). This runs in the nightly pass, not the hourly crawl.",
+        "תג \"ירידת מחיר\": כשהמחיר שלנו יורד ב-50$ ומעלה לעומת לפני כ-14 יום, האירוע מתויג אוטומטית ונשאר מתויג 14 יום (או עד שהמחיר חוזר לטווח 50$ מהמחיר שממנו ירד - המוקדם מביניהם). זה קורה בריצה הלילית, לא בסריקה השעתית.",
+      ),
+      t(
+        "Sports events checked against LiveEvents show grey, not because nothing was found but because that site's sports board only quotes a price after you pick dates - it never publishes one on the catalog page. That gets resolved in phase 2; until then the light there is honestly \"unknown\", not a claim about the price.",
+        "אירועי ספורט שנבדקים מול LiveEvents מוצגים באפור לא כי לא נמצא כלום, אלא כי לוח הספורט של האתר ההוא מציג מחיר רק אחרי בחירת תאריכים — הוא אף פעם לא מפרסם מחיר בדף הקטלוג. זה ייפתר בשלב 2; עד אז האור שם אומר בכנות \"לא ידוע\", לא טענה על המחיר.",
+      ),
+      t(
+        "Each competitor site is crawled at most once every 48 hours, one crawl running at a time system-wide (an hourly check picks whichever due site has waited longest). LiveTickets is the exception - its numbers come from the same live_events sync that already runs twice a day, so there's no separate crawl for it.",
+        "כל אתר מתחרה נסרק לכל היותר פעם ב-48 שעות, סריקה אחת רצה בכל זמן נתון במערכת (בדיקה שעתית בוחרת את האתר הכי \"רעב\" שממתין). LiveTickets הוא היוצא מן הכלל — המספרים שלו מגיעים מאותו סנכרון live_events שכבר רץ פעמיים ביום, אז אין לו סריקה נפרדת.",
+      ),
+      t(
+        "PRICE_LIGHT_SCRAPE=off is the kill switch: it stops all crawling (runs show as skipped) but matching and the lights keep working off whatever was already crawled - flip it off if a competitor site ever needs to be left alone.",
+        "PRICE_LIGHT_SCRAPE=off הוא מפסק החירום: הוא עוצר את כל הסריקה (ריצות מוצגות כ-skipped) אבל ההתאמה והרמזור ממשיכים לעבוד על מה שכבר נסרק — מכבים אותו אם אתר מתחרה צריך להישאר בשקט.",
+      ),
+    ],
+    rules: [
+      t(
+        "A red or orange light does nothing on its own - no auto-adjustment, no alert to a customer. Reading the light and deciding what to do about it is a person's job (a dedicated decision screen is coming in phase 1).",
+        "אור אדום או כתום לא עושה כלום לבד — בלי התאמה אוטומטית, בלי התראה ללקוח. קריאת האור וההחלטה מה לעשות איתו היא עבודה של בן אדם (מסך החלטה ייעודי מגיע בשלב 1).",
+      ),
+    ],
+    links: [{ label: t("Events table", "טבלת אירועים"), href: "/events" }],
+  },
+  {
     id: "sources",
     title: t("Event sources - the providers", "מקורות אירועים — הספקים"),
     intro: t(
