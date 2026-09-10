@@ -17,15 +17,21 @@ export const PRIORITY_ORDER: Record<TaskPriority, number> = {
   low: 3,
 };
 
-export const TASK_SOURCES = ["manual", "creative_gap"] as const;
+/**
+ * manual - typed in by a person.
+ * creative_gap - born from the gaps radar (source_ref = the gap).
+ * price_review - born from a frozen row on /price-changes (source_ref =
+ *   the event: kind "price_review", table "events", row_id = event id).
+ */
+export const TASK_SOURCES = ["manual", "creative_gap", "price_review"] as const;
 export type TaskSource = (typeof TASK_SOURCES)[number];
 
 /**
- * Where a creative_gap task came from - enough to link back to the screen
- * that fixes it and to spot "this gap already has an open task".
+ * Where a sourced task came from - enough to link back to the screen that
+ * fixes it and to spot "this gap / event already has an open task".
  */
 export interface TaskSourceRef {
-  /** Gap kind, e.g. "team_logo" | "hero_image" | "gallery" | "event_creative". */
+  /** Gap kind ("team_logo", "artist_hero", …) or "price_review". */
   kind: string;
   table: string;
   row_id: string | number;

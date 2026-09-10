@@ -2,6 +2,7 @@
 
 import { requireAdmin } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
+import { softDeleteEvent } from "@/lib/actions/event-actions";
 import { supabase } from "@/lib/supabase-server";
 
 // base_price_sync_log predates the generated database types - cast once at
@@ -13,6 +14,8 @@ export interface SyncLogRow {
   id: number;
   event_id: number;
   event_name: string | null;
+  /** ISO date of the event itself (not of the sync visit). */
+  event_date: string | null;
   component: string;
   old_price: number | null;
   new_price: number | null;
@@ -41,25 +44,81 @@ export async function listSyncLog(
     console.error("price-changes: log list failed", JSON.stringify(error));
     return [];
   }
-  const rows = (data ?? []) as Omit<SyncLogRow, "event_name">[];
+  const rows = (data ?? []) as Omit<SyncLogRow, "event_name" | "event_date">[];
 
-  // No FK on the log - resolve event names in one extra query.
+  // No FK on the log - resolve event name + date in one extra query. The date
+  // matters for triage: a frozen flight price two days out is a different job
+  // from one six months out (Tom, 2026-09-10).
   const eventIds = [...new Set(rows.map((row) => row.event_id))];
-  const nameOf = new Map<number, string | null>();
+  const eventOf = new Map<number, { name: string | null; date: string | null }>();
   if (eventIds.length > 0) {
     const { data: events, error: eventsError } = await db
       .from("events")
-      .select("id,name")
+      .select("id,name,date")
       .in("id", eventIds);
     if (eventsError) {
       console.error("price-changes: event names failed", JSON.stringify(eventsError));
     }
-    for (const event of (events ?? []) as { id: number; name: string | null }[]) {
-      nameOf.set(event.id, event.name);
+    for (const event of (events ?? []) as {
+      id: number;
+      name: string | null;
+      date: string | null;
+    }[]) {
+      eventOf.set(event.id, { name: event.name, date: event.date });
     }
   }
 
-  return rows.map((row) => ({ ...row, event_name: nameOf.get(row.event_id) ?? null }));
+  return rows.map((row) => ({
+    ...row,
+    event_name: eventOf.get(row.event_id)?.name ?? null,
+    event_date: eventOf.get(row.event_id)?.date ?? null,
+  }));
+}
+
+/**
+ * Takes the event off the site from the review screen (Tom, 2026-09-10:
+ * "להוסיף אפשרות להוריד מהאתר את האירוע מפה"). Soft delete - the same
+ * is_deleted date stamp the events table uses - and every open review row of
+ * that event is closed as skipped so the list clears.
+ */
+export async function removeEventFromSite(
+  logId: number,
+): Promise<{ ok: true; event_id: number } | { ok: false; error: string }> {
+  await requireAdmin();
+
+  const { data: row, error } = await db
+    .from("base_price_sync_log")
+    .select("id,event_id,status")
+    .eq("id", logId)
+    .single();
+  if (error || !row) {
+    console.error("price-changes: remove load failed", JSON.stringify(error));
+    return { ok: false, error: "Log row not found" };
+  }
+
+  try {
+    await softDeleteEvent(row.event_id);
+  } catch (deleteError) {
+    console.error("price-changes: soft delete failed", JSON.stringify(deleteError));
+    return { ok: false, error: "Could not remove the event" };
+  }
+
+  const { error: flipError } = await db
+    .from("base_price_sync_log")
+    .update({ status: "skipped", note: "האירוע הוסר מהאתר ממסך שינויי המחיר" })
+    .eq("event_id", row.event_id)
+    .eq("status", "needs_review");
+  if (flipError) {
+    console.error("price-changes: remove flip failed", JSON.stringify(flipError));
+  }
+
+  await logAudit({
+    action: "base_price.remove_event",
+    entityType: "event",
+    entityId: row.event_id,
+    changes: { from_log_id: logId },
+  });
+  return { ok: true, event_id: row.event_id };
 }
 
 /**

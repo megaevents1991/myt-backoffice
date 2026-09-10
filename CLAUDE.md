@@ -32,10 +32,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   (`:target` keyframes in globals.css + `components/deep-link-scroll.tsx`).
 >   Event editor sections carry `data-editor-section` for the `EditorRail`.
 > - **Tasks + creative gaps:** `/tasks` (table `tasks`, editor+ self, admins
->   assign) and the gaps radar (9 asset kinds, live queries; false gaps filed in
+>   assign) and the gaps radar (12 kinds - 9 visual + team/artist `bio` +
+>   category `page_content` text; live queries; false gaps filed in
 >   `creative_gap_dismissals`). A gap's **Do** button lands on the actual fix:
 >   team crest → `/assets?q=<team>`, missing creative → the event's `#fix-price`
 >   when `campaign_skip_reason` mentions price (the pipeline's only skip).
+>   Queue order (2026-09-10): severity → artists/teams **on sale now** (main's
+>   on-tour rule, mirrored in `lib/on-tour.ts`) before wishlist ones → hero
+>   gaps on entities that already have blob art sink last (`demoted`) → kind.
+>   Only `is_active` categories are checked. Assigning a task to someone else
+>   mails them (`lib/services/task-notify.ts`); a gap task set to **done**
+>   dismisses its gap (reopen restores). `/price-changes` rows can spawn a
+>   `price_review` task (one open per event) or soft-delete the event; the
+>   shared dialog is `components/task-editor.tsx`.
 > - **Pricing brain:** `lib/services/price-quote.ts` - see "Price Logic Chain".
 >   Nightly `base-price-sync` cron + `/price-changes` review screen
 >   (`base_price_sync_log`).

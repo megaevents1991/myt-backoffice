@@ -254,7 +254,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
             <FormItem className="md:col-span-2"><FormLabel>Preview text</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={form.control} name="bio" render={({ field }) => (
-            <FormItem className="md:col-span-2">
+            <FormItem id="fix-bio" className="scroll-mt-20 md:col-span-2">
               <FormLabel>Bio</FormLabel>
               <FormControl><Textarea rows={6} {...field} /></FormControl>
               <FormDescription>Plain paragraphs (blank line between). Existing formatting preserved unless you edit.</FormDescription>

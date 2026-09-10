@@ -10,6 +10,9 @@ export const GAP_KINDS = [
   "artist_gallery",
   "category_image",
   "blog_hero",
+  "team_bio",
+  "artist_bio",
+  "category_content",
 ] as const;
 export type GapKind = (typeof GAP_KINDS)[number];
 
@@ -89,6 +92,27 @@ export const GAP_META: Record<GapKind, GapMeta> = {
     severity: "warn",
     href: "/templates/blog",
   },
+  team_bio: {
+    kind: "team_bio",
+    label: "קבוצות בלי טקסט לעמוד",
+    short: "טקסט קבוצה",
+    severity: "warn",
+    href: "/templates/football",
+  },
+  artist_bio: {
+    kind: "artist_bio",
+    label: "אמנים בלי טקסט לעמוד",
+    short: "טקסט אמן",
+    severity: "warn",
+    href: "/templates/artists",
+  },
+  category_content: {
+    kind: "category_content",
+    label: "קטגוריות בלי תוכן עמוד",
+    short: "תוכן קטגוריה",
+    severity: "warn",
+    href: "/templates/categories",
+  },
 };
 
 export interface GapCounts {
@@ -112,6 +136,18 @@ export interface GapItem {
   fixUrl: string;
   /** Extra context (event date, skip reason). */
   detail?: string;
+  /**
+   * Live packages on the site for this artist / team right now (main's
+   * "on tour" rule, lib/on-tour.ts). Anything selling NOW outranks the
+   * wishlist in the queue; 0 / undefined for events, categories, posts.
+   */
+  liveEvents?: number;
+  /**
+   * The page still lacks its hero photo but the entity has blob card-art, so
+   * cards on the site already look right - listed, but ranked below the
+   * fully-missing ones (Dor, 2026-09-10: "להשאיר מונמך").
+   */
+  demoted?: boolean;
 }
 
 /**

@@ -9,12 +9,20 @@ import { supabase } from "@/lib/supabase-server";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
 import { logAudit } from "@/lib/audit";
+import { notifyTaskAssigned } from "@/lib/services/task-notify";
+import {
+  dismissCreativeGap,
+  restoreCreativeGap,
+} from "@/lib/actions/creative-gap-actions";
+import { gapKey } from "@/types/creative-gap.types";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   TASK_PRIORITIES,
+  TASK_SOURCES,
   TASK_STATUSES,
   type Task,
   type TaskPriority,
+  type TaskSource,
   type TaskSourceRef,
   type TaskStatus,
   type TaskWithNames,
@@ -43,6 +51,10 @@ function validStatus(value: string): value is TaskStatus {
 
 function validPriority(value: string): value is TaskPriority {
   return (TASK_PRIORITIES as readonly string[]).includes(value);
+}
+
+function validSource(value: string | undefined): value is TaskSource {
+  return !!value && (TASK_SOURCES as readonly string[]).includes(value);
 }
 
 /** Attach display names without a DB relation (no FK join over PostgREST needed). */
@@ -131,7 +143,7 @@ export async function createTask(input: {
   priority: TaskPriority;
   assignee_id?: string | null;
   due_date?: string | null;
-  source?: "manual" | "creative_gap";
+  source?: TaskSource;
   source_ref?: TaskSourceRef | null;
 }): Promise<CreateResult> {
   const session = await requireStaff();
@@ -154,7 +166,7 @@ export async function createTask(input: {
       assignee_id: assigneeId,
       created_by: session.sub,
       due_date: input.due_date || null,
-      source: input.source === "creative_gap" ? "creative_gap" : "manual",
+      source: validSource(input.source) ? input.source : "manual",
       source_ref: input.source_ref ?? null,
     })
     .select("id")
@@ -171,6 +183,20 @@ export async function createTask(input: {
     entityId: data.id,
     changes: { title, assignee_id: assigneeId, priority: input.priority },
   });
+
+  // Assigning someone else = they get a mail. Self-assignment stays quiet.
+  if (assigneeId && assigneeId !== session.sub) {
+    await notifyTaskAssigned({
+      taskId: data.id,
+      title,
+      description: input.description?.trim() || null,
+      priority: input.priority,
+      dueDate: input.due_date || null,
+      sourceRef: input.source_ref ?? null,
+      assigneeId,
+      assignerId: session.sub,
+    });
+  }
   return { ok: true, id: data.id };
 }
 
@@ -205,7 +231,19 @@ export async function updateTask(
   if (patch.assignee_id !== undefined) update.assignee_id = patch.assignee_id;
   if (patch.due_date !== undefined) update.due_date = patch.due_date || null;
 
-  const { error } = await db.from("tasks").update(update).eq("id", id);
+  // The row as it was - needed to tell a re-assignment from a plain edit.
+  const { data: before } = await db
+    .from("tasks")
+    .select("assignee_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  const { data: after, error } = await db
+    .from("tasks")
+    .update(update)
+    .eq("id", id)
+    .select("id,title,description,priority,assignee_id,due_date,source_ref")
+    .maybeSingle();
   if (error) {
     console.error("tasks: update failed", JSON.stringify(error));
     return { ok: false, error: "Update failed" };
@@ -217,6 +255,26 @@ export async function updateTask(
     entityId: id,
     changes: update,
   });
+
+  // Handed to a new person (not the editor themself) → mail them.
+  const newAssignee = (after?.assignee_id as string | null) ?? null;
+  if (
+    after &&
+    newAssignee &&
+    newAssignee !== (before?.assignee_id ?? null) &&
+    newAssignee !== session.sub
+  ) {
+    await notifyTaskAssigned({
+      taskId: id,
+      title: after.title,
+      description: after.description ?? null,
+      priority: after.priority,
+      dueDate: after.due_date ?? null,
+      sourceRef: (after.source_ref as TaskSourceRef | null) ?? null,
+      assigneeId: newAssignee,
+      assignerId: session.sub,
+    });
+  }
   return { ok: true };
 }
 
@@ -237,7 +295,7 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
     query = query.eq("assignee_id", session.sub);
   }
 
-  const { data, error } = await query.select("id");
+  const { data, error } = await query.select("id,source,source_ref");
   if (error) {
     console.error("tasks: status failed", JSON.stringify(error));
     return { ok: false, error: "Update failed" };
@@ -250,6 +308,25 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
     entityId: id,
     changes: { status },
   });
+
+  // A gap task marked done files the gap away with it (Tom, 2026-09-10: the
+  // radar kept listing it as "assigned to task" after the work was done).
+  // Reopening the task puts the gap back on the list.
+  const row = data[0] as { source: string; source_ref: TaskSourceRef | null };
+  if (row.source === "creative_gap" && row.source_ref) {
+    const ref = row.source_ref;
+    if (status === "done") {
+      await dismissCreativeGap({
+        kind: ref.kind,
+        table: ref.table,
+        row_id: ref.row_id,
+        label: ref.label,
+        note: "נסגר במשימה",
+      });
+    } else if (status === "todo" || status === "in_progress") {
+      await restoreCreativeGap(gapKey(ref.kind, ref.table, ref.row_id));
+    }
+  }
   return { ok: true };
 }
 
@@ -273,10 +350,13 @@ export async function deleteTask(id: string): Promise<Result> {
 }
 
 /**
- * Gap-ids ({table}:{row_id}) that already carry an OPEN task - the gaps tab
- * uses this to disable duplicate "create task" buttons.
+ * Source keys ({kind}:{table}:{row_id}) that already carry an OPEN task - the
+ * gaps tab and the price-changes screen use this to disable duplicate
+ * "create task" buttons. One source per call (creative_gap | price_review).
  */
-export async function openTaskGapKeys(): Promise<string[]> {
+export async function openTaskGapKeys(
+  source: Exclude<TaskSource, "manual"> = "creative_gap",
+): Promise<string[]> {
   await requireStaff();
 
   const { data, error } = await db
@@ -284,7 +364,7 @@ export async function openTaskGapKeys(): Promise<string[]> {
     .select("source_ref")
     .is("deleted_at", null)
     .in("status", ["todo", "in_progress"])
-    .eq("source", "creative_gap");
+    .eq("source", source);
   if (error) {
     console.error("tasks: gap-keys failed", JSON.stringify(error));
     return [];

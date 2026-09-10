@@ -11,19 +11,9 @@ import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -32,12 +22,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  createTask,
+  PRIORITY_LABEL,
+  TaskEditor,
+  type TaskEditorState,
+  type TaskPrefill,
+} from "@/components/task-editor";
+import {
   deleteTask,
   listTasks,
   openTaskGapKeys,
   setTaskStatus,
-  updateTask,
 } from "@/lib/actions/task-actions";
 import {
   dismissCreativeGap,
@@ -46,8 +40,7 @@ import {
   restoreCreativeGap,
   type DismissedGap,
 } from "@/lib/actions/creative-gap-actions";
-import { listUsers } from "@/lib/actions/user-actions";
-import { ADMIN_ROLES, STAFF_ROLES, type UserProfile } from "@/types/auth.types";
+import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   GAP_KINDS,
   GAP_META,
@@ -57,8 +50,8 @@ import {
 } from "@/types/creative-gap.types";
 import {
   PRIORITY_ORDER,
-  TASK_PRIORITIES,
   type TaskPriority,
+  type TaskSource,
   type TaskStatus,
   type TaskWithNames,
 } from "@/types/task.types";
@@ -77,20 +70,28 @@ const PRIORITY_STYLE: Record<TaskPriority, string> = {
   low: "bg-muted text-muted-foreground",
 };
 
-const PRIORITY_LABEL: Record<TaskPriority, string> = {
-  urgent: "Urgent",
-  high: "High",
-  medium: "Medium",
-  low: "Low",
+/** Small badge on sourced tasks - where the work came from. */
+const SOURCE_BADGE: Partial<Record<TaskSource, string>> = {
+  creative_gap: "creative",
+  price_review: "price",
 };
 
-type EditorState = {
-  open: boolean;
-  /** null = creating */
-  task: TaskWithNames | null;
-  /** Prefill when a task is born from a creative gap. */
-  gap?: GapItem;
-};
+/** A gap → the task it becomes. The deep link, not the page: whoever picks
+ *  this task up lands on the control that fixes it. */
+function gapPrefill(gap: GapItem): TaskPrefill {
+  return {
+    title: `${GAP_META[gap.kind].label}: ${gap.label}`,
+    source: "creative_gap",
+    source_ref: {
+      kind: gap.kind,
+      table: gap.table,
+      row_id: gap.row_id,
+      label: gap.label,
+      url: gap.fixUrl,
+    },
+    origin: `From creative gap: ${gap.label}`,
+  };
+}
 
 export function TasksClient() {
   const { user } = useAuth();
@@ -102,8 +103,7 @@ export function TasksClient() {
   const [tasks, setTasks] = useState<TaskWithNames[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("open");
-  const [staff, setStaff] = useState<UserProfile[]>([]);
-  const [editor, setEditor] = useState<EditorState>({ open: false, task: null });
+  const [editor, setEditor] = useState<TaskEditorState>({ open: false, task: null });
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -117,20 +117,6 @@ export function TasksClient() {
   useEffect(() => {
     reload();
   }, [reload]);
-
-  // Assignee picker is manager-only (listUsers is admin-guarded anyway).
-  useEffect(() => {
-    if (!isManager) return;
-    listUsers().then((users) =>
-      setStaff(
-        users.filter(
-          (candidate) =>
-            candidate.is_active &&
-            (STAFF_ROLES as readonly string[]).includes(candidate.role),
-        ),
-      ),
-    );
-  }, [isManager]);
 
   const filtered = useMemo(() => {
     switch (view) {
@@ -206,9 +192,9 @@ export function TasksClient() {
           <div className="min-w-[220px] max-w-[420px]">
             <div className="flex items-center gap-2">
               <span className="truncate font-medium">{row.original.title}</span>
-              {row.original.source === "creative_gap" && (
+              {SOURCE_BADGE[row.original.source] && (
                 <Badge variant="secondary" className="shrink-0 text-[10px]">
-                  creative
+                  {SOURCE_BADGE[row.original.source]}
                 </Badge>
               )}
             </div>
@@ -350,14 +336,17 @@ export function TasksClient() {
       </TabsContent>
 
       <TabsContent value="gaps" className="mt-4">
-        <GapsTab onCreateTask={(gap) => setEditor({ open: true, task: null, gap })} />
+        <GapsTab
+          onCreateTask={(gap) =>
+            setEditor({ open: true, task: null, prefill: gapPrefill(gap) })
+          }
+        />
       </TabsContent>
 
       <TaskEditor
-        key={`${editor.task?.id ?? "new"}-${editor.gap?.row_id ?? ""}-${editor.open}`}
+        key={`${editor.task?.id ?? "new"}-${editor.prefill?.source_ref.row_id ?? ""}-${editor.open}`}
         state={editor}
         isManager={isManager}
-        staff={staff}
         onClose={() => setEditor({ open: false, task: null })}
         onSaved={() => {
           setEditor({ open: false, task: null });
@@ -365,168 +354,6 @@ export function TasksClient() {
         }}
       />
     </Tabs>
-  );
-}
-
-function TaskEditor({
-  state,
-  isManager,
-  staff,
-  onClose,
-  onSaved,
-}: {
-  state: EditorState;
-  isManager: boolean;
-  staff: UserProfile[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const { toast } = useToast();
-  const { task, gap } = state;
-
-  const [title, setTitle] = useState(
-    task?.title ?? (gap ? `${GAP_META[gap.kind].label}: ${gap.label}` : ""),
-  );
-  const [description, setDescription] = useState(task?.description ?? "");
-  const [priority, setPriority] = useState<TaskPriority>(task?.priority ?? "medium");
-  const [assignee, setAssignee] = useState<string>(task?.assignee_id ?? "unassigned");
-  const [dueDate, setDueDate] = useState(task?.due_date ?? "");
-  const [saving, setSaving] = useState(false);
-
-  const submit = async () => {
-    setSaving(true);
-    try {
-      const assigneeId = assignee === "unassigned" ? null : assignee;
-      const result = task
-        ? await updateTask(task.id, {
-            title,
-            description: description || null,
-            priority,
-            assignee_id: assigneeId,
-            due_date: dueDate || null,
-          })
-        : await createTask({
-            title,
-            description: description || null,
-            priority,
-            assignee_id: assigneeId,
-            due_date: dueDate || null,
-            source: gap ? "creative_gap" : "manual",
-            source_ref: gap
-              ? {
-                  kind: gap.kind,
-                  table: gap.table,
-                  row_id: gap.row_id,
-                  label: gap.label,
-                  // The deep link, not the page: whoever picks this task up
-                  // lands on the control that fixes it.
-                  url: gap.fixUrl,
-                }
-              : null,
-          });
-      if (!result.ok) {
-        toast({
-          variant: "destructive",
-          title: "Save failed",
-          description: result.error,
-        });
-        return;
-      }
-      toast({ title: task ? "Task updated" : "Task created" });
-      onSaved();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open={state.open} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{task ? "Edit task" : "New task"}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="task-title">Title</Label>
-            <Input
-              id="task-title"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="What needs doing?"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="task-desc">Description</Label>
-            <Textarea
-              id="task-desc"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              rows={3}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Priority</Label>
-              <Select
-                value={priority}
-                onValueChange={(value) => setPriority(value as TaskPriority)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TASK_PRIORITIES.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {PRIORITY_LABEL[value]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="task-due">Due date</Label>
-              <Input
-                id="task-due"
-                type="date"
-                value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
-              />
-            </div>
-          </div>
-          {isManager && (
-            <div className="space-y-2">
-              <Label>Assign to</Label>
-              <Select value={assignee} onValueChange={setAssignee}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                  {staff.map((member) => (
-                    <SelectItem key={member.id} value={member.id}>
-                      {member.display_name || member.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          {gap && (
-            <p className="rounded-md bg-muted p-2 text-xs text-muted-foreground">
-              From creative gap: {gap.label}
-            </p>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={saving || !title.trim()}>
-            {saving ? "Saving…" : task ? "Save changes" : "Create task"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -633,7 +460,8 @@ function GapsTab({ onCreateTask }: { onCreateTask: (gap: GapItem) => void }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
         <span>
           <span className="font-medium tabular-nums text-foreground">{items.length}</span>{" "}
-          missing assets, most blocking first.
+          missing assets, most blocking first - artists and teams with packages
+          on sale now come before the wishlist.
         </span>
         {dismissed.length > 0 && (
           <button
@@ -711,24 +539,42 @@ function GapsTab({ onCreateTask }: { onCreateTask: (gap: GapItem) => void }) {
               const meta = GAP_META[item.kind];
               const key = gapKey(item.kind, item.table, item.row_id);
               const hasTask = taken.has(key);
+              const live = item.liveEvents ?? 0;
               return (
-                <tr key={key} className="border-t">
+                <tr key={key} className={cn("border-t", item.demoted && "opacity-70")}>
                   <td className="whitespace-nowrap px-3 py-2">
                     <span
+                      title={
+                        item.demoted
+                          ? "יש בלוב לכרטיסים - חסרה רק תמונת הראש של העמוד"
+                          : undefined
+                      }
                       className={cn(
                         "inline-flex rounded-full px-2 py-0.5 text-xs font-semibold",
-                        meta.severity === "crit"
-                          ? "bg-destructive/15 text-destructive"
-                          : "bg-warning-muted text-warning",
+                        item.demoted
+                          ? "bg-muted text-muted-foreground"
+                          : meta.severity === "crit"
+                            ? "bg-destructive/15 text-destructive"
+                            : "bg-warning-muted text-warning",
                       )}
                     >
                       {meta.short}
                     </span>
                   </td>
                   <td className="px-3 py-2">
-                    <Link href={item.url} className="font-medium hover:underline">
-                      {item.label}
-                    </Link>
+                    <span className="inline-flex flex-wrap items-center gap-2">
+                      <Link href={item.url} className="font-medium hover:underline">
+                        {item.label}
+                      </Link>
+                      {live > 0 && (
+                        <span
+                          title="חבילות זמינות באתר עכשיו - לא ב-wishlist"
+                          className="inline-flex items-center rounded-full bg-success-muted px-2 py-0.5 text-[11px] font-semibold text-success"
+                        >
+                          {live} on sale
+                        </span>
+                      )}
+                    </span>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{item.detail ?? ""}</td>
                   <td className="px-3 py-2">

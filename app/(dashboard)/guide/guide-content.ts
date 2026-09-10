@@ -159,8 +159,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "כפתורי חיפוש הטיסה/מלון בטופס האירוע מתמחרים דרך אותו כלל בדיוק — המספר שהם ממלאים הוא המספר שהסנכרון הלילי היה כותב.",
       ),
       t(
-        "Nightly sync (01:30 UTC): live future events are re-quoted in rotation (least-recently-checked first, next 45 days ahead of the rest). Any deviation of $20+ per component updates the base (both directions); a change above $400 is FROZEN for human review instead of applied. Every visit is logged - the price-changes screen shows the arithmetic and why an event did not move.",
-        "סנכרון לילי (01:30 UTC): אירועים חיים עתידיים מתומחרים מחדש ברוטציה (מי שנבדק הכי מזמן קודם, 45 הימים הקרובים לפני השאר). כל סטייה של 20$+ לרכיב מעדכנת את הבסיס (לשני הכיוונים); שינוי מעל 400$ נעצר לבדיקה אנושית במקום להיות מוחל. כל ביקור נרשם — מסך שינויי המחיר מציג את החשבון ולמה אירוע לא זז.",
+        "Nightly sync (01:30 UTC): live future events are re-quoted in rotation (least-recently-checked first, next 45 days ahead of the rest). Any deviation of $20+ per component updates the base (both directions); a change above $400 is FROZEN for human review instead of applied. Every visit is logged - the price-changes screen shows the arithmetic, the event date, and why an event did not move. A frozen row can be approved, marked as fixed in the event, handed to someone as a task, or the event removed from the site (soft delete) right there.",
+        "סנכרון לילי (01:30 UTC): אירועים חיים עתידיים מתומחרים מחדש ברוטציה (מי שנבדק הכי מזמן קודם, 45 הימים הקרובים לפני השאר). כל סטייה של 20$+ לרכיב מעדכנת את הבסיס (לשני הכיוונים); שינוי מעל 400$ נעצר לבדיקה אנושית במקום להיות מוחל. כל ביקור נרשם — מסך שינויי המחיר מציג את החשבון, את תאריך האירוע ולמה אירוע לא זז. שורה קפואה אפשר לאשר, לסמן כעודכנה באירוע, להעביר למישהו כמשימה, או להסיר את האירוע מהאתר (מחיקה רכה) ישר משם.",
       ),
       t(
         "Events with linked offline inventory are excluded per component - fixed inventory means the price is your decision, not a market read.",
@@ -317,8 +317,12 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "כשקריאייטיב חסר, סיבת הדילוג הרשומה היא כמעט תמיד \"אין מחיר בר־חישוב\" — כפתור ה־Do בחוסר שולח לשדות המחיר של האירוע, לא למחולל, כי זה התיקון האמיתי.",
       ),
       t(
-        "The gaps radar watches 9 asset kinds: event creatives and card images (blocking), team crests, hero images, atmosphere galleries, category and blog images (quality). \"Done\" files away a false gap (e.g. a crest that exists elsewhere) with undo.",
-        "הרדאר עוקב אחרי 9 סוגי נכסים: קריאייטיבים ותמונות קארד (חוסמים), סמלי קבוצות, תמונות ראשיות, גלריות אווירה, תמונות קטגוריה ובלוג (איכות). \"Done\" מתייק חוסר כוזב (למשל סמל שקיים במקום אחר) עם אפשרות ביטול.",
+        "The gaps radar watches 12 kinds: event creatives and card images (blocking), team crests, hero images, atmosphere galleries, category and blog images, and page text (team / artist bio, category page content) - quality. Only active categories are checked. \"Done\" files away a false gap (e.g. a crest that exists elsewhere) with undo.",
+        "הרדאר עוקב אחרי 12 סוגים: קריאייטיבים ותמונות קארד (חוסמים), סמלי קבוצות, תמונות ראשיות, גלריות אווירה, תמונות קטגוריה ובלוג, וטקסט לעמוד (ביו של קבוצה/אמן, תוכן עמוד קטגוריה) — איכות. רק קטגוריות פעילות נבדקות. \"Done\" מתייק חוסר כוזב (למשל סמל שקיים במקום אחר) עם אפשרות ביטול.",
+      ),
+      t(
+        "Queue order: artists and teams with packages on sale right now (the site's on-tour rule) come before the wishlist ones - a green \"N on sale\" badge marks them. A hero gap on an entity that already has blob card-art is greyed and sinks to the bottom: cards look right, only the page hero is missing.",
+        "סדר התור: אמנים וקבוצות עם חבילות שנמכרות עכשיו (כלל ה-on-tour של האתר) לפני אלה שב-wishlist — תג ירוק \"N on sale\" מסמן אותם. חוסר תמונת ראש למי שכבר יש לו בלוב מואפר ויורד לתחתית: הכרטיסים נראים טוב, חסרה רק תמונת הראש של העמוד.",
       ),
     ],
     links: [
@@ -377,8 +381,12 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "סטטוסים: לביצוע → בתהליך → בוצע (או בוטל). עדיפויות: דחוף / גבוה / בינוני / נמוך — הווידג'ט בדשבורד ממוין לפיהן.",
       ),
       t(
-        "A task born from a creative gap carries a \"Do\" deep link that lands on the exact fixing control - the crest field, the price section, the gallery picker.",
-        "משימה שנולדה מחוסר קריאייטיב נושאת קישור \"Do\" שנוחת על הפקד המתקן המדויק — שדה הסמל, סקשן המחיר, בוחר הגלריה.",
+        "A task born from a creative gap or a frozen price row carries a \"Do\" deep link that lands on the exact fixing control - the crest field, the price section, the gallery picker.",
+        "משימה שנולדה מחוסר קריאייטיב או משורת מחיר קפואה נושאת קישור \"Do\" שנוחת על הפקד המתקן המדויק — שדה הסמל, סקשן המחיר, בוחר הגלריה.",
+      ),
+      t(
+        "Assigning a task to someone else emails them (title, priority, due date, the Do link). Marking a gap task Done files the gap away in the radar too; reopening the task brings it back.",
+        "שיבוץ משימה למישהו אחר שולח לו מייל (כותרת, עדיפות, תאריך יעד, קישור Do). סימון משימת חוסר כ-Done מתייק גם את החוסר ברדאר; פתיחה מחדש של המשימה מחזירה אותו.",
       ),
       t(
         "The Creative gaps tab is one unified queue, most blocking first, with type filter pills (All is the default). Do / Create task / Done on every row.",

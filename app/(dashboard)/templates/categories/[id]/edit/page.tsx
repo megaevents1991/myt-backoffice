@@ -353,7 +353,11 @@ export default function EditCategoryPage({
 
           <CategoryTagsField value={catTagIds} onChange={setCatTagIds} />
 
-          <PageContentField value={pageContent} onChange={setPageContent} />
+          {/* id="fix-content": the gaps radar's "Do" lands here for a category
+              whose page has no text yet. */}
+          <div id="fix-content" className="scroll-mt-20">
+            <PageContentField value={pageContent} onChange={setPageContent} />
+          </div>
 
           <FeaturedEventsPicker
             categoryId={templateId}
