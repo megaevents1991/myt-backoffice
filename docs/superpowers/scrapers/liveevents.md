@@ -78,6 +78,13 @@ Only music has priced detail pages. Two shapes:
 ## LiveTickets event URL scheme (for livetickets-api.ts `url`)
 
 Not on this site — LiveTickets is `https://www.livetickets.co.il/` (separate competitor, ticket-only; phase 0 reads it from our `live_events` API table).
+Event page = `https://www.livetickets.co.il/events/events.aspx?eid=<live_events.event_id>` (same ids as the API);
+performer pages `/performers/<Name>.aspx`; search `/search/?PerformerName=…`.
+
+**`brt` CONFIRMED = shelf price (2026-09-10):** Arsenal–Leeds (eid 2324946) shows £395/£450/£450/£465/£495/£595/£595, Hertha–Fürth
+(eid 2326345) €80/€90/€110 — identical to `ticket_categories[].brt`; `cost` = brt × 0.92 (our net). Keep
+`LIVETICKETS_RETAIL_FACTOR = 1.0`, `LIVETICKETS_RETAIL_OFFSET_USD = 0`. Day-of events show "סיימנו את מלאי הכרטיסים" (sold out) while
+still `is_active` in the API — the ticket light for same-day events may compare against a price nobody can buy; acceptable (events < 1 day out are not sold on the site anyway).
 
 ## Stealth notes
 

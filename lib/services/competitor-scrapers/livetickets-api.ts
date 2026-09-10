@@ -86,7 +86,8 @@ export const livetickets: CompetitorScraper = {
           attrs: null,
           detail_text: null,
           // Display only; confirm the site's real event URL scheme during the Task 6 recon.
-          url: `https://www.livetickets.co.il/event/${row.event_id}`,
+          // Real scheme (recon 2026-09-10): /events/events.aspx?eid=<event_id>
+          url: `https://www.livetickets.co.il/events/events.aspx?eid=${row.event_id}`,
         };
       }
       if (rows.length < PAGE_SIZE) break;
