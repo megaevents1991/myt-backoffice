@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ReservationsTrend } from "@/components/reservations-trend";
 import { MyTasksWidget } from "@/components/my-tasks-widget";
 import { CreativeGapsPanel } from "@/components/creative-gaps-panel";
+import { GoogleReviewsHealthAlert } from "@/components/google-reviews-health-alert";
 
 export default function Dashboard() {
   const [error, setError] = useState<Error | null>(null);
@@ -55,6 +56,9 @@ export default function Dashboard() {
           Manage your events, partners, and reservations.
         </p>
       </div>
+
+      {/* Only renders when the Google-reviews cron failed / went stale. */}
+      <GoogleReviewsHealthAlert />
 
       {/* Cards Section */}
       <Suspense fallback={<DashboardSkeleton />}>
