@@ -56,7 +56,10 @@ export async function notifyTaskAssigned(input: TaskAssignedInput): Promise<void
 
     const origin = appOrigin();
     const boardUrl = `${origin}/tasks`;
-    const fixUrl = input.sourceRef?.url ? `${origin}${input.sourceRef.url}` : null;
+    // source_ref comes from the client side of a server action - only a
+    // same-site relative path may become a link in the mail.
+    const path = safeRelativePath(input.sourceRef?.url);
+    const fixUrl = path ? `${origin}${path}` : null;
 
     await sendMail({
       to: assignee.email,
@@ -114,9 +117,9 @@ function taskAssignedHtml(params: {
             ${params.sourceRef?.label ? row("נושא", escapeHtml(params.sourceRef.label)) : ""}
           </table></td></tr>
           <tr><td style="text-align:right;padding-bottom:12px;">
-            <a href="${params.fixUrl ?? params.boardUrl}" style="display:inline-block;background:#0A1A14;color:#5BFF95;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:bold;">${params.fixUrl ? "לתיקון" : "ללוח המשימות"}</a>
+            <a href="${escapeHtml(params.fixUrl ?? params.boardUrl)}" style="display:inline-block;background:#0A1A14;color:#5BFF95;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:bold;">${params.fixUrl ? "לתיקון" : "ללוח המשימות"}</a>
           </td></tr>
-          <tr><td style="text-align:right;font-size:13px;color:#6b7280;line-height:1.6;"><a href="${params.boardUrl}" style="color:#6b7280;">כל המשימות שלי</a></td></tr>
+          <tr><td style="text-align:right;font-size:13px;color:#6b7280;line-height:1.6;"><a href="${escapeHtml(params.boardUrl)}" style="color:#6b7280;">כל המשימות שלי</a></td></tr>
         </table>
       </td></tr>
     </table>
@@ -124,10 +127,19 @@ function taskAssignedHtml(params: {
 </html>`;
 }
 
+/** "/tasks", "/events/12#fix-price" - not "//evil", not "javascript:", no control chars. */
+function safeRelativePath(value: string | null | undefined): string | null {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f\s<>"'`]/.test(value)) return null;
+  return value;
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
