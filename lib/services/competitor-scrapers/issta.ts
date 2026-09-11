@@ -100,7 +100,8 @@ export const issta: CompetitorScraper = {
   key: "issta",
   scopes: ["package"],
   kinds: ["sports"],
-  intervalHours: 48,
+  // 72h - see the note on golasso.ts: one site per hourly tick, each site every ~3 days.
+  intervalHours: 72,
   mode: "fetch",
   covers: coversEvent,
   async *crawl(ctx: CrawlContext): AsyncGenerator<Listing> {

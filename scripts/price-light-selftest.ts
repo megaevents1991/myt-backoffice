@@ -36,7 +36,14 @@ const m = (over: Partial<LatestMatch>): LatestMatch => ({
 assert.equal(ourPackageUsd(base), 500 + 400 + 300 + 175);
 assert.equal(ourTicketUsd(base), 300 + 60);
 assert.equal(ourNights(base), 3);
-assert.equal(ourPackageUsd({ ...base, skip_flight: true }), null);
+// skip_flight no longer hides the package price (Dor, 2026-09-11): our packages carry flight
+// and hotel numbers either way, and the competitors sell the full package, so we want both
+// pictures - package vs package AND ticket vs ticket.
+assert.equal(ourPackageUsd({ ...base, skip_flight: true }), 500 + 400 + 300 + 175);
+// ...but a package price is only a package price when there IS travel in it. A zero flight or
+// a zero hotel would read as a confident green against a flight-inclusive competitor package.
+assert.equal(ourPackageUsd({ ...base, base_flight_price: 0 }), null);
+assert.equal(ourPackageUsd({ ...base, base_hotel_price: null }), null);
 assert.equal(ourPackageUsd({ ...base, tickets_and_rates: [] }), null);
 assert.equal(ourTicketUsd({ ...base, ticket_only_markup: null }), null);
 assert.equal(ourPackageUsd({ ...base, markup_ticket: 50, markup_flight: 30, markup_hotel: 20, event_additional_markup: 10 }), 500 + 400 + 300 + 110);

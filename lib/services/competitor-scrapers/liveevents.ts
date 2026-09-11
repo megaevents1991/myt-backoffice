@@ -236,7 +236,8 @@ export const liveevents: CompetitorScraper = {
   key: "liveevents",
   scopes: ["package"],
   kinds: ["sports", "music"],
-  intervalHours: 48,
+  // 72h - see the note on golasso.ts: one site per hourly tick, each site every ~3 days.
+  intervalHours: 72,
   mode: "browser",
   // Only the /events/ (music) catalog needs the page; the /package/ detail pages below are
   // plain stealth fetches, so the crawl loop paces them with pauseShort() (final review, I2).

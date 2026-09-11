@@ -21,7 +21,7 @@ import {
   type PriceLightRow,
 } from "@/lib/actions/price-light-actions";
 import { signedUsd } from "@/lib/services/price-light";
-import { HE_REASON, heLabel, PILL } from "@/app/(dashboard)/events/price-light-ui";
+import { COMPETITOR_LABEL, HE_REASON, heLabel, PILL } from "@/app/(dashboard)/events/price-light-ui";
 import type { Light } from "@/types/price-light.types";
 import { CompetitorsPanel } from "./competitors-panel";
 import { DecisionActions } from "./decision-actions";
@@ -63,8 +63,13 @@ const TILE_LABEL: Record<string, string> = {
 };
 
 function LightBadge({ row }: { row: PriceLightRow }) {
+  // Hebrew throughout and the competitor's display name, not its key: this tooltip is the
+  // explanation a staff member reads before deciding to drop a price or pull an event.
   const tip = [
-    row.competitor ? `${row.competitor}: raw ${row.raw ?? "?"} ${row.raw_currency ?? ""} → normalized $${row.normalized_usd ?? "?"}` : null,
+    row.competitor
+      ? `${COMPETITOR_LABEL[row.competitor] ?? row.competitor}: ${row.raw ?? "?"} ${row.raw_currency ?? ""} → מנורמל $${row.normalized_usd ?? "?"}`
+      : null,
+    row.our_usd != null ? `שלנו: $${row.our_usd}` : null,
     ...row.adjustments,
     row.partial ? "כיסוי חלקי בנרמול" : null,
     row.crawled_at ? `נסרק ${row.crawled_at.slice(0, 10)}` : null,
@@ -229,8 +234,8 @@ export function PriceLightClient() {
           if (!r.competitor) return <span className="text-xs text-muted-foreground">—</span>;
           return (
             <div className="space-y-1 text-xs">
-              <div className="flex items-center gap-1 font-medium capitalize">
-                {r.competitor}
+              <div className="flex items-center gap-1 font-medium">
+                {COMPETITOR_LABEL[r.competitor] ?? r.competitor}
                 {r.listing_url && (
                   <a href={r.listing_url} target="_blank" rel="noreferrer" title="לצפייה במודעה">
                     <ExternalLink className="h-3 w-3 text-muted-foreground" />
@@ -302,19 +307,33 @@ export function PriceLightClient() {
 
   return (
     <div className="space-y-4">
-      <div className="text-sm text-muted-foreground">
-        AI החודש: ${cost.usd.toFixed(2)} · {cost.calls} קריאות · מתחרים פעילים: {runs.length}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span>
+          <span className="font-medium tabular-nums text-foreground">{rows.length}</span> שורות
+        </span>
+        <span aria-hidden>·</span>
+        <span>
+          <span className="font-medium tabular-nums text-foreground">{runs.length}</span> מתחרים פעילים
+        </span>
+        <span aria-hidden>·</span>
+        <span>
+          AI החודש <span className="font-medium tabular-nums text-foreground">${cost.usd.toFixed(2)}</span>
+          {cost.calls > 0 ? ` ב-${cost.calls} קריאות` : " · אין קריאות"}
+        </span>
       </div>
 
+      {/* `text-start`, not `text-right`: the dashboard is RTL, so the label must hug the
+          reading edge rather than a hardcoded side. */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {tiles.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setView(t.id)}
+            aria-pressed={view === t.id}
             className={cn(
-              "rounded-lg border bg-card p-3 text-right transition-colors hover:bg-accent",
-              view === t.id && "ring-2 ring-ring",
+              "rounded-lg border bg-card p-3 text-start transition-colors hover:bg-accent",
+              view === t.id && "border-ring ring-2 ring-ring",
             )}
           >
             <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium", PILL[t.light])}>

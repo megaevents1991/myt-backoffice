@@ -313,7 +313,10 @@ export const golasso: CompetitorScraper = {
   key: "golasso",
   scopes: ["package"],
   kinds: ["sports"],
-  intervalHours: 48,
+  // 72h, not 48 (Dor, 2026-09-11: "we want to be gentle - every few days per site"). The
+  // hourly tick already crawls at most ONE due site, so across the four crawlable sites this
+  // is one visit per site every three days. Well inside LIGHT_STALE_DAYS (14).
+  intervalHours: 72,
   mode: "browser",
   // The catalog needs the browser, but /pdetails/<id> is a server-rendered GET below - so the
   // crawl loop paces those with pauseShort(), not the 20-60s browser pause (final review, I2).

@@ -223,8 +223,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "אירועי ספורט שנבדקים מול LiveEvents מוצגים באפור לא כי לא נמצא כלום, אלא כי לוח הספורט של האתר ההוא מציג מחיר רק אחרי בחירת תאריכים — הוא אף פעם לא מפרסם מחיר בדף הקטלוג. זה ייפתר בשלב 2; עד אז האור שם אומר בכנות \"לא ידוע\", לא טענה על המחיר.",
       ),
       t(
-        "Each competitor site is crawled at most once every 48 hours, one crawl running at a time system-wide (an hourly check picks whichever due site has waited longest). LiveTickets is the exception - its numbers come from the same live_events sync that already runs twice a day, so there's no separate crawl for it.",
-        "כל אתר מתחרה נסרק לכל היותר פעם ב-48 שעות, סריקה אחת רצה בכל זמן נתון במערכת (בדיקה שעתית בוחרת את האתר הכי \"רעב\" שממתין). LiveTickets הוא היוצא מן הכלל — המספרים שלו מגיעים מאותו סנכרון live_events שכבר רץ פעמיים ביום, אז אין לו סריקה נפרדת.",
+        "Each competitor site is crawled at most once every 72 hours, one crawl running at a time system-wide (an hourly check picks whichever due site has waited longest). LiveTickets is the exception - its numbers come from the same live_events sync that already runs twice a day, so there's no separate crawl for it.",
+        "כל אתר מתחרה נסרק לכל היותר פעם ב-72 שעות, סריקה אחת רצה בכל זמן נתון במערכת (בדיקה שעתית בוחרת את האתר הכי \"רעב\" שממתין). LiveTickets הוא היוצא מן הכלל — המספרים שלו מגיעים מאותו סנכרון live_events שכבר רץ פעמיים ביום, אז אין לו סריקה נפרדת.",
       ),
       t(
         "PRICE_LIGHT_SCRAPE=off is the kill switch: it stops all crawling (runs show as skipped) but matching and the lights keep working off whatever was already crawled - flip it off if a competitor site ever needs to be left alone.",

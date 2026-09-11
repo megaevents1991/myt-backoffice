@@ -77,26 +77,30 @@ export const HE_REASON: Record<UncheckedReason, string> = {
   partial_coverage: "כיסוי חלקי",
 };
 
+// Hebrew throughout: this tooltip sits on the events table, where every other string is
+// Hebrew, and it is the whole explanation behind a coloured pill.
 function tipFor(detail: LightScopeDetail | undefined): string {
-  if (!detail) return "not checked yet";
+  if (!detail) return "טרם נבדק";
   if (detail.light === "green" || detail.light === "orange" || detail.light === "red") {
     return [
       // `?? "מתחרה"`, never a literal "null": detail.competitor can be null on a light that
       // was set without a named competitor (final review, M10). The listing's travel window
       // is NOT available here - LightScopeDetail carries no window fields - so the trip dates
       // live in the history sheet (price-light-cell.tsx), which has the listing row itself.
-      `${(detail.competitor ? COMPETITOR_LABEL[detail.competitor] : null) ?? "מתחרה"}: raw ${detail.raw ?? "?"} ${detail.raw_currency ?? ""} → normalized $${detail.normalized_usd}`,
+      `${(detail.competitor ? COMPETITOR_LABEL[detail.competitor] : null) ?? "מתחרה"}: ${detail.raw ?? "?"} ${detail.raw_currency ?? ""} → מנורמל $${detail.normalized_usd}`,
+      detail.our_usd != null ? `שלנו: $${detail.our_usd}` : null,
       ...detail.adjustments.map((a) => a.label),
-      detail.partial ? "partial normalization" : null,
-      detail.crawled_at ? `crawled ${detail.crawled_at.slice(0, 10)}` : null,
+      detail.partial ? "כיסוי חלקי בנרמול" : null,
+      detail.crawled_at ? `נסרק ${detail.crawled_at.slice(0, 10)}` : null,
     ].filter(Boolean).join("\n");
   }
-  if (detail.light === "alone") return "all active competitors checked - none sells it";
-  if (detail.light === "na") return "not applicable for this event";
-  return detail.reason ? HE_REASON[detail.reason] : "not checked yet";
+  if (detail.light === "alone") return "כל המתחרים הפעילים נבדקו, אף אחד לא מוכר את האירוע";
+  if (detail.light === "na") return "לא רלוונטי לאירוע הזה";
+  return detail.reason ? HE_REASON[detail.reason] : "טרם נבדק";
 }
 
-export function Pill({ scope, detail, light }: { scope: "Pkg" | "Tkt"; detail: LightScopeDetail | undefined; light: Light }) {
+/** `scope` is the two-letter shoulder on the pill: Hebrew, like everything else on the table. */
+export function Pill({ scope, detail, light }: { scope: "חב׳" | "כר׳"; detail: LightScopeDetail | undefined; light: Light }) {
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>

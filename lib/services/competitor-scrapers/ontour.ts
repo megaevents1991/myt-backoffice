@@ -133,7 +133,8 @@ export const ontour: CompetitorScraper = {
   key: "ontour",
   scopes: ["package"],
   kinds: ["music"],
-  intervalHours: 48,
+  // 72h - see the note on golasso.ts: one site per hourly tick, each site every ~3 days.
+  intervalHours: 72,
   mode: "fetch",
   async *crawl(ctx: CrawlContext): AsyncGenerator<Listing> {
     const { toUsd } = await import("./livetickets-api.ts");

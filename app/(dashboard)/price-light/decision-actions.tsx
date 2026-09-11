@@ -1,11 +1,11 @@
 "use client";
 
-// Per-row decision buttons for the /price-light table. Red rows get the four
-// "what do we do about it" actions; every row gets "בדוק עכשיו" (re-match
-// against the stored catalogs, no browsing) and "דריסה" (manual override).
+// Per-row decision buttons for the /price-light table. A red row keeps one
+// primary action visible (הוזל - just a Link) and moves the rest into an
+// overflow menu; every other row only needs the menu (בדוק עכשיו + דריסה).
 import { useState } from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { Loader2, MoreHorizontal } from "lucide-react";
 
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -147,65 +160,109 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
   };
 
   return (
-    <div className="flex flex-wrap items-center justify-end gap-1.5">
+    <div className="flex items-center justify-end gap-1">
       {row.light === "red" && (
-        <>
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/events/${row.event_id}#fix-price`}>הוזל</Link>
-          </Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={silence}>
-            השאר בפיד
-          </Button>
-          <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
-            <Button size="sm" variant="destructive" disabled={busy} onClick={() => setRemoveOpen(true)}>
-              הסר מהאתר
-            </Button>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>להסיר את האירוע מהאתר?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {row.name} · {row.date}
-                  <br />
-                  האירוע יוסר בעדינות (soft delete) - לא ימחק לצמיתות.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={busy}>ביטול</AlertDialogCancel>
-                <AlertDialogAction
-                  disabled={busy}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    remove();
-                  }}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "הסר"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-          <Button size="sm" variant="outline" disabled={busy} onClick={openTask}>
-            משימה
-          </Button>
-        </>
+        <Button asChild size="sm" variant="outline">
+          <Link href={`/events/${row.event_id}#fix-price`}>הוזל</Link>
+        </Button>
       )}
 
-      <Button size="sm" variant="ghost" disabled={busy} onClick={recheck} title="בדוק שוב מול הקטלוגים השמורים">
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "בדוק עכשיו"}
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            disabled={busy}
+            aria-label={`פעולות עבור ${row.name}`}
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {row.light === "red" && (
+            <>
+              <DropdownMenuItem disabled={busy} onClick={silence}>
+                השאר בפיד
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={busy} onClick={openTask}>
+                משימה
+              </DropdownMenuItem>
+            </>
+          )}
 
-      {row.override ? (
-        <Button size="sm" variant="outline" disabled={busy} onClick={clearOverride}>
-          בטל דריסה
-        </Button>
-      ) : (
-        <Popover open={overrideOpen} onOpenChange={setOverrideOpen}>
-          <PopoverTrigger asChild>
-            <Button size="sm" variant="outline" disabled={busy}>
+          <DropdownMenuItem disabled={busy} onClick={recheck}>
+            בדוק עכשיו
+          </DropdownMenuItem>
+
+          {row.override ? (
+            <DropdownMenuItem disabled={busy} onClick={clearOverride}>
+              בטל דריסה
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem
+              disabled={busy}
+              onSelect={(e) => {
+                e.preventDefault();
+                setOverrideOpen(true);
+              }}
+            >
               דריסה
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-80 space-y-3">
+            </DropdownMenuItem>
+          )}
+
+          {row.light === "red" && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={busy}
+                className="text-destructive focus:text-destructive"
+                onSelect={(e) => {
+                  e.preventDefault();
+                  setRemoveOpen(true);
+                }}
+              >
+                הסר מהאתר
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Rendered as siblings of the DropdownMenu, not inside it - the menu
+          unmounts its content on close and would take a nested dialog with it. */}
+      <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>להסיר את האירוע מהאתר?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {row.name} · {row.date}
+              <br />
+              האירוע יוסר בעדינות (soft delete) - לא ימחק לצמיתות.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>ביטול</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={(e) => {
+                e.preventDefault();
+                remove();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "הסר"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={overrideOpen} onOpenChange={setOverrideOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>דריסת אור</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">אור</label>
               <Select value={overrideLight} onValueChange={(v) => setOverrideLight(v as Light)}>
@@ -230,6 +287,8 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
                 className="min-h-20 text-sm"
               />
             </div>
+          </div>
+          <DialogFooter>
             <Button
               size="sm"
               className="w-full"
@@ -238,9 +297,9 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
             >
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "שמור דריסה"}
             </Button>
-          </PopoverContent>
-        </Popover>
-      )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

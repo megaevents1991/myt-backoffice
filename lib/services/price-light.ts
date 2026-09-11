@@ -78,12 +78,29 @@ export function totalMarkupUsd(e: PricedEvent): number {
   return MAIN_DEFAULT_MARKUP_USD + extra;
 }
 
-/** The catalog-card price: flight + hotel + cheapest ticket + markup. null = na. */
+/**
+ * The catalog-card price: flight + hotel + cheapest ticket + markup. null = na.
+ *
+ * `skip_flight` does NOT make this null (Dor, 2026-09-11): an event we happen to sell without
+ * flights still has stored base prices, and the competitors we compare against sell the full
+ * package, so we want the package picture too - "as if there were no flight skip" - alongside
+ * the ticket-vs-ticket one. Before this, `skip_flight` was true on 428 of 436 live events, so
+ * the package light was `na` almost everywhere and every package competitor (LiveEvents, ISSTA,
+ * Golasso, OnTour) had nothing to compare against, even where their catalog carried the very
+ * same fixture - 105 Golasso listings lined up with our events, dozens at a perfect rule score.
+ *
+ * What DOES make it null: no available ticket, or no travel component at all. A package price
+ * built on a zero flight or a zero hotel is not a package price - it would sit far below a
+ * competitor's flight-inclusive package and read as a confident green, which is the one wrong
+ * answer this light must never give.
+ */
 export function ourPackageUsd(e: PricedEvent): number | null {
-  if (e.skip_flight) return null;
   const ticket = minAvailableTicketUsd(e);
   if (ticket == null) return null;
-  return Math.round(amount(e.base_flight_price) + amount(e.base_hotel_price) + ticket + totalMarkupUsd(e));
+  const flight = amount(e.base_flight_price);
+  const hotel = amount(e.base_hotel_price);
+  if (flight === 0 || hotel === 0) return null;
+  return Math.round(flight + hotel + ticket + totalMarkupUsd(e));
 }
 
 /** Ticket-only override price. null = na (no override configured). */
