@@ -26,7 +26,14 @@ const CARD_SELECTOR = 'a[href*="/pdetails/"]';
 const LOAD_MORE_SELECTOR = "button.btn-load-more";
 /** The list paints 6 cards per "load more" click - 6 is one page, not a healthy crawl. */
 const MIN_CARDS = 6;
-const MAX_LOAD_MORE_CLICKS = 15;
+/**
+ * Sized from the live list, not guessed: a probe on 2026-09-11 walked the whole catalog in 21
+ * clicks (132 cards, 52s). The first real crawl ran with a ceiling of 15 and stopped there with
+ * 96 cards - a third of the catalog invisible, and every package past card 96 recorded as
+ * `not_selling` against our events. The ceiling is a runaway guard only; `CATALOG_LOAD_BUDGET_MS`
+ * is the real bound (~2.5s per round, so the deadline bites around round 35).
+ */
+const MAX_LOAD_MORE_CLICKS = 40;
 
 const DATE_RE = /(\d{2})\.(\d{2})\.(\d{2})(?!\d)/;
 const RANGE_RE = /(\d{2}\.\d{2}\.\d{2})\s*[-–|]\s*(\d{2}\.\d{2}\.\d{2})/;
@@ -272,13 +279,22 @@ async function loadCatalog(ctx: CrawlContext): Promise<string> {
     if (timedOut()) { stopReason = "deadline"; break; }
     const more = page.locator(LOAD_MORE_SELECTOR).first();
     if (!(await more.isVisible().catch(() => false))) { stopReason = "load-more button absent"; break; }
+    // End of catalog: the site does NOT remove the button, it disables it and relabels it
+    // "אין עוד נתונים לטעון" (no more data to load) - observed on the first real crawl,
+    // 2026-09-11, at 132 cards. Checking `isEnabled` here is what makes a completed walk
+    // report as a clean finish instead of burning a 5s click timeout and calling it a failure.
+    if (!(await more.isEnabled().catch(() => false))) { stopReason = "load-more button disabled - no more data"; break; }
     if (timedOut()) { stopReason = "deadline"; break; }
-    let clickFailed = false;
-    await more.click({ timeout: 5_000 }).catch((err) => {
-      clickFailed = true;
-      ctx.log(`golasso: load-more click failed - ${(err as Error).message}`);
-    });
-    if (clickFailed) { stopReason = "click failed"; break; }
+    let clickError: string | null = null;
+    await more.click({ timeout: 5_000 }).catch((err) => { clickError = (err as Error).message; });
+    if (clickError !== null) {
+      // A click can still race the disable/removal that ends the list; re-check before
+      // calling it a fault, so a finished walk is never reported as a broken one.
+      const done = !(await more.isEnabled().catch(() => false));
+      stopReason = done ? "load-more button disabled mid-click - no more data" : "click failed";
+      if (!done) ctx.log(`golasso: load-more click failed - ${String(clickError)}`);
+      break;
+    }
     rounds++;
     if (timedOut()) { stopReason = "deadline"; break; }
     await page.waitForTimeout(1_200 + Math.floor(Math.random() * 800));

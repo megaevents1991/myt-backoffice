@@ -2,11 +2,12 @@
 // + competitor_listings. Never throws past its own summary.
 // Lock = a competitor_crawl_runs row in status "running" younger than LOCK_STALE_MS.
 import { supabase } from "@/lib/supabase-server";
+import { fetchPaged } from "@/lib/supabase-paged";
 import { appOrigin, sendMail } from "@/lib/email";
 import { multiCurrencyExchangeRateService } from "@/lib/services/ticket-price-sync";
 import { browserMode, randomPause, scrapeEnabled, shortPause, withBrowser } from "@/lib/services/browser";
 import { ACTIVE_COMPETITORS, scraperFor, type CompetitorScraper, type CrawlContext, type DetailInput, type Listing } from "@/lib/services/competitor-scrapers";
-import type { CompetitorKey, CrawlStatus, CrawlTrigger } from "@/types/price-light.types";
+import type { CompetitorKey, CrawlStatus, CrawlTrigger, Currency } from "@/types/price-light.types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
@@ -17,6 +18,19 @@ export const DROP_ALARM_RATIO = 0.5;          // listings < 50% of last ok run -
 export const CIRCUIT_AFTER_FAILURES = 3;      // consecutive blocked|error -> skip until a manual crawl
 export const CIRCUIT_COOLDOWN_MS = 24 * 60 * 60_000; // circuit auto-reopens 24h after the newest failing run (fix round 1, finding 1)
 export const FAILED_LISTING_RATIO = 0.2;      // >=20% of listings failing to upsert -> partial (0 successes -> error)
+/**
+ * Listings written per upsert request. The catalog used to cost two round-trips per listing
+ * (a select for the previous row + a single-row upsert, ~155ms each), which is what left the
+ * 1811-listing LiveTickets catalog cut off at 1549 rows by CRAWL_BUDGET_MS - and at the
+ * nightly's 60s LiveTickets budget would have covered under a quarter of it. 500 keeps one
+ * request at ~500 * 19 small columns (comfortably inside PostgREST's request limits, and the
+ * rows carry no detail_text unless a detail page already filled one), turns that catalog into
+ * 4 writes instead of 3622 round-trips, and bounds how many rows a failed chunk has to retry
+ * one at a time.
+ */
+export const CATALOG_CHUNK = 500;
+/** competitor_listings only grows - never trust a single unpaged read (PostgREST caps at 1000). */
+const LISTINGS_LOAD_MAX_ROWS = 50_000;
 
 export interface CrawlSummary {
   competitor: CompetitorKey; status: CrawlStatus;
@@ -97,33 +111,127 @@ function listingChanged(
     (next.attrs != null && JSON.stringify(prev.attrs ?? null) !== JSON.stringify(next.attrs));
 }
 
-async function upsertListing(l: Listing, runId: number | null, nowIso: string): Promise<{ id: number; changed: boolean }> {
-  const { data: prev } = await db.from("competitor_listings").select("id,price_from,event_date,travel_depart,travel_return,title,url,attrs")
-    .eq("competitor", l.competitor).eq("external_key", l.external_key).maybeSingle();
-  const changed = listingChanged(prev ?? null, l);
+/** The stored state of one listing - what change detection compares against and what the write merges into. */
+interface PrevListing {
+  /** Carried for fetchPaged's dedupe only; the id a write reports comes back from the upsert itself. */
+  id: number;
+  external_key: string;
+  price_from: number | null;
+  currency: Currency | null;
+  event_date: string | null;
+  travel_depart: string | null;
+  travel_return: string | null;
+  title: string;
+  url: string;
+  attrs: unknown;
+  detail_text: string | null;
+  last_changed_at: string;
+}
+const PREV_LISTING_COLUMNS =
+  "id,external_key,price_from,currency,event_date,travel_depart,travel_return,title,url,attrs,detail_text,last_changed_at";
+
+/** One buffered catalog write: the row to upsert, keyed for the response, plus its change verdict. */
+interface PendingWrite { key: string; row: Record<string, unknown>; changed: boolean }
+
+/**
+ * Every listing this competitor already has, in ONE paged read, so the catalog loop can decide
+ * `changed` in memory instead of selecting a row per listing. Throws on failure: a total preload
+ * failure would otherwise make every row look new AND drop the `attrs` carry-forward, which is a
+ * far worse outcome than reporting the run as an error (the DB is down either way).
+ */
+async function loadExistingListings(competitor: CompetitorKey): Promise<Map<string, PrevListing>> {
+  const { rows, truncated, error } = await fetchPaged<PrevListing>(
+    () => db.from("competitor_listings").select(PREV_LISTING_COLUMNS)
+      .eq("competitor", competitor).order("id", { ascending: true }),
+    LISTINGS_LOAD_MAX_ROWS,
+  );
+  if (error) {
+    console.error("price-light-crawl: listings preload failed", JSON.stringify(error));
+    throw new Error(`listings preload ${competitor}: ${error.message}`);
+  }
+  if (truncated) {
+    // Same reasoning as the error branch above, and the same remedy: a partial map is WORSE than
+    // no run at all, because every listing past the cap looks new (fresh `last_changed_at`, which
+    // re-triggers matching and any AI verdict) and loses its `attrs`/`detail_text` carry-forward.
+    // Unreachable today (cap 50k vs ~1.9k rows) - this exists so that stops being true loudly.
+    console.error(`price-light-crawl: ${competitor} listings preload hit the ${LISTINGS_LOAD_MAX_ROWS}-row cap - raise it`);
+    throw new Error(`listings preload ${competitor}: truncated at ${LISTINGS_LOAD_MAX_ROWS} rows`);
+  }
+  const byKey = new Map<string, PrevListing>();
+  for (const row of rows) byKey.set(row.external_key, row);
+  return byKey;
+}
+
+/**
+ * The row to upsert plus the state it leaves behind (what a repeat of the same external_key
+ * later in the run compares against - the old path re-selected the row and saw exactly this).
+ *
+ * Every row in a bulk upsert MUST carry the SAME keys: PostgREST writes NULL into a column that
+ * some rows in the array omit, which would wipe `detail_text` and violate `last_changed_at`'s
+ * NOT NULL. So both are always present, carrying the stored value forward when this listing
+ * doesn't supply one - the exact equivalent of the old "only set this column when ..." rules,
+ * since rewriting a column with its own value is a no-op.
+ */
+function buildListingWrite(
+  l: Listing, prev: PrevListing | null, runId: number | null, nowIso: string, changed: boolean,
+): { row: Record<string, unknown>; next: PrevListing } {
+  const next: PrevListing = {
+    id: prev?.id ?? 0,
+    external_key: l.external_key,
+    price_from: l.price_from, currency: l.currency, event_date: l.event_date,
+    travel_depart: l.travel_depart, travel_return: l.travel_return,
+    title: l.title, url: l.url,
+    attrs: l.attrs ?? prev?.attrs ?? null,
+    detail_text: l.detail_text ?? prev?.detail_text ?? null,
+    last_changed_at: changed ? nowIso : prev?.last_changed_at ?? nowIso,
+  };
   const row: Record<string, unknown> = {
     competitor: l.competitor, external_key: l.external_key, scope: l.scope, title: l.title, title_he: l.title_he,
     event_date: l.event_date, city: l.city, venue: l.venue, price_from: l.price_from, currency: l.currency,
     price_usd: l.price_usd, travel_depart: l.travel_depart, travel_return: l.travel_return,
-    attrs: l.attrs ?? prev?.attrs ?? null, url: l.url, last_seen_at: nowIso, run_id: runId,
+    attrs: next.attrs, detail_text: next.detail_text, url: l.url,
+    last_seen_at: nowIso, last_changed_at: next.last_changed_at, run_id: runId,
   };
-  if (l.detail_text) row.detail_text = l.detail_text;
-  if (changed) row.last_changed_at = nowIso;
-  const { data, error } = await db.from("competitor_listings")
-    .upsert(row, { onConflict: "competitor,external_key" }).select("id").single();
-  if (error) { console.error("price-light-crawl: listing upsert failed", JSON.stringify(error)); throw new Error(`listing upsert ${l.external_key}: ${error.message}`); }
-  return { id: data.id, changed };
+  return { row, next };
 }
 
-/** Listings already matched, or on a date (±1 day) one of our live events has - the only ones worth a detail page. */
+/** `.in(...)` is a URL filter - a whole catalog's ids in one call risks an over-long query string. */
+const IN_CHUNK = 200;
+
+function chunkIds(ids: number[]): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK) out.push(ids.slice(i, i + IN_CHUNK));
+  return out;
+}
+
+/**
+ * Listings already matched, or on a date (±1 day) one of our live events has - the only ones
+ * worth a detail page.
+ *
+ * Every read here checks its `error`: a swallowed failure returns an empty want-set, so the run
+ * enriches NOTHING while still reporting `ok` - a silent wrong answer that looks like success.
+ * Batching the catalog write made this reachable (the whole catalog's ids now arrive at once
+ * instead of trickling in), so the failure is reported and the caller skips enrichment for this
+ * run rather than pretending there was nothing to enrich.
+ */
 async function listingIdsWorthDetail(competitor: CompetitorKey, ids: number[]): Promise<Set<number>> {
-  const { data: matched } = await db.from("competitor_matches").select("listing_id")
-    .eq("competitor", competitor).eq("status", "found").in("listing_id", ids);
-  const want = new Set<number>((matched ?? []).map((m: { listing_id: number }) => m.listing_id));
-  const { data: dates } = await db.from("events").select("date").is("is_deleted", null).gte("date", new Date().toISOString().slice(0, 10));
+  const want = new Set<number>();
+  for (const chunk of chunkIds(ids)) {
+    const { data: matched, error } = await db.from("competitor_matches").select("listing_id")
+      .eq("competitor", competitor).eq("status", "found").in("listing_id", chunk);
+    if (error) { console.error("price-light-crawl: matched-listings read failed", JSON.stringify(error)); throw new Error(`detail targets ${competitor}: ${error.message}`); }
+    for (const m of (matched ?? []) as { listing_id: number }[]) want.add(m.listing_id);
+  }
+  const { data: dates, error: datesError } = await db.from("events").select("date").is("is_deleted", null).gte("date", new Date().toISOString().slice(0, 10));
+  if (datesError) { console.error("price-light-crawl: event dates read failed", JSON.stringify(datesError)); throw new Error(`detail targets ${competitor}: ${datesError.message}`); }
   const ourDays = new Set<string>((dates ?? []).map((e: { date: string }) => e.date.slice(0, 10)));
-  const { data: rows } = await db.from("competitor_listings").select("id,event_date,detail_text").in("id", ids);
-  for (const r of (rows ?? []) as { id: number; event_date: string | null; detail_text: string | null }[]) {
+  const rows: { id: number; event_date: string | null; detail_text: string | null }[] = [];
+  for (const chunk of chunkIds(ids)) {
+    const { data, error } = await db.from("competitor_listings").select("id,event_date,detail_text").in("id", chunk);
+    if (error) { console.error("price-light-crawl: listing dates read failed", JSON.stringify(error)); throw new Error(`detail targets ${competitor}: ${error.message}`); }
+    rows.push(...((data ?? []) as { id: number; event_date: string | null; detail_text: string | null }[]));
+  }
+  for (const r of rows) {
     if (!r.event_date || r.detail_text) continue;
     const d = new Date(`${r.event_date}T00:00:00.000Z`);
     for (const delta of [-1, 0, 1]) {
@@ -189,25 +297,82 @@ export async function runCrawl(
     const c = ctx(page);
     summary.pages = 1;
     let budgetHit = false;
+    // Batched catalog write path: ONE paged preload of this competitor's listings, then one
+    // upsert per CATALOG_CHUNK rows. dryRun writes nothing, so it doesn't read anything either.
+    const prevByKey = dryRun ? new Map<string, PrevListing>() : await loadExistingListings(competitor);
+    const buffer: PendingWrite[] = [];
+    const bufferedKeys = new Set<string>();
+
+    /**
+     * Writes the buffered rows in one request and folds the result into the counters:
+     * `summary.listings` counts SUCCESSFUL writes only, `summary.changed` the changed ones,
+     * `summary.failed` the rows that could not be written.
+     * A chunk-level error must NOT lose 500 rows silently (a single bad row - e.g. one that
+     * trips the phase-2 partial unique index on (competitor, scope, travel_depart,
+     * travel_return) - fails the whole statement), so the chunk is retried row by row and only
+     * the genuinely bad rows count as `failed`, exactly as the old per-listing path behaved.
+     */
+    const flushBuffer = async (): Promise<void> => {
+      if (buffer.length === 0) return;
+      const chunk = buffer.splice(0, buffer.length);
+      bufferedKeys.clear();
+      const { data, error } = await db.from("competitor_listings")
+        .upsert(chunk.map((b) => b.row), { onConflict: "competitor,external_key" })
+        .select("id,external_key");
+      if (!error) {
+        const idByKey = new Map<string, number>();
+        for (const r of (data ?? []) as { id: number; external_key: string }[]) idByKey.set(r.external_key, r.id);
+        for (const b of chunk) {
+          summary.listings += 1;
+          if (b.changed) summary.changed += 1;
+          const id = idByKey.get(b.key);
+          // The write succeeded, so it counts; without an id it just can't be offered to the
+          // detail step below (never observed - the upsert echoes every row it wrote).
+          if (id == null) { console.error(`price-light-crawl: ${competitor} upsert returned no id for ${b.key}`); continue; }
+          ids.push(id);
+        }
+        return;
+      }
+      console.error(`price-light-crawl: ${competitor} chunk upsert failed (${chunk.length} rows), retrying row by row`, JSON.stringify(error));
+      for (const b of chunk) {
+        const { data: one, error: rowError } = await db.from("competitor_listings")
+          .upsert(b.row, { onConflict: "competitor,external_key" }).select("id").single();
+        if (rowError) {
+          console.error(`price-light-crawl: ${competitor} listing ${b.key} upsert failed`, JSON.stringify(rowError));
+          summary.failed += 1;
+          continue;
+        }
+        summary.listings += 1;
+        if (b.changed) summary.changed += 1;
+        const id: number = one.id;
+        ids.push(id);
+      }
+    };
+
     for await (const listing of scraper.crawl(c)) {
       if (Date.now() - start > budget) { summary.note = "budget exhausted during catalog"; summary.status = "partial"; budgetHit = true; break; }
-      // `summary.listings` counts SUCCESSFUL upserts only - it's incremented after the upsert
+      // `summary.listings` counts SUCCESSFUL upserts only - it's incremented once the write
       // resolves (or immediately under dryRun, which performs no upsert at all), never up front,
       // so a failed upsert is counted once via `failed` and never double-counted into `total`
       // below (fix round 2, re-review finding).
       if (dryRun) { summary.listings += 1; continue; }
-      // One bad listing must not abort the whole run - upsertListing already logged the
-      // Supabase error before throwing; count the failure and move on (fix round 1, finding 3).
-      try {
-        const { id, changed } = await upsertListing(listing, summary.runId, nowIso);
-        summary.listings += 1;
-        ids.push(id);
-        if (changed) summary.changed += 1;
-      } catch (e) {
-        console.error(`price-light-crawl: ${competitor} listing upsert failed`, e instanceof Error ? e.message : e);
-        summary.failed += 1;
-      }
+      const prev = prevByKey.get(listing.external_key) ?? null;
+      const changed = listingChanged(prev, listing);
+      const { row, next } = buildListingWrite(listing, prev, summary.runId, nowIso, changed);
+      // The same external_key twice inside one chunk would make ON CONFLICT touch a row twice
+      // ("cannot affect row a second time") and fail the whole statement - flush first so the
+      // repeat lands in the next chunk, i.e. as a second write, like the old row-at-a-time path.
+      if (bufferedKeys.has(listing.external_key)) await flushBuffer();
+      buffer.push({ key: listing.external_key, row, changed });
+      bufferedKeys.add(listing.external_key);
+      // Keep the map in step with what was just queued, so a repeat of this key compares against
+      // the value that will be stored - what the old per-listing select would have returned.
+      prevByKey.set(listing.external_key, next);
+      if (buffer.length >= CATALOG_CHUNK) await flushBuffer();
     }
+    // Flush the tail - also after a budget break, so listings already crawled are stored rather
+    // than thrown away; that costs one request, not another pass over the catalog.
+    if (!dryRun) await flushBuffer();
     // A budget break already spent the whole run's time budget on the catalog alone - skip
     // detail enrichment entirely rather than immediately re-hitting the same budget check.
     if (budgetHit) return;
@@ -222,7 +387,19 @@ export async function runCrawl(
       }
     }
     if (dryRun || !scraper.detail || ids.length === 0) return;
-    const want = await listingIdsWorthDetail(competitor, ids);
+    // The catalog is already written at this point, so a failure picking enrichment targets must
+    // not throw away a good run - record it on the summary and skip enrichment for tonight. The
+    // listings themselves are fine; only their attrs stay unknown until the next crawl.
+    let want: Set<number>;
+    try {
+      want = await listingIdsWorthDetail(competitor, ids);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`price-light-crawl: ${competitor} detail targets failed`, msg);
+      const note = `detail targets unavailable (${msg.slice(0, 120)}) - catalog written, enrichment skipped`;
+      summary.note = summary.note ? `${summary.note} | ${note}` : note;
+      return;
+    }
     // Explicit select, not "*" - only what scraper.detail() reads and what the write-back
     // below merges into. `currency` and `event_date` are part of that set: the detail page
     // may price in a different currency than the catalog card (Golasso prices in the

@@ -23,6 +23,7 @@ import { LIGHT_EVENT_COLUMNS, writeSnapshotAndTag, type LightEvent } from "@/lib
 import { matchAllForEvent, type AiBudget } from "@/lib/services/price-light-match";
 import { AI_CALLS_PER_RUN } from "@/lib/services/price-light-judge";
 import { runCrawl } from "@/lib/services/price-light-crawl";
+import { LIGHTS, type Light, type Scope } from "@/types/price-light.types";
 
 // LiveTickets refresh is a table read (no crawling), so it should finish in
 // seconds - but it defaults to the crawler's 240s budget, which alone would
@@ -42,7 +43,13 @@ export interface NightlySummary {
   tagged: number;
   cleared: number;
   matched: number;
-  lightChanges: { eventId: number; name: string; from: string | null; to: string | null }[];
+  lightChanges: { eventId: number; name: string; scope: Scope; from: Light | null; to: Light | null }[];
+  /**
+   * Resulting light per scope for EVERY event pass 2 processed (not only the ones
+   * that moved) - `after`, keyed by scope then light. This is the "184 red tonight"
+   * number `lightChanges` alone can't show, since most events never move.
+   */
+  lightCounts: { package: Record<Light, number>; ticket: Record<Light, number> };
   errors: { eventId: number; note: string }[];
   remaining: number;
   /** Events pass 1 (snapshot + tag) never reached before the shared budget ran out. */
@@ -52,12 +59,17 @@ export interface NightlySummary {
   dryRun: boolean;
 }
 
+function emptyLightCounts(): Record<Light, number> {
+  return Object.fromEntries(LIGHTS.map((l) => [l, 0])) as Record<Light, number>;
+}
+
 export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs: number }): Promise<NightlySummary> {
   const start = Date.now();
   const today = new Date().toISOString().slice(0, 10);
   const summary: NightlySummary = {
     scanned: 0, snapshots: 0, tagged: 0, cleared: 0, matched: 0,
-    lightChanges: [], errors: [], remaining: 0, snapshotsRemaining: 0, aiCalls: 0, dryRun: options.dryRun,
+    lightChanges: [], lightCounts: { package: emptyLightCounts(), ticket: emptyLightCounts() },
+    errors: [], remaining: 0, snapshotsRemaining: 0, aiCalls: 0, dryRun: options.dryRun,
   };
 
   // LiveTickets listings are a table read - refresh them every night before matching.
@@ -135,11 +147,19 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
       });
       if (!result) continue;
       summary.matched += result.outcomes.filter((o) => o.wrote).length;
+      const { before, after } = result.lights;
+      if (after.package) summary.lightCounts.package[after.package] += 1;
+      if (after.ticket) summary.lightCounts.ticket[after.ticket] += 1;
+      // `changed` is a cheap early-out (both scopes unmoved -> skip entirely); once it's
+      // true, compare each scope on its own so a package-only or ticket-only move doesn't
+      // get attributed to the wrong scope (or both scopes logged when only one moved).
       if (result.lights.changed) {
-        summary.lightChanges.push({
-          eventId: event.id, name: event.name,
-          from: result.lights.before.package, to: result.lights.after.package,
-        });
+        if (before.package !== after.package) {
+          summary.lightChanges.push({ eventId: event.id, name: event.name, scope: "package", from: before.package, to: after.package });
+        }
+        if (before.ticket !== after.ticket) {
+          summary.lightChanges.push({ eventId: event.id, name: event.name, scope: "ticket", from: before.ticket, to: after.ticket });
+        }
       }
     } catch (e) {
       const note = e instanceof Error ? e.message : String(e);
@@ -193,18 +213,28 @@ async function revalidateMain(): Promise<void> {
 
 async function sendSummaryEmail(s: NightlySummary): Promise<void> {
   const redMoves = s.lightChanges.filter((c) => c.from === "red" || c.to === "red");
-  if (!s.tagged && !s.cleared && redMoves.length === 0 && s.errors.length === 0) return;
+  // Most nights nothing "changes" (a red event just stays red) - counting only moves
+  // is exactly the blind spot that hid 184 red tickets behind an all-`na` package scope
+  // on the first live run. Gate on the CURRENT red count too, so a steady-state red
+  // catalog still gets a nightly email instead of going silent.
+  const redNow = s.lightCounts.package.red + s.lightCounts.ticket.red;
+  if (!s.tagged && !s.cleared && redMoves.length === 0 && s.errors.length === 0 && redNow === 0) return;
   const to = process.env.NEXT_SECRET_ADMIN_EMAIL;
   if (!to) return;
+  const countsLine = (scope: "package" | "ticket") =>
+    LIGHTS.map((l) => `${l} ${s.lightCounts[scope][l]}`).join(" · ");
   try {
     await sendMail({
       to,
-      subject: `Price light: ${redMoves.length} red changes · ${s.tagged} new price-drop tags · ${s.errors.length} errors`,
+      subject: `Price light: ${redNow} red now (${redMoves.length} changes) · ${s.tagged} new price-drop tags · ${s.errors.length} errors`,
       html: [
         `<p><a href="${appOrigin()}/events">Events</a> · scanned ${s.scanned} · ${s.remaining} left for tomorrow` +
           (s.snapshotsRemaining ? ` · ${s.snapshotsRemaining} snapshots not reached` : "") +
           ` · AI ${s.aiCalls}/${AI_CALLS_PER_RUN} calls</p>`,
-        redMoves.length ? `<ul>${redMoves.map((c) => `<li>#${c.eventId} ${c.name}: ${c.from ?? "—"} → ${c.to ?? "—"}</li>`).join("")}</ul>` : "",
+        `<p>package: ${countsLine("package")}<br/>ticket: ${countsLine("ticket")}</p>`,
+        redMoves.length
+          ? `<ul>${redMoves.map((c) => `<li>#${c.eventId} ${c.name} (${c.scope}): ${c.from ?? "—"} → ${c.to ?? "—"}</li>`).join("")}</ul>`
+          : "",
         s.errors.length ? `<p><b>Errors</b></p><ul>${s.errors.map((e) => `<li>#${e.eventId}: ${e.note}</li>`).join("")}</ul>` : "",
       ].join(""),
     });
