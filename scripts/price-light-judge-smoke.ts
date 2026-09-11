@@ -8,13 +8,15 @@
  * plain `node --env-file=...` can't resolve those `@/` aliases. Run with tsx instead
  * (it reads tsconfig.json's "paths"):
  *
- *   npx tsx --env-file=.env.local scripts/price-light-judge-smoke.ts <eventId>
+ *   npx tsx --env-file=.env.local scripts/price-light-judge-smoke.ts <eventId> [competitor]
  *
- * Do NOT run this without ANTHROPIC_API_KEY set in .env.local and PRICE_LIGHT_AI != "off" -
- * without both, extractAndJudge() just returns an "ai disabled" verdict (no API call, no cost).
+ * Needs a real console key in ANTHROPIC_API_KEY and PRICE_LIGHT_AI=on; it checks both up front
+ * and tells you which one is missing instead of printing an "ai disabled" verdict. This is the
+ * ONE call to make before turning the AI on for the nightly: it proves the key, the model id,
+ * the forced tool call and the token accounting on a single real event, for about 3 cents.
  */
 import { loadEventForLight } from "@/lib/services/price-light-store";
-import { extractAndJudge } from "@/lib/services/price-light-judge";
+import { aiEnabled, aiModel, anthropicKey, extractAndJudge } from "@/lib/services/price-light-judge";
 import { supabase } from "@/lib/supabase-server";
 import { DATE_TOLERANCE_DAYS } from "@/lib/services/price-light";
 import type { ListingRow } from "@/types/price-light.types";
@@ -31,10 +33,22 @@ function shiftDay(day: string, delta: number): string {
 
 async function main() {
   const eventId = Number(process.argv[2]);
+  const competitor = process.argv[3] ?? null;
   if (!Number.isFinite(eventId)) {
-    console.error("usage: npx tsx --env-file=.env.local scripts/price-light-judge-smoke.ts <eventId>");
+    console.error("usage: npx tsx --env-file=.env.local scripts/price-light-judge-smoke.ts <eventId> [competitor]");
     process.exit(1);
   }
+
+  // Diagnose the switches BEFORE touching the database, so a missing key reads as a missing
+  // key rather than as an empty result or a bland "ai disabled" verdict.
+  if (!aiEnabled()) {
+    const switchOn = process.env.PRICE_LIGHT_AI === "on";
+    console.error("the judge is off, so this would make no API call. Fix and re-run:");
+    if (!switchOn) console.error(`  - PRICE_LIGHT_AI is "${process.env.PRICE_LIGHT_AI ?? "(unset)"}" - set it to exactly "on"`);
+    if (!anthropicKey()) console.error(`  - ANTHROPIC_API_KEY is ${process.env.ANTHROPIC_API_KEY?.trim() ? "not a console key (it must start with \"sk-ant-\")" : "empty"} - paste the key from console.anthropic.com`);
+    process.exit(1);
+  }
+  console.log(`model: ${aiModel()}`);
 
   const event = await loadEventForLight(eventId);
   if (!event) {
@@ -43,22 +57,25 @@ async function main() {
   }
 
   const day = event.date.slice(0, 10);
-  const { data, error } = await db
+  // Any competitor by default (pass one as argv[3] to pin it): hardcoding `liveevents` made
+  // this print "nothing to judge" whenever that site happened not to be the one crawled last.
+  // Window listings (ISSTA/OnTour publish no match date) are included the same way
+  // `candidatesFor` includes them, or the smoke test could not reach half the catalog.
+  let query = db
     .from("competitor_listings")
     .select("id,competitor,external_key,scope,title,title_he,event_date,city,venue,price_from,currency,price_usd,travel_depart,travel_return,attrs,detail_text,url,first_seen_at,last_seen_at,last_changed_at,run_id")
-    .eq("competitor", "liveevents")
-    .eq("scope", "package")
-    .gte("event_date", shiftDay(day, -DATE_TOLERANCE_DAYS))
-    .lte("event_date", shiftDay(day, DATE_TOLERANCE_DAYS))
+    .or(`and(event_date.gte.${shiftDay(day, -DATE_TOLERANCE_DAYS)},event_date.lte.${shiftDay(day, DATE_TOLERANCE_DAYS)}),and(event_date.is.null,travel_depart.lte.${day},travel_return.gte.${day})`)
     .order("last_seen_at", { ascending: false })
     .limit(5);
+  if (competitor) query = query.eq("competitor", competitor);
+  const { data, error } = await query;
   if (error) {
     console.error("price-light-judge-smoke: candidate query failed", JSON.stringify(error));
     process.exit(1);
   }
 
   const candidates = (data ?? []) as ListingRow[];
-  console.log(`event #${eventId} "${event.name}" (${day}) - ${candidates.length} liveevents candidate(s) within +/-${DATE_TOLERANCE_DAYS}d`);
+  console.log(`event #${eventId} "${event.name}" (${day}) - ${candidates.length} ${competitor ?? "any-competitor"} candidate(s) within +/-${DATE_TOLERANCE_DAYS}d or covering the date`);
   if (candidates.length === 0) {
     console.log("nothing to judge - no candidates in range.");
     return;

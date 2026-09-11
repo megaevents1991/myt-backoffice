@@ -31,14 +31,40 @@ export interface JudgeResult {
   attrs: ExtractedAttrs; verdict: AiVerdict; listing: ListingRow | null;
 }
 
+/** Every Anthropic console key starts with this. A placeholder never does. */
+const KEY_PREFIX = "sk-ant-";
+let keyWarned = false;
+
+/**
+ * The key, or null when what is configured is not one. The env var is expected to sit in
+ * Vercel as an empty slot until a real key from console.anthropic.com is pasted in, so the
+ * shape check is what keeps a slot (or a half-pasted value) from being treated as a
+ * credential: without it, `ANTHROPIC_API_KEY=REPLACE_ME` plus `PRICE_LIGHT_AI=on` would look
+ * enabled and turn every match into a 401 that reads as `unsure` with no hint why.
+ */
+export function anthropicKey(): string | null {
+  const raw = (process.env.ANTHROPIC_API_KEY ?? "").trim();
+  return raw.startsWith(KEY_PREFIX) ? raw : null;
+}
+
 /**
  * Opt-in, never fail-open: the AI is off unless PRICE_LIGHT_AI is literally "on"
- * AND a key is present. A typo, an empty string or an unset var costs nothing and
- * falls back to rule-only matching - the money side must never turn itself on by
- * accident (e.g. someone clearing the var to "disable" it).
+ * AND a real key is present. A typo, an empty string, a placeholder or an unset var costs
+ * nothing and falls back to rule-only matching - the money side must never turn itself on by
+ * accident (e.g. someone clearing the var to "disable" it). When the switch is on but the key
+ * is not usable, say so ONCE per process: silently doing nothing is the confusing outcome.
  */
 export function aiEnabled(): boolean {
-  return process.env.PRICE_LIGHT_AI === "on" && !!process.env.ANTHROPIC_API_KEY;
+  if (process.env.PRICE_LIGHT_AI !== "on") return false;
+  if (anthropicKey()) return true;
+  if (!keyWarned) {
+    keyWarned = true;
+    const raw = (process.env.ANTHROPIC_API_KEY ?? "").trim();
+    console.warn(
+      `price-light-judge: PRICE_LIGHT_AI=on but ANTHROPIC_API_KEY is ${raw ? `not a console key (expected it to start with "${KEY_PREFIX}")` : "empty"} - matching stays rule-only.`,
+    );
+  }
+  return false;
 }
 export function aiModel(): string { return process.env.PRICE_LIGHT_AI_MODEL || AI_MODEL_DEFAULT; }
 
@@ -112,7 +138,9 @@ export async function extractAndJudge(input: JudgeInput): Promise<JudgeResult> {
     // maxRetries 0: a retry doubles the wall-clock cost of one event inside the
     // nightly's between-events budget check, and a failed verdict is already a
     // harmless `unsure` that the next visit retries anyway.
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: AI_TIMEOUT_MS, maxRetries: 0 });
+    // `anthropicKey()` rather than the raw env var: aiEnabled() already proved it is a real
+    // key, and going through the same accessor means a placeholder can never reach the client.
+    const client = new Anthropic({ apiKey: anthropicKey() ?? undefined, timeout: AI_TIMEOUT_MS, maxRetries: 0 });
     const res = await client.messages.create({
       model, max_tokens: 4_000, system: SYSTEM, tools: [TOOL], tool_choice: { type: "tool", name: "verdict" },
       // Opus 5 thinks adaptively by default, so the reasoning tokens come out of

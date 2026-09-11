@@ -412,6 +412,12 @@ NEXT_SECRET_P1_TICKETS_FEED_URL=
 PRICE_LIGHT_SCRAPE=
 # Server-only, OUR Anthropic account (never the client, never billed to a customer key).
 # Powers extractAndJudge() - the price light's one AI call site (lib/services/price-light-judge.ts).
+# A console key from console.anthropic.com, starting "sk-ant-". The Vercel slot ships with a
+# placeholder: `anthropicKey()` only accepts a value with that prefix, so a placeholder or a
+# half-pasted value counts as NO key (rule-only) instead of turning every match into a 401.
+# With PRICE_LIGHT_AI=on and an unusable key, the judge logs why once per process.
+# Claude Code / Claude.ai subscriptions are interactive seats and cannot authenticate this -
+# the cron calls the API server-to-server, so it needs a console key.
 ANTHROPIC_API_KEY=
 # Phase 1 - AI judge for ambiguous matches (rule-match is phase 0's only matcher). OPT-IN, fails
 # closed: set PRICE_LIGHT_AI=on to enable; unset, empty or anything but "on" = off = rule-only,
