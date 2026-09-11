@@ -37,3 +37,20 @@ export function partnerLink(
   // which re-validates the saved combination against live data before applying it.
   return shareToken ? `${base}&pkg=${encodeURIComponent(shareToken)}` : base
 }
+
+/**
+ * A tracking link to any site page - an artist, team or category page
+ * (`/c/...`), picked in the portal's link builder. Same utm_source /
+ * utm_medium / utm_content contract as partnerLink, so attribution is
+ * identical to the homepage link.
+ */
+export function partnerPageLink(
+  trackingCode: string,
+  path: string,
+  agentUtm?: string | null,
+): string {
+  const clean = path.startsWith("/") ? path : `/${path}`
+  let link = `${PUBLIC_SITE_URL}${clean}?utm_source=${encodeURIComponent(trackingCode)}&utm_medium=influencer`
+  if (agentUtm) link += `&utm_content=${encodeURIComponent(agentUtm)}`
+  return link
+}

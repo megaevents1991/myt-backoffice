@@ -7,6 +7,7 @@ import {
 } from "@/lib/actions/portal-package-actions";
 import { getPortalProfile } from "@/lib/actions/portal-actions";
 import { getAgentSlugForUser, agentUtmContent } from "@/lib/portal-attribution";
+import { listSitePages } from "@/lib/actions/portal-site-pages-actions";
 import { SELLER_ROLES } from "@/types/auth.types";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +30,7 @@ export default async function PortalPackagesPage() {
 
   const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
 
-  const [packages, events, profile] = await Promise.all([
+  const [packages, events, profile, pages] = await Promise.all([
     getMyPreparedPackages(),
     getPackageBuilderEvents().catch((error: unknown) => {
       // The packages list still stands on its own if the event search fails.
@@ -39,6 +40,10 @@ export default async function PortalPackagesPage() {
     getPortalProfile().catch((error: unknown) => {
       console.error("PortalPackagesPage profile:", error);
       return null;
+    }),
+    listSitePages().catch((error: unknown) => {
+      console.error("PortalPackagesPage pages:", error);
+      return [];
     }),
   ]);
 
@@ -103,6 +108,7 @@ export default async function PortalPackagesPage() {
               location: e.location_name || null,
               suggested_price: e.site_price,
             }))}
+            pages={pages}
             agentUtm={agentUtm}
           />
         </CardContent>

@@ -15,6 +15,8 @@ export type CouponInput = {
   max_uses: number | null;
   /** Partner credited for orders redeeming this coupon (when order has no affiliate). */
   partner_tracking_code: string | null;
+  /** Fixed discount × ticket count (influencer coupons). Ignored for percent. */
+  per_person: boolean;
   is_active: boolean;
 };
 

@@ -16,6 +16,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > here, unchanged. The portal is styled with the main app's brand (forest
 > `#0A1A14` / mint `#5BFF95`, Assistant+Rubik) via the `portal-theme` scope in
 > `app/globals.css` - the admin dashboard look is untouched.
+>
+> **Partner links + influencer coupons (2026-09-11):** the portal link builder
+> can target any site page (`lib/actions/portal-site-pages-actions.ts` →
+> `partnerPageLink` in `lib/site.ts`; artists/teams resolve to their `/c/`
+> twin like main's `cmsTwin.ts`). Every `affiliate` partner can have ONE
+> influencer coupon (`coupons.influencer_partner_code`, code = tracking code +
+> value e.g. `AVIRAN30`, terms mirror `partners.user_discount`: 1..10 →
+> percent, else fixed **per person** via `coupons.per_person`). Built from the
+> partner editor, re-synced by `updatePartnerAccount` and the portal's
+> rebalance (`lib/services/influencer-coupon.ts`). myt-main multiplies a
+> per-person fixed coupon by the ticket count (`getCouponDiscountUsd`,
+> validate route, confirm-order) - other coupons stay per order.
 
 > **✅ Redesign + Events Factory + Guide (branch `feat/backoffice-redesign`, 2026-09-02).**
 > Everything below is on that branch, migrations already applied to prod.

@@ -7,6 +7,7 @@ import {
   type PartnerCredit,
 } from "@/lib/actions/partner-credit-actions";
 import { getPackageBuilderEvents } from "@/lib/actions/portal-package-actions";
+import { getMyInfluencerCoupon } from "@/lib/actions/influencer-coupon-actions";
 import { getAgentSlugForUser, agentUtmContent } from "@/lib/portal-attribution";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
 import { PARTNER_ROLES, SELLER_ROLES } from "@/types/auth.types";
@@ -95,7 +96,7 @@ export default async function PortalDashboardPage({
   const profile = await getPortalProfile();
   const creditAllowed = (profile?.credit_per_ticket ?? 0) > 0;
 
-  const [events, reservationsPage, agentSlug, dashboard, credit] =
+  const [events, reservationsPage, agentSlug, dashboard, credit, influencerCoupon] =
     await Promise.all([
       getPackageBuilderEvents().catch((error: unknown) => {
         console.error("PortalDashboardPage events:", error);
@@ -114,6 +115,8 @@ export default async function PortalDashboardPage({
       creditAllowed
         ? getMyCredit().catch(() => null)
         : Promise.resolve<PartnerCredit | null>(null),
+      // Influencers only (null for everyone else) - their one coupon.
+      getMyInfluencerCoupon().catch(() => null),
     ]);
   const agentUtm = agentUtmContent(agentSlug);
 
@@ -242,6 +245,31 @@ export default async function PortalDashboardPage({
           הסינון חל על הפעילות והאירועים - לא על חיוב העמלה.
         </span>
       </div>
+
+      {influencerCoupon && influencerCoupon.is_active && (
+        <Card className="shadow-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">הקופון שלי</CardTitle>
+            <CardDescription>
+              עוקבים שמקלידים את הקוד בקופה במקום ללחוץ על הלינק - ההזמנה נספרת
+              לכם בדיוק כמו דרך הלינק.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-3">
+            <code
+              dir="ltr"
+              className="rounded-md bg-muted px-3 py-1.5 font-mono text-lg font-bold tracking-wide"
+            >
+              {influencerCoupon.code}
+            </code>
+            <span className="text-sm text-muted-foreground">
+              {influencerCoupon.discount_type === "percent"
+                ? `${influencerCoupon.discount_value}% הנחה על ההזמנה`
+                : `$${influencerCoupon.discount_value} הנחה לכל נוסע`}
+            </span>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {money.map((card) => {

@@ -44,6 +44,7 @@ import {
   getContractDownloadUrl,
   removeUserContract,
 } from "@/lib/actions/user-actions";
+import { InfluencerCouponCard } from "@/components/influencer-coupon-card";
 
 /** Numbers are held as strings so a half-typed field doesn't become NaN. */
 type FormState = {
@@ -501,6 +502,14 @@ export default function PartnerPage({
                   Taken off the price for customers arriving through this partner.
                 </p>
               </div>
+              {form.type === "affiliate" && unwrappedParams.code !== "new" && (
+                <div className="sm:col-span-2">
+                  <InfluencerCouponCard
+                    trackingCode={unwrappedParams.code}
+                    userDiscount={Number(form.user_discount) || 0}
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="credit_per_ticket">Site Credit ($ per ticket)</Label>
                 <Input

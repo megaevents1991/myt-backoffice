@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase-server";
 import { verifyPassword } from "@/lib/auth/supabase-auth";
 import { logAudit } from "@/lib/audit";
 import { freezeCommissionOnExistingReservations } from "@/lib/partner-commission-freeze";
+import { syncInfluencerCoupon } from "@/lib/services/influencer-coupon";
 
 /**
  * Partner self-service profile (פעולות על הפרופיל).
@@ -462,5 +463,11 @@ export async function rebalanceMyCommissionSplit(input: {
     changes: { commission, user_discount: discount },
     metadata: { self_service_rebalance: true },
   });
+  // The influencer's coupon carries the follower discount - re-sync it so the
+  // code and value follow the new split.
+  const synced = await syncInfluencerCoupon(session.partner_code, { create: false });
+  if (!synced.ok && synced.error !== "לשותף עדיין אין קופון משפיען") {
+    console.error("rebalanceMyCommissionSplit: influencer coupon sync", synced.error);
+  }
   return { ok: true };
 }

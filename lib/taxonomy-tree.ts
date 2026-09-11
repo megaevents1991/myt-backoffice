@@ -38,6 +38,27 @@ export function flattenWithPath(cats: EventCategory[]): { id: number; path: stri
   return cats.map((c) => ({ id: c.id, path: pathOf(c) }));
 }
 
+// Root → parent chain of a category (excluding itself), oldest ancestor first.
+export function ancestorsOf(cat: EventCategory, all: EventCategory[]): EventCategory[] {
+  const byId = new Map<number, EventCategory>(all.map((c) => [c.id, c]));
+  const chain: EventCategory[] = [];
+  const seen = new Set<number>();
+  let cur = cat.parent_id;
+  while (cur != null && byId.has(cur) && !seen.has(cur)) {
+    seen.add(cur);
+    const p = byId.get(cur)!;
+    chain.unshift(p);
+    cur = p.parent_id;
+  }
+  return chain;
+}
+
+// Canonical URL path segments for a category on the site: ancestors' slugs +
+// its own (mirrors myt-main lib/taxonomy-tree.ts slugPathOf → /c/a/b/c).
+export function slugPathOf(cat: EventCategory, all: EventCategory[]): string[] {
+  return [...ancestorsOf(cat, all).map((a) => a.slug), cat.slug];
+}
+
 // All descendant ids of `id` (not including `id` itself), from a built tree.
 export function descendantIds(nodes: EventCategoryNode[], id: number): number[] {
   const find = (ns: EventCategoryNode[]): EventCategoryNode | null => {

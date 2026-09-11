@@ -61,6 +61,7 @@ const emptyForm: CouponInput = {
   valid_until: null,
   max_uses: null,
   partner_tracking_code: null,
+  per_person: false,
   is_active: true,
 };
 
@@ -126,6 +127,7 @@ export function CouponsTable() {
       valid_until: coupon.valid_until?.slice(0, 10) ?? null,
       max_uses: coupon.max_uses,
       partner_tracking_code: coupon.partner_tracking_code ?? null,
+      per_person: coupon.per_person ?? false,
       is_active: coupon.is_active,
     });
     setDialogOpen(true);
@@ -239,9 +241,21 @@ export function CouponsTable() {
       accessorKey: "discount_value",
       header: "Discount",
       cell: ({ row }) =>
-        row.original.discount_type === "percent"
-          ? `${row.original.discount_value}%`
-          : `$${row.original.discount_value}`,
+        row.original.discount_type === "percent" ? (
+          `${row.original.discount_value}%`
+        ) : (
+          <span className="whitespace-nowrap">
+            ${row.original.discount_value}
+            {row.original.per_person && (
+              <span className="ms-1 text-xs text-muted-foreground">/ person</span>
+            )}
+            {row.original.influencer_partner_code && (
+              <Badge variant="secondary" className="ms-1.5 text-[10px]">
+                influencer
+              </Badge>
+            )}
+          </span>
+        ),
     },
     {
       accessorKey: "event_id",
@@ -501,6 +515,26 @@ export function CouponsTable() {
                 />
               </div>
             </div>
+
+            {form.discount_type === "fixed" && (
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div>
+                  <Label htmlFor="coupon-per-person" className="cursor-pointer">
+                    Per person
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    $ off every ticket on the order, like the follower discount. Off = once per order.
+                  </p>
+                </div>
+                <Switch
+                  id="coupon-per-person"
+                  checked={form.per_person}
+                  onCheckedChange={(checked) =>
+                    setForm({ ...form, per_person: checked })
+                  }
+                />
+              </div>
+            )}
 
             <div className="flex items-center justify-between rounded-md border p-3">
               <Label htmlFor="coupon-active" className="cursor-pointer">

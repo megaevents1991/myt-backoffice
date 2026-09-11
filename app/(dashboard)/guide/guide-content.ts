@@ -415,6 +415,14 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "A monthly partner report goes out automatically on the 1st.",
         "דוח שותפים חודשי נשלח אוטומטית ב־1 לחודש.",
       ),
+      t(
+        "Link builder (portal → החבילות והלינקים שלי): besides the homepage and per-event links, a partner can point a tracking link at any site page - an artist, a team or a category (/c/...) - with the same utm_source attribution.",
+        "בונה הלינקים (פורטל → החבילות והלינקים שלי): מלבד דף הבית ולינק לאירוע, שותף יכול לכוון לינק מעקב לכל עמוד באתר — אמן, קבוצה או קטגוריה (/c/...) — עם אותה זקיפה של utm_source.",
+      ),
+      t(
+        "Influencer coupon: every affiliate (משפיען) gets one coupon built from the follower discount - code = tracking code + value (AVIRAN30), fixed amounts are per person like the link discount, and an order with the code counts as the influencer's. Built from the partner editor; saving a new follower discount renames it.",
+        "קופון משפיען: לכל משפיען קופון אחד שנבנה מהנחת העוקבים — קוד = קוד מעקב + ערך (AVIRAN30), סכום קבוע הוא לאדם כמו בהנחת הלינק, והזמנה עם הקוד נספרת למשפיען. נבנה מעורך השותף; שמירת הנחת עוקבים חדשה משנה את הקוד.",
+      ),
     ],
     links: [
       { label: t("Partners (staff view)", "שותפים (תצוגת צוות)"), href: "/partners" },

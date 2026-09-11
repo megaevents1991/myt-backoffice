@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { freezeCommissionOnExistingReservations } from "@/lib/partner-commission-freeze";
+import { syncInfluencerCoupon } from "@/lib/services/influencer-coupon";
 import {
   COMMISSION_TYPES,
   MARKETING_PARTNER_TYPES,
@@ -336,6 +337,16 @@ export async function updatePartnerAccount(
       JSON.stringify(partnerError),
     );
     return { ok: false, error: "Could not update the partner" };
+  }
+
+  // An influencer's coupon mirrors the follower discount - keep it in step
+  // (renames AVIRAN30 → AVIRAN25 when the discount moves). Only touches a
+  // coupon that already exists; creation is explicit in the editor.
+  if (input.type === "affiliate") {
+    const synced = await syncInfluencerCoupon(trackingCode, { create: false });
+    if (!synced.ok && synced.error !== "לשותף עדיין אין קופון משפיען") {
+      console.error("updatePartnerAccount: influencer coupon sync", synced.error);
+    }
   }
 
   const linked = await findLinkedUser(trackingCode);
