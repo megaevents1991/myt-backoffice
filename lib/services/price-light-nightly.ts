@@ -20,7 +20,8 @@ import { supabase } from "@/lib/supabase-server";
 import { appOrigin, sendMail } from "@/lib/email";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { LIGHT_EVENT_COLUMNS, writeSnapshotAndTag, type LightEvent } from "@/lib/services/price-light-store";
-import { matchAllForEvent } from "@/lib/services/price-light-match";
+import { matchAllForEvent, type AiBudget } from "@/lib/services/price-light-match";
+import { AI_CALLS_PER_RUN } from "@/lib/services/price-light-judge";
 import { runCrawl } from "@/lib/services/price-light-crawl";
 
 // LiveTickets refresh is a table read (no crawling), so it should finish in
@@ -46,6 +47,8 @@ export interface NightlySummary {
   remaining: number;
   /** Events pass 1 (snapshot + tag) never reached before the shared budget ran out. */
   snapshotsRemaining: number;
+  /** Judge calls this run actually spent, out of AI_CALLS_PER_RUN (0 on a dry run - never calls the AI). */
+  aiCalls: number;
   dryRun: boolean;
 }
 
@@ -54,7 +57,7 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
   const today = new Date().toISOString().slice(0, 10);
   const summary: NightlySummary = {
     scanned: 0, snapshots: 0, tagged: 0, cleared: 0, matched: 0,
-    lightChanges: [], errors: [], remaining: 0, snapshotsRemaining: 0, dryRun: options.dryRun,
+    lightChanges: [], errors: [], remaining: 0, snapshotsRemaining: 0, aiCalls: 0, dryRun: options.dryRun,
   };
 
   // LiveTickets listings are a table read - refresh them every night before matching.
@@ -113,14 +116,23 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
   }
 
   // Pass 2: match every competitor + recompute lights, least-recently-checked
-  // first (the query order above), budgeted.
+  // first (the query order above), budgeted. ONE AI budget for the whole pass -
+  // a judge call is ~12s the wall-clock check between events cannot see, so
+  // without a ceiling a handful of AI-heavy events would eat the entire window
+  // and strand everything behind them. A dry run passes `judge: null`: a report
+  // must never spend money, and a dry run is exactly what gets pointed at prod.
+  const aiBudget: AiBudget = { remaining: AI_CALLS_PER_RUN };
   for (const [index, event] of events.entries()) {
     if (Date.now() - start > options.budgetMs) {
       summary.remaining = events.length - index;
       break;
     }
     try {
-      const result = await matchAllForEvent(event.id, "nightly", { dryRun: options.dryRun });
+      const result = await matchAllForEvent(event.id, "nightly", {
+        dryRun: options.dryRun,
+        judge: options.dryRun ? null : undefined,
+        aiBudget,
+      });
       if (!result) continue;
       summary.matched += result.outcomes.filter((o) => o.wrote).length;
       if (result.lights.changed) {
@@ -135,6 +147,7 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
       summary.errors.push({ eventId: event.id, note: `match: ${note}` });
     }
   }
+  summary.aiCalls = AI_CALLS_PER_RUN - aiBudget.remaining;
 
   if (!options.dryRun) {
     if (summary.lightChanges.length || summary.tagged || summary.cleared) await revalidateMain();
@@ -189,7 +202,8 @@ async function sendSummaryEmail(s: NightlySummary): Promise<void> {
       subject: `Price light: ${redMoves.length} red changes · ${s.tagged} new price-drop tags · ${s.errors.length} errors`,
       html: [
         `<p><a href="${appOrigin()}/events">Events</a> · scanned ${s.scanned} · ${s.remaining} left for tomorrow` +
-          (s.snapshotsRemaining ? ` · ${s.snapshotsRemaining} snapshots not reached` : "") + `</p>`,
+          (s.snapshotsRemaining ? ` · ${s.snapshotsRemaining} snapshots not reached` : "") +
+          ` · AI ${s.aiCalls}/${AI_CALLS_PER_RUN} calls</p>`,
         redMoves.length ? `<ul>${redMoves.map((c) => `<li>#${c.eventId} ${c.name}: ${c.from ?? "—"} → ${c.to ?? "—"}</li>`).join("")}</ul>` : "",
         s.errors.length ? `<p><b>Errors</b></p><ul>${s.errors.map((e) => `<li>#${e.eventId}: ${e.note}</li>`).join("")}</ul>` : "",
       ].join(""),

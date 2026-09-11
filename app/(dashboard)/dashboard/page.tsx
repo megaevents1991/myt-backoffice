@@ -10,6 +10,7 @@ import { ReservationsTrend } from "@/components/reservations-trend";
 import { MyTasksWidget } from "@/components/my-tasks-widget";
 import { CreativeGapsPanel } from "@/components/creative-gaps-panel";
 import { GoogleReviewsHealthAlert } from "@/components/google-reviews-health-alert";
+import { PriceLightWidget } from "@/components/price-light-widget";
 
 export default function Dashboard() {
   const [error, setError] = useState<Error | null>(null);
@@ -78,6 +79,7 @@ export default function Dashboard() {
       <div className="grid gap-6 lg:grid-cols-2">
         <MyTasksWidget />
         <CreativeGapsPanel />
+        <PriceLightWidget />
       </div>
     </div>
   );

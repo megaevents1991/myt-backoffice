@@ -4,10 +4,12 @@ import { supabase } from "@/lib/supabase-server";
 import { ACTIVE_COMPETITORS } from "@/lib/services/competitor-scrapers";
 import {
   competitorsFor, computeScopeLight, decidePriceDrop, kindOf, minAvailableTicketUsd,
-  ourPackageUsd, ourTicketUsd, totalMarkupUsd, PRICE_DROP_LOOKBACK_DAYS,
+  ourPackageUsd, ourTicketUsd, totalMarkupUsd, OVERRIDE_DRIFT_USD, PRICE_DROP_LOOKBACK_DAYS,
   type LatestMatch, type PricedEvent,
 } from "@/lib/services/price-light";
-import type { Light, LightDetail, LightScopeDetail, MatchRow, MatchTrigger, Scope } from "@/types/price-light.types";
+import type {
+  Light, LightDetail, LightOverride, LightScopeDetail, MatchRow, MatchTrigger, Scope,
+} from "@/types/price-light.types";
 
 // New tables predate the generated DB types - one boundary cast (repo pattern).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,7 +19,8 @@ export const LIGHT_EVENT_COLUMNS =
   "id,name,name_english,type,date,def_date_depart,def_date_return,location," +
   "base_flight_price,base_hotel_price,tickets_and_rates,skip_flight,ticket_only_markup," +
   "markup_ticket,markup_flight,markup_hotel,event_additional_markup,is_deleted,is_test," +
-  "light_package,light_ticket,light_detail,light_checked_at,price_drop_usd,price_drop_from,price_drop_until";
+  "light_package,light_ticket,light_detail,light_checked_at,light_silenced_until," +
+  "price_drop_usd,price_drop_from,price_drop_until";
 
 export interface LightEvent extends PricedEvent {
   id: number;
@@ -28,6 +31,8 @@ export interface LightEvent extends PricedEvent {
   light_ticket: Light | null;
   light_detail: LightDetail | null;
   light_checked_at: string | null;
+  /** A red light muted until this instant ("השאר בפיד"). Cleared here the moment no scope is red. */
+  light_silenced_until: string | null;
   price_drop_usd: number | null;
   price_drop_from: number | null;
   price_drop_until: string | null;
@@ -79,6 +84,19 @@ function scopeDetail(event: LightEvent, scope: Scope, matches: (LatestMatch & { 
   return computeScopeLight({ ourUsd, matches: matches.filter((m) => m.scope === scope), competitors, now });
 }
 
+/**
+ * Spec §3 ("דריסה ידנית גוברת כל עוד המתחרה המנורמל לא זז יותר מ-OVERRIDE_DRIFT_USD"):
+ * a manual override outranks the recomputed light until the competitor price it was
+ * taken against moves more than OVERRIDE_DRIFT_USD. A null on either side means there
+ * is no drift to measure (the usual case - overrides are set on unchecked/alone/na
+ * scopes that have no competitor number at all), so the override stands.
+ */
+function overrideStillHolds(override: LightOverride, detail: LightScopeDetail): boolean {
+  const was = override.competitor_normalized_usd;
+  if (was == null || detail.normalized_usd == null) return true;
+  return Math.abs(detail.normalized_usd - was) <= OVERRIDE_DRIFT_USD;
+}
+
 export async function recomputeEventLights(
   eventId: number,
   trigger: MatchTrigger,
@@ -90,16 +108,44 @@ export async function recomputeEventLights(
   const matches = await loadLatestMatches(eventId);
   const pkg = scopeDetail(event, "package", matches, now);
   const tkt = scopeDetail(event, "ticket", matches, now);
-  const detail: LightDetail = { package: pkg, ticket: tkt, override: event.light_detail?.override ?? null };
+
+  // `light_detail.override` is a single scope-tagged field (setLightOverride replaces
+  // it wholesale), so at most one scope is ever overridden. Keep it while it still
+  // holds; once the competitor drifted past the threshold, drop it and let the
+  // computed light through - the market moved, the manual call is stale.
+  const override = event.light_detail?.override ?? null;
+  const overrideDetail = override ? (override.scope === "package" ? pkg : tkt) : null;
+  const keepOverride = override != null && overrideDetail != null && overrideStillHolds(override, overrideDetail);
+
+  const detail: LightDetail = { package: pkg, ticket: tkt, override: keepOverride ? override : null };
   const before: Lights = { package: event.light_package, ticket: event.light_ticket };
-  const after: Lights = { package: pkg.light, ticket: tkt.light };
+  const after: Lights = {
+    package: keepOverride && override?.scope === "package" ? override.light : pkg.light,
+    ticket: keepOverride && override?.scope === "ticket" ? override.light : tkt.light,
+  };
   const changed = before.package !== after.package || before.ticket !== after.ticket;
+  // "השאר בפיד" mutes a RED light. Once no scope is red any more the mute has nothing
+  // left to hide, so it is cleared in the same write that records the new lights -
+  // otherwise a stale `light_silenced_until` would keep a future red out of
+  // "ממתינים להחלטה" without anyone deciding that.
+  const clearSilence = after.package !== "red" && after.ticket !== "red" && event.light_silenced_until != null;
   if (!opts.dryRun) {
     const { error } = await db
       .from("events")
-      .update({ light_package: after.package, light_ticket: after.ticket, light_detail: detail, light_checked_at: now })
+      .update({
+        light_package: after.package, light_ticket: after.ticket, light_detail: detail, light_checked_at: now,
+        ...(clearSilence ? { light_silenced_until: null } : {}),
+      })
       .eq("id", eventId);
     if (error) { console.error(`price-light: write lights ${eventId} (${trigger}) failed`, JSON.stringify(error)); throw error; }
+    try {
+      // Dynamic import avoids a store <-> tasks import cycle (tasks imports
+      // LightEvent/Lights types from this file).
+      const { closePriceLightTasksIfNotRed } = await import("@/lib/services/price-light-tasks");
+      await closePriceLightTasksIfNotRed(eventId, after);
+    } catch (e) {
+      console.error(`price-light: auto-close tasks ${eventId} (${trigger}) failed`, e);
+    }
   }
   return { before, after, changed, detail };
 }

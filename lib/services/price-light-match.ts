@@ -8,12 +8,27 @@ import {
 } from "@/lib/services/price-light";
 import { ACTIVE_COMPETITORS, scraperFor } from "@/lib/services/competitor-scrapers";
 import { loadEventForLight, recomputeEventLights, type LightEvent } from "@/lib/services/price-light-store";
+import { aiEnabled, extractAndJudge, makeJudge } from "@/lib/services/price-light-judge";
 import type { CompetitorKey, ExtractedAttrs, ListingRow, MatchMethod, MatchStatus, MatchTrigger, Scope } from "@/types/price-light.types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
 
 export interface MatchOutcome { competitor: CompetitorKey; scope: Scope; status: MatchStatus; wrote: boolean; listingId: number | null; note: string | null }
+
+/** Run-wide ceiling on AI calls, shared (and mutated) across every event in one pass.
+ *  The nightly creates exactly one of these; ad-hoc callers pass none = no ceiling. */
+export interface AiBudget { remaining: number }
+
+/** The gate both AI call sites go through: decrement first, and once the budget is
+ *  spent report "no call allowed" - which the caller treats exactly like `judge: null`
+ *  for that event (rule-only, no `unsure`-by-AI, no cost). */
+function takeAiBudget(budget: AiBudget | undefined): boolean {
+  if (!budget) return true;
+  if (budget.remaining <= 0) return false;
+  budget.remaining -= 1;
+  return true;
+}
 
 /** Phase 1 plugs Claude in here. null = rule-only. */
 export type Judge = (input: { event: LightEvent; candidates: ListingRow[] }) =>
@@ -45,11 +60,14 @@ async function hadGoodCrawl(competitor: CompetitorKey): Promise<boolean> {
   return (data ?? []).length > 0;
 }
 
-interface PrevRow { status: MatchStatus; listing_id: number | null; normalized_usd: number | null; our_usd: number | null; listing_changed_at: string | null }
+interface PrevRow {
+  status: MatchStatus; listing_id: number | null; normalized_usd: number | null; our_usd: number | null;
+  listing_changed_at: string | null; ai_verdict: Record<string, unknown> | null; attrs: Partial<ExtractedAttrs> | null;
+}
 
 async function latestRow(eventId: number, competitor: CompetitorKey, scope: Scope): Promise<PrevRow | null> {
   const { data, error } = await db.from("competitor_matches")
-    .select("status,listing_id,normalized_usd,our_usd,listing_changed_at")
+    .select("status,listing_id,normalized_usd,our_usd,listing_changed_at,ai_verdict,attrs")
     .eq("event_id", eventId).eq("competitor", competitor).eq("scope", scope)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (error) { console.error(JSON.stringify(error)); throw error; }
@@ -63,14 +81,67 @@ function hasListingChanged(prev: PrevRow | null, listing: ListingRow | null): bo
   return (prev?.listing_changed_at ?? null) !== listing.last_changed_at;
 }
 
+const ATTR_KEYS: (keyof ExtractedAttrs)[] = ["bag_included", "direct_flight", "hotel_stars", "nights", "breakfast", "transfers"];
+
+/** Extraction is only worth an AI call when the page gave us nothing already. */
+function attrsAllUnknown(attrs: Partial<ExtractedAttrs> | null): boolean {
+  if (!attrs) return true;
+  return ATTR_KEYS.every((k) => (attrs[k] ?? "unknown") === "unknown");
+}
+
+/** Page attrs win over AI attrs PER FIELD, not as a whole-object spread - LiveEvents
+ *  always stores all six keys, "unknown" when it doesn't know one, so `{ ...ai, ...page }`
+ *  would let an all-"unknown" page object overwrite every AI-extracted value and turn
+ *  the extraction call into a paid no-op (fix round 2 finding 2). Copies a page field
+ *  onto the AI result only when the page actually knows it (defined, not "unknown"). */
+function mergeAttrs(ai: Partial<ExtractedAttrs> | null, page: Partial<ExtractedAttrs> | null): Partial<ExtractedAttrs> {
+  const merged: Partial<ExtractedAttrs> = { ...(ai ?? {}) };
+  const setIfKnown = <K extends keyof ExtractedAttrs>(key: K, value: ExtractedAttrs[K] | undefined) => {
+    if (value !== undefined && value !== "unknown") merged[key] = value;
+  };
+  for (const key of ATTR_KEYS) setIfKnown(key, page?.[key]);
+  return merged;
+}
+
+/** One AI call per (event, listing) pair (spec `§5`): the previous row's listing
+ *  is still among today's candidates, unchanged, and already carries a verdict -
+ *  but NOT an error verdict (fix round 1 finding 1): a failed call must not pin
+ *  forever just because the listing hasn't changed since - treat it as a miss so
+ *  the next visit retries the call. */
+function cachedCandidateFor(prev: PrevRow | null, candidates: ListingRow[]): ListingRow | null {
+  if (!prev || prev.listing_id == null || prev.ai_verdict == null) return null;
+  if ((prev.ai_verdict as { error?: unknown } | null)?.error != null) return null;
+  const listing = candidates.find((c) => c.id === prev.listing_id) ?? null;
+  return listing && !hasListingChanged(prev, listing) ? listing : null;
+}
+
+/** `ai error: <msg>` when `verdict.error` is set, else null. Shared by the `unsure`
+ *  note (`aiNote`) and the `found` note (an extraction that errored but still left
+ *  the rule-matched listing usable). */
+function verdictErrorNote(verdict: Record<string, unknown> | null): string | null {
+  const err = verdict && typeof verdict.error === "string" ? verdict.error : null;
+  return err ? `ai error: ${err}` : null;
+}
+
+/** Note text for an `unsure` row that went through the judge - falls back to the
+ *  phase-0 "ambiguous, no judge" wording when no verdict was ever produced. */
+function aiNote(verdict: Record<string, unknown> | null): string | null {
+  if (!verdict) return null;
+  const err = verdictErrorNote(verdict);
+  if (err) return err;
+  const confidence = typeof verdict.confidence === "number" ? verdict.confidence : 0;
+  return `ai unsure (confidence ${confidence.toFixed(2)})`;
+}
+
 export async function matchEvent(
   event: LightEvent,
   competitor: CompetitorKey,
   scope: Scope,
   trigger: MatchTrigger,
-  opts: { dryRun?: boolean; judge?: Judge | null } = {},
+  opts: { dryRun?: boolean; judge?: Judge | null; aiBudget?: AiBudget } = {},
 ): Promise<MatchOutcome> {
   const out: MatchOutcome = { competitor, scope, status: "skipped", wrote: false, listingId: null, note: null };
+  const judge = opts.judge === undefined ? makeJudge() : opts.judge;
   const ourUsd = scope === "package" ? ourPackageUsd(event) : ourTicketUsd(event);
   const prev = await latestRow(event.id, competitor, scope);
 
@@ -101,6 +172,10 @@ export async function matchEvent(
     { names: [event.name, event.name_english ?? ""].filter(Boolean), date: event.date.slice(0, 10) },
     candidates.map<MatchCandidate>((c) => ({ id: c.id, title: c.title, title_he: c.title_he, event_date: c.event_date })),
   );
+  // Same listing as last visit, unchanged, already verdicted - reused by both the
+  // rule-found extraction branch below and the rule-failed judge-decide branch.
+  const cached = cachedCandidateFor(prev, candidates);
+
   if (rule) {
     picked = candidates.find((c) => c.id === rule.candidate.id) ?? null;
     if (picked && picked.price_usd == null) {
@@ -108,13 +183,56 @@ export async function matchEvent(
       status = "unsure";
     } else {
       status = "found";
+      if (picked && prev && cached && cached.id === picked.id) {
+        // Cache hit, no call. `cached: true` marks the copy so the AI cost gauge
+        // (aiCostThisMonth) doesn't count this re-written verdict as a second call.
+        attrs = prev.attrs; verdict = { ...prev.ai_verdict, cached: true }; method = "ai";
+      } else if (picked && judge !== null && aiEnabled() && picked.detail_text && attrsAllUnknown(picked.attrs)
+        && takeAiBudget(opts.aiBudget)) {
+        // Fix round 2 finding 1: gate on `judge !== null` too, not just `aiEnabled()` -
+        // an explicit `opts.judge: null` ("rule-only, must not spend money") must still
+        // suppress this call even though it invokes `extractAndJudge` directly rather
+        // than the `judge` closure itself.
+        // Fix round 1 finding 2: call `extractAndJudge` DIRECTLY (not the `judge`
+        // closure) so `same_event`/confidence never gates whether we keep the
+        // extracted attrs - the rule already decided this is the same event.
+        // `price-light-match.ts` stays the judge module's only caller either way.
+        try {
+          const r = await extractAndJudge({ event, candidates: [picked] });
+          attrs = r.attrs; verdict = r.verdict as unknown as Record<string, unknown>; method = "ai";
+        } catch (e) {
+          // Defensive: extractAndJudge never throws today, but don't let a future
+          // change here take matchEvent down with it.
+          verdict = { error: e instanceof Error ? e.message : "call failed" }; method = "ai";
+        }
+      }
     }
-  } else if (candidates.length > 0 && opts.judge) {
-    const j = await opts.judge({ event, candidates });
-    if (j) { status = j.status; picked = j.listing; attrs = j.attrs; verdict = j.verdict; method = "ai"; }
-    else status = "unsure";
+  } else if (prev && cached) {
+    // Full-decision cache reuse (status included, not just attrs/verdict) is an
+    // accepted deviation from a literal "reuse prev.attrs/prev.ai_verdict" reading -
+    // ruling: one AI call per (event, listing) pair means a known-good cached match
+    // must not re-invoke the judge just to re-derive the same status.
+    if (cached.price_usd == null) {
+      quoteOnly = true; picked = cached; status = "unsure";
+    } else {
+      // Same `cached: true` marker as the branch above - a reused verdict is not a new call.
+      picked = cached; status = "found"; attrs = prev.attrs; verdict = { ...prev.ai_verdict, cached: true }; method = "ai";
+    }
+  } else if (candidates.length > 0 && judge && takeAiBudget(opts.aiBudget)) {
+    let j: Awaited<ReturnType<Judge>> = null;
+    try {
+      j = await judge({ event, candidates });
+    } catch (e) {
+      // Defensive: the judge (price-light-judge.ts) already never throws past its
+      // own boundary, but guard here too so a bug there can't take matchEvent down.
+      j = { status: "unsure", listing: null, attrs: null, verdict: { error: e instanceof Error ? e.message : "call failed" } };
+    }
+    if (j) {
+      status = j.status; picked = j.listing; attrs = j.attrs; verdict = j.verdict; method = "ai";
+      if (status === "found" && picked && picked.price_usd == null) { quoteOnly = true; status = "unsure"; }
+    } else status = "unsure";
   } else if (candidates.length > 0) {
-    status = "unsure";                                          // ambiguous, no judge yet (phase 1)
+    status = "unsure";                                          // ambiguous, no judge (AI off or rule-only mode)
   } else {
     status = (await hadGoodCrawl(competitor)) ? "not_selling" : "skipped";
   }
@@ -123,19 +241,28 @@ export async function matchEvent(
 
   if (status === "found" && picked) {
     const priceUsd = Number(picked.price_usd ?? 0);
-    const merged = { ...(attrs ?? {}), ...(picked.attrs ?? {}) };          // page attrs win over AI attrs
+    const merged = mergeAttrs(attrs, picked.attrs);                        // page attrs win over AI attrs, per field
     const norm = scope === "package"
       ? normalize(priceUsd, merged, { nights: ourNights(event) })
       : { normalizedUsd: Math.round(priceUsd), adjustments: [], partial: false };
+    // A verdict produced THIS run against a row that has none must always be persisted,
+    // even when the price landed on the same number: otherwise the call is paid for,
+    // thrown away, and `cachedCandidateFor` never finds a verdict to reuse - the cache
+    // could never engage and every visit would re-buy the same extraction.
     const unchanged = prev?.status === "found" && prev.listing_id === picked.id &&
       !hasListingChanged(prev, picked) &&
-      Number(prev.normalized_usd) === norm.normalizedUsd && Number(prev.our_usd) === ourUsd;
+      Number(prev.normalized_usd) === norm.normalizedUsd && Number(prev.our_usd) === ourUsd &&
+      !(verdict != null && prev.ai_verdict == null);
     if (!unchanged) {
+      // Fix round 1 finding 3: surface an extraction error even on a `found` row
+      // (the rule still matched the listing; only the AI attrs enrichment failed) -
+      // join with the pre-existing partial-normalization note when both apply.
+      const notes = [verdictErrorNote(verdict), norm.partial ? "partial normalization" : null].filter((n): n is string => n != null);
       await write({
         status, method, listing_id: picked.id, ai_verdict: verdict, raw_price: picked.price_from, raw_currency: picked.currency,
         price_usd: priceUsd, normalized_usd: norm.normalizedUsd, adjustments: norm.adjustments, attrs: merged,
         our_usd: ourUsd, diff_usd: ourUsd - norm.normalizedUsd, listing_changed_at: picked.last_changed_at,
-        note: norm.partial ? "partial normalization" : null,
+        note: notes.length > 0 ? notes.join(" · ") : null,
       });
     }
     return out;
@@ -143,27 +270,37 @@ export async function matchEvent(
 
   if (status !== "skipped") {
     const listingId = picked?.id ?? null;
+    // Same rule as the `found` branch above: a fresh verdict against a verdict-less
+    // previous row is itself a change worth writing, or the call was paid for nothing.
     const changed = prev?.status !== status || (prev?.listing_id ?? null) !== listingId ||
-      Number(prev?.our_usd ?? null) !== ourUsd || hasListingChanged(prev, picked);
+      Number(prev?.our_usd ?? null) !== ourUsd || hasListingChanged(prev, picked) ||
+      (verdict != null && prev?.ai_verdict == null);
     if (changed) {
       await write({
         status, method, listing_id: listingId, ai_verdict: verdict, our_usd: ourUsd,
         ...(picked ? { listing_changed_at: picked.last_changed_at } : {}),
-        note: quoteOnly ? "quote_only" : status === "unsure" ? `${candidates.length} candidates, no rule match` : null,
+        note: quoteOnly ? "quote_only" : status === "unsure" ? (aiNote(verdict) ?? `${candidates.length} candidates, no rule match`) : null,
       });
     }
   }
   return out;
 }
 
-export async function matchAllForEvent(eventId: number, trigger: MatchTrigger, opts: { dryRun?: boolean; judge?: Judge | null } = {}) {
+export async function matchAllForEvent(
+  eventId: number,
+  trigger: MatchTrigger,
+  opts: { dryRun?: boolean; judge?: Judge | null; aiBudget?: AiBudget } = {},
+) {
   const event = await loadEventForLight(eventId);
   if (!event || event.is_deleted) return null;
+  // Resolve once per event, not once per (competitor, scope) - `matchEvent` never
+  // re-resolves when it is handed an already-concrete (possibly null) judge.
+  const judge = opts.judge === undefined ? makeJudge() : opts.judge;
   const outcomes: MatchOutcome[] = [];
   for (const scope of ["package", "ticket"] as const) {
     for (const competitor of competitorsFor(kindOf(event), scope, ACTIVE_COMPETITORS)) {
       if (!scraperFor(competitor).scopes.includes(scope)) continue;
-      outcomes.push(await matchEvent(event, competitor, scope, trigger, opts));
+      outcomes.push(await matchEvent(event, competitor, scope, trigger, { ...opts, judge }));
     }
   }
   const lights = await recomputeEventLights(eventId, trigger, { dryRun: opts.dryRun });

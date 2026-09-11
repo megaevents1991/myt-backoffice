@@ -230,14 +230,53 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "PRICE_LIGHT_SCRAPE=off is the kill switch: it stops all crawling (runs show as skipped) but matching and the lights keep working off whatever was already crawled - flip it off if a competitor site ever needs to be left alone.",
         "PRICE_LIGHT_SCRAPE=off הוא מפסק החירום: הוא עוצר את כל הסריקה (ריצות מוצגות כ-skipped) אבל ההתאמה והרמזור ממשיכים לעבוד על מה שכבר נסרק — מכבים אותו אם אתר מתחרה צריך להישאר בשקט.",
       ),
+      t(
+        "Phase 1 (admins): the /price-light screen is where a red light gets a decision instead of sitting quietly on the events table. Tiles at the top double as filters - Alone/Green/Orange/Red/Unchecked, plus \"ממתינים להחלטה\" (pending) which lands you on exactly the reds that still need a human: not silenced right now, and no task already chasing them. The table view adds Package/Ticket, next 45 days, partial-coverage crawls, changed this week, and an AI-sample view.",
+        "שלב 1 (מנהלים): מסך /price-light הוא המקום שבו אור אדום מקבל החלטה במקום לשבת בשקט על טבלת האירועים. התגים למעלה משמשים גם כפילטרים — לבד בשוק/ירוק/כתום/אדום/לא נבדק, ובנוסף \"ממתינים להחלטה\" שמנחית אתכם בדיוק על האדומים שעדיין צריכים בן אדם: לא מושתקים כרגע, ואין להם כבר משימה רודפת. תצוגת הטבלה מוסיפה חבילה/כרטיס, 45 הימים הקרובים, סריקות בכיסוי חלקי, מה שהשתנה השבוע, ותצוגת מדגם AI.",
+      ),
+      t(
+        "A red row gets four decisions: \"הוזל\" jumps straight to that event's price section to fix the base price (the light itself never writes a price); \"השאר בפיד\" silences the red for 14 days - it stays red, it just drops off the pending view until it expires or the light itself changes; \"הסר מהאתר\" soft-deletes the event after a confirm (never a hard delete); \"משימה\" opens a high-priority task with the competitor numbers baked into its description - clicking it again when one is already open just tells you it exists instead of creating a duplicate. Any row (not only red) also gets \"בדוק עכשיו\" (re-match against the stored catalogs, instant) and \"דריסה\" - force a light by hand when the automatic read is wrong, but only with a note of 3+ characters, and it's logged; \"בטל דריסה\" removes it.",
+        "לשורה אדומה יש ארבע החלטות: \"הוזל\" קופץ ישר לקטע המחיר של האירוע כדי לתקן את מחיר הבסיס (הרמזור עצמו אף פעם לא כותב מחיר); \"השאר בפיד\" משתיק את האדום ל-14 יום — הוא נשאר אדום, רק יורד מתצוגת הממתינים עד שהוא פג או שהאור עצמו משתנה; \"הסר מהאתר\" מסיר את האירוע בעדינות (soft delete) אחרי אישור — לעולם לא מחיקה לצמיתות; \"משימה\" פותחת משימה בעדיפות גבוהה עם מספרי המתחרים משובצים בתיאור — לחיצה נוספת כשכבר יש אחת פתוחה רק אומרת שהיא קיימת, לא יוצרת כפילות. לכל שורה (לא רק אדומה) יש גם \"בדוק עכשיו\" (התאמה מחדש מול הקטלוגים השמורים, מיידי) ו\"דריסה\" — כפיית אור ידנית כשהקריאה האוטומטית טועה, אבל רק עם הערה של 3+ תווים, והיא נרשמת; \"בטל דריסה\" מסירה אותה.",
+      ),
+      t(
+        "A price-light task closes itself: the moment a nightly or manual recheck moves that scope's light off red, its open task is marked done automatically with a note recording when and why - nobody needs to remember to go close it.",
+        "משימת רמזור נסגרת לבד: ברגע שבדיקה לילית או ידנית מזיזה את האור של אותו היקף מאדום, המשימה הפתוחה שלה מסומנת \"בוצע\" אוטומטית עם הערה שמתעדת מתי ולמה — אף אחד לא צריך לזכור לסגור אותה.",
+      ),
+      t(
+        "The AI judge only steps in when the rule can't decide on its own, or already found the listing but couldn't read its included-items - it never overrules a confident rule match, and it never sets a light directly. The screen's header shows this month's AI spend and call count so the cost stays visible, not a surprise on a bill.",
+        "שופט ה-AI נכנס לפעולה רק כשהחוק לא מצליח להכריע לבד, או כבר מצא את המודעה אבל לא הצליח לקרוא מה כלול בה — הוא לעולם לא דורס התאמת חוק בטוחה, ולעולם לא קובע אור ישירות. כותרת המסך מציגה את הוצאת ה-AI החודשית ומספר הקריאות, כדי שהעלות תישאר גלויה ולא הפתעה בחשבון.",
+      ),
+      t(
+        "The AI is opt-in and off by default: it only runs when PRICE_LIGHT_AI is set to exactly \"on\" and an API key is present. Anything else - unset, empty, a typo - means rule-only matching, so nothing can start spending by accident. Its budget is capped per nightly run too, and a dry run never calls it at all.",
+        "ה-AI הוא opt-in וכבוי כברירת מחדל: הוא רץ רק כש-PRICE_LIGHT_AI מוגדר בדיוק ל-\"on\" ויש מפתח API. כל דבר אחר — לא מוגדר, ריק, שגיאת הקלדה — משמעו התאמה לפי חוק בלבד, כך שכלום לא יכול להתחיל להוציא כסף בטעות. יש גם תקרת קריאות לכל ריצה לילית, וריצת ניסיון (dry run) לא קוראת ל-AI בכלל.",
+      ),
+      t(
+        "A manual override (\"דריסה\") keeps winning over the automatic read on every later recheck - but only while the competitor price it was taken against hasn't really moved (about $20). Once the competitor moves more than that, the override is dropped and the computed light takes over: the market changed, so the old manual call no longer describes it.",
+        "דריסה ידנית ממשיכה לגבור על הקריאה האוטומטית בכל בדיקה חוזרת — אבל רק כל עוד מחיר המתחרה שמולו היא נקבעה לא באמת זז (כ-20$). ברגע שהמתחרה זז יותר מזה, הדריסה יורדת והאור המחושב חוזר לשלוט: השוק השתנה, והקביעה הידנית הישנה כבר לא מתארת אותו.",
+      ),
+      t(
+        "\"השאר בפיד\" (silence) clears itself: the moment that event's light leaves red, the mute is removed in the same update - so a mute set months ago can never quietly hide the NEXT red on the same event.",
+        "\"השאר בפיד\" (השתקה) מתנקה מעצמה: ברגע שהאור של האירוע יורד מאדום, ההשתקה מוסרת באותו עדכון — כך שהשתקה שנקבעה לפני חודשים לא יכולה להסתיר בשקט את האדום הבא של אותו אירוע.",
+      ),
+      t(
+        "The /price-light screen and its dashboard summary card are admins-only - an editor sees neither the screen nor the red count.",
+        "מסך /price-light וכרטיס הסיכום שלו בדשבורד הם למנהלים בלבד — עורך לא רואה לא את המסך ולא את מספר האדומים.",
+      ),
+      t(
+        "The competitors panel on the same screen shows each site's last run, catalog size, next due time, and whether its circuit breaker is open. \"סרוק עכשיו\" forces an immediate crawl of one site - except LiveTickets, which has no crawl button because its numbers already refresh overnight from the live_events sync, not from browsing a page.",
+        "פאנל המתחרים באותו מסך מראה לכל אתר את הריצה האחרונה, גודל הקטלוג, מועד הבדיקה הבא, ואם בלם המעגל שלו פתוח. \"סרוק עכשיו\" כופה סריקה מיידית של אתר אחד — חוץ מ-LiveTickets, שאין לו כפתור סריקה כי המספרים שלו כבר מתרעננים בלילה מסנכרון live_events, לא מגלישה בדף.",
+      ),
     ],
     rules: [
       t(
-        "A red or orange light does nothing on its own - no auto-adjustment, no alert to a customer. Reading the light and deciding what to do about it is a person's job (a dedicated decision screen is coming in phase 1).",
-        "אור אדום או כתום לא עושה כלום לבד — בלי התאמה אוטומטית, בלי התראה ללקוח. קריאת האור וההחלטה מה לעשות איתו היא עבודה של בן אדם (מסך החלטה ייעודי מגיע בשלב 1).",
+        "A red or orange light does nothing on its own - no auto-adjustment, no alert to a customer. Reading the light and deciding what to do about it is a person's job: the /price-light decision screen (phase 1, admins only).",
+        "אור אדום או כתום לא עושה כלום לבד — בלי התאמה אוטומטית, בלי התראה ללקוח. קריאת האור וההחלטה מה לעשות איתו היא עבודה של בן אדם: מסך ההחלטה /price-light (שלב 1, מנהלים בלבד).",
       ),
     ],
-    links: [{ label: t("Events table", "טבלת אירועים"), href: "/events" }],
+    links: [
+      { label: t("Events table", "טבלת אירועים"), href: "/events" },
+      { label: t("Price light decisions", "החלטות רמזור"), href: "/price-light", adminOnly: true },
+    ],
   },
   {
     id: "sources",

@@ -89,7 +89,9 @@ export interface LightOverride {
   note: string;
   by: string;
   at: string;
-  competitor_normalized_usd: number;
+  // null when the scope had no competitor price at override time (unchecked/alone/na) -
+  // the common case an override is actually used for (Phase 1 task 4, setLightOverride).
+  competitor_normalized_usd: number | null;
 }
 
 export interface LightDetail {
