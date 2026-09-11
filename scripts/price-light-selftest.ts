@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import {
   BAG_USD, CONNECTION_USD, STAR_STEP_USD, NIGHT_USD, BREAKFAST_USD, TRANSFER_USD,
   ourPackageUsd, ourTicketUsd, ourNights, kindOf, competitorsFor, normalize,
-  computeScopeLight, decidePriceDrop, pickRuleMatch, signedUsd,
+  computeScopeLight, decidePriceDrop, pickRuleMatch, candidateCoversDate, signedUsd,
   type PricedEvent, type LatestMatch,
 } from "../lib/services/price-light.ts";
 import { UNKNOWN_ATTRS } from "../types/price-light.types.ts";
@@ -103,6 +103,29 @@ const pick = pickRuleMatch({ names: ["Real Madrid vs Barcelona", "ריאל מד�
 assert.equal(pick?.candidate.id, 1);
 assert.equal(pickRuleMatch({ names: ["Liverpool vs Arsenal"], date: "2026-11-09" }, cands), null);
 assert.equal(pickRuleMatch({ names: ["Real Madrid"], date: "2026-10-26" }, cands), null); // ambiguous: two same-date candidates
+
+// window listings (phase 2): no event_date, the travel window must contain our date
+const winCands = [
+  { id: 10, title: "ברצלונה-ריאל מדריד", event_date: null, travel_depart: "2026-10-23", travel_return: "2026-10-27" },
+  { id: 11, title: "Real Madrid vs Barcelona", event_date: null, travel_depart: "2026-11-01", travel_return: "2026-11-04" },
+  { id: 12, title: "Real Madrid vs Barcelona", event_date: null, travel_depart: null, travel_return: null }, // no window, no date -> never
+];
+assert.equal(candidateCoversDate(winCands[0], "2026-10-26"), true);
+assert.equal(candidateCoversDate(winCands[0], "2026-10-23"), true);  // inclusive both ends
+assert.equal(candidateCoversDate(winCands[0], "2026-10-28"), false);
+assert.equal(candidateCoversDate(winCands[2], "2026-10-26"), false);
+assert.equal(candidateCoversDate({ id: 1, title: "x", event_date: "2026-10-26", travel_depart: "2026-10-20", travel_return: "2026-10-30" }, "2026-10-27"), false); // a dated listing is date-only, window ignored
+const winPick = pickRuleMatch({ names: ["Real Madrid vs Barcelona", "ריאל מדריד ברצלונה"], date: "2026-10-26" }, winCands);
+assert.equal(winPick?.candidate.id, 10);
+assert.equal(pickRuleMatch({ names: ["Real Madrid vs Barcelona"], date: "2026-10-30" }, winCands), null); // outside every window
+assert.equal(pickRuleMatch({ names: ["Real Madrid vs Barcelona"], date: "2026-11-02" }, winCands)?.candidate.id, 11);
+
+// A window longer than MAX_WINDOW_DAYS is a season, not a trip - it never covers our date,
+// even when it contains it (final review, M1).
+const seasonCand = { id: 13, title: "Real Madrid vs Barcelona", event_date: null, travel_depart: "2026-10-20", travel_return: "2026-11-09" }; // 20 days
+assert.equal(candidateCoversDate(seasonCand, "2026-10-26"), false);
+assert.equal(candidateCoversDate({ ...seasonCand, travel_return: "2026-11-03" }, "2026-10-26"), true); // exactly 14 days still counts
+assert.equal(pickRuleMatch({ names: ["Real Madrid vs Barcelona"], date: "2026-10-26" }, [seasonCand]), null);
 
 assert.equal(signedUsd(-180), "−$180");
 assert.equal(signedUsd(35), "+$35");

@@ -17,10 +17,21 @@ import {
 import { signedUsd } from "@/lib/services/price-light";
 import {
   LIGHTS,
+  type CompetitorKey,
   type Light,
   type LightScopeDetail,
   type UncheckedReason,
 } from "@/types/price-light.types";
+
+// Staff-facing display names for competitor keys - used in the pill tooltip
+// here and in the competitors panel's card title (competitors-panel.tsx).
+export const COMPETITOR_LABEL: Record<CompetitorKey, string> = {
+  liveevents: "LiveEvents",
+  issta: "ISSTA Sport",
+  golasso: "Golasso",
+  ontour: "OnTour",
+  livetickets: "LiveTickets",
+};
 
 /** Sort order for the "רמזור" column (worst first): red > orange > unchecked > green > alone > na. */
 export const LIGHT_SORT_ORDER: Record<Light, number> = {
@@ -70,7 +81,11 @@ function tipFor(detail: LightScopeDetail | undefined): string {
   if (!detail) return "not checked yet";
   if (detail.light === "green" || detail.light === "orange" || detail.light === "red") {
     return [
-      `${detail.competitor}: raw ${detail.raw ?? "?"} ${detail.raw_currency ?? ""} → normalized $${detail.normalized_usd}`,
+      // `?? "מתחרה"`, never a literal "null": detail.competitor can be null on a light that
+      // was set without a named competitor (final review, M10). The listing's travel window
+      // is NOT available here - LightScopeDetail carries no window fields - so the trip dates
+      // live in the history sheet (price-light-cell.tsx), which has the listing row itself.
+      `${(detail.competitor ? COMPETITOR_LABEL[detail.competitor] : null) ?? "מתחרה"}: raw ${detail.raw ?? "?"} ${detail.raw_currency ?? ""} → normalized $${detail.normalized_usd}`,
       ...detail.adjustments.map((a) => a.label),
       detail.partial ? "partial normalization" : null,
       detail.crawled_at ? `crawled ${detail.crawled_at.slice(0, 10)}` : null,

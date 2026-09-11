@@ -315,12 +315,13 @@ computeScopeLight({ ourUsd, matches: LatestMatchPerCompetitor, competitors, now 
 
 ```
 lib/services/competitor-scrapers/
-  index.ts          registry: SCRAPERS: Record<CompetitorKey, CompetitorScraper>, ACTIVE_COMPETITORS, CRAWL_INTERVAL_HOURS
-  types.ts          CompetitorScraper, CrawlContext, Listing
+  index.ts          registry: SCRAPERS: Record<CompetitorKey, CompetitorScraper>, ACTIVE_COMPETITORS
+                    (the crawl interval is per-scraper: `intervalHours` on CompetitorScraper)
+  types.ts          CompetitorScraper, CrawlContext, Listing, DetailInput
   liveevents.ts     phase 0
-  issta.ts          phase 2
-  golasso.ts        phase 2
-  ontour.ts         phase 2
+  issta.ts          phase 2 ✅
+  golasso.ts        phase 2 ✅
+  ontour.ts         phase 2 ✅
   livetickets-api.ts phase 0 - not a crawler: reads live_events (already synced twice a day) into competitor_listings
 lib/services/browser.ts   withBrowser(fn) - the only file that knows how a browser is obtained
 ```

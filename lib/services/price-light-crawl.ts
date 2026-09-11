@@ -4,8 +4,8 @@
 import { supabase } from "@/lib/supabase-server";
 import { appOrigin, sendMail } from "@/lib/email";
 import { multiCurrencyExchangeRateService } from "@/lib/services/ticket-price-sync";
-import { browserMode, randomPause, scrapeEnabled, withBrowser } from "@/lib/services/browser";
-import { ACTIVE_COMPETITORS, scraperFor, type CompetitorScraper, type CrawlContext, type Listing } from "@/lib/services/competitor-scrapers";
+import { browserMode, randomPause, scrapeEnabled, shortPause, withBrowser } from "@/lib/services/browser";
+import { ACTIVE_COMPETITORS, scraperFor, type CompetitorScraper, type CrawlContext, type DetailInput, type Listing } from "@/lib/services/competitor-scrapers";
 import type { CompetitorKey, CrawlStatus, CrawlTrigger } from "@/types/price-light.types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,6 +32,9 @@ export interface CrawlSummary {
 }
 
 interface RunRowLite { id: number; status: CrawlStatus; started_at: string; listings: number }
+
+/** Exactly the columns the detail loop selects - no `as Listing` over nine undefined fields. */
+interface DetailRow extends DetailInput { id: number }
 
 async function recentRuns(competitor: CompetitorKey, limit: number): Promise<RunRowLite[]> {
   const { data, error } = await db.from("competitor_crawl_runs")
@@ -84,17 +87,18 @@ export async function pickDueCompetitor(now: Date = new Date()): Promise<Competi
 }
 
 function listingChanged(
-  prev: { price_from: number | null; event_date: string | null; title: string; url: string; attrs: unknown } | null,
+  prev: { price_from: number | null; event_date: string | null; travel_depart: string | null; travel_return: string | null; title: string; url: string; attrs: unknown } | null,
   next: Listing,
 ): boolean {
   if (!prev) return true;
   return Number(prev.price_from) !== Number(next.price_from) || prev.event_date !== next.event_date ||
+    prev.travel_depart !== next.travel_depart || prev.travel_return !== next.travel_return ||
     prev.title !== next.title || prev.url !== next.url ||
     (next.attrs != null && JSON.stringify(prev.attrs ?? null) !== JSON.stringify(next.attrs));
 }
 
 async function upsertListing(l: Listing, runId: number | null, nowIso: string): Promise<{ id: number; changed: boolean }> {
-  const { data: prev } = await db.from("competitor_listings").select("id,price_from,event_date,title,url,attrs")
+  const { data: prev } = await db.from("competitor_listings").select("id,price_from,event_date,travel_depart,travel_return,title,url,attrs")
     .eq("competitor", l.competitor).eq("external_key", l.external_key).maybeSingle();
   const changed = listingChanged(prev ?? null, l);
   const row: Record<string, unknown> = {
@@ -174,6 +178,7 @@ export async function runCrawl(
   const ids: number[] = [];
   const ctx = (page: CrawlContext["page"]): CrawlContext => ({
     page, fetch, pause: scraper.mode === "table" ? async () => undefined : randomPause,
+    pauseShort: scraper.mode === "table" ? async () => undefined : shortPause,
     // Page-fetch counting via a "->" substring in scraper logs was unreliable across scrapers;
     // `pages` now just marks that the (one) catalog crawl ran - detailPages counts enrichment
     // separately and both are folded together when the run row is written (fix round 1, minor).
@@ -218,22 +223,40 @@ export async function runCrawl(
     }
     if (dryRun || !scraper.detail || ids.length === 0) return;
     const want = await listingIdsWorthDetail(competitor, ids);
-    // Explicit select, not "*" - only what scraper.detail() reads (scope, url) and what the
-    // write-back below merges into (id, attrs, detail_text, travel_depart/return, price_from/usd).
+    // Explicit select, not "*" - only what scraper.detail() reads and what the write-back
+    // below merges into. `currency` and `event_date` are part of that set: the detail page
+    // may price in a different currency than the catalog card (Golasso prices in the
+    // DESTINATION's currency), and `event_date` is the anchor a scraper sanity-checks a
+    // parsed travel window against (review 2026-09-11, C1 + I3). The row type below is the
+    // same `DetailInput` the scraper contract takes, so the two can't drift apart.
     const { data: rows } = await db.from("competitor_listings")
-      .select("id,scope,url,attrs,detail_text,travel_depart,travel_return,price_from,price_usd")
+      .select("id,scope,url,attrs,detail_text,travel_depart,travel_return,price_from,price_usd,currency,event_date")
       .in("id", [...want]);
-    for (const row of (rows ?? []) as (Listing & { id: number })[]) {
-      if (Date.now() - start > budget) { summary.note = "budget exhausted during details"; summary.status = "partial"; break; }
-      await c.pause();
+    // Golasso/LiveEvents fetch their detail pages rather than navigating the browser to them,
+    // so the honest pacing is the same-site GET pause (5-15s), not the 20-60s page-load one.
+    const detailPause = (scraper.detailMode ?? scraper.mode) === "fetch" ? c.pauseShort : c.pause;
+    const total = (rows ?? []).length;
+    for (const row of (rows ?? []) as DetailRow[]) {
+      if (Date.now() - start > budget) {
+        // A details cutoff is NOT `partial`: the catalog itself completed cleanly, and marking
+        // it partial would drown the "partial-coverage crawls" view in healthy runs (I2d).
+        const cutNote = `details cut at budget (${summary.detailPages} of ${total} enriched)`;
+        summary.note = summary.note ? `${summary.note} | ${cutNote}` : cutNote;
+        break;
+      }
+      await detailPause();
       try {
         const extra = await scraper.detail(row, c);
         summary.detailPages += 1;
-        const priceMoved = extra.price_from != null && Number(extra.price_from) !== Number(row.price_from);
+        const nextCurrency = extra.currency ?? row.currency;
+        // A currency-only move is a real price move: 789 GBP -> 789 EUR is a different price.
+        const priceMoved = extra.price_from != null &&
+          (Number(extra.price_from) !== Number(row.price_from) || nextCurrency !== row.currency);
         const { error } = await db.from("competitor_listings").update({
           attrs: extra.attrs ?? row.attrs, detail_text: extra.detail_text ?? row.detail_text,
           travel_depart: extra.travel_depart ?? row.travel_depart, travel_return: extra.travel_return ?? row.travel_return,
           price_from: extra.price_from ?? row.price_from, price_usd: extra.price_usd ?? row.price_usd,
+          currency: nextCurrency,
           ...(priceMoved ? { last_changed_at: nowIso } : {}),
         }).eq("id", row.id);
         if (error) console.error("price-light-crawl: detail write failed", JSON.stringify(error));

@@ -1,12 +1,18 @@
 import type { CompetitorKey } from "@/types/price-light.types";
 import type { CompetitorScraper } from "./types";
 import { liveevents } from "./liveevents";
+import { issta } from "./issta";
+import { golasso } from "./golasso";
+import { ontour } from "./ontour";
 import { livetickets } from "./livetickets-api";
 
-// Phase 0: liveevents (Task 6) + livetickets (Task 5). Phase 2 adds issta, golasso, ontour.
-// A competitor NOT in this map never counts toward "alone".
+// Registration order = the order the crawl panel lists them. A competitor NOT in this map
+// never counts toward "alone". livetickets stays last (table mode, refreshed by the nightly).
 export const SCRAPERS: Partial<Record<CompetitorKey, CompetitorScraper>> = {};
 SCRAPERS.liveevents = liveevents;
+SCRAPERS.issta = issta;
+SCRAPERS.golasso = golasso;
+SCRAPERS.ontour = ontour;
 SCRAPERS.livetickets = livetickets;
 
 // Keep this line LAST - it must run after every SCRAPERS.x = ... assignment.
@@ -17,4 +23,4 @@ export function scraperFor(key: CompetitorKey): CompetitorScraper {
   if (!scraper) throw new Error(`price-light: no scraper registered for ${key}`);
   return scraper;
 }
-export type { CompetitorScraper, CrawlContext, Listing } from "./types";
+export type { CompetitorScraper, CrawlContext, DetailInput, Listing } from "./types";

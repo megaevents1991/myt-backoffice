@@ -8,18 +8,19 @@
 // building this). `fetchCatalogHtml()` below is the only place that actually drives
 // `ctx.page` (Playwright, for /events/ only) vs `ctx.fetch` (for /matches/ and detail).
 //
-// This crawler also reuses the Israeli UA rotation from lib/services/browser.ts (a
-// `@/`-import-free module) so a plain `node script.ts` invocation of the pure parsers below
-// never needs to resolve a "@/..." alias. For the same reason `toUsd` (Task 5,
+// This crawler also reuses the Israeli UA rotation, which now comes via ./shared.ts (which
+// reads it from lib/services/ua.ts - a dependency-free module) so a plain `node script.ts`
+// invocation of the pure parsers below never needs to resolve a "@/..." alias, nor pull
+// playwright/chromium in through browser.ts. For the same reason `toUsd` (Task 5,
 // lib/services/competitor-scrapers/livetickets-api.ts) - which transitively imports
 // "@/lib/supabase-server" - is loaded via a *dynamic* import only inside crawl()/detail(),
 // never at module top level: that keeps `parseCatalog`/`parseDetail` themselves free of any
 // unresolvable specifier so the fixture script (which imports only those two functions) can
 // run under plain node.
-import { parseHTML } from "linkedom";
 import type { Currency, ExtractedAttrs } from "@/types/price-light.types";
-import { UAS } from "../browser.ts";
-import type { CompetitorScraper, CrawlContext, Listing } from "./types";
+import { currencyFromSymbol, doc, parseHeDate, parsePrice, stealthHeaders } from "./shared.ts";
+export { parseHeDate, parsePrice, stealthHeaders } from "./shared.ts";
+import type { CompetitorScraper, CrawlContext, DetailInput, Listing } from "./types";
 
 const BASE = "https://livevents.co.il"; // one "e" - liveevents.co.il does not resolve (recon)
 // From the recon doc "Catalog pages".
@@ -27,53 +28,6 @@ const CATALOG_URLS: { url: string; kind: "sports" | "music" }[] = [
   { url: `${BASE}/events/`, kind: "music" },
   { url: `${BASE}/matches/`, kind: "sports" },
 ];
-const ACCEPT_LANGUAGE = "he-IL,he;q=0.9,en-US;q=0.8";
-
-const HE_MONTHS: Record<string, number> = {
-  "ינואר": 1, "פברואר": 2, "מרץ": 3, "אפריל": 4, "מאי": 5, "יוני": 6,
-  "יולי": 7, "אוגוסט": 8, "ספטמבר": 9, "אוקטובר": 10, "נובמבר": 11, "דצמבר": 12,
-};
-
-const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)];
-
-/** Stealth headers for a plain fetch - UA rotation + Israeli Accept-Language, no referer. */
-export function stealthHeaders(): Record<string, string> {
-  return { "User-Agent": pick(UAS), "Accept-Language": ACCEPT_LANGUAGE };
-}
-
-/**
- * Builds an ISO date and round-trips it through `Date` (UTC) to reject calendar-invalid
- * input (e.g. "31.02.2026") - `new Date(2026, 1, 31)` silently rolls over to March 3rd
- * instead of throwing, so the only reliable check is reading the parts back and comparing.
- */
-function isoOrNull(y: number, m: number, d: number): string | null {
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
-  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-}
-
-/** "26/10/2026" | "26.10.26" | "26 באוקטובר 2026" -> "2026-10-26"; null if calendar-invalid. */
-export function parseHeDate(text: string): string | null {
-  const t = text.trim();
-  const dmy = t.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/);
-  if (dmy) {
-    const y = dmy[3].length === 2 ? Number(`20${dmy[3]}`) : Number(dmy[3]);
-    return isoOrNull(y, Number(dmy[2]), Number(dmy[1]));
-  }
-  const he = t.match(/(\d{1,2})\s+ב?([א-ת]+)\s+(\d{4})/);
-  if (he && HE_MONTHS[he[2]]) return isoOrNull(Number(he[3]), HE_MONTHS[he[2]], Number(he[1]));
-  return null;
-}
-
-/** "החל מ-₪2,990 לאדם" | "1,349" -> 2990 | 1349 */
-export function parsePrice(text: string): number | null {
-  const m = text.replace(/[,\s]/g, "").match(/(\d{3,6})/);
-  return m ? Number(m[1]) : null;
-}
-
-function doc(html: string): Document {
-  return parseHTML(html).document as unknown as Document;
-}
 
 /** Walks up the tree - linkedom's `closest()` is present, but this avoids depending on it. */
 function insideSlider(el: Element): boolean {
@@ -88,14 +42,6 @@ function insideSlider(el: Element): boolean {
 /** "טוטנהאם | אברטון" -> "טוטנהאם-vs-אברטון" (recon: `game/<slug>` external_key for sports). */
 function slugifyHeTitle(title: string): string {
   return title.trim().toLowerCase().replace(/\s*\|\s*/g, "-vs-").replace(/\s+/g, "-");
-}
-
-function currencyFromSymbol(sym: string): Currency | null {
-  const s = sym.trim();
-  if (s === "€") return "EUR";
-  if (s === "£") return "GBP";
-  if (s === "₪") return "ILS";
-  return null;
 }
 
 /**
@@ -292,6 +238,9 @@ export const liveevents: CompetitorScraper = {
   kinds: ["sports", "music"],
   intervalHours: 48,
   mode: "browser",
+  // Only the /events/ (music) catalog needs the page; the /package/ detail pages below are
+  // plain stealth fetches, so the crawl loop paces them with pauseShort() (final review, I2).
+  detailMode: "fetch",
   async *crawl(ctx: CrawlContext): AsyncGenerator<Listing> {
     const { toUsd } = await import("./livetickets-api.ts");
     for (const { url, kind } of CATALOG_URLS) {
@@ -315,7 +264,7 @@ export const liveevents: CompetitorScraper = {
       await ctx.pause();
     }
   },
-  async detail(listing: Listing, ctx: CrawlContext): Promise<Partial<Listing>> {
+  async detail(listing: DetailInput, ctx: CrawlContext): Promise<Partial<Listing>> {
     if (listing.scope !== "package" || !hasDetailPage(listing.url)) return {};
     try {
       const res = await ctx.fetch(listing.url, { headers: stealthHeaders() });

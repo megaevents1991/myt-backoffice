@@ -44,13 +44,41 @@ function shiftDay(day: string, delta: number): string {
 
 async function candidatesFor(event: LightEvent, competitor: CompetitorKey, scope: Scope): Promise<ListingRow[]> {
   const day = event.date.slice(0, 10);
+  const from = shiftDay(day, -DATE_TOLERANCE_DAYS);
+  const to = shiftDay(day, DATE_TOLERANCE_DAYS);
+  // Two ways to be a candidate: a dated listing within ±DATE_TOLERANCE_DAYS, or (phase 2)
+  // an undated listing whose travel window contains our date. PostgREST `or` with nested
+  // `and` groups; every value is a YYYY-MM-DD string, no quoting needed.
   const { data, error } = await db.from("competitor_listings")
     .select("id,competitor,external_key,scope,title,title_he,event_date,city,venue,price_from,currency,price_usd,travel_depart,travel_return,attrs,detail_text,url,first_seen_at,last_seen_at,last_changed_at,run_id")
     .eq("competitor", competitor).eq("scope", scope)
-    .gte("event_date", shiftDay(day, -DATE_TOLERANCE_DAYS)).lte("event_date", shiftDay(day, DATE_TOLERANCE_DAYS))
+    .or(`and(event_date.gte.${from},event_date.lte.${to}),and(event_date.is.null,travel_depart.lte.${day},travel_return.gte.${day})`)
     .gte("last_seen_at", new Date(Date.now() - STALE_LISTING_MS).toISOString());
   if (error) { console.error("price-light-match: candidates failed", JSON.stringify(error)); return []; }
   return (data ?? []) as ListingRow[];
+}
+
+/**
+ * Does this competitor's crawled catalog cover the event at all? Coverage gates ONLY the
+ * absence claim (`not_selling`) - a scraper with no `covers()` covers everything, which is
+ * every competitor but ISSTA today.
+ */
+function coversEvent(competitor: CompetitorKey, event: LightEvent, tagSlugs: string[]): boolean {
+  const covers = scraperFor(competitor).covers;
+  if (!covers) return true;
+  return covers({ type: event.type, name: event.name, name_english: event.name_english ?? null, tagSlugs });
+}
+
+/** The event's feed-tag slugs - the vertical ("football"/"music") a scraper's `covers()` reads.
+ *  Loaded ONCE per event in matchAllForEvent, never per (competitor, scope). A query failure
+ *  returns [] on purpose: that makes ISSTA `skipped`, the safe direction (never a false `alone`). */
+export async function tagSlugsForEvent(eventId: number): Promise<string[]> {
+  const { data, error } = await db.from("event_tag_links").select("event_tags!inner(slug)").eq("event_id", eventId);
+  if (error) { console.error("price-light-match: tag slugs failed", JSON.stringify(error)); return []; }
+  return (data ?? [])
+    .map((r: { event_tags: { slug: string } | { slug: string }[] | null }) =>
+      (Array.isArray(r.event_tags) ? r.event_tags[0]?.slug : r.event_tags?.slug) ?? null)
+    .filter((s: string | null): s is string => !!s);
 }
 
 async function hadGoodCrawl(competitor: CompetitorKey): Promise<boolean> {
@@ -63,11 +91,14 @@ async function hadGoodCrawl(competitor: CompetitorKey): Promise<boolean> {
 interface PrevRow {
   status: MatchStatus; listing_id: number | null; normalized_usd: number | null; our_usd: number | null;
   listing_changed_at: string | null; ai_verdict: Record<string, unknown> | null; attrs: Partial<ExtractedAttrs> | null;
+  /** When this row was written - the reference point for the "same question, same inputs"
+   *  negative cache below (a candidate that has not changed since is not a new question). */
+  created_at: string | null;
 }
 
 async function latestRow(eventId: number, competitor: CompetitorKey, scope: Scope): Promise<PrevRow | null> {
   const { data, error } = await db.from("competitor_matches")
-    .select("status,listing_id,normalized_usd,our_usd,listing_changed_at,ai_verdict,attrs")
+    .select("status,listing_id,normalized_usd,our_usd,listing_changed_at,ai_verdict,attrs,created_at")
     .eq("event_id", eventId).eq("competitor", competitor).eq("scope", scope)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (error) { console.error(JSON.stringify(error)); throw error; }
@@ -115,6 +146,28 @@ function cachedCandidateFor(prev: PrevRow | null, candidates: ListingRow[]): Lis
   return listing && !hasListingChanged(prev, listing) ? listing : null;
 }
 
+/**
+ * NEGATIVE cache - the "same question, same inputs" rule (final review, I5b).
+ *
+ * `cachedCandidateFor` can only reuse a verdict that picked a listing. The judge's other
+ * answer - `unsure` with `listing: null` (ISSTA's marketing titles rule-score ~0, so the
+ * judge is asked and honestly declines) - writes `listing_id: null` and therefore could
+ * never be cached: the same event re-bought the same call every night, forever, and the
+ * 40-call ceiling was spent on no-hopers before a genuinely ambiguous pair got a look.
+ *
+ * So: skip the call when the previous row was that exact answer (unsure, no listing, a real
+ * non-error verdict) AND not one candidate has changed since it was written. A new or
+ * changed candidate is a new question and pays for a fresh call.
+ */
+function aiAlreadyDeclined(prev: PrevRow | null, candidates: ListingRow[]): boolean {
+  if (!prev || prev.status !== "unsure" || prev.listing_id != null || prev.ai_verdict == null) return false;
+  if ((prev.ai_verdict as { error?: unknown } | null)?.error != null) return false;
+  if (!prev.created_at) return false;
+  const asked = Date.parse(prev.created_at);
+  if (!Number.isFinite(asked)) return false;
+  return candidates.every((c) => Date.parse(c.last_changed_at) <= asked);
+}
+
 /** `ai error: <msg>` when `verdict.error` is set, else null. Shared by the `unsure`
  *  note (`aiNote`) and the `found` note (an extraction that errored but still left
  *  the rule-matched listing usable). */
@@ -138,7 +191,7 @@ export async function matchEvent(
   competitor: CompetitorKey,
   scope: Scope,
   trigger: MatchTrigger,
-  opts: { dryRun?: boolean; judge?: Judge | null; aiBudget?: AiBudget } = {},
+  opts: { dryRun?: boolean; judge?: Judge | null; aiBudget?: AiBudget; tagSlugs?: string[] } = {},
 ): Promise<MatchOutcome> {
   const out: MatchOutcome = { competitor, scope, status: "skipped", wrote: false, listingId: null, note: null };
   const judge = opts.judge === undefined ? makeJudge() : opts.judge;
@@ -170,7 +223,10 @@ export async function matchEvent(
 
   const rule = pickRuleMatch(
     { names: [event.name, event.name_english ?? ""].filter(Boolean), date: event.date.slice(0, 10) },
-    candidates.map<MatchCandidate>((c) => ({ id: c.id, title: c.title, title_he: c.title_he, event_date: c.event_date })),
+    candidates.map<MatchCandidate>((c) => ({
+      id: c.id, title: c.title, title_he: c.title_he, event_date: c.event_date,
+      travel_depart: c.travel_depart, travel_return: c.travel_return,
+    })),
   );
   // Same listing as last visit, unchanged, already verdicted - reused by both the
   // rule-found extraction branch below and the rule-failed judge-decide branch.
@@ -218,7 +274,7 @@ export async function matchEvent(
       // Same `cached: true` marker as the branch above - a reused verdict is not a new call.
       picked = cached; status = "found"; attrs = prev.attrs; verdict = { ...prev.ai_verdict, cached: true }; method = "ai";
     }
-  } else if (candidates.length > 0 && judge && takeAiBudget(opts.aiBudget)) {
+  } else if (candidates.length > 0 && judge && !aiAlreadyDeclined(prev, candidates) && takeAiBudget(opts.aiBudget)) {
     let j: Awaited<ReturnType<Judge>> = null;
     try {
       j = await judge({ event, candidates });
@@ -233,6 +289,12 @@ export async function matchEvent(
     } else status = "unsure";
   } else if (candidates.length > 0) {
     status = "unsure";                                          // ambiguous, no judge (AI off or rule-only mode)
+  } else if (!coversEvent(competitor, event, opts.tagSlugs ?? [])) {
+    // The scraper says its crawled catalog does not cover this event's vertical (ISSTA is
+    // football-only), so "no candidate" is not evidence of anything: record `skipped`, which
+    // computeScopeLight already treats as non-valid -> the scope lands on `partial_coverage`
+    // instead of claiming `alone` off a section we never opened (final review, I1).
+    status = "skipped";
   } else {
     status = (await hadGoodCrawl(competitor)) ? "not_selling" : "skipped";
   }
@@ -289,19 +351,26 @@ export async function matchEvent(
 export async function matchAllForEvent(
   eventId: number,
   trigger: MatchTrigger,
-  opts: { dryRun?: boolean; judge?: Judge | null; aiBudget?: AiBudget } = {},
+  opts: { dryRun?: boolean; judge?: Judge | null; aiBudget?: AiBudget; tagSlugs?: string[] } = {},
 ) {
   const event = await loadEventForLight(eventId);
   if (!event || event.is_deleted) return null;
   // Resolve once per event, not once per (competitor, scope) - `matchEvent` never
   // re-resolves when it is handed an already-concrete (possibly null) judge.
   const judge = opts.judge === undefined ? makeJudge() : opts.judge;
+  // One query per EVENT, not per (competitor, scope) - the slugs are the same for all of them.
+  const tagSlugs = opts.tagSlugs ?? (await tagSlugsForEvent(eventId));
   const outcomes: MatchOutcome[] = [];
   for (const scope of ["package", "ticket"] as const) {
-    for (const competitor of competitorsFor(kindOf(event), scope, ACTIVE_COMPETITORS)) {
-      if (!scraperFor(competitor).scopes.includes(scope)) continue;
-      outcomes.push(await matchEvent(event, competitor, scope, trigger, { ...opts, judge }));
-    }
+    const competitors = competitorsFor(kindOf(event), scope, ACTIVE_COMPETITORS)
+      .filter((c) => scraperFor(c).scopes.includes(scope));
+    // Competitors within one scope run concurrently: their rows are disjoint per
+    // (event, competitor, scope), and the shared `aiBudget` decrement in `takeAiBudget` is
+    // synchronous, so the ceiling still holds exactly. Scopes stay sequential (final review,
+    // I5a) - this is what offsets the per-event cost phase 2's extra crawlers added.
+    outcomes.push(...await Promise.all(
+      competitors.map((competitor) => matchEvent(event, competitor, scope, trigger, { ...opts, judge, tagSlugs })),
+    ));
   }
   const lights = await recomputeEventLights(eventId, trigger, { dryRun: opts.dryRun });
   return { outcomes, lights };

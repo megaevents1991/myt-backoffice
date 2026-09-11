@@ -81,7 +81,8 @@ function userPrompt(event: LightEvent, shown: ListingRow[]): string {
     `travel: ${event.def_date_depart ?? "?"} → ${event.def_date_return ?? "?"}`,
   ].join("\n");
   const cands = shown.map((c, i) => {
-    const head = `[${i}] ${c.title}${c.title_he && c.title_he !== c.title ? ` / ${c.title_he}` : ""} | date ${c.event_date ?? "?"} | city ${c.city ?? "?"} | price ${c.price_from ?? "?"} ${c.currency ?? ""}`;
+    const when = c.event_date ?? (c.travel_depart && c.travel_return ? `travel ${c.travel_depart}..${c.travel_return} (match date not published)` : "?");
+    const head = `[${i}] ${c.title}${c.title_he && c.title_he !== c.title ? ` / ${c.title_he}` : ""} | date ${when} | city ${c.city ?? "?"} | price ${c.price_from ?? "?"} ${c.currency ?? ""}`;
     const text = shown.length === 1 && c.detail_text ? `\nLISTING TEXT:\n${c.detail_text.slice(0, AI_DETAIL_TEXT_MAX)}` : "";
     return head + text;
   }).join("\n");

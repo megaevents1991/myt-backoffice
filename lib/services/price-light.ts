@@ -16,6 +16,10 @@ export const PRICE_DROP_MIN_USD = 50;
 export const PRICE_DROP_LOOKBACK_DAYS = 14;
 export const PRICE_DROP_SHOW_DAYS = 14;
 export const DATE_TOLERANCE_DAYS = 1;
+/** Longest travel window (depart..return, inclusive) a window-only listing may use to claim our
+ *  date. Every real window is 3-6 days; a season-long "ברצלונה 2026/27" range would otherwise
+ *  silently cover both legs of a tie (final review, M1). */
+export const MAX_WINDOW_DAYS = 14;
 
 // ---- normalization (applied to the COMPETITOR's price to look like ours:
 // direct, no bag, 3*, our nights, no breakfast, no transfers) ---------------
@@ -249,7 +253,15 @@ export function nameTokens(value: string): string[] {
     .filter((t) => t.length > 1 && !STOP.has(t));
 }
 
-export interface MatchCandidate { id: number; title: string; title_he?: string | null; event_date: string | null }
+export interface MatchCandidate {
+  id: number;
+  title: string;
+  title_he?: string | null;
+  event_date: string | null;
+  /** Phase 2: sites that publish a travel window instead of the match date (ISSTA, OnTour). */
+  travel_depart?: string | null;
+  travel_return?: string | null;
+}
 
 /** 0..1 - share of our name tokens found in the candidate title (best over our names). */
 export function ruleMatchScore(ours: { names: string[] }, candidate: MatchCandidate): number {
@@ -264,20 +276,34 @@ export function ruleMatchScore(ours: { names: string[] }, candidate: MatchCandid
   return best;
 }
 
+/**
+ * A candidate is "on our date" either by exact event_date, or — when the site publishes no
+ * event date at all — because its travel window contains our date (inclusive both ends).
+ * A candidate WITH an event_date is judged by that date only; its window is ignored.
+ * A window longer than MAX_WINDOW_DAYS is not a trip, it's a season — rejected outright.
+ */
+export function candidateCoversDate(c: MatchCandidate, date: string): boolean {
+  if (c.event_date) return c.event_date === date;
+  if (!c.travel_depart || !c.travel_return) return false;
+  if (!(c.travel_depart <= date && date <= c.travel_return)) return false;
+  const span = (Date.parse(`${c.travel_return}T00:00:00Z`) - Date.parse(`${c.travel_depart}T00:00:00Z`)) / 86_400_000;
+  return Number.isFinite(span) && span <= MAX_WINDOW_DAYS;
+}
+
 export const RULE_MATCH_MIN_SCORE = 0.8;
 
 /**
- * Deterministic pick: the single candidate on the exact date whose title covers
- * >= 80% of our name tokens. Two qualifying candidates with the same score =
- * ambiguous = null (the AI judge decides in phase 1). A ±1-day candidate is
- * never picked by rule.
+ * Deterministic pick: the single candidate on our date (exact date, or a travel window
+ * that contains it) whose title covers >= 80% of our name tokens. Two qualifying
+ * candidates with the same score = ambiguous = null (the AI judge decides). A ±1-day
+ * dated candidate is never picked by rule.
  */
 export function pickRuleMatch(
   ours: { names: string[]; date: string },
   candidates: MatchCandidate[],
 ): { candidate: MatchCandidate; score: number } | null {
-  const sameDay = candidates.filter((c) => c.event_date === ours.date);
-  const scored = sameDay
+  const onDate = candidates.filter((c) => candidateCoversDate(c, ours.date));
+  const scored = onDate
     .map((candidate) => ({ candidate, score: ruleMatchScore(ours, candidate) }))
     .filter((x) => x.score >= RULE_MATCH_MIN_SCORE)
     .sort((a, b) => b.score - a.score);

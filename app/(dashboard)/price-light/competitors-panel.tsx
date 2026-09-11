@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { triggerCrawl, type CrawlPanelRow } from "@/lib/actions/price-light-actions";
+import { COMPETITOR_LABEL } from "@/app/(dashboard)/events/price-light-ui";
 import type { CrawlStatus } from "@/types/price-light.types";
 
 const STATUS_LABEL: Record<CrawlStatus, string> = {
@@ -76,7 +77,7 @@ function CompetitorCard({ row, onDone }: { row: CrawlPanelRow; onDone: () => voi
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-        <CardTitle className="text-sm font-semibold capitalize">{row.competitor}</CardTitle>
+        <CardTitle className="text-sm font-semibold">{COMPETITOR_LABEL[row.competitor] ?? row.competitor}</CardTitle>
         <div className="flex items-center gap-1.5">
           {row.circuitOpen && (
             <Badge variant="outline" className="border-transparent bg-destructive/15 text-destructive">

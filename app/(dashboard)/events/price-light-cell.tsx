@@ -97,7 +97,10 @@ export function PriceLightCell({ event, onUpdated }: { event: Event; onUpdated: 
                         {" · "}{m.method}
                         {m.note ? ` · ${m.note}` : ""}
                       </div>
-                      {l && <a href={l.url} target="_blank" rel="noreferrer" className="text-xs underline">{l.title} · {l.event_date} · {l.price_from} {l.currency}</a>}
+                      {/* ISSTA/OnTour listings carry no match date - the travel window is the
+                          only thing that explains why this listing was paired with our event,
+                          so show it in its place rather than an empty gap (final review, I4). */}
+                      {l && <a href={l.url} target="_blank" rel="noreferrer" className="text-xs underline">{l.title} · {l.event_date ?? (l.travel_depart && l.travel_return ? `נסיעה ${l.travel_depart}–${l.travel_return}` : "—")} · {l.price_from} {l.currency}</a>}
                     </li>
                   );
                 })}

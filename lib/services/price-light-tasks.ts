@@ -82,6 +82,12 @@ export async function openPriceLightTask(
       .select("id")
       .single();
     if (error || !data) {
+      // 23505 = the partial unique index tasks_price_light_open_uniq fired: another request
+      // opened the same event+scope task between our dedupe read and this insert. Return it.
+      if ((error as { code?: string } | null)?.code === "23505") {
+        const raced = await openTaskFor(event.id, scope);
+        if (raced) return { ok: true, taskId: raced.id, existed: true };
+      }
       console.error(JSON.stringify(error));
       return { ok: false, error: "task insert failed" };
     }

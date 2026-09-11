@@ -3,22 +3,19 @@
 //   otherwise                         -> local @sparticuz/chromium + optional residential proxy
 // Every page is hardened the same way regardless of mode.
 import type { Browser, BrowserContext, Page } from "playwright-core";
+// The UA list lives in its own dependency-free module so the fetch-mode crawlers can share it
+// WITHOUT importing this file (which pulls playwright/chromium in). Re-exported here for the
+// existing call sites (final review, M8).
+import { UAS } from "./ua.ts";
 
-// Exported for other stealth call sites (e.g. fetch-mode crawlers) that need
-// the same Israeli UA rotation without pulling in the rest of this module.
-export const UAS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 Edg/127.0.0.0",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-];
+export { UAS };
 const VIEWPORTS = [{ width: 1366, height: 768 }, { width: 1536, height: 864 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }];
 
 export const PAGE_TIMEOUT_MS = 45_000;
 export const PAUSE_MIN_MS = 20_000;
 export const PAUSE_MAX_MS = 60_000;
+export const PAUSE_SHORT_MIN_MS = 5_000;
+export const PAUSE_SHORT_MAX_MS = 15_000;
 // Applied in BOTH modes (harden()) so a remote CDP provider that doesn't
 // pre-configure Hebrew locale itself still sees an Israeli Accept-Language.
 const ACCEPT_LANGUAGE = "he-IL,he;q=0.9,en-US;q=0.8";
@@ -35,6 +32,13 @@ export function browserMode(): "remote" | "local" {
 
 export async function randomPause(): Promise<void> {
   const ms = PAUSE_MIN_MS + Math.floor(Math.random() * (PAUSE_MAX_MS - PAUSE_MIN_MS));
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+/** Between paginated GETs of the SAME site in fetch mode (a person clicking league tabs) -
+ *  the full 20-60s pause is for browser page loads and for switching sites. */
+export async function shortPause(): Promise<void> {
+  const ms = PAUSE_SHORT_MIN_MS + Math.floor(Math.random() * (PAUSE_SHORT_MAX_MS - PAUSE_SHORT_MIN_MS));
   await new Promise((r) => setTimeout(r, ms));
 }
 

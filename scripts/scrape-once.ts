@@ -7,7 +7,7 @@
  * (including livetickets-api.ts's "@/lib/supabase-server" import), which plain `node` can't
  * resolve without a path-alias loader, so this script needs one before it can actually run.
  */
-import { withBrowser, randomPause } from "../lib/services/browser.ts";
+import { withBrowser, randomPause, shortPause } from "../lib/services/browser.ts";
 import { scraperFor } from "../lib/services/competitor-scrapers/index.ts";
 import type { CrawlContext, Listing } from "../lib/services/competitor-scrapers/types.ts";
 import type { CompetitorKey } from "../types/price-light.types.ts";
@@ -17,7 +17,7 @@ const detailKey = process.argv.includes("--detail") ? process.argv[process.argv.
 const scraper = scraperFor(key);
 
 const run = async (page: CrawlContext["page"]) => {
-  const ctx: CrawlContext = { page, fetch, pause: randomPause, log: (m) => console.error(m), dryRun: true };
+  const ctx: CrawlContext = { page, fetch, pause: randomPause, pauseShort: shortPause, log: (m) => console.error(m), dryRun: true };
   const listings: Listing[] = [];
   for await (const l of scraper.crawl(ctx)) listings.push(l);
   console.log(JSON.stringify(listings, null, 2));
