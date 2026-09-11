@@ -19,49 +19,28 @@
 
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
+import {
+  influencerCouponCode,
+  influencerCouponTerms,
+  type InfluencerCoupon,
+  type InfluencerCouponResult,
+} from "@/lib/influencer-coupon-shared";
+
+// Re-export so existing server importers (actions) keep their import path;
+// the pure helpers/types live in the shared module so a client component can
+// use them without dragging this server module's Supabase client in.
+export {
+  influencerCouponCode,
+  influencerCouponTerms,
+  type InfluencerCoupon,
+  type InfluencerCouponResult,
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
 
-export interface InfluencerCoupon {
-  id: number;
-  code: string;
-  discount_type: "percent" | "fixed";
-  discount_value: number;
-  per_person: boolean;
-  is_active: boolean;
-  times_used: number;
-  times_paid: number;
-}
-
-export type InfluencerCouponResult =
-  | { ok: true; coupon: InfluencerCoupon; created: boolean }
-  | { ok: false; error: string };
-
 const COUPON_COLUMNS =
   "id,code,discount_type,discount_value,per_person,is_active,times_used,times_paid";
-
-/** "aviran-il" + 30 → "AVIRANIL30". Same charset main's normalizeCouponCode accepts. */
-export function influencerCouponCode(trackingCode: string, value: number): string {
-  const base = trackingCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return `${base}${Math.round(value)}`;
-}
-
-/**
- * Same normalization as main's finalPurchasePriceCalc / confirm-order floor:
- * 1..10 reads as a percent of the total, anything else as USD per ticket.
- */
-export function influencerCouponTerms(userDiscount: number): {
-  discount_type: "percent" | "fixed";
-  discount_value: number;
-  per_person: boolean;
-} | null {
-  const value = Math.floor(Number(userDiscount));
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return value <= 10
-    ? { discount_type: "percent", discount_value: value, per_person: false }
-    : { discount_type: "fixed", discount_value: value, per_person: true };
-}
 
 export async function findInfluencerCoupon(
   trackingCode: string,

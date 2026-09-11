@@ -13,7 +13,7 @@ import {
   influencerCouponCode,
   influencerCouponTerms,
   type InfluencerCoupon,
-} from "@/lib/services/influencer-coupon";
+} from "@/lib/influencer-coupon-shared";
 
 /**
  * The partner editor's "Influencer coupon" box (affiliates only, existing
