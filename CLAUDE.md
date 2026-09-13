@@ -314,6 +314,36 @@ treats `stop_reason === "max_tokens"` as a failure: Opus 5 thinks adaptively, so
 truncates the reasoning before the forced tool call ever lands. `scripts/price-light-judge-smoke.ts
 <eventId>` (`npx tsx`, needs the key) smoke-tests one call live.
 
+**Phase 2.1 (2026-09-13): duration-aware comparison + the agent's memory.** Two packages for the
+same fixture are rarely the same length - ours is often a night longer - so a nights gap is now
+measured, priced and, where it cannot be seen, *admitted*. (a) `ourNights()` returns `null`
+instead of a flat 3 when an event has no travel window (a guess wearing a number's clothes);
+(b) a nights gap is priced at `ourNightRateUsd()` - that event's own `base_hotel_price / nights`,
+clamped to `NIGHT_RATE_MIN_USD 45`..`NIGHT_RATE_MAX_USD 260`, with the flat `NIGHT_USD 90` left
+only as the fallback (measured: a Manchester night is $190, a Barcelona one $75-138, so the flat
+rate mis-priced a one-night gap by up to 2x in both directions); (c) `listingNights()` derives
+the competitor's nights from the listing's stored travel window when no detail page ever said
+(123 of Golasso's 132 listings had `attrs: null` but all 132 carried the window); (d)
+`nightsUncertaintyUsd()` returns one night's rate when either side's duration is unknown, and
+`computeScopeLight` widens BOTH thresholds by it, so a duration we cannot see reads orange, never
+a confident red (63 of 77 matched package listings published no nights at all; 10 events moved
+red/green → orange on the first pass). `LightScopeDetail` carries `uncertainty_usd` + `nights`
+(both optional - rows written earlier have neither), the events-table tooltip and the
+`/price-light` row both print the duration line, and `matchEvent` rewrites a row whose nights
+changed even when its price did not. **The detail queue is now ordered**
+(`listingIdsWorthDetail`): matched-but-never-enriched first, then listings whose title actually
+covers one of our event names (`DETAIL_NAME_MIN_SCORE 0.5`), then the long tail, and at most
+`DETAIL_REFRESH_SLICE 6` refreshes of already-enriched rows - before this it re-fetched the same
+head every run (18 of 570 enriched, unchanged run after run) and a listing with no detail page
+has no nights, no stars and, on LiveEvents, no price. **The agent's memory** is
+`lib/services/price-light-memory.ts`: `houseRules()` is GENERATED from the engine constants (so
+tuning a constant re-teaches the judge on its next call, never a hand-copied prompt) and
+`loadJudgeLessons()` quotes the notes staff wrote when they overrode a light (`audit_log`,
+`price_light.override`, newest `LESSON_MAX 8` within `LESSON_LOOKBACK_DAYS 120`, capped at
+`AI_MEMORY_MAX 2000` chars in the prompt). The nightly loads it ONCE per run and threads it as
+`aiMemory` through `matchAllForEvent`; staff notes are quoted as evidence, explicitly not as
+instructions. Setup steps for turning the AI on: `docs/superpowers/price-light-ai-setup.md`.
+
 **Manual override beats the recompute.** `light_detail.override` (one scope-tagged field) is
 re-applied by `recomputeEventLights` on every pass: the overridden scope keeps `override.light`
 until the competitor's normalized price drifts more than `OVERRIDE_DRIFT_USD` ($20) from the number

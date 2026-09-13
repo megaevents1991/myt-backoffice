@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { matchAllForEvent } from "@/lib/services/price-light-match";
+import { aiEnabled } from "@/lib/services/price-light-judge";
+import { loadJudgeMemory } from "@/lib/services/price-light-memory";
 import {
   LIGHT_EVENT_COLUMNS,
   loadEventForLight,
@@ -68,7 +70,11 @@ export async function recheckEvent(
 > {
   await requireStaff();
   try {
-    const result = await matchAllForEvent(eventId, "manual");
+    // A manual recheck must judge by exactly the same rules the nightly does, corrections
+    // included - otherwise "בדוק עכשיו" could answer differently from last night's pass on
+    // identical inputs. One small audit-log read, and only when the AI is actually on.
+    const aiMemory = aiEnabled() ? await loadJudgeMemory() : null;
+    const result = await matchAllForEvent(eventId, "manual", { aiMemory });
     if (!result) return { ok: false, error: "event not found or deleted" };
     return { ok: true, lights: result.lights.after, detail: result.lights.detail, checked_at: new Date().toISOString() };
   } catch (e) {
@@ -225,6 +231,10 @@ export interface PriceLightRow {
   listing_url: string | null;
   adjustments: string[];
   partial: boolean;
+  /** Nights on each side + the USD doubt that widened the light's band (price-light.ts). */
+  nights_ours: number | null;
+  nights_theirs: number | null;
+  uncertainty_usd: number;
   reason: UncheckedReason | null;
   crawled_at: string | null;
   checked_at: string | null;
@@ -386,6 +396,12 @@ export async function listPriceLight(): Promise<PriceLightRow[]> {
         listing_url: newest?.url ?? null,
         adjustments: detail?.adjustments.map((a) => a.label) ?? [],
         partial: detail?.partial ?? false,
+        // `nights.theirs` is "unknown" when no competitor page ever said - null on the wire, so
+        // the client renders "?" instead of inventing a number. Rows written before 2026-09-13
+        // carry neither field at all, hence the ?? fallbacks.
+        nights_ours: detail?.nights?.ours ?? null,
+        nights_theirs: typeof detail?.nights?.theirs === "number" ? detail.nights.theirs : null,
+        uncertainty_usd: detail?.uncertainty_usd ?? 0,
         reason: detail?.reason ?? null,
         crawled_at: detail?.crawled_at ?? null,
         checked_at: event.light_checked_at,

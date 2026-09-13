@@ -21,7 +21,8 @@ import { appOrigin, sendMail } from "@/lib/email";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { LIGHT_EVENT_COLUMNS, writeSnapshotAndTag, type LightEvent } from "@/lib/services/price-light-store";
 import { matchAllForEvent, type AiBudget } from "@/lib/services/price-light-match";
-import { AI_CALLS_PER_RUN } from "@/lib/services/price-light-judge";
+import { AI_CALLS_PER_RUN, aiEnabled } from "@/lib/services/price-light-judge";
+import { loadJudgeMemory } from "@/lib/services/price-light-memory";
 import { runCrawl } from "@/lib/services/price-light-crawl";
 import { LIGHTS, type Light, type Scope } from "@/types/price-light.types";
 
@@ -134,6 +135,10 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
   // and strand everything behind them. A dry run passes `judge: null`: a report
   // must never spend money, and a dry run is exactly what gets pointed at prod.
   const aiBudget: AiBudget = { remaining: AI_CALLS_PER_RUN };
+  // The agent's memory - house rules generated from the engine's constants plus the notes staff
+  // wrote when they overrode a light. Loaded ONCE for the whole pass (one audit-log read, not
+  // one per event) and skipped entirely when nothing will call the AI anyway.
+  const aiMemory = options.dryRun || !aiEnabled() ? null : await loadJudgeMemory();
   for (const [index, event] of events.entries()) {
     if (Date.now() - start > options.budgetMs) {
       summary.remaining = events.length - index;
@@ -144,6 +149,7 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
         dryRun: options.dryRun,
         judge: options.dryRun ? null : undefined,
         aiBudget,
+        aiMemory,
       });
       if (!result) continue;
       summary.matched += result.outcomes.filter((o) => o.wrote).length;

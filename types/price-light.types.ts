@@ -77,6 +77,12 @@ export interface LightScopeDetail {
   normalized_usd: number | null;
   adjustments: Adjustment[];
   partial: boolean;
+  /** USD the nights comparison could still be wrong by - the red/green band is widened by it.
+   *  Optional: rows written before 2026-09-13 have no such field, so every reader treats
+   *  `undefined` as zero doubt rather than as a missing number. */
+  uncertainty_usd?: number;
+  /** Both package durations, so a reader can see WHY a light was widened or moved. */
+  nights?: { ours: number | null; theirs: number | "unknown" } | null;
   reason: UncheckedReason | null;
   crawled_at: string | null;
   match_id: number | null;

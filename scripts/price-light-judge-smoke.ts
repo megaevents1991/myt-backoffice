@@ -17,6 +17,7 @@
  */
 import { loadEventForLight } from "@/lib/services/price-light-store";
 import { aiEnabled, aiModel, anthropicKey, extractAndJudge } from "@/lib/services/price-light-judge";
+import { loadJudgeMemory } from "@/lib/services/price-light-memory";
 import { supabase } from "@/lib/supabase-server";
 import { DATE_TOLERANCE_DAYS } from "@/lib/services/price-light";
 import type { ListingRow } from "@/types/price-light.types";
@@ -81,7 +82,13 @@ async function main() {
     return;
   }
 
-  const result = await extractAndJudge({ event, candidates });
+  // Exactly what the nightly sends: the agent's house rules plus whatever staff corrections
+  // exist so far. Printed, because "what does it actually know?" is the first question anyone
+  // asks about an agent - and the answer must be readable before the first bill.
+  const memory = await loadJudgeMemory();
+  console.log(`\n--- agent memory (${memory.length} chars) ---\n${memory}\n--- end memory ---\n`);
+
+  const result = await extractAndJudge({ event, candidates }, { memory });
   console.log(JSON.stringify(result, null, 2));
   console.log(`\ncost: $${result.verdict.cost_usd} (${result.verdict.input_tokens} in / ${result.verdict.output_tokens} out, ${result.verdict.ms}ms)`);
 }

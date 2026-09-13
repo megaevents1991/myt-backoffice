@@ -7,6 +7,7 @@ import { appOrigin, sendMail } from "@/lib/email";
 import { multiCurrencyExchangeRateService } from "@/lib/services/ticket-price-sync";
 import { browserMode, randomPause, scrapeEnabled, shortPause, withBrowser } from "@/lib/services/browser";
 import { ACTIVE_COMPETITORS, scraperFor, type CompetitorScraper, type CrawlContext, type DetailInput, type Listing } from "@/lib/services/competitor-scrapers";
+import { ruleMatchScore } from "@/lib/services/price-light";
 import type { CompetitorKey, CrawlStatus, CrawlTrigger, Currency } from "@/types/price-light.types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -204,42 +205,123 @@ function chunkIds(ids: number[]): number[][] {
   return out;
 }
 
+/** Enrichment slots a run may spend REFRESHING listings it already has a detail page for.
+ *  Capped so refreshes can never crowd out listings nobody has ever opened - that is what
+ *  kept the queue standing still (2026-09-13: 18 of 570 enriched, run after run). */
+export const DETAIL_REFRESH_SLICE = 6;
+/** Name overlap that makes a listing plausibly ours. Deliberately looser than the matcher's
+ *  RULE_MATCH_MIN_SCORE: this only decides what is worth READING, and a page we never fetch
+ *  can never be matched by anything - not by the rule, not by the AI. */
+export const DETAIL_NAME_MIN_SCORE = 0.5;
+/** Our own future events - already past PostgREST's 1000-row cap, so this read is paged. */
+const EVENTS_LOAD_MAX_ROWS = 5_000;
+
+/** Ids whose full rows are actually fetched. A run can enrich ~20 pages inside the budget, and
+ *  every fetched row drags its `detail_text` along (up to 2000 chars) - reading the whole
+ *  570-long queue to use its head would be a ~1MB round trip per crawl for nothing. */
+export const DETAIL_FETCH_MAX = 80;
+
+interface DetailPick {
+  id: number; event_date: string | null; detail_text: string | null;
+  title: string; title_he: string | null; last_changed_at: string | null;
+}
+
+function dayWindow(day: string): string[] {
+  const d = new Date(`${day}T00:00:00.000Z`);
+  return [-1, 0, 1].map((delta) => {
+    const x = new Date(d);
+    x.setUTCDate(x.getUTCDate() + delta);
+    return x.toISOString().slice(0, 10);
+  });
+}
+
 /**
- * Listings already matched, or on a date (±1 day) one of our live events has - the only ones
- * worth a detail page.
+ * The detail queue, in the order it should be spent - most useful page first.
  *
- * Every read here checks its `error`: a swallowed failure returns an empty want-set, so the run
+ * A crawl affords roughly twenty detail pages inside CRAWL_BUDGET_MS, and LiveEvents alone puts
+ * 570 listings on one of our dates, so WHICH twenty is the whole question. Before this the
+ * answer was "whatever PostgREST returned first, including every already-enriched matched
+ * listing": the same head of the list was re-fetched every run while 568 listings stayed blank
+ * (measured 2026-09-13). A listing with no detail page has no nights, no stars and - on
+ * LiveEvents, where the price only appears there - no price at all, so it can never become a
+ * real comparison.
+ *
+ * Order:
+ *   1. matched, never enriched        - it is setting a light RIGHT NOW and we cannot see inside
+ *   2. plausibly ours, never enriched - same date, and the title covers our event's name
+ *   3. on one of our dates, never enriched - the long tail, unchanged from before
+ *   4. matched, already enriched      - at most DETAIL_REFRESH_SLICE per run, because a matched
+ *      listing's price does move and on LiveEvents that price lives on the detail page
+ *
+ * Every read checks its `error`: a swallowed failure would return an empty queue, so the run
  * enriches NOTHING while still reporting `ok` - a silent wrong answer that looks like success.
- * Batching the catalog write made this reachable (the whole catalog's ids now arrive at once
- * instead of trickling in), so the failure is reported and the caller skips enrichment for this
- * run rather than pretending there was nothing to enrich.
  */
-async function listingIdsWorthDetail(competitor: CompetitorKey, ids: number[]): Promise<Set<number>> {
-  const want = new Set<number>();
+async function listingIdsWorthDetail(competitor: CompetitorKey, ids: number[]): Promise<number[]> {
+  const matched = new Set<number>();
   for (const chunk of chunkIds(ids)) {
-    const { data: matched, error } = await db.from("competitor_matches").select("listing_id")
+    const { data, error } = await db.from("competitor_matches").select("listing_id")
       .eq("competitor", competitor).eq("status", "found").in("listing_id", chunk);
     if (error) { console.error("price-light-crawl: matched-listings read failed", JSON.stringify(error)); throw new Error(`detail targets ${competitor}: ${error.message}`); }
-    for (const m of (matched ?? []) as { listing_id: number }[]) want.add(m.listing_id);
+    for (const m of (data ?? []) as { listing_id: number }[]) matched.add(m.listing_id);
   }
-  const { data: dates, error: datesError } = await db.from("events").select("date").is("is_deleted", null).gte("date", new Date().toISOString().slice(0, 10));
-  if (datesError) { console.error("price-light-crawl: event dates read failed", JSON.stringify(datesError)); throw new Error(`detail targets ${competitor}: ${datesError.message}`); }
-  const ourDays = new Set<string>((dates ?? []).map((e: { date: string }) => e.date.slice(0, 10)));
-  const rows: { id: number; event_date: string | null; detail_text: string | null }[] = [];
+
+  // `id` is selected for `fetchPaged`'s dedup key, not for its own sake - a row that slides
+  // across a page boundary mid-pagination must not be counted twice.
+  const { rows: events, error: eventsError, truncated } = await fetchPaged<{ id: number; name: string; name_english: string | null; date: string }>(
+    () => db.from("events").select("id,name,name_english,date").is("is_deleted", null)
+      .gte("date", new Date().toISOString().slice(0, 10)).order("date", { ascending: true }),
+    EVENTS_LOAD_MAX_ROWS,
+  );
+  if (eventsError) { console.error("price-light-crawl: event dates read failed", JSON.stringify(eventsError)); throw new Error(`detail targets ${competitor}: ${eventsError.message}`); }
+  if (truncated) console.error(`price-light-crawl: event list truncated at ${EVENTS_LOAD_MAX_ROWS} - detail queue may miss late events`);
+  const namesByDay = new Map<string, string[]>();
+  for (const e of events) {
+    const day = e.date.slice(0, 10);
+    const list = namesByDay.get(day) ?? [];
+    list.push(e.name, ...(e.name_english ? [e.name_english] : []));
+    namesByDay.set(day, list);
+  }
+
+  const rows: DetailPick[] = [];
   for (const chunk of chunkIds(ids)) {
-    const { data, error } = await db.from("competitor_listings").select("id,event_date,detail_text").in("id", chunk);
+    const { data, error } = await db.from("competitor_listings")
+      .select("id,event_date,detail_text,title,title_he,last_changed_at").in("id", chunk);
     if (error) { console.error("price-light-crawl: listing dates read failed", JSON.stringify(error)); throw new Error(`detail targets ${competitor}: ${error.message}`); }
-    rows.push(...((data ?? []) as { id: number; event_date: string | null; detail_text: string | null }[]));
+    rows.push(...((data ?? []) as DetailPick[]));
   }
+
+  const matchedFresh: DetailPick[] = [];
+  const matchedBlank: number[] = [];
+  const plausible: number[] = [];
+  const onDate: number[] = [];
   for (const r of rows) {
-    if (!r.event_date || r.detail_text) continue;
-    const d = new Date(`${r.event_date}T00:00:00.000Z`);
-    for (const delta of [-1, 0, 1]) {
-      const x = new Date(d); x.setUTCDate(x.getUTCDate() + delta);
-      if (ourDays.has(x.toISOString().slice(0, 10))) { want.add(r.id); break; }
+    // `!= null`, not truthiness: an EMPTY string is the marker for "we opened this page and it
+    // had no package detail on it" (LiveEvents' /show/ tier pages return `{}`). Without that
+    // distinction such a listing is queued again every single run, forever, and - now that the
+    // queue has a stable order - permanently occupies the same early slots, starving the rest.
+    const enriched = r.detail_text != null;
+    if (matched.has(r.id)) {
+      if (enriched) matchedFresh.push(r); else matchedBlank.push(r.id);
+      continue;
     }
+    if (enriched || !r.event_date) continue;
+    const ourNames = dayWindow(r.event_date).flatMap((day) => namesByDay.get(day) ?? []);
+    if (ourNames.length === 0) continue;
+    const score = ruleMatchScore({ names: ourNames }, { id: r.id, title: r.title, title_he: r.title_he, event_date: r.event_date });
+    (score >= DETAIL_NAME_MIN_SCORE ? plausible : onDate).push(r.id);
   }
-  return want;
+  // Refresh the matched listings whose row has sat unchanged the longest, not simply the first
+  // six the database handed back: that order is stable, so the same six would be refreshed for
+  // ever while every other matched listing went stale untouched.
+  const refresh = matchedFresh
+    .sort((a, b) => (a.last_changed_at ?? "").localeCompare(b.last_changed_at ?? ""))
+    .slice(0, DETAIL_REFRESH_SLICE)
+    .map((r) => r.id);
+  // The cap is applied to the NEW pages, not to the whole list: slicing the concatenation would
+  // drop the refresh tail entirely whenever the backlog is long, which is exactly when a matched
+  // listing's price has had the most time to move.
+  const fresh = [...matchedBlank, ...plausible, ...onDate].slice(0, Math.max(0, DETAIL_FETCH_MAX - refresh.length));
+  return [...fresh, ...refresh];
 }
 
 export async function runCrawl(
@@ -390,7 +472,7 @@ export async function runCrawl(
     // The catalog is already written at this point, so a failure picking enrichment targets must
     // not throw away a good run - record it on the summary and skip enrichment for tonight. The
     // listings themselves are fine; only their attrs stay unknown until the next crawl.
-    let want: Set<number>;
+    let want: number[];
     try {
       want = await listingIdsWorthDetail(competitor, ids);
     } catch (e) {
@@ -406,18 +488,29 @@ export async function runCrawl(
     // DESTINATION's currency), and `event_date` is the anchor a scraper sanity-checks a
     // parsed travel window against (review 2026-09-11, C1 + I3). The row type below is the
     // same `DetailInput` the scraper contract takes, so the two can't drift apart.
-    const { data: rows } = await db.from("competitor_listings")
-      .select("id,scope,url,attrs,detail_text,travel_depart,travel_return,price_from,price_usd,currency,event_date")
-      .in("id", [...want]);
+    // Chunked like every other `.in(...)` here - a whole queue of ids in one URL filter is the
+    // over-long query string IN_CHUNK exists to avoid.
+    const fetched: DetailRow[] = [];
+    for (const chunk of chunkIds(want)) {
+      const { data, error } = await db.from("competitor_listings")
+        .select("id,scope,url,attrs,detail_text,travel_depart,travel_return,price_from,price_usd,currency,event_date")
+        .in("id", chunk);
+      if (error) { console.error("price-light-crawl: detail rows read failed", JSON.stringify(error)); continue; }
+      fetched.push(...((data ?? []) as DetailRow[]));
+    }
+    // PostgREST answers in its own order, so re-impose the queue's: the priority computed in
+    // `listingIdsWorthDetail` is the whole point, and a budget cutoff must bite the tail.
+    const byId = new Map(fetched.map((r) => [r.id, r]));
+    const rows = want.map((id) => byId.get(id)).filter((r): r is DetailRow => r != null);
     // Golasso/LiveEvents fetch their detail pages rather than navigating the browser to them,
     // so the honest pacing is the same-site GET pause (5-15s), not the 20-60s page-load one.
     const detailPause = (scraper.detailMode ?? scraper.mode) === "fetch" ? c.pauseShort : c.pause;
-    const total = (rows ?? []).length;
-    for (const row of (rows ?? []) as DetailRow[]) {
+    const total = rows.length;
+    for (const row of rows) {
       if (Date.now() - start > budget) {
         // A details cutoff is NOT `partial`: the catalog itself completed cleanly, and marking
         // it partial would drown the "partial-coverage crawls" view in healthy runs (I2d).
-        const cutNote = `details cut at budget (${summary.detailPages} of ${total} enriched)`;
+        const cutNote = `details cut at budget (${summary.detailPages} of ${total} queued enriched)`;
         summary.note = summary.note ? `${summary.note} | ${cutNote}` : cutNote;
         break;
       }
@@ -430,7 +523,12 @@ export async function runCrawl(
         const priceMoved = extra.price_from != null &&
           (Number(extra.price_from) !== Number(row.price_from) || nextCurrency !== row.currency);
         const { error } = await db.from("competitor_listings").update({
-          attrs: extra.attrs ?? row.attrs, detail_text: extra.detail_text ?? row.detail_text,
+          attrs: extra.attrs ?? row.attrs,
+          // `?? ""` marks the page as OPENED even when it carried nothing (LiveEvents' /show/
+          // tier pages parse to `{}`). Null means "never fetched" and re-queues the listing next
+          // run; an empty string means "fetched, nothing there" and lets the queue move on. Every
+          // reader of detail_text tests truthiness, so "" behaves exactly like no text.
+          detail_text: extra.detail_text ?? row.detail_text ?? "",
           travel_depart: extra.travel_depart ?? row.travel_depart, travel_return: extra.travel_return ?? row.travel_return,
           price_from: extra.price_from ?? row.price_from, price_usd: extra.price_usd ?? row.price_usd,
           currency: nextCurrency,

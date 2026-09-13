@@ -77,6 +77,23 @@ export const HE_REASON: Record<UncheckedReason, string> = {
   partial_coverage: "כיסוי חלקי",
 };
 
+/**
+ * The duration line - the first thing to check when a comparison looks wrong, because our
+ * packages are often a night longer than the competitor's. Reads:
+ *   "לילות: 4 שלנו מול 3 שלהם"              - measured both sides, priced into the adjustment
+ *   "לילות: 4 שלנו · אצלהם לא פורסם (±$138)" - unknown their side, so the light's band widened
+ * Null for a ticket-scope light (a ticket has no duration) and for rows written before the
+ * field existed.
+ */
+function nightsLine(detail: LightScopeDetail): string | null {
+  const n = detail.nights;
+  if (!n) return null;
+  const ours = n.ours == null ? "לא ידוע" : `${n.ours}`;
+  if (typeof n.theirs === "number") return `לילות: ${ours} שלנו מול ${n.theirs} שלהם`;
+  const band = detail.uncertainty_usd ? ` (±$${detail.uncertainty_usd})` : "";
+  return `לילות: ${ours} שלנו · אצלהם לא פורסם${band}`;
+}
+
 // Hebrew throughout: this tooltip sits on the events table, where every other string is
 // Hebrew, and it is the whole explanation behind a coloured pill.
 function tipFor(detail: LightScopeDetail | undefined): string {
@@ -89,6 +106,7 @@ function tipFor(detail: LightScopeDetail | undefined): string {
       // live in the history sheet (price-light-cell.tsx), which has the listing row itself.
       `${(detail.competitor ? COMPETITOR_LABEL[detail.competitor] : null) ?? "מתחרה"}: ${detail.raw ?? "?"} ${detail.raw_currency ?? ""} → מנורמל $${detail.normalized_usd}`,
       detail.our_usd != null ? `שלנו: $${detail.our_usd}` : null,
+      nightsLine(detail),
       ...detail.adjustments.map((a) => a.label),
       detail.partial ? "כיסוי חלקי בנרמול" : null,
       detail.crawled_at ? `נסרק ${detail.crawled_at.slice(0, 10)}` : null,

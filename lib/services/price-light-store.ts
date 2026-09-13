@@ -4,11 +4,11 @@ import { supabase } from "@/lib/supabase-server";
 import { ACTIVE_COMPETITORS } from "@/lib/services/competitor-scrapers";
 import {
   competitorsFor, computeScopeLight, decidePriceDrop, kindOf, minAvailableTicketUsd,
-  ourPackageUsd, ourTicketUsd, totalMarkupUsd, OVERRIDE_DRIFT_USD, PRICE_DROP_LOOKBACK_DAYS,
-  type LatestMatch, type PricedEvent,
+  nightsUncertaintyUsd, ourNightRateUsd, ourNights, ourPackageUsd, ourTicketUsd, totalMarkupUsd,
+  OVERRIDE_DRIFT_USD, PRICE_DROP_LOOKBACK_DAYS, type LatestMatch, type PricedEvent,
 } from "@/lib/services/price-light";
 import type {
-  Light, LightDetail, LightOverride, LightScopeDetail, MatchRow, MatchTrigger, Scope,
+  ExtractedAttrs, Light, LightDetail, LightOverride, LightScopeDetail, MatchRow, MatchTrigger, Scope,
 } from "@/types/price-light.types";
 
 // New tables predate the generated DB types - one boundary cast (repo pattern).
@@ -46,8 +46,9 @@ export async function loadEventForLight(eventId: number): Promise<LightEvent | n
   return (data as LightEvent | null) ?? null;
 }
 
-/** Newest match row per (competitor, scope), with its listing's crawl time. */
-export async function loadLatestMatches(eventId: number): Promise<(LatestMatch & { scope: Scope })[]> {
+/** Newest match row per (competitor, scope), with its listing's crawl time and the attrs the
+ *  comparison was made with (`scopeDetail` prices the nights doubt off them). */
+export async function loadLatestMatches(eventId: number): Promise<(LatestMatch & { scope: Scope; attrs: Partial<ExtractedAttrs> | null })[]> {
   const { data, error } = await db
     .from("competitor_matches")
     .select("id,competitor,scope,status,listing_id,raw_price,raw_currency,normalized_usd,adjustments,attrs,created_at,competitor_listings(last_seen_at)")
@@ -59,7 +60,7 @@ export async function loadLatestMatches(eventId: number): Promise<(LatestMatch &
     .limit(60);
   if (error) { console.error("price-light: load matches failed", JSON.stringify(error)); return []; }
   const seen = new Set<string>();
-  const out: (LatestMatch & { scope: Scope })[] = [];
+  const out: (LatestMatch & { scope: Scope; attrs: Partial<ExtractedAttrs> | null })[] = [];
   for (const row of (data ?? []) as (MatchRow & { competitor_listings: { last_seen_at: string } | null })[]) {
     const key = `${row.competitor}:${row.scope}`;
     if (seen.has(key)) continue;
@@ -73,15 +74,38 @@ export async function loadLatestMatches(eventId: number): Promise<(LatestMatch &
       crawled_at: row.competitor_listings?.last_seen_at ?? row.created_at,
       match_id: row.id, adjustments: row.adjustments ?? [], partial,
       reason: row.status === "skipped" ? "crawl_failed" : null,
+      attrs: row.attrs ?? null,
     });
   }
   return out;
 }
 
-function scopeDetail(event: LightEvent, scope: Scope, matches: (LatestMatch & { scope: Scope })[], now: string): LightScopeDetail {
+/**
+ * The nights doubt is priced HERE, not in the engine: `nightsUncertaintyUsd` needs this event's
+ * own night rate, and `computeScopeLight` stays pure (it is handed numbers, it does not look
+ * events up). Ticket scope compares like for like - a ticket has no duration - so it carries no
+ * doubt at all; only the package scope does.
+ */
+function scopeDetail(
+  event: LightEvent,
+  scope: Scope,
+  matches: (LatestMatch & { scope: Scope; attrs: Partial<ExtractedAttrs> | null })[],
+  now: string,
+): LightScopeDetail {
   const competitors = competitorsFor(kindOf(event), scope, ACTIVE_COMPETITORS);
   const ourUsd = scope === "package" ? ourPackageUsd(event) : ourTicketUsd(event);
-  return computeScopeLight({ ourUsd, matches: matches.filter((m) => m.scope === scope), competitors, now });
+  const nightsOurs = ourNights(event);
+  const nightRate = ourNightRateUsd(event);
+  const scoped = matches.filter((m) => m.scope === scope).map((m) => {
+    if (scope !== "package" || m.status !== "found") return m;
+    const theirs = m.attrs?.nights ?? "unknown";
+    return {
+      ...m,
+      uncertainty_usd: nightsUncertaintyUsd(theirs, nightsOurs, nightRate),
+      nights: { ours: nightsOurs, theirs },
+    };
+  });
+  return computeScopeLight({ ourUsd, matches: scoped, competitors, now });
 }
 
 /**

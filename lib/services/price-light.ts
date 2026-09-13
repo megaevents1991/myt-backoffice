@@ -26,9 +26,31 @@ export const MAX_WINDOW_DAYS = 14;
 export const BAG_USD = 120;        // partners' number
 export const CONNECTION_USD = 100; // opening values below - calibrate after a month
 export const STAR_STEP_USD = 40;   // per star per night
-export const NIGHT_USD = 90;       // per night
+export const NIGHT_USD = 90;       // per night - the FALLBACK rate only (see ourNightRateUsd)
 export const BREAKFAST_USD = 15;   // per night
 export const TRANSFER_USD = 30;
+
+/**
+ * A night is the single biggest difference between two packages for the same fixture, and it
+ * is worth wildly different money per destination: on the live catalog (2026-09-13, probe over
+ * every matched package listing) a Manchester night prices at $190 and a Barcelona one at
+ * $75-138. A flat $90 therefore mis-prices a one-night gap by up to 2x in BOTH directions -
+ * enough on its own to flip a light. So the rate comes from OUR OWN hotel base for that event
+ * (`ourNightRateUsd`), clamped into a sane band, and NIGHT_USD is only the fallback for an
+ * event with no usable hotel number.
+ *
+ * Units: `base_hotel_price` is per person for the whole stay (.claude/rules/pricing.md), and
+ * every competitor package price we store is also per person in a double room - so dividing it
+ * by our nights gives a per-person night rate directly comparable to theirs.
+ */
+export const NIGHT_RATE_MIN_USD = 45;
+export const NIGHT_RATE_MAX_USD = 260;
+/** Nights assumed for per-night scaling (stars, breakfast) when our own travel window is missing. */
+export const NIGHTS_FALLBACK = 3;
+/** Nights-gap size priced with full confidence; past it the estimate itself is doubted. */
+export const NIGHT_GAP_FREE = 2;
+/** Share of a night's rate counted as doubt for each gap night beyond NIGHT_GAP_FREE. */
+export const NIGHT_GAP_DOUBT = 0.5;
 
 // LiveTickets ticket light uses the API's `brt` (gross) as their shelf price.
 // If the phase-0 spot check disproves that, calibrate cost -> shelf here.
@@ -112,11 +134,76 @@ export function ourTicketUsd(e: PricedEvent): number | null {
   return Math.round(ticket + Number(markup));
 }
 
-export function ourNights(e: PricedEvent): number {
+/**
+ * Nights in OUR package, or null when the event carries no usable travel window.
+ *
+ * It used to answer a flat 3 in that case, which is a guess wearing a number's clothes: the
+ * nights gap it produced against a competitor was indistinguishable from a measured one and
+ * moved real money through `normalize`. Callers now get null and must decide - `normalize`
+ * skips the gap adjustment and marks the comparison partial (no live event needs this today:
+ * all 427 future events have both dates).
+ */
+export function ourNights(e: PricedEvent): number | null {
   const a = e.def_date_depart ? Date.parse(e.def_date_depart.slice(0, 10)) : NaN;
   const b = e.def_date_return ? Date.parse(e.def_date_return.slice(0, 10)) : NaN;
-  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return 3;
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return null;
   return Math.round((b - a) / 86_400_000);
+}
+
+/** What one night of OUR stay costs, per person - the price of a nights gap. See NIGHT_RATE_MIN_USD. */
+export function ourNightRateUsd(e: PricedEvent): number {
+  const nights = ourNights(e);
+  const hotel = amount(e.base_hotel_price);
+  if (nights == null || nights <= 0 || hotel === 0) return NIGHT_USD;
+  const rate = hotel / nights;
+  if (!Number.isFinite(rate) || rate <= 0) return NIGHT_USD;
+  return Math.round(Math.min(NIGHT_RATE_MAX_USD, Math.max(NIGHT_RATE_MIN_USD, rate)));
+}
+
+/**
+ * How many nights the competitor's listing is, from whatever the crawl actually captured.
+ *
+ * `attrs.nights` is only ever filled by a DETAIL page, and detail enrichment reaches a small
+ * slice of a catalog (budget + "worth a detail" filter): on 2026-09-13 that left 123 of
+ * Golasso's 132 package listings with `attrs: null` - while all 132 carried the travel window
+ * their card prints. The window is the same measurement ISSTA's and OnTour's scrapers already
+ * turn into `nights`, so deriving it here costs nothing and fixes the majority of comparisons.
+ *
+ * The MAX_WINDOW_DAYS ceiling is the same one `candidateCoversDate` uses: past it the range is
+ * a season, not a trip, and the night count read off it would be fiction.
+ */
+export function listingNights(
+  attrs: Partial<ExtractedAttrs> | null | undefined,
+  window: { travel_depart?: string | null; travel_return?: string | null } | null | undefined,
+): number | "unknown" {
+  const known = attrs?.nights;
+  if (typeof known === "number" && Number.isFinite(known) && known > 0) return known;
+  const depart = window?.travel_depart, ret = window?.travel_return;
+  if (!depart || !ret) return "unknown";
+  const span = (Date.parse(`${ret}T00:00:00Z`) - Date.parse(`${depart}T00:00:00Z`)) / 86_400_000;
+  if (!Number.isFinite(span) || span <= 0 || span > MAX_WINDOW_DAYS) return "unknown";
+  return Math.round(span);
+}
+
+/**
+ * Money the nights comparison could still be wrong by, in USD - what the light's red/green
+ * band is widened by so a duration we cannot see never gets called a price difference.
+ *
+ * - A night unknown on EITHER side = one whole night of doubt. This is the common case
+ *   (63 of 77 matched package listings on 2026-09-13) and the one that produced false reds:
+ *   a 3-night competitor package sitting next to our 4-night one, compared as if equal.
+ * - A gap wider than NIGHT_GAP_FREE = we are extrapolating our own hotel rate across nights
+ *   nobody priced, so each extra night carries NIGHT_GAP_DOUBT of a night.
+ */
+export function nightsUncertaintyUsd(
+  theirNights: number | "unknown" | undefined,
+  ourNightsValue: number | null,
+  nightRateUsd: number,
+): number {
+  if (typeof theirNights !== "number" || ourNightsValue == null) return Math.round(nightRateUsd);
+  const gap = Math.abs(ourNightsValue - theirNights);
+  if (gap <= NIGHT_GAP_FREE) return 0;
+  return Math.round((gap - NIGHT_GAP_FREE) * NIGHT_GAP_DOUBT * nightRateUsd);
 }
 
 // ---- competitors per kind ---------------------------------------------------
@@ -135,35 +222,73 @@ export function competitorsFor(kind: EventKind, scope: Scope, active: readonly C
 }
 
 // ---- normalization ------------------------------------------------------------
+export interface Normalized {
+  normalizedUsd: number;
+  adjustments: Adjustment[];
+  partial: boolean;
+  /** USD the nights side of this comparison could still be wrong by (nightsUncertaintyUsd). */
+  uncertaintyUsd: number;
+  /** What each side's duration was taken to be - what the tooltip shows the reader. */
+  nights: { ours: number | null; theirs: number | "unknown" };
+}
+
+/**
+ * `ours.nights` null = our own travel window is missing: the nights GAP is then unknowable, so
+ * no gap adjustment is made and the comparison is partial. Per-night scaling that still has to
+ * happen (stars, breakfast) falls back to NIGHTS_FALLBACK rather than dropping the adjustment
+ * entirely - a 4★ hotel is still worth less to us than a 3★ one whatever the length.
+ *
+ * `ours.nightRateUsd` is what a night costs on THIS event (ourNightRateUsd); omitted = NIGHT_USD.
+ */
 export function normalize(
   priceUsd: number,
   attrs: Partial<ExtractedAttrs> | null | undefined,
-  ours: { nights: number },
-): { normalizedUsd: number; adjustments: Adjustment[]; partial: boolean } {
+  ours: { nights: number | null; nightRateUsd?: number },
+): Normalized {
   const a = attrs ?? {};
   const adjustments: Adjustment[] = [];
   let partial = false;
   const known = <T>(v: T | "unknown" | undefined): v is T => v !== undefined && v !== "unknown";
+  const scaleNights = ours.nights ?? NIGHTS_FALLBACK;
+  const nightRate = ours.nightRateUsd != null && Number.isFinite(ours.nightRateUsd) && ours.nightRateUsd > 0
+    ? Math.round(ours.nightRateUsd)
+    : NIGHT_USD;
 
   if (known(a.bag_included)) { if (a.bag_included) adjustments.push({ key: "bag", usd: -BAG_USD, label: `+bag −$${BAG_USD}` }); }
   else partial = true;
   if (known(a.direct_flight)) { if (!a.direct_flight) adjustments.push({ key: "connection", usd: CONNECTION_USD, label: `connection +$${CONNECTION_USD}` }); }
   else partial = true;
   if (known(a.hotel_stars)) {
-    const usd = (3 - a.hotel_stars) * STAR_STEP_USD * ours.nights;
+    const usd = (3 - a.hotel_stars) * STAR_STEP_USD * scaleNights;
     if (usd !== 0) adjustments.push({ key: "stars", usd, label: `${a.hotel_stars}★ ${usd > 0 ? "+" : "−"}$${Math.abs(usd)}` });
   } else partial = true;
-  if (known(a.nights)) {
-    const usd = (ours.nights - a.nights) * NIGHT_USD;
-    if (usd !== 0) adjustments.push({ key: "nights", usd, label: `${a.nights} nights ${usd > 0 ? "+" : "−"}$${Math.abs(usd)}` });
+  if (known(a.nights) && ours.nights != null) {
+    const usd = (ours.nights - a.nights) * nightRate;
+    // English, like the other five labels: these are engine strings, and the Hebrew duration
+    // line the staff actually read is built in the UI (`nightsLine`). One mixed-language label
+    // in a row of English ones is a presentation decision leaking into the engine.
+    if (usd !== 0) {
+      adjustments.push({
+        key: "nights",
+        usd,
+        label: `${a.nights}n vs ${ours.nights}n ${usd > 0 ? "+" : "−"}$${Math.abs(usd)}`,
+      });
+    }
   } else partial = true;
-  if (known(a.breakfast)) { if (a.breakfast) adjustments.push({ key: "breakfast", usd: -BREAKFAST_USD * ours.nights, label: `+breakfast −$${BREAKFAST_USD * ours.nights}` }); }
+  if (known(a.breakfast)) { if (a.breakfast) adjustments.push({ key: "breakfast", usd: -BREAKFAST_USD * scaleNights, label: `+breakfast −$${BREAKFAST_USD * scaleNights}` }); }
   else partial = true;
   if (known(a.transfers)) { if (a.transfers) adjustments.push({ key: "transfers", usd: -TRANSFER_USD, label: `+transfers −$${TRANSFER_USD}` }); }
   else partial = true;
 
   const normalizedUsd = Math.round(priceUsd + adjustments.reduce((s, x) => s + x.usd, 0));
-  return { normalizedUsd, adjustments, partial };
+  const theirNights = known(a.nights) ? a.nights : "unknown";
+  return {
+    normalizedUsd,
+    adjustments,
+    partial,
+    uncertaintyUsd: nightsUncertaintyUsd(theirNights, ours.nights, nightRate),
+    nights: { ours: ours.nights, theirs: theirNights },
+  };
 }
 
 // ---- the light ------------------------------------------------------------------
@@ -177,6 +302,9 @@ export interface LatestMatch {
   match_id: number | null;
   adjustments?: Adjustment[] | null;
   partial?: boolean;
+  /** From `nightsUncertaintyUsd` - filled by the store, which has the event the rate comes from. */
+  uncertainty_usd?: number;
+  nights?: { ours: number | null; theirs: number | "unknown" } | null;
   reason?: UncheckedReason | null; // carried from a failed crawl
 }
 
@@ -194,7 +322,8 @@ export function computeScopeLight(input: {
   const staleDays = input.staleDays ?? LIGHT_STALE_DAYS;
   const empty: LightScopeDetail = {
     light: "unchecked", diff_usd: null, our_usd: input.ourUsd, competitor: null, raw: null,
-    raw_currency: null, normalized_usd: null, adjustments: [], partial: false, reason: null,
+    raw_currency: null, normalized_usd: null, adjustments: [], partial: false,
+    uncertainty_usd: 0, nights: null, reason: null,
     crawled_at: null, match_id: null, per_competitor: {},
   };
   if (input.ourUsd == null) return { ...empty, light: "na" };
@@ -218,13 +347,26 @@ export function computeScopeLight(input: {
     if (valid.length === input.competitors.length) return { ...empty, light: "alone", per_competitor: per };
     return { ...empty, reason: "partial_coverage", per_competitor: per };
   }
+  // The cheapest normalized competitor is still the one we answer to, uncertainty or not - a
+  // light must describe the toughest offer on the shelf. The doubt attached to THAT match then
+  // widens the band around it.
   const best = found.reduce((a, b) => ((b.normalized_usd as number) < (a.normalized_usd as number) ? b : a));
   const diff = Math.round(input.ourUsd - (best.normalized_usd as number));
-  const light: Light = diff < LIGHT_GREEN_USD ? "green" : diff > LIGHT_RED_USD ? "red" : "orange";
+  // A duration we could not see is not a price difference. Widening both thresholds by the
+  // nights doubt is what stops a 3-night competitor package next to our 4-night one from
+  // reading as a confident red (63 of 77 matched package listings on 2026-09-13 published no
+  // nights at all). Inside the widened band the light is orange - "look at it", not "act".
+  const uncertainty = Math.max(0, Math.round(best.uncertainty_usd ?? 0));
+  const light: Light = diff < LIGHT_GREEN_USD - uncertainty
+    ? "green"
+    : diff > LIGHT_RED_USD + uncertainty
+      ? "red"
+      : "orange";
   return {
     light, diff_usd: diff, our_usd: input.ourUsd, competitor: best.competitor, raw: best.raw,
     raw_currency: best.raw_currency, normalized_usd: best.normalized_usd, adjustments: best.adjustments ?? [],
-    partial: !!best.partial, reason: null, crawled_at: best.crawled_at, match_id: best.match_id, per_competitor: per,
+    partial: !!best.partial, uncertainty_usd: uncertainty, nights: best.nights ?? null,
+    reason: null, crawled_at: best.crawled_at, match_id: best.match_id, per_competitor: per,
   };
 }
 

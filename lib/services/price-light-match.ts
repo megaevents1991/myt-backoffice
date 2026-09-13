@@ -3,8 +3,8 @@
 // only when the verdict differs from the latest row.
 import { supabase } from "@/lib/supabase-server";
 import {
-  DATE_TOLERANCE_DAYS, LIGHT_STALE_DAYS, competitorsFor, kindOf, normalize, ourNights, ourPackageUsd, ourTicketUsd,
-  pickRuleMatch, type MatchCandidate,
+  DATE_TOLERANCE_DAYS, LIGHT_STALE_DAYS, competitorsFor, kindOf, listingNights, normalize, ourNightRateUsd,
+  ourNights, ourPackageUsd, ourTicketUsd, pickRuleMatch, type MatchCandidate,
 } from "@/lib/services/price-light";
 import { ACTIVE_COMPETITORS, scraperFor } from "@/lib/services/competitor-scrapers";
 import { loadEventForLight, recomputeEventLights, type LightEvent } from "@/lib/services/price-light-store";
@@ -19,6 +19,17 @@ export interface MatchOutcome { competitor: CompetitorKey; scope: Scope; status:
 /** Run-wide ceiling on AI calls, shared (and mutated) across every event in one pass.
  *  The nightly creates exactly one of these; ad-hoc callers pass none = no ceiling. */
 export interface AiBudget { remaining: number }
+
+export interface MatchOptions {
+  dryRun?: boolean;
+  judge?: Judge | null;
+  aiBudget?: AiBudget;
+  tagSlugs?: string[];
+  /** The agent's house rules + staff corrections (price-light-memory.ts `loadJudgeMemory`),
+   *  loaded ONCE per run by the caller and handed to every AI call this pass makes - both the
+   *  `judge` closure and the direct extraction call below. Omitted = base prompt only. */
+  aiMemory?: string | null;
+}
 
 /** The gate both AI call sites go through: decrement first, and once the budget is
  *  spent report "no call allowed" - which the caller treats exactly like `judge: null`
@@ -134,6 +145,23 @@ function mergeAttrs(ai: Partial<ExtractedAttrs> | null, page: Partial<ExtractedA
   return merged;
 }
 
+/**
+ * Fill `nights` from the listing's own travel window when no detail page ever said it.
+ *
+ * `attrs.nights` is only written by a detail page, and detail enrichment reaches a fraction of
+ * a catalog: on 2026-09-13, 123 of Golasso's 132 package listings had `attrs: null` while ALL
+ * 132 carried the depart/return window their card prints. Deriving here (the same
+ * return-minus-depart ISSTA's and OnTour's scrapers already do at scrape time) is what turns
+ * those into duration-aware comparisons instead of raw price-vs-price.
+ *
+ * The derived value is persisted on the MATCH row's attrs, never back onto the listing: the
+ * listing records what its page said, the match records what the comparison was made with.
+ */
+function withListingNights(attrs: Partial<ExtractedAttrs>, listing: ListingRow): Partial<ExtractedAttrs> {
+  const nights = listingNights(attrs, listing);
+  return nights === "unknown" ? attrs : { ...attrs, nights };
+}
+
 /** One AI call per (event, listing) pair (spec `§5`): the previous row's listing
  *  is still among today's candidates, unchanged, and already carries a verdict -
  *  but NOT an error verdict (fix round 1 finding 1): a failed call must not pin
@@ -191,10 +219,10 @@ export async function matchEvent(
   competitor: CompetitorKey,
   scope: Scope,
   trigger: MatchTrigger,
-  opts: { dryRun?: boolean; judge?: Judge | null; aiBudget?: AiBudget; tagSlugs?: string[] } = {},
+  opts: MatchOptions = {},
 ): Promise<MatchOutcome> {
   const out: MatchOutcome = { competitor, scope, status: "skipped", wrote: false, listingId: null, note: null };
-  const judge = opts.judge === undefined ? makeJudge() : opts.judge;
+  const judge = opts.judge === undefined ? makeJudge(opts.aiMemory) : opts.judge;
   const ourUsd = scope === "package" ? ourPackageUsd(event) : ourTicketUsd(event);
   const prev = await latestRow(event.id, competitor, scope);
 
@@ -254,7 +282,7 @@ export async function matchEvent(
         // extracted attrs - the rule already decided this is the same event.
         // `price-light-match.ts` stays the judge module's only caller either way.
         try {
-          const r = await extractAndJudge({ event, candidates: [picked] });
+          const r = await extractAndJudge({ event, candidates: [picked] }, { memory: opts.aiMemory });
           attrs = r.attrs; verdict = r.verdict as unknown as Record<string, unknown>; method = "ai";
         } catch (e) {
           // Defensive: extractAndJudge never throws today, but don't let a future
@@ -303,16 +331,25 @@ export async function matchEvent(
 
   if (status === "found" && picked) {
     const priceUsd = Number(picked.price_usd ?? 0);
-    const merged = mergeAttrs(attrs, picked.attrs);                        // page attrs win over AI attrs, per field
+    // Page attrs win over AI attrs, per field; the derived duration is a PACKAGE concern only -
+    // a ticket has no nights, and stamping one on a ticket row would be data that means nothing.
+    const base = mergeAttrs(attrs, picked.attrs);
+    const merged = scope === "package" ? withListingNights(base, picked) : base;
     const norm = scope === "package"
-      ? normalize(priceUsd, merged, { nights: ourNights(event) })
+      ? normalize(priceUsd, merged, { nights: ourNights(event), nightRateUsd: ourNightRateUsd(event) })
       : { normalizedUsd: Math.round(priceUsd), adjustments: [], partial: false };
     // A verdict produced THIS run against a row that has none must always be persisted,
     // even when the price landed on the same number: otherwise the call is paid for,
     // thrown away, and `cachedCandidateFor` never finds a verdict to reuse - the cache
     // could never engage and every visit would re-buy the same extraction.
+    // `nights` is compared as well as the price: a duration we have only just learned (derived
+    // from the listing's travel window) can leave `normalized_usd` identical - a zero-night gap
+    // adjusts nothing - while still being the difference between a light that carries a night
+    // of doubt and one that does not. Without this the row would never be rewritten and the
+    // store would keep pricing that doubt off stale "unknown" attrs.
+    const nightsUnchanged = (prev?.attrs?.nights ?? "unknown") === (merged.nights ?? "unknown");
     const unchanged = prev?.status === "found" && prev.listing_id === picked.id &&
-      !hasListingChanged(prev, picked) &&
+      !hasListingChanged(prev, picked) && nightsUnchanged &&
       Number(prev.normalized_usd) === norm.normalizedUsd && Number(prev.our_usd) === ourUsd &&
       !(verdict != null && prev.ai_verdict == null);
     if (!unchanged) {
@@ -351,13 +388,13 @@ export async function matchEvent(
 export async function matchAllForEvent(
   eventId: number,
   trigger: MatchTrigger,
-  opts: { dryRun?: boolean; judge?: Judge | null; aiBudget?: AiBudget; tagSlugs?: string[] } = {},
+  opts: MatchOptions = {},
 ) {
   const event = await loadEventForLight(eventId);
   if (!event || event.is_deleted) return null;
   // Resolve once per event, not once per (competitor, scope) - `matchEvent` never
   // re-resolves when it is handed an already-concrete (possibly null) judge.
-  const judge = opts.judge === undefined ? makeJudge() : opts.judge;
+  const judge = opts.judge === undefined ? makeJudge(opts.aiMemory) : opts.judge;
   // One query per EVENT, not per (competitor, scope) - the slugs are the same for all of them.
   const tagSlugs = opts.tagSlugs ?? (await tagSlugsForEvent(eventId));
   const outcomes: MatchOutcome[] = [];

@@ -211,6 +211,10 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "hover על תג מציג טולטיפ: איזה מתחרה, המחיר הגולמי שלו והמטבע, המספר המנורמל בדולר, כל התאמה שהופעלה (מזוודה/קונקשיין/כוכבים/לילות/ארוחת בוקר/העברות), ומתי נסרק. קליק על תג פותח את גיליון ההיסטוריה — כל ניסיון התאמה שנרשם לאירוע הזה.",
       ),
       t(
+        "Duration is part of the comparison (2026-09-13). Our packages are often a night longer than a competitor's, so the tooltip shows both durations (\"לילות: 4 שלנו מול 3 שלהם\") and the gap is priced at OUR hotel's per-night rate for that trip - a Manchester night is worth far more than a Barcelona one, so a flat rate mis-read a one-night gap by up to double. When the competitor never publishes their dates the tooltip says so and the light's ±$150 band is widened by one night's worth: an unknown duration shows as orange (\"look at it\") instead of a confident red, because a night we cannot see is not a price difference.",
+        "משך השהות הוא חלק מההשוואה (13.09.2026). החבילות שלנו לא פעם ארוכות בלילה מזו של המתחרה, ולכן הטולטיפ מציג את שני המשכים (\"לילות: 4 שלנו מול 3 שלהם\"), והפער מתומחר לפי מחיר הלילה של המלון שלנו באותה נסיעה — לילה במנצ'סטר שווה הרבה יותר מלילה בברצלונה, וסכום אחיד קבוע החטיא פער של לילה עד פי שניים. כשהמתחרה לא מפרסם תאריכים הטולטיפ אומר את זה, והטווח של ±150$ מתרחב בשווי לילה אחד: משך לא ידוע מוצג ככתום (\"תסתכלו על זה\") ולא כאדום בטוח, כי לילה שאנחנו לא רואים הוא לא הפרש מחיר.",
+      ),
+      t(
         "The refresh icon re-runs matching against the catalogs already stored in the database - it does NOT browse the competitor sites live, so it's instant and safe to click often.",
         "אייקון הרענון מריץ שוב את ההתאמה מול הקטלוגים שכבר שמורים בבסיס הנתונים — הוא לא גולש לאתרי המתחרים בזמן אמת, ולכן מהיר ובטוח ללחוץ עליו הרבה.",
       ),

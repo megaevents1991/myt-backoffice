@@ -5,7 +5,9 @@
 import assert from "node:assert/strict";
 import {
   BAG_USD, CONNECTION_USD, STAR_STEP_USD, NIGHT_USD, BREAKFAST_USD, TRANSFER_USD,
-  ourPackageUsd, ourTicketUsd, ourNights, kindOf, competitorsFor, normalize,
+  NIGHTS_FALLBACK, NIGHT_RATE_MIN_USD, NIGHT_RATE_MAX_USD,
+  ourPackageUsd, ourTicketUsd, ourNights, ourNightRateUsd, listingNights, nightsUncertaintyUsd,
+  kindOf, competitorsFor, normalize,
   computeScopeLight, decidePriceDrop, pickRuleMatch, candidateCoversDate, signedUsd,
   type PricedEvent, type LatestMatch,
 } from "../lib/services/price-light.ts";
@@ -56,6 +58,29 @@ assert.deepEqual(competitorsFor("sports", "package", ["liveevents", "livetickets
 assert.deepEqual(competitorsFor("music", "package", ["liveevents", "ontour", "issta"]), ["liveevents", "ontour"]);
 assert.deepEqual(competitorsFor("sports", "ticket", ["liveevents", "livetickets"]), ["livetickets"]);
 
+// duration: the nights each side actually sells, and what one night is worth on THIS event
+assert.equal(ourNights({ ...base, def_date_return: null }), null);        // no window = no guess (was a flat 3)
+assert.equal(ourNights({ ...base, def_date_return: "2026-10-24" }), null); // return <= depart
+assert.equal(ourNightRateUsd(base), Math.round(400 / 3));                  // our own hotel base, per night
+assert.equal(ourNightRateUsd({ ...base, base_hotel_price: 0 }), NIGHT_USD);        // no hotel number = fallback
+assert.equal(ourNightRateUsd({ ...base, def_date_depart: null }), NIGHT_USD);      // no window = fallback
+assert.equal(ourNightRateUsd({ ...base, base_hotel_price: 30 }), NIGHT_RATE_MIN_USD);      // clamped up
+assert.equal(ourNightRateUsd({ ...base, base_hotel_price: 9_000 }), NIGHT_RATE_MAX_USD);   // clamped down
+// a detail page that said nothing still leaves the card's travel window to measure
+assert.equal(listingNights(null, { travel_depart: "2026-10-24", travel_return: "2026-10-27" }), 3);
+assert.equal(listingNights({ nights: 5 }, { travel_depart: "2026-10-24", travel_return: "2026-10-27" }), 5); // page wins
+assert.equal(listingNights({ nights: "unknown" }, { travel_depart: null, travel_return: null }), "unknown");
+assert.equal(listingNights(null, { travel_depart: "2026-08-01", travel_return: "2027-05-30" }), "unknown");  // a season, not a trip
+assert.equal(listingNights(null, { travel_depart: "2026-10-27", travel_return: "2026-10-24" }), "unknown");  // inverted
+
+// nights doubt: unknown on either side costs one whole night; a wide gap costs half a night each
+assert.equal(nightsUncertaintyUsd("unknown", 4, 138), 138);
+assert.equal(nightsUncertaintyUsd(3, null, 138), 138);
+assert.equal(nightsUncertaintyUsd(3, 4, 138), 0);            // 1-night gap is priced, not doubted
+assert.equal(nightsUncertaintyUsd(2, 4, 138), 0);            // exactly NIGHT_GAP_FREE
+assert.equal(nightsUncertaintyUsd(1, 4, 138), 69);           // 3-night gap: one night beyond, half rate
+assert.equal(nightsUncertaintyUsd(7, 4, 100), 50);           // symmetric: they are longer
+
 // normalization
 const n1 = normalize(1000, { ...UNKNOWN_ATTRS, bag_included: true }, { nights: 3 });
 assert.equal(n1.normalizedUsd, 1000 - BAG_USD);
@@ -66,6 +91,23 @@ assert.equal(n2.partial, false);
 assert.equal(n2.adjustments.length, 5);
 const n3 = normalize(1000, { bag_included: false, direct_flight: true, hotel_stars: 2, nights: 2, breakfast: false, transfers: false }, { nights: 3 });
 assert.equal(n3.normalizedUsd, 1000 + STAR_STEP_USD * 3 + NIGHT_USD);
+assert.equal(n3.uncertaintyUsd, 0);
+assert.deepEqual(n3.nights, { ours: 3, theirs: 2 });
+// the nights gap is priced at THIS event's night rate, not the flat fallback
+const n4 = normalize(1000, { ...UNKNOWN_ATTRS, nights: 3 }, { nights: 4, nightRateUsd: 190 });
+assert.equal(n4.normalizedUsd, 1000 + 190);
+assert.equal(n4.adjustments.find((a) => a.key === "nights")?.usd, 190);
+assert.equal(n4.uncertaintyUsd, 0);
+// nights unknown on their side: no adjustment, and one night of doubt handed to the light
+const n5 = normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 4, nightRateUsd: 190 });
+assert.equal(n5.normalizedUsd, 1000);
+assert.equal(n5.uncertaintyUsd, 190);
+assert.deepEqual(n5.nights, { ours: 4, theirs: "unknown" });
+// our own window missing: no gap adjustment either way, per-night scaling falls back to 3 nights
+const n6 = normalize(1000, { ...UNKNOWN_ATTRS, nights: 5, hotel_stars: 4 }, { nights: null, nightRateUsd: 190 });
+assert.equal(n6.normalizedUsd, 1000 - STAR_STEP_USD * NIGHTS_FALLBACK);
+assert.equal(n6.partial, true);
+assert.equal(n6.uncertaintyUsd, 190);
 
 // lights
 const ours = 1375;
@@ -85,6 +127,21 @@ assert.equal(orange.light, "orange"); assert.equal(orange.diff_usd, 75);
 const red = computeScopeLight({ ourUsd: ours, matches: [m({ normalized_usd: 1100 }), m({ competitor: "issta", normalized_usd: 1500 })], competitors: [...sports], now: NOW });
 assert.equal(red.light, "red"); assert.equal(red.diff_usd, 275); assert.equal(red.competitor, "liveevents");
 assert.equal(computeScopeLight({ ourUsd: ours, matches: [m({ normalized_usd: 1525 })], competitors: [...sports], now: NOW }).light, "orange"); // exactly -150 is orange
+// a duration we could not see widens the band both ways: the same numbers that are red/green
+// with a measured night count are only orange when the competitor never published theirs.
+const redBand = computeScopeLight({ ourUsd: ours, matches: [m({ normalized_usd: 1100, uncertainty_usd: 200 })], competitors: [...sports], now: NOW });
+assert.equal(redBand.light, "orange"); assert.equal(redBand.diff_usd, 275); assert.equal(redBand.uncertainty_usd, 200);
+const greenBand = computeScopeLight({ ourUsd: ours, matches: [m({ normalized_usd: 1600, uncertainty_usd: 200 })], competitors: [...sports], now: NOW });
+assert.equal(greenBand.light, "orange");
+// past the widened threshold it is still red - doubt softens a verdict, it never hides one
+assert.equal(computeScopeLight({ ourUsd: ours, matches: [m({ normalized_usd: 1000, uncertainty_usd: 200 })], competitors: [...sports], now: NOW }).light, "red");
+// the cheapest competitor still wins the comparison, and ITS doubt is the one applied
+const mixed = computeScopeLight({
+  ourUsd: ours,
+  matches: [m({ normalized_usd: 1100, uncertainty_usd: 200 }), m({ competitor: "issta", normalized_usd: 1200, uncertainty_usd: 0 })],
+  competitors: [...sports], now: NOW,
+});
+assert.equal(mixed.competitor, "liveevents"); assert.equal(mixed.light, "orange");
 const stale = computeScopeLight({ ourUsd: ours, matches: [m({ normalized_usd: 1600, crawled_at: "2026-08-01T00:00:00.000Z" })], competitors: [...sports], now: NOW });
 assert.equal(stale.light, "unchecked"); assert.equal(stale.reason, "stale");
 const unsure = computeScopeLight({ ourUsd: ours, matches: [m({ status: "unsure", normalized_usd: null })], competitors: [...sports], now: NOW });

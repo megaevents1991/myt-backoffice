@@ -21,6 +21,9 @@ export const AI_USD_PER_M_INPUT = 5;
 export const AI_USD_PER_M_OUTPUT = 25;
 
 export interface JudgeInput { event: LightEvent; candidates: ListingRow[] }
+/** `memory` = the agent's house rules + staff corrections (price-light-memory.ts). Omitted
+ *  (ad-hoc callers, smoke test) = the base system prompt alone, exactly as before. */
+export interface JudgeOptions { memory?: string | null }
 export interface AiVerdict {
   model: string; input_tokens: number; output_tokens: number; cost_usd: number; ms: number;
   same_event: boolean | "unknown"; confidence: number; matched_candidate_index: number | null;
@@ -68,12 +71,22 @@ export function aiEnabled(): boolean {
 }
 export function aiModel(): string { return process.env.PRICE_LIGHT_AI_MODEL || AI_MODEL_DEFAULT; }
 
+/** Hard ceiling on the memory block, characters - a runaway prompt is a runaway bill. */
+export const AI_MEMORY_MAX = 2_000;
+
 const SYSTEM = `You compare an Israeli travel company's event package with a competitor's listing.
 Answer ONLY through the tool. same_event = true only when artist/teams AND date (±1 day) AND city agree.
 If several candidates are given, pick the one index that is the same event, else same_event=false.
 Extract what the listing text says is included: bag_included (checked suitcase, not hand luggage),
 direct_flight, hotel_stars, nights, breakfast, transfers. Use "unknown" when the text does not say.
 Hebrew and English both appear; "טיסות ישירות" = direct, "לינה וארוחת בוקר" = breakfast, "תיק גב/טרולי בלבד" = no checked bag.`;
+
+/** Base prompt + whatever the agent has learned so far. Trimmed, because the memory block is
+ *  assembled from staff-written notes and rides along on every single call. */
+function systemPrompt(memory: string | null | undefined): string {
+  const extra = (memory ?? "").trim();
+  return extra ? `${SYSTEM}\n\n${extra.slice(0, AI_MEMORY_MAX)}` : SYSTEM;
+}
 
 const TOOL = {
   name: "verdict",
@@ -118,7 +131,7 @@ function userPrompt(event: LightEvent, shown: ListingRow[]): string {
 function num(v: unknown): number | "unknown" { return typeof v === "number" && Number.isFinite(v) ? v : "unknown"; }
 function bool(v: unknown): boolean | "unknown" { return typeof v === "boolean" ? v : "unknown"; }
 
-export async function extractAndJudge(input: JudgeInput): Promise<JudgeResult> {
+export async function extractAndJudge(input: JudgeInput, opts: JudgeOptions = {}): Promise<JudgeResult> {
   const started = Date.now();
   const model = aiModel();
   const base: AiVerdict = { model, input_tokens: 0, output_tokens: 0, cost_usd: 0, ms: 0, same_event: "unknown", confidence: 0, matched_candidate_index: null, attrs: UNKNOWN_ATTRS };
@@ -142,7 +155,7 @@ export async function extractAndJudge(input: JudgeInput): Promise<JudgeResult> {
     // key, and going through the same accessor means a placeholder can never reach the client.
     const client = new Anthropic({ apiKey: anthropicKey() ?? undefined, timeout: AI_TIMEOUT_MS, maxRetries: 0 });
     const res = await client.messages.create({
-      model, max_tokens: 4_000, system: SYSTEM, tools: [TOOL], tool_choice: { type: "tool", name: "verdict" },
+      model, max_tokens: 4_000, system: systemPrompt(opts.memory), tools: [TOOL], tool_choice: { type: "tool", name: "verdict" },
       // Opus 5 thinks adaptively by default, so the reasoning tokens come out of
       // max_tokens BEFORE the forced tool call - 400 truncated the answer away.
       // Low effort + a real ceiling keeps the verdict cheap and complete.
@@ -176,11 +189,13 @@ export async function extractAndJudge(input: JudgeInput): Promise<JudgeResult> {
   }
 }
 
-/** Adapter for `matchEvent`'s `judge` option. null when AI is off. */
-export function makeJudge(): Judge | null {
+/** Adapter for `matchEvent`'s `judge` option. null when AI is off. `memory` is loaded ONCE per
+ *  run by the caller (price-light-nightly.ts) and closed over here, so a pass of 400 events
+ *  costs one audit-log read, not 400. */
+export function makeJudge(memory?: string | null): Judge | null {
   if (!aiEnabled()) return null;
   return async ({ event, candidates }) => {
-    const r = await extractAndJudge({ event, candidates });
+    const r = await extractAndJudge({ event, candidates }, { memory });
     // AiVerdict has no index signature - one boundary cast to the loose jsonb-shaped type
     // `Judge` expects, same rationale as the tool_use cast above.
     const verdict = r.verdict as unknown as Record<string, unknown>;

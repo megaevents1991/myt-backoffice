@@ -62,6 +62,22 @@ const TILE_LABEL: Record<string, string> = {
   pending: "ממתינים להחלטה",
 };
 
+/** Same duration line as the events-table tooltip (price-light-ui.tsx `nightsLine`), off the
+ *  flattened row fields - our packages are often a night longer, and that is the first thing
+ *  to check when a comparison looks wrong. Null when the scope has no duration (ticket) or the
+ *  light predates the field. */
+function nightsLine(row: PriceLightRow): string | null {
+  if (row.scope !== "package" || row.competitor == null) return null;
+  // A light computed before this field existed has neither duration and no doubt recorded.
+  // Printing "לא ידוע / לא פורסם" for it would be an invented statement about a comparison
+  // nobody measured that way - say nothing until the next pass rewrites the row.
+  if (row.nights_ours == null && row.nights_theirs == null && row.uncertainty_usd === 0) return null;
+  const ours = row.nights_ours == null ? "לא ידוע" : `${row.nights_ours}`;
+  if (row.nights_theirs != null) return `לילות: ${ours} שלנו מול ${row.nights_theirs} שלהם`;
+  const band = row.uncertainty_usd ? ` (±$${row.uncertainty_usd})` : "";
+  return `לילות: ${ours} שלנו · אצלהם לא פורסם${band}`;
+}
+
 function LightBadge({ row }: { row: PriceLightRow }) {
   // Hebrew throughout and the competitor's display name, not its key: this tooltip is the
   // explanation a staff member reads before deciding to drop a price or pull an event.
@@ -70,6 +86,7 @@ function LightBadge({ row }: { row: PriceLightRow }) {
       ? `${COMPETITOR_LABEL[row.competitor] ?? row.competitor}: ${row.raw ?? "?"} ${row.raw_currency ?? ""} → מנורמל $${row.normalized_usd ?? "?"}`
       : null,
     row.our_usd != null ? `שלנו: $${row.our_usd}` : null,
+    nightsLine(row),
     ...row.adjustments,
     row.partial ? "כיסוי חלקי בנרמול" : null,
     row.crawled_at ? `נסרק ${row.crawled_at.slice(0, 10)}` : null,
@@ -232,6 +249,7 @@ export function PriceLightClient() {
         cell: ({ row }) => {
           const r = row.original;
           if (!r.competitor) return <span className="text-xs text-muted-foreground">—</span>;
+          const nights = nightsLine(r);
           return (
             <div className="space-y-1 text-xs">
               <div className="flex items-center gap-1 font-medium">
@@ -247,6 +265,7 @@ export function PriceLightClient() {
                   {r.raw} {r.raw_currency} → ${r.normalized_usd ?? "?"}
                 </div>
               )}
+              {nights && <div className="text-muted-foreground">{nights}</div>}
               {r.adjustments.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {r.adjustments.map((a) => (
