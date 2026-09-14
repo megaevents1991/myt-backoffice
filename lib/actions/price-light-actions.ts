@@ -15,7 +15,7 @@ import {
   type Lights,
 } from "@/lib/services/price-light-store";
 import { openPriceLightTask as insertPriceLightTask } from "@/lib/services/price-light-tasks";
-import { kindOf } from "@/lib/services/price-light";
+import { kindOf, ourPackageUsd, ourTicketUsd } from "@/lib/services/price-light";
 import {
   ACTIVE_COMPETITORS,
   scraperFor,
@@ -23,7 +23,7 @@ import {
 } from "@/lib/services/competitor-scrapers";
 import { circuitOpen, runCrawl, type CrawlSummary } from "@/lib/services/price-light-crawl";
 import { softDeleteEvent } from "@/lib/actions/event-actions";
-import { SILENCE_DAYS } from "@/lib/actions/price-light-constants";
+import { RECHECK_AI_CALLS, SILENCE_DAYS } from "@/lib/actions/price-light-constants";
 import {
   SCOPES,
   type CompetitorKey,
@@ -31,6 +31,7 @@ import {
   type Currency,
   type EventKind,
   type Light,
+  type LightDecisionSnapshot,
   type LightDetail,
   type LightOverride,
   type LightScopeDetail,
@@ -74,7 +75,12 @@ export async function recheckEvent(
     // included - otherwise "בדוק עכשיו" could answer differently from last night's pass on
     // identical inputs. One small audit-log read, and only when the AI is actually on.
     const aiMemory = aiEnabled() ? await loadJudgeMemory() : null;
-    const result = await matchAllForEvent(eventId, "manual", { aiMemory });
+    // A ceiling on ONE click. Every other AI call site runs under a run-wide budget; a manual
+    // recheck has no run to belong to, so without this a click could fan out to one call per
+    // competitor per scope, and a staff member working down a list of reds would spend at the
+    // nightly's rate with nothing accounting for it. The per-(event, listing) cache means
+    // re-clicking the same row after this is free anyway.
+    const result = await matchAllForEvent(eventId, "manual", { aiMemory, aiBudget: { remaining: RECHECK_AI_CALLS } });
     if (!result) return { ok: false, error: "event not found or deleted" };
     return { ok: true, lights: result.lights.after, detail: result.lights.detail, checked_at: new Date().toISOString() };
   } catch (e) {
@@ -102,17 +108,84 @@ export async function listEventMatches(eventId: number): Promise<{ matches: Matc
   return { matches, listings };
 }
 
+/**
+ * What the comparison looked like when a human decided something about it.
+ *
+ * Every decision below stamps one of these into its audit metadata, because that row is what the
+ * price-light agent learns from (lib/agents/price-light.agent.ts) and "someone removed event 812"
+ * is not a lesson. Taken BEFORE the decision's own write, so an override records the light it
+ * overruled rather than the one it installed.
+ */
+function lightSnapshot(event: LightEvent, scope: Scope): LightDecisionSnapshot | null {
+  const detail = event.light_detail?.[scope];
+  const light = scope === "package" ? event.light_package : event.light_ticket;
+  if (!detail || !light) return null;
+  return {
+    scope,
+    light,
+    diff_usd: detail.diff_usd,
+    our_usd: detail.our_usd,
+    competitor: detail.competitor,
+    normalized_usd: detail.normalized_usd,
+    nights_ours: detail.nights?.ours ?? null,
+    nights_theirs: detail.nights?.theirs ?? null,
+    uncertainty_usd: detail.uncertainty_usd ?? null,
+  };
+}
+
+/** The scope a scope-less decision (mute, remove) is really about: the red one, package first. */
+function decidedScope(event: LightEvent): Scope {
+  if (event.light_package === "red") return "package";
+  if (event.light_ticket === "red") return "ticket";
+  return "package";
+}
+
+/** Snapshot for a decision taken on `eventId`, or null when the event or its light is gone. */
+async function snapshotFor(eventId: number, scope?: Scope): Promise<LightDecisionSnapshot | null> {
+  const event = await loadEventForLight(eventId);
+  if (!event) return null;
+  return lightSnapshot(event, scope ?? decidedScope(event));
+}
+
+/**
+ * "הוזל": records that a human looked at a red light, judged the gap REAL, and went to fix our
+ * price. Nothing else happens here - the price itself is edited on the event page, and the light
+ * never writes a price. This exists purely so the strongest signal we have stops being invisible:
+ * before it, the button was a plain link and the decision left no trace at all.
+ */
+export async function markRepriced(eventId: number, scope: Scope): Promise<Ok> {
+  // Admin, like every other decision here: it is only reachable from the admin-only /price-light
+  // screen, and what it writes becomes evidence the agent learns from.
+  await requireAdmin();
+  try {
+    const snapshot = await snapshotFor(eventId, scope);
+    await logAudit({
+      action: "price_light.repriced",
+      entityType: "event",
+      entityId: eventId,
+      metadata: { ...(snapshot ?? { scope }) },
+    });
+    return { ok: true };
+  } catch (e) {
+    console.error("markRepriced failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "failed" };
+  }
+}
+
 /** "מזכיר לי מאוחר יותר": mute a red light for `days` (default SILENCE_DAYS) without touching the light itself. */
 export async function silenceRedLight(eventId: number, days: number = SILENCE_DAYS): Promise<Ok> {
   await requireAdmin();
   try {
+    // Read the light BEFORE muting it - this row is the agent's record of what a human saw and
+    // chose to accept, and the mute itself changes nothing about the comparison it describes.
+    const snapshot = await snapshotFor(eventId);
     const until = new Date(Date.now() + days * 86_400_000).toISOString();
     const { error } = await db.from("events").update({ light_silenced_until: until }).eq("id", eventId);
     if (error) {
       console.error("silenceRedLight failed", JSON.stringify(error));
       return { ok: false, error: "update failed" };
     }
-    await logAudit({ action: "price_light.silenced", entityType: "event", entityId: eventId, metadata: { days, until } });
+    await logAudit({ action: "price_light.silenced", entityType: "event", entityId: eventId, metadata: { ...(snapshot ?? {}), days, until } });
     return { ok: true };
   } catch (e) {
     console.error("silenceRedLight failed", e);
@@ -149,7 +222,18 @@ export async function setLightOverride(eventId: number, scope: Scope, light: Lig
       console.error("setLightOverride failed", JSON.stringify(error));
       return { ok: false, error: "update failed" };
     }
-    await logAudit({ action: "price_light.override", entityType: "event", entityId: eventId, metadata: { scope, light, note: trimmed } });
+    // `before` is the light this override overruled - the comparison the human disagreed with,
+    // which is exactly what makes the note underneath it a lesson rather than an opinion.
+    const before = lightSnapshot(event, scope);
+    await logAudit({
+      action: "price_light.override",
+      entityType: "event",
+      entityId: eventId,
+      // `light` stays the OVERRULED light (from the snapshot) and the human's new one is
+      // `to_light`: a lesson that read "package green — overruled to green" would describe
+      // nothing. When there was no light to snapshot, `light` falls back to the new one.
+      metadata: { ...(before ?? { scope, light }), to_light: light, note: trimmed },
+    });
     return { ok: true };
   } catch (e) {
     console.error("setLightOverride failed", e);
@@ -203,8 +287,11 @@ export async function openPriceLightTask(
 export async function removeEventFromSite(eventId: number): Promise<Ok> {
   await requireAdmin();
   try {
+    // Snapshot first: after the soft delete the event drops out of every light query, and the
+    // comparison a human refused to match would be unrecoverable.
+    const snapshot = await snapshotFor(eventId);
     await softDeleteEvent(eventId);
-    await logAudit({ action: "price_light.removed", entityType: "event", entityId: eventId });
+    await logAudit({ action: "price_light.removed", entityType: "event", entityId: eventId, metadata: { ...(snapshot ?? {}) } });
     return { ok: true };
   } catch (e) {
     console.error("removeEventFromSite failed", e);
@@ -235,6 +322,16 @@ export interface PriceLightRow {
   nights_ours: number | null;
   nights_theirs: number | null;
   uncertainty_usd: number;
+  /**
+   * OUR price as it is right now, recomputed from the event's own columns at read time.
+   *
+   * `our_usd` above is a snapshot from when matching last ran, and our own ticket prices move
+   * between runs (`ticket-price-sync` every 2h), so the two drift apart during the day - 151 of
+   * 435 events on 2026-09-13, by $5 to $163, which is enough to matter against a ±$150 band.
+   * The light itself stays the recorded verdict; this is what the screen shows alongside it so
+   * nobody reads a stale number as today's price.
+   */
+  our_usd_now: number | null;
   reason: UncheckedReason | null;
   crawled_at: string | null;
   checked_at: string | null;
@@ -264,8 +361,12 @@ type ListedEvent = LightEvent;
 
 // A few hundred live future events at current catalog size.
 const LIST_EVENTS_MAX = 5_000;
-// ~2 scopes x a handful of competitors x every listed event's match history.
+// ~2 scopes x a handful of competitors x every listed event's RECENT match history
+// (bounded by NEWEST_MATCH_LOOKBACK_DAYS below, not by the whole table's lifetime).
 const LIST_MATCHES_MAX = 20_000;
+/** How far back `loadNewestMatches` looks. Well past LIGHT_STALE_DAYS (14) - a match older than
+ *  this cannot be behind a live light, and reading past it only grows with the table's age. */
+const NEWEST_MATCH_LOOKBACK_DAYS = 90;
 // One open price_light task per red (event, scope) at most - well under the event count.
 const LIST_TASKS_MAX = 5_000;
 
@@ -334,6 +435,13 @@ async function loadNewestMatches(eventIds: number[]): Promise<Map<string, Newest
         .from("competitor_matches")
         .select("id,event_id,scope,method,created_at,competitor_listings(url)")
         .in("event_id", eventIds)
+        // Only the recent past. This table is append-only and grows by ~170 rows a night, so an
+        // unbounded read walks the whole history to use its newest row per (event, scope) - and
+        // would silently hit LIST_MATCHES_MAX within months, at which point the events beyond the
+        // cap quietly lose their listing link and "changed this week" flag. Nothing older than
+        // NEWEST_MATCH_LOOKBACK_DAYS can be driving a live light anyway: a match goes stale at
+        // LIGHT_STALE_DAYS (14).
+        .gte("created_at", new Date(Date.now() - NEWEST_MATCH_LOOKBACK_DAYS * 86_400_000).toISOString())
         .order("created_at", { ascending: false }),
     LIST_MATCHES_MAX,
   );
@@ -402,6 +510,8 @@ export async function listPriceLight(): Promise<PriceLightRow[]> {
         nights_ours: detail?.nights?.ours ?? null,
         nights_theirs: typeof detail?.nights?.theirs === "number" ? detail.nights.theirs : null,
         uncertainty_usd: detail?.uncertainty_usd ?? 0,
+        // Pure arithmetic over columns already loaded - no extra query, no write on a read path.
+        our_usd_now: scope === "package" ? ourPackageUsd(event) : ourTicketUsd(event),
         reason: detail?.reason ?? null,
         crawled_at: detail?.crawled_at ?? null,
         checked_at: event.light_checked_at,

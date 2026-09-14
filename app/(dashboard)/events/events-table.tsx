@@ -811,8 +811,15 @@ export function EventsTable() {
           </Button>
         );
       },
+      // Sort by the WORSE of the two pills, not by the package one alone. The cell shows both,
+      // and today the ticket light carries most of the signal (the package light is still
+      // "unchecked" for every event no package competitor sells), so sorting on package alone
+      // buried rows with a red ticket under rows that had nothing to say.
       accessorFn: (row) =>
-        LIGHT_SORT_ORDER[isLight(row.light_package) ? row.light_package : "unchecked"],
+        Math.min(
+          LIGHT_SORT_ORDER[isLight(row.light_package) ? row.light_package : "unchecked"],
+          LIGHT_SORT_ORDER[isLight(row.light_ticket) ? row.light_ticket : "unchecked"],
+        ),
       cell: ({ row }) => (
         <PriceLightCell
           event={row.original}

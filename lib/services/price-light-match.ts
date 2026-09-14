@@ -2,6 +2,7 @@
 // in phase 0; `judge` is the phase-1 AI hook. Writes a competitor_matches row
 // only when the verdict differs from the latest row.
 import { supabase } from "@/lib/supabase-server";
+import { takeBudget, type AgentBudget } from "@/lib/agents/switch";
 import {
   DATE_TOLERANCE_DAYS, LIGHT_STALE_DAYS, competitorsFor, kindOf, listingNights, normalize, ourNightRateUsd,
   ourNights, ourPackageUsd, ourTicketUsd, pickRuleMatch, type MatchCandidate,
@@ -17,8 +18,10 @@ const db = supabase as any;
 export interface MatchOutcome { competitor: CompetitorKey; scope: Scope; status: MatchStatus; wrote: boolean; listingId: number | null; note: string | null }
 
 /** Run-wide ceiling on AI calls, shared (and mutated) across every event in one pass.
- *  The nightly creates exactly one of these; ad-hoc callers pass none = no ceiling. */
-export interface AiBudget { remaining: number }
+ *  The nightly creates exactly one of these (`newBudget(PRICE_LIGHT_AGENT)`); ad-hoc callers
+ *  pass none = no ceiling. The type and the decrement are the agent layer's, so every agent
+ *  gets the same accounting. */
+export type AiBudget = AgentBudget;
 
 export interface MatchOptions {
   dryRun?: boolean;
@@ -31,15 +34,10 @@ export interface MatchOptions {
   aiMemory?: string | null;
 }
 
-/** The gate both AI call sites go through: decrement first, and once the budget is
- *  spent report "no call allowed" - which the caller treats exactly like `judge: null`
- *  for that event (rule-only, no `unsure`-by-AI, no cost). */
-function takeAiBudget(budget: AiBudget | undefined): boolean {
-  if (!budget) return true;
-  if (budget.remaining <= 0) return false;
-  budget.remaining -= 1;
-  return true;
-}
+/** The gate both AI call sites go through: decrement first, and once the budget is spent report
+ *  "no call allowed" - which the caller treats exactly like `judge: null` for that event
+ *  (rule-only, no `unsure`-by-AI, no cost). Shared with every other agent (lib/agents/switch.ts). */
+const takeAiBudget = takeBudget;
 
 /** Phase 1 plugs Claude in here. null = rule-only. */
 export type Judge = (input: { event: LightEvent; candidates: ListingRow[] }) =>

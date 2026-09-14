@@ -1,24 +1,27 @@
 // The ONLY place Claude is called for the price light (spec §5). Reads its input,
 // returns a structured verdict, never throws past the caller.
 import Anthropic from "@anthropic-ai/sdk";
+import { PRICE_LIGHT_AGENT } from "@/lib/agents";
+import { agentEnabled, agentModel, anthropicKey, callCostUsd } from "@/lib/agents/switch";
 import type { Judge } from "@/lib/services/price-light-match";
 import type { LightEvent } from "@/lib/services/price-light-store";
 import { UNKNOWN_ATTRS, type ExtractedAttrs, type ListingRow } from "@/types/price-light.types";
 
-export const AI_CONFIDENCE_MIN = 0.8;
-// 12s, not 20s, and no SDK retry: the nightly checks its wall-clock budget only
-// BETWEEN events, so a slow call inside one event is time the budget can't see.
-// Two events' worth of hung calls used to be enough to strand the tail of the run.
-export const AI_TIMEOUT_MS = 12_000;
+// What this agent IS now lives in one place - lib/agents/price-light.agent.ts - so a second
+// agent is a declaration rather than a second copy of this file's plumbing. These re-exports
+// keep every existing caller (nightly, matcher, actions, smoke test) working unchanged.
+export const AI_CONFIDENCE_MIN = PRICE_LIGHT_AGENT.confidenceMin;
+export const AI_TIMEOUT_MS = PRICE_LIGHT_AGENT.timeoutMs;
 /** Hard ceiling on judge calls in ONE nightly pass - the run-wide budget the
  *  nightly threads through `matchAllForEvent`. Past it, matching carries on
  *  rule-only for the rest of the run instead of eating the whole cron window. */
-export const AI_CALLS_PER_RUN = 40;
+export const AI_CALLS_PER_RUN = PRICE_LIGHT_AGENT.callsPerRun;
+export const AI_MODEL_DEFAULT = PRICE_LIGHT_AGENT.defaultModel;
+export const AI_USD_PER_M_INPUT = PRICE_LIGHT_AGENT.usdPerMInput;
+export const AI_USD_PER_M_OUTPUT = PRICE_LIGHT_AGENT.usdPerMOutput;
+/** Prompt-shaping, specific to THIS judge's call - not part of what an agent is. */
 export const AI_MAX_CANDIDATES = 10;
 export const AI_DETAIL_TEXT_MAX = 6_000;
-export const AI_MODEL_DEFAULT = "claude-opus-5";
-export const AI_USD_PER_M_INPUT = 5;
-export const AI_USD_PER_M_OUTPUT = 25;
 
 export interface JudgeInput { event: LightEvent; candidates: ListingRow[] }
 /** `memory` = the agent's house rules + staff corrections (price-light-memory.ts). Omitted
@@ -34,45 +37,18 @@ export interface JudgeResult {
   attrs: ExtractedAttrs; verdict: AiVerdict; listing: ListingRow | null;
 }
 
-/** Every Anthropic console key starts with this. A placeholder never does. */
-const KEY_PREFIX = "sk-ant-";
-let keyWarned = false;
-
 /**
- * The key, or null when what is configured is not one. The env var is expected to sit in
- * Vercel as an empty slot until a real key from console.anthropic.com is pasted in, so the
- * shape check is what keeps a slot (or a half-pasted value) from being treated as a
- * credential: without it, `ANTHROPIC_API_KEY=REPLACE_ME` plus `PRICE_LIGHT_AI=on` would look
- * enabled and turn every match into a 401 that reads as `unsure` with no hint why.
+ * Opt-in, never fail-open - now enforced for every agent in one place (lib/agents/switch.ts):
+ * this judge is off unless `PRICE_LIGHT_AI` is literally "on", the master `AI_AGENTS` switch is
+ * not "off", AND a value shaped like a real console key is present. A typo, an empty string, a
+ * placeholder or an unset var costs nothing and falls back to rule-only matching.
  */
-export function anthropicKey(): string | null {
-  const raw = (process.env.ANTHROPIC_API_KEY ?? "").trim();
-  return raw.startsWith(KEY_PREFIX) ? raw : null;
-}
-
-/**
- * Opt-in, never fail-open: the AI is off unless PRICE_LIGHT_AI is literally "on"
- * AND a real key is present. A typo, an empty string, a placeholder or an unset var costs
- * nothing and falls back to rule-only matching - the money side must never turn itself on by
- * accident (e.g. someone clearing the var to "disable" it). When the switch is on but the key
- * is not usable, say so ONCE per process: silently doing nothing is the confusing outcome.
- */
-export function aiEnabled(): boolean {
-  if (process.env.PRICE_LIGHT_AI !== "on") return false;
-  if (anthropicKey()) return true;
-  if (!keyWarned) {
-    keyWarned = true;
-    const raw = (process.env.ANTHROPIC_API_KEY ?? "").trim();
-    console.warn(
-      `price-light-judge: PRICE_LIGHT_AI=on but ANTHROPIC_API_KEY is ${raw ? `not a console key (expected it to start with "${KEY_PREFIX}")` : "empty"} - matching stays rule-only.`,
-    );
-  }
-  return false;
-}
-export function aiModel(): string { return process.env.PRICE_LIGHT_AI_MODEL || AI_MODEL_DEFAULT; }
+export function aiEnabled(): boolean { return agentEnabled(PRICE_LIGHT_AGENT); }
+export function aiModel(): string { return agentModel(PRICE_LIGHT_AGENT); }
+export { anthropicKey };
 
 /** Hard ceiling on the memory block, characters - a runaway prompt is a runaway bill. */
-export const AI_MEMORY_MAX = 2_000;
+export const AI_MEMORY_MAX = PRICE_LIGHT_AGENT.memoryMaxChars;
 
 const SYSTEM = `You compare an Israeli travel company's event package with a competitor's listing.
 Answer ONLY through the tool. same_event = true only when artist/teams AND date (±1 day) AND city agree.
@@ -179,7 +155,7 @@ export async function extractAndJudge(input: JudgeInput, opts: JudgeOptions = {}
     const listing = idx != null ? shown[idx] : null;
     const verdict: AiVerdict = {
       model, input_tokens: inTok, output_tokens: outTok,
-      cost_usd: Math.round(((inTok * AI_USD_PER_M_INPUT + outTok * AI_USD_PER_M_OUTPUT) / 1_000_000) * 10_000) / 10_000,
+      cost_usd: callCostUsd(PRICE_LIGHT_AGENT, inTok, outTok),
       ms: Date.now() - started, same_event: same, confidence, matched_candidate_index: idx, attrs,
     };
     return { same_event: same, confidence, matched_candidate_index: idx, attrs, verdict, listing };

@@ -87,35 +87,59 @@ Deleting the key does the same thing.
 
 ## The learning loop — this is the part that makes it an agent
 
-The judge is not a static prompt. Its system prompt is assembled on every call from
-`lib/services/price-light-memory.ts`:
+The judge is not a static prompt. Its system prompt is assembled on every call, from two blocks:
 
 1. **House rules, generated from the engine's own constants** (`lib/services/price-light.ts`).
-   The prompt is never hand-copied, so when we tune a rule — the way the duration pass on
-   2026-09-13 changed how a night is priced — the model is told the new rule on its very next
-   call. The arithmetic and the AI cannot drift apart.
-2. **Staff corrections.** Every time someone hits **דריסה** on `/price-light` and types the
-   mandatory note ("ISSTA sells 3 nights, we sell 4"), that note is written to `audit_log`. The
-   agent quotes the newest 8 of them (within 120 days) as evidence about how this market
-   behaves. So the fix a human makes today is context the agent has tomorrow night.
+   Never hand-copied, so when we tune a rule — the way the duration pass on 2026-09-13 changed
+   how a night is priced — the model is told the new rule on its very next call. The arithmetic
+   and the AI cannot drift apart.
+2. **The marks your team leaves on `/price-light`.** Every decision now records *what the
+   comparison looked like when it was made* — scope, light, the gap, which competitor, both
+   normalized prices, both durations — and the agent reads the newest ten back (within 120 days):
+
+   | The mark | What the agent takes from it |
+   |---|---|
+   | **דריסה** | The only one carrying your own sentence ("איסתא מוכרים 3 לילות, אנחנו 4"). The sharpest signal there is, and the one that speaks directly about matching. |
+   | **הוזל** | A human judged the gap REAL and went to cut our price. |
+   | **הסר מהאתר** | A human would rather pull the event than match that price. |
+   | **השאר בפיד** | A human looked and decided we stay pricier here on purpose. |
+   | **משימה** | A human opened a task to chase the gap. |
+
+   So a fix you make today is context the agent has tomorrow night. **`הוזל` used to be a bare
+   link** — the strongest signal we had left no trace at all until 2026-09-13.
 
 Two honest limits:
 
-- Notes are quoted as **data, never as instructions** — a note cannot change the rules, by
-  design. That is a security property, not an oversight: those notes are free text typed into a
-  form, and a prompt that obeys them is a prompt anyone with form access can rewrite.
-- The only correction channel today is the override note. A dedicated "this match is wrong"
-  button (writing a `method: "manual"` match row the judge could learn from directly) is the
-  obvious next step, and is listed as such in the status doc.
+- Marks are quoted as **data, never as instructions** — nothing in them can change the rules or
+  the schema the agent answers in. That is a security property, not an oversight: they are free
+  text typed into a form, and a prompt that obeys them is a prompt anyone with form access can
+  rewrite.
+- Four of the five marks are *outcomes* ("what we did"), not matching corrections. They are
+  market evidence; only the override note tells the agent it matched the wrong listing. A
+  dedicated "this match is wrong" button — writing a `method: "manual"` row the judge learns from
+  directly — is the obvious next step.
+
+## Ground prepared for the next agents
+
+The price light is **agent #1 of a registry**, not a one-off. `lib/agents/` holds what every agent
+needs: the declaration shape, the registry, the switches (per-agent plus a master `AI_AGENTS=off`
+that stops all of them at once), the run budget, the cost maths and the memory assembly. Adding the
+next agent — for creatives, pricing, tasks, anything — is a `<name>.agent.ts` declaring its model,
+ceilings, house rules and which recorded decisions it learns from, one line in the registry, and one
+env switch. None of this feature's plumbing gets copied.
 
 ## Where each piece lives
 
 | Piece | File |
 |---|---|
+| What an agent IS | `lib/agents/types.ts` |
+| This agent's declaration | `lib/agents/price-light.agent.ts` |
+| Registry | `lib/agents/index.ts` |
+| Switches, key, budget, cost | `lib/agents/switch.ts` |
+| Memory assembly (rules + marks) | `lib/agents/memory.ts` |
 | The one AI call site | `lib/services/price-light-judge.ts` (`extractAndJudge`) |
 | Its only production caller | `lib/services/price-light-match.ts` |
-| Rules + lessons (the memory) | `lib/services/price-light-memory.ts` |
 | Thresholds, normalization, the light itself | `lib/services/price-light.ts` |
-| Run ceiling, model, timeout, confidence floor | `lib/services/price-light-judge.ts` constants |
-| Smoke test | `scripts/price-light-judge-smoke.ts` |
+| Agent-layer selftest | `scripts/agents-selftest.ts` |
+| Smoke test (one real call) | `scripts/price-light-judge-smoke.ts` |
 | Cost this month | `/price-light` header, `aiCostThisMonth()` |

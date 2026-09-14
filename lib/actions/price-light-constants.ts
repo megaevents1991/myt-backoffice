@@ -7,3 +7,8 @@
 
 /** How long a red light stays silenced on "השאר בפיד" (`silenceRedLight`). */
 export const SILENCE_DAYS = 14;
+
+/** AI calls one "בדוק עכשיו" click may spend. The nightly has a run-wide ceiling; a manual
+ *  recheck has no run to belong to, so it carries its own. Four covers the competitors of both
+ *  scopes for one event, which is all a single click can legitimately need. */
+export const RECHECK_AI_CALLS = 4;

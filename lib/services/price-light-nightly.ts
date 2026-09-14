@@ -21,6 +21,8 @@ import { appOrigin, sendMail } from "@/lib/email";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { LIGHT_EVENT_COLUMNS, writeSnapshotAndTag, type LightEvent } from "@/lib/services/price-light-store";
 import { matchAllForEvent, type AiBudget } from "@/lib/services/price-light-match";
+import { PRICE_LIGHT_AGENT } from "@/lib/agents";
+import { newBudget } from "@/lib/agents/switch";
 import { AI_CALLS_PER_RUN, aiEnabled } from "@/lib/services/price-light-judge";
 import { loadJudgeMemory } from "@/lib/services/price-light-memory";
 import { runCrawl } from "@/lib/services/price-light-crawl";
@@ -134,7 +136,7 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
   // without a ceiling a handful of AI-heavy events would eat the entire window
   // and strand everything behind them. A dry run passes `judge: null`: a report
   // must never spend money, and a dry run is exactly what gets pointed at prod.
-  const aiBudget: AiBudget = { remaining: AI_CALLS_PER_RUN };
+  const aiBudget: AiBudget = newBudget(PRICE_LIGHT_AGENT);
   // The agent's memory - house rules generated from the engine's constants plus the notes staff
   // wrote when they overrode a light. Loaded ONCE for the whole pass (one audit-log read, not
   // one per event) and skipped entirely when nothing will call the AI anyway.

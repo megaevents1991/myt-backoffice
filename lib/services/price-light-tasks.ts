@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { signedUsd } from "@/lib/services/price-light";
 import type { LightEvent, Lights } from "@/lib/services/price-light-store";
-import type { LightScopeDetail, MatchRow, Scope } from "@/types/price-light.types";
+import type { LightDecisionSnapshot, LightScopeDetail, MatchRow, Scope } from "@/types/price-light.types";
 import type { TaskSourceRef } from "@/types/task.types";
 
 // New table predates the generated DB types - one boundary cast (repo pattern).
@@ -91,7 +91,24 @@ export async function openPriceLightTask(
       console.error(JSON.stringify(error));
       return { ok: false, error: "task insert failed" };
     }
-    await logAudit({ action: "price_light.task_opened", entityType: "event", entityId: event.id, metadata: { scope, task_id: data.id } });
+    // The comparison as the human saw it, alongside the task id: this row is what the
+    // price-light agent reads back as evidence (lib/agents/price-light.agent.ts), and a bare
+    // "a task was opened for event 812" teaches it nothing.
+    const light = scope === "package" ? event.light_package : event.light_ticket;
+    const snapshot: LightDecisionSnapshot | null = light
+      ? {
+        scope, light, diff_usd: detail.diff_usd, our_usd: detail.our_usd,
+        competitor: detail.competitor, normalized_usd: detail.normalized_usd,
+        nights_ours: detail.nights?.ours ?? null, nights_theirs: detail.nights?.theirs ?? null,
+        uncertainty_usd: detail.uncertainty_usd ?? null,
+      }
+      : null;
+    await logAudit({
+      action: "price_light.task_opened",
+      entityType: "event",
+      entityId: event.id,
+      metadata: { ...(snapshot ?? { scope }), task_id: data.id },
+    });
     return { ok: true, taskId: data.id, existed: false };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "failed" };

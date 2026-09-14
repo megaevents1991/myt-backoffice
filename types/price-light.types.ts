@@ -24,6 +24,10 @@ export const CRAWL_STATUSES = ["running", "ok", "partial", "blocked", "error", "
 export type CrawlStatus = (typeof CRAWL_STATUSES)[number];
 
 export type CrawlTrigger = "schedule" | "manual" | "dry_run";
+/** `our_price_moved` is RESERVED, not wired: re-matching the moment our own price changes would
+ *  mean hooking `ticket-price-sync`, and the standing rule is that the light never edits the
+ *  pricing code. Our price therefore drifts from the recorded `our_usd` between nightly runs;
+ *  `/price-light` shows the live figure beside the recorded one (`our_usd_now`) instead. */
 export type MatchTrigger = "crawl" | "nightly" | "on_create" | "manual" | "our_price_moved";
 
 export type Currency = "ILS" | "USD" | "EUR" | "GBP";
@@ -87,6 +91,27 @@ export interface LightScopeDetail {
   crawled_at: string | null;
   match_id: number | null;
   per_competitor: Partial<Record<CompetitorKey, PerCompetitor>>;
+}
+
+/**
+ * What the comparison looked like at the moment a human decided something about it.
+ *
+ * Stamped into the `audit_log` metadata of every price-light decision (הוזל / השאר בפיד /
+ * הסר מהאתר / משימה / דריסה), because "someone removed event 812" teaches nothing, while
+ * "at the time, package was red +$420 against Golasso, our 4 nights against their 3, and a
+ * human pulled the event rather than match it" is a labelled example. This is the record the
+ * price-light agent learns from - see lib/agents/price-light.agent.ts.
+ */
+export interface LightDecisionSnapshot {
+  scope: Scope;
+  light: Light;
+  diff_usd: number | null;
+  our_usd: number | null;
+  competitor: CompetitorKey | null;
+  normalized_usd: number | null;
+  nights_ours: number | null;
+  nights_theirs: number | "unknown" | null;
+  uncertainty_usd: number | null;
 }
 
 export interface LightOverride {

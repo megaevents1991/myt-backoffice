@@ -43,6 +43,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   clearLightOverride,
+  markRepriced,
   openPriceLightTask,
   recheckEvent,
   removeEventFromSite,
@@ -163,7 +164,20 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
     <div className="flex items-center justify-end gap-1">
       {row.light === "red" && (
         <Button asChild size="sm" variant="outline">
-          <Link href={`/events/${row.event_id}#fix-price`}>הוזל</Link>
+          {/* Still a plain link to the price section - the light never writes a price. The click
+              is recorded first (markRepriced) because "a human judged this gap real" is the
+              single strongest signal we have, and until now it left no trace at all. Recording
+              must never block the navigation: on failure we log and go anyway. */}
+          <Link
+            href={`/events/${row.event_id}#fix-price`}
+            onClick={() => {
+              void markRepriced(row.event_id, row.scope).catch((e) =>
+                console.error("markRepriced failed", e),
+              );
+            }}
+          >
+            הוזל
+          </Link>
         </Button>
       )}
 

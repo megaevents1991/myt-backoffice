@@ -85,11 +85,18 @@ export async function createEvent(event: Omit<Event, "id">) {
   } catch (e) {
     console.error("auto-tag on create failed:", e);
   }
-  // Price light: match the new event against the stored competitor catalogs
-  // right away (seconds, no browsing). Tolerant - the nightly run completes it.
+  // Price light: match the new event against the stored competitor catalogs right away
+  // (seconds, no browsing). Tolerant - the nightly run completes it.
+  //
+  // `judge: null` - RULE ONLY here, deliberately. This runs inside the user's save request and
+  // has no run-wide budget to share (every other AI call site gets one), so leaving the judge on
+  // would mean up to one 12s AI call per competitor per scope added to a single save - and the
+  // factory's bulk-approve, which calls createEvent once per draft, could fire hundreds of
+  // unbudgeted calls from one click. An ambiguous new event simply waits for tonight's pass,
+  // where both the ceiling and the timing are accounted for.
   try {
     const { matchAllForEvent } = await import("@/lib/services/price-light-match");
-    await matchAllForEvent(created.id, "on_create");
+    await matchAllForEvent(created.id, "on_create", { judge: null });
   } catch (e) {
     console.error("price-light on create failed:", e);
   }

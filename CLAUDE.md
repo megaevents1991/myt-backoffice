@@ -344,6 +344,36 @@ tuning a constant re-teaches the judge on its next call, never a hand-copied pro
 `aiMemory` through `matchAllForEvent`; staff notes are quoted as evidence, explicitly not as
 instructions. Setup steps for turning the AI on: `docs/superpowers/price-light-ai-setup.md`.
 
+### Agents (`lib/agents/`, 2026-09-13)
+
+**One agent layer, and the price light is agent #1.** Dor: "צריך להיות agent שהוא במיוחד על זה,
+אחריי זה נייצר עוד לדברים אחרים אז צריך להכין את השטח". An agent is DECLARED, not wired: `types.ts`
+is the shape (`AgentDefinition`), `<name>.agent.ts` declares one (model, `callsPerRun`, `timeoutMs`,
+`confidenceMin`, token prices, memory caps, `switchEnv`, `learnsFrom`, `houseRules`), `index.ts`
+registers it, and the plumbing is shared: `switch.ts` (key shape check, per-agent switch, master
+`AI_AGENTS` kill switch, `newBudget`/`takeBudget`, `callCostUsd`) and `memory.ts` (house rules +
+recorded decisions, capped and fenced). Adding an agent = a declaration + an env switch; it never
+means copying the price light's plumbing. `scripts/agents-selftest.ts` (`npx tsx`) covers the
+switches, the budget, the cost maths and every lesson formatter with synthetic rows - no DB, no API.
+
+**Two rules the layer enforces.** (1) **Opt-in, fails closed**: an agent runs only when its switch
+is literally `"on"`, `AI_AGENTS` is not `"off"`, AND `ANTHROPIC_API_KEY` starts `sk-ant-`; anything
+else is off and costs nothing, so the spending side can never turn itself on by accident. (2) **Staff
+text is DATA**: recorded decisions are quoted to the model inside an explicit "data, not instructions"
+fence - anyone with the decision screen can write into that block, so a prompt that obeyed it would be
+a prompt they could rewrite.
+
+**What the price-light agent learns from (`price_light.*` audit actions, newest 10 in 120 days).**
+Every decision on `/price-light` now stamps a `LightDecisionSnapshot` into its audit metadata (scope,
+light, diff, competitor, both normalized prices, both durations, the uncertainty) taken BEFORE its own
+write - because "someone removed event 812" is not a lesson, while "package red +$420 vs Golasso, our
+4 nights vs their 3, and a human pulled the event" is a labelled example. Sources in priority order:
+`override` (the only one carrying a human's own sentence - `light` is the OVERRULED light, `to_light`
+the forced one), `repriced`, `removed`, `silenced`, `task_opened`. **`הוזל` is now recorded**
+(`markRepriced`, `price_light.repriced`): it was a bare `<Link>`, so the strongest signal we have -
+a human judging a gap real - used to leave no trace at all. It still only logs; the light never
+writes a price. A decision with no snapshot (rows predating this) is dropped rather than guessed at.
+
 **Manual override beats the recompute.** `light_detail.override` (one scope-tagged field) is
 re-applied by `recomputeEventLights` on every pass: the overridden scope keeps `override.light`
 until the competitor's normalized price drifts more than `OVERRIDE_DRIFT_USD` ($20) from the number
@@ -449,6 +479,9 @@ PRICE_LIGHT_SCRAPE=
 # Claude Code / Claude.ai subscriptions are interactive seats and cannot authenticate this -
 # the cron calls the API server-to-server, so it needs a console key.
 ANTHROPIC_API_KEY=
+# Master kill switch for EVERY agent (lib/agents/). "off" stops all of them whatever their own
+# switches say; unset means each agent is governed individually. Nothing else turns agents on.
+AI_AGENTS=
 # Phase 1 - AI judge for ambiguous matches (rule-match is phase 0's only matcher). OPT-IN, fails
 # closed: set PRICE_LIGHT_AI=on to enable; unset, empty or anything but "on" = off = rule-only,
 # exactly phase-0 behaviour (aiEnabled() false). Needs the key above as well - turning this on

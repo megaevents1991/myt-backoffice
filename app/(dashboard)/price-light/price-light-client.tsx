@@ -86,6 +86,11 @@ function LightBadge({ row }: { row: PriceLightRow }) {
       ? `${COMPETITOR_LABEL[row.competitor] ?? row.competitor}: ${row.raw ?? "?"} ${row.raw_currency ?? ""} → מנורמל $${row.normalized_usd ?? "?"}`
       : null,
     row.our_usd != null ? `שלנו: $${row.our_usd}` : null,
+    // Our own ticket prices move between nightly runs, so the number the light was computed
+    // against is not always today's. Say so rather than let a stale figure pass for current.
+    row.our_usd != null && row.our_usd_now != null && row.our_usd_now !== row.our_usd
+      ? `המחיר שלנו זז מאז הבדיקה: כעת $${row.our_usd_now}`
+      : null,
     nightsLine(row),
     ...row.adjustments,
     row.partial ? "כיסוי חלקי בנרמול" : null,
