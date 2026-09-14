@@ -49,12 +49,11 @@ import {
   removeEventFromSite,
   setLightOverride,
   silenceRedLight,
-  type PriceLightRow,
 } from "@/lib/actions/price-light-actions";
 // "use server" files may only export async functions, so this plain constant
 // lives in a sibling module instead of price-light-actions.ts.
 import { SILENCE_DAYS } from "@/lib/actions/price-light-constants";
-import type { Light } from "@/types/price-light.types";
+import { rowScopes, type Light, type PriceLightRow, type Scope } from "@/types/price-light.types";
 
 // "na" is not a settable override - a scope is only ever overridden to one of
 // these five states (matches the /price-light table's LIGHTS minus "na").
@@ -68,13 +67,25 @@ const OVERRIDE_LABEL: Record<Light, string> = {
   na: "—",
 };
 
+const SCOPE_HE: Record<Scope, string> = { package: "חבילה", ticket: "כרטיס" };
+
 export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: () => void }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [overrideOpen, setOverrideOpen] = useState(false);
-  const [overrideLight, setOverrideLight] = useState<Light>(row.light === "na" ? "unchecked" : row.light);
   const [overrideNote, setOverrideNote] = useState("");
+
+  // The row is an EVENT now, carrying both conclusions, so a scope-specific decision has to say
+  // WHICH one it is about (Dor, 2026-09-14). Where only one scope qualifies the button goes
+  // straight there; where both do, the scope is part of the label, so it stays one click.
+  const cells = rowScopes(row);
+  const reds = cells.filter((c) => c.light === "red");
+  const [overrideScope, setOverrideScope] = useState<Scope>(cells[0]?.scope ?? "package");
+  const overrideCell = cells.find((c) => c.scope === overrideScope) ?? null;
+  const [overrideLight, setOverrideLight] = useState<Light>(
+    overrideCell && overrideCell.light !== "na" ? overrideCell.light : "unchecked",
+  );
 
   const run = async (label: string, fn: () => Promise<{ ok: boolean; error?: string }>) => {
     setBusy(true);
@@ -112,10 +123,10 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
     }
   };
 
-  const openTask = async () => {
+  const openTask = async (scope: Scope) => {
     setBusy(true);
     try {
-      const res = await openPriceLightTask(row.event_id, row.scope);
+      const res = await openPriceLightTask(row.event_id, scope);
       if (!res.ok) {
         toast({ variant: "destructive", title: "פתיחת משימה נכשלה", description: res.error });
         return;
@@ -143,7 +154,7 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
   };
 
   const submitOverride = async () => {
-    const ok = await run("דריסה", () => setLightOverride(row.event_id, row.scope, overrideLight, overrideNote));
+    const ok = await run("דריסה", () => setLightOverride(row.event_id, overrideScope, overrideLight, overrideNote));
     if (ok) {
       setOverrideOpen(false);
       setOverrideNote("");
@@ -162,8 +173,10 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
 
   return (
     <div className="flex items-center justify-end gap-1">
-      {row.light === "red" && (
-        <Button asChild size="sm" variant="outline">
+      {/* One button per red conclusion. With both red the scope is in the label, so "which one
+          did I just judge real" is answered by the click itself rather than by a second dialog. */}
+      {reds.map((cell) => (
+        <Button asChild key={cell.scope} size="sm" variant="outline">
           {/* Still a plain link to the price section - the light never writes a price. The click
               is recorded first (markRepriced) because "a human judged this gap real" is the
               single strongest signal we have, and until now it left no trace at all. Recording
@@ -171,15 +184,15 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
           <Link
             href={`/events/${row.event_id}#fix-price`}
             onClick={() => {
-              void markRepriced(row.event_id, row.scope).catch((e) =>
+              void markRepriced(row.event_id, cell.scope).catch((e) =>
                 console.error("markRepriced failed", e),
               );
             }}
           >
-            הוזל
+            {reds.length > 1 ? `הוזל · ${SCOPE_HE[cell.scope]}` : "הוזל"}
           </Link>
         </Button>
-      )}
+      ))}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -194,14 +207,18 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {row.light === "red" && (
+          {reds.length > 0 && (
             <>
+              {/* The mute is on the EVENT - it hides the row from "ממתינים להחלטה", and there is
+                  one row per event now, so it needs no scope. */}
               <DropdownMenuItem disabled={busy} onClick={silence}>
                 השאר בפיד
               </DropdownMenuItem>
-              <DropdownMenuItem disabled={busy} onClick={openTask}>
-                משימה
-              </DropdownMenuItem>
+              {reds.map((cell) => (
+                <DropdownMenuItem key={cell.scope} disabled={busy} onClick={() => openTask(cell.scope)}>
+                  {reds.length > 1 ? `משימה · ${SCOPE_HE[cell.scope]}` : "משימה"}
+                </DropdownMenuItem>
+              ))}
             </>
           )}
 
@@ -225,7 +242,7 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
             </DropdownMenuItem>
           )}
 
-          {row.light === "red" && (
+          {reds.length > 0 && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -277,6 +294,35 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
             <DialogTitle>דריסת אור</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {/* An override forces ONE conclusion, so when the row has both it must say which.
+                With a single scope there is nothing to ask and the picker stays out of the way. */}
+            {cells.length > 1 && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">על מה</label>
+                <Select
+                  value={overrideScope}
+                  onValueChange={(v) => {
+                    const scope = v as Scope;
+                    setOverrideScope(scope);
+                    // Start from the light being overruled, not from the other scope's - the
+                    // dialog should open on what this conclusion currently says.
+                    const next = cells.find((c) => c.scope === scope);
+                    if (next && next.light !== "na") setOverrideLight(next.light);
+                  }}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cells.map((c) => (
+                      <SelectItem key={c.scope} value={c.scope}>
+                        {SCOPE_HE[c.scope]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">אור</label>
               <Select value={overrideLight} onValueChange={(v) => setOverrideLight(v as Light)}>

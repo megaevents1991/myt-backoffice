@@ -70,7 +70,9 @@ export interface PricedEvent {
   def_date_return?: string | null;
   base_flight_price: number | null;
   base_hotel_price: number | null;
-  tickets_and_rates: { price: number; available?: boolean }[] | null;
+  /** `category`/`description` are what the ticket actually IS ("CATEGORÍA 3 (CAT3)" / "מאחורי
+   *  השער טבעת עליונה") - optional because only the naming code reads them. */
+  tickets_and_rates: { price: number; available?: boolean; category?: string | null; description?: string | null }[] | null;
   skip_flight?: boolean | null;
   ticket_only_markup?: number | null;
   markup_ticket?: number | null;
@@ -84,10 +86,65 @@ const amount = (v: number | null | undefined): number => {
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
 
-export function minAvailableTicketUsd(e: PricedEvent): number | null {
+/** The cheapest ticket a customer can actually buy - the row, not just its price. */
+export function cheapestAvailableTicket(e: PricedEvent): NonNullable<PricedEvent["tickets_and_rates"]>[number] | null {
   const available = (e.tickets_and_rates ?? []).filter((t) => t?.available !== false);
   if (available.length === 0) return null;
-  return Math.min(...available.map((t) => Number(t.price)));
+  return available.reduce((a, b) => (Number(b.price) < Number(a.price) ? b : a));
+}
+
+export function minAvailableTicketUsd(e: PricedEvent): number | null {
+  const ticket = cheapestAvailableTicket(e);
+  return ticket ? Number(ticket.price) : null;
+}
+
+/** One component of OUR package, as the pricing rule defines it. */
+export interface OurOfferLine { key: "flight" | "hotel" | "ticket"; label: string; detail: string; usd: number | null }
+
+/**
+ * What our own package IS, component by component (Dor, 2026-09-14: "תשלוף את הדברים שלנו לפי
+ * החוקיות שיש לנו").
+ *
+ * Two of the three are a RULE, not a record: `price-quote.ts` prices the cheapest DIRECT flight
+ * (a connection only when the direct beats it by more than $300) and the cheapest 3★ hotel, per
+ * person in a double room - it stores the resulting number, never the airline or the hotel that
+ * produced it. So this describes the rule honestly rather than inventing a name we never kept.
+ * The ticket is different: we DO store what it is, so it is named exactly.
+ *
+ * Mirrors `lib/services/price-quote.ts`; this module stays pure and must not import it (it drags
+ * Amadeus and the hotel service in), so if that rule changes, change the wording here too.
+ */
+export function ourOfferLines(e: PricedEvent): OurOfferLine[] {
+  const nights = ourNights(e);
+  const flight = amount(e.base_flight_price);
+  const hotel = amount(e.base_hotel_price);
+  const ticket = cheapestAvailableTicket(e);
+  const ticketName = [ticket?.category, ticket?.description]
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean)
+    .join(" · ");
+  return [
+    {
+      key: "flight",
+      label: "טיסה",
+      detail: flight === 0 ? "אין מחיר טיסה" : "ישירה, הזולה ביותר (קונקשן רק אם הישירה יקרה ב-$300+)",
+      usd: flight || null,
+    },
+    {
+      key: "hotel",
+      label: "מלון",
+      detail: hotel === 0
+        ? "אין מחיר מלון"
+        : `3★ הזול ביותר · ${nights == null ? "מספר לילות לא ידוע" : `${nights} לילות`} · לאדם בחדר זוגי`,
+      usd: hotel || null,
+    },
+    {
+      key: "ticket",
+      label: "כרטיס",
+      detail: ticket ? (ticketName || "הקטגוריה הזמינה הזולה") : "אין כרטיס זמין",
+      usd: ticket ? Math.round(Number(ticket.price)) : null,
+    },
+  ];
 }
 
 /** Composed markups when any is set, else main's global 175; plus the per-event extra. */
@@ -312,6 +369,23 @@ function daysBetween(fromIso: string, toIso: string): number {
   return (Date.parse(toIso) - Date.parse(fromIso)) / 86_400_000;
 }
 
+/**
+ * The light for one gap, widened by whatever that comparison could not see.
+ *
+ * A duration we could not measure is not a price difference: widening both thresholds by the
+ * nights doubt is what stops a 3-night competitor package sitting next to our 4-night one from
+ * reading as a confident red (63 of 77 matched package listings on 2026-09-13 published no nights
+ * at all). Inside the widened band the answer is orange - "look at it", not "act".
+ *
+ * One function, used for BOTH the scope's verdict and each competitor's own, so a per-competitor
+ * light can never be computed by a slightly different rule than the light beside it.
+ */
+function lightFor(diffUsd: number, uncertaintyUsd: number): Light {
+  if (diffUsd < LIGHT_GREEN_USD - uncertaintyUsd) return "green";
+  if (diffUsd > LIGHT_RED_USD + uncertaintyUsd) return "red";
+  return "orange";
+}
+
 export function computeScopeLight(input: {
   ourUsd: number | null;
   matches: LatestMatch[];
@@ -335,7 +409,19 @@ export function computeScopeLight(input: {
   for (const c of input.competitors) {
     const match = input.matches.find((x) => x.competitor === c) ?? null;
     if (!match) { per[c] = { status: "skipped", normalized_usd: null, crawled_at: null }; continue; }
-    per[c] = { status: match.status, normalized_usd: match.normalized_usd, crawled_at: match.crawled_at };
+    // Each competitor gets its OWN verdict, by the same rule and its own doubt - so a reader can
+    // see whether we are dear against everyone or only against one aggressive site. The scope's
+    // light below still answers to the cheapest of them: that is the decision.
+    const ownDiff = match.normalized_usd == null ? null : Math.round(input.ourUsd - match.normalized_usd);
+    const ownUnc = Math.max(0, Math.round(match.uncertainty_usd ?? 0));
+    per[c] = {
+      status: match.status,
+      normalized_usd: match.normalized_usd,
+      crawled_at: match.crawled_at,
+      diff_usd: ownDiff,
+      uncertainty_usd: ownUnc,
+      ...(match.status === "found" && ownDiff != null ? { light: lightFor(ownDiff, ownUnc) } : {}),
+    };
     const fresh = !!match.crawled_at && daysBetween(match.crawled_at, input.now) <= staleDays;
     if ((match.status === "found" || match.status === "not_selling") && fresh) valid.push(match);
     else newestReason = !fresh && match.crawled_at ? "stale" : match.status === "unsure" ? "unsure" : (match.reason ?? "crawl_failed");
@@ -352,16 +438,8 @@ export function computeScopeLight(input: {
   // widens the band around it.
   const best = found.reduce((a, b) => ((b.normalized_usd as number) < (a.normalized_usd as number) ? b : a));
   const diff = Math.round(input.ourUsd - (best.normalized_usd as number));
-  // A duration we could not see is not a price difference. Widening both thresholds by the
-  // nights doubt is what stops a 3-night competitor package next to our 4-night one from
-  // reading as a confident red (63 of 77 matched package listings on 2026-09-13 published no
-  // nights at all). Inside the widened band the light is orange - "look at it", not "act".
   const uncertainty = Math.max(0, Math.round(best.uncertainty_usd ?? 0));
-  const light: Light = diff < LIGHT_GREEN_USD - uncertainty
-    ? "green"
-    : diff > LIGHT_RED_USD + uncertainty
-      ? "red"
-      : "orange";
+  const light: Light = lightFor(diff, uncertainty);
   return {
     light, diff_usd: diff, our_usd: input.ourUsd, competitor: best.competitor, raw: best.raw,
     raw_currency: best.raw_currency, normalized_usd: best.normalized_usd, adjustments: best.adjustments ?? [],

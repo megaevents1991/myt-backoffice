@@ -63,6 +63,10 @@
     {
       "path": "/api/cron/price-light-nightly",
       "schedule": "15 0 * * *"
+    },
+    {
+      "path": "/api/cron/price-light-retention",
+      "schedule": "0 3 * * 0"
     }
   ],
   "functions": {
@@ -139,6 +143,9 @@
     },
     "app/api/cron/price-light-nightly/route.ts": {
       "memory": 1024,
+      "maxDuration": 300
+    },
+    "app/api/cron/price-light-retention/route.ts": {
       "maxDuration": 300
     },
     "app/api/price-light/crawl/route.ts": {

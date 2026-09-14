@@ -58,10 +58,23 @@ export interface Adjustment {
   label: string;
 }
 
+/**
+ * What ONE competitor said about one (event, scope) - with its own verdict, not just the
+ * winner's.
+ *
+ * `diff_usd` / `light` / `uncertainty_usd` are per-competitor (Dor, 2026-09-14: "טבלה שיש לה
+ * סיכום פר אירוע מול כל המתחרים... וצבע הרמזור כנגד כל מתחרה"): the scope's own light answers
+ * "are we dear against the toughest offer on the shelf", which is the decision - but it hides
+ * whether we are dear against ALL of them or only against one aggressive site. Optional: rows
+ * written before 2026-09-14 carry only the first three fields.
+ */
 export interface PerCompetitor {
   status: MatchStatus;
   normalized_usd: number | null;
   crawled_at: string | null;
+  diff_usd?: number | null;
+  light?: Light;
+  uncertainty_usd?: number;
 }
 
 export type UncheckedReason =
@@ -190,6 +203,99 @@ export interface MatchRow {
   listing_changed_at: string | null;
   note: string | null;
   created_at: string;
+}
+
+// ---- what the /price-light screen renders -------------------------------------------------
+// These live here, not next to `listPriceLight`, because that file is "use server" and may only
+// export async functions - a type or a pure helper there breaks the build the moment anything
+// imports it.
+
+/**
+ * One competitor's answer for one (event, scope) - including the ones that did NOT set the light.
+ *
+ * The light is decided by the cheapest normalized offer, but "who else did we check, and what did
+ * they say" is the question a human asks next (Dor, 2026-09-14: "האם אפשר שנבדוק את כל המתחרים
+ * לאותו אירוע"). The data was always recorded in `light_detail[scope].per_competitor`; it just had
+ * nowhere to be seen.
+ */
+export interface CompetitorAnswer {
+  competitor: CompetitorKey;
+  status: MatchStatus;
+  normalized_usd: number | null;
+  crawled_at: string | null;
+  /** This competitor's OWN gap and verdict - "are we dear against THIS one", which is what a
+   *  per-competitor summary is for. Null/undefined on a competitor with no usable price, and on
+   *  rows written before 2026-09-14. */
+  diff_usd: number | null;
+  light: Light | null;
+  /** True for the one whose price the scope's light was actually computed against. */
+  decided: boolean;
+}
+
+/** One scope's verdict for an event - the package conclusion, or the ticket conclusion. */
+export interface PriceLightScopeCell {
+  scope: Scope;
+  light: Light;
+  diff_usd: number | null;
+  our_usd: number | null;
+  /**
+   * OUR price as it is RIGHT NOW, recomputed from the event's own columns at read time.
+   *
+   * `our_usd` is a snapshot from when matching last ran, and our own ticket prices move between
+   * runs (`ticket-price-sync`, every 2h), so the two drift apart during the day - 151 of 435
+   * events on 2026-09-13, by $5 to $163, against a ±$150 band. The light stays the recorded
+   * verdict; this is shown beside it so nobody reads a stale number as today's price.
+   */
+  our_usd_now: number | null;
+  competitor: CompetitorKey | null;
+  normalized_usd: number | null;
+  raw: number | null;
+  raw_currency: Currency | null;
+  listing_url: string | null;
+  adjustments: string[];
+  partial: boolean;
+  /** Nights on each side + the USD doubt that widened the light's band (price-light.ts). */
+  nights_ours: number | null;
+  nights_theirs: number | null;
+  uncertainty_usd: number;
+  reason: UncheckedReason | null;
+  crawled_at: string | null;
+  has_open_task: boolean;
+  changed_this_week: boolean;
+  method: MatchMethod | null;
+  /** Every active competitor for this scope, the deciding one first. */
+  competitors: CompetitorAnswer[];
+  /** What OUR side of this comparison is, component by component, per the pricing rule
+   *  (`ourOfferLines`). Package only - a ticket comparison has one component and it is the row. */
+  ours: { label: string; detail: string; usd: number | null }[];
+}
+
+/**
+ * ONE row per event, carrying BOTH conclusions (Dor, 2026-09-14: "צריך להיות באותה שורה גם
+ * המסקנה על כרטיס וגם המסקנה על חבילה").
+ *
+ * It used to be one row per (event, scope), which split the two halves of one decision across two
+ * lines of the table - "cheap on the ticket, dear on the package" was something you had to
+ * assemble by eye. A scope is null when it has nothing to say (`na`: no ticket-only price
+ * configured, or no package price at all).
+ */
+export interface PriceLightRow {
+  id: string;            // String(event_id) - the table's row id
+  event_id: number;
+  name: string;
+  date: string;
+  city: string | null;
+  kind: EventKind;
+  package: PriceLightScopeCell | null;
+  ticket: PriceLightScopeCell | null;
+  checked_at: string | null;
+  silenced_until: string | null;
+  override: LightOverride | null;
+}
+
+/** The scopes this row has something to say about, package first. */
+export function rowScopes(row: PriceLightRow): PriceLightScopeCell[] {
+  return [row.package, row.ticket].filter((c): c is PriceLightScopeCell => c != null);
 }
 
 export interface PriceSnapshotRow {

@@ -22,10 +22,17 @@ export async function GET(request: NextRequest) {
       Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000
     ).toISOString();
 
+    // `price_light.*` rows are exempt: those are the staff decisions the price-light agent reads
+    // back as evidence (lib/agents/memory.ts looks 120 days back), so dropping them at 30 days
+    // silently capped the agent's memory at a month. They expire on the price-light retention
+    // pass instead - /api/cron/price-light-retention, 180 days.
+    // `audit_log` predates the generated DB types - one boundary cast (repo pattern).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { count, error } = await (supabase as any)
       .from("audit_log")
       .delete({ count: "exact" })
-      .lt("created_at", cutoff);
+      .lt("created_at", cutoff)
+      .not("action", "like", "price_light.%");
 
     if (error) {
       console.error("purgeAuditLog delete failed:", JSON.stringify(error));

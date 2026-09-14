@@ -11,18 +11,21 @@ import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { DataTable, type DataTableView } from "@/components/data-table";
-import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   aiCostThisMonth,
   listCrawlRuns,
   listPriceLight,
   type CrawlPanelRow,
-  type PriceLightRow,
 } from "@/lib/actions/price-light-actions";
 import { signedUsd } from "@/lib/services/price-light";
 import { COMPETITOR_LABEL, HE_REASON, heLabel, PILL } from "@/app/(dashboard)/events/price-light-ui";
-import type { Light } from "@/types/price-light.types";
+import {
+  rowScopes,
+  type Light,
+  type PriceLightRow,
+  type PriceLightScopeCell,
+} from "@/types/price-light.types";
 import { CompetitorsPanel } from "./competitors-panel";
 import { DecisionActions } from "./decision-actions";
 
@@ -44,14 +47,23 @@ function relativeTime(iso: string | null): string {
   return `לפני ${days} ימים`;
 }
 
-/** "ממתינים להחלטה": red, not silenced right now, and no open task chasing it already.
- *  `silenced_until` is compared as a TIMESTAMP, not as a string: Postgres hands back
- *  `+00` offsets while `new Date().toISOString()` ends in `Z`, so a lexical `>` compares
- *  two differently-shaped strings and silently mis-reads the silence (same comparison the
- *  dashboard widget already does with Date.parse). */
-function isPending(row: PriceLightRow, now: number): boolean {
-  return row.light === "red" && !(row.silenced_until != null && Date.parse(row.silenced_until) > now) && !row.has_open_task;
+/** The silence is on the EVENT, so it mutes both scopes at once. Compared as a TIMESTAMP, not as
+ *  a string: Postgres hands back `+00` offsets while `new Date().toISOString()` ends in `Z`, so a
+ *  lexical `>` compares two differently-shaped strings and silently mis-reads the silence. */
+function isSilenced(row: PriceLightRow, now: number): boolean {
+  return row.silenced_until != null && Date.parse(row.silenced_until) > now;
 }
+
+/** "ממתינים להחלטה", per scope: red, not silenced right now, no open task chasing it already. */
+function scopePending(row: PriceLightRow, cell: PriceLightScopeCell, now: number): boolean {
+  return cell.light === "red" && !isSilenced(row, now) && !cell.has_open_task;
+}
+
+/** A row waits for a human when EITHER of its two conclusions does. */
+function isPending(row: PriceLightRow, now: number): boolean {
+  return rowScopes(row).some((cell) => scopePending(row, cell, now));
+}
+
 
 const TILE_LABEL: Record<string, string> = {
   alone: "לבד בשוק",
@@ -62,47 +74,116 @@ const TILE_LABEL: Record<string, string> = {
   pending: "ממתינים להחלטה",
 };
 
-/** Same duration line as the events-table tooltip (price-light-ui.tsx `nightsLine`), off the
- *  flattened row fields - our packages are often a night longer, and that is the first thing
- *  to check when a comparison looks wrong. Null when the scope has no duration (ticket) or the
- *  light predates the field. */
-function nightsLine(row: PriceLightRow): string | null {
-  if (row.scope !== "package" || row.competitor == null) return null;
+const SCOPE_HE: Record<PriceLightScopeCell["scope"], string> = { package: "חבילה", ticket: "כרטיס" };
+
+/** Same duration line as the events-table tooltip (price-light-ui.tsx `nightsLine`) - our packages
+ *  are often a night longer, and that is the first thing to check when a comparison looks wrong.
+ *  Null for a ticket (no duration) and for a light that predates the field. */
+function nightsLine(cell: PriceLightScopeCell): string | null {
+  if (cell.scope !== "package" || cell.competitor == null) return null;
   // A light computed before this field existed has neither duration and no doubt recorded.
   // Printing "לא ידוע / לא פורסם" for it would be an invented statement about a comparison
   // nobody measured that way - say nothing until the next pass rewrites the row.
-  if (row.nights_ours == null && row.nights_theirs == null && row.uncertainty_usd === 0) return null;
-  const ours = row.nights_ours == null ? "לא ידוע" : `${row.nights_ours}`;
-  if (row.nights_theirs != null) return `לילות: ${ours} שלנו מול ${row.nights_theirs} שלהם`;
-  const band = row.uncertainty_usd ? ` (±$${row.uncertainty_usd})` : "";
+  if (cell.nights_ours == null && cell.nights_theirs == null && cell.uncertainty_usd === 0) return null;
+  const ours = cell.nights_ours == null ? "לא ידוע" : `${cell.nights_ours}`;
+  if (cell.nights_theirs != null) return `לילות: ${ours} שלנו מול ${cell.nights_theirs} שלהם`;
+  const band = cell.uncertainty_usd ? ` (±$${cell.uncertainty_usd})` : "";
   return `לילות: ${ours} שלנו · אצלהם לא פורסם${band}`;
 }
 
-function LightBadge({ row }: { row: PriceLightRow }) {
+/** Why a competitor has no number, when it has none. */
+function noPriceText(status: PriceLightScopeCell["competitors"][number]["status"]): string {
+  switch (status) {
+    case "not_selling": return "לא מוכר";
+    case "unsure": return "לא ודאי";
+    case "na": return "לא רלוונטי";
+    case "found": return "ללא מחיר";
+    default: return "לא נבדק";
+  }
+}
+
+/**
+ * The per-event summary against EVERY competitor (Dor, 2026-09-14): one line per competitor, its
+ * own normalized price, its own gap and its own light colour - so "are we dear against everyone,
+ * or only against Golasso" is one glance rather than an inference. The competitor that set the
+ * scope's light is marked; the others are the context that makes it readable.
+ */
+function CompetitorMatrix({ cell }: { cell: PriceLightScopeCell }) {
+  return (
+    <table className="w-full text-xs">
+      <tbody>
+        {cell.competitors.map((a) => (
+          <tr key={a.competitor} className="align-baseline">
+            <td className="py-0.5 pe-2 whitespace-nowrap">
+              {a.decided && <span className="me-1 text-muted-foreground" title="קבע את האור">●</span>}
+              <span className={a.decided ? "font-medium" : "text-muted-foreground"}>
+                {COMPETITOR_LABEL[a.competitor] ?? a.competitor}
+              </span>
+            </td>
+            <td className="py-0.5 pe-2 tabular-nums whitespace-nowrap">
+              {a.normalized_usd != null
+                ? `$${a.normalized_usd}`
+                : <span className="text-muted-foreground">{noPriceText(a.status)}</span>}
+            </td>
+            <td className="py-0.5 tabular-nums whitespace-nowrap">
+              {a.light && a.diff_usd != null && (
+                <span className={cn("inline-flex rounded-full px-1.5 py-0.5 font-medium", PILL[a.light])}>
+                  {signedUsd(a.diff_usd)}
+                </span>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** Our own side of a package comparison, as the pricing rule defines it. */
+function OurBreakdown({ cell }: { cell: PriceLightScopeCell }) {
+  if (cell.ours.length === 0) return null;
+  return (
+    <table className="w-full text-xs">
+      <tbody>
+        {cell.ours.map((line) => (
+          <tr key={line.label} className="align-baseline">
+            <td className="py-0.5 pe-2 whitespace-nowrap text-muted-foreground">{line.label}</td>
+            <td className="py-0.5 pe-2">{line.detail}</td>
+            <td className="py-0.5 tabular-nums whitespace-nowrap">{line.usd != null ? `$${line.usd}` : "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function LightBadge({ cell }: { cell: PriceLightScopeCell }) {
   // Hebrew throughout and the competitor's display name, not its key: this tooltip is the
   // explanation a staff member reads before deciding to drop a price or pull an event.
   const tip = [
-    row.competitor
-      ? `${COMPETITOR_LABEL[row.competitor] ?? row.competitor}: ${row.raw ?? "?"} ${row.raw_currency ?? ""} → מנורמל $${row.normalized_usd ?? "?"}`
+    `${SCOPE_HE[cell.scope]}`,
+    cell.competitor
+      ? `${COMPETITOR_LABEL[cell.competitor] ?? cell.competitor}: ${cell.raw ?? "?"} ${cell.raw_currency ?? ""} → מנורמל $${cell.normalized_usd ?? "?"}`
       : null,
-    row.our_usd != null ? `שלנו: $${row.our_usd}` : null,
+    cell.our_usd != null ? `שלנו: $${cell.our_usd}` : null,
     // Our own ticket prices move between nightly runs, so the number the light was computed
     // against is not always today's. Say so rather than let a stale figure pass for current.
-    row.our_usd != null && row.our_usd_now != null && row.our_usd_now !== row.our_usd
-      ? `המחיר שלנו זז מאז הבדיקה: כעת $${row.our_usd_now}`
+    cell.our_usd != null && cell.our_usd_now != null && cell.our_usd_now !== cell.our_usd
+      ? `המחיר שלנו זז מאז הבדיקה: כעת $${cell.our_usd_now}`
       : null,
-    nightsLine(row),
-    ...row.adjustments,
-    row.partial ? "כיסוי חלקי בנרמול" : null,
-    row.crawled_at ? `נסרק ${row.crawled_at.slice(0, 10)}` : null,
-    row.reason ? HE_REASON[row.reason] : null,
+    nightsLine(cell),
+    ...cell.adjustments,
+    cell.partial ? "כיסוי חלקי בנרמול" : null,
+    cell.crawled_at ? `נסרק ${cell.crawled_at.slice(0, 10)}` : null,
+    cell.reason ? HE_REASON[cell.reason] : null,
   ].filter(Boolean).join("\n");
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium tabular-nums", PILL[row.light])}>
-            {heLabel(row.light, row.diff_usd)}
+          <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums", PILL[cell.light])}>
+            <span className="opacity-70">{SCOPE_HE[cell.scope]}</span>
+            {heLabel(cell.light, cell.diff_usd)}
           </span>
         </TooltipTrigger>
         <TooltipContent className="whitespace-pre-line text-xs">{tip || "לא נבדק עדיין"}</TooltipContent>
@@ -153,22 +234,24 @@ export function PriceLightClient() {
       alone: 0, green: 0, orange: 0, red: 0, unchecked: 0, pending: 0,
       orangePlus: 0, package: 0, ticket: 0, soon: 0, partial: 0, changed: 0, aiSample: 0,
     };
+    // Counted per EVENT, not per conclusion: a row with a red package and a red ticket is one
+    // event to deal with, and the tiles are a to-do list, not a tally of verdicts.
     for (const row of rows) {
-      if (row.light === "alone") c.alone++;
-      if (row.light === "green") c.green++;
-      if (row.light === "orange") { c.orange++; c.orangePlus++; }
-      if (row.light === "red") {
-        c.red++;
-        c.orangePlus++;
-        if (isPending(row, now)) c.pending++;
-      }
-      if (row.light === "unchecked") c.unchecked++;
-      if (row.scope === "package") c.package++;
-      if (row.scope === "ticket") c.ticket++;
+      const cells = rowScopes(row);
+      const has = (pred: (c: PriceLightScopeCell) => boolean) => cells.some(pred);
+      if (has((x) => x.light === "alone")) c.alone++;
+      if (has((x) => x.light === "green")) c.green++;
+      if (has((x) => x.light === "orange")) c.orange++;
+      if (has((x) => x.light === "red")) c.red++;
+      if (has((x) => x.light === "orange" || x.light === "red")) c.orangePlus++;
+      if (has((x) => x.light === "unchecked")) c.unchecked++;
+      if (isPending(row, now)) c.pending++;
+      if (row.package) c.package++;
+      if (row.ticket) c.ticket++;
       if (row.date <= soonCutoff) c.soon++;
-      if (row.partial) c.partial++;
-      if (row.changed_this_week) c.changed++;
-      if (row.method === "ai") c.aiSample++;
+      if (has((x) => x.partial)) c.partial++;
+      if (has((x) => x.changed_this_week)) c.changed++;
+      if (has((x) => x.method === "ai")) c.aiSample++;
     }
     return c;
   }, [rows]);
@@ -176,19 +259,22 @@ export function PriceLightClient() {
   const filtered = useMemo(() => {
     const now = Date.now();
     const soonCutoff = addDaysStr(new Date(now).toISOString().slice(0, 10), 45);
+    // Every view asks "does EITHER conclusion qualify" - the row is the event now, and an event
+    // with a red ticket belongs in the red view whatever its package says.
+    const some = (pred: (c: PriceLightScopeCell) => boolean) => (r: PriceLightRow) => rowScopes(r).some(pred);
     switch (view) {
       case "pending": return rows.filter((r) => isPending(r, now));
-      case "red": return rows.filter((r) => r.light === "red");
-      case "orange_plus": return rows.filter((r) => r.light === "orange" || r.light === "red");
-      case "package": return rows.filter((r) => r.scope === "package");
-      case "ticket": return rows.filter((r) => r.scope === "ticket");
+      case "red": return rows.filter(some((c) => c.light === "red"));
+      case "orange_plus": return rows.filter(some((c) => c.light === "orange" || c.light === "red"));
+      case "package": return rows.filter((r) => r.package != null);
+      case "ticket": return rows.filter((r) => r.ticket != null);
       case "soon": return rows.filter((r) => r.date <= soonCutoff);
-      case "partial": return rows.filter((r) => r.partial);
-      case "changed": return rows.filter((r) => r.changed_this_week);
-      case "unchecked": return rows.filter((r) => r.light === "unchecked");
-      case "ai_sample": return rows.filter((r) => r.method === "ai");
-      case "alone": return rows.filter((r) => r.light === "alone");
-      case "green": return rows.filter((r) => r.light === "green");
+      case "partial": return rows.filter(some((c) => c.partial));
+      case "changed": return rows.filter(some((c) => c.changed_this_week));
+      case "unchecked": return rows.filter(some((c) => c.light === "unchecked"));
+      case "ai_sample": return rows.filter(some((c) => c.method === "ai"));
+      case "alone": return rows.filter(some((c) => c.light === "alone"));
+      case "green": return rows.filter(some((c) => c.light === "green"));
       case "all": return rows;
       default: return rows;
     }
@@ -233,80 +319,117 @@ export function PriceLightClient() {
         ),
       },
       {
-        accessorKey: "scope",
-        header: "היקף",
+        id: "lights",
+        header: "רמזור",
         cell: ({ row }) => (
-          <Badge variant="outline" className="font-normal">
-            {row.original.scope === "package" ? "חבילה" : "כרטיס"}
-          </Badge>
+          <div className="flex flex-col items-start gap-1">
+            {rowScopes(row.original).map((cell) => (
+              <LightBadge key={cell.scope} cell={cell} />
+            ))}
+          </div>
         ),
       },
       {
-        accessorKey: "our_usd",
+        id: "ours",
         header: "המחיר שלנו",
         cell: ({ row }) => (
-          <span className="tabular-nums">{row.original.our_usd != null ? `$${row.original.our_usd}` : "—"}</span>
+          <div className="space-y-1 text-xs tabular-nums">
+            {rowScopes(row.original).map((cell) => {
+              // The live figure wins the line when it has moved since the light was computed -
+              // the recorded one stays visible, struck through, so the drift is legible.
+              const moved = cell.our_usd != null && cell.our_usd_now != null && cell.our_usd_now !== cell.our_usd;
+              return (
+                <div key={cell.scope} className="flex items-baseline gap-1">
+                  <span className="text-muted-foreground">{SCOPE_HE[cell.scope]}</span>
+                  <span className="font-medium">
+                    {cell.our_usd_now != null ? `$${cell.our_usd_now}` : cell.our_usd != null ? `$${cell.our_usd}` : "—"}
+                  </span>
+                  {moved && <span className="text-muted-foreground line-through">${cell.our_usd}</span>}
+                </div>
+              );
+            })}
+          </div>
         ),
       },
       {
-        accessorKey: "competitor",
-        header: "מתחרה",
+        id: "competitors",
+        header: "מתחרים",
         cell: ({ row }) => {
-          const r = row.original;
-          if (!r.competitor) return <span className="text-xs text-muted-foreground">—</span>;
-          const nights = nightsLine(r);
+          const cells = rowScopes(row.original).filter((c) => c.competitors.length > 0);
+          if (cells.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
           return (
-            <div className="space-y-1 text-xs">
-              <div className="flex items-center gap-1 font-medium">
-                {COMPETITOR_LABEL[r.competitor] ?? r.competitor}
-                {r.listing_url && (
-                  <a href={r.listing_url} target="_blank" rel="noreferrer" title="לצפייה במודעה">
-                    <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                  </a>
-                )}
-              </div>
-              {r.raw != null && (
-                <div className="text-muted-foreground">
-                  {r.raw} {r.raw_currency} → ${r.normalized_usd ?? "?"}
-                </div>
-              )}
-              {nights && <div className="text-muted-foreground">{nights}</div>}
-              {r.adjustments.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {r.adjustments.map((a) => (
-                    <span key={a} className="rounded bg-muted px-1 py-0.5 text-muted-foreground">
-                      {a}
-                    </span>
-                  ))}
-                </div>
-              )}
+            <div className="space-y-1.5 text-xs">
+              {cells.map((cell) => {
+                const nights = nightsLine(cell);
+                return (
+                  <div key={cell.scope} className="space-y-1">
+                    <div className="flex items-center gap-1 font-medium">
+                      <span className="text-muted-foreground">{SCOPE_HE[cell.scope]}</span>
+                      {cell.listing_url && (
+                        <a href={cell.listing_url} target="_blank" rel="noreferrer" title="לצפייה במודעה">
+                          <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                        </a>
+                      )}
+                    </div>
+                    <OurBreakdown cell={cell} />
+                    <CompetitorMatrix cell={cell} />
+                    {nights && <div className="text-muted-foreground">{nights}</div>}
+                    {cell.adjustments.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {cell.adjustments.map((a) => (
+                          <span key={a} className="rounded bg-muted px-1 py-0.5 text-muted-foreground">
+                            {a}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           );
         },
       },
       {
-        accessorKey: "diff_usd",
+        id: "diff",
         header: "פער",
-        sortingFn: (rowA, rowB) => (rowA.original.diff_usd ?? -Infinity) - (rowB.original.diff_usd ?? -Infinity),
+        // Sort by the WORST gap on the row (most over-priced first) - that is the one that will
+        // make someone act, whichever half of the package it came from.
+        accessorFn: (row) => Math.max(...rowScopes(row).map((c) => c.diff_usd ?? -Infinity), -Infinity),
         cell: ({ row }) => {
-          const d = row.original.diff_usd;
-          if (d == null) return <span className="text-muted-foreground">—</span>;
+          const cells = rowScopes(row.original).filter((c) => c.diff_usd != null);
+          if (cells.length === 0) return <span className="text-muted-foreground">—</span>;
           return (
-            <span className={cn("tabular-nums font-medium", d < 0 ? "text-success" : d > 0 ? "text-destructive" : "")}>
-              {signedUsd(d)}
-            </span>
+            <div className="space-y-1 text-xs tabular-nums">
+              {cells.map((cell) => (
+                <div key={cell.scope} className="flex items-baseline gap-1">
+                  <span className="text-muted-foreground">{SCOPE_HE[cell.scope]}</span>
+                  <span
+                    className={cn(
+                      "font-medium",
+                      (cell.diff_usd ?? 0) < 0 ? "text-success" : (cell.diff_usd ?? 0) > 0 ? "text-destructive" : "",
+                    )}
+                  >
+                    {signedUsd(cell.diff_usd ?? 0)}
+                  </span>
+                </div>
+              ))}
+            </div>
           );
         },
       },
       {
-        accessorKey: "light",
-        header: "רמזור",
-        cell: ({ row }) => <LightBadge row={row.original} />,
-      },
-      {
-        accessorKey: "crawled_at",
+        id: "crawled_at",
         header: "נסרק",
-        cell: ({ row }) => <span className="text-xs text-muted-foreground">{relativeTime(row.original.crawled_at)}</span>,
+        cell: ({ row }) => {
+          // The freshest crawl behind either conclusion - "when did we last see the market".
+          const newest = rowScopes(row.original)
+            .map((c) => c.crawled_at)
+            .filter((x): x is string => !!x)
+            .sort()
+            .at(-1) ?? null;
+          return <span className="text-xs text-muted-foreground">{relativeTime(newest)}</span>;
+        },
       },
       {
         id: "decision",

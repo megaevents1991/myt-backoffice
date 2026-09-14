@@ -15,7 +15,7 @@ import {
   type Lights,
 } from "@/lib/services/price-light-store";
 import { openPriceLightTask as insertPriceLightTask } from "@/lib/services/price-light-tasks";
-import { kindOf, ourPackageUsd, ourTicketUsd } from "@/lib/services/price-light";
+import { competitorsFor, kindOf, ourOfferLines, ourPackageUsd, ourTicketUsd } from "@/lib/services/price-light";
 import {
   ACTIVE_COMPETITORS,
   scraperFor,
@@ -25,11 +25,9 @@ import { circuitOpen, runCrawl, type CrawlSummary } from "@/lib/services/price-l
 import { softDeleteEvent } from "@/lib/actions/event-actions";
 import { RECHECK_AI_CALLS, SILENCE_DAYS } from "@/lib/actions/price-light-constants";
 import {
-  SCOPES,
+  type CompetitorAnswer,
   type CompetitorKey,
   type CrawlStatus,
-  type Currency,
-  type EventKind,
   type Light,
   type LightDecisionSnapshot,
   type LightDetail,
@@ -38,8 +36,9 @@ import {
   type ListingRow,
   type MatchMethod,
   type MatchRow,
+  type PriceLightRow,
+  type PriceLightScopeCell,
   type Scope,
-  type UncheckedReason,
 } from "@/types/price-light.types";
 
 // New tables predate the generated DB types - one boundary cast (repo pattern).
@@ -299,48 +298,9 @@ export async function removeEventFromSite(eventId: number): Promise<Ok> {
   }
 }
 
-/** Row shape for the /price-light table: one row per (event, scope) whose light is not `na`. */
-export interface PriceLightRow {
-  id: string; // "<eventId>:<scope>"
-  event_id: number;
-  name: string;
-  date: string;
-  city: string | null;
-  kind: EventKind;
-  scope: Scope;
-  light: Light;
-  diff_usd: number | null;
-  our_usd: number | null;
-  competitor: CompetitorKey | null;
-  normalized_usd: number | null;
-  raw: number | null;
-  raw_currency: Currency | null;
-  listing_url: string | null;
-  adjustments: string[];
-  partial: boolean;
-  /** Nights on each side + the USD doubt that widened the light's band (price-light.ts). */
-  nights_ours: number | null;
-  nights_theirs: number | null;
-  uncertainty_usd: number;
-  /**
-   * OUR price as it is right now, recomputed from the event's own columns at read time.
-   *
-   * `our_usd` above is a snapshot from when matching last ran, and our own ticket prices move
-   * between runs (`ticket-price-sync` every 2h), so the two drift apart during the day - 151 of
-   * 435 events on 2026-09-13, by $5 to $163, which is enough to matter against a ±$150 band.
-   * The light itself stays the recorded verdict; this is what the screen shows alongside it so
-   * nobody reads a stale number as today's price.
-   */
-  our_usd_now: number | null;
-  reason: UncheckedReason | null;
-  crawled_at: string | null;
-  checked_at: string | null;
-  silenced_until: string | null;
-  has_open_task: boolean;
-  changed_this_week: boolean;
-  method: MatchMethod | null;
-  override: LightOverride | null;
-}
+// The row shapes this screen renders live in types/price-light.types.ts (`PriceLightRow`,
+// `PriceLightScopeCell`, `CompetitorAnswer`): a "use server" file may only export async
+// functions, so the types - and the pure helpers over them - cannot live here.
 
 /** Row for the crawl-status panel: one per registered competitor scraper. */
 export interface CrawlPanelRow {
@@ -463,7 +423,72 @@ async function loadNewestMatches(eventIds: number[]): Promise<Map<string, Newest
   return map;
 }
 
-/** Every (event, scope) row for the /price-light table - three round trips total, never one per event. */
+/** One scope's cell, or null when that scope has nothing to say for this event (`na`). */
+function buildScopeCell(
+  event: ListedEvent,
+  scope: Scope,
+  newest: NewestMatch | null,
+  hasOpenTask: boolean,
+  now: number,
+): PriceLightScopeCell | null {
+  const light: Light = (scope === "package" ? event.light_package : event.light_ticket) ?? "unchecked";
+  if (light === "na") return null;
+  const detail: LightScopeDetail | undefined = event.light_detail?.[scope];
+  const decided = detail?.competitor ?? null;
+  // Every active competitor for this scope, not only the one that set the light - the deciding
+  // one first, then the rest in registry order, so the eye lands on the number that mattered.
+  const perCompetitor = detail?.per_competitor ?? {};
+  const competitors: CompetitorAnswer[] = competitorsFor(kindOf(event), scope, ACTIVE_COMPETITORS)
+    .map((competitor) => {
+      const answer = perCompetitor[competitor];
+      return {
+        competitor,
+        status: answer?.status ?? "skipped",
+        normalized_usd: answer?.normalized_usd ?? null,
+        crawled_at: answer?.crawled_at ?? null,
+        diff_usd: answer?.diff_usd ?? null,
+        light: answer?.light ?? null,
+        decided: competitor === decided,
+      };
+    })
+    .sort((a, b) => Number(b.decided) - Number(a.decided));
+
+  return {
+    scope,
+    light,
+    diff_usd: detail?.diff_usd ?? null,
+    our_usd: detail?.our_usd ?? null,
+    // Pure arithmetic over columns already loaded - no extra query, no write on a read path.
+    our_usd_now: scope === "package" ? ourPackageUsd(event) : ourTicketUsd(event),
+    competitor: decided,
+    normalized_usd: detail?.normalized_usd ?? null,
+    raw: detail?.raw ?? null,
+    raw_currency: detail?.raw_currency ?? null,
+    listing_url: newest?.url ?? null,
+    adjustments: detail?.adjustments.map((a) => a.label) ?? [],
+    partial: detail?.partial ?? false,
+    // `nights.theirs` is "unknown" when no competitor page ever said - null on the wire, so the
+    // client renders "?" instead of inventing a number. Rows written before 2026-09-13 carry
+    // neither field at all, hence the ?? fallbacks.
+    nights_ours: detail?.nights?.ours ?? null,
+    nights_theirs: typeof detail?.nights?.theirs === "number" ? detail.nights.theirs : null,
+    uncertainty_usd: detail?.uncertainty_usd ?? 0,
+    reason: detail?.reason ?? null,
+    crawled_at: detail?.crawled_at ?? null,
+    has_open_task: hasOpenTask,
+    changed_this_week: !!newest && now - Date.parse(newest.created_at) < 7 * 86_400_000,
+    method: newest?.method ?? null,
+    competitors,
+    // Our own side, per the pricing rule. Package only: a ticket comparison IS the ticket, and
+    // repeating its category under itself would be noise.
+    ours: scope === "package"
+      ? ourOfferLines(event).map((l) => ({ label: l.label, detail: l.detail, usd: l.usd }))
+      : [],
+  };
+}
+
+/** One row per EVENT for the /price-light table, carrying both conclusions - three round trips
+ *  total, never one per event. */
 export async function listPriceLight(): Promise<PriceLightRow[]> {
   await requireStaff();
   const events = await loadListedEvents();
@@ -478,50 +503,31 @@ export async function listPriceLight(): Promise<PriceLightRow[]> {
   const now = Date.now();
   const rows: PriceLightRow[] = [];
   for (const event of events) {
-    const kind = kindOf(event);
-    for (const scope of SCOPES) {
-      const light: Light = (scope === "package" ? event.light_package : event.light_ticket) ?? "unchecked";
-      if (light === "na") continue;
-      const detail: LightScopeDetail | undefined = event.light_detail?.[scope];
-      const key = `${event.id}:${scope}`;
-      const newest = newestMatches.get(key) ?? null;
-      const override = event.light_detail?.override && event.light_detail.override.scope === scope ? event.light_detail.override : null;
-      rows.push({
-        id: key,
-        event_id: event.id,
-        name: event.name,
-        date: event.date,
-        city: event.location?.name ?? null,
-        kind,
-        scope,
-        light,
-        diff_usd: detail?.diff_usd ?? null,
-        our_usd: detail?.our_usd ?? null,
-        competitor: detail?.competitor ?? null,
-        normalized_usd: detail?.normalized_usd ?? null,
-        raw: detail?.raw ?? null,
-        raw_currency: detail?.raw_currency ?? null,
-        listing_url: newest?.url ?? null,
-        adjustments: detail?.adjustments.map((a) => a.label) ?? [],
-        partial: detail?.partial ?? false,
-        // `nights.theirs` is "unknown" when no competitor page ever said - null on the wire, so
-        // the client renders "?" instead of inventing a number. Rows written before 2026-09-13
-        // carry neither field at all, hence the ?? fallbacks.
-        nights_ours: detail?.nights?.ours ?? null,
-        nights_theirs: typeof detail?.nights?.theirs === "number" ? detail.nights.theirs : null,
-        uncertainty_usd: detail?.uncertainty_usd ?? 0,
-        // Pure arithmetic over columns already loaded - no extra query, no write on a read path.
-        our_usd_now: scope === "package" ? ourPackageUsd(event) : ourTicketUsd(event),
-        reason: detail?.reason ?? null,
-        crawled_at: detail?.crawled_at ?? null,
-        checked_at: event.light_checked_at,
-        silenced_until: event.light_silenced_until,
-        has_open_task: openTaskKeys.has(key),
-        changed_this_week: !!newest && now - Date.parse(newest.created_at) < 7 * 86_400_000,
-        method: newest?.method ?? null,
-        override,
-      });
-    }
+    const cellFor = (scope: Scope) => buildScopeCell(
+      event,
+      scope,
+      newestMatches.get(`${event.id}:${scope}`) ?? null,
+      openTaskKeys.has(`${event.id}:${scope}`),
+      now,
+    );
+    const pkg = cellFor("package");
+    const tkt = cellFor("ticket");
+    // An event with nothing to say on either scope is not a row - it would be an empty line the
+    // reader has to check and discard.
+    if (!pkg && !tkt) continue;
+    rows.push({
+      id: String(event.id),
+      event_id: event.id,
+      name: event.name,
+      date: event.date,
+      city: event.location?.name ?? null,
+      kind: kindOf(event),
+      package: pkg,
+      ticket: tkt,
+      checked_at: event.light_checked_at,
+      silenced_until: event.light_silenced_until,
+      override: event.light_detail?.override ?? null,
+    });
   }
   return rows;
 }

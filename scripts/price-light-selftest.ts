@@ -7,6 +7,7 @@ import {
   BAG_USD, CONNECTION_USD, STAR_STEP_USD, NIGHT_USD, BREAKFAST_USD, TRANSFER_USD,
   NIGHTS_FALLBACK, NIGHT_RATE_MIN_USD, NIGHT_RATE_MAX_USD,
   ourPackageUsd, ourTicketUsd, ourNights, ourNightRateUsd, listingNights, nightsUncertaintyUsd,
+  cheapestAvailableTicket, ourOfferLines,
   kindOf, competitorsFor, normalize,
   computeScopeLight, decidePriceDrop, pickRuleMatch, candidateCoversDate, signedUsd,
   type PricedEvent, type LatestMatch,
@@ -146,6 +147,65 @@ const stale = computeScopeLight({ ourUsd: ours, matches: [m({ normalized_usd: 16
 assert.equal(stale.light, "unchecked"); assert.equal(stale.reason, "stale");
 const unsure = computeScopeLight({ ourUsd: ours, matches: [m({ status: "unsure", normalized_usd: null })], competitors: [...sports], now: NOW });
 assert.equal(unsure.light, "unchecked"); assert.equal(unsure.reason, "unsure");
+
+// every competitor carries its OWN verdict, by the same rule as the scope's
+const matrix = computeScopeLight({
+  ourUsd: ours,
+  matches: [
+    m({ competitor: "liveevents", normalized_usd: 1100 }),                       // +275 -> red
+    m({ competitor: "issta", normalized_usd: 1300 }),                            // +75  -> orange
+    m({ competitor: "golasso", normalized_usd: 1600 }),                          // -225 -> green
+  ],
+  competitors: [...sports], now: NOW,
+});
+assert.equal(matrix.light, "red");                       // the scope answers to the CHEAPEST
+assert.equal(matrix.competitor, "liveevents");
+assert.equal(matrix.per_competitor.liveevents?.light, "red");
+assert.equal(matrix.per_competitor.liveevents?.diff_usd, 275);
+assert.equal(matrix.per_competitor.issta?.light, "orange");
+assert.equal(matrix.per_competitor.golasso?.light, "green");
+assert.equal(matrix.per_competitor.golasso?.diff_usd, -225);
+// a competitor's own doubt widens its own band, not the others'
+const mixedDoubt = computeScopeLight({
+  ourUsd: ours,
+  matches: [m({ competitor: "liveevents", normalized_usd: 1100, uncertainty_usd: 200 }), m({ competitor: "issta", normalized_usd: 1100 })],
+  competitors: [...sports], now: NOW,
+});
+assert.equal(mixedDoubt.per_competitor.liveevents?.light, "orange");  // same gap, doubted
+assert.equal(mixedDoubt.per_competitor.issta?.light, "red");          // same gap, measured
+// a competitor with no usable price gets no light at all - never a green by omission
+const noPrice = computeScopeLight({
+  ourUsd: ours,
+  matches: [m({ normalized_usd: 1100 }), m({ competitor: "issta", status: "not_selling", normalized_usd: null })],
+  competitors: [...sports], now: NOW,
+});
+assert.equal(noPrice.per_competitor.issta?.light, undefined);
+assert.equal(noPrice.per_competitor.issta?.diff_usd, null);
+
+// our own side, described from the pricing rule
+const lines = ourOfferLines({
+  ...base,
+  tickets_and_rates: [
+    { price: 300, available: true, category: "CAT3", description: "מאחורי השער טבעת עליונה" },
+    { price: 200, available: false, category: "CAT1", description: "לא זמין" },
+  ],
+});
+assert.deepEqual(lines.map((l) => l.key), ["flight", "hotel", "ticket"]);
+assert.ok(lines[0].detail.includes("ישירה"));
+assert.equal(lines[0].usd, 500);
+assert.ok(lines[1].detail.includes("3★"));
+assert.ok(lines[1].detail.includes("3 לילות"));
+assert.equal(lines[1].usd, 400);
+// the ticket is NAMED - the one field we really do store - and it is the cheapest AVAILABLE one
+assert.ok(lines[2].detail.includes("CAT3"));
+assert.ok(lines[2].detail.includes("מאחורי השער"));
+assert.equal(lines[2].usd, 300);
+assert.equal(cheapestAvailableTicket(base)?.price, 300);
+// no travel window -> the nights claim is dropped, not guessed
+assert.ok(ourOfferLines({ ...base, def_date_depart: null })[1].detail.includes("לא ידוע"));
+// missing components say so instead of showing $0
+assert.ok(ourOfferLines({ ...base, base_flight_price: 0 })[0].detail.includes("אין מחיר"));
+assert.ok(ourOfferLines({ ...base, tickets_and_rates: [] })[2].detail.includes("אין כרטיס"));
 
 // price drop
 assert.deepEqual(decidePriceDrop({ today: "2026-09-10", todayUsd: 1300, refUsd: 1400, current: null }), { usd: 100, from: 1400, until: "2026-09-24" });
