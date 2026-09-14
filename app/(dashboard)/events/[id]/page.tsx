@@ -89,6 +89,12 @@ import {
   setEventTags,
 } from "@/lib/actions/event-taxonomy-actions";
 import { flattenWithPath } from "@/lib/taxonomy-tree";
+import {
+  isSectionExcluded,
+  isUnlabeledSectionId,
+  numberUnlabeledSections,
+  unlabeledSectionGroupId,
+} from "@/lib/tixstock-map";
 
 const TX_TICKET_COLOR = "rgb(5, 32, 60)";
 
@@ -497,6 +503,9 @@ export default function EventPage({
 
         const parser = new DOMParser();
         const doc = parser.parseFromString(text, "image/svg+xml");
+        // Before the dedupe below, and on the raw file - the same numbering the
+        // portal + main maps apply, so a saved exclusion lands on the same wedge.
+        numberUnlabeledSections(doc);
         const sections = Array.from(doc.querySelectorAll("[data-section]"));
         const geometryMap = new Map<string, Element>();
 
@@ -631,7 +640,7 @@ export default function EventPage({
         }
 
         // Apply excluded styling
-        if (sectionId && excludedSections.includes(sectionId)) {
+        if (sectionId && isSectionExcluded(sectionId, excludedSections)) {
           el.classList.add("svg-excluded");
         } else {
           el.classList.remove("svg-excluded");
@@ -2489,10 +2498,11 @@ export default function EventPage({
                     </Button>
                     {excludeSectionsMode && (
                       <span className="text-xs text-muted-foreground">
-                        Click sections on the map to exclude/include them. Note: some venues repeat
-                        the same section letter on several sides of the map - TixStock tickets only
-                        carry ring+letter, so excluding one wedge excludes ALL wedges with that
-                        letter (the mirrored highlight is the real ticket filter).
+                        Click sections on the map to exclude/include them. Wedges without a letter
+                        toggle one at a time (they carry no tickets - greying one is visual only).
+                        Some venues repeat the same letter on several sides of the map - TixStock
+                        tickets only carry ring+letter, so excluding one lettered wedge excludes ALL
+                        wedges with that letter (the mirrored highlight is the real ticket filter).
                       </span>
                     )}
                   </div>
@@ -2620,12 +2630,35 @@ export default function EventPage({
                             // Exclude sections mode: toggle section in/out of excluded list
                             if (excludeSectionsMode) {
                               if (!clickedSection) return;
+                              const clicked = clickedSection;
+                              // Wedges of the clicked one's unlabeled group, for events
+                              // saved with the old shared id (`upper-tier_`).
+                              const groupId = isUnlabeledSectionId(clicked)
+                                ? unlabeledSectionGroupId(clicked)
+                                : null;
+                              const groupSiblings = groupId
+                                ? Array.from(
+                                    new Set(
+                                      Array.from(mapContainerRef.current?.querySelectorAll("[data-section]") ?? [])
+                                        .map((el) => el.getAttribute("data-section") ?? "")
+                                        .filter((id) => isUnlabeledSectionId(id) && unlabeledSectionGroupId(id) === groupId),
+                                    ),
+                                  )
+                                : [];
                               setEvent((prev) => {
                                 if (!prev) return prev;
-                                const current = prev.tx_excluded_sections ?? [];
-                                const next = current.includes(clickedSection!)
-                                  ? current.filter((s) => s !== clickedSection)
-                                  : [...current, clickedSection!];
+                                let current = prev.tx_excluded_sections ?? [];
+                                // Legacy shared id: expand it into one id per wedge first,
+                                // so the click below toggles only this wedge.
+                                if (groupId && current.includes(groupId)) {
+                                  current = [
+                                    ...current.filter((s) => s !== groupId),
+                                    ...groupSiblings.filter((id) => !current.includes(id)),
+                                  ];
+                                }
+                                const next = current.includes(clicked)
+                                  ? current.filter((s) => s !== clicked)
+                                  : [...current, clicked];
                                 return { ...prev, tx_excluded_sections: next };
                               });
                               return;

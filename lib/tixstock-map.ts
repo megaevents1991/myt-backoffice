@@ -193,6 +193,90 @@ export const getCategoryIdFromSectionEl = (
 };
 
 /* ------------------------------------------------------------------ */
+/*  Unlabeled sections                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Some TixStock maps leave wedges without a letter, so dozens of them share
+ * one id like `lower-tier_` (AccorHotels Arena Paris: 16 per tier). Clicking
+ * one in exclude mode used to toggle all of them. `numberUnlabeledSections`
+ * gives each wedge its own id - `lower-tier_~1`, `lower-tier_~2`, ... - in
+ * document order of the raw file, so every surface that loads the same SVG
+ * (backoffice editor, portal wizard, main order page) numbers identically.
+ *
+ * `~` never appears in a TixStock section name, so these ids can't match a
+ * ticket (unlabeled wedges have no tickets - excluding one is visual only).
+ */
+export const UNLABELED_SECTION_MARK = "~";
+
+/** True for an id produced by `numberUnlabeledSections`. */
+export const isUnlabeledSectionId = (sectionId: string): boolean =>
+  sectionId.includes(`_${UNLABELED_SECTION_MARK}`);
+
+/** `lower-tier_~3` → `lower-tier_`, the shared id the raw SVG carries. */
+export const unlabeledSectionGroupId = (sectionId: string): string =>
+  sectionId.slice(0, sectionId.lastIndexOf(`_${UNLABELED_SECTION_MARK}`) + 1);
+
+/** Tag + geometry of a section's shape - identical copies share it. */
+const sectionShapeSignature = (el: Element): string => {
+  const shape =
+    el.querySelector(".block") || el.querySelector(SVG_SHAPE_SEL) || el;
+  return [
+    shape.tagName,
+    shape.getAttribute("d") || "",
+    shape.getAttribute("points") || "",
+    shape.getAttribute("x") || "",
+    shape.getAttribute("y") || "",
+    shape.getAttribute("width") || "",
+    shape.getAttribute("height") || "",
+    shape.getAttribute("transform") || "",
+  ].join("|");
+};
+
+/**
+ * Rename every `[data-section]` whose id ends in `_` (no letter) to a unique
+ * numbered id. Exact geometric duplicates of one wedge keep one shared id so
+ * duplicate cleanup still collapses them. Idempotent - numbered ids no longer
+ * end in `_`.
+ */
+export const numberUnlabeledSections = (root: ParentNode): void => {
+  const counters = new Map<string, number>();
+  const bySignature = new Map<string, string>();
+
+  for (const el of Array.from(root.querySelectorAll("[data-section]"))) {
+    const id = el.getAttribute("data-section") || "";
+    if (!id.endsWith("_")) continue;
+
+    const signature = `${id}|${sectionShapeSignature(el)}`;
+    let numbered = bySignature.get(signature);
+    if (!numbered) {
+      const n = (counters.get(id) ?? 0) + 1;
+      counters.set(id, n);
+      numbered = `${id}${UNLABELED_SECTION_MARK}${n}`;
+      bySignature.set(signature, numbered);
+    }
+    el.setAttribute("data-section", numbered);
+  }
+};
+
+/**
+ * Whether a map section is excluded. Events saved before the numbering hold
+ * the shared id (`upper-tier_`) - that still excludes every numbered wedge of
+ * the group, until someone toggles one of them in the editor.
+ */
+export const isSectionExcluded = (
+  sectionId: string,
+  excludedSections?: string[] | null,
+): boolean => {
+  if (!sectionId || !excludedSections?.length) return false;
+  if (excludedSections.includes(sectionId)) return true;
+  return (
+    isUnlabeledSectionId(sectionId) &&
+    excludedSections.includes(unlabeledSectionGroupId(sectionId))
+  );
+};
+
+/* ------------------------------------------------------------------ */
 /*  SVG sanitisation & preparation                                     */
 /* ------------------------------------------------------------------ */
 
@@ -226,6 +310,9 @@ export const sanitizeAndPrepareSvg = (rawSvg: string): string | null => {
   svg.querySelectorAll("[data-tier]").forEach((el) => {
     if (!el.querySelector("[data-section]")) el.remove();
   });
+
+  // One id per unlabeled wedge, so exclude/hover/click act on it alone
+  numberUnlabeledSections(svg);
 
   // Make the SVG responsive
   svg.setAttribute("width", "100%");
@@ -293,7 +380,7 @@ export const prePaintSvg = (
       const secId = el.getAttribute("data-section") || "";
       const catId = getCategoryIdFromSectionEl(el);
 
-      if (excludedSections?.includes(secId)) {
+      if (isSectionExcluded(secId, excludedSections)) {
         paintSection(el, "disabled");
         continue;
       }
@@ -348,16 +435,7 @@ export const cleanupDuplicateSections = (container: HTMLElement): void => {
     // the `[data-section]` wrapper group itself. Read it from the shape so
     // sections that share an id (e.g. many `platea_` blocks) are not all
     // collapsed to one signature and wrongly removed.
-    const shape =
-      el.querySelector(".block") || el.querySelector(SVG_SHAPE_SEL) || el;
-    const d = shape.getAttribute("d") || "";
-    const points = shape.getAttribute("points") || "";
-    const x = shape.getAttribute("x") || "";
-    const y = shape.getAttribute("y") || "";
-    const w = shape.getAttribute("width") || "";
-    const h = shape.getAttribute("height") || "";
-    const transform = shape.getAttribute("transform") || "";
-    const sig = `${sectionId}|${shape.tagName}|${d}|${points}|${x}|${y}|${w}|${h}|${transform}`;
+    const sig = `${sectionId}|${sectionShapeSignature(el)}`;
 
     if (seen.has(sig)) {
       el.remove();
