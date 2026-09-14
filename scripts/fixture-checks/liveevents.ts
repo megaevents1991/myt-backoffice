@@ -9,6 +9,8 @@
  */
 import assert from "node:assert/strict";
 import { parseCatalog, parseDetail, parseHeDate } from "../../lib/services/competitor-scrapers/liveevents.ts";
+import { DETAIL_TEXT_MAX } from "../../lib/services/competitor-scrapers/shared.ts";
+import { formatOfferLines, parseOfferDetail } from "../../lib/services/offer-detail.ts";
 import type { FixtureSpec } from "./types.ts";
 
 const FIXTURE_URLS = {
@@ -87,7 +89,14 @@ function check(read: (file: string) => string): void {
   assert.equal(detail.travel_depart, "2026-11-19", `travel_depart ${detail.travel_depart}`);
   assert.equal(detail.travel_return, "2026-11-22", `travel_return ${detail.travel_return}`);
   assert.ok((detail.detail_text ?? "").length > 200, "detail_text");
-  assert.ok((detail.detail_text ?? "").length <= 2000, "detail_text <= 2000 chars");
+  assert.ok((detail.detail_text ?? "").length <= DETAIL_TEXT_MAX, `detail_text <= ${DETAIL_TEXT_MAX} chars`);
+  // The comparison's contents lines (lib/services/offer-detail.ts) read back out of the stored text.
+  const offer = formatOfferLines(parseOfferDetail("liveevents", detail.detail_text, detail.attrs));
+  console.log("offer lines:", offer);
+  assert.ok(offer.flight?.includes("הלוך"), `flight times ${offer.flight}`);
+  assert.ok(offer.hotel?.includes("4★"), `hotel ${offer.hotel}`);
+  assert.ok(offer.hotel?.includes("ארוחת בוקר"), `board ${offer.hotel}`);
+  assert.ok(offer.ticket, `ticket ${offer.ticket}`);
 
   // `/show/<slug>/` is a tier-list page (no per-person price marker) - parseDetail must
   // short-circuit to `{}` rather than half-fill attrs from unrelated page text.

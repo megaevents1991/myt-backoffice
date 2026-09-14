@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { ARTISTS_URL, attrsFromText, parseArtists, parsePerformer } from "../../lib/services/competitor-scrapers/ontour.ts";
+import { formatOfferLines, parseOfferDetail } from "../../lib/services/offer-detail.ts";
 import type { FixtureSpec } from "./types.ts";
 
 // A performer that sold packages at recon time (2026-09-10: Shakira, Celine Dion, André Rieu).
@@ -41,6 +42,12 @@ const spec: FixtureSpec = {
       { bag_included: false, direct_flight: true, hotel_stars: 4, nights: "unknown", breakfast: true, transfers: "unknown" });
     assert.equal(attrsFromText("לינה בלבד").breakfast, false);
     assert.equal(attrsFromText("כולל מזוודה 23 ק\"ג").bag_included, true);
+    // Contents lines (lib/services/offer-detail.ts) for every package on the page.
+    for (const l of listings) {
+      const offer = formatOfferLines(parseOfferDetail("ontour", l.detail_text, l.attrs));
+      console.log("offer lines:", l.external_key, offer);
+      assert.ok(offer.flight, `flight ${l.external_key}`);
+    }
     console.log(`ontour: ${performers.length} performers, ${listings.length} listings (${priced.length} priced)`);
     console.log("sample:", listings[0]);
   },

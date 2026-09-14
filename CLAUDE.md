@@ -221,6 +221,7 @@ fallback for manual triggers:
 - `base-price-sync` - nightly 01:30 UTC: re-quotes live future events through `price-quote.ts`; deviation ≥$20 per component rewrites the base, >$400 freezes as `needs_review` (`/price-changes`); skips offline-linked components (`flights.event_ids` / `offline_hotels.event_ids`), base=0, events <2 days out. **Rotation** (2026-09-07): the 270s budget covers ~50 events, so each night takes the least-recently-visited first (newest log row per event = last visit), next-45-days ahead of the rest. **Every visit is logged** - `applied` / `needs_review` / `skipped` / `error` with the arithmetic in `note` - so the screen answers "why didn't it move". **`?dry_run=1` computes everything with zero writes** (no event update, no log row, rotation not advanced) - the way to test against prod from a preview. Daily summary email to `NEXT_SECRET_ADMIN_EMAIL` when anything happened.
 - `price-light-crawl` - hourly tick (`7 * * * *`): crawls at most ONE competitor whose site is due (72h interval, `intervalHours` per scraper in `lib/services/competitor-scrapers/`), writing `competitor_listings`. Locking is a `competitor_crawl_runs` row in status `running` younger than 6 min - not an advisory lock. `?competitor=liveevents` forces a site (validated against `ACTIVE_COMPETITORS`), `?dry_run=1` writes nothing. Stealth is code, not a promise: one session at a time, 20-60s random pauses, blocked images/media/fonts/stylesheets, rotating Israeli UA, 45s page / 240s crawl timeout. Three consecutive `blocked`/`error` runs open a circuit for 24h (manual crawls bypass it); a listing-count drop ≥50% vs the last good run marks the run `partial` and emails `NEXT_SECRET_ADMIN_EMAIL`. `PRICE_LIGHT_SCRAPE=off` stops crawling (matching/lights still run off the stored catalog). Admin "crawl now" is `POST /api/price-light/crawl` (`guardAdminRoute`).
 - `price-light-retention` - weekly, Sundays 03:00 UTC: keeps `RETENTION_DAYS` (**180**) and hard-deletes the rest of `event_price_snapshots` (by `day`), `competitor_matches` (by the EVENT they describe being 180 days past - never by their own age, or a quiet row that is still an event's newest verdict would be erased and its light would vanish at the next recompute), `competitor_listings` (`last_seen_at` - not seen in six months = off their site), `competitor_crawl_runs` (`started_at`) and `audit_log` rows whose action starts `price_light.`. Backoffice-only log tables, so a hard delete is the policy here (same precedent as `purgeAuditLog`); it never touches `events`. `?dry_run=1` counts exactly what a real run would remove and writes nothing. **`purgeAuditLog` now EXEMPTS `price_light.*`** - those rows are the decisions the agent learns from, and dropping them at 30 days silently capped its 120-day memory at a month. Why these sizes are safe: the price-drop lookback reads 14 days, a light goes stale at 14, and the circuit reads the last handful of runs - every read path lives far inside 180.
+- `price-light-ours` - nightly 02:40 UTC (after `base-price-sync` finishes its own Amadeus searches): describes OUR package contents for the /price-light comparison - the flight and hotel the pricing rule would buy today (cheapest direct / connection past the $300 gap via `fetchFlightOffers` + `pickFlightPrice`; cheapest 3★ via main's `/api/hotels`; a linked offline flight/hotel wins) - into `events.light_detail.ours`. Never-described first, then older than `OUR_OFFER_REFRESH_DAYS` (7) or last lost to a TRANSIENT error (HTTP/API/timeout - retried next night, not left blank a week), `OUR_OFFER_CONCURRENCY` 3 events at a time in a 260s budget (~5-8s per event). **Hotel searches run through ONE queue** whatever the event concurrency, with one retry on 429/5xx: main's `/api/hotels` fails under parallel load (first full pass lost 308 of 426 hotels; each answered alone). Flights: 423 of 426 described. Reads the rule, writes no price. `?dry_run=1` still SEARCHES (that is what is being tested) but writes nothing; `?limit=N` caps a manual run. Dor 2026-09-14: the extra Amadeus/hotel calls are fine nightly and on demand.
 - `price-light-nightly` - 00:15 UTC, before `base-price-sync`: refreshes the `livetickets` competitor table from `live_events` first (it's an API read, never crawled, budgeted at 60s so it can't eat the whole run); then pass 1 snapshots every live future event and applies the "ירידת מחיר" tag (drop ≥$50 vs ~14 days ago, shown 14 days); pass 2 rule-matches every event against the stored catalogs and recomputes `events.light_package` / `light_ticket` / `light_detail`. Both passes go least-recently-checked first and share one 270s budget measured from the top of the run, so a cutoff mid-pass-1 is recorded (`snapshotsRemaining`) rather than silently skipped. Revalidates main (both targets) once if anything changed; summary email (which also reports `aiCalls` used out of `AI_CALLS_PER_RUN`). `?dry_run=1` = zero writes **and zero AI** - dry runs pass `judge: null`, so a report pointed at prod never spends money. Spec `docs/superpowers/specs/2026-09-09-price-light-design.md`; rules + constants ONLY in `lib/services/price-light.ts`.
 
 ### Environment Variables
@@ -357,6 +358,36 @@ all 839 live scope cells carry it. Scope-specific decisions name their scope: wi
 there are two **הוזל** buttons and two **משימה** items (`הוזל · חבילה`), and **דריסה** gains a scope
 picker; **השאר בפיד**, **הסר מהאתר** and **בדוק עכשיו** stay event-level. The events-table light
 column sorts by the worse of the two lights, not by the package one alone.
+
+**Partner pass (2026-09-14): every competitor, contents side by side, a package/ticket lens.**
+(a) **Matching coverage.** 357 of 426 live events had NO priced package competitor, and 840 package
+answers were `unsure` - almost none of them genuinely ambiguous. The rule (`price-light.ts`) now:
+keeps a geresh inside a word ("מנצ'סטר" was two tokens), ignores competition names/years/club forms
+(`STOP`), treats tokens as equal across a Hebrew prefix letter or one typo on 5+ letters
+("הילרי"/"הילארי", "ויאריאל"/"וויאריאל"), scores BOTH ways (a short complete title "מילאן | לצ'ה"
+counts, but only with ≥2 tokens), never picks a multi-fixture bundle (title "+", or detail text
+"חבילה מרובת משחקים" - `isMultiMatchText`), and breaks a tie between copies of the same fixture by
+the cheaper one. **`ruleSaysAbsent`**: when every candidate in the date window scores below
+`RULE_ABSENT_BELOW` (0.4) it is plainly another event -> `not_selling` (still gated by `covers()` +
+a good crawl) and no AI call is spent on it; a strong name one day off stays `unsure`. Measured:
+0 found lost, +52 found, 520 `unsure` -> `not_selling`, 39 `unsure` left; 40 borderline absences
+checked by hand, all correct. **`quote_only`** (LiveEvents sports "לקבלת הצעת מחיר": they sell it, no
+number) travels match `note` -> store -> `per_competitor` -> UI as "מוכר · הצעת מחיר" instead of
+"לא ודאי" (225 events). (b) **What each package contains** - partner format "טיסות: אל על עם מזוודה
+ישיר 16-20 | מלון: שם, ארוחת בוקר או ללא | סוג כרטיס". Competitors: `lib/services/offer-detail.ts`,
+pure per-site parsers over the STORED `detail_text` (LiveEvents / Golasso / OnTour; ISSTA's page is a
+JS loader and LiveTickets is a table, so those fall back to `attrs`); the stored text cap is now
+`DETAIL_TEXT_MAX` 6000 (`competitor-scrapers/shared.ts`) - at 2000 OnTour's ticket block was cut.
+Ours: `lib/services/our-offer-detail.ts` re-runs the pricing RULE read-only (`fetchFlightOffers` +
+`pickFlightPrice`, main's `/api/hotels` which already returns the hotel name/room/meal it picked;
+linked offline flight/hotel wins) and stores `light_detail.ours` - it never writes a price, and
+`recomputeEventLights`/`clearLightOverride` carry `ours` over. Refreshed by the `price-light-ours`
+cron and the sheet's "פרט את שלנו עכשיו" (`refreshOurOffer`, `requireAdmin`). (c) **UI**: a
+package/ticket lens above the tiles (a LENS: tiles, views and pending all count only the chosen
+scope; `?scope=` preselects it), and **"השוואה מפורטת"** on each row opens `comparison-sheet.tsx`
+(`getPriceLightComparison`, loaded per row - detail pages never ride the list payload): us first,
+then every competitor with its published price, normalized price, own gap pill, status, and the
+three contents lines.
 
 ### Agents (`lib/agents/`, 2026-09-13)
 

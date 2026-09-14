@@ -51,7 +51,7 @@ export async function loadEventForLight(eventId: number): Promise<LightEvent | n
 export async function loadLatestMatches(eventId: number): Promise<(LatestMatch & { scope: Scope; attrs: Partial<ExtractedAttrs> | null })[]> {
   const { data, error } = await db
     .from("competitor_matches")
-    .select("id,competitor,scope,status,listing_id,raw_price,raw_currency,normalized_usd,adjustments,attrs,created_at,competitor_listings(last_seen_at)")
+    .select("id,competitor,scope,status,listing_id,raw_price,raw_currency,normalized_usd,adjustments,attrs,note,created_at,competitor_listings(last_seen_at)")
     .eq("event_id", eventId)
     .order("created_at", { ascending: false })
     // Headroom for de-dup: only the newest row per (competitor, scope) survives below,
@@ -73,8 +73,11 @@ export async function loadLatestMatches(eventId: number): Promise<(LatestMatch &
       // A not_selling verdict is as fresh as the match itself (no listing to point at).
       crawled_at: row.competitor_listings?.last_seen_at ?? row.created_at,
       match_id: row.id, adjustments: row.adjustments ?? [], partial,
-      reason: row.status === "skipped" ? "crawl_failed" : null,
+      // A competitor that does not cover this event (price-light-match `notCovered`) is a coverage
+      // gap, not a broken crawl - say which, or the tooltip blames a crawl that never failed.
+      reason: row.status === "skipped" ? (row.note?.startsWith("not covered") ? "partial_coverage" : "crawl_failed") : null,
       attrs: row.attrs ?? null,
+      quote_only: row.status === "unsure" && row.note === "quote_only",
     });
   }
   return out;
@@ -141,7 +144,12 @@ export async function recomputeEventLights(
   const overrideDetail = override ? (override.scope === "package" ? pkg : tkt) : null;
   const keepOverride = override != null && overrideDetail != null && overrideStillHolds(override, overrideDetail);
 
-  const detail: LightDetail = { package: pkg, ticket: tkt, override: keepOverride ? override : null };
+  // `ours` (our package's described contents, lib/services/our-offer-detail.ts) is not this pass's
+  // to compute - it is carried over as read, or every nightly recompute would erase it.
+  const detail: LightDetail = {
+    package: pkg, ticket: tkt, override: keepOverride ? override : null,
+    ours: event.light_detail?.ours ?? null,
+  };
   const before: Lights = { package: event.light_package, ticket: event.light_ticket };
   const after: Lights = {
     package: keepOverride && override?.scope === "package" ? override.light : pkg.light,

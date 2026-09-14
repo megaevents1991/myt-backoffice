@@ -10,9 +10,11 @@ import {
   cheapestAvailableTicket, ourOfferLines,
   kindOf, competitorsFor, normalize,
   computeScopeLight, decidePriceDrop, pickRuleMatch, candidateCoversDate, signedUsd,
+  nameTokens, ruleMatchScore, ruleSaysAbsent, isMultiMatchTitle, RULE_MATCH_MIN_SCORE, RULE_ABSENT_BELOW,
   type PricedEvent, type LatestMatch,
 } from "../lib/services/price-light.ts";
 import { UNKNOWN_ATTRS } from "../types/price-light.types.ts";
+import { airlineFromCode, bagFrom, formatOfferLines, isMultiMatchText, parseOfferDetail } from "../lib/services/offer-detail.ts";
 
 const NOW = "2026-09-10T12:00:00.000Z";
 const base: PricedEvent = {
@@ -250,6 +252,89 @@ const seasonCand = { id: 13, title: "Real Madrid vs Barcelona", event_date: null
 assert.equal(candidateCoversDate(seasonCand, "2026-10-26"), false);
 assert.equal(candidateCoversDate({ ...seasonCand, travel_return: "2026-11-03" }, "2026-10-26"), true); // exactly 14 days still counts
 assert.equal(pickRuleMatch({ names: ["Real Madrid vs Barcelona"], date: "2026-10-26" }, [seasonCand]), null);
+
+// ---- matching coverage (2026-09-14): real misses from prod, each one a regression guard ----
+// geresh is part of the word, competition names and years are noise
+assert.deepEqual(nameTokens("ליגת האלופות: מנצ'סטר סיטי - פריז סן ז'רמן 2026-2027"), ["מנצסטר", "סיטי", "פריז", "סן", "זרמן"]);
+// one typo on a 5+ letter word is the same name; four letters is not enough to risk it
+assert.ok(ruleMatchScore({ names: ["הילרי דאף", "Hilary Duff"] }, { id: 1, title: "הילארי דאף", event_date: null }) >= RULE_MATCH_MIN_SCORE);
+assert.ok(ruleMatchScore({ names: ["ריאל מדריד - ויאריאל"] }, { id: 1, title: "ריאל מדריד vs וויאריאל", event_date: null }) >= RULE_MATCH_MIN_SCORE);
+assert.ok(ruleMatchScore({ names: ["מנצ'טסר יונייטד - טוטנהאם"] }, { id: 1, title: "מנצ'סטר יונייטד vs טוטנהאם הוטספר", event_date: null }) >= RULE_MATCH_MIN_SCORE);
+assert.equal(ruleMatchScore({ names: ["ליון"] }, { id: 1, title: "ליאון", event_date: null }), 0);
+// a short, complete competitor title counts both ways...
+assert.ok(ruleMatchScore({ names: ["איי סי מילאן - לצ'ה", "AC Milan vs US Lecce"] }, { id: 1, title: "מילאן | לצ'ה", event_date: null }) >= RULE_MATCH_MIN_SCORE);
+assert.ok(ruleMatchScore({ names: ["ליגת האלופות: ארסנל - ליל"] }, { id: 1, title: "ארסנל vs ליל", event_date: null }) >= RULE_MATCH_MIN_SCORE);
+// ...but a title naming ONE side never claims a fixture by being contained in it (review 2026-09-14:
+// Golasso emits a bare club title when a card shows a single team)
+assert.ok(ruleMatchScore({ names: ["ריאל מדריד - סביליה"] }, { id: 1, title: "ריאל", event_date: null }) < RULE_MATCH_MIN_SCORE);
+assert.ok(ruleMatchScore({ names: ["ריאל מדריד - סביליה"] }, { id: 1, title: "ריאל מדריד", event_date: null }) < RULE_MATCH_MIN_SCORE);
+assert.ok(ruleMatchScore({ names: ["ברצלונה - קומו"] }, { id: 1, title: "ברצלונה-קומו", event_date: null }) >= RULE_MATCH_MIN_SCORE);
+// a bag the page EXCLUDES is not a bag
+assert.equal(bagFrom("הטיסה לא כוללת מזוודה, ניתן להוסיף בתשלום"), "טרולי בלבד");
+assert.equal(bagFrom("לא כולל מזוודה"), "טרולי בלבד");
+// a different fixture sharing a club word stays a different fixture
+assert.ok(ruleMatchScore({ names: ["מנצ'סטר סיטי - ברנטפורד"] }, { id: 1, title: "מנצ'סטר יונייטד vs טוטנהאם", event_date: null }) < RULE_ABSENT_BELOW);
+
+// duplicate listings of one fixture (one per hotel tier) are not ambiguity: the cheaper copy wins
+const dupes = [
+  { id: 30, title: "ארסנל vs ליל", event_date: "2026-10-13", price_usd: 1686 },
+  { id: 31, title: "ארסנל vs ליל", event_date: "2026-10-13", price_usd: 1484 },
+  { id: 32, title: "אתלטיקו מדריד vs מנצ'סטר יונייטד", event_date: "2026-10-13", price_usd: 1754 },
+];
+assert.equal(pickRuleMatch({ names: ["ליגת האלופות: ארסנל - ליל"], date: "2026-10-13" }, dupes)?.candidate.id, 31);
+// ...including copies spelled differently (event #724 on Golasso)
+assert.equal(pickRuleMatch({ names: ["ברצלונה - ויאריאל"], date: "2026-11-22" }, [
+  { id: 68, title: "ברצלונה vs ויאריאל", event_date: "2026-11-22", price_usd: 1520 },
+  { id: 61, title: "ברצלונה vs וויאריאל", event_date: "2026-11-22", price_usd: 1052 },
+])?.candidate.id, 61);
+// a multi-fixture bundle is never the like-for-like offer, and never evidence of absence
+const bundle = [{ id: 40, title: "ליברפול-סיטי+יונייטד-טוטנהאם", event_date: null, travel_depart: "2026-10-08", travel_return: "2026-10-12" }];
+assert.equal(isMultiMatchTitle(bundle[0].title), true);
+assert.equal(pickRuleMatch({ names: ["ליברפול - מנצ'סטר סיטי"], date: "2026-10-11" }, bundle), null);
+assert.equal(ruleSaysAbsent({ names: ["ליברפול - מנצ'סטר סיטי"] }, bundle), false);
+// ...while a fixture the bundle does NOT contain is absent from it
+assert.equal(ruleSaysAbsent({ names: ["ווסטהאם יונייטד - קווינס פארק ריינג'רס", "West Ham United FC vs Queens Park Rangers"] }, bundle), true);
+// on-date listings of other artists = they do not sell ours; one strong name a day off = not absence
+assert.equal(ruleSaysAbsent({ names: ["הילרי דאף", "Hilary Duff"] }, [{ id: 50, title: "סם סמית'", event_date: "2026-09-15" }]), true);
+assert.equal(ruleSaysAbsent({ names: ["ווסטהאם יונייטד - ק.פ.ר"] }, [{ id: 51, title: "ווסטהאם יונייטד vs ק.פ.ר", event_date: "2026-10-09" }]), false);
+
+// quote-only competitors surface on the per-competitor answer
+const quoted = computeScopeLight({
+  ourUsd: 1500, competitors: ["liveevents", "golasso"], now: "2026-09-14T00:00:00Z",
+  matches: [
+    { competitor: "liveevents", status: "unsure", normalized_usd: null, raw: null, raw_currency: null, crawled_at: "2026-09-13T00:00:00Z", match_id: 1, quote_only: true },
+    { competitor: "golasso", status: "found", normalized_usd: 1400, raw: 1400, raw_currency: "USD", crawled_at: "2026-09-13T00:00:00Z", match_id: 2 },
+  ],
+});
+assert.equal(quoted.per_competitor.liveevents?.quote_only, true);
+assert.equal(quoted.per_competitor.golasso?.quote_only, undefined);
+
+// ---- offer contents (partner format) - shapes copied from stored prod detail pages ----
+assert.equal(bagFrom("טיסות אלעל כוללות טרולי עד 8 קילו"), "טרולי בלבד");
+assert.equal(bagFrom("טיסה שכר ישירה עם חברת התעופה ארקיע ,כוללת טרולי וכבודה לכל נוסע"), "כולל מזוודה");
+assert.equal(bagFrom("כולל כבודה מלאה (תיק גב טרולי ומזוודה עד 23 ק\"ג לאדם)"), "כבודה מלאה");
+assert.equal(bagFrom("כבודת יד - כולל תיק קטן וטרולי עד 8 ק\"ג לכל נוסע/ת. ללא מזוודות"), "טרולי בלבד");
+assert.equal(bagFrom("כוללת תיק גב לכל נוסע"), "תיק גב בלבד");
+assert.equal(bagFrom("טיסה ישירה"), null);
+assert.equal(airlineFromCode("LY"), "אל על");
+assert.equal(airlineFromCode("ZZ"), "ZZ"); // unknown code stays visible rather than vanishing
+const golassoText = "פרטי החבילהחבילת ספורט ל-5 ימים ברומא. החבילה כוללת:1.טיסת שכר ישירה לרומא עם חברת התעופה ישראייר, כוללת תיק גב לכל נוסע2.ארבעה לילות במלון Best Western Ars Hotel ברמת ארבעה כוכבים על בסיס לינה בלבד3.כרטיס כניסה למשחק במסגרת הליגה האיטלקית : רומא - אינטר , בקטגוריה 4 מאחורי השער למעלהפרטי טיסההלוךIsrael- TLVRome- FCO6H383Israir18.09.2616:4019:25חזורRome- FCOIsrael- TLV6H348Israir22.09.2622:0002:20 +1בחירת קטגוריית ישיבהקטגוריה 3 (כלול בחבילה)קטגוריה 2 (€64)";
+assert.deepEqual(formatOfferLines(parseOfferDetail("golasso", golassoText, null)), {
+  flight: "ישראייר · ישירה · תיק גב בלבד · הלוך 16:40–19:25 · חזור 22:00–02:20",
+  hotel: "Best Western Ars Hotel · 4★ · ללא ארוחת בוקר",
+  ticket: "קטגוריה 3", // the widget's included seat wins over the prose's category 4
+});
+const ontourText = "יציאה 13.05.27 המראה בשעה 5:40 ונחיתה בשעה 08:30 חזרה 16.05.27 המראה בשעה 23:55 ונחיתה בשעה 04:25 טיסות ישירות לקראקוב עם חברת לוט כולל כבודה מלאה (תיק גב טרולי ומזוודה עד 23 ק\"ג לאדם). 3 לילות במלון ספא 4* Galaxy Hotel, ע\"ב לינה וארוחת בוקר לאדם בחדר זוגי. ישיבה ביציע התחתון (צהוב במפה). שדרוג לפרקט C בתוספת של 99 אירו לכרטיס ( ירוק במפה)";
+assert.deepEqual(formatOfferLines(parseOfferDetail("ontour", ontourText, null)), {
+  flight: "LOT · ישירה · כבודה מלאה · הלוך 5:40–08:30 · חזור 23:55–04:25",
+  hotel: "Galaxy Hotel · 4★ · כולל ארוחת בוקר",
+  ticket: "ישיבה ביציע התחתון",
+});
+assert.equal(isMultiMatchText("חבילה מרובת משחקים11.09.26 | 14.09.26"), true);
+// a page that says nothing falls back to the boolean markers, never to invented words
+assert.deepEqual(formatOfferLines(parseOfferDetail("issta", "קלאסיקו עם הפודיום", { direct_flight: true, breakfast: false })), {
+  flight: "ישירה", hotel: "ללא ארוחת בוקר", ticket: null,
+});
 
 assert.equal(signedUsd(-180), "−$180");
 assert.equal(signedUsd(35), "+$35");

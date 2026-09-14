@@ -15,7 +15,13 @@ import {
   type Lights,
 } from "@/lib/services/price-light-store";
 import { openPriceLightTask as insertPriceLightTask } from "@/lib/services/price-light-tasks";
-import { competitorsFor, kindOf, ourOfferLines, ourPackageUsd, ourTicketUsd } from "@/lib/services/price-light";
+import {
+  cheapestAvailableTicket, competitorsFor, kindOf, ourNights, ourOfferLines, ourPackageUsd, ourTicketUsd,
+} from "@/lib/services/price-light";
+import { formatOfferLines, parseOfferDetail } from "@/lib/services/offer-detail";
+import {
+  describeOurOffer, OUR_OFFER_EVENT_COLUMNS, storeOurOffer, type OurOfferEvent,
+} from "@/lib/services/our-offer-detail";
 import {
   ACTIVE_COMPETITORS,
   scraperFor,
@@ -25,8 +31,11 @@ import { circuitOpen, runCrawl, type CrawlSummary } from "@/lib/services/price-l
 import { softDeleteEvent } from "@/lib/actions/event-actions";
 import { RECHECK_AI_CALLS, SILENCE_DAYS } from "@/lib/actions/price-light-constants";
 import {
+  type ComparisonOffer,
   type CompetitorAnswer,
   type CompetitorKey,
+  type OfferLines,
+  type PriceLightComparison,
   type CrawlStatus,
   type Light,
   type LightDecisionSnapshot,
@@ -105,6 +114,154 @@ export async function listEventMatches(eventId: number): Promise<{ matches: Matc
     for (const r of (rows ?? []) as ListingRow[]) listings[r.id] = r;
   }
   return { matches, listings };
+}
+
+// ---- side-by-side comparison (partner, 2026-09-14) ---------------------------------------------
+type NewestMatchRow = Pick<MatchRow, "id" | "competitor" | "scope" | "status" | "listing_id" | "raw_price" | "raw_currency" |
+  "price_usd" | "normalized_usd" | "diff_usd" | "light" | "attrs" | "note" | "created_at">;
+type ComparisonListing = Pick<ListingRow, "id" | "title" | "url" | "event_date" | "travel_depart" | "travel_return" |
+  "attrs" | "detail_text" | "last_seen_at" | "price_from" | "currency" | "price_usd">;
+
+const nightsBetweenDays = (a: string | null, b: string | null): number | null => {
+  if (!a || !b) return null;
+  const n = Math.round((Date.parse(b.slice(0, 10)) - Date.parse(a.slice(0, 10))) / 86_400_000);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+/**
+ * One event, every competitor, both scopes - with what each package CONTAINS (flight, hotel, seat).
+ * Loaded on demand for one row, never with the list: detail pages run to 6,000 characters each.
+ */
+async function buildComparison(eventId: number): Promise<PriceLightComparison | null> {
+  const event = await loadEventForLight(eventId);
+  if (!event) return null;
+
+  const { data: matchData, error: matchError } = await db.from("competitor_matches")
+    .select("id,competitor,scope,status,listing_id,raw_price,raw_currency,price_usd,normalized_usd,diff_usd,light,attrs,note,created_at")
+    .eq("event_id", eventId).order("created_at", { ascending: false }).limit(60);
+  if (matchError) console.error("buildComparison: matches failed", JSON.stringify(matchError));
+  const newest = new Map<string, NewestMatchRow>();
+  for (const m of (matchData ?? []) as NewestMatchRow[]) {
+    const key = `${m.scope}:${m.competitor}`;
+    if (!newest.has(key)) newest.set(key, m);
+  }
+
+  const listingIds = [...new Set([...newest.values()].map((m) => m.listing_id).filter((id): id is number => id != null))];
+  const listings = new Map<number, ComparisonListing>();
+  if (listingIds.length > 0) {
+    const { data, error } = await db.from("competitor_listings")
+      .select("id,title,url,event_date,travel_depart,travel_return,attrs,detail_text,last_seen_at,price_from,currency,price_usd")
+      .in("id", listingIds);
+    if (error) console.error("buildComparison: listings failed", JSON.stringify(error));
+    for (const l of (data ?? []) as ComparisonListing[]) listings.set(l.id, l);
+  }
+
+  const ours = event.light_detail?.ours ?? null;
+  const ticket = cheapestAvailableTicket(event);
+  const ticketName = [ticket?.category, ticket?.description].map((s) => (s ?? "").trim()).filter(Boolean).join(" · ") || null;
+  // Never described yet -> the rule's own wording, so the column is never blank.
+  const ruleLines = ourOfferLines(event);
+  const ruleText = (key: "flight" | "hotel") => ruleLines.find((l) => l.key === key)?.detail ?? null;
+
+  const offersFor = (scope: Scope): ComparisonOffer[] => {
+    const ourUsd = scope === "package" ? ourPackageUsd(event) : ourTicketUsd(event);
+    if (ourUsd == null) return [];
+    const detail = event.light_detail?.[scope];
+    const oursLines: OfferLines = scope === "package"
+      ? {
+          flight: ours?.flight ? formatOfferLines({ flight: ours.flight, hotel: null, ticket: null, multiMatch: false }).flight : ruleText("flight"),
+          hotel: ours?.hotel ? formatOfferLines({ flight: null, hotel: ours.hotel, ticket: null, multiMatch: false }).hotel : ruleText("hotel"),
+          ticket: ticketName,
+        }
+      : { flight: null, hotel: null, ticket: ticketName };
+    const us: ComparisonOffer = {
+      who: "ours", status: "ours", quote_only: false, raw: ourUsd, raw_currency: "USD", usd: ourUsd,
+      normalized_usd: ourUsd, diff_usd: null, light: null, decided: false, title: event.name, url: null,
+      depart: scope === "package" ? event.def_date_depart ?? null : null,
+      return: scope === "package" ? event.def_date_return ?? null : null,
+      nights: scope === "package" ? ourNights(event) : null,
+      lines: oursLines, multi_match: false, seen_at: ours?.at ?? null,
+    };
+
+    const theirs = competitorsFor(kindOf(event), scope, ACTIVE_COMPETITORS).map<ComparisonOffer>((competitor) => {
+      const m = newest.get(`${scope}:${competitor}`) ?? null;
+      const per = detail?.per_competitor?.[competitor];
+      const listing = m?.listing_id != null ? listings.get(m.listing_id) ?? null : null;
+      const attrs = m?.attrs ?? listing?.attrs ?? null;
+      const parsed = listing ? parseOfferDetail(competitor, listing.detail_text, attrs) : null;
+      const lines = parsed ? formatOfferLines(parsed) : { flight: null, hotel: null, ticket: null };
+      return {
+        who: competitor,
+        status: per?.status ?? m?.status ?? "skipped",
+        quote_only: per?.quote_only ?? m?.note === "quote_only",
+        raw: m?.raw_price ?? listing?.price_from ?? null,
+        raw_currency: m?.raw_currency ?? listing?.currency ?? null,
+        usd: m?.price_usd ?? listing?.price_usd ?? null,
+        normalized_usd: per?.normalized_usd ?? m?.normalized_usd ?? null,
+        diff_usd: per?.diff_usd ?? m?.diff_usd ?? null,
+        light: per?.light ?? null,
+        decided: detail?.competitor === competitor,
+        title: listing?.title ?? null,
+        url: listing?.url ?? null,
+        depart: listing?.travel_depart ?? null,
+        return: listing?.travel_return ?? null,
+        nights: typeof attrs?.nights === "number" ? attrs.nights : nightsBetweenDays(listing?.travel_depart ?? null, listing?.travel_return ?? null),
+        // A ticket listing is the ticket - flight/hotel lines there would be noise.
+        lines: scope === "ticket" ? { flight: null, hotel: null, ticket: lines.ticket } : lines,
+        multi_match: parsed?.multiMatch ?? false,
+        seen_at: listing?.last_seen_at ?? m?.created_at ?? null,
+      };
+    });
+    // The one that set the light first, then the priced ones cheapest-first, then everyone else.
+    theirs.sort((a, b) =>
+      Number(b.decided) - Number(a.decided) ||
+      (a.normalized_usd ?? Infinity) - (b.normalized_usd ?? Infinity));
+    return [us, ...theirs];
+  };
+
+  return {
+    event_id: event.id,
+    name: event.name,
+    date: event.date,
+    ours_at: ours?.at ?? null,
+    ours_errors: ours?.errors ?? [],
+    package: offersFor("package"),
+    ticket: offersFor("ticket"),
+  };
+}
+
+/** The side-by-side comparison for one event row on /price-light. */
+export async function getPriceLightComparison(eventId: number): Promise<PriceLightComparison | null> {
+  await requireStaff();
+  try {
+    return await buildComparison(eventId);
+  } catch (e) {
+    console.error("getPriceLightComparison failed", e);
+    return null;
+  }
+}
+
+/**
+ * "פרט עכשיו": describe OUR package's contents right now (the rule's Amadeus + hotel searches, or the
+ * linked offline inventory), store it, and hand back the refreshed comparison. Admin-only - it spends
+ * paid searches. Describes; never writes a price.
+ */
+export async function refreshOurOffer(
+  eventId: number,
+): Promise<{ ok: true; comparison: PriceLightComparison } | { ok: false; error: string }> {
+  await requireAdmin();
+  try {
+    const { data, error } = await db.from("events").select(OUR_OFFER_EVENT_COLUMNS).eq("id", eventId).maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    if (!data) return { ok: false, error: "event not found" };
+    const ours = await describeOurOffer(data as OurOfferEvent);
+    await storeOurOffer(eventId, ours);
+    const comparison = await buildComparison(eventId);
+    return comparison ? { ok: true, comparison } : { ok: false, error: "event not found" };
+  } catch (e) {
+    console.error("refreshOurOffer failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "failed" };
+  }
 }
 
 /**
@@ -248,7 +405,8 @@ export async function clearLightOverride(eventId: number): Promise<Ok> {
     if (!event) return { ok: false, error: "event not found" };
     const detail = event.light_detail;
     if (!detail || !detail.override) return { ok: false, error: "no override set" };
-    const nextDetail: LightDetail = { package: detail.package, ticket: detail.ticket };
+    // Spread, then clear: rebuilding from package/ticket alone silently erased `ours`.
+    const nextDetail: LightDetail = { ...detail, override: null };
     const { error } = await db.from("events").update({ light_detail: nextDetail }).eq("id", eventId);
     if (error) {
       console.error("clearLightOverride failed", JSON.stringify(error));
@@ -449,6 +607,7 @@ function buildScopeCell(
         diff_usd: answer?.diff_usd ?? null,
         light: answer?.light ?? null,
         decided: competitor === decided,
+        quote_only: answer?.quote_only ?? false,
       };
     })
     .sort((a, b) => Number(b.decided) - Number(a.decided));

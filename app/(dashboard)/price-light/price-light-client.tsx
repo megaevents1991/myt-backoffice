@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ExternalLink } from "lucide-react";
+import { Columns2, ExternalLink } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -25,7 +25,9 @@ import {
   type Light,
   type PriceLightRow,
   type PriceLightScopeCell,
+  type Scope,
 } from "@/types/price-light.types";
+import { ComparisonSheet } from "./comparison-sheet";
 import { CompetitorsPanel } from "./competitors-panel";
 import { DecisionActions } from "./decision-actions";
 
@@ -59,9 +61,26 @@ function scopePending(row: PriceLightRow, cell: PriceLightScopeCell, now: number
   return cell.light === "red" && !isSilenced(row, now) && !cell.has_open_task;
 }
 
-/** A row waits for a human when EITHER of its two conclusions does. */
-function isPending(row: PriceLightRow, now: number): boolean {
-  return rowScopes(row).some((cell) => scopePending(row, cell, now));
+/**
+ * The ticket / package filter (partner, 2026-09-14: "פלטור של כרטיס / חבילה"). It is a LENS, not a
+ * view: with "חבילה" picked, a row's ticket conclusion is not just hidden from the table, it stops
+ * counting in every tile and view too - "3 red" then means three red PACKAGES.
+ */
+type ScopeFilter = "all" | Scope;
+
+const SCOPE_FILTERS: { id: ScopeFilter; label: string }[] = [
+  { id: "all", label: "חבילה + כרטיס" },
+  { id: "package", label: "חבילה" },
+  { id: "ticket", label: "כרטיס" },
+];
+
+function cellsIn(row: PriceLightRow, scope: ScopeFilter): PriceLightScopeCell[] {
+  return scope === "all" ? rowScopes(row) : [row[scope]].filter((c): c is PriceLightScopeCell => c != null);
+}
+
+/** A row waits for a human when EITHER of its conclusions in scope does. */
+function isPending(row: PriceLightRow, now: number, scope: ScopeFilter): boolean {
+  return cellsIn(row, scope).some((cell) => scopePending(row, cell, now));
 }
 
 
@@ -92,8 +111,11 @@ function nightsLine(cell: PriceLightScopeCell): string | null {
 }
 
 /** Why a competitor has no number, when it has none. */
-function noPriceText(status: PriceLightScopeCell["competitors"][number]["status"]): string {
-  switch (status) {
+function noPriceText(answer: PriceLightScopeCell["competitors"][number]): string {
+  // LiveEvents sells most sports packages "לקבלת הצעת מחיר" - they DO sell it, there is just no
+  // published number. Calling that "לא ודאי" read as "maybe they don't have it" (225 events).
+  if (answer.quote_only) return "מוכר · הצעת מחיר";
+  switch (answer.status) {
     case "not_selling": return "לא מוכר";
     case "unsure": return "לא ודאי";
     case "na": return "לא רלוונטי";
@@ -123,7 +145,7 @@ function CompetitorMatrix({ cell }: { cell: PriceLightScopeCell }) {
             <td className="py-0.5 pe-2 tabular-nums whitespace-nowrap">
               {a.normalized_usd != null
                 ? `$${a.normalized_usd}`
-                : <span className="text-muted-foreground">{noPriceText(a.status)}</span>}
+                : <span className="text-muted-foreground">{noPriceText(a)}</span>}
             </td>
             <td className="py-0.5 tabular-nums whitespace-nowrap">
               {a.light && a.diff_usd != null && (
@@ -200,6 +222,8 @@ export function PriceLightClient() {
   const [cost, setCost] = useState<{ usd: number; calls: number }>({ usd: 0, calls: 0 });
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("pending");
+  const [scope, setScope] = useState<ScopeFilter>("all");
+  const [compare, setCompare] = useState<PriceLightRow | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -220,24 +244,31 @@ export function PriceLightClient() {
     reload();
   }, [reload]);
 
-  // ?f= preselects a view on arrival (e.g. a link from the dashboard widget) - read once.
+  // ?f= preselects a view, ?scope= the package/ticket lens, on arrival (e.g. a link from the
+  // dashboard widget) - read once.
   useEffect(() => {
     const f = searchParams.get("f");
-    if (f) setView(f);
+    if (f) setView(f === "package" || f === "ticket" ? "all" : f);
+    const s = searchParams.get("scope") ?? (f === "package" || f === "ticket" ? f : null);
+    if (s === "package" || s === "ticket") setScope(s);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The rows that have anything to say under the current lens - a ticket-only lens drops events
+  // that have no ticket conclusion at all.
+  const scoped = useMemo(() => rows.filter((r) => cellsIn(r, scope).length > 0), [rows, scope]);
 
   const counts = useMemo(() => {
     const now = Date.now();
     const soonCutoff = addDaysStr(new Date(now).toISOString().slice(0, 10), 45);
     const c = {
       alone: 0, green: 0, orange: 0, red: 0, unchecked: 0, pending: 0,
-      orangePlus: 0, package: 0, ticket: 0, soon: 0, partial: 0, changed: 0, aiSample: 0,
+      orangePlus: 0, soon: 0, partial: 0, changed: 0, aiSample: 0,
     };
     // Counted per EVENT, not per conclusion: a row with a red package and a red ticket is one
     // event to deal with, and the tiles are a to-do list, not a tally of verdicts.
-    for (const row of rows) {
-      const cells = rowScopes(row);
+    for (const row of scoped) {
+      const cells = cellsIn(row, scope);
       const has = (pred: (c: PriceLightScopeCell) => boolean) => cells.some(pred);
       if (has((x) => x.light === "alone")) c.alone++;
       if (has((x) => x.light === "green")) c.green++;
@@ -245,40 +276,38 @@ export function PriceLightClient() {
       if (has((x) => x.light === "red")) c.red++;
       if (has((x) => x.light === "orange" || x.light === "red")) c.orangePlus++;
       if (has((x) => x.light === "unchecked")) c.unchecked++;
-      if (isPending(row, now)) c.pending++;
-      if (row.package) c.package++;
-      if (row.ticket) c.ticket++;
+      if (isPending(row, now, scope)) c.pending++;
       if (row.date <= soonCutoff) c.soon++;
       if (has((x) => x.partial)) c.partial++;
       if (has((x) => x.changed_this_week)) c.changed++;
       if (has((x) => x.method === "ai")) c.aiSample++;
     }
     return c;
-  }, [rows]);
+  }, [scoped, scope]);
 
   const filtered = useMemo(() => {
     const now = Date.now();
     const soonCutoff = addDaysStr(new Date(now).toISOString().slice(0, 10), 45);
-    // Every view asks "does EITHER conclusion qualify" - the row is the event now, and an event
-    // with a red ticket belongs in the red view whatever its package says.
-    const some = (pred: (c: PriceLightScopeCell) => boolean) => (r: PriceLightRow) => rowScopes(r).some(pred);
+    // Every view asks "does EITHER conclusion in scope qualify" - the row is the event, and an
+    // event with a red ticket belongs in the red view whatever its package says (unless the lens
+    // is "package", in which case its ticket is not in the question at all).
+    const some = (pred: (c: PriceLightScopeCell) => boolean) => (r: PriceLightRow) => cellsIn(r, scope).some(pred);
     switch (view) {
-      case "pending": return rows.filter((r) => isPending(r, now));
-      case "red": return rows.filter(some((c) => c.light === "red"));
-      case "orange_plus": return rows.filter(some((c) => c.light === "orange" || c.light === "red"));
-      case "package": return rows.filter((r) => r.package != null);
-      case "ticket": return rows.filter((r) => r.ticket != null);
-      case "soon": return rows.filter((r) => r.date <= soonCutoff);
-      case "partial": return rows.filter(some((c) => c.partial));
-      case "changed": return rows.filter(some((c) => c.changed_this_week));
-      case "unchecked": return rows.filter(some((c) => c.light === "unchecked"));
-      case "ai_sample": return rows.filter(some((c) => c.method === "ai"));
-      case "alone": return rows.filter(some((c) => c.light === "alone"));
-      case "green": return rows.filter(some((c) => c.light === "green"));
-      case "all": return rows;
-      default: return rows;
+      case "pending": return scoped.filter((r) => isPending(r, now, scope));
+      case "red": return scoped.filter(some((c) => c.light === "red"));
+      case "orange_plus": return scoped.filter(some((c) => c.light === "orange" || c.light === "red"));
+      case "soon": return scoped.filter((r) => r.date <= soonCutoff);
+      case "partial": return scoped.filter(some((c) => c.partial));
+      case "changed": return scoped.filter(some((c) => c.changed_this_week));
+      case "unchecked": return scoped.filter(some((c) => c.light === "unchecked"));
+      case "ai_sample": return scoped.filter(some((c) => c.method === "ai"));
+      case "alone": return scoped.filter(some((c) => c.light === "alone"));
+      case "green": return scoped.filter(some((c) => c.light === "green"));
+      case "orange": return scoped.filter(some((c) => c.light === "orange"));
+      case "all": return scoped;
+      default: return scoped;
     }
-  }, [rows, view]);
+  }, [scoped, scope, view]);
 
   const tiles: { id: string; count: number; light: Light }[] = [
     { id: "alone", count: counts.alone, light: "alone" },
@@ -293,14 +322,12 @@ export function PriceLightClient() {
     { id: "pending", label: "ממתינים להחלטה", count: counts.pending },
     { id: "red", label: "אדום", count: counts.red },
     { id: "orange_plus", label: "כתום ומעלה", count: counts.orangePlus },
-    { id: "package", label: "חבילה", count: counts.package },
-    { id: "ticket", label: "כרטיס", count: counts.ticket },
     { id: "soon", label: "בקרוב (45 יום)", count: counts.soon },
     { id: "partial", label: "כיסוי חלקי", count: counts.partial },
     { id: "changed", label: "השתנה השבוע", count: counts.changed },
     { id: "unchecked", label: "לא נבדק", count: counts.unchecked },
     { id: "ai_sample", label: "מדגם AI", count: counts.aiSample },
-    { id: "all", label: "הכול", count: rows.length },
+    { id: "all", label: "הכול", count: scoped.length },
   ];
 
   const columns = useMemo<ColumnDef<PriceLightRow>[]>(
@@ -323,7 +350,7 @@ export function PriceLightClient() {
         header: "רמזור",
         cell: ({ row }) => (
           <div className="flex flex-col items-start gap-1">
-            {rowScopes(row.original).map((cell) => (
+            {cellsIn(row.original, scope).map((cell) => (
               <LightBadge key={cell.scope} cell={cell} />
             ))}
           </div>
@@ -334,7 +361,7 @@ export function PriceLightClient() {
         header: "המחיר שלנו",
         cell: ({ row }) => (
           <div className="space-y-1 text-xs tabular-nums">
-            {rowScopes(row.original).map((cell) => {
+            {cellsIn(row.original, scope).map((cell) => {
               // The live figure wins the line when it has moved since the light was computed -
               // the recorded one stays visible, struck through, so the drift is legible.
               const moved = cell.our_usd != null && cell.our_usd_now != null && cell.our_usd_now !== cell.our_usd;
@@ -355,10 +382,19 @@ export function PriceLightClient() {
         id: "competitors",
         header: "מתחרים",
         cell: ({ row }) => {
-          const cells = rowScopes(row.original).filter((c) => c.competitors.length > 0);
+          const cells = cellsIn(row.original, scope).filter((c) => c.competitors.length > 0);
           if (cells.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
           return (
             <div className="space-y-1.5 text-xs">
+              {/* What each package CONTAINS - flight, hotel, seat - per competitor, side by side. */}
+              <button
+                type="button"
+                onClick={() => setCompare(row.original)}
+                className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-medium hover:bg-accent"
+              >
+                <Columns2 className="h-3 w-3" aria-hidden />
+                השוואה מפורטת
+              </button>
               {cells.map((cell) => {
                 const nights = nightsLine(cell);
                 return (
@@ -395,9 +431,9 @@ export function PriceLightClient() {
         header: "פער",
         // Sort by the WORST gap on the row (most over-priced first) - that is the one that will
         // make someone act, whichever half of the package it came from.
-        accessorFn: (row) => Math.max(...rowScopes(row).map((c) => c.diff_usd ?? -Infinity), -Infinity),
+        accessorFn: (row) => Math.max(...cellsIn(row, scope).map((c) => c.diff_usd ?? -Infinity), -Infinity),
         cell: ({ row }) => {
-          const cells = rowScopes(row.original).filter((c) => c.diff_usd != null);
+          const cells = cellsIn(row.original, scope).filter((c) => c.diff_usd != null);
           if (cells.length === 0) return <span className="text-muted-foreground">—</span>;
           return (
             <div className="space-y-1 text-xs tabular-nums">
@@ -423,7 +459,7 @@ export function PriceLightClient() {
         header: "נסרק",
         cell: ({ row }) => {
           // The freshest crawl behind either conclusion - "when did we last see the market".
-          const newest = rowScopes(row.original)
+          const newest = cellsIn(row.original, scope)
             .map((c) => c.crawled_at)
             .filter((x): x is string => !!x)
             .sort()
@@ -437,7 +473,7 @@ export function PriceLightClient() {
         cell: ({ row }) => <DecisionActions row={row.original} onDone={reload} />,
       },
     ],
-    [reload],
+    [reload, scope],
   );
 
   const emptyState = useMemo(() => {
@@ -456,7 +492,7 @@ export function PriceLightClient() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <span>
-          <span className="font-medium tabular-nums text-foreground">{rows.length}</span> שורות
+          <span className="font-medium tabular-nums text-foreground">{scoped.length}</span> אירועים
         </span>
         <span aria-hidden>·</span>
         <span>
@@ -467,6 +503,23 @@ export function PriceLightClient() {
           AI החודש <span className="font-medium tabular-nums text-foreground">${cost.usd.toFixed(2)}</span>
           {cost.calls > 0 ? ` ב-${cost.calls} קריאות` : " · אין קריאות"}
         </span>
+      </div>
+
+      <div role="group" aria-label="חבילה או כרטיס" className="inline-flex rounded-lg border bg-card p-0.5 text-sm">
+        {SCOPE_FILTERS.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setScope(s.id)}
+            aria-pressed={scope === s.id}
+            className={cn(
+              "rounded-md px-3 py-1 transition-colors",
+              scope === s.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent",
+            )}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
 
       {/* `text-start`, not `text-right`: the dashboard is RTL, so the label must hug the
@@ -496,16 +549,25 @@ export function PriceLightClient() {
       <DataTable
         columns={columns}
         data={filtered}
-        searchColumns={["name", "competitor"]}
-        searchPlaceholder="חיפוש אירוע או מתחרה..."
+        searchColumns={["name"]}
+        searchPlaceholder="חיפוש אירוע..."
         views={views}
         activeView={view}
         onViewChange={setView}
-        defaultSorting={[{ id: "diff_usd", desc: true }]}
+        defaultSorting={[{ id: "diff", desc: true }]}
         dense
         getRowId={(row) => row.id}
         emptyState={emptyState}
       />
+
+      {compare && (
+        <ComparisonSheet
+          eventId={compare.event_id}
+          eventName={compare.name}
+          open={compare != null}
+          onOpenChange={(open) => { if (!open) setCompare(null); }}
+        />
+      )}
     </div>
   );
 }

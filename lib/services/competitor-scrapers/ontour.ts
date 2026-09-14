@@ -6,7 +6,7 @@
 // prints one inside that window - otherwise event_date is null and the matcher uses the window.
 import { UNKNOWN_ATTRS } from "../../../types/price-light.types.ts";
 import type { ExtractedAttrs } from "../../../types/price-light.types.ts";
-import { absoluteUrl, currencyFromSymbol, doc, flatText, nightsBetween, parseHeDate, parsePrice, stealthHeaders } from "./shared.ts";
+import { DETAIL_TEXT_MAX, absoluteUrl, bagExcluded, currencyFromSymbol, doc, flatText, nightsBetween, parseHeDate, parsePrice, stealthHeaders } from "./shared.ts";
 import type { CompetitorScraper, CrawlContext, Listing } from "./types";
 
 const BASE = "https://ontour.co.il";
@@ -39,7 +39,8 @@ export function attrsFromText(flat: string): Partial<ExtractedAttrs> {
   const a: Partial<ExtractedAttrs> = { ...UNKNOWN_ATTRS };
   if (/קונקשן|עצירת\s*ביניים|חניית\s*ביניים|טיסת\s*המשך/.test(flat)) a.direct_flight = false;
   else if (/טיסות?\s*ישיר/.test(flat)) a.direct_flight = true;
-  if (/מזוודה|כבודה\s*רשומה|כבודת\s*בטן/.test(flat)) a.bag_included = true;
+  if (bagExcluded(flat)) a.bag_included = false;
+  else if (/מזוודה|כבודה\s*רשומה|כבודת\s*בטן/.test(flat)) a.bag_included = true;
   else if (/תיק\s*גב|טרולי|כבודת\s*יד/.test(flat)) a.bag_included = false;
   const stars = flat.match(/(\d)\s*כוכבים/);
   if (stars) a.hotel_stars = Number(stars[1]);
@@ -122,7 +123,7 @@ export function parsePerformer(html: string, pageUrl: string): Listing[] {
       travel_depart: depart,
       travel_return: ret,
       attrs: { ...attrsFromText(flat), nights: nightsBetween(depart, ret) },
-      detail_text: flat.slice(0, 2000),
+      detail_text: flat.slice(0, DETAIL_TEXT_MAX),
       url: pageUrl,
     });
   }

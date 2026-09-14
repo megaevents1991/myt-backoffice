@@ -18,7 +18,7 @@
 // unresolvable specifier so the fixture script (which imports only those two functions) can
 // run under plain node.
 import type { Currency, ExtractedAttrs } from "@/types/price-light.types";
-import { currencyFromSymbol, doc, parseHeDate, parsePrice, stealthHeaders } from "./shared.ts";
+import { DETAIL_TEXT_MAX, bagExcluded, currencyFromSymbol, doc, parseHeDate, parsePrice, stealthHeaders } from "./shared.ts";
 export { parseHeDate, parsePrice, stealthHeaders } from "./shared.ts";
 import type { CompetitorScraper, CrawlContext, DetailInput, Listing } from "./types";
 
@@ -173,7 +173,7 @@ export function parseDetail(html: string): Partial<Listing> {
     : travel_depart && travel_return
       ? true
       : "unknown";
-  const bagIncluded = /כבודת\s*יד/.test(flat) ? false : /מזוודה|כבודה/.test(flat) ? true : "unknown";
+  const bagIncluded = bagExcluded(flat) || /כבודת\s*יד/.test(flat) ? false : /מזוודה|כבודה/.test(flat) ? true : "unknown";
   const breakfast = /ארוחת\s*בוקר/.test(flat) ? !/ללא\s*ארוחת\s*בוקר|לא\s*כולל\s*ארוחת\s*בוקר/.test(flat) : "unknown";
   // "Not included" list mentions transfers by name somewhere after the "אינו כולל" (does
   // not include) header, or an explicit "לא כלול"/"ללא" right next to the word itself.
@@ -193,7 +193,7 @@ export function parseDetail(html: string): Partial<Listing> {
 
   const partial: Partial<Listing> = {
     attrs,
-    detail_text: flat.slice(0, 2000),
+    detail_text: flat.slice(0, DETAIL_TEXT_MAX),
     travel_depart,
     travel_return,
   };

@@ -7,6 +7,8 @@
  */
 import assert from "node:assert/strict";
 import { ALL_PACKAGES_URL, parseCatalog, parseDetail } from "../../lib/services/competitor-scrapers/golasso.ts";
+import { DETAIL_TEXT_MAX } from "../../lib/services/competitor-scrapers/shared.ts";
+import { formatOfferLines, parseOfferDetail } from "../../lib/services/offer-detail.ts";
 import type { FixtureSpec } from "./types.ts";
 
 // Recon detail page (Roma vs Real Madrid, 2026-10-14). If it 404s at --save time, take the
@@ -60,7 +62,13 @@ const spec: FixtureSpec = {
     assert.match(detail.travel_depart ?? "", /^\d{4}-\d{2}-\d{2}$/, `detail depart ${detail.travel_depart}`);
     assert.match(detail.travel_return ?? "", /^\d{4}-\d{2}-\d{2}$/, `detail return ${detail.travel_return}`);
     assert.ok((detail.detail_text ?? "").length > 200, "detail_text");
-    assert.ok((detail.detail_text ?? "").length <= 2000, "detail_text <= 2000 chars");
+    assert.ok((detail.detail_text ?? "").length <= DETAIL_TEXT_MAX, `detail_text <= ${DETAIL_TEXT_MAX} chars`);
+    // Contents lines (lib/services/offer-detail.ts): the flight table, the hotel item, the included seat.
+    const offer = formatOfferLines(parseOfferDetail("golasso", detail.detail_text, detail.attrs));
+    console.log("offer lines:", offer);
+    assert.ok(offer.flight?.includes("הלוך"), `flight times ${offer.flight}`);
+    assert.ok(/★/.test(offer.hotel ?? ""), `hotel ${offer.hotel}`);
+    assert.ok(/קטגוריה/.test(offer.ticket ?? ""), `ticket ${offer.ticket}`);
     assert.deepEqual(parseDetail("<html><body>nothing here</body></html>", first), {}, "no-price page -> {}");
 
     // C1 (final review): the site prices in the DESTINATION's currency, so a detail page can

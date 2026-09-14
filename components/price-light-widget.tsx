@@ -7,10 +7,10 @@ import { Gauge } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
-import { listPriceLight, type PriceLightRow } from "@/lib/actions/price-light-actions";
+import { listPriceLight } from "@/lib/actions/price-light-actions";
 import { PILL } from "@/app/(dashboard)/events/price-light-ui";
 import { ADMIN_ROLES } from "@/types/auth.types";
-import type { Light } from "@/types/price-light.types";
+import { rowScopes, type Light, type PriceLightRow } from "@/types/price-light.types";
 
 // Colours come from `PILL` (app/(dashboard)/events/price-light-ui.tsx) - the one
 // place the רמזור palette lives, shared by the events cell and the /price-light
@@ -91,20 +91,25 @@ export function PriceLightWidget() {
     );
   }
 
+  // A row is an EVENT carrying up to two conclusions; the bar counts conclusions (that is what
+  // the segments mean), while "reds" and "pending" count EVENTS - one event to deal with, even
+  // when both its package and its ticket are red.
   const counts = { ...EMPTY_COUNTS };
   let redTotal = 0;
   let pending = 0;
+  let total = 0;
   const now = Date.now();
   for (const row of rows) {
-    counts[row.light] += 1;
-    if (row.light === "red") {
-      redTotal += 1;
-      const silencedActive = row.silenced_until != null && Date.parse(row.silenced_until) > now;
-      if (!silencedActive && !row.has_open_task) pending += 1;
+    const cells = rowScopes(row);
+    for (const cell of cells) {
+      counts[cell.light] += 1;
+      total += 1;
     }
+    if (!cells.some((c) => c.light === "red")) continue;
+    redTotal += 1;
+    const silencedActive = row.silenced_until != null && Date.parse(row.silenced_until) > now;
+    if (!silencedActive && cells.some((c) => c.light === "red" && !c.has_open_task)) pending += 1;
   }
-
-  const total = rows.length;
 
   return (
     // Full-width on the dashboard's two-column row: this is the third card, and a

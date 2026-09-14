@@ -5,9 +5,10 @@ import { supabase } from "@/lib/supabase-server";
 import { takeBudget, type AgentBudget } from "@/lib/agents/switch";
 import {
   DATE_TOLERANCE_DAYS, LIGHT_STALE_DAYS, competitorsFor, kindOf, listingNights, normalize, ourNightRateUsd,
-  ourNights, ourPackageUsd, ourTicketUsd, pickRuleMatch, type MatchCandidate,
+  ourNights, ourPackageUsd, ourTicketUsd, pickRuleMatch, ruleSaysAbsent, type MatchCandidate,
 } from "@/lib/services/price-light";
 import { ACTIVE_COMPETITORS, scraperFor } from "@/lib/services/competitor-scrapers";
+import { isMultiMatchText } from "@/lib/services/offer-detail";
 import { loadEventForLight, recomputeEventLights, type LightEvent } from "@/lib/services/price-light-store";
 import { aiEnabled, extractAndJudge, makeJudge } from "@/lib/services/price-light-judge";
 import type { CompetitorKey, ExtractedAttrs, ListingRow, MatchMethod, MatchStatus, MatchTrigger, Scope } from "@/types/price-light.types";
@@ -246,14 +247,20 @@ export async function matchEvent(
   // publishes no price. Rule matched it, but it can never resolve to "found"
   // (no normalized price) or "not_selling" - it goes to "unsure" instead.
   let quoteOnly = false;
+  // Skipped because the competitor does not cover this vertical at all - unlike a failed crawl,
+  // that IS worth recording (see the write below).
+  let notCovered = false;
 
-  const rule = pickRuleMatch(
-    { names: [event.name, event.name_english ?? ""].filter(Boolean), date: event.date.slice(0, 10) },
-    candidates.map<MatchCandidate>((c) => ({
-      id: c.id, title: c.title, title_he: c.title_he, event_date: c.event_date,
-      travel_depart: c.travel_depart, travel_return: c.travel_return,
-    })),
-  );
+  const names = [event.name, event.name_english ?? ""].filter(Boolean);
+  const ruleCandidates = candidates.map<MatchCandidate>((c) => ({
+    id: c.id, title: c.title, title_he: c.title_he, event_date: c.event_date,
+    travel_depart: c.travel_depart, travel_return: c.travel_return, price_usd: c.price_usd,
+    multi: isMultiMatchText(c.detail_text),
+  }));
+  const rule = pickRuleMatch({ names, date: event.date.slice(0, 10) }, ruleCandidates);
+  // Every candidate in the date window is plainly another event: that is absence, not ambiguity -
+  // no judge call, and the not_selling path below decides (coverage + a good crawl still gate it).
+  const absent = candidates.length > 0 && ruleSaysAbsent({ names }, ruleCandidates);
   // Same listing as last visit, unchanged, already verdicted - reused by both the
   // rule-found extraction branch below and the rule-failed judge-decide branch.
   const cached = cachedCandidateFor(prev, candidates);
@@ -300,7 +307,7 @@ export async function matchEvent(
       // Same `cached: true` marker as the branch above - a reused verdict is not a new call.
       picked = cached; status = "found"; attrs = prev.attrs; verdict = { ...prev.ai_verdict, cached: true }; method = "ai";
     }
-  } else if (candidates.length > 0 && judge && !aiAlreadyDeclined(prev, candidates) && takeAiBudget(opts.aiBudget)) {
+  } else if (candidates.length > 0 && !absent && judge && !aiAlreadyDeclined(prev, candidates) && takeAiBudget(opts.aiBudget)) {
     let j: Awaited<ReturnType<Judge>> = null;
     try {
       j = await judge({ event, candidates });
@@ -313,7 +320,7 @@ export async function matchEvent(
       status = j.status; picked = j.listing; attrs = j.attrs; verdict = j.verdict; method = "ai";
       if (status === "found" && picked && picked.price_usd == null) { quoteOnly = true; status = "unsure"; }
     } else status = "unsure";
-  } else if (candidates.length > 0) {
+  } else if (candidates.length > 0 && !absent) {
     status = "unsure";                                          // ambiguous, no judge (AI off or rule-only mode)
   } else if (!coversEvent(competitor, event, opts.tagSlugs ?? [])) {
     // The scraper says its crawled catalog does not cover this event's vertical (ISSTA is
@@ -321,6 +328,7 @@ export async function matchEvent(
     // computeScopeLight already treats as non-valid -> the scope lands on `partial_coverage`
     // instead of claiming `alone` off a section we never opened (final review, I1).
     status = "skipped";
+    notCovered = true;
   } else {
     status = (await hadGoodCrawl(competitor)) ? "not_selling" : "skipped";
   }
@@ -365,6 +373,14 @@ export async function matchEvent(
     return out;
   }
 
+  // A `skipped` from a failed crawl writes nothing on purpose - the last real answer stands until it
+  // goes stale. A `skipped` because the competitor does not COVER this event is different: it is the
+  // answer, and not writing it left whatever the event's previous row said standing for ever (82
+  // non-football events kept an old ISSTA "unsure" once the absence rule stopped calling them so).
+  if (notCovered && prev && prev.status !== "skipped") {
+    await write({ status: "skipped", method: "rule", listing_id: null, our_usd: ourUsd, note: "not covered by this competitor" });
+  }
+
   if (status !== "skipped") {
     const listingId = picked?.id ?? null;
     // Same rule as the `found` branch above: a fresh verdict against a verdict-less
@@ -376,7 +392,10 @@ export async function matchEvent(
       await write({
         status, method, listing_id: listingId, ai_verdict: verdict, our_usd: ourUsd,
         ...(picked ? { listing_changed_at: picked.last_changed_at } : {}),
-        note: quoteOnly ? "quote_only" : status === "unsure" ? (aiNote(verdict) ?? `${candidates.length} candidates, no rule match`) : null,
+        note: quoteOnly ? "quote_only"
+          : status === "unsure" ? (aiNote(verdict) ?? `${candidates.length} candidates, no rule match`)
+          : status === "not_selling" && absent ? `${candidates.length} candidates, all other events`
+          : null,
       });
     }
   }

@@ -10,6 +10,24 @@ import { parseHTML } from "linkedom";
 import type { Currency } from "../../../types/price-light.types";
 import { UAS } from "../ua.ts";
 
+/**
+ * How much of a detail page's text is stored. Was 2000 per site, which cut OnTour's Celine Dion page
+ * mid-way through the ticket block - and the contents the /price-light comparison reads back out
+ * (lib/services/offer-detail.ts: airline, flight times, hotel, board, seat) sit at the END of these
+ * pages. Same ceiling the AI judge already reads (`AI_DETAIL_TEXT_MAX`).
+ */
+export const DETAIL_TEXT_MAX = 6_000;
+
+/**
+ * The page says a checked bag is NOT included ("לא כולל מזוודה", "ללא מזוודות", "הטיסה אינה כוללת
+ * כבודה"). Every crawler must test this BEFORE its "מזוודה/כבודה means included" check: a bare
+ * substring test read the exclusion sentence as inclusion and handed that listing a $120 BAG_USD
+ * discount in `normalize()` - on exactly the pages that are cheap because the bag is extra.
+ */
+export function bagExcluded(text: string): boolean {
+  return /(ללא|לא\s*כולל|לא\s*כלול|אינו\s*כולל|אינה\s*כוללת|אינן\s*כוללות|אינם\s*כוללים)[^.]{0,20}(מזוודו?ת?|כבודה)/.test(text);
+}
+
 const ACCEPT_LANGUAGE = "he-IL,he;q=0.9,en-US;q=0.8";
 const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)];
 

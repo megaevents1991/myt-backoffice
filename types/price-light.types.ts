@@ -75,6 +75,9 @@ export interface PerCompetitor {
   diff_usd?: number | null;
   light?: Light;
   uncertainty_usd?: number;
+  /** Sells the event, publishes no price ("לקבלת הצעת מחיר") - status stays `unsure`, since there
+   *  is nothing to compare, but it is NOT a doubt about whether they sell it. */
+  quote_only?: boolean;
 }
 
 export type UncheckedReason =
@@ -138,10 +141,59 @@ export interface LightOverride {
   competitor_normalized_usd: number | null;
 }
 
+// ---- what a package contains (partner format, 2026-09-14) ------------------------------------
+// "טיסות: אל על עם מזוודה ישיר 16-20 | מלון: שם מלון כולל ארוחת בוקר או ללא | סוג כרטיס".
+// Read out of competitor pages by lib/services/offer-detail.ts, and out of our own rule by
+// lib/services/our-offer-detail.ts - one shape, so both sides print in the same words.
+
+export interface FlightLeg { depart: string | null; arrive: string | null }
+
+export interface OfferFlight {
+  airline: string | null;
+  direct: boolean | null;
+  /** Short human wording: "כולל מזוודה 23 ק\"ג" / "טרולי בלבד" / "כבודה מלאה" / "ללא מזוודה". */
+  bag: string | null;
+  out: FlightLeg | null;
+  back: FlightLeg | null;
+}
+
+export type Board = "breakfast" | "room_only";
+
+export interface OfferHotel { name: string | null; stars: number | null; board: Board | null }
+
+export interface OfferDetail {
+  flight: OfferFlight | null;
+  hotel: OfferHotel | null;
+  ticket: string | null;
+  /** The package bundles more than one fixture (Golasso "חבילה מרובת משחקים"). */
+  multiMatch: boolean;
+}
+
+export interface OfferLines { flight: string | null; hotel: string | null; ticket: string | null }
+
+/**
+ * OUR package's contents as the pricing rule would buy it today - the cheapest direct flight (a
+ * connection only past the $300 gap) and the cheapest 3★ hotel, exactly what `price-quote.ts` prices.
+ *
+ * `price-quote.ts` keeps only the resulting number, never the airline or hotel behind it, and the
+ * light never edits the pricing code; so this is described separately (nightly rotation +
+ * "פרט עכשיו") and stored under `light_detail.ours`. An event linked to an offline flight or hotel is
+ * described from THAT inventory, since that is what the customer actually gets.
+ */
+export interface OurOfferSnapshot {
+  at: string;
+  flight: (OfferFlight & { usd: number | null; source: "amadeus" | "offline" }) | null;
+  hotel: (OfferHotel & { usd: number | null; room: string | null; source: "hotel_api" | "offline" }) | null;
+  /** Why a half is missing ("no direct or connecting offer", "hotel search failed: ..."). */
+  errors: string[];
+}
+
 export interface LightDetail {
   package?: LightScopeDetail;
   ticket?: LightScopeDetail;
   override?: LightOverride | null;
+  /** Preserved across every recompute - written only by lib/services/our-offer-detail.ts. */
+  ours?: OurOfferSnapshot | null;
 }
 
 export interface CrawlRunRow {
@@ -230,6 +282,8 @@ export interface CompetitorAnswer {
   light: Light | null;
   /** True for the one whose price the scope's light was actually computed against. */
   decided: boolean;
+  /** Sells it, no published price - "מוכר · הצעת מחיר", never read as "not sure they sell it". */
+  quote_only: boolean;
 }
 
 /** One scope's verdict for an event - the package conclusion, or the ticket conclusion. */
@@ -296,6 +350,41 @@ export interface PriceLightRow {
 /** The scopes this row has something to say about, package first. */
 export function rowScopes(row: PriceLightRow): PriceLightScopeCell[] {
   return [row.package, row.ticket].filter((c): c is PriceLightScopeCell => c != null);
+}
+
+/** One side of the side-by-side comparison: us, or one competitor's matched listing. */
+export interface ComparisonOffer {
+  who: CompetitorKey | "ours";
+  status: MatchStatus | "ours";
+  quote_only: boolean;
+  /** As published ("€1,349") - the number a human can check against the page. */
+  raw: number | null;
+  raw_currency: Currency | null;
+  usd: number | null;
+  normalized_usd: number | null;
+  /** OUR price minus theirs, normalized; null for us and for anyone with no price. */
+  diff_usd: number | null;
+  light: Light | null;
+  decided: boolean;
+  title: string | null;
+  url: string | null;
+  depart: string | null;
+  return: string | null;
+  nights: number | null;
+  lines: OfferLines;
+  multi_match: boolean;
+  seen_at: string | null;
+}
+
+export interface PriceLightComparison {
+  event_id: number;
+  name: string;
+  date: string;
+  /** When our own contents were last described; null = never (rule wording is shown instead). */
+  ours_at: string | null;
+  ours_errors: string[];
+  package: ComparisonOffer[];
+  ticket: ComparisonOffer[];
 }
 
 export interface PriceSnapshotRow {

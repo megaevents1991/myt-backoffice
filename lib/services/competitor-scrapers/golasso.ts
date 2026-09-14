@@ -17,7 +17,7 @@
 // only, so the fixture script can run these under plain node - same rule as liveevents.ts.
 import { UNKNOWN_ATTRS } from "../../../types/price-light.types.ts";
 import type { Currency, ExtractedAttrs } from "../../../types/price-light.types.ts";
-import { currencyFromSymbol, doc, flatText, isoOrNull, nightsBetween, parseHeDate, parsePrice, stealthHeaders, textLines } from "./shared.ts";
+import { DETAIL_TEXT_MAX, bagExcluded, currencyFromSymbol, doc, flatText, isoOrNull, nightsBetween, parseHeDate, parsePrice, stealthHeaders, textLines } from "./shared.ts";
 import type { CompetitorScraper, CrawlContext, DetailInput, Listing } from "./types";
 
 const BASE = "https://www.goalzo.co.il";
@@ -223,14 +223,14 @@ export function parseDetail(html: string, listing: Pick<DetailInput, "event_date
   const nightsWindow = nightsBetween(win.depart, win.ret);
   const attrs: Partial<ExtractedAttrs> = {
     ...UNKNOWN_ATTRS,
-    bag_included: /תיק\s*גב\s*בלבד|כבודת\s*יד\s*בלבד/.test(flat) ? false : /מזוודה|כבודה\s*רשומה/.test(flat) ? true : "unknown",
+    bag_included: bagExcluded(flat) || /תיק\s*גב\s*בלבד|כבודת\s*יד\s*בלבד/.test(flat) ? false : /מזוודה|כבודה\s*רשומה/.test(flat) ? true : "unknown",
     direct_flight: /קונקשן|עצירת\s*ביניים|חניית\s*ביניים/.test(flat) ? false : /טיס(?:ה|ות|ת)\s*ישיר/.test(flat) ? true : "unknown",
     hotel_stars: starsMatch ? Number(starsMatch[1]) : "unknown",
     nights: nightsWindow !== "unknown" ? nightsWindow : nightsFromText(flat),
     breakfast: /לינה\s*בלבד|ללא\s*ארוחת\s*בוקר/.test(flat) ? false : /ארוחת\s*בוקר/.test(flat) ? true : "unknown",
     transfers: /ללא\s*העברות|לא\s*כולל\s*העברות/.test(flat) ? false : /העברות/.test(flat) ? true : "unknown",
   };
-  const partial: Partial<Listing> = { attrs, detail_text: flat.slice(0, 2000) };
+  const partial: Partial<Listing> = { attrs, detail_text: flat.slice(0, DETAIL_TEXT_MAX) };
   if (win.depart && win.ret) { partial.travel_depart = win.depart; partial.travel_return = win.ret; }
   // First price on the page = "מחיר החבילה" (per person); "סך הכל לתשלום" is the 2-pax total.
   const price = parsePrice(priceMatch[2]);

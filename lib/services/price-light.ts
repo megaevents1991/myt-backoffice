@@ -363,6 +363,8 @@ export interface LatestMatch {
   uncertainty_usd?: number;
   nights?: { ours: number | null; theirs: number | "unknown" } | null;
   reason?: UncheckedReason | null; // carried from a failed crawl
+  /** The competitor sells this event but publishes no price (LiveEvents sports: "לקבלת הצעת מחיר"). */
+  quote_only?: boolean;
 }
 
 function daysBetween(fromIso: string, toIso: string): number {
@@ -421,6 +423,7 @@ export function computeScopeLight(input: {
       diff_usd: ownDiff,
       uncertainty_usd: ownUnc,
       ...(match.status === "found" && ownDiff != null ? { light: lightFor(ownDiff, ownUnc) } : {}),
+      ...(match.quote_only ? { quote_only: true } : {}),
     };
     const fresh = !!match.crawled_at && daysBetween(match.crawled_at, input.now) <= staleDays;
     if ((match.status === "found" || match.status === "not_selling") && fresh) valid.push(match);
@@ -477,17 +480,29 @@ export function decidePriceDrop(input: {
 }
 
 // ---- rule-based matching (before any AI) ----------------------------------------------
-const STOP = new Set(["vs", "v", "fc", "cf", "the", "and", "at", "in", "match", "game", "tickets", "package", "משחק", "נגד", "מול", "חבילה", "כרטיסים"]);
+// Words that name a competition, a club's legal form or the product rather than WHO is playing.
+// Measured 2026-09-14: "ליגת האלופות: ארסנל - ליל" scored 0.5 against Golasso's "ארסנל vs ליל"
+// only because two of its four tokens were the competition's name.
+const STOP = new Set([
+  "vs", "v", "fc", "cf", "afc", "sc", "ac", "as", "us", "cd", "ssc", "club", "de", "del", "di",
+  "the", "and", "at", "in", "match", "game", "tickets", "package", "live", "tour",
+  "champions", "league", "premier", "uefa", "cup", "laliga", "liga", "serie", "bundesliga",
+  "משחק", "נגד", "מול", "חבילה", "כרטיסים", "ליגת", "האלופות", "צמפיונס", "הליגה", "ליגה", "גביע", "הופעה", "הופעת",
+  "איי", "סי", "אס",
+]);
 
 export function nameTokens(value: string): string[] {
-  return value
+  return [...new Set(value
     .toLowerCase()
     .normalize("NFD")
     .replace(/\p{M}+/gu, "")
+    // A geresh/apostrophe is PART of a Hebrew transliteration ("מנצ'סטר", "לצ'ה", "ז'רמן"), not a
+    // word break: splitting on it left "מנצ" + "סטר" and made every such name half a match.
+    .replace(/['’׳`´]/g, "")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
     .split(" ")
-    .filter((t) => t.length > 1 && !STOP.has(t));
+    .filter((t) => t.length > 1 && !STOP.has(t) && !/^\d{4}$/.test(t)))];
 }
 
 export interface MatchCandidate {
@@ -498,19 +513,113 @@ export interface MatchCandidate {
   /** Phase 2: sites that publish a travel window instead of the match date (ISSTA, OnTour). */
   travel_depart?: string | null;
   travel_return?: string | null;
+  /** Only the tie-break between duplicate listings reads it (the cheaper copy wins). */
+  price_usd?: number | null;
+  /** Its detail page says it bundles several fixtures (offer-detail.ts `isMultiMatchText`) - a
+   *  title alone cannot tell: Golasso names such a package after its first game. */
+  multi?: boolean;
 }
 
-/** 0..1 - share of our name tokens found in the candidate title (best over our names). */
+/** Optimal-string-alignment distance, capped: returns `cap + 1` as soon as it cannot be ≤ cap. */
+function editDistanceWithin(a: string, b: string, cap: number): number {
+  if (Math.abs(a.length - b.length) > cap) return cap + 1;
+  let prev2: number[] = [];
+  let prev: number[] = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur: number[] = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, prev2[j - 2] + 1);
+      cur.push(v);
+      rowMin = Math.min(rowMin, v);
+    }
+    if (rowMin > cap) return cap + 1;
+    prev2 = prev;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Letters Hebrew glues onto the front of a word ("במדריד", "ולונדון"). */
+const HE_PREFIX = /^[ובהלמשכ](?=[א-ת]{3})/;
+
+/**
+ * Two tokens name the same thing: equal, equal once a Hebrew prefix letter is dropped, or - for
+ * words of 5+ letters - one typo apart. Every one of these was a real miss on 2026-09-14:
+ * "הילרי"/"הילארי" (Hilary Duff), "ויאריאל"/"וויאריאל", "סיביליה"/"סביליה", "מנצ'טסר" (our own typo).
+ * Five letters, not four: at four a single letter separates different places ("ליון"/"ליאון").
+ */
+function tokensAlike(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.replace(HE_PREFIX, "") === b || a === b.replace(HE_PREFIX, "")) return true;
+  return Math.min(a.length, b.length) >= 5 && editDistanceWithin(a, b, 1) <= 1;
+}
+
+function coverage(from: string[], into: string[]): number {
+  if (from.length === 0) return 0;
+  return from.filter((t) => into.some((u) => tokensAlike(t, u))).length / from.length;
+}
+
+/**
+ * 0..1 - how well a candidate title names the same event as ours, best over our names.
+ *
+ * Measured BOTH ways: the share of our tokens the title covers, and the share of the title's
+ * tokens our name covers. The second is what a short competitor title needs - "מילאן | לצ'ה"
+ * against our "איי סי מילאן - לצ'ה" is a perfect title, but only half of OUR words. It only
+ * counts when the title names TWO SIDES (a "vs" / "|" / "-" / "נגד" between them): a bare club
+ * title ("ריאל מדריד" - Golasso emits one when a card shows a single team) is fully contained in
+ * every Real Madrid fixture, and must never claim one by being so.
+ */
 export function ruleMatchScore(ours: { names: string[] }, candidate: MatchCandidate): number {
-  const theirs = new Set([...nameTokens(candidate.title), ...nameTokens(candidate.title_he ?? "")]);
+  const raw = [...new Set([candidate.title, candidate.title_he ?? ""].filter(Boolean))];
+  const titles = raw.map((t) => ({ tokens: nameTokens(t), twoSides: namesTwoSides(t) }));
+  const theirsAll = [...new Set(titles.flatMap((t) => t.tokens))];
   let best = 0;
   for (const name of ours.names) {
     const tokens = nameTokens(name);
     if (tokens.length === 0) continue;
-    const hit = tokens.filter((t) => theirs.has(t)).length / tokens.length;
-    best = Math.max(best, hit);
+    best = Math.max(best, coverage(tokens, theirsAll));
+    for (const title of titles) {
+      if (title.twoSides && title.tokens.length >= 2) best = Math.max(best, coverage(title.tokens, tokens));
+    }
   }
   return best;
+}
+
+/**
+ * A title that names two sides of a fixture: "X vs Y", "X | Y", "X - Y", "X -Y", "ברצלונה-קומו", "X נגד Y".
+ * A Latin hyphen with no spaces is a NAME ("Paris Saint-Germain"), not a separator.
+ */
+function namesTwoSides(title: string): boolean {
+  return /\s(?:vs\.?|v|נגד|מול)\s|\||\s[-–]|[-–]\s|[א-ת][-–][א-ת]/i.test(title);
+}
+
+/**
+ * A listing that bundles several fixtures ("ליברפול-סיטי+יונייטד-טוטנהאם"). It DOES sell our
+ * match, so it is never evidence of absence - but its price covers two games, so it is never
+ * the like-for-like offer a light may be computed against either.
+ */
+export function isMultiMatchTitle(title: string): boolean {
+  return /\+/.test(title);
+}
+
+/** At or above this a title is plausibly our event; below it, plainly a different one. */
+export const RULE_ABSENT_BELOW = 0.4;
+
+/**
+ * Every candidate the date window produced is plainly SOME OTHER event - so the competitor does
+ * not sell ours, and the answer is `not_selling`, not "ambiguous".
+ *
+ * Before this, any listing within a day of our date made the match `unsure`: 403 of the 840
+ * unsure package answers on 2026-09-14 had on-date candidates sharing not one word with our event
+ * (Hilary Duff "unsure" because LiveEvents sells Sam Smith that night). That blocked every
+ * `alone`, hid who really does not sell, and - with the AI on - would have spent a call on each.
+ * A candidate a day off with a strong name still counts: that is a date disagreement, not absence.
+ */
+export function ruleSaysAbsent(ours: { names: string[] }, candidates: MatchCandidate[]): boolean {
+  return candidates.every((c) => ruleMatchScore(ours, c) < RULE_ABSENT_BELOW);
 }
 
 /**
@@ -531,21 +640,35 @@ export const RULE_MATCH_MIN_SCORE = 0.8;
 
 /**
  * Deterministic pick: the single candidate on our date (exact date, or a travel window
- * that contains it) whose title covers >= 80% of our name tokens. Two qualifying
- * candidates with the same score = ambiguous = null (the AI judge decides). A ±1-day
- * dated candidate is never picked by rule.
+ * that contains it) whose title scores >= 0.8 (`ruleMatchScore`). Two qualifying
+ * candidates with the same score = ambiguous = null (the AI judge decides) - UNLESS they are
+ * the same title listed twice (Golasso lists one fixture once per hotel tier: "ארסנל vs ליל" at
+ * $1,484 and at $1,686), in which case the cheaper copy is the offer on the shelf. A ±1-day
+ * dated candidate and a multi-fixture bundle are never picked by rule.
  */
 export function pickRuleMatch(
   ours: { names: string[]; date: string },
   candidates: MatchCandidate[],
 ): { candidate: MatchCandidate; score: number } | null {
-  const onDate = candidates.filter((c) => candidateCoversDate(c, ours.date));
+  const onDate = candidates.filter((c) => candidateCoversDate(c, ours.date) && !c.multi && !isMultiMatchTitle(c.title));
   const scored = onDate
     .map((candidate) => ({ candidate, score: ruleMatchScore(ours, candidate) }))
     .filter((x) => x.score >= RULE_MATCH_MIN_SCORE)
     .sort((a, b) => b.score - a.score);
-  if (scored.length === 1) return scored[0];
-  if (scored.length > 1 && scored[0].score > scored[1].score) return scored[0];
+  if (scored.length === 0) return null;
+  const top = scored.filter((x) => x.score === scored[0].score);
+  if (top.length === 1) return top[0];
+  // "Same title" tolerates spelling: Golasso lists Barcelona-Villarreal as both "ויאריאל" and
+  // "וויאריאל" on one night - one fixture, three copies, not three different events.
+  const first = nameTokens(top[0].candidate.title);
+  const sameTitle = (c: MatchCandidate) => {
+    const t = nameTokens(c.title);
+    return coverage(t, first) === 1 && coverage(first, t) === 1;
+  };
+  if (first.length > 0 && top.every((x) => sameTitle(x.candidate))) {
+    const price = (x: { candidate: MatchCandidate }) => x.candidate.price_usd ?? Number.POSITIVE_INFINITY;
+    return top.reduce((a, b) => (price(b) < price(a) ? b : a));
+  }
   return null;
 }
 
