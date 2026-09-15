@@ -94,8 +94,11 @@ export async function pickDueCompetitor(now: Date = new Date()): Promise<Competi
     const runs = await recentRuns(key, 10);
     const lastGood = runs.find((r) => r.status === "ok" || r.status === "partial");
     const lastAny = runs.find((r) => r.status !== "running" && r.status !== "skipped");
-    // A blocked site waits a full interval from the block, not from the last good run.
-    const since = lastAny?.status === "blocked" ? lastAny : lastGood;
+    // A VISIT is a visit, successful or not: a failed one waits a full interval too, and only then
+    // is the site tried again. Counting only good runs meant a site that kept failing (ISSTA on
+    // 2026-09-15: HTTP 200 with an empty catalog from Vercel's IP) stayed permanently "overdue" and
+    // was re-crawled every hour until the circuit opened - the opposite of "gentle, every few days".
+    const since = lastAny?.status === "blocked" || lastAny?.status === "error" ? lastAny : lastGood;
     const ageMs = since ? now.getTime() - Date.parse(since.started_at) : Number.POSITIVE_INFINITY;
     const overdueMs = ageMs - scraper.intervalHours * 3_600_000;
     if (overdueMs < 0) continue;
@@ -584,7 +587,9 @@ export async function runCrawl(
     if (summary.status === "running" && summary.listings === 0 && summary.failed === 0) {
       summary.status = "error";
       summary.note = summary.note ? `${summary.note} | catalog parsed 0 listings` : "catalog parsed 0 listings";
-      if (!dryRun && (summary.prevListings ?? 0) > 0) await alert(competitor, `error: ${summary.note}`);
+      // One mail when the circuit opens, not one per attempt: the same "0 listings" arrived twice in
+      // two hours on 2026-09-15 and said nothing new the second time.
+      if (!dryRun && (await circuitOpen(competitor))) await alert(competitor, `error: ${summary.note}`);
     }
     if (summary.status === "running") summary.status = "ok";
     if (summary.status !== "error" && summary.prevListings != null && summary.listings < summary.prevListings * DROP_ALARM_RATIO) {

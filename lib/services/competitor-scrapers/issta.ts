@@ -108,6 +108,7 @@ export const issta: CompetitorScraper = {
     const { toUsd } = await import("./livetickets-api.ts");
     const seen = new Set<string>();
     let failures = 0;
+    let emptyPages = 0;
     let lastError = "";
     for (let i = 0; i < LEAGUE_URLS.length; i++) {
       const url = LEAGUE_URLS[i];
@@ -128,8 +129,16 @@ export const issta: CompetitorScraper = {
         continue;
       }
       const listings = parseCatalog(html);
-      ctx.log(`issta: ${url} -> ${listings.length} listings`);
-      if (listings.length === 0) ctx.log(`issta: ZERO listings on ${url} - selectors may have changed`);
+      const cardsInHtml = (html.match(/deal-item-container/g) ?? []).length;
+      ctx.log(`issta: ${url} -> ${listings.length} listings (${html.length} chars, ${cardsInHtml} cards in html)`);
+      // A single empty page is normal - three of the eight leagues genuinely had no packages on
+      // 2026-09-15. What is NOT normal is every page coming back empty, which is what Vercel's IP
+      // saw while an Israeli connection got cards from four of them. Cards left in the HTML mean
+      // the selector changed instead; say which, so the run note answers it without a re-run.
+      if (listings.length === 0) {
+        emptyPages += 1;
+        ctx.log(`issta: no listings on ${url} - ${cardsInHtml > 0 ? "cards ARE in the HTML, selectors changed" : "no cards in the HTML (empty category, or the page was served without them)"}`);
+      }
       for (const l of listings) {
         if (seen.has(l.external_key)) continue; // the same package sits on several league pages
         seen.add(l.external_key);
@@ -141,5 +150,12 @@ export const issta: CompetitorScraper = {
       if (i < LEAGUE_URLS.length - 1) await ctx.pauseShort();
     }
     if (failures === LEAGUE_URLS.length) throw new Error(`issta: all ${failures} league pages failed (last: ${lastError})`);
+    // Every page answered and not one card came back anywhere - that is a failure with a reason,
+    // not an empty catalog (the eight leagues are never all empty at once; four of them served
+    // cards to an Israeli connection the same hour Vercel's IP got none). Thrown so runCrawl
+    // records it with this note and the circuit counts it.
+    if (seen.size === 0 && emptyPages > 0) {
+      throw new Error(`issta: all ${emptyPages} answering league pages carried no cards - the site likely served this IP a card-less page`);
+    }
   },
 };
