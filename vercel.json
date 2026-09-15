@@ -55,6 +55,22 @@
     {
       "path": "/api/cron/googleReviewsSync",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/price-light-crawl",
+      "schedule": "7 * * * *"
+    },
+    {
+      "path": "/api/cron/price-light-nightly",
+      "schedule": "15 0 * * *"
+    },
+    {
+      "path": "/api/cron/price-light-retention",
+      "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/cron/price-light-ours",
+      "schedule": "40 2 * * *"
     }
   ],
   "functions": {
@@ -123,6 +139,28 @@
       "maxDuration": 800
     },
     "app/api/cron/base-price-sync/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/cron/price-light-crawl/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
+    "app/api/cron/price-light-nightly/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
+    "app/api/cron/price-light-retention/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/cron/price-light-ours/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/price-light/crawl/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
+    "app/(dashboard)/price-light/page.tsx": {
+      "memory": 1024,
       "maxDuration": 300
     }
   },

@@ -92,7 +92,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   columns explicitly + validate prices/commission are positive finite (pattern:
 >   `offline-hotel-room-actions.ts` `replaceOfflineHotelRooms`).
 > - **Unauth resource-abuse proxies** (`validate-airline` headless Chromium, `flights/search`
->   Amadeus prod, `*/tickets`, `competitor-pricing`) - add auth or shared-secret + rate limit.
+>   Amadeus prod, `*/tickets`) - add auth or shared-secret + rate limit.
 > - **Secret in URL** on `hotels/search` - move to a header + rotate (cross-project with main).
 
 ## Always-on rules (auto-loaded)
@@ -219,6 +219,10 @@ fallback for manual triggers:
 - `partnerMonthlyReport` - partner report monthly
 - `googleReviewsSync` - daily 04:00 UTC: mirrors the Mega Events Google Business reviews into `google_reviews` / `google_review_sources` (`lib/services/google-reviews-sync.ts`). Source per run: Places API (New) when `NEXT_SECRET_GOOGLE_PLACES_API_KEY` is set (live rating/count, ≤5 reviews per call, no owner replies), **otherwise Elfsight's public review feed for our Place ID** (all reviews + replies; unofficial endpoint, refreshed on Elfsight's schedule - a failure lands in `google_review_sources.sync_error` and the site keeps what it has). The mirror only accumulates. Initial 71 rows seeded with `scripts/seed-google-reviews-from-elfsight.mjs`. myt-main renders "לקוחות משתפים" from these tables (its own carousel - the Elfsight widget is gone, 2026-09-09).
 - `base-price-sync` - nightly 01:30 UTC: re-quotes live future events through `price-quote.ts`; deviation ≥$20 per component rewrites the base, >$400 freezes as `needs_review` (`/price-changes`); skips offline-linked components (`flights.event_ids` / `offline_hotels.event_ids`), base=0, events <2 days out. **Rotation** (2026-09-07): the 270s budget covers ~50 events, so each night takes the least-recently-visited first (newest log row per event = last visit), next-45-days ahead of the rest. **Every visit is logged** - `applied` / `needs_review` / `skipped` / `error` with the arithmetic in `note` - so the screen answers "why didn't it move". **`?dry_run=1` computes everything with zero writes** (no event update, no log row, rotation not advanced) - the way to test against prod from a preview. Daily summary email to `NEXT_SECRET_ADMIN_EMAIL` when anything happened.
+- `price-light-crawl` - hourly tick (`7 * * * *`): crawls at most ONE competitor whose site is due (72h interval, `intervalHours` per scraper in `lib/services/competitor-scrapers/`), writing `competitor_listings`. Locking is a `competitor_crawl_runs` row in status `running` younger than 6 min - not an advisory lock. `?competitor=liveevents` forces a site (validated against `ACTIVE_COMPETITORS`), `?dry_run=1` writes nothing. Stealth is code, not a promise: one session at a time, 20-60s random pauses, blocked images/media/fonts/stylesheets, rotating Israeli UA, 45s page / 240s crawl timeout. Three consecutive `blocked`/`error` runs open a circuit for 24h (manual crawls bypass it); a listing-count drop ≥50% vs the last good run marks the run `partial` and emails `NEXT_SECRET_ADMIN_EMAIL`. `PRICE_LIGHT_SCRAPE=off` stops crawling (matching/lights still run off the stored catalog). Admin "crawl now" is `POST /api/price-light/crawl` (`guardAdminRoute`).
+- `price-light-retention` - weekly, Sundays 03:00 UTC: keeps `RETENTION_DAYS` (**180**) and hard-deletes the rest of `event_price_snapshots` (by `day`), `competitor_matches` (by the EVENT they describe being 180 days past - never by their own age, or a quiet row that is still an event's newest verdict would be erased and its light would vanish at the next recompute), `competitor_listings` (`last_seen_at` - not seen in six months = off their site), `competitor_crawl_runs` (`started_at`) and `audit_log` rows whose action starts `price_light.`. Backoffice-only log tables, so a hard delete is the policy here (same precedent as `purgeAuditLog`); it never touches `events`. `?dry_run=1` counts exactly what a real run would remove and writes nothing. **`purgeAuditLog` now EXEMPTS `price_light.*`** - those rows are the decisions the agent learns from, and dropping them at 30 days silently capped its 120-day memory at a month. Why these sizes are safe: the price-drop lookback reads 14 days, a light goes stale at 14, and the circuit reads the last handful of runs - every read path lives far inside 180.
+- `price-light-ours` - nightly 02:40 UTC (after `base-price-sync` finishes its own Amadeus searches): describes OUR package contents for the /price-light comparison - the flight and hotel the pricing rule would buy today (cheapest direct / connection past the $300 gap via `fetchFlightOffers` + `pickFlightPrice`; cheapest 3★ via main's `/api/hotels`; a linked offline flight/hotel wins) - into `events.light_detail.ours`. Never-described first, then older than `OUR_OFFER_REFRESH_DAYS` (7) or last lost to a TRANSIENT error (HTTP/API/timeout - retried next night, not left blank a week), `OUR_OFFER_CONCURRENCY` 3 events at a time in a 260s budget (~5-8s per event). **Hotel searches run through ONE queue** whatever the event concurrency, with one retry on 429/5xx: main's `/api/hotels` fails under parallel load (first full pass lost 308 of 426 hotels; each answered alone). Flights: 423 of 426 described. Reads the rule, writes no price. `?dry_run=1` still SEARCHES (that is what is being tested) but writes nothing; `?limit=N` caps a manual run. Dor 2026-09-14: the extra Amadeus/hotel calls are fine nightly and on demand.
+- `price-light-nightly` - 00:15 UTC, before `base-price-sync`: refreshes the `livetickets` competitor table from `live_events` first (it's an API read, never crawled, budgeted at 60s so it can't eat the whole run); then pass 1 snapshots every live future event and applies the "ירידת מחיר" tag (drop ≥$50 vs ~14 days ago, shown 14 days); pass 2 rule-matches every event against the stored catalogs and recomputes `events.light_package` / `light_ticket` / `light_detail`. Both passes go least-recently-checked first and share one 270s budget measured from the top of the run, so a cutoff mid-pass-1 is recorded (`snapshotsRemaining`) rather than silently skipped. Revalidates main (both targets) once if anything changed; summary email (which also reports `aiCalls` used out of `AI_CALLS_PER_RUN`). `?dry_run=1` = zero writes **and zero AI** - dry runs pass `judge: null`, so a report pointed at prod never spends money. Spec `docs/superpowers/specs/2026-09-09-price-light-design.md`; rules + constants ONLY in `lib/services/price-light.ts`.
 
 ### Environment Variables
 
@@ -255,6 +259,213 @@ Spec: `docs/superpowers/specs/2026-09-02-events-factory-design.md`. Three paths 
 - **Batch from every provider**: Live/P1/Sports tables have multi-select + Create-N; the stash is `{ provider, rows }` (`lib/provider-batch.ts` mappers are identity-only - name/date/venue/coords/smart dates; tickets come from stadium memory, not from provider live tickets, which stay on the single-event pages).
 - **Factory** (`/factory`, `lib/actions/factory-actions.ts`, table `event_drafts`): "Send to factory" from any provider bar creates draft rows; the page loops `buildNextDraft()` one draft per call (stoppable) through the blocks above and records what stayed empty in `missing`; the grid inline-edits name/iata/prices (amber = missing), bulk-approve calls `createEvent` per draft. Drafts are a separate table on purpose - main never sees them. Terminal rows purge after 30 days.
 - **Form cleanup**: legacy composed-pricing markups (`markup_ticket/flight/hotel`, `skip_hotel_markup`) sit in a collapsed Advanced section (auto-opens when used); `usual_price` is gone from the UI but the column stays (main's feed uses it as a last-resort price fallback).
+
+### Price light (רמזור) (2026-09-10, phase 0)
+
+Spec `docs/superpowers/specs/2026-09-09-price-light-design.md`; phase-0 task plan
+`docs/superpowers/plans/2026-09-10-price-light-phase-0.md`; LiveEvents site recon
+`docs/superpowers/scrapers/liveevents.md`. Own Playwright crawler per competitor site
+(no Firecrawl - rejected in the design doc), never more than one site per 72h, matched
+rule-first against our catalog and shown as two traffic-light pills (package / ticket)
+on the events table. Rules, thresholds and normalization constants live ONLY in
+`lib/services/price-light.ts` (pure, no DB/fetch - runs under plain `node` via
+`scripts/price-light-selftest.ts`); the crawl loop is `lib/services/price-light-crawl.ts`,
+matching is `lib/services/price-light-match.ts`, the nightly pass is
+`lib/services/price-light-nightly.ts`, event-column read/write is
+`lib/services/price-light-store.ts`, and each site's crawler lives in
+`lib/services/competitor-scrapers/` (phase 0: `liveevents.ts` browser-mode, `livetickets-api.ts`
+table-mode reading `live_events`). Browser acquisition (local `@sparticuz/chromium` vs remote
+CDP, UA/viewport rotation, stealth headers) is centralized in `lib/services/browser.ts` - no
+other file launches a browser. UI: `app/(dashboard)/events/price-light-cell.tsx` (pills, tooltip,
+refresh, history sheet) via `lib/actions/price-light-actions.ts`. Local tooling:
+`scripts/scrape-fixture.ts <competitor> [--save]` (parser regression on saved HTML),
+`scripts/scrape-once.ts <competitor>` (live dry-run), `scripts/livetickets-brt-check.ts` (spot-checks
+the `brt` = shelf-price assumption). The old `/api/competitor-pricing` route and its bulk-check
+dialog on `/events` are gone - `createEvent` matches new events instantly (`on_create`) instead.
+`comp_pricing` column/type is untouched here (removal is a separate PR). Phase 2 adds ISSTA,
+Golasso, OnTour and the AI judge (`PRICE_LIGHT_AI`).
+
+**Phase 1 (2026-09-10): AI judge + `/price-light` decision screen.** The rule matcher
+(`price-light.ts`) is still phase 0's only *normalizer* - the AI never sets a light itself, it only
+resolves what the rule couldn't. The judge is `extractAndJudge()` in
+`lib/services/price-light-judge.ts`, and `price-light-match.ts` is its **only production call
+site** - nothing else in the app may call it (the one other caller is the local
+`scripts/price-light-judge-smoke.ts` smoke test, run by hand). The AI is
+**opt-in**: `aiEnabled()` is true only when `PRICE_LIGHT_AI` is literally `"on"` AND
+`ANTHROPIC_API_KEY` is set. Unset, empty or anything but `on` = off = rule-only, exactly phase-0
+behaviour (it fails CLOSED on a typo, so the spending side can never turn itself on by accident);
+every AI failure (timeout, truncation, bad output, disabled) resolves to `unsure` with a note and
+never throws past `matchEvent`. Two ways in: the rule left the pick ambiguous (candidates handed
+to the judge to pick `same_event` + extract listing attrs), or the rule already found the listing but
+its `attrs` are all `unknown` and it has `detail_text` (extraction only, no re-judging same_event).
+**One AI call per (event, listing) pair:** reused whenever the newest `competitor_matches` row for
+that (event, competitor, scope) has the same `listing_id`, a non-null `ai_verdict` with no `error`,
+and `listing_changed_at` unchanged - a fresh call only fires when the listing itself changed. A
+reused verdict is copied onto the new row marked `cached: true`, which is how `aiCostThisMonth()`
+avoids re-billing one call on every visit. A verdict produced this run against a row that has none
+is ALWAYS persisted, even at an unchanged price - otherwise the cache could never engage. Page
+`attrs` win over AI `attrs` **per field, only where the page actually knows the value** (a page
+that stores `"unknown"` never overwrites an AI answer). Constants live only in the judge file:
+`AI_CONFIDENCE_MIN 0.8` (below it → `unsure`), `AI_TIMEOUT_MS 12000` with `maxRetries: 0`,
+`AI_CALLS_PER_RUN 40` (run-wide ceiling the nightly threads through `matchAllForEvent` as a shared
+`aiBudget`; past it matching carries on rule-only and the summary reports `aiCalls`),
+`AI_MAX_CANDIDATES 10`, `AI_DETAIL_TEXT_MAX 6000`, `AI_MODEL_DEFAULT "claude-opus-5"`,
+`AI_USD_PER_M_INPUT 5` / `AI_USD_PER_M_OUTPUT 25` (Opus 5 pricing - cost computed and stored per
+call in `ai_verdict`). The call is `max_tokens: 4000` + `output_config: { effort: "low" }` and
+treats `stop_reason === "max_tokens"` as a failure: Opus 5 thinks adaptively, so a small ceiling
+truncates the reasoning before the forced tool call ever lands. `scripts/price-light-judge-smoke.ts
+<eventId>` (`npx tsx`, needs the key) smoke-tests one call live. **First live run (2026-09-15)
+found Opus 5 answering the tool with STRINGS** (`"same_event": "true"`, `"nights": "3"` - the schema
+allows `["boolean","string"]`); the reader accepted only real booleans/numbers, so every verdict read
+as "unknown" and the judge could never find, rule out, or extract anything. `coerceBool`/`coerceNum`
+now read both, every verdict carries `parser: AI_VERDICT_PARSER` (2), and both caches reuse only a
+verdict with that stamp - older rows are asked again rather than recycled.
+
+**Phase 2.1 (2026-09-13): duration-aware comparison + the agent's memory.** Two packages for the
+same fixture are rarely the same length - ours is often a night longer - so a nights gap is now
+measured, priced and, where it cannot be seen, *admitted*. (a) `ourNights()` returns `null`
+instead of a flat 3 when an event has no travel window (a guess wearing a number's clothes);
+(b) a nights gap is priced at `ourNightRateUsd()` - that event's own `base_hotel_price / nights`,
+clamped to `NIGHT_RATE_MIN_USD 45`..`NIGHT_RATE_MAX_USD 260`, with the flat `NIGHT_USD 90` left
+only as the fallback (measured: a Manchester night is $190, a Barcelona one $75-138, so the flat
+rate mis-priced a one-night gap by up to 2x in both directions); (c) `listingNights()` derives
+the competitor's nights from the listing's stored travel window when no detail page ever said
+(123 of Golasso's 132 listings had `attrs: null` but all 132 carried the window); (d)
+`nightsUncertaintyUsd()` returns one night's rate when either side's duration is unknown, and
+`computeScopeLight` widens BOTH thresholds by it, so a duration we cannot see reads orange, never
+a confident red (63 of 77 matched package listings published no nights at all; 10 events moved
+red/green → orange on the first pass). `LightScopeDetail` carries `uncertainty_usd` + `nights`
+(both optional - rows written earlier have neither), the events-table tooltip and the
+`/price-light` row both print the duration line, and `matchEvent` rewrites a row whose nights
+changed even when its price did not. **The detail queue is now ordered**
+(`listingIdsWorthDetail`): matched-but-never-enriched first, then listings whose title actually
+covers one of our event names (`DETAIL_NAME_MIN_SCORE 0.5`), then the long tail, and at most
+`DETAIL_REFRESH_SLICE 6` refreshes of already-enriched rows - before this it re-fetched the same
+head every run (18 of 570 enriched, unchanged run after run) and a listing with no detail page
+has no nights, no stars and, on LiveEvents, no price. **The agent's memory** is
+`lib/services/price-light-memory.ts`: `houseRules()` is GENERATED from the engine constants (so
+tuning a constant re-teaches the judge on its next call, never a hand-copied prompt) and
+`loadJudgeLessons()` quotes the notes staff wrote when they overrode a light (`audit_log`,
+`price_light.override`, newest `LESSON_MAX 8` within `LESSON_LOOKBACK_DAYS 120`, capped at
+`AI_MEMORY_MAX 2000` chars in the prompt). The nightly loads it ONCE per run and threads it as
+`aiMemory` through `matchAllForEvent`; staff notes are quoted as evidence, explicitly not as
+instructions. Setup steps for turning the AI on: `docs/superpowers/price-light-ai-setup.md`.
+
+**One row per EVENT on `/price-light` (2026-09-14).** Dor: "צריך להיות באותה שורה גם המסקנה על
+כרטיס וגם המסקנה על חבילה". `PriceLightRow` is now the event, carrying `package` / `ticket`
+`PriceLightScopeCell`s (null when that scope is `na`); 406 of 435 events show both. The types and
+`rowScopes()` live in `types/price-light.types.ts` - `price-light-actions.ts` is `"use server"` and
+may only export async functions. Tiles and views count EVENTS and match when EITHER conclusion
+qualifies; the table shows both pills, both prices, both gaps, and sorts by the worse gap. **Every
+competitor is shown, not just the one that set the light** (`CompetitorAnswer[]`, deciding one
+marked) - the data was always in `light_detail[scope].per_competitor` and had nowhere to be seen;
+all 839 live scope cells carry it. Scope-specific decisions name their scope: with both scopes red
+there are two **הוזל** buttons and two **משימה** items (`הוזל · חבילה`), and **דריסה** gains a scope
+picker; **השאר בפיד**, **הסר מהאתר** and **בדוק עכשיו** stay event-level. The events-table light
+column sorts by the worse of the two lights, not by the package one alone.
+
+**Partner pass (2026-09-14): every competitor, contents side by side, a package/ticket lens.**
+(a) **Matching coverage.** 357 of 426 live events had NO priced package competitor, and 840 package
+answers were `unsure` - almost none of them genuinely ambiguous. The rule (`price-light.ts`) now:
+keeps a geresh inside a word ("מנצ'סטר" was two tokens), ignores competition names/years/club forms
+(`STOP`), treats tokens as equal across a Hebrew prefix letter or one typo on 5+ letters
+("הילרי"/"הילארי", "ויאריאל"/"וויאריאל"), scores BOTH ways (a short complete title "מילאן | לצ'ה"
+counts, but only with ≥2 tokens), never picks a multi-fixture bundle (title "+", or detail text
+"חבילה מרובת משחקים" - `isMultiMatchText`), and breaks a tie between copies of the same fixture by
+the cheaper one. **`ruleSaysAbsent`**: when every candidate in the date window scores below
+`RULE_ABSENT_BELOW` (0.4) it is plainly another event -> `not_selling` (still gated by `covers()` +
+a good crawl) and no AI call is spent on it; a strong name one day off stays `unsure`. Measured:
+0 found lost, +52 found, 520 `unsure` -> `not_selling`, 39 `unsure` left; 40 borderline absences
+checked by hand, all correct. **`quote_only`** (LiveEvents sports "לקבלת הצעת מחיר": they sell it, no
+number) travels match `note` -> store -> `per_competitor` -> UI as "מוכר · הצעת מחיר" instead of
+"לא ודאי" (225 events). (b) **What each package contains** - partner format "טיסות: אל על עם מזוודה
+ישיר 16-20 | מלון: שם, ארוחת בוקר או ללא | סוג כרטיס". Competitors: `lib/services/offer-detail.ts`,
+pure per-site parsers over the STORED `detail_text` (LiveEvents / Golasso / OnTour; ISSTA's page is a
+JS loader and LiveTickets is a table, so those fall back to `attrs`); the stored text cap is now
+`DETAIL_TEXT_MAX` 6000 (`competitor-scrapers/shared.ts`) - at 2000 OnTour's ticket block was cut.
+Ours: `lib/services/our-offer-detail.ts` re-runs the pricing RULE read-only (`fetchFlightOffers` +
+`pickFlightPrice`, main's `/api/hotels` which already returns the hotel name/room/meal it picked;
+linked offline flight/hotel wins) and stores `light_detail.ours` - it never writes a price, and
+`recomputeEventLights`/`clearLightOverride` carry `ours` over. Refreshed by the `price-light-ours`
+cron and the sheet's "פרט את שלנו עכשיו" (`refreshOurOffer`, `requireAdmin`). (c) **UI**: a
+package/ticket lens above the tiles (a LENS: tiles, views and pending all count only the chosen
+scope; `?scope=` preselects it), and **"השוואה מפורטת"** on each row opens `comparison-sheet.tsx`
+(`getPriceLightComparison`, loaded per row - detail pages never ride the list payload): us first,
+then every competitor with its published price, normalized price, own gap pill, status, and the
+three contents lines.
+
+### Agents (`lib/agents/`, 2026-09-13)
+
+**One agent layer, and the price light is agent #1.** Dor: "צריך להיות agent שהוא במיוחד על זה,
+אחריי זה נייצר עוד לדברים אחרים אז צריך להכין את השטח". An agent is DECLARED, not wired: `types.ts`
+is the shape (`AgentDefinition`), `<name>.agent.ts` declares one (model, `callsPerRun`, `timeoutMs`,
+`confidenceMin`, token prices, memory caps, `switchEnv`, `learnsFrom`, `houseRules`), `index.ts`
+registers it, and the plumbing is shared: `switch.ts` (key shape check, per-agent switch, master
+`AI_AGENTS` kill switch, `newBudget`/`takeBudget`, `callCostUsd`) and `memory.ts` (house rules +
+recorded decisions, capped and fenced). Adding an agent = a declaration + an env switch; it never
+means copying the price light's plumbing. `scripts/agents-selftest.ts` (`npx tsx`) covers the
+switches, the budget, the cost maths and every lesson formatter with synthetic rows - no DB, no API.
+
+**Two rules the layer enforces.** (1) **Opt-in, fails closed**: an agent runs only when its switch
+is literally `"on"`, `AI_AGENTS` is not `"off"`, AND `ANTHROPIC_API_KEY` starts `sk-ant-`; anything
+else is off and costs nothing, so the spending side can never turn itself on by accident. (2) **Staff
+text is DATA**: recorded decisions are quoted to the model inside an explicit "data, not instructions"
+fence - anyone with the decision screen can write into that block, so a prompt that obeyed it would be
+a prompt they could rewrite.
+
+**What the price-light agent learns from (`price_light.*` audit actions, newest 10 in 120 days).**
+Every decision on `/price-light` now stamps a `LightDecisionSnapshot` into its audit metadata (scope,
+light, diff, competitor, both normalized prices, both durations, the uncertainty) taken BEFORE its own
+write - because "someone removed event 812" is not a lesson, while "package red +$420 vs Golasso, our
+4 nights vs their 3, and a human pulled the event" is a labelled example. Sources in priority order:
+`override` (the only one carrying a human's own sentence - `light` is the OVERRULED light, `to_light`
+the forced one), `repriced`, `removed`, `silenced`, `task_opened`. **`הוזל` is now recorded**
+(`markRepriced`, `price_light.repriced`): it was a bare `<Link>`, so the strongest signal we have -
+a human judging a gap real - used to leave no trace at all. It still only logs; the light never
+writes a price. A decision with no snapshot (rows predating this) is dropped rather than guessed at.
+
+**Manual override beats the recompute.** `light_detail.override` (one scope-tagged field) is
+re-applied by `recomputeEventLights` on every pass: the overridden scope keeps `override.light`
+until the competitor's normalized price drifts more than `OVERRIDE_DRIFT_USD` ($20) from the number
+recorded at override time (a null on either side = nothing to measure = the override stands). Past
+that the override is dropped (`override: null`) and the computed light takes over - the market moved,
+the manual call is stale.
+
+**Admin-only surface.** Both the `/price-light` screen (`lib/nav.ts` roles) and the dashboard
+`PriceLightWidget` are gated on `ADMIN_ROLES` - an editor sees neither the screen nor the red count
+(the widget returns `null`); the server actions keep their own `requireAdmin`/`requireStaff` guards
+regardless.
+
+`/price-light` (nav "Price Light", `ADMIN_ROLES` only) is where a red light gets a decision instead
+of sitting on the events table. Tiles + views (`pending` / red / orange+ / package / ticket / next 45
+days / partial-coverage crawls / changed this week / unchecked / AI sample / all) - **"ממתינים
+להחלטה"** (pending, the default view) is red, not silenced right now, and with no open task already
+chasing it (`isPending()` in `price-light-client.tsx`). Header line shows AI cost this month
+(`aiCostThisMonth()`). Four decisions on a red row (`decision-actions.tsx`): **הוזל** (the drop is
+real - a plain link to `/events/{id}#fix-price` to go fix the base price there, no separate write);
+**השאר בפיד** (`silenceRedLight`, `SILENCE_DAYS 14` in `lib/actions/price-light-constants.ts` - the
+light stays red, it just drops out of "ממתינים להחלטה" until it expires or the light itself changes:
+`recomputeEventLights` clears `light_silenced_until` in the same write the moment no scope is red
+any more, so a stale mute can never hide the NEXT red);
+**הסר מהאתר** (`removeEventFromSite`, confirm dialog, soft delete only - never hard-deletes); **משימה**
+(`openPriceLightTask` - dedupes on an already-open task for the same event+scope, returns `existed:
+true` instead of a duplicate). Any row also gets **בדוק עכשיו** (`recheckEvent` - re-runs matching
+against the stored catalogs, no browsing, same as the events-table refresh icon) and **דריסה**
+(`setLightOverride`/`clearLightOverride` - forces a light, mandatory note ≥ 3 chars, stored in
+`light_detail.override`; "בטל דריסה" clears it). `recomputeEventLights` auto-closes an open
+price-light task the moment its scope's light reaches a real non-red verdict (`lightSettled`: green,
+orange, alone or na - never `unchecked`, which is stale data, not a resolution; the same rule lifts
+a "השאר בפיד" mute) (`status: "done"`, note
+`"האור ירד מאדום אוטומטית (...)"` appended - never deleted, so the history stays). Every decision
+writes `logAudit({ action: "price_light.<silenced|override|override_cleared|task_opened|task_autoclosed|removed|crawl_triggered>" })`.
+Competitors panel on the same screen shows last run / listing count / next due / open circuit per
+competitor with a **"סרוק עכשיו"** button (`triggerCrawl`, `requireAdmin()`, audited
+`price_light.crawl_triggered`) - disabled for table-mode competitors (LiveTickets), which refresh
+overnight from `live_events` instead of being crawled on demand. Dashboard mirror:
+`components/price-light-widget.tsx`, a segmented bar + "N אדומים · M ממתינים להחלטה" linking to
+`/price-light?f=pending`.
+
+**Phase 2 (2026-09-11): ISSTA Sport, Golasso, OnTour.** Three more crawlers in `lib/services/competitor-scrapers/` (`issta.ts` fetch-mode, 8 league pages; `golasso.ts` browser-mode all-packages page + fetchable `/pdetails/<id>` detail; `ontour.ts` fetch-mode `/artists/` → selling performer pages), registered in `index.ts` so the sports package light now compares against LiveEvents + ISSTA + Golasso and the music package light against LiveEvents + OnTour — "alone" needs all of them fresh. **ISSTA is crawled football-only** (`LEAGUES` = 8 soccer competitions), so `CompetitorScraper.covers?()` (`issta.coversEvent`, true only for the `football` vertical tag) gates ONLY the absence claim: a competitor that does not cover the event records `skipped` instead of `not_selling`, which lands the scope on `partial_coverage` rather than a false "alone" — `found`/`unsure` are evidence regardless and are never gated. `CompetitorScraper.detailMode` ("fetch" on golasso and liveevents, default = `mode`) says how `detail()` loads its page, so a browser-mode crawler whose detail pages are plain GETs is paced with `pauseShort()` (5–15 s) instead of the 20–60 s browser pause and actually finishes its enrichment inside the crawl budget; a details-budget cutoff keeps the run `ok` with a `details cut at budget` note (only a catalog cutoff is `partial`). **ISSTA and OnTour publish a travel window, not the match date:** such listings store `event_date = null` + `travel_depart/return`, and the matcher (`candidateCoversDate` in `price-light.ts`, the OR-clause in `candidatesFor`) treats them as on-date when the window contains our date. Shared parser helpers live in `competitor-scrapers/shared.ts`; `ctx.pauseShort()` (5–15 s) is the only pacing allowed between same-site paginated GETs in fetch mode. Fixture regression is per site: `scripts/scrape-fixture.ts <site>` with assertions in `scripts/fixture-checks/<site>.ts`. Recon + build addenda: `docs/superpowers/scrapers/phase2-recon.md`. **The light never touches pricing** — it reads `ourPackageUsd`/`ourTicketUsd` and writes only `light_*` columns; the pricing brain (`price-quote.ts`, `base-price-sync`, `/price-changes`) is untouched and stays the source of truth.
 
 ### Types
 
@@ -308,13 +519,43 @@ NEXT_SECRET_GOOGLE_PLACE_ID=
 # Optional - P1 feed URLs have hardcoded fallback values in p1-events-sync.ts
 NEXT_SECRET_P1_EVENTS_FEED_URL=
 NEXT_SECRET_P1_TICKETS_FEED_URL=
+# Price light (רמזור). "off" is the kill switch - crawls report `skipped`, matching/lights
+# still run off the stored catalog. Default "on" when unset.
+PRICE_LIGHT_SCRAPE=
+# Server-only, OUR Anthropic account (never the client, never billed to a customer key).
+# Powers extractAndJudge() - the price light's one AI call site (lib/services/price-light-judge.ts).
+# A console key from console.anthropic.com, starting "sk-ant-". The Vercel slot ships with a
+# placeholder: `anthropicKey()` only accepts a value with that prefix, so a placeholder or a
+# half-pasted value counts as NO key (rule-only) instead of turning every match into a 401.
+# With PRICE_LIGHT_AI=on and an unusable key, the judge logs why once per process.
+# Claude Code / Claude.ai subscriptions are interactive seats and cannot authenticate this -
+# the cron calls the API server-to-server, so it needs a console key.
+ANTHROPIC_API_KEY=
+# Master kill switch for EVERY agent (lib/agents/). "off" stops all of them whatever their own
+# switches say; unset means each agent is governed individually. Nothing else turns agents on.
+AI_AGENTS=
+# Phase 1 - AI judge for ambiguous matches (rule-match is phase 0's only matcher). OPT-IN, fails
+# closed: set PRICE_LIGHT_AI=on to enable; unset, empty or anything but "on" = off = rule-only,
+# exactly phase-0 behaviour (aiEnabled() false). Needs the key above as well - turning this on
+# without it does nothing (still rule-only).
+PRICE_LIGHT_AI=
+# Model id for the judge. Empty -> AI_MODEL_DEFAULT "claude-opus-5" (price-light-judge.ts).
+PRICE_LIGHT_AI_MODEL=
+# Set -> crawler connects to a remote stealth browser over CDP (Browserbase/Bright Data) and
+# that provider owns the fingerprint (UA/locale/timezone/proxy). Unset -> local @sparticuz/chromium.
+NEXT_SECRET_BROWSER_CDP_URL=
+# Optional residential proxy for the LOCAL chromium path only (ignored when CDP is set above).
+NEXT_SECRET_SCRAPE_PROXY_URL=
+# Dev-only override so `scripts/scrape-once.ts` can drive a real local Chrome instead of
+# @sparticuz/chromium; never read in production (NODE_ENV check).
+LOCAL_CHROME_PATH=
 ```
 
 ## Database
 
 Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, `locations`, `p1_events`, `live_events`, `sports_events`, `offline_flights`, `tixstock_events`. Managed via Supabase (PostgreSQL).
 
-Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `event_drafts`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`. Same shape but READ by main with its service client: `google_reviews` + `google_review_sources` (the site's "לקוחות משתפים"; `is_hidden` pulls a review off the site). Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
+Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `event_drafts`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`, `competitor_crawl_runs`, `competitor_listings`, `competitor_matches`, `event_price_snapshots`. Same shape but READ by main with its service client: `google_reviews` + `google_review_sources` (the site's "לקוחות משתפים"; `is_hidden` pulls a review off the site). Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
 
 ### Migrations (Supabase CLI)
 
