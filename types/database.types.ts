@@ -332,6 +332,48 @@ export type Database = {
         }
         Relationships: []
       }
+      cancellation_requests: {
+        Row: {
+          created_at: string
+          email: string
+          first_name: string
+          id: number
+          id_number: string
+          last_name: string
+          note: string | null
+          order_number: string
+          phone: string
+          source: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          first_name: string
+          id?: number
+          id_number: string
+          last_name: string
+          note?: string | null
+          order_number: string
+          phone: string
+          source?: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          first_name?: string
+          id?: number
+          id_number?: string
+          last_name?: string
+          note?: string | null
+          order_number?: string
+          phone?: string
+          source?: string
+          status?: string
+        }
+        Relationships: []
+      }
       categories: {
         Row: {
           art_bg_scale: number | null
@@ -451,6 +493,212 @@ export type Database = {
           },
         ]
       }
+      competitor_crawl_runs: {
+        Row: {
+          browser_mode: string | null
+          competitor: string
+          finished_at: string | null
+          id: number
+          listings: number
+          note: string | null
+          pages: number
+          prev_listings: number | null
+          started_at: string
+          status: string
+          trigger: string
+        }
+        Insert: {
+          browser_mode?: string | null
+          competitor: string
+          finished_at?: string | null
+          id?: number
+          listings?: number
+          note?: string | null
+          pages?: number
+          prev_listings?: number | null
+          started_at?: string
+          status: string
+          trigger: string
+        }
+        Update: {
+          browser_mode?: string | null
+          competitor?: string
+          finished_at?: string | null
+          id?: number
+          listings?: number
+          note?: string | null
+          pages?: number
+          prev_listings?: number | null
+          started_at?: string
+          status?: string
+          trigger?: string
+        }
+        Relationships: []
+      }
+      competitor_listings: {
+        Row: {
+          attrs: Json | null
+          city: string | null
+          competitor: string
+          currency: string | null
+          detail_text: string | null
+          event_date: string | null
+          external_key: string
+          first_seen_at: string
+          id: number
+          last_changed_at: string
+          last_seen_at: string
+          price_from: number | null
+          price_usd: number | null
+          run_id: number | null
+          scope: string
+          title: string
+          title_he: string | null
+          travel_depart: string | null
+          travel_return: string | null
+          url: string
+          venue: string | null
+        }
+        Insert: {
+          attrs?: Json | null
+          city?: string | null
+          competitor: string
+          currency?: string | null
+          detail_text?: string | null
+          event_date?: string | null
+          external_key: string
+          first_seen_at?: string
+          id?: number
+          last_changed_at?: string
+          last_seen_at?: string
+          price_from?: number | null
+          price_usd?: number | null
+          run_id?: number | null
+          scope: string
+          title: string
+          title_he?: string | null
+          travel_depart?: string | null
+          travel_return?: string | null
+          url: string
+          venue?: string | null
+        }
+        Update: {
+          attrs?: Json | null
+          city?: string | null
+          competitor?: string
+          currency?: string | null
+          detail_text?: string | null
+          event_date?: string | null
+          external_key?: string
+          first_seen_at?: string
+          id?: number
+          last_changed_at?: string
+          last_seen_at?: string
+          price_from?: number | null
+          price_usd?: number | null
+          run_id?: number | null
+          scope?: string
+          title?: string
+          title_he?: string | null
+          travel_depart?: string | null
+          travel_return?: string | null
+          url?: string
+          venue?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "competitor_listings_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "competitor_crawl_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      competitor_matches: {
+        Row: {
+          adjustments: Json | null
+          ai_verdict: Json | null
+          attrs: Json | null
+          competitor: string
+          created_at: string
+          diff_usd: number | null
+          event_id: number
+          id: number
+          light: string | null
+          listing_changed_at: string | null
+          listing_id: number | null
+          method: string
+          normalized_usd: number | null
+          note: string | null
+          our_usd: number | null
+          price_usd: number | null
+          raw_currency: string | null
+          raw_price: number | null
+          scope: string
+          status: string
+        }
+        Insert: {
+          adjustments?: Json | null
+          ai_verdict?: Json | null
+          attrs?: Json | null
+          competitor: string
+          created_at?: string
+          diff_usd?: number | null
+          event_id: number
+          id?: number
+          light?: string | null
+          listing_changed_at?: string | null
+          listing_id?: number | null
+          method: string
+          normalized_usd?: number | null
+          note?: string | null
+          our_usd?: number | null
+          price_usd?: number | null
+          raw_currency?: string | null
+          raw_price?: number | null
+          scope: string
+          status: string
+        }
+        Update: {
+          adjustments?: Json | null
+          ai_verdict?: Json | null
+          attrs?: Json | null
+          competitor?: string
+          created_at?: string
+          diff_usd?: number | null
+          event_id?: number
+          id?: number
+          light?: string | null
+          listing_changed_at?: string | null
+          listing_id?: number | null
+          method?: string
+          normalized_usd?: number | null
+          note?: string | null
+          our_usd?: number | null
+          price_usd?: number | null
+          raw_currency?: string | null
+          raw_price?: number | null
+          scope?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "competitor_matches_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "competitor_matches_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "competitor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       coupons: {
         Row: {
           code: string
@@ -461,9 +709,11 @@ export type Database = {
           event_id: number | null
           funded_by_commission: boolean
           id: number
+          influencer_partner_code: string | null
           is_active: boolean
           max_uses: number | null
           partner_tracking_code: string | null
+          per_person: boolean
           times_paid: number
           times_used: number
           valid_until: string | null
@@ -477,9 +727,11 @@ export type Database = {
           event_id?: number | null
           funded_by_commission?: boolean
           id?: never
+          influencer_partner_code?: string | null
           is_active?: boolean
           max_uses?: number | null
           partner_tracking_code?: string | null
+          per_person?: boolean
           times_paid?: number
           times_used?: number
           valid_until?: string | null
@@ -493,9 +745,11 @@ export type Database = {
           event_id?: number | null
           funded_by_commission?: boolean
           id?: never
+          influencer_partner_code?: string | null
           is_active?: boolean
           max_uses?: number | null
           partner_tracking_code?: string | null
+          per_person?: boolean
           times_paid?: number
           times_used?: number
           valid_until?: string | null
@@ -683,6 +937,47 @@ export type Database = {
         }
         Relationships: []
       }
+      event_price_snapshots: {
+        Row: {
+          base_flight: number | null
+          base_hotel: number | null
+          day: string
+          event_id: number
+          markup: number | null
+          min_ticket: number | null
+          package_usd: number | null
+          ticket_usd: number | null
+        }
+        Insert: {
+          base_flight?: number | null
+          base_hotel?: number | null
+          day: string
+          event_id: number
+          markup?: number | null
+          min_ticket?: number | null
+          package_usd?: number | null
+          ticket_usd?: number | null
+        }
+        Update: {
+          base_flight?: number | null
+          base_hotel?: number | null
+          day?: string
+          event_id?: number
+          markup?: number | null
+          min_ticket?: number | null
+          package_usd?: number | null
+          ticket_usd?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_price_snapshots_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_tag_links: {
         Row: {
           event_id: number
@@ -778,6 +1073,11 @@ export type Database = {
           is_deleted: string | null
           is_prioritized: boolean | null
           is_test: boolean
+          light_checked_at: string | null
+          light_detail: Json | null
+          light_package: string | null
+          light_silenced_until: string | null
+          light_ticket: string | null
           location: Json | null
           locked_flight_id: number | null
           map_image_url: string | null
@@ -786,6 +1086,9 @@ export type Database = {
           markup_ticket: number | null
           name: string
           name_english: string | null
+          price_drop_from: number | null
+          price_drop_until: string | null
+          price_drop_usd: number | null
           skip_flight: boolean | null
           skip_flight_markup: number | null
           skip_hotel_markup: number | null
@@ -824,6 +1127,11 @@ export type Database = {
           is_deleted?: string | null
           is_prioritized?: boolean | null
           is_test?: boolean
+          light_checked_at?: string | null
+          light_detail?: Json | null
+          light_package?: string | null
+          light_silenced_until?: string | null
+          light_ticket?: string | null
           location?: Json | null
           locked_flight_id?: number | null
           map_image_url?: string | null
@@ -832,6 +1140,9 @@ export type Database = {
           markup_ticket?: number | null
           name: string
           name_english?: string | null
+          price_drop_from?: number | null
+          price_drop_until?: string | null
+          price_drop_usd?: number | null
           skip_flight?: boolean | null
           skip_flight_markup?: number | null
           skip_hotel_markup?: number | null
@@ -870,6 +1181,11 @@ export type Database = {
           is_deleted?: string | null
           is_prioritized?: boolean | null
           is_test?: boolean
+          light_checked_at?: string | null
+          light_detail?: Json | null
+          light_package?: string | null
+          light_silenced_until?: string | null
+          light_ticket?: string | null
           location?: Json | null
           locked_flight_id?: number | null
           map_image_url?: string | null
@@ -878,6 +1194,9 @@ export type Database = {
           markup_ticket?: number | null
           name?: string
           name_english?: string | null
+          price_drop_from?: number | null
+          price_drop_until?: string | null
+          price_drop_usd?: number | null
           skip_flight?: boolean | null
           skip_flight_markup?: number | null
           skip_hotel_markup?: number | null
@@ -1480,6 +1799,104 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      google_review_sources: {
+        Row: {
+          display_name: string | null
+          maps_url: string | null
+          place_id: string
+          rating: number | null
+          review_count: number | null
+          sync_error: string | null
+          synced_at: string | null
+        }
+        Insert: {
+          display_name?: string | null
+          maps_url?: string | null
+          place_id: string
+          rating?: number | null
+          review_count?: number | null
+          sync_error?: string | null
+          synced_at?: string | null
+        }
+        Update: {
+          display_name?: string | null
+          maps_url?: string | null
+          place_id?: string
+          rating?: number | null
+          review_count?: number | null
+          sync_error?: string | null
+          synced_at?: string | null
+        }
+        Relationships: []
+      }
+      google_reviews: {
+        Row: {
+          author_name: string
+          author_photo_url: string | null
+          author_url: string | null
+          first_seen_at: string
+          images: Json
+          is_hidden: boolean
+          language: string | null
+          place_id: string
+          published_at: string
+          rating: number
+          reply_at: string | null
+          reply_text: string | null
+          review_key: string
+          review_url: string | null
+          text: string | null
+          text_html: string | null
+          updated_at: string
+        }
+        Insert: {
+          author_name: string
+          author_photo_url?: string | null
+          author_url?: string | null
+          first_seen_at?: string
+          images?: Json
+          is_hidden?: boolean
+          language?: string | null
+          place_id: string
+          published_at: string
+          rating: number
+          reply_at?: string | null
+          reply_text?: string | null
+          review_key: string
+          review_url?: string | null
+          text?: string | null
+          text_html?: string | null
+          updated_at?: string
+        }
+        Update: {
+          author_name?: string
+          author_photo_url?: string | null
+          author_url?: string | null
+          first_seen_at?: string
+          images?: Json
+          is_hidden?: boolean
+          language?: string | null
+          place_id?: string
+          published_at?: string
+          rating?: number
+          reply_at?: string | null
+          reply_text?: string | null
+          review_key?: string
+          review_url?: string | null
+          text?: string | null
+          text_html?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_reviews_place_id_fkey"
+            columns: ["place_id"]
+            isOneToOne: false
+            referencedRelation: "google_review_sources"
+            referencedColumns: ["place_id"]
+          },
+        ]
       }
       hotels: {
         Row: {
