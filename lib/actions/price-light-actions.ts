@@ -29,8 +29,11 @@ import {
 } from "@/lib/services/competitor-scrapers";
 import { circuitOpen, runCrawl, type CrawlSummary } from "@/lib/services/price-light-crawl";
 import { softDeleteEvent } from "@/lib/actions/event-actions";
-import { RECHECK_AI_CALLS, SILENCE_DAYS } from "@/lib/actions/price-light-constants";
+import { OVERRIDE_NOTE_MAX, RECHECK_AI_CALLS, SILENCE_DAYS, SILENCE_DAYS_MAX } from "@/lib/actions/price-light-constants";
+import { ADMIN_ROLES } from "@/types/auth.types";
 import {
+  LIGHTS,
+  SCOPES,
   type ComparisonOffer,
   type CompetitorAnswer,
   type CompetitorKey,
@@ -77,18 +80,23 @@ export async function recheckEvent(
   | { ok: true; lights: Lights; detail: LightDetail; checked_at: string }
   | { ok: false; error: string }
 > {
-  await requireStaff();
+  const session = await requireStaff();
+  // The refresh icon is on /events, which editors see; spending AI calls is an admin decision
+  // everywhere else in this feature, so an editor's recheck is rule-only.
+  const canSpend = ADMIN_ROLES.includes(session.role);
   try {
     // A manual recheck must judge by exactly the same rules the nightly does, corrections
     // included - otherwise "בדוק עכשיו" could answer differently from last night's pass on
     // identical inputs. One small audit-log read, and only when the AI is actually on.
-    const aiMemory = aiEnabled() ? await loadJudgeMemory() : null;
+    const aiMemory = canSpend && aiEnabled() ? await loadJudgeMemory() : null;
     // A ceiling on ONE click. Every other AI call site runs under a run-wide budget; a manual
     // recheck has no run to belong to, so without this a click could fan out to one call per
     // competitor per scope, and a staff member working down a list of reds would spend at the
     // nightly's rate with nothing accounting for it. The per-(event, listing) cache means
     // re-clicking the same row after this is free anyway.
-    const result = await matchAllForEvent(eventId, "manual", { aiMemory, aiBudget: { remaining: RECHECK_AI_CALLS } });
+    const result = await matchAllForEvent(eventId, "manual", canSpend
+      ? { aiMemory, aiBudget: { remaining: RECHECK_AI_CALLS } }
+      : { judge: null });
     if (!result) return { ok: false, error: "event not found or deleted" };
     return { ok: true, lights: result.lights.after, detail: result.lights.detail, checked_at: new Date().toISOString() };
   } catch (e) {
@@ -331,17 +339,20 @@ export async function markRepriced(eventId: number, scope: Scope): Promise<Ok> {
 /** "מזכיר לי מאוחר יותר": mute a red light for `days` (default SILENCE_DAYS) without touching the light itself. */
 export async function silenceRedLight(eventId: number, days: number = SILENCE_DAYS): Promise<Ok> {
   await requireAdmin();
+  // A server action is a public endpoint: never trust the client's number. An absurd `days` made
+  // toISOString() throw a RangeError; clamp to a sane mute instead.
+  const safeDays = Number.isFinite(days) ? Math.min(SILENCE_DAYS_MAX, Math.max(1, Math.round(days))) : SILENCE_DAYS;
   try {
     // Read the light BEFORE muting it - this row is the agent's record of what a human saw and
     // chose to accept, and the mute itself changes nothing about the comparison it describes.
     const snapshot = await snapshotFor(eventId);
-    const until = new Date(Date.now() + days * 86_400_000).toISOString();
+    const until = new Date(Date.now() + safeDays * 86_400_000).toISOString();
     const { error } = await db.from("events").update({ light_silenced_until: until }).eq("id", eventId);
     if (error) {
       console.error("silenceRedLight failed", JSON.stringify(error));
       return { ok: false, error: "update failed" };
     }
-    await logAudit({ action: "price_light.silenced", entityType: "event", entityId: eventId, metadata: { ...(snapshot ?? {}), days, until } });
+    await logAudit({ action: "price_light.silenced", entityType: "event", entityId: eventId, metadata: { ...(snapshot ?? {}), days: safeDays, until } });
     return { ok: true };
   } catch (e) {
     console.error("silenceRedLight failed", e);
@@ -357,8 +368,13 @@ export async function silenceRedLight(eventId: number, days: number = SILENCE_DA
  */
 export async function setLightOverride(eventId: number, scope: Scope, light: Light, note: string): Promise<Ok> {
   const session = await requireAdmin();
-  const trimmed = note.trim();
+  // Validated server-side: `light` lands in `light_package`/`light_ticket`, a column the main app
+  // reads, and the note is quoted into every AI prompt - neither may be whatever a client sends.
+  if (!(SCOPES as readonly string[]).includes(scope)) return { ok: false, error: "invalid scope" };
+  if (!(LIGHTS as readonly string[]).includes(light) || light === "na") return { ok: false, error: "invalid light" };
+  const trimmed = (note ?? "").trim();
   if (trimmed.length < 3) return { ok: false, error: "note must be at least 3 characters" };
+  if (trimmed.length > OVERRIDE_NOTE_MAX) return { ok: false, error: `note must be at most ${OVERRIDE_NOTE_MAX} characters` };
   try {
     const event = await loadEventForLight(eventId);
     if (!event) return { ok: false, error: "event not found" };
@@ -426,7 +442,8 @@ export async function openPriceLightTask(
   eventId: number,
   scope: Scope,
 ): Promise<{ ok: true; taskId: string; existed: boolean } | { ok: false; error: string }> {
-  const session = await requireStaff();
+  // Admin, like every other decision on /price-light: its audit row is a lesson the agent learns from.
+  const session = await requireAdmin();
   try {
     const event = await loadEventForLight(eventId);
     if (!event) return { ok: false, error: "event not found" };

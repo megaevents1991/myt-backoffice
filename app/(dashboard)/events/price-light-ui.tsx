@@ -19,6 +19,7 @@ import {
   LIGHTS,
   type CompetitorKey,
   type Light,
+  type LightOverride,
   type LightScopeDetail,
   type UncheckedReason,
 } from "@/types/price-light.types";
@@ -117,8 +118,15 @@ function tipFor(detail: LightScopeDetail | undefined): string {
   return detail.reason ? HE_REASON[detail.reason] : "טרם נבדק";
 }
 
-/** `scope` is the two-letter shoulder on the pill: Hebrew, like everything else on the table. */
-export function Pill({ scope, detail, light }: { scope: "חב׳" | "כר׳"; detail: LightScopeDetail | undefined; light: Light }) {
+/** `scope` is the two-letter shoulder on the pill: Hebrew, like everything else on the table.
+ *  `override` is the event's manual override WHEN it is the one on this scope: the pill's colour is
+ *  the forced light, so the tooltip must say so, not explain the computed light it replaced. */
+export function Pill({ scope, detail, light, override }: {
+  scope: "חב׳" | "כר׳"; detail: LightScopeDetail | undefined; light: Light; override?: LightOverride | null;
+}) {
+  const tip = override && override.light === light
+    ? [`דריסה ידנית: ${override.note}`, override.by ? `ע״י ${override.by}` : null, `חישוב אוטומטי: ${tipFor(detail)}`].filter(Boolean).join("\n")
+    : tipFor(detail);
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
@@ -128,7 +136,7 @@ export function Pill({ scope, detail, light }: { scope: "חב׳" | "כר׳"; det
             {heLabel(light, detail?.diff_usd ?? null)}
           </span>
         </TooltipTrigger>
-        <TooltipContent className="whitespace-pre-line text-xs">{tipFor(detail)}</TooltipContent>
+        <TooltipContent className="whitespace-pre-line text-xs">{tip}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

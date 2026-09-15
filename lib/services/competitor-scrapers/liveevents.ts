@@ -226,7 +226,9 @@ async function fetchCatalogHtml(kind: "sports" | "music", url: string, ctx: Craw
   }
   const page = ctx.page;
   if (!page) throw new Error("liveevents: music catalog needs a browser page");
-  await page.goto(url, { waitUntil: "domcontentloaded" });
+  // Playwright resolves an HTTP error page as a normal load - check the status like the fetch path does.
+  const response = await page.goto(url, { waitUntil: "domcontentloaded" });
+  if (response && response.status() >= 400) throw new Error(`HTTP ${response.status()}`);
   await page.waitForSelector(".accord-crap div.line", { timeout: 20_000 }).catch(() => undefined);
   await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => undefined);
   return page.content();
@@ -244,12 +246,18 @@ export const liveevents: CompetitorScraper = {
   detailMode: "fetch",
   async *crawl(ctx: CrawlContext): AsyncGenerator<Listing> {
     const { toUsd } = await import("./livetickets-api.ts");
+    const failures: string[] = [];
     for (const { url, kind } of CATALOG_URLS) {
       let html: string;
       try {
         html = await fetchCatalogHtml(kind, url, ctx);
       } catch (err) {
-        ctx.log(`liveevents: ${url} -> ${(err as Error).message}`);
+        const msg = (err as Error).message;
+        ctx.log(`liveevents: ${url} -> ${msg}`);
+        failures.push(msg);
+        // Every catalog failing is a blocked/broken site, not an empty one: throw so the run is
+        // recorded as such (and the circuit can open) instead of a clean crawl with no listings.
+        if (failures.length === CATALOG_URLS.length) throw new Error(`liveevents: every catalog page failed (${failures.join("; ")})`);
         await ctx.pause();
         continue;
       }

@@ -52,6 +52,9 @@ function shiftDay(day: string, delta: number): string {
   const d = new Date(`${day}T00:00:00.000Z`); d.setUTCDate(d.getUTCDate() + delta); return d.toISOString().slice(0, 10);
 }
 
+/** Re-stamp an unchanged `not_selling` at half the staleness window, so it never ages out while true. */
+const NOT_SELLING_REFRESH_MS = (LIGHT_STALE_DAYS / 2) * 86_400_000;
+
 async function candidatesFor(event: LightEvent, competitor: CompetitorKey, scope: Scope): Promise<ListingRow[]> {
   const day = event.date.slice(0, 10);
   const from = shiftDay(day, -DATE_TOLERANCE_DAYS);
@@ -64,7 +67,9 @@ async function candidatesFor(event: LightEvent, competitor: CompetitorKey, scope
     .eq("competitor", competitor).eq("scope", scope)
     .or(`and(event_date.gte.${from},event_date.lte.${to}),and(event_date.is.null,travel_depart.lte.${day},travel_return.gte.${day})`)
     .gte("last_seen_at", new Date(Date.now() - STALE_LISTING_MS).toISOString());
-  if (error) { console.error("price-light-match: candidates failed", JSON.stringify(error)); return []; }
+  // Throw, never `[]`: an empty candidate list is read as "the competitor does not sell this", so a
+  // statement timeout here used to write `not_selling` - and enough of those make a false "alone".
+  if (error) { console.error("price-light-match: candidates failed", JSON.stringify(error)); throw new Error(`candidates ${competitor}: ${error.message}`); }
   return (data ?? []) as ListingRow[];
 }
 
@@ -323,6 +328,13 @@ export async function matchEvent(
     if (j) {
       status = j.status; picked = j.listing; attrs = j.attrs; verdict = j.verdict; method = "ai";
       if (status === "found" && picked && picked.price_usd == null) { quoteOnly = true; status = "unsure"; }
+      // An AI "not the same event" is an ABSENCE claim like the rule's, so it passes the same two
+      // gates: a competitor that does not cover this vertical (ISSTA on a basketball game) or has no
+      // good crawl on record cannot be counted as not selling it - that is what feeds a false "alone".
+      if (status === "not_selling") {
+        if (!coversEvent(competitor, event, opts.tagSlugs ?? [])) { status = "skipped"; notCovered = true; }
+        else if (!(await hadGoodCrawl(competitor))) status = "skipped";
+      }
     } else status = "unsure";
   } else if (candidates.length > 0 && !absent) {
     status = "unsure";                                          // ambiguous, no judge (AI off or rule-only mode)
@@ -389,9 +401,14 @@ export async function matchEvent(
     const listingId = picked?.id ?? null;
     // Same rule as the `found` branch above: a fresh verdict against a verdict-less
     // previous row is itself a change worth writing, or the call was paid for nothing.
+    // A `not_selling` row has no listing, so its freshness IS its created_at - and an unchanged
+    // answer was never rewritten, so a competitor that kept not selling an event went "stale" 14
+    // days after it first said so and the scope fell to "unchecked" while being checked nightly.
+    const answerAging = status === "not_selling" && !!prev?.created_at &&
+      Date.now() - Date.parse(prev.created_at) > NOT_SELLING_REFRESH_MS;
     const changed = prev?.status !== status || (prev?.listing_id ?? null) !== listingId ||
       Number(prev?.our_usd ?? null) !== ourUsd || hasListingChanged(prev, picked) ||
-      (verdict != null && !verdictReusable(prev?.ai_verdict ?? null));
+      (verdict != null && !verdictReusable(prev?.ai_verdict ?? null)) || answerAging;
     if (changed) {
       await write({
         status, method, listing_id: listingId, ai_verdict: verdict, our_usd: ourUsd,

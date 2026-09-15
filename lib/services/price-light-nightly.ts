@@ -32,6 +32,7 @@ import { LIGHTS, type Light, type Scope } from "@/types/price-light.types";
 // seconds - but it defaults to the crawler's 240s budget, which alone would
 // blow past this cron's 300s maxDuration before pass 1 even starts. Cap it.
 const LIVETICKETS_REFRESH_BUDGET_MS = 60_000;
+const REVALIDATE_TIMEOUT_MS = 10_000;
 // Live future events can outgrow PostgREST's 1000-row page cap - never trust
 // a single unpaged read for this table.
 const EVENTS_LOAD_MAX_ROWS = 20_000;
@@ -205,7 +206,9 @@ async function revalidateMain(): Promise<void> {
   const results = await Promise.allSettled(
     targets.map(async (target) => {
       const url = `${target.baseUrl.replace(/\/$/, "")}/api/revalidate?secret=${encodeURIComponent(revalidationSecret)}`;
-      const response = await fetch(url, { method: "GET" });
+      // Bounded: this runs at the very end of a budget that is only checked between events, so an
+      // unbounded wait here could carry the function past maxDuration and lose the summary email.
+      const response = await fetch(url, { method: "GET", signal: AbortSignal.timeout(REVALIDATE_TIMEOUT_MS) });
       if (!response.ok) throw new Error(`${response.status}`);
     }),
   );

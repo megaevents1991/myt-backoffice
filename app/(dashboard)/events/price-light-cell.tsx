@@ -61,8 +61,8 @@ export function PriceLightCell({ event, onUpdated }: { event: Event; onUpdated: 
   return (
     <div className="flex items-center gap-1">
       <button type="button" onClick={openHistory} className="flex items-center gap-1" title="History">
-        <Pill scope="חב׳" detail={detail?.package} light={pkg} />
-        <Pill scope="כר׳" detail={detail?.ticket} light={tkt} />
+        <Pill scope="חב׳" detail={detail?.package} light={pkg} override={detail?.override?.scope === "package" ? detail.override : null} />
+        <Pill scope="כר׳" detail={detail?.ticket} light={tkt} override={detail?.override?.scope === "ticket" ? detail.override : null} />
       </button>
       <Button variant="ghost" size="icon" className="h-6 w-6" onClick={recheck} disabled={busy} title="Recheck against stored catalogs">
         {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}

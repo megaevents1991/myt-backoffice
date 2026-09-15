@@ -12,6 +12,7 @@
 // Dor, 2026-09-14: the Amadeus/hotel calls are a paid service we already use - nightly and on
 // demand are both fine.
 import { supabase } from "@/lib/supabase-server";
+import { fetchPaged } from "@/lib/supabase-paged";
 import { fetchFlightOffers, getStopsCount, isUSADestination, type AmadeusOffer } from "@/lib/services/flight-search";
 import { pickFlightPrice, QUOTE_HOTEL_ADULTS } from "@/lib/services/price-quote";
 import { airlineFromCode, boardFrom } from "@/lib/services/offer-detail";
@@ -28,6 +29,7 @@ export const OUR_OFFER_REFRESH_DAYS = 7;
 export const OUR_OFFER_CONCURRENCY = 3;
 /** Wall-clock budget of one cron run (the function's maxDuration is 300s). */
 export const OUR_OFFER_BUDGET_MS = 260_000;
+const OUR_OFFER_EVENTS_MAX = 5_000;
 
 export interface OurOfferEvent {
   id: number;
@@ -90,10 +92,15 @@ function describeAmadeusOffer(offer: DetailedOffer): OfferFlight {
  * 2 to the USA). Same two searches, so the chosen offer is the one behind the base price.
  */
 async function describeRuleFlight(iata: string, depart: string, ret: string): Promise<OurOfferSnapshot["flight"]> {
-  const [direct, any] = await Promise.all([
+  // Settled, not all: `searchCheapestOffer` (what the base price came from) catches each search on its
+  // own and prices off whichever answered, so one failed search must not blank the whole description.
+  const [directRes, anyRes] = await Promise.allSettled([
     fetchFlightOffers({ destinationLocationCode: iata, departureDate: depart, returnDate: ret, nonStop: true, max: 10 }),
     fetchFlightOffers({ destinationLocationCode: iata, departureDate: depart, returnDate: ret, nonStop: false, max: 50 }),
   ]);
+  if (directRes.status === "rejected" && anyRes.status === "rejected") throw directRes.reason;
+  const direct = directRes.status === "fulfilled" ? directRes.value : [];
+  const any = anyRes.status === "fulfilled" ? anyRes.value : [];
   const maxStops = isUSADestination(iata) ? 2 : 1;
   const bestDirect = cheapest(direct);
   const bestAny = cheapest(any.filter((o) => getStopsCount(o) <= maxStops));
@@ -146,6 +153,7 @@ function boardOfMeal(meal: string | null | undefined): OfferHotel["board"] {
  */
 let hotelQueue: Promise<unknown> = Promise.resolve();
 const HOTEL_RETRY_MS = 3_000;
+const HOTEL_TIMEOUT_MS = 30_000;
 
 function inHotelQueue<T>(task: () => Promise<T>): Promise<T> {
   const run = hotelQueue.then(task, task);
@@ -160,7 +168,9 @@ async function describeRuleHotel(lat: number, lon: number, checkin: string, chec
   // Same request shape as price-quote.ts quoteHotel (the secret-in-URL is its existing contract with
   // main - flagged in CLAUDE.md's security TODO, not widened here).
   const url = `${base}/api/hotels?lat=${lat}&lon=${lon}&checkin=${checkin}&checkout=${checkout}&secret=${secret}`;
-  const call = () => fetch(url, { headers: { "Content-Type": "application/json" } });
+  // Bounded: searches run one at a time through the queue, so a single hung request would stall
+  // every hotel behind it and carry the pass past maxDuration.
+  const call = () => fetch(url, { headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(HOTEL_TIMEOUT_MS) });
   const response = await inHotelQueue(async () => {
     const first = await call();
     if (first.status !== 429 && first.status < 500) return first;
@@ -286,22 +296,27 @@ export async function runOurOfferPass(opts: { dryRun: boolean; budgetMs?: number
   const budget = opts.budgetMs ?? OUR_OFFER_BUDGET_MS;
   const summary: OurOfferPassSummary = { candidates: 0, described: 0, fresh: 0, withErrors: 0, failedWrites: 0, remaining: 0, dryRun: opts.dryRun };
   const today = new Date().toISOString().slice(0, 10);
-  const { data, error } = await db.from("events")
-    .select(`${OUR_OFFER_EVENT_COLUMNS},is_test,base_flight_price,base_hotel_price,ours_at:light_detail->ours->>at,ours_errors:light_detail->ours->errors`)
-    .is("is_deleted", null)
-    .gte("date", today)
-    .order("date", { ascending: true })
-    .limit(2000);
-  if (error) {
-    console.error("our-offer: candidate read failed", JSON.stringify(error));
-    throw new Error(`our-offer candidates: ${error.message}`);
-  }
   type Candidate = OurOfferEvent & {
     is_test?: boolean | null; base_flight_price: number | null; base_hotel_price: number | null;
     ours_at: string | null; ours_errors: string[] | null;
   };
+  // Paged: PostgREST caps a response at 1000 rows whatever `.limit()` asks for, and events past the
+  // cap would silently never be described (the rotation filters AFTER this read).
+  const { rows, error, truncated } = await fetchPaged<Candidate>(
+    () => db.from("events")
+      .select(`${OUR_OFFER_EVENT_COLUMNS},is_test,base_flight_price,base_hotel_price,ours_at:light_detail->ours->>at,ours_errors:light_detail->ours->errors`)
+      .is("is_deleted", null)
+      .gte("date", today)
+      .order("id", { ascending: true }),
+    OUR_OFFER_EVENTS_MAX,
+  );
+  if (error) {
+    console.error("our-offer: candidate read failed", JSON.stringify(error));
+    throw new Error(`our-offer candidates: ${error.message}`);
+  }
+  if (truncated) console.error(`our-offer: candidate read truncated at ${OUR_OFFER_EVENTS_MAX}`);
   const staleBefore = new Date(Date.now() - OUR_OFFER_REFRESH_DAYS * 86_400_000).toISOString();
-  const all = ((data ?? []) as Candidate[])
+  const all = rows
     .filter((e) => !e.is_test && ((Number(e.base_flight_price) || 0) > 0 || (Number(e.base_hotel_price) || 0) > 0));
   // A half lost to a passing failure (HTTP/API error, timeout) is retried the next night rather than
   // left blank for a week; a permanent answer ("no 3★ rate found", no dates) waits for the refresh.

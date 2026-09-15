@@ -262,7 +262,10 @@ async function loadCatalog(ctx: CrawlContext): Promise<string> {
   if (!page) throw new Error("golasso: catalog needs a browser page");
   const deadline = Date.now() + CATALOG_LOAD_BUDGET_MS;
   const timedOut = () => Date.now() >= deadline;
-  await page.goto(ALL_PACKAGES_URL, { waitUntil: "domcontentloaded" });
+  // Playwright does not throw on an HTTP error - a 403 block page loads "successfully" and parses
+  // to zero cards. Fail the run here so it is recorded `blocked`, not as a clean empty catalog.
+  const response = await page.goto(ALL_PACKAGES_URL, { waitUntil: "domcontentloaded" });
+  if (response && response.status() >= 400) throw new Error(`golasso: catalog HTTP ${response.status()}`);
   await page.waitForSelector(CARD_SELECTOR, { timeout: 30_000 }).catch(() => undefined);
   await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => undefined);
   let cards = await page.locator(CARD_SELECTOR).count().catch(() => 0);

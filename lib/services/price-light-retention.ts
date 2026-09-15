@@ -22,6 +22,13 @@ import { fetchPaged } from "@/lib/supabase-paged";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
 
+/** The filter calls the sweeps chain - the builder itself comes from the one `db` boundary cast. */
+interface SweepQuery extends PromiseLike<{ count: number | null; error: { message: string } | null }> {
+  lt(column: string, value: string): SweepQuery;
+  in(column: string, values: readonly number[]): SweepQuery;
+  like(column: string, pattern: string): SweepQuery;
+}
+
 /** One window for everything - Dor picked 180 days, and one number is easier to reason about than
  *  four. Every read path lives far inside it: the price-drop lookback is 14 days, a light goes
  *  stale at 14, and the crawl circuit reads the last handful of runs. */
@@ -95,7 +102,7 @@ export async function runPriceLightRetention(opts: { dryRun?: boolean } = {}): P
   };
 
   /** Count on a dry run, delete-and-count on a real one - same filter either way. */
-  const sweep = async (table: string, apply: (q: any) => any): Promise<number> => { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const sweep = async (table: string, apply: (q: SweepQuery) => SweepQuery): Promise<number> => {
     if (dryRun) {
       const { count, error } = await apply(db.from(table).select("*", { count: "exact", head: true }));
       if (error) throw new Error(error.message);

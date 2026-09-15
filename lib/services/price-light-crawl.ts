@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { appOrigin, sendMail } from "@/lib/email";
 import { multiCurrencyExchangeRateService } from "@/lib/services/ticket-price-sync";
-import { browserMode, randomPause, scrapeEnabled, shortPause, withBrowser } from "@/lib/services/browser";
+import { browserMode, PAGE_TIMEOUT_MS, randomPause, scrapeEnabled, shortPause, withBrowser } from "@/lib/services/browser";
 import { ACTIVE_COMPETITORS, scraperFor, type CompetitorScraper, type CrawlContext, type DetailInput, type Listing } from "@/lib/services/competitor-scrapers";
 import { ruleMatchScore } from "@/lib/services/price-light";
 import type { CompetitorKey, CrawlStatus, CrawlTrigger, Currency } from "@/types/price-light.types";
@@ -56,7 +56,11 @@ async function recentRuns(competitor: CompetitorKey, limit: number): Promise<Run
     .select("id,status,started_at,listings").eq("competitor", competitor)
     .order("started_at", { ascending: false }).limit(limit);
   if (error) { console.error("price-light-crawl: runs load failed", JSON.stringify(error)); return []; }
-  return (data ?? []) as RunRowLite[];
+  // A "running" row past LOCK_STALE_MS is a run the platform killed (maxDuration) before it could
+  // record itself. Read as a failure, not as "in progress": otherwise it counts toward neither the
+  // circuit nor the interval, and a site that stalls every request is re-crawled hourly for ever.
+  return ((data ?? []) as RunRowLite[]).map((r) =>
+    r.status === "running" && Date.now() - Date.parse(r.started_at) > LOCK_STALE_MS ? { ...r, status: "error" as const } : r);
 }
 
 /** Another crawl (any competitor) is running and started less than LOCK_STALE_MS ago. */
@@ -112,6 +116,30 @@ function listingChanged(
     (next.attrs != null && JSON.stringify(prev.attrs ?? null) !== JSON.stringify(next.attrs));
 }
 
+/**
+ * What a detail page taught us, kept when the catalog card cannot say it.
+ *
+ * The catalog pass used to write the card's values straight over the row: LiveEvents cards carry
+ * no travel dates (only the detail page does), and Golasso cards price in £ while the detail page
+ * prices in € - so every 72h crawl wiped the enriched dates, flipped the price's currency, marked
+ * the listing "changed" (re-buying its AI verdict) and left it wrong until a detail refresh came
+ * round. Rules: a date the card does not print keeps the stored one; a price the card does not
+ * print, or prints in a DIFFERENT currency than an enriched row already holds, keeps the stored
+ * price. A card price in the same currency is still the card's truth and always wins.
+ */
+function keepDetailFacts(l: Listing, prev: PrevListing | null): Listing {
+  if (!prev) return l;
+  const enriched = !!prev.detail_text;
+  const keepPrice = enriched && prev.price_from != null && prev.currency != null &&
+    (l.price_from == null || (l.currency != null && l.currency !== prev.currency));
+  return {
+    ...l,
+    travel_depart: l.travel_depart ?? prev.travel_depart,
+    travel_return: l.travel_return ?? prev.travel_return,
+    ...(keepPrice ? { price_from: prev.price_from, currency: prev.currency, price_usd: prev.price_usd } : {}),
+  };
+}
+
 /** The stored state of one listing - what change detection compares against and what the write merges into. */
 interface PrevListing {
   /** Carried for fetchPaged's dedupe only; the id a write reports comes back from the upsert itself. */
@@ -119,6 +147,7 @@ interface PrevListing {
   external_key: string;
   price_from: number | null;
   currency: Currency | null;
+  price_usd: number | null;
   event_date: string | null;
   travel_depart: string | null;
   travel_return: string | null;
@@ -129,7 +158,7 @@ interface PrevListing {
   last_changed_at: string;
 }
 const PREV_LISTING_COLUMNS =
-  "id,external_key,price_from,currency,event_date,travel_depart,travel_return,title,url,attrs,detail_text,last_changed_at";
+  "id,external_key,price_from,currency,price_usd,event_date,travel_depart,travel_return,title,url,attrs,detail_text,last_changed_at";
 
 /** One buffered catalog write: the row to upsert, keyed for the response, plus its change verdict. */
 interface PendingWrite { key: string; row: Record<string, unknown>; changed: boolean }
@@ -179,7 +208,7 @@ function buildListingWrite(
   const next: PrevListing = {
     id: prev?.id ?? 0,
     external_key: l.external_key,
-    price_from: l.price_from, currency: l.currency, event_date: l.event_date,
+    price_from: l.price_from, currency: l.currency, price_usd: l.price_usd, event_date: l.event_date,
     travel_depart: l.travel_depart, travel_return: l.travel_return,
     title: l.title, url: l.url,
     attrs: l.attrs ?? prev?.attrs ?? null,
@@ -366,8 +395,13 @@ export async function runCrawl(
 
   const nowIso = new Date().toISOString();
   const ids: number[] = [];
+  // Every plain GET is bounded like a page load. Node's own fetch waits ~5 minutes on a stalled
+  // socket - longer than the function's maxDuration - and a site that stalls on purpose (an anti-bot
+  // tactic) would otherwise kill the run before it can record itself as failed.
+  const boundedFetch: typeof fetch = (input, init) =>
+    fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(PAGE_TIMEOUT_MS) });
   const ctx = (page: CrawlContext["page"]): CrawlContext => ({
-    page, fetch, pause: scraper.mode === "table" ? async () => undefined : randomPause,
+    page, fetch: boundedFetch, pause: scraper.mode === "table" ? async () => undefined : randomPause,
     pauseShort: scraper.mode === "table" ? async () => undefined : shortPause,
     // Page-fetch counting via a "->" substring in scraper logs was unreliable across scrapers;
     // `pages` now just marks that the (one) catalog crawl ran - detailPages counts enrichment
@@ -439,8 +473,9 @@ export async function runCrawl(
       // below (fix round 2, re-review finding).
       if (dryRun) { summary.listings += 1; continue; }
       const prev = prevByKey.get(listing.external_key) ?? null;
-      const changed = listingChanged(prev, listing);
-      const { row, next } = buildListingWrite(listing, prev, summary.runId, nowIso, changed);
+      const merged = keepDetailFacts(listing, prev);
+      const changed = listingChanged(prev, merged);
+      const { row, next } = buildListingWrite(merged, prev, summary.runId, nowIso, changed);
       // The same external_key twice inside one chunk would make ON CONFLICT touch a row twice
       // ("cannot affect row a second time") and fail the whole statement - flush first so the
       // repeat lands in the next chunk, i.e. as a second write, like the old row-at-a-time path.
@@ -543,8 +578,16 @@ export async function runCrawl(
 
   try {
     if (scraper.mode === "browser") await withBrowser(work); else await work(null);
+    // A whole catalog that parsed to NOTHING is a block page, a login wall or a changed layout - never
+    // a healthy crawl. Recorded as ok/partial it would count as a "good crawl" and let the matcher
+    // mark every event not_selling (a false "alone"), and the circuit would never open.
+    if (summary.status === "running" && summary.listings === 0 && summary.failed === 0) {
+      summary.status = "error";
+      summary.note = summary.note ? `${summary.note} | catalog parsed 0 listings` : "catalog parsed 0 listings";
+      if (!dryRun && (summary.prevListings ?? 0) > 0) await alert(competitor, `error: ${summary.note}`);
+    }
     if (summary.status === "running") summary.status = "ok";
-    if (summary.prevListings != null && summary.listings < summary.prevListings * DROP_ALARM_RATIO) {
+    if (summary.status !== "error" && summary.prevListings != null && summary.listings < summary.prevListings * DROP_ALARM_RATIO) {
       summary.status = "partial";
       // Don't clobber a note the failed-upsert check above may have already set - append instead
       // (fix round 2, out-of-scope observation from the re-reviewer).

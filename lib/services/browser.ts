@@ -57,7 +57,7 @@ async function launch(): Promise<{ browser: Browser; context: BrowserContext }> 
     // the Accept-Language header and the route/referrer/timeout hardening in
     // harden() apply on top of whatever context the provider hands back.
     const browser = await playwright.connectOverCDP(cdp, { timeout: PAGE_TIMEOUT_MS });
-    const context = browser.contexts()[0] ?? (await browser.newContext());
+    const context = browser.contexts()[0] ?? (await withBrowserClosedOnFailure(browser, () => browser.newContext()));
     return { browser, context };
   }
   const { default: chromium } = await import("@sparticuz/chromium");
@@ -69,13 +69,26 @@ async function launch(): Promise<{ browser: Browser; context: BrowserContext }> 
     headless: true,
     proxy: proxy ? parseProxy(proxy) : undefined,
   });
-  const context = await browser.newContext({
+  const context = await withBrowserClosedOnFailure(browser, () => browser.newContext({
     userAgent: pick(UAS),
     viewport: pick(VIEWPORTS),
     locale: "he-IL",
     timezoneId: "Asia/Jerusalem",
-  });
+  }));
   return { browser, context };
+}
+
+/**
+ * Context creation happens after the browser exists but before `withBrowser`'s try/finally owns it -
+ * a throw there used to leave a stray Chromium in a warm Lambda, or an open, billed remote session.
+ */
+async function withBrowserClosedOnFailure<T>(browser: Browser, step: () => Promise<T>): Promise<T> {
+  try {
+    return await step();
+  } catch (e) {
+    await browser.close().catch(() => undefined);
+    throw e;
+  }
 }
 
 async function harden(page: Page): Promise<void> {

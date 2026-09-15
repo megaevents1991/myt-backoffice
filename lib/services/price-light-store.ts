@@ -3,7 +3,7 @@
 import { supabase } from "@/lib/supabase-server";
 import { ACTIVE_COMPETITORS } from "@/lib/services/competitor-scrapers";
 import {
-  competitorsFor, computeScopeLight, decidePriceDrop, kindOf, minAvailableTicketUsd,
+  competitorsFor, computeScopeLight, decidePriceDrop, kindOf, lightSettled, minAvailableTicketUsd,
   nightsUncertaintyUsd, ourNightRateUsd, ourNights, ourPackageUsd, ourTicketUsd, totalMarkupUsd,
   OVERRIDE_DRIFT_USD, PRICE_DROP_LOOKBACK_DAYS, type LatestMatch, type PricedEvent,
 } from "@/lib/services/price-light";
@@ -58,7 +58,9 @@ export async function loadLatestMatches(eventId: number): Promise<(LatestMatch &
     // but with ~2 scopes x a handful of active competitors, 60 rows comfortably covers
     // every competitor's history within a single crawl cycle even with reruns/retries.
     .limit(60);
-  if (error) { console.error("price-light: load matches failed", JSON.stringify(error)); return []; }
+  // Throw, never `[]`: no matches recomputes both lights to "unchecked" and writes that over the
+  // real ones - one failed read would wipe the lights, lift a mute and auto-close red tasks.
+  if (error) { console.error("price-light: load matches failed", JSON.stringify(error)); throw new Error(`load matches ${eventId}: ${error.message}`); }
   const seen = new Set<string>();
   const out: (LatestMatch & { scope: Scope; attrs: Partial<ExtractedAttrs> | null })[] = [];
   for (const row of (data ?? []) as (MatchRow & { competitor_listings: { last_seen_at: string } | null })[]) {
@@ -160,7 +162,9 @@ export async function recomputeEventLights(
   // left to hide, so it is cleared in the same write that records the new lights -
   // otherwise a stale `light_silenced_until` would keep a future red out of
   // "ממתינים להחלטה" without anyone deciding that.
-  const clearSilence = after.package !== "red" && after.ticket !== "red" && event.light_silenced_until != null;
+  // "unchecked" is not "no longer red": a competitor site blocked for two weeks turns a real red
+  // into unchecked without anyone deciding anything, and must not lift a mute on its way.
+  const clearSilence = lightSettled(after.package) && lightSettled(after.ticket) && event.light_silenced_until != null;
   if (!opts.dryRun) {
     const { error } = await db
       .from("events")

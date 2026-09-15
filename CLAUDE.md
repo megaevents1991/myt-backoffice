@@ -453,7 +453,9 @@ true` instead of a duplicate). Any row also gets **בדוק עכשיו** (`reche
 against the stored catalogs, no browsing, same as the events-table refresh icon) and **דריסה**
 (`setLightOverride`/`clearLightOverride` - forces a light, mandatory note ≥ 3 chars, stored in
 `light_detail.override`; "בטל דריסה" clears it). `recomputeEventLights` auto-closes an open
-price-light task the moment its scope's light leaves red (`status: "done"`, note
+price-light task the moment its scope's light reaches a real non-red verdict (`lightSettled`: green,
+orange, alone or na - never `unchecked`, which is stale data, not a resolution; the same rule lifts
+a "השאר בפיד" mute) (`status: "done"`, note
 `"האור ירד מאדום אוטומטית (...)"` appended - never deleted, so the history stays). Every decision
 writes `logAudit({ action: "price_light.<silenced|override|override_cleared|task_opened|task_autoclosed|removed|crawl_triggered>" })`.
 Competitors panel on the same screen shows last run / listing count / next due / open circuit per

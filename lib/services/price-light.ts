@@ -382,6 +382,12 @@ function daysBetween(fromIso: string, toIso: string): number {
  * One function, used for BOTH the scope's verdict and each competitor's own, so a per-competitor
  * light can never be computed by a slightly different rule than the light beside it.
  */
+/** A real verdict other than red - what may lift a "השאר בפיד" mute or auto-close a red task.
+ *  `unchecked` (data gone stale, a crawl failing) is the absence of a verdict, not a resolution. */
+export function lightSettled(light: Light | null | undefined): boolean {
+  return light != null && light !== "red" && light !== "unchecked";
+}
+
 function lightFor(diffUsd: number, uncertaintyUsd: number): Light {
   if (diffUsd < LIGHT_GREEN_USD - uncertaintyUsd) return "green";
   if (diffUsd > LIGHT_RED_USD + uncertaintyUsd) return "red";

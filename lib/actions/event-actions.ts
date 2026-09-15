@@ -195,6 +195,12 @@ export async function duplicateEvent(
     name: `${source.name} (Copy)`,
     name_english: `${source.name_english} (Copy)`,
     is_deleted: null, // Ensure the copy is not deleted
+    // The price-light state describes the ORIGINAL's comparison - a copy (usually for another
+    // date) must earn its own. Carried over, a manual override would be re-applied to the copy
+    // every night, a mute would hide its reds, and the price-drop tag would show on a price
+    // that never dropped.
+    light_package: null, light_ticket: null, light_detail: null, light_checked_at: null,
+    light_silenced_until: null, price_drop_usd: null, price_drop_from: null, price_drop_until: null,
   };
   delete newEvent.id;
 

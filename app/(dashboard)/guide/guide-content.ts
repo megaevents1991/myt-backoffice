@@ -259,8 +259,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "ההחלטות שלכם מלמדות את המערכת (13.09.2026). כל סימון על שורה אדומה — הוזל, השאר בפיד, הסר מהאתר, משימה, דריסה — נרשם יחד עם איך ההשוואה נראתה באותו רגע: הפער, מול איזה מתחרה, ואורך הנסיעה של שני הצדדים. כשמנוע ה-AI דלוק הוא קורא את האחרונים שבהם לפני שהוא מכריע, כך שההחלטה שאתם עושים היום היא ההקשר שיהיה לו מחר בלילה. שתי מסקנות: כדאי לכתוב הערת דריסה כמו שצריך (\"איסתא מוכרים 3 לילות, אנחנו 4\" מלמד הרבה יותר מ\"לא נכון\"), וללחוץ על \"הוזל\" חשוב גם אם הוא רק מקפיץ אתכם לשדה המחיר — ככה המערכת לומדת שהפער היה אמיתי.",
       ),
       t(
-        "A price-light task closes itself: the moment a nightly or manual recheck moves that scope's light off red, its open task is marked done automatically with a note recording when and why - nobody needs to remember to go close it.",
-        "משימת רמזור נסגרת לבד: ברגע שבדיקה לילית או ידנית מזיזה את האור של אותו היקף מאדום, המשימה הפתוחה שלה מסומנת \"בוצע\" אוטומטית עם הערה שמתעדת מתי ולמה — אף אחד לא צריך לזכור לסגור אותה.",
+        "A price-light task closes itself: the moment a nightly or manual recheck moves that scope's light from red to a real verdict (green, orange or alone), its open task is marked done automatically with a note recording when and why - nobody needs to remember to go close it. A light that only fell to \"not checked\" (stale data, a competitor site failing) does not count: nothing was resolved, so the task stays open.",
+        "משימת רמזור נסגרת לבד: ברגע שבדיקה לילית או ידנית מזיזה את האור של אותו היקף מאדום להכרעה אמיתית (ירוק, כתום או לבד בשוק), המשימה הפתוחה שלה מסומנת \"בוצע\" אוטומטית עם הערה שמתעדת מתי ולמה — אף אחד לא צריך לזכור לסגור אותה. אור שרק ירד ל\"לא נבדק\" (מידע ישן, אתר מתחרה שנכשל) לא נחשב: שום דבר לא נפתר, והמשימה נשארת פתוחה.",
       ),
       t(
         "The AI judge only steps in when the rule can't decide on its own, or already found the listing but couldn't read its included-items - it never overrules a confident rule match, and it never sets a light directly. The screen's header shows this month's AI spend and call count so the cost stays visible, not a surprise on a bill.",

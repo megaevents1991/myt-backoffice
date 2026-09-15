@@ -4,7 +4,7 @@
 // docs/superpowers/specs/2026-09-09-price-light-design.md.
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
-import { signedUsd } from "@/lib/services/price-light";
+import { lightSettled, signedUsd } from "@/lib/services/price-light";
 import type { LightEvent, Lights } from "@/lib/services/price-light-store";
 import type { LightDecisionSnapshot, LightScopeDetail, MatchRow, Scope } from "@/types/price-light.types";
 import type { TaskSourceRef } from "@/types/task.types";
@@ -119,7 +119,9 @@ export async function openPriceLightTask(
 export async function closePriceLightTasksIfNotRed(eventId: number, lights: Lights): Promise<number> {
   let closed = 0;
   for (const scope of ["package", "ticket"] as const) {
-    if (lights[scope] === "red") continue;
+    // Only a real non-red verdict closes the task - "unchecked" (stale data, a failing crawl) means
+    // nothing was resolved, and closing on it told staff a red had cleared that never did.
+    if (!lightSettled(lights[scope])) continue;
     const task = await openTaskFor(eventId, scope).catch(() => null);
     if (!task) continue;
     const note = `האור ירד מאדום אוטומטית (${new Date().toISOString().slice(0, 10)})`;
