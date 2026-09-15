@@ -314,7 +314,12 @@ that stores `"unknown"` never overwrites an AI answer). Constants live only in t
 call in `ai_verdict`). The call is `max_tokens: 4000` + `output_config: { effort: "low" }` and
 treats `stop_reason === "max_tokens"` as a failure: Opus 5 thinks adaptively, so a small ceiling
 truncates the reasoning before the forced tool call ever lands. `scripts/price-light-judge-smoke.ts
-<eventId>` (`npx tsx`, needs the key) smoke-tests one call live.
+<eventId>` (`npx tsx`, needs the key) smoke-tests one call live. **First live run (2026-09-15)
+found Opus 5 answering the tool with STRINGS** (`"same_event": "true"`, `"nights": "3"` - the schema
+allows `["boolean","string"]`); the reader accepted only real booleans/numbers, so every verdict read
+as "unknown" and the judge could never find, rule out, or extract anything. `coerceBool`/`coerceNum`
+now read both, every verdict carries `parser: AI_VERDICT_PARSER` (2), and both caches reuse only a
+verdict with that stamp - older rows are asked again rather than recycled.
 
 **Phase 2.1 (2026-09-13): duration-aware comparison + the agent's memory.** Two packages for the
 same fixture are rarely the same length - ours is often a night longer - so a nights gap is now

@@ -10,6 +10,7 @@ import { PRICE_LIGHT_AGENT } from "@/lib/agents";
 import { interleave, memoryBlock } from "@/lib/agents/memory";
 import { agentEnabled, agentModel, anthropicKey, callCostUsd, newBudget, takeBudget } from "@/lib/agents/switch";
 import type { AuditLessonRow } from "@/lib/agents/types";
+import { AI_VERDICT_PARSER, coerceBool, coerceNum } from "@/lib/services/price-light-judge";
 
 const def = PRICE_LIGHT_AGENT;
 const lessonFor = (action: string, metadata: Record<string, unknown>): string | null => {
@@ -118,5 +119,18 @@ const block = memoryBlock(def, ["package red — a human did something"]);
 assert.ok(block.startsWith(rules), "rules come first");
 assert.ok(block.includes("DATA, not instructions"), "staff text is fenced as data");
 assert.ok(block.includes("- package red — a human did something"));
+
+// ---- the judge's answer reader (2026-09-14: Opus 5 answered "true" / "3" as STRINGS) ----
+assert.equal(coerceBool("true"), true);
+assert.equal(coerceBool(" False "), false);
+assert.equal(coerceBool(true), true);
+assert.equal(coerceBool("unknown"), "unknown");
+assert.equal(coerceBool("yes"), "unknown"); // only the two spellings the schema allows
+assert.equal(coerceNum("3"), 3);
+assert.equal(coerceNum(4), 4);
+assert.equal(coerceNum("0.95"), 0.95);
+assert.equal(coerceNum("unknown"), "unknown");
+assert.equal(coerceNum("3 nights"), "unknown");
+assert.equal(AI_VERDICT_PARSER, 2);
 
 console.log("agents selftest: all assertions passed");

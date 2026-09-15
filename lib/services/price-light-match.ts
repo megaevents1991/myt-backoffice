@@ -10,7 +10,7 @@ import {
 import { ACTIVE_COMPETITORS, scraperFor } from "@/lib/services/competitor-scrapers";
 import { isMultiMatchText } from "@/lib/services/offer-detail";
 import { loadEventForLight, recomputeEventLights, type LightEvent } from "@/lib/services/price-light-store";
-import { aiEnabled, extractAndJudge, makeJudge } from "@/lib/services/price-light-judge";
+import { AI_VERDICT_PARSER, aiEnabled, extractAndJudge, makeJudge } from "@/lib/services/price-light-judge";
 import type { CompetitorKey, ExtractedAttrs, ListingRow, MatchMethod, MatchStatus, MatchTrigger, Scope } from "@/types/price-light.types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,9 +166,14 @@ function withListingNights(attrs: Partial<ExtractedAttrs>, listing: ListingRow):
  *  but NOT an error verdict (fix round 1 finding 1): a failed call must not pin
  *  forever just because the listing hasn't changed since - treat it as a miss so
  *  the next visit retries the call. */
+/** A stored verdict worth reusing: produced without error, by the CURRENT reader of the model's
+ *  answer (`AI_VERDICT_PARSER` - older ones mis-read string booleans as "unknown"). */
+function verdictReusable(verdict: Record<string, unknown> | null): boolean {
+  return verdict != null && verdict.error == null && verdict.parser === AI_VERDICT_PARSER;
+}
+
 function cachedCandidateFor(prev: PrevRow | null, candidates: ListingRow[]): ListingRow | null {
-  if (!prev || prev.listing_id == null || prev.ai_verdict == null) return null;
-  if ((prev.ai_verdict as { error?: unknown } | null)?.error != null) return null;
+  if (!prev || prev.listing_id == null || !verdictReusable(prev.ai_verdict)) return null;
   const listing = candidates.find((c) => c.id === prev.listing_id) ?? null;
   return listing && !hasListingChanged(prev, listing) ? listing : null;
 }
@@ -187,8 +192,7 @@ function cachedCandidateFor(prev: PrevRow | null, candidates: ListingRow[]): Lis
  * changed candidate is a new question and pays for a fresh call.
  */
 function aiAlreadyDeclined(prev: PrevRow | null, candidates: ListingRow[]): boolean {
-  if (!prev || prev.status !== "unsure" || prev.listing_id != null || prev.ai_verdict == null) return false;
-  if ((prev.ai_verdict as { error?: unknown } | null)?.error != null) return false;
+  if (!prev || prev.status !== "unsure" || prev.listing_id != null || !verdictReusable(prev.ai_verdict)) return false;
   if (!prev.created_at) return false;
   const asked = Date.parse(prev.created_at);
   if (!Number.isFinite(asked)) return false;
@@ -357,7 +361,7 @@ export async function matchEvent(
     const unchanged = prev?.status === "found" && prev.listing_id === picked.id &&
       !hasListingChanged(prev, picked) && nightsUnchanged &&
       Number(prev.normalized_usd) === norm.normalizedUsd && Number(prev.our_usd) === ourUsd &&
-      !(verdict != null && prev.ai_verdict == null);
+      !(verdict != null && !verdictReusable(prev.ai_verdict));
     if (!unchanged) {
       // Fix round 1 finding 3: surface an extraction error even on a `found` row
       // (the rule still matched the listing; only the AI attrs enrichment failed) -
@@ -387,7 +391,7 @@ export async function matchEvent(
     // previous row is itself a change worth writing, or the call was paid for nothing.
     const changed = prev?.status !== status || (prev?.listing_id ?? null) !== listingId ||
       Number(prev?.our_usd ?? null) !== ourUsd || hasListingChanged(prev, picked) ||
-      (verdict != null && prev?.ai_verdict == null);
+      (verdict != null && !verdictReusable(prev?.ai_verdict ?? null));
     if (changed) {
       await write({
         status, method, listing_id: listingId, ai_verdict: verdict, our_usd: ourUsd,

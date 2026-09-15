@@ -31,6 +31,8 @@ export interface AiVerdict {
   model: string; input_tokens: number; output_tokens: number; cost_usd: number; ms: number;
   same_event: boolean | "unknown"; confidence: number; matched_candidate_index: number | null;
   attrs: ExtractedAttrs; error?: string;
+  /** AI_VERDICT_PARSER at write time; absent on verdicts read by the pre-fix parser. */
+  parser?: number;
 }
 export interface JudgeResult {
   same_event: boolean | "unknown"; confidence: number; matched_candidate_index: number | null;
@@ -104,8 +106,31 @@ function userPrompt(event: LightEvent, shown: ListingRow[]): string {
   return `${ours}\n\nCOMPETITOR CANDIDATES:\n${cands}`;
 }
 
-function num(v: unknown): number | "unknown" { return typeof v === "number" && Number.isFinite(v) ? v : "unknown"; }
-function bool(v: unknown): boolean | "unknown" { return typeof v === "boolean" ? v : "unknown"; }
+/**
+ * The tool schema allows `["boolean", "string"]` / `["integer", "string"]` so "unknown" can be said -
+ * and Opus 5 uses that latitude: its first live answers (2026-09-14) came back `"same_event": "true"`
+ * and `"nights": "3"`, STRINGS. The original `typeof === "boolean"` read every one of them as
+ * "unknown", so from phase 1 until this fix the judge could never answer found / not_selling and
+ * every extracted night or star was thrown away. Accept both spellings.
+ */
+export function coerceNum(v: unknown): number | "unknown" {
+  const n = typeof v === "number" ? v : typeof v === "string" && /^\s*-?\d+(\.\d+)?\s*$/.test(v) ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : "unknown";
+}
+export function coerceBool(v: unknown): boolean | "unknown" {
+  if (typeof v === "boolean") return v;
+  const s = typeof v === "string" ? v.trim().toLowerCase() : "";
+  return s === "true" ? true : s === "false" ? false : "unknown";
+}
+const num = coerceNum;
+const bool = coerceBool;
+
+/**
+ * Stamped on every verdict. A stored verdict from before the string-coercion fix (no `parser`) was
+ * mis-read at the time - its "unknown" is a parsing artefact, not the model's answer - so the caches
+ * in price-light-match.ts never reuse one; the pair is asked again under the fixed reader.
+ */
+export const AI_VERDICT_PARSER = 2;
 
 export async function extractAndJudge(input: JudgeInput, opts: JudgeOptions = {}): Promise<JudgeResult> {
   const started = Date.now();
@@ -149,14 +174,17 @@ export async function extractAndJudge(input: JudgeInput, opts: JudgeOptions = {}
       bag_included: bool(j.bag_included), direct_flight: bool(j.direct_flight), hotel_stars: num(j.hotel_stars),
       nights: num(j.nights), breakfast: bool(j.breakfast), transfers: bool(j.transfers),
     };
-    const same = typeof j.same_event === "boolean" ? j.same_event : "unknown";
-    const confidence = typeof j.confidence === "number" ? Math.max(0, Math.min(1, j.confidence)) : 0;
-    const idx = typeof j.matched_candidate_index === "number" && j.matched_candidate_index >= 0 && j.matched_candidate_index < shown.length ? j.matched_candidate_index : null;
+    const same = bool(j.same_event);
+    const conf = num(j.confidence);
+    const confidence = conf === "unknown" ? 0 : Math.max(0, Math.min(1, conf));
+    const rawIdx = num(j.matched_candidate_index);
+    const idx = rawIdx !== "unknown" && Number.isInteger(rawIdx) && rawIdx >= 0 && rawIdx < shown.length ? rawIdx : null;
     const listing = idx != null ? shown[idx] : null;
     const verdict: AiVerdict = {
       model, input_tokens: inTok, output_tokens: outTok,
       cost_usd: callCostUsd(PRICE_LIGHT_AGENT, inTok, outTok),
       ms: Date.now() - started, same_event: same, confidence, matched_candidate_index: idx, attrs,
+      parser: AI_VERDICT_PARSER,
     };
     return { same_event: same, confidence, matched_candidate_index: idx, attrs, verdict, listing };
   } catch (e) {
