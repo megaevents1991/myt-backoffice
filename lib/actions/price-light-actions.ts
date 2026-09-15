@@ -481,6 +481,8 @@ export async function removeEventFromSite(eventId: number): Promise<Ok> {
 export interface CrawlPanelRow {
   competitor: CompetitorKey;
   mode: CompetitorScraper["mode"];
+  /** "local" = refreshed by scripts/crawl-local.ts off an Israeli address; no on-demand crawl from here. */
+  crawlFrom: NonNullable<CompetitorScraper["crawlFrom"]>;
   intervalHours: number;
   last: { status: CrawlStatus; started_at: string; finished_at: string | null; listings: number; note: string | null } | null;
   nextDueAt: string | null;
@@ -745,6 +747,7 @@ export async function listCrawlRuns(): Promise<CrawlPanelRow[]> {
     rows.push({
       competitor,
       mode: scraper.mode,
+      crawlFrom: scraper.crawlFrom ?? "vercel",
       intervalHours: scraper.intervalHours,
       last,
       nextDueAt,
@@ -770,6 +773,9 @@ export async function triggerCrawl(
 ): Promise<{ ok: true; summary: CrawlSummary } | { ok: false; error: string }> {
   await requireAdmin();
   if (!ACTIVE_COMPETITORS.includes(competitor)) return { ok: false, error: `unknown competitor: ${competitor}` };
+  // The panel hides the button for a local-only site; a direct call still gets a plain answer
+  // instead of a `skipped` run row (runCrawl would refuse it on Vercel anyway).
+  if (scraperFor(competitor).crawlFrom === "local") return { ok: false, error: "האתר נסרק רק מהמחשב המקומי (scripts/crawl-local.ts), לא מכאן" };
   try {
     const summary = await runCrawl(competitor, "manual", { dryRun });
     await logAudit({

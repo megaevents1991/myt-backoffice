@@ -10,7 +10,8 @@ import { currencyFromSymbol, doc, isoOrNull, nightsBetween, parsePrice, stealthH
 import type { CompetitorScraper, CrawlContext, Listing } from "./types";
 
 const BASE = "https://www.issta.co.il";
-const LEAGUES = ["spanish-league", "premier-league", "italian", "german-league", "champions-league", "uefa-europa-league", "superclasico", "french-league"];
+// `uefa-europa-league` was dropped 2026-09-15: the URL answers 404 and only ever counted as a failed page.
+const LEAGUES = ["spanish-league", "premier-league", "italian", "german-league", "champions-league", "superclasico", "french-league"];
 export const LEAGUE_URLS = LEAGUES.map((l) => `${BASE}/sportcategory/soccer/${l}`);
 
 /** "23/10/2026" -> "2026-10-23" (the loader link's fdate; DD/MM/YYYY only). */
@@ -85,7 +86,7 @@ export function parseCatalog(html: string): Listing[] {
 }
 
 /**
- * LEAGUES is eight SOCCER competitions, all under /sportcategory/soccer/ - the crawler never
+ * LEAGUES is seven SOCCER competitions, all under /sportcategory/soccer/ - the crawler never
  * opens ISSTA's basketball, tennis or motorsport sections. So for a non-football event the
  * absence of a candidate proves nothing, and this returns false: the matcher then records
  * `skipped` instead of `not_selling`, which keeps the scope at `partial_coverage` rather than
@@ -103,6 +104,9 @@ export const issta: CompetitorScraper = {
   // 72h - see the note on golasso.ts: one site per hourly tick, each site every ~3 days.
   intervalHours: 72,
   mode: "fetch",
+  // Vercel's IP gets card-less pages (see the field's doc in types.ts); an Israeli machine runs
+  // scripts/crawl-local.ts every ~3 days instead, and Vercel only reads the run it leaves behind.
+  crawlFrom: "local",
   covers: coversEvent,
   async *crawl(ctx: CrawlContext): AsyncGenerator<Listing> {
     const { toUsd } = await import("./livetickets-api.ts");
@@ -131,7 +135,7 @@ export const issta: CompetitorScraper = {
       const listings = parseCatalog(html);
       const cardsInHtml = (html.match(/deal-item-container/g) ?? []).length;
       ctx.log(`issta: ${url} -> ${listings.length} listings (${html.length} chars, ${cardsInHtml} cards in html)`);
-      // A single empty page is normal - three of the eight leagues genuinely had no packages on
+      // A single empty page is normal - three of the leagues genuinely had no packages on
       // 2026-09-15. What is NOT normal is every page coming back empty, which is what Vercel's IP
       // saw while an Israeli connection got cards from four of them. Cards left in the HTML mean
       // the selector changed instead; say which, so the run note answers it without a re-run.
@@ -151,7 +155,7 @@ export const issta: CompetitorScraper = {
     }
     if (failures === LEAGUE_URLS.length) throw new Error(`issta: all ${failures} league pages failed (last: ${lastError})`);
     // Every page answered and not one card came back anywhere - that is a failure with a reason,
-    // not an empty catalog (the eight leagues are never all empty at once; four of them served
+    // not an empty catalog (the leagues are never all empty at once; four of them served
     // cards to an Israeli connection the same hour Vercel's IP got none). Thrown so runCrawl
     // records it with this note and the circuit counts it.
     if (seen.size === 0 && emptyPages > 0) {

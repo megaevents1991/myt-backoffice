@@ -283,8 +283,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "מסך /price-light וכרטיס הסיכום שלו בדשבורד הם למנהלים בלבד — עורך לא רואה לא את המסך ולא את מספר האדומים.",
       ),
       t(
-        "The competitors panel on the same screen shows each site's last run, catalog size, next due time, and whether its circuit breaker is open. \"סרוק עכשיו\" forces an immediate crawl of one site - except LiveTickets, which has no crawl button because its numbers already refresh overnight from the live_events sync, not from browsing a page.",
-        "פאנל המתחרים באותו מסך מראה לכל אתר את הריצה האחרונה, גודל הקטלוג, מועד הבדיקה הבא, ואם בלם המעגל שלו פתוח. \"סרוק עכשיו\" כופה סריקה מיידית של אתר אחד — חוץ מ-LiveTickets, שאין לו כפתור סריקה כי המספרים שלו כבר מתרעננים בלילה מסנכרון live_events, לא מגלישה בדף.",
+        "The competitors panel on the same screen shows each site's last run, catalog size, next due time, and whether its circuit breaker is open. \"סרוק עכשיו\" forces an immediate crawl of one site - except LiveTickets, which has no crawl button because its numbers already refresh overnight from the live_events sync, not from browsing a page, and ISSTA, whose site serves our servers a page without any packages: it is crawled every three days from an office computer in Israel, and this panel only shows the run that leaves behind.",
+        "פאנל המתחרים באותו מסך מראה לכל אתר את הריצה האחרונה, גודל הקטלוג, מועד הבדיקה הבא, ואם בלם המעגל שלו פתוח. \"סרוק עכשיו\" כופה סריקה מיידית של אתר אחד — חוץ מ-LiveTickets, שאין לו כפתור סריקה כי המספרים שלו כבר מתרעננים בלילה מסנכרון live_events, לא מגלישה בדף, ומ-ISSTA, שהאתר שלו מגיש לשרתים שלנו דף בלי חבילות: הוא נסרק כל שלושה ימים ממחשב במשרד בישראל, והפאנל רק מציג את הריצה שנשארת מזה.",
       ),
     ],
     rules: [

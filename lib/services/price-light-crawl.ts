@@ -91,6 +91,7 @@ export async function pickDueCompetitor(now: Date = new Date()): Promise<Competi
   for (const key of ACTIVE_COMPETITORS) {
     const scraper = scraperFor(key);
     if (scraper.mode === "table") continue;                       // refreshed by the nightly, not the tick
+    if (scraper.crawlFrom === "local") continue;                  // crawled by scripts/crawl-local.ts off an Israeli address
     const runs = await recentRuns(key, 10);
     const lastGood = runs.find((r) => r.status === "ok" || r.status === "partial");
     const lastAny = runs.find((r) => r.status !== "running" && r.status !== "skipped");
@@ -387,6 +388,14 @@ export async function runCrawl(
   }
   if (scraper.mode !== "table" && (await isCrawlLocked())) {
     summary.status = "skipped"; summary.note = "locked: another crawl is running";
+    if (!dryRun) await insertRun(summary, trigger, mode);
+    return finish(summary, start);
+  }
+  // A local-only site is never crawled from Vercel, whatever asked (tick, "crawl now", the cron's
+  // ?competitor= override): the answer would be a card-less page recorded as a failure, and three of
+  // those open the circuit and mail. VERCEL is set on every Vercel runtime and on nothing local.
+  if (scraper.crawlFrom === "local" && process.env.VERCEL) {
+    summary.status = "skipped"; summary.note = "crawled only from a local (Israeli) machine - scripts/crawl-local.ts";
     if (!dryRun) await insertRun(summary, trigger, mode);
     return finish(summary, start);
   }

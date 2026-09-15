@@ -42,6 +42,16 @@ export interface CompetitorScraper {
    * makes detail enrichment finish inside the crawl budget (review 2026-09-11, I2).
    */
   detailMode?: "fetch" | "browser";
+  /**
+   * Where this site can actually be crawled from (default `"vercel"`). `"local"` = the site
+   * serves foreign/datacenter addresses a page without its cards (ISSTA, 2026-09-15: HTTP 200,
+   * zero `deal-item-container`s from Vercel's IP, 21 from an Israeli connection), so the
+   * hourly tick never picks it, `runCrawl` records `skipped` when it runs ON Vercel, and the
+   * panel shows no "סרוק עכשיו". The catalog is refreshed by `scripts/crawl-local.ts` on a
+   * machine with an Israeli address - it writes the same run row, so the panel and the
+   * freshness rules read it exactly like a Vercel run.
+   */
+  crawlFrom?: "vercel" | "local";
   crawl(ctx: CrawlContext): AsyncGenerator<Listing>;
   /** Fetch the detail page of a listing we matched: attrs + detail_text. Same session. */
   detail?(listing: DetailInput, ctx: CrawlContext): Promise<Partial<Listing>>;
