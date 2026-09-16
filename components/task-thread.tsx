@@ -155,6 +155,20 @@ export function TaskThread({ taskId }: { taskId: string }) {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Every live preview blob URL, tracked outside state: the unmount cleanup below
+  // runs with the FIRST render's closure, where `attachments` is always [].
+  const previewUrlsRef = useRef<Set<string>>(new Set());
+
+  function makePreviewUrl(file: Blob): string {
+    const url = URL.createObjectURL(file);
+    previewUrlsRef.current.add(url);
+    return url;
+  }
+
+  function releasePreviewUrl(url: string) {
+    URL.revokeObjectURL(url);
+    previewUrlsRef.current.delete(url);
+  }
 
   const load = useCallback(async () => {
     setComments(await listTaskComments(taskId));
@@ -171,10 +185,11 @@ export function TaskThread({ taskId }: { taskId: string }) {
   // Attachment preview URLs are local blobs - release them once they're no
   // longer shown (sent, removed, or the thread unmounts).
   useEffect(() => {
+    const urls = previewUrlsRef.current;
     return () => {
-      attachments.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      urls.clear();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const nameOf = useMemo(() => {
@@ -209,8 +224,13 @@ export function TaskThread({ taskId }: { taskId: string }) {
         }
         setAttachments((prev) => [
           ...prev,
-          { ...result.attachment, previewUrl: URL.createObjectURL(shrunk.file) },
+          { ...result.attachment, previewUrl: makePreviewUrl(shrunk.file) },
         ]);
+      } catch (error) {
+        // A shrink/upload that throws (bad image, network, server action error) must not
+        // leave a spinner behind - the finally below removes this file's placeholder.
+        console.error("task-thread: upload failed", error);
+        toast({ title: `ההעלאה של ${file.name} נכשלה`, variant: "destructive" });
       } finally {
         setPending((prev) => prev.filter((item) => item.id !== id));
       }
@@ -220,7 +240,7 @@ export function TaskThread({ taskId }: { taskId: string }) {
   function removeAttachment(path: string) {
     setAttachments((prev) => {
       const target = prev.find((a) => a.path === path);
-      if (target) URL.revokeObjectURL(target.previewUrl);
+      if (target) releasePreviewUrl(target.previewUrl);
       return prev.filter((a) => a.path !== path);
     });
   }
@@ -325,7 +345,7 @@ export function TaskThread({ taskId }: { taskId: string }) {
         toast({ title: result.error, variant: "destructive" });
         return;
       }
-      attachments.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+      attachments.forEach((a) => releasePreviewUrl(a.previewUrl));
       setBody("");
       setAttachments([]);
       setMentions([]);

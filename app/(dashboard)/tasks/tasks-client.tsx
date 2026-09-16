@@ -491,7 +491,12 @@ export function TasksClient() {
       </TabsContent>
 
       <TabsContent value="kanban" className="mt-4 space-y-3">
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {/* Same switch (and state) as the Tasks tab - it filters this board too. */}
+          <label className="flex items-center gap-2 text-muted-foreground">
+            <Switch checked={myTasksOnly} onCheckedChange={setMyTasksOnly} />
+            המשימות שלי
+          </label>
           <span className="text-muted-foreground">קיבוץ:</span>
           <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupBy)}>
             <SelectTrigger className="h-8 w-[140px]">
@@ -528,6 +533,7 @@ export function TasksClient() {
             const found = tasks.find((t) => t.id === taskId);
             if (found) setEditor({ open: true, task: found });
           }}
+          onTasksChanged={reload}
         />
       </TabsContent>
 

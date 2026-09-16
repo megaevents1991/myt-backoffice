@@ -46,7 +46,14 @@ const SCOPE_LABEL: Record<string, string> = {
 /** Pricing tab on /tasks (Task 15, 2026-09-16): every open pricing gap - red price
  *  lights + frozen base-price changes - in one list. Visible to all staff, unlike
  *  the admin-only /price-light screen (Dor, 16.09). */
-export function PricingGapsTab({ onOpenTask }: { onOpenTask: (taskId: string) => void }) {
+export function PricingGapsTab({
+  onOpenTask,
+  onTasksChanged,
+}: {
+  onOpenTask: (taskId: string) => void;
+  /** Reload the parent's task list, so a task created here can be opened right away. */
+  onTasksChanged?: () => void | Promise<void>;
+}) {
   const { toast } = useToast();
   const [rows, setRows] = useState<PricingGapRow[] | null>(null);
   // A whole-call failure (auth/unexpected - requireStaff() itself, say): nothing loaded at all.
@@ -64,16 +71,24 @@ export function PricingGapsTab({ onOpenTask }: { onOpenTask: (taskId: string) =>
   const [hideWithTask, setHideWithTask] = useState(true);
 
   const load = useCallback(async () => {
-    const result = await listPricingGaps();
-    if (!result.ok) {
+    try {
+      const result = await listPricingGaps();
+      if (!result.ok) {
+        setRows([]);
+        setFatalError(result.error);
+        setSourceErrors([]);
+        return;
+      }
+      setRows(result.rows);
+      setFatalError(null);
+      setSourceErrors(result.errors);
+    } catch (error) {
+      // A thrown action (network, masked server error) must not leave the skeleton up forever.
+      console.error("pricing-gaps: load failed", error);
       setRows([]);
-      setFatalError(result.error);
+      setFatalError(error instanceof Error ? error.message : "הטעינה נכשלה");
       setSourceErrors([]);
-      return;
     }
-    setRows(result.rows);
-    setFatalError(null);
-    setSourceErrors(result.errors);
   }, []);
 
   useEffect(() => {
@@ -107,12 +122,15 @@ export function PricingGapsTab({ onOpenTask }: { onOpenTask: (taskId: string) =>
           return;
         }
         toast({ title: result.existed ? "כבר יש משימה פתוחה" : "נוצרה משימה" });
-        await load();
+        await Promise.all([load(), onTasksChanged?.()]);
+      } catch (error) {
+        console.error("pricing-gaps: open task failed", error);
+        toast({ variant: "destructive", title: "פתיחת המשימה נכשלה" });
       } finally {
         setBusyKey(null);
       }
     },
-    [toast, load],
+    [toast, load, onTasksChanged],
   );
 
   const markHandled = useCallback(
@@ -126,6 +144,9 @@ export function PricingGapsTab({ onOpenTask }: { onOpenTask: (taskId: string) =>
         }
         toast({ title: "נרשם", description: "אם הפער יישאר בבדיקה הלילית הוא יחזור" });
         await load();
+      } catch (error) {
+        console.error("pricing-gaps: mark handled failed", error);
+        toast({ variant: "destructive", title: "הפעולה נכשלה" });
       } finally {
         setBusyKey(null);
       }
