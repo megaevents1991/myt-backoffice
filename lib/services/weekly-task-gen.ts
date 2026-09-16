@@ -60,7 +60,11 @@ async function loadOpenItemKeys(): Promise<Set<string>> {
     TASKS_MAX,
   );
   if (error) throw new Error(`open task keys load failed: ${error.message}`);
-  if (truncated) console.error(`weekly-task-gen: open task keys truncated at ${TASKS_MAX}`);
+  // A truncated read is not "fewer open tasks than there really are" - it is an INCOMPLETE
+  // dedupe set. Creating per-item tasks against it would silently duplicate every task whose
+  // key fell past the cap, which is worse than skipping this rule's run entirely: throw, same
+  // as a real query error, so the rule is retried whole next time instead of half-applied now.
+  if (truncated) throw new Error(`open task keys truncated at ${TASKS_MAX} - refusing to dedupe against a partial set`);
   const keys = new Set<string>();
   for (const row of rows) {
     if (row.source_ref) keys.add(`${row.source_ref.kind}:${row.source_ref.table}:${row.source_ref.row_id}`);
@@ -105,8 +109,15 @@ async function loadEarlierOpenDigests(
 }
 
 /** Appends the close note rather than overwriting the description, same pattern as
- *  closePriceLightTasksIfNotRed in price-light-tasks.ts. */
-async function closeEarlierDigests(ruleId: string, week: string): Promise<number> {
+ *  closePriceLightTasksIfNotRed in price-light-tasks.ts. An update failure is pushed
+ *  into `summary.errors` (same as an insert failure below) rather than only logged -
+ *  otherwise a close that silently didn't happen would never show up in the summary. */
+async function closeEarlierDigests(
+  ruleId: string,
+  week: string,
+  ruleName: string,
+  summary: TaskGenSummary,
+): Promise<number> {
   const rows = await loadEarlierOpenDigests(ruleId, week);
   let closed = 0;
   const note = "נסגר אוטומטית — אין יותר פריטים פתוחים";
@@ -121,6 +132,7 @@ async function closeEarlierDigests(ruleId: string, week: string): Promise<number
       .eq("id", row.id);
     if (error) {
       console.error("weekly-task-gen: close earlier digest failed", JSON.stringify(error));
+      summary.errors.push(`${ruleName}: close earlier digest failed - ${error.message}`);
       continue;
     }
     closed++;
@@ -128,7 +140,13 @@ async function closeEarlierDigests(ruleId: string, week: string): Promise<number
   return closed;
 }
 
-async function insertTask(task: TaskInsert): Promise<{ id: string } | null> {
+/** A digest insert can lose a race to another concurrent run (the Sunday cron and a
+ *  manual "run now" overlapping) - `tasks_recurring_digest_week_uniq` (migration
+ *  20260916120000) turns that into a Postgres 23505 instead of a duplicate row. That is
+ *  "already exists", not a failure: the caller counts it in `existed`, never `errors`.
+ *  The index only covers `source = 'recurring'` rows, so a 23505 elsewhere would be a
+ *  real, unexpected conflict and falls through to the normal error path. */
+async function insertTask(task: TaskInsert): Promise<{ id: string } | { conflict: true } | null> {
   const { data, error } = await db
     .from("tasks")
     .insert({
@@ -144,10 +162,12 @@ async function insertTask(task: TaskInsert): Promise<{ id: string } | null> {
     })
     .select("id")
     .single();
-  if (error || !data) {
+  if (error) {
+    if (error.code === "23505" && task.source === "recurring") return { conflict: true };
     console.error("weekly-task-gen: task insert failed", JSON.stringify(error));
     return null;
   }
+  if (!data) return null;
   return data as { id: string };
 }
 
@@ -187,6 +207,10 @@ async function runOneRule(
       summary.errors.push(`${rule.name}: task insert failed`);
       continue;
     }
+    if ("conflict" in inserted) {
+      summary.existed++;
+      continue;
+    }
     created++;
     summary.created++;
     if (task.assignee_id) {
@@ -206,7 +230,7 @@ async function runOneRule(
 
   let closed = 0;
   if (plan.closeEarlierDigests) {
-    closed = await closeEarlierDigests(rule.id, week);
+    closed = await closeEarlierDigests(rule.id, week, rule.name, summary);
     summary.closed += closed;
   }
 
@@ -226,6 +250,19 @@ async function runOneRule(
   });
 }
 
+/**
+ * Concurrency note: `tasks_recurring_digest_week_uniq` (migration 20260916120000) makes a
+ * double-created weekly digest impossible even if the Sunday cron and a manual "run now"
+ * overlap - the loser's insert hits Postgres 23505 and is counted in `existed` (see
+ * insertTask above). Per-item tasks have NO such DB-level guard: two overlapping runs can
+ * still insert the same candidate twice, because `loadOpenItemKeys()` is read once up
+ * front and the two runs race each other's writes. This is accepted rather than fixed
+ * here - per-item rows already rely on app-level dedupe only (same as the existing
+ * price_light/creative_gap rows this reads against, which can themselves repeat), a
+ * unique index over an arbitrary jsonb `source_ref` shape could fail to build against
+ * that existing data, and in practice a manual run-now and the Sunday cron essentially
+ * never overlap.
+ */
 export async function runWeeklyTaskGen(
   opts: { dryRun?: boolean; budgetMs?: number; ruleId?: string; now?: Date } = {},
 ): Promise<TaskGenSummary> {

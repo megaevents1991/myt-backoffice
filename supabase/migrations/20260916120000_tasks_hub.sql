@@ -59,3 +59,11 @@ alter table public.task_comments enable row level security;
 insert into storage.buckets (id, name, public)
 values ('task-attachments', 'task-attachments', false)
 on conflict (id) do nothing;
+
+-- One weekly digest per rule per ISO week, even if the cron and a manual
+-- "run now" overlap. Only 'recurring' rows are covered - per-item tasks keep
+-- the app-level dedupe (existing price_light/creative_gap rows may already
+-- repeat, and an index over them could fail to build).
+create unique index if not exists tasks_recurring_digest_week_uniq
+  on public.tasks ((source_ref->>'row_id'), (source_ref->>'week'))
+  where source = 'recurring' and deleted_at is null;

@@ -55,13 +55,24 @@ const NATIVE_SOURCE: Partial<Record<RuleDomain, TaskSource>> = {
 /** Pure day-of-week check, split out so the "wrong day" branch is unit-testable on its
  *  own (self-test requirement). 0 = Sunday … 6 = Saturday, matching rule.dow and
  *  Date#getUTCDay(). A manual "run now" (single ruleId) bypasses this in the caller -
- *  it never calls this helper. */
+ *  it never calls this helper.
+ *
+ *  `dow` and `now.getUTCDay()` are both UTC weekdays. The cron itself fires Sunday
+ *  06:00 UTC (08:00-09:00 Israel), where UTC and Israel agree on the date, so the
+ *  scheduled run never crosses this boundary. A manual FULL run (no ruleId) triggered near
+ *  Israeli midnight, however, can evaluate the neighbouring UTC day - e.g. 01:00 Israel time
+ *  (May-Oct, UTC+3) is still 22:00 UTC the day before. No behaviour change; just naming the
+ *  edge so a "why did it skip today" question doesn't start from scratch. */
 export function isRuleDueToday(rule: Pick<TaskRule, "dow">, now: Date): boolean {
   return rule.dow === now.getUTCDay();
 }
 
 /** today + due_days in UTC, as `YYYY-MM-DD`. null due_days -> null due_date - a rule with
- *  no due_days means "no deadline", not "due today". */
+ *  no due_days means "no deadline", not "due today".
+ *
+ *  "today" is the UTC calendar date of `now`, same convention as isRuleDueToday above - a
+ *  due_date computed near Israeli midnight can land a day off from the Israel-local date
+ *  for the same reason. No behaviour change. */
 export function dueDateUtc(now: Date, dueDays: number | null): string | null {
   if (dueDays == null) return null;
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
