@@ -553,12 +553,29 @@ async function loadOpenPriceLightTaskKeys(): Promise<Set<string>> {
 
 /**
  * Newest competitor_matches row per (event_id, scope) for the listed events, with the match's
- * listing url embedded in the same round trip - one query total, mirroring the embedded-select
- * shape `loadLatestMatches` uses in price-light-store.ts. Reduced to newest-per-key client-side.
+ * listing url in the same round trip.
+ *
+ * First choice is the `price_light_newest_matches` Postgres function (migration 20260916113000):
+ * a DISTINCT ON that returns exactly the ~2 rows per event in ONE request. Before it existed the
+ * screen paged through every match of the lookback window - 6,055 rows in 7 sequential pages,
+ * 3.4s measured on 2026-09-16 - to keep 852 of them. That paged read stays as the fallback for a
+ * deploy whose database has not run the migration yet (PGRST202 = function not found), so the
+ * screen never breaks on the ordering of a merge and its migration.
  */
 async function loadNewestMatches(eventIds: number[]): Promise<Map<string, NewestMatch>> {
   const map = new Map<string, NewestMatch>();
   if (eventIds.length === 0) return map;
+  const since = new Date(Date.now() - NEWEST_MATCH_LOOKBACK_DAYS * 86_400_000).toISOString();
+
+  const { data: newest, error: rpcError } = await db.rpc("price_light_newest_matches", { event_ids: eventIds, since });
+  if (!rpcError) {
+    for (const row of (newest ?? []) as { event_id: number; scope: Scope; method: MatchMethod; created_at: string; url: string | null }[]) {
+      map.set(`${row.event_id}:${row.scope}`, { event_id: row.event_id, scope: row.scope, url: row.url, method: row.method, created_at: row.created_at });
+    }
+    return map;
+  }
+  if (rpcError.code !== "PGRST202") console.error("listPriceLight: newest-matches rpc failed, paging instead", JSON.stringify(rpcError));
+
   const { rows, error, truncated } = await fetchPaged<{
     id: number;
     event_id: number;
@@ -578,7 +595,7 @@ async function loadNewestMatches(eventIds: number[]): Promise<Map<string, Newest
         // cap quietly lose their listing link and "changed this week" flag. Nothing older than
         // NEWEST_MATCH_LOOKBACK_DAYS can be driving a live light anyway: a match goes stale at
         // LIGHT_STALE_DAYS (14).
-        .gte("created_at", new Date(Date.now() - NEWEST_MATCH_LOOKBACK_DAYS * 86_400_000).toISOString())
+        .gte("created_at", since)
         .order("created_at", { ascending: false }),
     LIST_MATCHES_MAX,
   );
@@ -710,52 +727,60 @@ export async function listPriceLight(): Promise<PriceLightRow[]> {
   return rows;
 }
 
-/** Crawl-status panel: one row per registered competitor scraper (a handful, never paged). */
-export async function listCrawlRuns(): Promise<CrawlPanelRow[]> {
-  await requireStaff();
-  const rows: CrawlPanelRow[] = [];
-  for (const competitor of ACTIVE_COMPETITORS) {
-    const scraper = scraperFor(competitor);
-    const { data: lastRows, error } = await db
+/** One competitor's panel row - four small reads, issued together. */
+async function crawlPanelRow(competitor: CompetitorKey): Promise<CrawlPanelRow> {
+  const scraper = scraperFor(competitor);
+  const [lastRes, dueRes, countRes, circuit] = await Promise.all([
+    db
       .from("competitor_crawl_runs")
       .select("status,started_at,finished_at,listings,note")
       .eq("competitor", competitor)
       .order("started_at", { ascending: false })
-      .limit(1);
-    if (error) console.error("listCrawlRuns: last run failed", JSON.stringify(error));
-    const last = ((lastRows ?? []) as { status: CrawlStatus; started_at: string; finished_at: string | null; listings: number; note: string | null }[])[0] ?? null;
-
+      .limit(1),
     // "Next due" is based on the newest ok/partial/blocked run, ignoring skipped/running (and a
     // lone error row) - the same basis pickDueCompetitor uses to decide overdue-ness
     // (price-light-crawl.ts:66-84). `last` above stays "any status" for display.
-    const { data: dueRows, error: dueError } = await db
+    db
       .from("competitor_crawl_runs")
       .select("started_at")
       .eq("competitor", competitor)
       .in("status", ["ok", "partial", "blocked"])
       .order("started_at", { ascending: false })
-      .limit(1);
-    if (dueError) console.error("listCrawlRuns: due-basis run failed", JSON.stringify(dueError));
-    const dueSince = ((dueRows ?? []) as { started_at: string }[])[0] ?? null;
-    const nextDueAt = dueSince ? new Date(Date.parse(dueSince.started_at) + scraper.intervalHours * 3_600_000).toISOString() : null;
-
-    const { count, error: countError } = await db
+      .limit(1),
+    db
       .from("competitor_listings")
       .select("id", { count: "exact", head: true })
-      .eq("competitor", competitor);
-    if (countError) console.error("listCrawlRuns: count failed", JSON.stringify(countError));
-    rows.push({
-      competitor,
-      mode: scraper.mode,
-      crawlFrom: scraper.crawlFrom ?? "vercel",
-      intervalHours: scraper.intervalHours,
-      last,
-      nextDueAt,
-      circuitOpen: await circuitOpen(competitor),
-      totalListings: count ?? 0,
-    });
-  }
-  return rows;
+      .eq("competitor", competitor),
+    circuitOpen(competitor),
+  ]);
+  if (lastRes.error) console.error("listCrawlRuns: last run failed", JSON.stringify(lastRes.error));
+  if (dueRes.error) console.error("listCrawlRuns: due-basis run failed", JSON.stringify(dueRes.error));
+  if (countRes.error) console.error("listCrawlRuns: count failed", JSON.stringify(countRes.error));
+
+  const last = ((lastRes.data ?? []) as { status: CrawlStatus; started_at: string; finished_at: string | null; listings: number; note: string | null }[])[0] ?? null;
+  const dueSince = ((dueRes.data ?? []) as { started_at: string }[])[0] ?? null;
+  const nextDueAt = dueSince ? new Date(Date.parse(dueSince.started_at) + scraper.intervalHours * 3_600_000).toISOString() : null;
+  return {
+    competitor,
+    mode: scraper.mode,
+    crawlFrom: scraper.crawlFrom ?? "vercel",
+    intervalHours: scraper.intervalHours,
+    last,
+    nextDueAt,
+    circuitOpen: circuit,
+    totalListings: countRes.count ?? 0,
+  };
+}
+
+/**
+ * Crawl-status panel: one row per registered competitor scraper (a handful, never paged).
+ * Every read runs concurrently - five competitors x four reads used to go one after another,
+ * 20 round trips that took longer than the whole events list (4.6s measured 2026-09-16) and,
+ * because the screen waited for all three loads together, held the table back too.
+ */
+export async function listCrawlRuns(): Promise<CrawlPanelRow[]> {
+  await requireStaff();
+  return Promise.all(ACTIVE_COMPETITORS.map(crawlPanelRow));
 }
 
 /**

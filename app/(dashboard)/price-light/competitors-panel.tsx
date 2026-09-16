@@ -12,6 +12,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { triggerCrawl, type CrawlPanelRow } from "@/lib/actions/price-light-actions";
 import { COMPETITOR_LABEL } from "@/app/(dashboard)/events/price-light-ui";
@@ -147,8 +148,19 @@ function CompetitorCard({ row, onDone }: { row: CrawlPanelRow; onDone: () => voi
   );
 }
 
-export function CompetitorsPanel({ runs, onDone }: { runs: CrawlPanelRow[]; onDone: () => void }) {
-  if (runs.length === 0) return null;
+export function CompetitorsPanel({ runs, loading = false, onDone }: { runs: CrawlPanelRow[]; loading?: boolean; onDone: () => void }) {
+  if (runs.length === 0) {
+    // First load: the strip's shape appears at once so the tiles and table below it do not
+    // jump down when the five cards land a moment later.
+    if (!loading) return null;
+    return (
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5" aria-busy>
+        {Array.from({ length: 5 }, (_, i) => (
+          <Skeleton key={i} className="h-[62px] rounded-lg" />
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
       {runs.map((row) => (

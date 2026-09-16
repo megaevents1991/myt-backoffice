@@ -219,26 +219,49 @@ export function PriceLightClient() {
   const searchParams = useSearchParams();
   const [rows, setRows] = useState<PriceLightRow[]>([]);
   const [runs, setRuns] = useState<CrawlPanelRow[]>([]);
-  const [cost, setCost] = useState<{ usd: number; calls: number }>({ usd: 0, calls: 0 });
+  const [cost, setCost] = useState<{ usd: number; calls: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [runsLoading, setRunsLoading] = useState(true);
   const [view, setView] = useState("pending");
   const [scope, setScope] = useState<ScopeFilter>("all");
   const [compare, setCompare] = useState<PriceLightRow | null>(null);
 
-  const reload = useCallback(async () => {
+  // Three loads, three arrivals. They used to sit behind one Promise.all, so the table - the
+  // thing the reader came for - waited for the slowest of the three (the competitors panel).
+  // Now each part fills in as its own answer lands; a failure in one leaves the others standing.
+  const reloadRows = useCallback(async () => {
     setLoading(true);
     try {
-      const [r, c, a] = await Promise.all([listPriceLight(), listCrawlRuns(), aiCostThisMonth()]);
-      setRows(r);
-      setRuns(c);
-      setCost(a);
+      setRows(await listPriceLight());
     } catch (e) {
-      console.error("price-light reload failed", e);
+      console.error("price-light rows failed", e);
       toast({ variant: "destructive", title: "טעינה נכשלה", description: e instanceof Error ? e.message : "שגיאה" });
     } finally {
       setLoading(false);
     }
   }, [toast]);
+  const reloadRuns = useCallback(async () => {
+    setRunsLoading(true);
+    try {
+      setRuns(await listCrawlRuns());
+    } catch (e) {
+      console.error("price-light crawl panel failed", e);
+    } finally {
+      setRunsLoading(false);
+    }
+  }, []);
+  const reloadCost = useCallback(async () => {
+    try {
+      setCost(await aiCostThisMonth());
+    } catch (e) {
+      console.error("price-light ai cost failed", e);
+    }
+  }, []);
+  const reload = useCallback(() => {
+    void reloadRows();
+    void reloadRuns();
+    void reloadCost();
+  }, [reloadRows, reloadRuns, reloadCost]);
 
   useEffect(() => {
     reload();
@@ -496,12 +519,19 @@ export function PriceLightClient() {
         </span>
         <span aria-hidden>·</span>
         <span>
-          <span className="font-medium tabular-nums text-foreground">{runs.length}</span> מתחרים פעילים
+          <span className="font-medium tabular-nums text-foreground">{runsLoading && runs.length === 0 ? "…" : runs.length}</span> מתחרים פעילים
         </span>
         <span aria-hidden>·</span>
         <span>
-          AI החודש <span className="font-medium tabular-nums text-foreground">${cost.usd.toFixed(2)}</span>
-          {cost.calls > 0 ? ` ב-${cost.calls} קריאות` : " · אין קריאות"}
+          AI החודש{" "}
+          {cost ? (
+            <>
+              <span className="font-medium tabular-nums text-foreground">${cost.usd.toFixed(2)}</span>
+              {cost.calls > 0 ? ` ב-${cost.calls} קריאות` : " · אין קריאות"}
+            </>
+          ) : (
+            <span className="font-medium text-foreground">…</span>
+          )}
         </span>
       </div>
 
@@ -544,7 +574,7 @@ export function PriceLightClient() {
         ))}
       </div>
 
-      <CompetitorsPanel runs={runs} onDone={reload} />
+      <CompetitorsPanel runs={runs} loading={runsLoading} onDone={reload} />
 
       <DataTable
         columns={columns}

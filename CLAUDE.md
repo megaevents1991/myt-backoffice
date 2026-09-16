@@ -371,7 +371,12 @@ marked) - the data was always in `light_detail[scope].per_competitor` and had no
 all 839 live scope cells carry it. Scope-specific decisions name their scope: with both scopes red
 there are two **הוזל** buttons and two **משימה** items (`הוזל · חבילה`), and **דריסה** gains a scope
 picker; **השאר בפיד**, **הסר מהאתר** and **בדוק עכשיו** stay event-level. The events-table light
-column sorts by the worse of the two lights, not by the package one alone.
+column sorts by the worse of the two lights, not by the package one alone. **Load path (2026-09-16):** the screen
+issues three independent loads (rows / competitors panel / AI cost) and renders each as it lands - the table never waits
+for the panel. `listPriceLight` reads the newest match per (event, scope) through the Postgres function
+`price_light_newest_matches(event_ids, since)` (migration `20260916113000`, `service_role` only; one round trip instead
+of paging every match of the lookback window) and falls back to the paged read on `PGRST202` (function not migrated
+yet); `listCrawlRuns` runs its 20 small reads concurrently. Measured before: 6s+ on prod.
 
 **Partner pass (2026-09-14): every competitor, contents side by side, a package/ticket lens.**
 (a) **Matching coverage.** 357 of 426 live events had NO priced package competitor, and 840 package
