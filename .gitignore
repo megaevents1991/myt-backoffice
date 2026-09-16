@@ -51,3 +51,6 @@ yarn-error.log*
 .claude/plans
 .playwright-mcp
 .superpowers/sddbash.exe.stackdump
+
+# Git Bash crash dumps
+*.stackdump
