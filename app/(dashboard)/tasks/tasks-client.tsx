@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Check, Eye, MessageSquare, Pencil, Plus, RotateCcw, Trash2, Wrench } from "lucide-react";
 
@@ -42,6 +42,15 @@ import {
   type DismissedGap,
 } from "@/lib/actions/creative-gap-actions";
 import { editableFields } from "@/lib/tasks/permissions";
+import { BOARD_META } from "@/lib/task-boards";
+import { KanbanBoard } from "./kanban-board";
+import {
+  filterByBoard,
+  parseBoardParam,
+  PRIORITY_STYLE,
+  STATUS_LABEL,
+  type GroupBy,
+} from "@/lib/tasks/kanban";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   GAP_KINDS,
@@ -53,26 +62,11 @@ import {
 import {
   OPEN_TASK_STATUSES,
   PRIORITY_ORDER,
-  type TaskPriority,
+  TASK_BOARDS,
   type TaskSource,
   type TaskStatus,
   type TaskWithNames,
 } from "@/types/task.types";
-
-const STATUS_LABEL: Record<TaskStatus, string> = {
-  todo: "To do",
-  in_progress: "In progress",
-  paused: "Paused",
-  done: "Done",
-  cancelled: "Cancelled",
-};
-
-const PRIORITY_STYLE: Record<TaskPriority, string> = {
-  urgent: "bg-destructive/15 text-destructive",
-  high: "bg-warning-muted text-warning",
-  medium: "bg-info-muted text-info",
-  low: "bg-muted text-muted-foreground",
-};
 
 /** Small badge on sourced tasks - where the work came from. */
 const SOURCE_BADGE: Partial<Record<TaskSource, string>> = {
@@ -100,15 +94,26 @@ function gapPrefill(gap: GapItem): TaskPrefill {
 export function TasksClient() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const router = useRouter();
+  const pathname = usePathname();
+  // ONE top-level useSearchParams for the whole page - ?tab=, ?task= and now
+  // ?board= all read from this same instance (never a second hook call).
   const searchParams = useSearchParams();
-  // /tasks?tab=gaps deep-links straight to the gaps tab (dashboard panel).
-  const initialTab = searchParams.get("tab") === "gaps" ? "gaps" : "tasks";
+  // /tasks?tab=gaps or ?tab=kanban deep-links straight to that tab.
+  const initialTab =
+    searchParams.get("tab") === "gaps"
+      ? "gaps"
+      : searchParams.get("tab") === "kanban"
+        ? "kanban"
+        : "tasks";
   const initialTaskId = searchParams.get("task");
+  const boardLens = parseBoardParam(searchParams.get("board"));
   const isManager = !!user && (ADMIN_ROLES as readonly string[]).includes(user.role);
 
   const [tasks, setTasks] = useState<TaskWithNames[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("open");
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
   // The whole board is visible now (16.09) - "my tasks" is the one filter that
   // keeps an editor's default view unchanged (on for them, off for admins,
   // who assign work and need to see everyone's).
@@ -154,20 +159,47 @@ export function TasksClient() {
     return tasks.filter((task) => task.assignee_id === user.id);
   }, [tasks, myTasksOnly, user]);
 
+  // The board lens (הכל / פיתוח / שיווק / תפעול) narrows BOTH the table and
+  // the kanban - everything below (table view tabs + counts, and the
+  // <KanbanBoard> tasks prop) reads from here, never from `scoped` directly.
+  const boardFiltered = useMemo(
+    () => filterByBoard(scoped, boardLens),
+    [scoped, boardLens],
+  );
+
+  // Counts for the lens buttons themselves - computed pre-lens (from `scoped`)
+  // so every button always shows how many tasks it would reveal.
+  const boardCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const task of scoped) counts.set(task.board, (counts.get(task.board) ?? 0) + 1);
+    return counts;
+  }, [scoped]);
+
+  const setBoardLens = useCallback(
+    (board: (typeof TASK_BOARDS)[number] | "all") => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (board === "all") params.delete("board");
+      else params.set("board", board);
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
   const filtered = useMemo(() => {
     switch (view) {
       case "open":
-        return scoped.filter(
+        return boardFiltered.filter(
           (task) => (OPEN_TASK_STATUSES as readonly string[]).includes(task.status),
         );
       case "done":
-        return scoped.filter(
+        return boardFiltered.filter(
           (task) => task.status === "done" || task.status === "cancelled",
         );
       default:
-        return scoped;
+        return boardFiltered;
     }
-  }, [scoped, view]);
+  }, [boardFiltered, view]);
 
   const sorted = useMemo(
     () =>
@@ -180,11 +212,11 @@ export function TasksClient() {
   );
 
   const counts = useMemo(() => {
-    const open = scoped.filter(
+    const open = boardFiltered.filter(
       (task) => (OPEN_TASK_STATUSES as readonly string[]).includes(task.status),
     ).length;
-    return { open, done: scoped.length - open, all: scoped.length };
-  }, [scoped]);
+    return { open, done: boardFiltered.length - open, all: boardFiltered.length };
+  }, [boardFiltered]);
 
   const onStatus = useCallback(
     async (task: TaskWithNames, status: TaskStatus) => {
@@ -198,6 +230,27 @@ export function TasksClient() {
         return;
       }
       reload();
+    },
+    [reload, toast],
+  );
+
+  // Same server call as the table's status <Select> (onStatus above), but
+  // returning success/failure instead of void - that boolean is how
+  // <KanbanBoard> knows whether to keep its optimistic move or roll it back.
+  // The toast with the server's error happens here, once, either way.
+  const onKanbanStatusChange = useCallback(
+    async (id: string, status: TaskStatus) => {
+      const result = await setTaskStatus(id, status);
+      if (!result.ok) {
+        toast({
+          variant: "destructive",
+          title: "Update failed",
+          description: result.error,
+        });
+        return false;
+      }
+      reload();
+      return true;
     },
     [reload, toast],
   );
@@ -374,8 +427,28 @@ export function TasksClient() {
 
   return (
     <Tabs defaultValue={initialTab}>
+      {/* Board lens - filters the table AND the kanban below it together. */}
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        <FilterPill
+          active={boardLens === "all"}
+          onClick={() => setBoardLens("all")}
+          label="הכל"
+          count={scoped.length}
+        />
+        {TASK_BOARDS.map((board) => (
+          <FilterPill
+            key={board}
+            active={boardLens === board}
+            onClick={() => setBoardLens(board)}
+            label={BOARD_META[board].label}
+            count={boardCounts.get(board) ?? 0}
+          />
+        ))}
+      </div>
+
       <TabsList>
         <TabsTrigger value="tasks">Tasks</TabsTrigger>
+        <TabsTrigger value="kanban">Kanban</TabsTrigger>
         <TabsTrigger value="gaps">Creative gaps</TabsTrigger>
       </TabsList>
 
@@ -410,6 +483,30 @@ export function TasksClient() {
               ? undefined
               : "Create one, or pull work in from the Creative gaps tab.",
           }}
+        />
+      </TabsContent>
+
+      <TabsContent value="kanban" className="mt-4 space-y-3">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">קיבוץ:</span>
+          <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupBy)}>
+            <SelectTrigger className="h-8 w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">ללא</SelectItem>
+              <SelectItem value="phase">פאזה</SelectItem>
+              <SelectItem value="assignee">משובץ</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <KanbanBoard
+          tasks={boardFiltered}
+          onStatusChange={onKanbanStatusChange}
+          groupBy={groupBy}
+          role={user?.role ?? ""}
+          userId={user?.id ?? null}
+          onOpenTask={(task) => setEditor({ open: true, task })}
         />
       </TabsContent>
 
