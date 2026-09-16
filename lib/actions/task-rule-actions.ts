@@ -22,6 +22,7 @@ export type Ok = { ok: true } | { ok: false; error: string };
 interface StaffNameRow {
   id: string;
   display_name: string | null;
+  email: string;
 }
 
 /** One extra query for the handful of distinct assignees on this screen - never
@@ -32,13 +33,15 @@ async function attachAssigneeNames(rules: TaskRule[]): Promise<TaskRuleWithNames
   );
   if (!ids.length) return rules.map((rule) => ({ ...rule, assignee_name: null }));
 
-  const { data, error } = await db.from("user_profiles").select("id,display_name").in("id", ids);
+  const { data, error } = await db.from("user_profiles").select("id,display_name,email").in("id", ids);
   if (error) {
     console.error("task-rule-actions: load assignee names failed", JSON.stringify(error));
     return rules.map((rule) => ({ ...rule, assignee_name: null }));
   }
+  // Same fallback as the tasks board: a profile with no display name shows its email,
+  // never "unassigned".
   const names = new Map<string, string | null>(
-    (data as StaffNameRow[]).map((row) => [row.id, row.display_name]),
+    (data as StaffNameRow[]).map((row) => [row.id, row.display_name || row.email]),
   );
   return rules.map((rule) => ({
     ...rule,

@@ -694,7 +694,7 @@ export function RulesClient({
                   <SelectContent>
                     <SelectItem value={UNASSIGNED}>לא משובץ</SelectItem>
                     {staff.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.display_name ?? s.email}</SelectItem>
+                      <SelectItem key={s.id} value={s.id}>{s.display_name || s.email}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
