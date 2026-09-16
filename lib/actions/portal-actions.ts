@@ -9,6 +9,7 @@ import {
   UNASSIGNED_AGENT_SENTINEL,
 } from "@/lib/portal-attribution";
 import { supabase } from "@/lib/supabase-server";
+import { fromPortalHistory, portalHistoryFrom } from "@/lib/portal-history";
 import {
   commissionForReservation,
   commissionForReservations,
@@ -282,15 +283,22 @@ export async function getPortalStats(): Promise<PortalStats> {
     couponUses: 0,
   };
 
+  // Staff-set portal cut-off (lib/portal-history) - the tiles must agree with
+  // the reservations page, which applies the same date.
+  const historyFrom = await portalHistoryFrom(session.partner_code);
+
   const [resResult, couponResult, partnerResult] = await Promise.all([
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
-      .from("reservations")
-      .select(
-        "id,status,user_shown_price,event_order_info,commission_type,commission_rate,agent_user_id",
-      )
-      .is("is_deleted", null)
-      .eq("aff_partner_tracking_code", session.partner_code),
+    fromPortalHistory(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from("reservations")
+        .select(
+          "id,status,user_shown_price,event_order_info,commission_type,commission_rate,agent_user_id",
+        )
+        .is("is_deleted", null)
+        .eq("aff_partner_tracking_code", session.partner_code),
+      historyFrom,
+    ),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from("coupons")
@@ -308,13 +316,16 @@ export async function getPortalStats(): Promise<PortalStats> {
   if (resData.error?.code === "42703") {
     // agent_user_id not migrated yet - retry without it; every row simply
     // merges to its UTM attribution below (override contributes nothing).
-    resData = await supabase
-      .from("reservations")
-      .select(
-        "id,status,user_shown_price,event_order_info,commission_type,commission_rate",
-      )
-      .is("is_deleted", null)
-      .eq("aff_partner_tracking_code", session.partner_code);
+    resData = await fromPortalHistory(
+      supabase
+        .from("reservations")
+        .select(
+          "id,status,user_shown_price,event_order_info,commission_type,commission_rate",
+        )
+        .is("is_deleted", null)
+        .eq("aff_partner_tracking_code", session.partner_code),
+      historyFrom,
+    );
   }
   if (resData.error) {
     console.error("getPortalStats reservations:", JSON.stringify(resData.error));
@@ -479,14 +490,22 @@ export async function getPortalReservations(
 ): Promise<PortalReservationsPage> {
   const session = await requirePartner();
   const scope = await resolvePortalScope(session);
+  // Staff-set portal cut-off (lib/portal-history): a partner starting fresh on
+  // a code with old history sees bookings from that date only. Applied IN the
+  // query, not after - a JS filter on the 501-row page would leave `truncated`
+  // pointing at older rows that are all hidden anyway.
+  const historyFrom = await portalHistoryFrom(session.partner_code);
 
   const fetchReservations = (columns: string) =>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
-      .from("reservations")
-      .select(columns)
-      .is("is_deleted", null)
-      .eq("aff_partner_tracking_code", session.partner_code)
+    fromPortalHistory(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from("reservations")
+        .select(columns)
+        .is("is_deleted", null)
+        .eq("aff_partner_tracking_code", session.partner_code),
+      historyFrom,
+    )
       .order("created_at", { ascending: false })
       // One more than the page, purely to detect that older rows exist.
       .limit(RESERVATIONS_PAGE_SIZE + 1);
