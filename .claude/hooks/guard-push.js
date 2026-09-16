@@ -109,9 +109,13 @@ function main() {
   }
 
   const cmd = String(payload?.tool_input?.command || "");
-  // `git ... push` within one command segment (covers `git -C <path> push`,
-  // `git push --force`, and chained `git commit && git push`).
-  if (!/\bgit\b[^|;&\n]*\bpush\b/i.test(cmd)) process.exit(0);
+  // `push` as git's SUBCOMMAND: `git push`, `git -C <path> push`, `git
+  // --no-pager push`, and chained `git commit && git push` (segments split on
+  // `|;&`). Anything looser fired on non-pushes (2026-09-16): a bare
+  // `\bgit\b ... \bpush\b` matched the `git/` in a GitHub API path
+  // (`gh api .../git/refs/heads/chore/push-gate-...`) and a branch NAME in
+  // `git ls-remote origin chore/push-gate-...`.
+  if (!/\bgit\s+(?:-\S+\s+(?:[^-\s]\S*\s+)?)*push\b/i.test(cmd)) process.exit(0);
 
   let message = null;
   try {
