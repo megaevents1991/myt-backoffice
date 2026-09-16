@@ -16,6 +16,7 @@
  * once every backlog task has its dismissal.
  */
 import { supabase } from "@/lib/supabase-server";
+import { logAudit } from "@/lib/audit";
 import { gapKey } from "@/types/creative-gap.types";
 import type { TaskSourceRef } from "@/types/task.types";
 
@@ -113,6 +114,18 @@ async function main() {
   }));
   const { error } = await db.from("creative_gap_dismissals").upsert(rows, { onConflict: "gap_key" });
   if (error) throw new Error(`insert failed: ${JSON.stringify(error)}`);
+
+  // One audit row per applied dismissal, same shape dismissCreativeGap()
+  // writes for a manual one - logAudit never throws, so a failure here can't
+  // abort the backfill after the writes already landed.
+  for (const row of rows) {
+    await logAudit({
+      action: "creative_gap.dismiss",
+      entityType: "creative_gap",
+      entityId: row.gap_key,
+      changes: { label: row.label },
+    });
+  }
   console.log(`\nInserted ${rows.length} dismissal(s).`);
 }
 

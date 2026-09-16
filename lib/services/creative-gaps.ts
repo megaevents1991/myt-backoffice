@@ -312,37 +312,22 @@ export async function listGapsOfKind(
           .order("name")
           .limit(LIST_LIMIT);
         if (error) throw error;
-        return (data ?? []).map((row: TwinCategory) => {
-          const twin = ctx.twinOf(row);
-          // A twin category still needs a picture on the site - it's just
-          // uploaded through the team/artist editor (which fills the twin
-          // category's image_url too, see category-twins.ts fillTwinCategoryImage),
-          // not the category editor itself.
-          if (twin) {
-            const editPath =
-              twin.kind === "team"
-                ? `/templates/football/${twin.id}/edit`
-                : `/templates/artists/${twin.id}/edit`;
-            return {
-              kind,
-              table: "categories",
-              row_id: row.id,
-              label: `${twin.name} (כרטיס עמוד הקבוצה/האמן)`,
-              url: `/templates/categories/${row.id}/edit`,
-              fixUrl: `${editPath}#fix-image`,
-              detail:
-                "התמונה מופיעה בכרטיס בעמוד הקבוצות/האמנים. העלאת תמונה לקבוצה ממלאת אותה.",
-            };
-          }
-          return {
+        // A real twin category (Dor, 16.09 fix round 1) is never rendered
+        // with its own image at all - main shows TeamCmsPage/ArtistCmsPage
+        // for it (person cards / blob hero), not the generic category page
+        // that would display categories.image_url. So an empty image_url on
+        // a twin isn't a gap, not even one relabelled toward the person -
+        // there is nothing to fix on either side.
+        return (data ?? [])
+          .filter((row: TwinCategory) => !ctx.twinOf(row))
+          .map((row: TwinCategory) => ({
             kind,
             table: "categories",
             row_id: row.id,
             label: row.name || row.name_english || String(row.id),
             url: `/templates/categories/${row.id}/edit`,
             fixUrl: `/templates/categories/${row.id}/edit#fix-image`,
-          };
-        });
+          }));
       }
       case "blog_hero": {
         const { data, error } = await db

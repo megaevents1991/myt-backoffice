@@ -60,6 +60,26 @@ check(
   null,
 );
 
+// --- fix round 1 (2026-09-16): a matched person with no English name is NOT
+// a twin - main's render gate (app/c/[...slug]/page.tsx) needs BOTH name AND
+// nameDBenglish non-empty to show TeamCmsPage/ArtistCmsPage; short of that it
+// falls back to the generic category page. ---
+
+const teamsNoEnglish = [{ id: 11, name: "צ'לסי", name_english: "" }];
+const teamsNullEnglish = [{ id: 12, name: "פולהאם", name_english: null }];
+
+check(
+  "matched by Hebrew name but person has empty English name -> null",
+  findTwin({ id: 107, parent_id: 1, name: "צ'לסי", name_english: null }, hubs, teamsNoEnglish, artists),
+  null,
+);
+
+check(
+  "matched by Hebrew name but person has null English name -> null",
+  findTwin({ id: 108, parent_id: 1, name: "פולהאם", name_english: null }, hubs, teamsNullEnglish, artists),
+  null,
+);
+
 // --- findCategoryTwin (person -> category), the direction portal-site-pages-actions.ts uses ---
 
 const categories = [
@@ -76,6 +96,12 @@ check(
 check(
   "person -> category, undefined hub -> null",
   findCategoryTwin({ id: 10, name: "ליברפול", name_english: "Liverpool" }, undefined, categories),
+  null,
+);
+
+check(
+  "person -> category, person has no English name -> null (render gate)",
+  findCategoryTwin({ id: 10, name: "ליברפול", name_english: null }, 1, categories),
   null,
 );
 

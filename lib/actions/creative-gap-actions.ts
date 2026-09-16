@@ -39,8 +39,9 @@ const db = supabase as any;
 export async function getCreativeGapCounts(): Promise<GapCounts> {
   await requireStaff();
 
-  // Needed so category_content's count excludes artist-twin categories the
-  // same way the list does (Task 16) - see listCategoryContentGaps().
+  // Needed so category_content/category_image counts apply the same
+  // category-twin exclusions the lists do (Task 16) - see
+  // listCategoryContentGaps() and the category_image case in listGapsOfKind().
   const ctx = await buildGapContext();
 
   const [
@@ -89,13 +90,12 @@ export async function getCreativeGapCounts(): Promise<GapCounts> {
       .eq("is_deleted", false)
       .eq("gallery", "[]"),
     // Only categories that are switched on: an inactive one has no tile and
-    // no /c/ page, so its missing image is noise (Tom, 2026-09-10).
-    db
-      .from("categories")
-      .select("id", { count: "exact", head: true })
-      .eq("is_deleted", false)
-      .eq("is_active", true)
-      .is("image_url", null),
+    // no /c/ page, so its missing image is noise (Tom, 2026-09-10). A real
+    // twin category is excluded too (Task 16 fix round 1) - main never shows
+    // its image_url at all, so the count must match the list's twin filter;
+    // that filter needs ctx.twinOf, so this goes through listGapsOfKind
+    // rather than a plain count like the others.
+    listGapsOfKind("category_image", ctx).then((rows) => ({ count: rows.length, error: null })),
     db
       .from("blog_posts")
       .select("id", { count: "exact", head: true })
@@ -167,7 +167,7 @@ export async function listCreativeGaps(kind: GapKind): Promise<GapItem[]> {
 
 /**
  * Every gap, in one list - what the gaps tab shows. The computation
- * (severity/on-sale/demoted ranking, dismissal filtering) lives in
+ * (severity/on-sale ranking, dismissal filtering) lives in
  * computeOpenCreativeGaps (lib/services/creative-gaps.ts) so the weekly-cron
  * creative_gaps rule generator can call it without a staff session; this stays
  * the staff-facing entry point.

@@ -15,26 +15,6 @@ import type {
   UpdatePersonData,
 } from "../../types/person.types";
 import { ensurePersonTaxonomy } from "@/lib/services/taxonomy-sync";
-import { fillTwinCategoryImage } from "@/lib/services/category-twins";
-
-/** Task 16: a saved hero (or, failing that, blob) image fills the team's
- *  twin category card image too, when that category has none yet. Tolerant:
- *  a sync failure must not fail the save, same pattern as ensurePersonTaxonomy
- *  above. */
-async function fillTwinImage(team: Person): Promise<void> {
-  const imageUrl = team.image_url ?? team.art_image_url;
-  if (!imageUrl) return;
-  try {
-    await fillTwinCategoryImage({
-      kind: "team",
-      personId: team.id,
-      person: { id: team.id, name: team.name, name_english: team.name_english },
-      imageUrl,
-    });
-  } catch (e) {
-    console.error("team category-twin image fill failed:", e);
-  }
-}
 
 const TABLE = "football_teams";
 const REVALIDATE = ["/templates", "/templates/football"];
@@ -64,7 +44,6 @@ export async function createFootballTeam(
   } catch (e) {
     console.error("team taxonomy sync failed:", e);
   }
-  await fillTwinImage(created);
   return created;
 }
 export async function updateFootballTeam(
@@ -72,9 +51,7 @@ export async function updateFootballTeam(
   data: UpdatePersonData,
 ): Promise<Person> {
   await requireStaff();
-  const updated = await updateRow<Person>(TABLE, id, data, REVALIDATE);
-  await fillTwinImage(updated);
-  return updated;
+  return updateRow<Person>(TABLE, id, data, REVALIDATE);
 }
 export async function softDeleteFootballTeam(id: number): Promise<Person> {
   await requireStaff();
