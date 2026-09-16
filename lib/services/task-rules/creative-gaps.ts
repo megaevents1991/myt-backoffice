@@ -8,13 +8,11 @@ export const creativeGapsGenerator: RuleGenerator = {
   screenUrl: "/tasks?tab=gaps",
   digestTitle: (count) => `פערי קריאייטיב — ${count} נכסים חסרים`,
   async candidates(match) {
-    let gaps;
-    try {
-      gaps = await computeOpenCreativeGaps();
-    } catch (error) {
-      console.error("task-rules/creative-gaps: load failed", JSON.stringify(error));
-      return [];
-    }
+    // No try/catch here: computeOpenCreativeGaps() itself never throws today (each
+    // per-kind query already logs and degrades to [] internally, unchanged in this
+    // fix round), but a generator must never turn a load failure into a silent "no
+    // gaps" - if that ever changes, the throw is meant to propagate.
+    const gaps = await computeOpenCreativeGaps();
 
     const kinds = match.kinds && match.kinds.length > 0 ? new Set(match.kinds) : null;
     // 0 = every gap, 1 = severe only - GapMeta only has "crit"/"warn", so "severe" means crit.

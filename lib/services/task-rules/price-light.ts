@@ -86,7 +86,7 @@ async function loadEvents(): Promise<EventLightRow[]> {
   );
   if (error) {
     console.error("task-rules/price-light: events failed", JSON.stringify(error));
-    return [];
+    throw new Error("price-light: events load failed");
   }
   if (truncated) console.error(`task-rules/price-light: events truncated at ${EVENTS_MAX}`);
   return rows.filter((e) => !e.is_test);
@@ -107,7 +107,7 @@ async function loadFootballEventIds(eventIds: number[]): Promise<Set<number>> {
     .eq("event_tags.slug", "football");
   if (error) {
     console.error("task-rules/price-light: tag slugs failed", JSON.stringify(error));
-    return new Set();
+    throw new Error("price-light: tag slugs load failed");
   }
   return new Set((data ?? []).map((r: TagLinkRow) => r.event_id));
 }
@@ -129,7 +129,7 @@ async function loadOpenTaskKeys(): Promise<Set<string>> {
   );
   if (error) {
     console.error("task-rules/price-light: open tasks failed", JSON.stringify(error));
-    return new Set();
+    throw new Error("price-light: open tasks load failed");
   }
   if (truncated) console.error(`task-rules/price-light: open tasks truncated at ${TASKS_MAX}`);
   const keys = new Set<string>();

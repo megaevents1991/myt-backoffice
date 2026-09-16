@@ -25,6 +25,16 @@ interface OpenTaskRow {
 
 const LOG_MAX = 3_000;
 const TASKS_MAX = 5_000;
+// PostgREST silently truncates a single `.in()` call past its row cap (~1000) rather than
+// erroring, so a needs_review backlog spanning more than one chunk would quietly drop names
+// to "#id" past the cut - chunk instead of trusting one request to carry every id.
+const NAME_LOOKUP_CHUNK = 200;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
 
 /** Every frozen (`needs_review`) sync-log row - one query, not one per event. */
 async function loadNeedsReviewRows(): Promise<SyncLogRow[]> {
@@ -39,7 +49,7 @@ async function loadNeedsReviewRows(): Promise<SyncLogRow[]> {
   );
   if (error) {
     console.error("task-rules/price-changes: log failed", JSON.stringify(error));
-    return [];
+    throw new Error("price-changes: log load failed");
   }
   if (truncated) console.error(`task-rules/price-changes: log truncated at ${LOG_MAX}`);
   return rows;
@@ -61,7 +71,7 @@ async function loadOpenReviewEventIds(): Promise<Set<number>> {
   );
   if (error) {
     console.error("task-rules/price-changes: open tasks failed", JSON.stringify(error));
-    return new Set();
+    throw new Error("price-changes: open tasks load failed");
   }
   if (truncated) console.error(`task-rules/price-changes: open tasks truncated at ${TASKS_MAX}`);
   const ids = new Set<number>();
@@ -109,10 +119,11 @@ export const priceChangesGenerator: RuleGenerator = {
 
     const eventIds = [...byEvent.keys()];
     const nameOf = new Map<number, string>();
-    if (eventIds.length > 0) {
-      const { data, error } = await db.from("events").select("id,name").in("id", eventIds);
+    for (const idsChunk of chunk(eventIds, NAME_LOOKUP_CHUNK)) {
+      const { data, error } = await db.from("events").select("id,name").in("id", idsChunk);
       if (error) {
         console.error("task-rules/price-changes: event names failed", JSON.stringify(error));
+        throw new Error("price-changes: event names load failed");
       }
       for (const e of (data ?? []) as { id: number; name: string }[]) nameOf.set(e.id, e.name);
     }

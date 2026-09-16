@@ -16,6 +16,13 @@ export interface RuleGenerator {
   /** Where the digest task links to. */
   screenUrl: string;
   digestTitle(count: number): string;
-  /** READ ONLY. A generator never writes a price and never removes an event. */
+  /**
+   * READ ONLY. A generator never writes a price and never removes an event.
+   *
+   * Throws when its data cannot be loaded; callers must not read a throw as
+   * "no gaps". The weekly cron auto-closes a digest task once its generator
+   * returns zero candidates, so a swallowed DB error would silently close an
+   * open digest - only a genuinely empty result may return `[]`.
+   */
   candidates(match: RuleMatch): Promise<RuleCandidate[]>;
 }
