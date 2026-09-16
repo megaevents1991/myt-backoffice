@@ -243,7 +243,8 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
 
 /** The side-by-side comparison for one event row on /price-light. */
 export async function getPriceLightComparison(eventId: number): Promise<PriceLightComparison | null> {
-  await requireStaff();
+  // Admin-only surface (competitor prices / AI spend) - same bar as the /price-light page.
+  await requireAdmin();
   try {
     return await buildComparison(eventId);
   } catch (e) {
@@ -707,12 +708,13 @@ function buildScopeCell(
  * Cached (lib/services/price-light-cache.ts): the answer is kept under the `rows` tag for
  * PRICE_LIGHT_TTL_S.rows seconds or until a write path invalidates it - a decision here, a
  * recheck, an event edit, a task closing, the nightly. Auth stays OUTSIDE the cached function:
- * `unstable_cache` cannot read cookies, and the cache is shared by every staff member anyway.
+ * `unstable_cache` cannot read cookies, and the cache is shared by every admin anyway.
  * A payload over Vercel's 2 MB data-cache item limit is silently not cached (today's full
  * list is about half that) - the screen then simply behaves as before this cache existed.
  */
 export async function listPriceLight(opts: { onlyRed?: boolean } = {}): Promise<PriceLightRow[]> {
-  await requireStaff();
+  // Admin-only surface (competitor prices / AI spend) - same bar as the /price-light page.
+  await requireAdmin();
   return cachedPriceLightRows(opts.onlyRed === true);
 }
 
@@ -815,7 +817,8 @@ async function crawlPanelRow(competitor: CompetitorKey): Promise<CrawlPanelRow> 
  * because the screen waited for all three loads together, held the table back too.
  */
 export async function listCrawlRuns(): Promise<CrawlPanelRow[]> {
-  await requireStaff();
+  // Admin-only surface (competitor prices / AI spend) - same bar as the /price-light page.
+  await requireAdmin();
   return cachedCrawlPanel();
 }
 
@@ -871,7 +874,8 @@ const AI_COST_FETCH_MAX = 50_000;
  * listing, so counting them would re-bill one call once per visit and inflate both numbers.
  */
 export async function aiCostThisMonth(): Promise<{ usd: number; calls: number }> {
-  await requireStaff();
+  // Admin-only surface (competitor prices / AI spend) - same bar as the /price-light page.
+  await requireAdmin();
   return cachedAiCost();
 }
 
