@@ -43,7 +43,7 @@ function isManager(role: string): boolean {
 }
 
 const TASK_COLUMNS =
-  "id,title,description,status,priority,assignee_id,created_by,due_date,source,source_ref,deleted_at,completed_at,created_at,updated_at";
+  "id,title,description,status,priority,assignee_id,created_by,due_date,source,source_ref,deleted_at,completed_at,created_at,updated_at,board,phase,channel,progress";
 
 function validStatus(value: string): value is TaskStatus {
   return (TASK_STATUSES as readonly string[]).includes(value);
@@ -67,7 +67,13 @@ async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
     ),
   ];
   if (ids.length === 0) {
-    return rows.map((row) => ({ ...row, assignee_name: null, created_by_name: null }));
+    return rows.map((row) => ({
+      ...row,
+      assignee_name: null,
+      created_by_name: null,
+      // Populated by a later task (comment count query); honest zero until then.
+      comment_count: 0,
+    }));
   }
 
   const { data: users, error } = await db
@@ -84,6 +90,8 @@ async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
     ...row,
     assignee_name: row.assignee_id ? (nameOf.get(row.assignee_id) ?? null) : null,
     created_by_name: row.created_by ? (nameOf.get(row.created_by) ?? null) : null,
+    // Populated by a later task (comment count query); honest zero until then.
+    comment_count: 0,
   }));
 }
 
