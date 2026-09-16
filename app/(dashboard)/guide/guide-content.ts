@@ -429,8 +429,12 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "הרדאר עוקב אחרי 12 סוגים: קריאייטיבים ותמונות קארד (חוסמים), סמלי קבוצות, תמונות ראשיות, גלריות אווירה, תמונות קטגוריה ובלוג, וטקסט לעמוד (ביו של קבוצה/אמן, תוכן עמוד קטגוריה) — איכות. רק קטגוריות פעילות נבדקות. \"Done\" מתייק חוסר כוזב (למשל סמל שקיים במקום אחר) עם אפשרות ביטול.",
       ),
       t(
-        "Queue order: artists and teams with packages on sale right now (the site's on-tour rule) come before the wishlist ones - a green \"N on sale\" badge marks them. A hero gap on an entity that already has blob card-art is greyed and sinks to the bottom: cards look right, only the page hero is missing.",
-        "סדר התור: אמנים וקבוצות עם חבילות שנמכרות עכשיו (כלל ה-on-tour של האתר) לפני אלה שב-wishlist — תג ירוק \"N on sale\" מסמן אותם. חוסר תמונת ראש למי שכבר יש לו בלוב מואפר ויורד לתחתית: הכרטיסים נראים טוב, חסרה רק תמונת הראש של העמוד.",
+        "Queue order: artists and teams with packages on sale right now (the site's on-tour rule) come before the wishlist ones - a green \"N on sale\" badge marks them. An entity that already has blob card-art has no hero gap at all any more - a blob picture is enough, it doesn't need a separate page hero on top of it.",
+        "סדר התור: אמנים וקבוצות עם חבילות שנמכרות עכשיו (כלל ה-on-tour של האתר) לפני אלה שב-wishlist — תג ירוק \"N on sale\" מסמן אותם. למי שכבר יש בלוב אין יותר חוסר תמונת ראש בכלל — תמונת בלוב מספיקה, אין צורך בתמונת ראש נפרדת מעליה.",
+      ),
+      t(
+        "A category under the Teams or Artists hub whose name matches a real team or artist is a \"twin\" - the site renders that team's/artist's own images there instead of a separate category picture, so a twin category never shows an image gap. A team twin still needs its own page-content text; an artist twin doesn't need that either.",
+        "קטגוריה תחת הרכזת קבוצות או אמנים ששמה תואם קבוצה או אמן אמיתיים היא \"תאום\" — האתר מציג שם את התמונות של הקבוצה/האמן עצמם במקום תמונת קטגוריה נפרדת, ולכן לקטגוריית תאום אין חוסר תמונה בכלל. תאום־קבוצה עדיין צריך טקסט תוכן עמוד משלו; תאום־אמן לא צריך גם את זה.",
       ),
     ],
     links: [
@@ -480,28 +484,49 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     id: "tasks",
     title: t("Tasks", "משימות"),
     intro: t(
-      "A lightweight board for the team. Admins create and assign to anyone; editors create for themselves and update their own status.",
-      "לוח קליל לצוות. מנהלים יוצרים ומשייכים לכל אחד; עורכים יוצרים לעצמם ומעדכנים את הסטטוס שלהם.",
+      "The team's shared work board. Everyone sees every task; admins can touch anything, an editor changes status and progress only on tasks assigned to them.",
+      "לוח העבודה המשותף לצוות. כולם רואים כל משימה; מנהלים יכולים לגעת בהכול, ועורך משנה סטטוס והתקדמות רק במשימות ששויכו אליו.",
     ),
     points: [
       t(
-        "Statuses: to do → in progress → done (or cancelled). Priorities: urgent / high / medium / low - your dashboard widget sorts by them.",
-        "סטטוסים: לביצוע → בתהליך → בוצע (או בוטל). עדיפויות: דחוף / גבוה / בינוני / נמוך — הווידג'ט בדשבורד ממוין לפיהן.",
+        "Statuses: to do → in progress → paused → done (or cancelled) - paused still counts as an open task. Priorities: urgent / high / medium / low - your dashboard widget sorts by them. A task can also carry a board (dev / marketing / ops), a phase, a marketing channel and a progress percentage.",
+        "סטטוסים: לביצוע → בתהליך → מושהה → בוצע (או בוטל) — מושהה עדיין נחשב משימה פתוחה. עדיפויות: דחוף / גבוה / בינוני / נמוך — הווידג'ט בדשבורד ממוין לפיהן. למשימה יש גם לוח (dev / marketing / ops), פאזה, ערוץ שיווקי ואחוז התקדמות.",
       ),
       t(
         "A task born from a creative gap or a frozen price row carries a \"Do\" deep link that lands on the exact fixing control - the crest field, the price section, the gallery picker.",
         "משימה שנולדה מחוסר קריאייטיב או משורת מחיר קפואה נושאת קישור \"Do\" שנוחת על הפקד המתקן המדויק — שדה הסמל, סקשן המחיר, בוחר הגלריה.",
       ),
       t(
-        "Assigning a task to someone else emails them (title, priority, due date, the Do link). Marking a gap task Done files the gap away in the radar too; reopening the task brings it back.",
-        "שיבוץ משימה למישהו אחר שולח לו מייל (כותרת, עדיפות, תאריך יעד, קישור Do). סימון משימת חוסר כ-Done מתייק גם את החוסר ברדאר; פתיחה מחדש של המשימה מחזירה אותו.",
+        "Assigning a task to someone else emails them (title, priority, due date, the Do link). Any task closed as Done or Cancelled that was born from a gap - creative, price light or a frozen price change - files that gap away automatically; reopening the task brings the gap straight back.",
+        "שיבוץ משימה למישהו אחר שולח לו מייל (כותרת, עדיפות, תאריך יעד, קישור Do). כל משימה שנסגרת כבוצעה או בוטלה ונולדה מחוסר — קריאייטיב, רמזור מחיר או שינוי מחיר קפוא — מתייקת את החוסר אוטומטית; פתיחה מחדש של המשימה מחזירה את החוסר מיד.",
       ),
       t(
         "The Creative gaps tab is one unified queue, most blocking first, with type filter pills (All is the default). Do / Create task / Done on every row.",
         "לשונית חוסרי הקריאייטיב היא תור מאוחד אחד, החוסם קודם, עם צ'יפי סינון לפי סוג (All ברירת המחדל). Do / צור משימה / Done על כל שורה.",
       ),
+      t(
+        "Open a task to see its thread underneath - every comment, screenshot and status change in one chronological scroll. Paste a screenshot straight from the clipboard (it's shrunk automatically); type @ and a name to mention a teammate - they get an email with an excerpt of the comment. The system posts its own lines into the same thread whenever the task's status, assignee, priority, due date, progress or board changes, so the whole history of a task lives in one place, not scattered across edits.",
+        "פותחים משימה כדי לראות את הפתיל שלה למטה — כל תגובה, צילום מסך ושינוי סטטוס בגלילה כרונולוגית אחת. מדביקים צילום מסך ישר מהלוח (מוקטן אוטומטית); מקלידים @ ושם כדי לתייג עמית — הוא מקבל מייל עם קטע מהתגובה. המערכת כותבת שורות משלה לאותו פתיל בכל פעם שסטטוס, שיוך, עדיפות, תאריך יעד, התקדמות או לוח של המשימה משתנים, כך שכל ההיסטוריה של משימה חיה במקום אחד ולא מפוזרת בין עריכות.",
+      ),
+      t(
+        "Recurring rules (admins, /tasks/rules) create tasks automatically every week without anyone remembering to look - one rule can either drop a single weekly summary task, or open one task per item it finds (say, one per event whose price light has been red too long). Each rule has a day of the week it runs on, always read in UTC, not Israel time - the whole batch actually runs Sunday mornings.",
+        "כללים חוזרים (מנהלים, /tasks/rules) יוצרים משימות אוטומטית כל שבוע בלי שמישהו צריך לזכור לבדוק — כלל אחד יכול להטיל משימת סיכום שבועית אחת, או לפתוח משימה לכל פריט שהוא מוצא (למשל, אחת לכל אירוע שהרמזור שלו אדום יותר מדי זמן). לכל כלל יום בשבוע שבו הוא רץ, נקרא תמיד לפי UTC ולא לפי שעון ישראל — כל האצווה בפועל רצה בבוקרי יום ראשון.",
+      ),
+      t(
+        "The board also has a Kanban view (the Kanban tab) alongside the table - drag a card to change its status. The board lens above both (All / Dev / Marketing / Ops) narrows the table, its counts and the Kanban together to one board at a time.",
+        "ללוח יש גם תצוגת קאנבן (לשונית Kanban) לצד הטבלה — גוררים כרטיס כדי לשנות סטטוס. עדשת הלוח מעל שתיהן (הכול / Dev / Marketing / Ops) מצמצמת יחד את הטבלה, הספירות והקאנבן ללוח אחד בכל פעם.",
+      ),
+      t(
+        "The Pricing tab (visible to everyone, not just admins) lists every open pricing problem - red price lights and frozen price-change rows - in one place, each with three buttons: Task opens a tracked task for it, Fix jumps straight to the field that actually fixes it, and Handled records that you dealt with it without touching a price - a price light stays hidden until the next nightly check, a frozen price row is marked closed but keeps its original note so reopening it later restores exactly what the sync wrote.",
+        "לשונית התמחור (גלויה לכולם, לא רק למנהלים) מרכזת כל בעיית תמחור פתוחה — רמזורים אדומים ושורות שינוי מחיר קפואות — במקום אחד, כל אחת עם שלושה כפתורים: משימה פותחת משימה עוקבת, לתקן קופץ ישר לשדה שבאמת מתקן את זה, וטופל מתעד שטיפלתם בלי לגעת במחיר — רמזור נשאר מוסתר עד הבדיקה הלילית הבאה, ושורת מחיר קפואה מסומנת כסגורה אבל שומרת את ההערה המקורית שלה כך שפתיחה מחדש מאוחר יותר משחזרת בדיוק את מה שהסנכרון כתב.",
+      ),
     ],
-    links: [{ label: t("Tasks board", "לוח משימות"), href: "/tasks" }],
+    links: [
+      { label: t("Tasks board", "לוח משימות"), href: "/tasks" },
+      { label: t("Pricing tab", "לשונית תמחור"), href: "/tasks?tab=pricing" },
+      { label: t("Kanban view", "תצוגת קאנבן"), href: "/tasks?tab=kanban" },
+      { label: t("Recurring rules", "כללים חוזרים"), href: "/tasks/rules", adminOnly: true },
+    ],
   },
   {
     id: "partners",

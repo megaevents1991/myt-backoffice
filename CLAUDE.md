@@ -59,13 +59,101 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   team crest → `/assets?q=<team>`, missing creative → the event's `#fix-price`
 >   when `campaign_skip_reason` mentions price (the pipeline's only skip).
 >   Queue order (2026-09-10): severity → artists/teams **on sale now** (main's
->   on-tour rule, mirrored in `lib/on-tour.ts`) before wishlist ones → hero
->   gaps on entities that already have blob art sink last (`demoted`) → kind.
->   Only `is_active` categories are checked. Assigning a task to someone else
+>   on-tour rule, mirrored in `lib/on-tour.ts`) before wishlist ones → kind.
+>   A hero gap on an entity that already has blob card-art is no longer
+>   demoted (2026-09-16, Dor: "יש בלוב לא מחייב הירו") - it isn't listed at
+>   all any more; `GapItem.demoted` stays declared for the UI but is never set
+>   true. Twin categories (`lib/services/category-twins.ts`, shared with the
+>   portal link builder's `cmsTwin` match - a category under the `teams`/
+>   `artists` hub whose name matches a real team/artist with both a Hebrew and
+>   an English name): main renders the team's/artist's own images there
+>   (`/c/teams` and `/c/artists` → `CmsCatalog`), so a twin category never gets
+>   a `category_image` gap at all, team or artist. A team twin still keeps its
+>   `category_content` text gap; an artist twin has none. Only
+>   `is_active` categories are checked. Assigning a task to someone else
 >   mails them (`lib/services/task-notify.ts`); a gap task set to **done**
 >   dismisses its gap (reopen restores). `/price-changes` rows can spawn a
 >   `price_review` task (one open per event) or soft-delete the event; the
 >   shared dialog is `components/task-editor.tsx`.
+> - **Tasks Hub (2026-09-16):** everything below needs the unapplied migration
+>   `supabase/migrations/20260916120000_tasks_hub.sql` applied from master
+>   first - `/tasks/rules`, the Pricing tab's price-light rows, and
+>   `scripts/import-roadmap.ts` all refuse to run without it.
+>   - **Schema:** `tasks` gains `board` (`dev`/`marketing`/`ops`), `phase`
+>     (smallint), `channel` (marketing-only), `progress` (smallint), and a
+>     `paused` status that counts as OPEN (assignee/open-task indexes and
+>     filters were updated to include it). New sources `recurring` (weekly
+>     digest tasks) and `roadmap` (imported rows) alongside the existing ones.
+>     `task_rules` (one row per recurring rule) and `task_comments` (the
+>     thread) are new tables. `events.light_red_since` records when a price
+>     light scope first went red, for a future `min_weeks_red` rule condition.
+>     A partial unique index (`tasks_recurring_digest_week_uniq`) stops the
+>     cron and a manual "run now" from double-creating the same rule's digest
+>     in the same ISO week.
+>   - **Thread** (`components/task-thread.tsx`, `lib/actions/task-comment-actions.ts`):
+>     every task has a chronological comment thread mixing human comments and
+>     the system's own activity rows (status/assignee/priority/due_date/progress/board
+>     changes, written by `lib/services/task-activity.ts` from the same action
+>     that makes the change - a DB trigger wouldn't know who the actor was).
+>     Screenshots paste straight from the clipboard, client-shrunk to 2000px
+>     and capped at 2.5MB (`lib/images/sniff.ts` magic-byte checks the real
+>     type - a renamed `.png` that isn't actually an image is rejected) to stay
+>     under the repo's 3MB server-action body limit, stored in the private
+>     `task-attachments` bucket and served via signed URLs. `@name` mentions
+>     (`lib/tasks/mentions.ts`, Unicode-aware so Hebrew names work) mail the
+>     mentioned staff member (`lib/services/task-mention-notify.ts`) - a
+>     mention removed from the text before sending is pruned and never mailed.
+>   - **Recurring rules** (`lib/services/task-rules/*`, one file per domain -
+>     `price-light.ts`, `price-changes.ts`, `creative-gaps.ts`, `custom.ts`):
+>     each rule's `candidates()` generator **throws** on a load failure rather
+>     than returning an empty list - an empty list reads as "no gaps" and
+>     would auto-close open digests it shouldn't. `lib/services/weekly-task-gen.ts`
+>     runs every active `task_rules` row through `weekly-task-plan.ts` (pure,
+>     unit-tested against synthetic rows): a rule in `weekly_digest` mode gets
+>     one summary task per ISO week; `per_item` mode creates one task per
+>     candidate under the **domain's own native source** (`price_light`,
+>     `price_review`, `creative_gap`) so it dedupes and closes exactly like a
+>     hand-made task, not a separate "recurring" lane. `dow` (0=Sunday..6=Saturday)
+>     is a **UTC** weekday, matched against `now.getUTCDay()` - the cron itself
+>     only fires Sundays 06:00 UTC (`weeklyTaskGen`, `?dry_run=1`), so today a
+>     non-Sunday `dow` only matters once a second cron cadence is added.
+>     `/tasks/rules` (admin only) is where a rule's domain, match filter,
+>     assignee, board and `dow` are set - kept out of the migration on purpose
+>     so assignment stays something you change on the screen, not in SQL.
+>   - **Visibility:** the whole board is visible to every staff member (Dor,
+>     16.09) - what's restricted is editing. `lib/tasks/permissions.ts`:
+>     admins edit every field on any task; an editor may change only `status`
+>     and `progress`, and only on a task assigned to them - commenting on the
+>     thread is a separate, always-open door.
+>   - **Kanban + board lens** (`?tab=kanban`, `?board=`, `lib/tasks/kanban.ts`):
+>     a swimlane view of the same tasks: the board lens (`all` or one of
+>     `dev`/`marketing`/`ops`) filters the table, its counts and the kanban
+>     together from one query-string source.
+>   - **Pricing tab** (`?tab=pricing`, all staff, not admin-only like
+>     `/price-light`): every open pricing problem - red price lights and
+>     frozen `/price-changes` rows - in one list via
+>     `lib/actions/pricing-gap-actions.ts`. Three buttons per row: **משימה**
+>     (Task) opens a tracked task; **לתקן** (Fix) jumps straight to the fixing
+>     control; **טופל** (Handled, `lib/services/gap-resolution.ts` +
+>     `lib/services/price-light-decisions.ts`) never writes a price - on a
+>     price light it logs a `price_light.repriced` audit row and mutes the row
+>     until the next nightly recompute (00:30 UTC); on a frozen price-change
+>     row it stamps the row's note with `"נסגר במשימה <taskId> | <original note>"`
+>     so a task reopen can restore the exact original note. Because this tab
+>     is open to every editor (not just admins), its actions call
+>     `requireStaff()` and go through session-free service functions rather
+>     than the admin-gated actions `/price-light` uses directly.
+>   - **Gap-closing is now generic** (`lib/services/gap-resolution.ts`): a task
+>     born from creative_gap/price_light/price_review closes that gap when
+>     marked done or cancelled, and reopens it otherwise - one rule for every
+>     gap family, replacing the old inline `if (source === "creative_gap")`
+>     branch in `setTaskStatus` (creative behaviour is unchanged).
+>   - **Roadmap import** (`scripts/import-roadmap.ts`, one-time, create-only by
+>     default): migrates the old standalone RoadMap app's localStorage export
+>     into `tasks` (source `roadmap`). Existing imported rows are left alone
+>     unless `--update-existing` is passed, so re-running an export never
+>     reverts an edit made in `/tasks`. See `docs/superpowers/roadmap-export-snippet.md`
+>     for getting the export out of the old app first.
 > - **Pricing brain:** `lib/services/price-quote.ts` - see "Price Logic Chain".
 >   Nightly `base-price-sync` cron + `/price-changes` review screen
 >   (`base_price_sync_log`).
@@ -232,6 +320,7 @@ fallback for manual triggers:
 - `price-light-retention` - weekly, Sundays 03:00 UTC: keeps `RETENTION_DAYS` (**180**) and hard-deletes the rest of `event_price_snapshots` (by `day`), `competitor_matches` (by the EVENT they describe being 180 days past - never by their own age, or a quiet row that is still an event's newest verdict would be erased and its light would vanish at the next recompute), `competitor_listings` (`last_seen_at` - not seen in six months = off their site), `competitor_crawl_runs` (`started_at`) and `audit_log` rows whose action starts `price_light.`. Backoffice-only log tables, so a hard delete is the policy here (same precedent as `purgeAuditLog`); it never touches `events`. `?dry_run=1` counts exactly what a real run would remove and writes nothing. **`purgeAuditLog` now EXEMPTS `price_light.*`** - those rows are the decisions the agent learns from, and dropping them at 30 days silently capped its 120-day memory at a month. Why these sizes are safe: the price-drop lookback reads 14 days, a light goes stale at 14, and the circuit reads the last handful of runs - every read path lives far inside 180.
 - `price-light-ours` - nightly 02:40 UTC (after `base-price-sync` finishes its own Amadeus searches): describes OUR package contents for the /price-light comparison - the flight and hotel the pricing rule would buy today (cheapest direct / connection past the $300 gap via `fetchFlightOffers` + `pickFlightPrice`; cheapest 3★ via main's `/api/hotels`; a linked offline flight/hotel wins) - into `events.light_detail.ours`. Never-described first, then older than `OUR_OFFER_REFRESH_DAYS` (7) or last lost to a TRANSIENT error (HTTP/API/timeout - retried next night, not left blank a week), `OUR_OFFER_CONCURRENCY` 3 events at a time in a 260s budget (~5-8s per event). **Hotel searches run through ONE queue** whatever the event concurrency, with one retry on 429/5xx: main's `/api/hotels` fails under parallel load (first full pass lost 308 of 426 hotels; each answered alone). Flights: 423 of 426 described. Reads the rule, writes no price. `?dry_run=1` still SEARCHES (that is what is being tested) but writes nothing; `?limit=N` caps a manual run. Dor 2026-09-14: the extra Amadeus/hotel calls are fine nightly and on demand.
 - `price-light-nightly` - 00:15 UTC, before `base-price-sync`: refreshes the `livetickets` competitor table from `live_events` first (it's an API read, never crawled, budgeted at 60s so it can't eat the whole run); then pass 1 snapshots every live future event and applies the "ירידת מחיר" tag (drop ≥$50 vs ~14 days ago, shown 14 days); pass 2 rule-matches every event against the stored catalogs and recomputes `events.light_package` / `light_ticket` / `light_detail`. Both passes go least-recently-checked first and share one 270s budget measured from the top of the run, so a cutoff mid-pass-1 is recorded (`snapshotsRemaining`) rather than silently skipped. Revalidates main (both targets) once if anything changed; summary email (which also reports `aiCalls` used out of `AI_CALLS_PER_RUN`). `?dry_run=1` = zero writes **and zero AI** - dry runs pass `judge: null`, so a report pointed at prod never spends money. Spec `docs/superpowers/specs/2026-09-09-price-light-design.md`; rules + constants ONLY in `lib/services/price-light.ts`.
+- `weeklyTaskGen` - Sundays 06:00 UTC (`vercel.json` `0 6 * * 0`): runs every active `task_rules` row through its domain's generator (`lib/services/task-rules/*`) and `weekly-task-plan.ts`'s pure decision logic, creating one weekly-digest task per rule (source `recurring`) or one task per item under that domain's native source (`price_light`/`price_review`/`creative_gap`). A generator that fails to load its data THROWS - never silently returns an empty list, which would auto-close open digests that are still valid. `?dry_run=1` reports what it would create with zero writes. See "Tasks Hub" above.
 
 ### Environment Variables
 
@@ -408,6 +497,12 @@ scope; `?scope=` preselects it), and **"השוואה מפורטת"** on each row
 then every competitor with its published price, normalized price, own gap pill, status, and the
 three contents lines.
 
+**`events.light_red_since` (Tasks Hub, 2026-09-16):** timestamp of when a scope's light first
+turned red, written by `recomputeEventLights`, cleared the moment the scope leaves red. Not read
+anywhere in the price-light engine itself - it exists for the recurring-rules engine (`lib/services/
+task-rules/price-light.ts`) to eventually gate a rule on "red for at least N weeks" (`min_weeks_red`),
+so a light that just turned red today doesn't already spawn a task.
+
 ### Agents (`lib/agents/`, 2026-09-13)
 
 **One agent layer, and the price light is agent #1.** Dor: "צריך להיות agent שהוא במיוחד על זה,
@@ -578,7 +673,7 @@ LOCAL_CHROME_PATH=
 
 Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, `locations`, `p1_events`, `live_events`, `sports_events`, `offline_flights`, `tixstock_events`. Managed via Supabase (PostgreSQL).
 
-Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `event_drafts`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`, `competitor_crawl_runs`, `competitor_listings`, `competitor_matches`, `event_price_snapshots`. Same shape but READ by main with its service client: `google_reviews` + `google_review_sources` (the site's "לקוחות משתפים"; `is_hidden` pulls a review off the site). Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
+Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `task_rules`, `task_comments`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `event_drafts`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`, `competitor_crawl_runs`, `competitor_listings`, `competitor_matches`, `event_price_snapshots`. Same shape but READ by main with its service client: `google_reviews` + `google_review_sources` (the site's "לקוחות משתפים"; `is_hidden` pulls a review off the site). Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
 
 ### Migrations (Supabase CLI)
 
