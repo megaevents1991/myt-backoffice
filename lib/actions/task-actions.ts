@@ -32,6 +32,7 @@ import {
 } from "@/types/task.types";
 import { validBoard, validChannel, validPhase, validProgress } from "@/lib/task-boards";
 import { diffActivities, recordActivity } from "@/lib/services/task-activity";
+import { editableFields, type EditableTaskField } from "@/lib/tasks/permissions";
 
 type Result = { ok: true } | { ok: false; error: string };
 type CreateResult = { ok: true; id: string } | { ok: false; error: string };
@@ -122,21 +123,18 @@ async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
   }));
 }
 
-/** Managers see everything; editors only their own tasks. */
+/** Every staff member sees the whole board; editing stays scoped (see updateTask/setTaskStatus). */
 export async function listTasks(): Promise<TaskWithNames[]> {
-  const session = await requireStaff();
+  await requireStaff();
 
-  let query = db
+  // Everyone on staff sees the whole board (Dor, 16.09): the roadmap lives here
+  // now, and a board people cannot see is not a board. Editing stays narrow -
+  // an editor only changes the status/progress of tasks assigned to them.
+  const { data, error } = await db
     .from("tasks")
     .select(TASK_COLUMNS)
     .is("deleted_at", null)
     .order("created_at", { ascending: false });
-
-  if (!isManager(session.role)) {
-    query = query.eq("assignee_id", session.sub);
-  }
-
-  const { data, error } = await query;
   if (error) {
     console.error("tasks: list failed", JSON.stringify(error));
     return [];
@@ -262,8 +260,19 @@ export async function updateTask(
   },
 ): Promise<Result> {
   const session = await requireStaff();
-  if (!isManager(session.role)) {
-    return { ok: false, error: "Only admins edit task details" };
+  const manager = isManager(session.role);
+
+  if (!manager) {
+    // The most permissive a non-admin can ever be (editing their OWN task) -
+    // any patch key outside that set is refused before we even know whose
+    // task this is. Real ownership is enforced below via the scoped queries.
+    const allowed = editableFields(session.role, true);
+    const disallowed = (Object.keys(patch) as EditableTaskField[]).filter(
+      (key) => !allowed.has(key),
+    );
+    if (disallowed.length > 0) {
+      return { ok: false, error: "רק מנהל עורך פרטי משימה" };
+    }
   }
 
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -300,24 +309,29 @@ export async function updateTask(
 
   // The row as it was - needed to tell a re-assignment from a plain edit,
   // and to diff every tracked field into the thread's activity rows below.
-  const { data: before, error: beforeError } = await db
+  // Scoped the same way as the update itself for a non-admin, so a non-owner
+  // can never learn another task's fields through the activity diff.
+  let beforeQuery = db
     .from("tasks")
     .select("status,assignee_id,priority,due_date,progress,board")
-    .eq("id", id)
-    .maybeSingle();
+    .eq("id", id);
+  if (!manager) beforeQuery = beforeQuery.eq("assignee_id", session.sub);
+  const { data: before, error: beforeError } = await beforeQuery.maybeSingle();
   if (beforeError) console.error("tasks: before-read failed", JSON.stringify(beforeError));
   // Tradeoff: if before-read fails, diffActivities records every patched field as changing from
   // null (not true, but safe: the actual edit succeeded so audit has the final state).
 
-  const { data: after, error } = await db
-    .from("tasks")
-    .update(update)
-    .eq("id", id)
+  let updateQuery = db.from("tasks").update(update).eq("id", id);
+  if (!manager) updateQuery = updateQuery.eq("assignee_id", session.sub);
+  const { data: after, error } = await updateQuery
     .select("id,title,description,priority,assignee_id,due_date,source_ref")
     .maybeSingle();
   if (error) {
     console.error("tasks: update failed", JSON.stringify(error));
     return { ok: false, error: "Update failed" };
+  }
+  if (!manager && !after) {
+    return { ok: false, error: "לא המשימה שלך" };
   }
 
   await logAudit({

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Check, MessageSquare, Pencil, Plus, RotateCcw, Trash2, Wrench } from "lucide-react";
+import { Check, Eye, MessageSquare, Pencil, Plus, RotateCcw, Trash2, Wrench } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -13,6 +13,7 @@ import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -40,6 +41,7 @@ import {
   restoreCreativeGap,
   type DismissedGap,
 } from "@/lib/actions/creative-gap-actions";
+import { editableFields } from "@/lib/tasks/permissions";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   GAP_KINDS,
@@ -107,8 +109,19 @@ export function TasksClient() {
   const [tasks, setTasks] = useState<TaskWithNames[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("open");
+  // The whole board is visible now (16.09) - "my tasks" is the one filter that
+  // keeps an editor's default view unchanged (on for them, off for admins,
+  // who assign work and need to see everyone's).
+  const [myTasksOnly, setMyTasksOnly] = useState(true);
+  const didInitFilter = useRef(false);
   const [editor, setEditor] = useState<TaskEditorState>({ open: false, task: null });
   const handledTaskRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!user || didInitFilter.current) return;
+    didInitFilter.current = true;
+    setMyTasksOnly(!isManager);
+  }, [user, isManager]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -133,20 +146,28 @@ export function TasksClient() {
     handledTaskRef.current = initialTaskId;
   }, [loading, tasks, initialTaskId]);
 
+  // The board-wide list, narrowed to "mine" first when that toggle is on -
+  // every other count/filter below reads from here so the tabs and the
+  // toggle never disagree about what's on screen.
+  const scoped = useMemo(() => {
+    if (!myTasksOnly || !user) return tasks;
+    return tasks.filter((task) => task.assignee_id === user.id);
+  }, [tasks, myTasksOnly, user]);
+
   const filtered = useMemo(() => {
     switch (view) {
       case "open":
-        return tasks.filter(
+        return scoped.filter(
           (task) => (OPEN_TASK_STATUSES as readonly string[]).includes(task.status),
         );
       case "done":
-        return tasks.filter(
+        return scoped.filter(
           (task) => task.status === "done" || task.status === "cancelled",
         );
       default:
-        return tasks;
+        return scoped;
     }
-  }, [tasks, view]);
+  }, [scoped, view]);
 
   const sorted = useMemo(
     () =>
@@ -159,11 +180,11 @@ export function TasksClient() {
   );
 
   const counts = useMemo(() => {
-    const open = tasks.filter(
+    const open = scoped.filter(
       (task) => (OPEN_TASK_STATUSES as readonly string[]).includes(task.status),
     ).length;
-    return { open, done: tasks.length - open, all: tasks.length };
-  }, [tasks]);
+    return { open, done: scoped.length - open, all: scoped.length };
+  }, [scoped]);
 
   const onStatus = useCallback(
     async (task: TaskWithNames, status: TaskStatus) => {
@@ -266,23 +287,29 @@ export function TasksClient() {
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => (
-          <Select
-            value={row.original.status}
-            onValueChange={(value) => onStatus(row.original, value as TaskStatus)}
-          >
-            <SelectTrigger className="h-8 w-[130px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(STATUS_LABEL) as TaskStatus[]).map((status) => (
-                <SelectItem key={status} value={status}>
-                  {STATUS_LABEL[status]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ),
+        cell: ({ row }) => {
+          const isOwnTask = !!user && row.original.assignee_id === user.id;
+          const canChangeStatus =
+            isManager || editableFields(user?.role ?? "", isOwnTask).has("status");
+          return (
+            <Select
+              value={row.original.status}
+              onValueChange={(value) => onStatus(row.original, value as TaskStatus)}
+              disabled={!canChangeStatus}
+            >
+              <SelectTrigger className="h-8 w-[130px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(STATUS_LABEL) as TaskStatus[]).map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {STATUS_LABEL[status]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          );
+        },
       },
       {
         id: "comments",
@@ -323,10 +350,26 @@ export function TasksClient() {
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
-          ) : null,
+          ) : (
+            // Not a manager: no edit/delete, but every row still opens - the
+            // dialog itself decides read-only vs. status/progress editable
+            // (see the `editable` prop on TaskEditor), and the thread is
+            // always there to read and comment on regardless.
+            <div className="flex justify-end gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setEditor({ open: true, task: row.original })}
+                aria-label="Open task"
+              >
+                <Eye className="h-4 w-4" />
+              </Button>
+            </div>
+          ),
       },
     ],
-    [isManager, onStatus, onDelete],
+    [isManager, user, onStatus, onDelete],
   );
 
   return (
@@ -349,6 +392,12 @@ export function TasksClient() {
           ]}
           activeView={view}
           onViewChange={setView}
+          filters={
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Switch checked={myTasksOnly} onCheckedChange={setMyTasksOnly} />
+              המשימות שלי
+            </label>
+          }
           rightActions={
             <Button size="sm" onClick={() => setEditor({ open: true, task: null })}>
               <Plus className="mr-1.5 h-4 w-4" />
@@ -376,6 +425,10 @@ export function TasksClient() {
         key={`${editor.task?.id ?? "new"}-${editor.prefill?.source_ref.row_id ?? ""}-${editor.open}`}
         state={editor}
         isManager={isManager}
+        editable={editableFields(
+          user?.role ?? "",
+          !!user && editor.task?.assignee_id === user.id,
+        )}
         onClose={() => setEditor({ open: false, task: null })}
         onSaved={() => {
           setEditor({ open: false, task: null });

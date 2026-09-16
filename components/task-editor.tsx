@@ -26,6 +26,7 @@ import { createTask, updateTask } from "@/lib/actions/task-actions";
 import { listUsers } from "@/lib/actions/user-actions";
 import { TaskThread } from "@/components/task-thread";
 import { BOARD_META, CHANNEL_META, PHASES } from "@/lib/task-boards";
+import { TASK_FIELDS, type EditableTaskField } from "@/lib/tasks/permissions";
 import { STAFF_ROLES, type UserProfile } from "@/types/auth.types";
 import {
   MKT_CHANNELS,
@@ -77,16 +78,27 @@ export interface TaskEditorState {
 export function TaskEditor({
   state,
   isManager,
+  editable,
   onClose,
   onSaved,
 }: {
   state: TaskEditorState;
   isManager: boolean;
+  /** Fields the current viewer may change on THIS task (ignored while creating -
+   *  any staff member can fill in a new task for themself). Empty on an
+   *  existing task = read-only: the form still renders and the thread still
+   *  takes comments, there's just nothing to save. Omitted by callers that
+   *  only ever open this for a manager (price-changes) - falls back to
+   *  everything/nothing by `isManager`, same as before this field existed. */
+  editable?: Set<EditableTaskField>;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { toast } = useToast();
   const { task, prefill } = state;
+  const fields = editable ?? new Set<EditableTaskField>(isManager ? TASK_FIELDS : []);
+  const canEdit = (field: EditableTaskField) => !task || fields.has(field);
+  const readOnly = !!task && fields.size === 0;
 
   const [title, setTitle] = useState(task?.title ?? prefill?.title ?? "");
   const [description, setDescription] = useState(
@@ -139,17 +151,20 @@ export function TaskEditor({
       const effectivePhase = board === "dev" ? phase : null;
       const effectiveChannel = board === "marketing" ? channel : null;
       const effectiveProgress = board === "marketing" ? progress : null;
+      // On an existing task, send only the fields THIS viewer may change - an
+      // editor's patch never carries a key updateTask would reject (title,
+      // board, assignee...), even though the (disabled) inputs still show them.
       const result = task
         ? await updateTask(task.id, {
-            title,
-            description: description || null,
-            priority,
-            assignee_id: assigneeId,
-            due_date: dueDate || null,
-            board,
-            phase: effectivePhase,
-            channel: effectiveChannel,
-            progress: effectiveProgress,
+            ...(canEdit("title") ? { title } : {}),
+            ...(canEdit("description") ? { description: description || null } : {}),
+            ...(canEdit("priority") ? { priority } : {}),
+            ...(canEdit("assignee_id") ? { assignee_id: assigneeId } : {}),
+            ...(canEdit("due_date") ? { due_date: dueDate || null } : {}),
+            ...(canEdit("board") ? { board } : {}),
+            ...(canEdit("phase") ? { phase: effectivePhase } : {}),
+            ...(canEdit("channel") ? { channel: effectiveChannel } : {}),
+            ...(canEdit("progress") ? { progress: effectiveProgress } : {}),
           })
         : await createTask({
             title,
@@ -199,6 +214,7 @@ export function TaskEditor({
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="What needs doing?"
+              disabled={!canEdit("title")}
             />
           </div>
           <div className="space-y-2">
@@ -208,6 +224,7 @@ export function TaskEditor({
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               rows={3}
+              disabled={!canEdit("description")}
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -216,6 +233,7 @@ export function TaskEditor({
               <Select
                 value={priority}
                 onValueChange={(value) => setPriority(value as TaskPriority)}
+                disabled={!canEdit("priority")}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -236,12 +254,13 @@ export function TaskEditor({
                 type="date"
                 value={dueDate}
                 onChange={(event) => setDueDate(event.target.value)}
+                disabled={!canEdit("due_date")}
               />
             </div>
           </div>
           <div className="space-y-2">
             <Label>Board</Label>
-            <Select value={board} onValueChange={onBoardChange}>
+            <Select value={board} onValueChange={onBoardChange} disabled={!canEdit("board")}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -260,6 +279,7 @@ export function TaskEditor({
               <Select
                 value={phase === null ? "none" : String(phase)}
                 onValueChange={(value) => setPhase(value === "none" ? null : Number(value))}
+                disabled={!canEdit("phase")}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -284,6 +304,7 @@ export function TaskEditor({
                   onValueChange={(value) =>
                     setChannel(value === "none" ? null : (value as MktChannel))
                   }
+                  disabled={!canEdit("channel")}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -307,6 +328,7 @@ export function TaskEditor({
                   max={100}
                   step={5}
                   onValueChange={(values) => setProgress(values[0] ?? 0)}
+                  disabled={!canEdit("progress")}
                 />
               </div>
             </div>
@@ -348,11 +370,13 @@ export function TaskEditor({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            Cancel
+            {readOnly ? "Close" : "Cancel"}
           </Button>
-          <Button onClick={submit} disabled={saving || !title.trim()}>
-            {saving ? "Saving…" : task ? "Save changes" : "Create task"}
-          </Button>
+          {!readOnly && (
+            <Button onClick={submit} disabled={saving || !title.trim()}>
+              {saving ? "Saving…" : task ? "Save changes" : "Create task"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
