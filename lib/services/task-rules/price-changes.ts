@@ -1,12 +1,10 @@
-import { supabase } from "@/lib/supabase-server";
+import { supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { OPEN_TASK_STATUSES } from "@/types/task.types";
 import type { RuleGenerator } from "./types";
 
-// base_price_sync_log predates the generated database types - one boundary
-// cast, same pattern as base-price-log-actions.ts.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+// Typed against types/database.types.ts (npm run db:types).
+const db = supabaseTyped;
 
 interface SyncLogRow {
   id: number;

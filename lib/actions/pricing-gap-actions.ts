@@ -10,7 +10,7 @@
  * lib/services/gap-resolution.ts and lib/services/price-light-decisions.ts.
  */
 import { requireStaff } from "@/lib/auth/guards";
-import { supabase } from "@/lib/supabase-server";
+import { supabaseTyped } from "@/lib/supabase-server";
 import { generatorFor, type RuleCandidate } from "@/lib/services/task-rules";
 import { createTask } from "@/lib/actions/task-actions";
 import { openPriceLightTask as insertPriceLightTask } from "@/lib/services/price-light-tasks";
@@ -23,10 +23,8 @@ import { OPEN_TASK_STATUSES, type TaskSourceRef } from "@/types/task.types";
 import type { Scope } from "@/types/price-light.types";
 import type { PricingGapListResult, PricingGapRow, PricingGapSource } from "@/types/pricing-gap.types";
 
-// base_price_sync_log + events predate the generated database types - same
-// boundary-cast pattern as base-price-log-actions.ts.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+// Typed against types/database.types.ts (npm run db:types).
+const db = supabaseTyped;
 
 type Ok = { ok: true } | { ok: false; error: string };
 type TaskResult = { ok: true; taskId: string; existed: boolean } | { ok: false; error: string };

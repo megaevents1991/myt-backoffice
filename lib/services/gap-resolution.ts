@@ -11,16 +11,14 @@
  * action/service and resolveGapForTask never lets one fail the task's own status
  * change - it only logs.
  */
-import { supabase } from "@/lib/supabase-server";
+import { supabaseTyped } from "@/lib/supabase-server";
 import { dismissCreativeGap, restoreCreativeGap } from "@/lib/actions/creative-gap-actions";
 import { gapKey } from "@/types/creative-gap.types";
 import type { Scope } from "@/types/price-light.types";
 import type { TaskSource, TaskSourceRef, TaskStatus } from "@/types/task.types";
 
-// base_price_sync_log predates the generated database types - same boundary-cast
-// pattern as base-price-log-actions.ts / lib/services/task-rules/price-changes.ts.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+// Typed against types/database.types.ts (npm run db:types).
+const db = supabaseTyped;
 
 export type GapFamily = "creative" | "pricing";
 

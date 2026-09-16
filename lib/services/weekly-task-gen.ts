@@ -12,7 +12,7 @@
  * "touch nothing for this rule and move on" automatically - there is nothing
  * to roll back.
  */
-import { supabase } from "@/lib/supabase-server";
+import { supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
@@ -23,10 +23,8 @@ import { isRuleDueToday, planRule, type TaskInsert } from "@/lib/services/weekly
 import { OPEN_TASK_STATUSES, type TaskSourceRef } from "@/types/task.types";
 import type { TaskRule } from "@/types/task-rule.types";
 
-// task_rules predates the generated database types - one boundary cast, same
-// pattern as the task-rules generators.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+// Typed against types/database.types.ts (npm run db:types).
+const db = supabaseTyped;
 
 export interface TaskGenSummary {
   ran: number;

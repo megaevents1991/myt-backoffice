@@ -7,7 +7,7 @@
  *  import rather than declare locally. */
 export type Ok = { ok: true } | { ok: false; error: string };
 
-export interface TaskAttachment {
+export type TaskAttachment = {
   /** Storage path inside the private task-attachments bucket: {task_id}/{uuid}.{ext} */
   path: string;
   name: string;
@@ -15,7 +15,7 @@ export interface TaskAttachment {
   size: number;
   width: number | null;
   height: number | null;
-}
+};
 
 export const ACTIVITY_FIELDS = [
   "status",
@@ -27,11 +27,11 @@ export const ACTIVITY_FIELDS = [
 ] as const;
 export type ActivityField = (typeof ACTIVITY_FIELDS)[number];
 
-export interface TaskActivity {
+export type TaskActivity = {
   field: ActivityField;
   from: string | null;
   to: string | null;
-}
+};
 
 export interface TaskComment {
   id: string;

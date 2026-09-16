@@ -2,10 +2,9 @@
  *  transport, same best-effort contract - a mail failure is logged and never
  *  fails the comment write (spec §3.3). */
 import { appOrigin, sendMail } from "@/lib/email";
-import { supabase } from "@/lib/supabase-server";
+import { supabaseTyped } from "@/lib/supabase-server";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+const db = supabaseTyped;
 
 const EXCERPT_MAX = 300;
 

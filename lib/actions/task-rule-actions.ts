@@ -8,16 +8,14 @@
  * (Task 9) - that is the one place a rule is actually executed, cron or manual.
  */
 import { requireAdmin } from "@/lib/auth/guards";
-import { supabase } from "@/lib/supabase-server";
+import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { runWeeklyTaskGen, type TaskGenSummary } from "@/lib/services/weekly-task-gen";
 import { validateRuleInput } from "@/lib/tasks/rule-validation";
 import type { TaskRule, TaskRuleWithNames } from "@/types/task-rule.types";
 
-// task_rules predates the generated database types (Task 9's migration) - one
-// boundary cast, same pattern as weekly-task-gen.ts and the other new actions.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+// Typed against types/database.types.ts (npm run db:types).
+const db = supabaseTyped;
 
 export type Ok = { ok: true } | { ok: false; error: string };
 

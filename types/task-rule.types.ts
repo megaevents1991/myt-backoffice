@@ -9,7 +9,7 @@ export const RULE_MODES = ["weekly_digest", "per_item"] as const;
 export type RuleMode = (typeof RULE_MODES)[number];
 
 /** Every field is optional - a rule filters only on what it sets. */
-export interface RuleMatch {
+export type RuleMatch = {
   /** price_light: "package" | "ticket"; omitted = package. */
   scope?: "package" | "ticket";
   /** price_light: "football" | "music" … (event vertical tag). */
@@ -26,7 +26,7 @@ export interface RuleMatch {
   kinds?: string[];
   /** creative_gaps: 0 = every gap, 1 = severe only. */
   min_severity?: number;
-}
+};
 
 export interface TaskRule {
   id: string;

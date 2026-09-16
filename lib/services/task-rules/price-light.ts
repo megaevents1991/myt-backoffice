@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase-server";
+import { supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { kindOf } from "@/lib/services/price-light";
 import { OPEN_TASK_STATUSES } from "@/types/task.types";
@@ -7,10 +7,8 @@ import type { RuleGenerator } from "./types";
 import type { RuleMatch } from "@/types/task-rule.types";
 import type { LightDetail, Scope } from "@/types/price-light.types";
 
-// This table predates the generated database types - one boundary cast, same
-// pattern as price-light-actions.ts.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+// Typed against types/database.types.ts (npm run db:types).
+const db = supabaseTyped;
 
 export interface LightRow {
   id: number;

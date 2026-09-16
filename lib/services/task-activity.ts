@@ -1,10 +1,9 @@
 /** System rows in the task thread. Written from the same server action that
  *  performs the change - a DB trigger would not know who the actor was. */
-import { supabase } from "@/lib/supabase-server";
+import { supabaseTyped } from "@/lib/supabase-server";
 import type { ActivityField, TaskActivity } from "@/types/task-comment.types";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+const db = supabaseTyped;
 
 /** Column name in `tasks` → the field name shown in the thread. */
 const TRACKED: Record<string, ActivityField> = {

@@ -2,7 +2,7 @@
 
 import { requireStaff } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
-import { supabase } from "@/lib/supabase-server";
+import { supabaseTyped } from "@/lib/supabase-server";
 import {
   buildGapContext,
   computeOpenCreativeGaps,
@@ -18,10 +18,8 @@ import {
   type GapKind,
 } from "@/types/creative-gap.types";
 
-// Several of these tables predate the generated database types - cast once at
-// the boundary, same pattern as listUsers.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+// Typed against types/database.types.ts (npm run db:types).
+const db = supabaseTyped;
 
 /**
  * Live queries only - no table backs this. Two soft-delete dialects to get

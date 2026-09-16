@@ -60,7 +60,7 @@ export type MktChannel = (typeof MKT_CHANNELS)[number];
  * Where a sourced task came from - enough to link back to the screen that
  * fixes it and to spot "this gap / event already has an open task".
  */
-export interface TaskSourceRef {
+export type TaskSourceRef = {
   /** Gap kind ("team_logo", "artist_hero", …) or "price_review". */
   kind: string;
   table: string;
@@ -72,7 +72,7 @@ export interface TaskSourceRef {
   /** recurring weekly_digest only - the ISO week ("2026-W38") this digest covers, the
    *  dedupe key alongside row_id (see isoWeek in lib/services/task-rules/week.ts). */
   week?: string;
-}
+};
 
 export interface Task {
   id: string;

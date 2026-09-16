@@ -1076,6 +1076,7 @@ export type Database = {
           light_checked_at: string | null
           light_detail: Json | null
           light_package: string | null
+          light_red_since: string | null
           light_silenced_until: string | null
           light_ticket: string | null
           location: Json | null
@@ -1130,6 +1131,7 @@ export type Database = {
           light_checked_at?: string | null
           light_detail?: Json | null
           light_package?: string | null
+          light_red_since?: string | null
           light_silenced_until?: string | null
           light_ticket?: string | null
           location?: Json | null
@@ -1184,6 +1186,7 @@ export type Database = {
           light_checked_at?: string | null
           light_detail?: Json | null
           light_package?: string | null
+          light_red_since?: string | null
           light_silenced_until?: string | null
           light_ticket?: string | null
           location?: Json | null
@@ -2757,9 +2760,143 @@ export type Database = {
           },
         ]
       }
+      task_comments: {
+        Row: {
+          activity: Json | null
+          attachments: Json
+          author_id: string | null
+          body: string | null
+          created_at: string
+          deleted_at: string | null
+          edited_at: string | null
+          id: string
+          kind: string
+          mentions: string[]
+          task_id: string
+        }
+        Insert: {
+          activity?: Json | null
+          attachments?: Json
+          author_id?: string | null
+          body?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
+          id?: string
+          kind?: string
+          mentions?: string[]
+          task_id: string
+        }
+        Update: {
+          activity?: Json | null
+          attachments?: Json
+          author_id?: string | null
+          body?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
+          id?: string
+          kind?: string
+          mentions?: string[]
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_comments_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_comments_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_rules: {
+        Row: {
+          active: boolean
+          assignee_id: string | null
+          board: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          domain: string
+          dow: number
+          due_days: number | null
+          id: string
+          last_run_at: string | null
+          match: Json
+          mode: string
+          name: string
+          priority: string
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          assignee_id?: string | null
+          board?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          domain: string
+          dow?: number
+          due_days?: number | null
+          id?: string
+          last_run_at?: string | null
+          match?: Json
+          mode?: string
+          name: string
+          priority?: string
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          assignee_id?: string | null
+          board?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          domain?: string
+          dow?: number
+          due_days?: number | null
+          id?: string
+          last_run_at?: string | null
+          match?: Json
+          mode?: string
+          name?: string
+          priority?: string
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_rules_assignee_id_fkey"
+            columns: ["assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tasks: {
         Row: {
           assignee_id: string | null
+          board: string
+          channel: string | null
           completed_at: string | null
           created_at: string
           created_by: string | null
@@ -2767,7 +2904,9 @@ export type Database = {
           description: string | null
           due_date: string | null
           id: string
+          phase: number | null
           priority: string
+          progress: number | null
           source: string
           source_ref: Json | null
           status: string
@@ -2776,6 +2915,8 @@ export type Database = {
         }
         Insert: {
           assignee_id?: string | null
+          board?: string
+          channel?: string | null
           completed_at?: string | null
           created_at?: string
           created_by?: string | null
@@ -2783,7 +2924,9 @@ export type Database = {
           description?: string | null
           due_date?: string | null
           id?: string
+          phase?: number | null
           priority?: string
+          progress?: number | null
           source?: string
           source_ref?: Json | null
           status?: string
@@ -2792,6 +2935,8 @@ export type Database = {
         }
         Update: {
           assignee_id?: string | null
+          board?: string
+          channel?: string | null
           completed_at?: string | null
           created_at?: string
           created_by?: string | null
@@ -2799,7 +2944,9 @@ export type Database = {
           description?: string | null
           due_date?: string | null
           id?: string
+          phase?: number | null
           priority?: string
+          progress?: number | null
           source?: string
           source_ref?: Json | null
           status?: string

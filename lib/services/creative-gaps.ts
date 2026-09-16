@@ -13,7 +13,7 @@
  * tables (artists/football_teams/categories/blog_posts) use boolean is_deleted.
  * gallery is jsonb defaulting to '[]' - an empty one is never NULL.
  */
-import { supabase } from "@/lib/supabase-server";
+import { supabaseTyped } from "@/lib/supabase-server";
 import { buildLiveEventCounter, type OnTourEvent } from "@/lib/on-tour";
 import {
   findTwin,
@@ -26,10 +26,8 @@ import {
 import type { CategoryPageContent } from "@/types/page-content.types";
 import { GAP_KINDS, GAP_META, gapKey, type GapItem, type GapKind } from "@/types/creative-gap.types";
 
-// Several of these tables predate the generated database types - cast once at
-// the boundary, same pattern as creative-gap-actions.ts.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+// Typed against types/database.types.ts (npm run db:types).
+const db = supabaseTyped;
 
 export function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -105,11 +103,11 @@ export async function listCategoryContentGaps(
   }
   return (data ?? [])
     .filter(
-      (row: { page_content: CategoryPageContent | null }) => !hasPageText(row.page_content),
+      (row) => !hasPageText(row.page_content as CategoryPageContent | null),
     )
     .filter((row: TwinCategory) => (ctx ? ctx.twinOf(row)?.kind !== "artist" : true))
     .slice(0, LIST_LIMIT)
-    .map((row: Record<string, string | number | null>) => ({
+    .map((row) => ({
       kind: "category_content" as const,
       table: "categories",
       row_id: row.id as number,
@@ -193,7 +191,7 @@ export async function listGapsOfKind(
           .order("date", { ascending: true })
           .limit(LIST_LIMIT);
         if (error) throw error;
-        return (data ?? []).map((row: Record<string, string | number | null>) => {
+        return (data ?? []).map((row) => {
           // The pipeline records WHY it skipped. Its only remaining skip is
           // "no computable price" (lib/creative/auto.ts) - so the fix for a
           // missing creative is almost always the event's price fields, not
@@ -227,7 +225,7 @@ export async function listGapsOfKind(
           .order("date", { ascending: true })
           .limit(LIST_LIMIT);
         if (error) throw error;
-        return (data ?? []).map((row: Record<string, string | number | null>) => ({
+        return (data ?? []).map((row) => ({
           kind,
           table: "events",
           row_id: row.id,
@@ -260,7 +258,7 @@ export async function listGapsOfKind(
                 : query.eq("gallery", "[]");
         const { data, error } = await query;
         if (error) throw error;
-        return (data ?? []).map((row: Record<string, string | number | null>) => {
+        return (data ?? []).map((row) => {
           const label = String(row.name || row.name_english || row.id);
           // Crests are uploaded in the shared logo library (/assets), not on
           // the team form - send "Do" there with the search prefilled. Hero,
@@ -300,7 +298,7 @@ export async function listGapsOfKind(
         if (error) throw error;
         const anchor =
           kind === "artist_gallery" ? "fix-gallery" : kind === "artist_bio" ? "fix-bio" : "fix-image";
-        return (data ?? []).map((row: Record<string, string | number | null>) =>
+        return (data ?? []).map((row) =>
           personGap({
             kind,
             table: "artists",
@@ -350,7 +348,7 @@ export async function listGapsOfKind(
           .order("created_at", { ascending: false })
           .limit(LIST_LIMIT);
         if (error) throw error;
-        return (data ?? []).map((row: Record<string, string | number | null>) => ({
+        return (data ?? []).map((row) => ({
           kind,
           table: "blog_posts",
           row_id: row.id,

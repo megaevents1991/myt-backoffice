@@ -2,7 +2,7 @@
 
 import { randomUUID } from "crypto";
 import { requireStaff } from "@/lib/auth/guards";
-import { supabase } from "@/lib/supabase-server";
+import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { sniffImageMime } from "@/lib/images/sniff";
 import { notifyTaskMention } from "@/lib/services/task-mention-notify";
@@ -16,8 +16,7 @@ import type {
 } from "@/types/task-comment.types";
 import { isValidTaskAttachmentPath } from "@/lib/tasks/attachment-path";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+const db = supabaseTyped;
 
 const COMMENT_COLUMNS =
   "id,task_id,author_id,kind,body,activity,attachments,mentions,edited_at,deleted_at,created_at";

@@ -15,15 +15,13 @@
  * table. Idempotent: a second run (dry or real) reports "would dismiss: 0"
  * once every backlog task has its dismissal.
  */
-import { supabase } from "@/lib/supabase-server";
+import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { gapKey } from "@/types/creative-gap.types";
 import type { TaskSourceRef } from "@/types/task.types";
 
-// tasks / creative_gap_dismissals predate the generated database types on
-// some call sites - same boundary-cast pattern as creative-gaps.ts.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
+// Typed against types/database.types.ts (npm run db:types).
+const db = supabaseTyped;
 
 const PAGE_SIZE = 500;
 const APPLY = process.argv.includes("--apply");
@@ -38,14 +36,16 @@ interface DoneGapTask {
  *  this size. */
 async function fetchAllPages<T>(
   label: string,
-  page: (from: number, to: number) => Promise<{ data: T[] | null; error: unknown }>,
+  // A query builder is thenable, not a Promise; its rows carry jsonb as `Json`, so the
+  // caller names the shape it reads (T) at this one boundary.
+  page: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: unknown }>,
 ): Promise<T[]> {
   const rows: T[] = [];
   let from = 0;
   for (;;) {
     const { data, error } = await page(from, from + PAGE_SIZE - 1);
     if (error) throw new Error(`${label} failed: ${JSON.stringify(error)}`);
-    const batch = data ?? [];
+    const batch = (data ?? []) as T[];
     rows.push(...batch);
     if (batch.length < PAGE_SIZE) break;
     from += PAGE_SIZE;

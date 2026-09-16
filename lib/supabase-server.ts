@@ -1,4 +1,5 @@
-import { createClient } from "@supabase/supabase-js"
+import { createClient, type SupabaseClient } from "@supabase/supabase-js"
+import type { Database } from "@/types/database.types"
 
 // Cache for the Supabase client instance
 let supabaseInstance: ReturnType<typeof createClient> | null = null;
@@ -33,4 +34,9 @@ export const supabase = new Proxy({} as ReturnType<typeof createClient>, {
     return typeof value === 'function' ? value.bind(client) : value;
   }
 });
+
+// The same client, typed against the generated schema (types/database.types.ts,
+// `npm run db:types`). `supabase` above is untyped, so its rows resolve to `never` and
+// older callers cast it to `any`; new code should use this one instead.
+export const supabaseTyped = supabase as unknown as SupabaseClient<Database>;
 

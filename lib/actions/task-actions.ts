@@ -1,14 +1,8 @@
 "use server";
 
 import { requireStaff } from "@/lib/auth/guards";
-import { supabase } from "@/lib/supabase-server";
+import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
-
-// The generated database types predate the tasks table (regenerate with
-// `npm run db:types` once the migration lands on master) - cast once at the
-// boundary, same pattern as listUsers.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
 import { logAudit } from "@/lib/audit";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { notifyTaskAssigned } from "@/lib/services/task-notify";
@@ -32,6 +26,9 @@ import { validBoard, validChannel, validPhase, validProgress } from "@/lib/task-
 import { diffActivities, recordActivity } from "@/lib/services/task-activity";
 import { editableFields, type EditableTaskField } from "@/lib/tasks/permissions";
 
+// Typed against types/database.types.ts (npm run db:types).
+const db = supabaseTyped;
+
 type Result = { ok: true } | { ok: false; error: string };
 type CreateResult = { ok: true; id: string } | { ok: false; error: string };
 
@@ -46,9 +43,9 @@ function isManager(role: string): boolean {
   return (ADMIN_ROLES as readonly string[]).includes(role);
 }
 
+// One literal (not concatenated) so the typed client can parse the column list.
 const TASK_COLUMNS =
-  "id,title,description,status,priority,assignee_id,created_by,due_date,source,source_ref," +
-  "board,phase,channel,progress,deleted_at,completed_at,created_at,updated_at";
+  "id,title,description,status,priority,assignee_id,created_by,due_date,source,source_ref,board,phase,channel,progress,deleted_at,completed_at,created_at,updated_at";
 
 function validStatus(value: string): value is TaskStatus {
   return (TASK_STATUSES as readonly string[]).includes(value);
@@ -418,7 +415,7 @@ export async function updateTask(
       taskId: id,
       title: after.title,
       description: after.description ?? null,
-      priority: after.priority,
+      priority: validPriority(after.priority) ? after.priority : "medium",
       dueDate: after.due_date ?? null,
       sourceRef: (after.source_ref as TaskSourceRef | null) ?? null,
       assigneeId: newAssignee,
