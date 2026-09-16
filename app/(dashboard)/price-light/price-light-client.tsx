@@ -2,7 +2,7 @@
 
 // The /price-light screen: what the competitors charge for the same event,
 // and what to do about a red light. Pattern = price-changes-client.tsx.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -221,23 +221,45 @@ export function PriceLightClient() {
   const [runs, setRuns] = useState<CrawlPanelRow[]>([]);
   const [cost, setCost] = useState<{ usd: number; calls: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  // True while `rows` holds only the red events (the first paint) - every count that is not
+  // about red is unknown until the full list lands, and is shown as "…" rather than as 0.
+  const [partial, setPartial] = useState(false);
   const [runsLoading, setRunsLoading] = useState(true);
   const [view, setView] = useState("pending");
   const [scope, setScope] = useState<ScopeFilter>("all");
   const [compare, setCompare] = useState<PriceLightRow | null>(null);
+  // Two answers can be in flight for the rows (red-first, then everything); a stale one must
+  // never land on top of a newer load, e.g. a decision's refresh racing the opening full list.
+  const rowsSeq = useRef(0);
 
   // Three loads, three arrivals. They used to sit behind one Promise.all, so the table - the
   // thing the reader came for - waited for the slowest of the three (the competitors panel).
   // Now each part fills in as its own answer lands; a failure in one leaves the others standing.
-  const reloadRows = useCallback(async () => {
+  //
+  // `redFirst` (the opening load only): the default view is "ממתינים להחלטה", a subset of the
+  // red events, so the red rows are fetched alone first - about half the catalog's rows and
+  // bytes (238 of 426 events were red on 2026-09-16) - and the table paints from them while
+  // the full list is still on its way. The full answer then replaces them wholesale.
+  const reloadRows = useCallback(async (redFirst = false) => {
+    const seq = ++rowsSeq.current;
     setLoading(true);
     try {
-      setRows(await listPriceLight());
+      if (redFirst) {
+        const red = await listPriceLight({ onlyRed: true });
+        if (seq !== rowsSeq.current) return;
+        setRows(red);
+        setPartial(true);
+        setLoading(false);
+      }
+      const all = await listPriceLight();
+      if (seq !== rowsSeq.current) return;
+      setRows(all);
+      setPartial(false);
     } catch (e) {
       console.error("price-light rows failed", e);
       toast({ variant: "destructive", title: "טעינה נכשלה", description: e instanceof Error ? e.message : "שגיאה" });
     } finally {
-      setLoading(false);
+      if (seq === rowsSeq.current) setLoading(false);
     }
   }, [toast]);
   const reloadRuns = useCallback(async () => {
@@ -264,8 +286,10 @@ export function PriceLightClient() {
   }, [reloadRows, reloadRuns, reloadCost]);
 
   useEffect(() => {
-    reload();
-  }, [reload]);
+    void reloadRows(true);
+    void reloadRuns();
+    void reloadCost();
+  }, [reloadRows, reloadRuns, reloadCost]);
 
   // ?f= preselects a view, ?scope= the package/ticket lens, on arrival (e.g. a link from the
   // dashboard widget) - read once.
@@ -332,26 +356,31 @@ export function PriceLightClient() {
     }
   }, [scoped, scope, view]);
 
-  const tiles: { id: string; count: number; light: Light }[] = [
-    { id: "alone", count: counts.alone, light: "alone" },
-    { id: "green", count: counts.green, light: "green" },
-    { id: "orange", count: counts.orange, light: "orange" },
-    { id: "red", count: counts.red, light: "red" },
-    { id: "unchecked", count: counts.unchecked, light: "unchecked" },
-    { id: "pending", count: counts.pending, light: "red" },
+  // While only the red rows are in, every count that is not about red is unknown - `null`
+  // renders "…". Red and pending are exact from the first paint (every red event is there).
+  const known = (n: number, redOnly = false): number | null => (partial && !redOnly ? null : n);
+  const tiles: { id: string; count: number | null; light: Light }[] = [
+    { id: "alone", count: known(counts.alone), light: "alone" },
+    { id: "green", count: known(counts.green), light: "green" },
+    { id: "orange", count: known(counts.orange), light: "orange" },
+    { id: "red", count: known(counts.red, true), light: "red" },
+    { id: "unchecked", count: known(counts.unchecked), light: "unchecked" },
+    { id: "pending", count: known(counts.pending, true), light: "red" },
   ];
 
   const views: DataTableView[] = [
     { id: "pending", label: "ממתינים להחלטה", count: counts.pending },
     { id: "red", label: "אדום", count: counts.red },
-    { id: "orange_plus", label: "כתום ומעלה", count: counts.orangePlus },
-    { id: "soon", label: "בקרוב (45 יום)", count: counts.soon },
-    { id: "partial", label: "כיסוי חלקי", count: counts.partial },
-    { id: "changed", label: "השתנה השבוע", count: counts.changed },
-    { id: "unchecked", label: "לא נבדק", count: counts.unchecked },
-    { id: "ai_sample", label: "מדגם AI", count: counts.aiSample },
-    { id: "all", label: "הכול", count: scoped.length },
+    { id: "orange_plus", label: "כתום ומעלה", count: known(counts.orangePlus) ?? undefined },
+    { id: "soon", label: "בקרוב (45 יום)", count: known(counts.soon) ?? undefined },
+    { id: "partial", label: "כיסוי חלקי", count: known(counts.partial) ?? undefined },
+    { id: "changed", label: "השתנה השבוע", count: known(counts.changed) ?? undefined },
+    { id: "unchecked", label: "לא נבדק", count: known(counts.unchecked) ?? undefined },
+    { id: "ai_sample", label: "מדגם AI", count: known(counts.aiSample) ?? undefined },
+    { id: "all", label: "הכול", count: known(scoped.length) ?? undefined },
   ];
+  // A non-red view has nothing to show until the full list lands - "loading", not "empty".
+  const viewStillLoading = partial && view !== "pending" && view !== "red";
 
   const columns = useMemo<ColumnDef<PriceLightRow>[]>(
     () => [
@@ -500,7 +529,7 @@ export function PriceLightClient() {
   );
 
   const emptyState = useMemo(() => {
-    if (loading) return { title: "טוען…" };
+    if (loading || viewStillLoading) return { title: "טוען…" };
     const descriptions: Record<string, string> = {
       pending: "כל האדומים כבר טופלו, מושתקים או בעלי משימה פתוחה.",
       red: "אין כרגע אירועים באדום.",
@@ -509,13 +538,13 @@ export function PriceLightClient() {
       changed: "שום דבר לא השתנה השבוע.",
     };
     return { title: "אין שורות בתצוגה הזו", description: descriptions[view] };
-  }, [view, loading]);
+  }, [view, loading, viewStillLoading]);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <span>
-          <span className="font-medium tabular-nums text-foreground">{scoped.length}</span> אירועים
+          <span className="font-medium tabular-nums text-foreground">{partial ? "…" : scoped.length}</span> אירועים
         </span>
         <span aria-hidden>·</span>
         <span>
@@ -569,7 +598,7 @@ export function PriceLightClient() {
             <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium", PILL[t.light])}>
               {TILE_LABEL[t.id]}
             </span>
-            <div className="mt-1.5 text-2xl font-bold tabular-nums">{t.count}</div>
+            <div className="mt-1.5 text-2xl font-bold tabular-nums">{t.count ?? "…"}</div>
           </button>
         ))}
       </div>

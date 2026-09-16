@@ -511,17 +511,19 @@ interface NewestMatch { event_id: number; scope: Scope; url: string | null; meth
 
 /** Every live, future, non-deleted, non-test event - the universe the price-light screen
  *  watches. `is_test` is filtered client-side, exactly as the nightly pass does, so the
- *  screen shows the same population the lights were computed for. */
-async function loadListedEvents(): Promise<ListedEvent[]> {
+ *  screen shows the same population the lights were computed for. `onlyRed` narrows it to
+ *  events with a red light on either scope - the screen's first paint (see listPriceLight). */
+async function loadListedEvents(onlyRed: boolean): Promise<ListedEvent[]> {
   const today = new Date().toISOString().slice(0, 10);
   const { rows, error, truncated } = await fetchPaged<ListedEvent>(
-    () =>
-      db
+    () => {
+      const q = db
         .from("events")
         .select(LIST_EVENT_COLUMNS)
         .is("is_deleted", null)
-        .gte("date", today)
-        .order("id", { ascending: true }),
+        .gte("date", today);
+      return (onlyRed ? q.or("light_package.eq.red,light_ticket.eq.red") : q).order("id", { ascending: true });
+    },
     LIST_EVENTS_MAX,
   );
   if (error) console.error("listPriceLight: events failed", JSON.stringify(error));
@@ -682,11 +684,20 @@ function buildScopeCell(
   };
 }
 
-/** One row per EVENT for the /price-light table, carrying both conclusions - three round trips
- *  total, never one per event. */
-export async function listPriceLight(): Promise<PriceLightRow[]> {
+/**
+ * One row per EVENT for the /price-light table, carrying both conclusions - three round trips
+ * total, never one per event.
+ *
+ * `onlyRed`: just the events with a red light on either scope. The screen opens on "ממתינים
+ * להחלטה", which is a subset of red, so it asks for this first and paints the table from it, then
+ * fetches the whole list behind it for the other tiles and views. Measured 2026-09-16: 238 of
+ * 426 events are red, so the first answer is about half the rows and bytes (550ms / 0.86 MB vs
+ * 1.0s / 1.46 MB from Israel) - a half-second earlier table, not an order of magnitude. Same
+ * shape, same code path - only the event filter differs - so a red row looks identical in both.
+ */
+export async function listPriceLight(opts: { onlyRed?: boolean } = {}): Promise<PriceLightRow[]> {
   await requireStaff();
-  const events = await loadListedEvents();
+  const events = await loadListedEvents(opts.onlyRed === true);
   if (events.length === 0) return [];
 
   const eventIds = events.map((e) => e.id);

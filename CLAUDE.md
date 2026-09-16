@@ -376,7 +376,11 @@ issues three independent loads (rows / competitors panel / AI cost) and renders 
 for the panel. `listPriceLight` reads the newest match per (event, scope) through the Postgres function
 `price_light_newest_matches(event_ids, since)` (migration `20260916113000`, `service_role` only; one round trip instead
 of paging every match of the lookback window) and falls back to the paged read on `PGRST202` (function not migrated
-yet); `listCrawlRuns` runs its 20 small reads concurrently. Measured before: 6s+ on prod.
+yet); `listCrawlRuns` runs its 20 small reads concurrently. Measured before: 6s+ on prod. **Red first:** the opening
+load asks `listPriceLight({ onlyRed: true })` (events with a red light on either scope - the default "ממתינים להחלטה"
+view is a subset of them) and paints the table from that, then fetches the full list and swaps it in; until then every
+non-red tile/view count shows "…" and a non-red view reads "טוען…", never a false 0 or "empty". A sequence counter drops
+a stale answer, so a decision's refresh can never be overwritten by the opening full list.
 
 **Partner pass (2026-09-14): every competitor, contents side by side, a package/ticket lens.**
 (a) **Matching coverage.** 357 of 426 live events had NO priced package competitor, and 840 package
