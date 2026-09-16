@@ -68,6 +68,8 @@ export interface TaskEditorState {
   /** null = creating */
   task: TaskWithNames | null;
   prefill?: TaskPrefill;
+  /** New-task placement from the Roadmap / Marketing tabs ("+" in a phase or channel). */
+  defaults?: { board: TaskBoard; phase?: number | null; channel?: MktChannel | null };
 }
 
 /**
@@ -109,9 +111,14 @@ export function TaskEditor({
   );
   const [assignee, setAssignee] = useState<string>(task?.assignee_id ?? "unassigned");
   const [dueDate, setDueDate] = useState(task?.due_date ?? "");
-  const [board, setBoard] = useState<TaskBoard>(task?.board ?? "ops");
-  const [phase, setPhase] = useState<number | null>(task?.phase ?? null);
-  const [channel, setChannel] = useState<MktChannel | null>(task?.channel ?? null);
+  const { defaults } = state;
+  const [board, setBoard] = useState<TaskBoard>(task?.board ?? defaults?.board ?? "ops");
+  const [phase, setPhase] = useState<number | null>(
+    task ? (task.phase ?? null) : defaults?.board === "dev" ? (defaults.phase ?? null) : null,
+  );
+  const [channel, setChannel] = useState<MktChannel | null>(
+    task ? (task.channel ?? null) : defaults?.board === "marketing" ? (defaults.channel ?? null) : null,
+  );
   const [progress, setProgress] = useState<number>(task?.progress ?? 0);
   const [saving, setSaving] = useState(false);
   const [staff, setStaff] = useState<UserProfile[]>([]);

@@ -103,10 +103,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   dismisses its gap (reopen restores). `/price-changes` rows can spawn a
 >   `price_review` task (one open per event) or soft-delete the event; the
 >   shared dialog is `components/task-editor.tsx`.
-> - **Tasks Hub (2026-09-16):** everything below needs the unapplied migration
->   `supabase/migrations/20260916210000_tasks_hub.sql` applied from master
->   first - `/tasks/rules`, the Pricing tab's price-light rows, and
->   `scripts/import-roadmap.ts` all refuse to run without it.
+> - **Tasks Hub (2026-09-16, in prod - PR #38, migration
+>   `supabase/migrations/20260916210000_tasks_hub.sql` applied).**
 >   - **Schema:** `tasks` gains `board` (`dev`/`marketing`/`ops`), `phase`
 >     (smallint), `channel` (marketing-only), `progress` (smallint), and a
 >     `paused` status that counts as OPEN (assignee/open-task indexes and
@@ -190,12 +188,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >     records a `price_light.repriced` decision ONLY when it is marked done
 >     while that scope's light is still red (`shouldRecordRepriced`);
 >     cancelled records nothing, and reopening undoes nothing.
->   - **Roadmap import** (`scripts/import-roadmap.ts`, one-time, create-only by
->     default): migrates the old standalone RoadMap app's localStorage export
->     into `tasks` (source `roadmap`). Existing imported rows are left alone
->     unless `--update-existing` is passed, so re-running an export never
->     reverts an edit made in `/tasks`. See `docs/superpowers/roadmap-export-snippet.md`
->     for getting the export out of the old app first.
+>   - **Roadmap + Marketing tabs** (`?tab=roadmap`, `?tab=marketing`,
+>     `app/(dashboard)/tasks/task-map-view.tsx`, pure grouping in
+>     `lib/tasks/roadmap.ts` + `scripts/roadmap-selftest.ts`): the old standalone
+>     RoadMap app lives here now (Dor, 16.09 - its data was NOT imported; the board
+>     started empty and the import script was removed). Roadmap = `dev` tasks by
+>     phase 1-7 (+ "ללא פאזה"), Marketing = `marketing` tasks by channel with mean
+>     progress (a done task counts 100). Cancelled tasks are off the map. Both read
+>     the whole board (own search + assignee filter, not the board lens or the
+>     my-tasks switch); "+" in a section opens the task dialog pre-placed there
+>     (`TaskEditorState.defaults`). The `roadmap` task source stays in the type
+>     list but nothing writes it any more.
 > - **Pricing brain:** `lib/services/price-quote.ts` - see "Price Logic Chain".
 >   Nightly `base-price-sync` cron + `/price-changes` review screen
 >   (`base_price_sync_log`).
@@ -206,8 +209,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > - **`/guide`:** bilingual (EN/HE toggle) system manual for staff, content in
 >   `app/(dashboard)/guide/guide-content.ts`. **When a flow described there
 >   changes, update it in the same PR.**
-> - Not yet done post-merge: `npm run db:types` and drop the `supabase as any`
->   boundary casts in the new actions/services.
+> - **Typed DB client (2026-09-16):** `supabaseTyped` (`lib/supabase-server.ts`) is the
+>   same client typed with `types/database.types.ts` - the plain `supabase` export is
+>   untyped (rows resolve to `never`), which is why older code casts it to `any`. The
+>   Tasks Hub files use `supabaseTyped`; new code should too. jsonb-column shapes must be
+>   `type` aliases, not `interface`s, to be assignable to `Json`.
 
 > **✅ Contentful → Supabase CMS migration COMPLETE (2026-07-22).**
 > This backoffice owns the CMS under **Templates** (תבניות): per-type

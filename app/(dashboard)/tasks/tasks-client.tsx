@@ -45,6 +45,7 @@ import { editableFields } from "@/lib/tasks/permissions";
 import { BOARD_META } from "@/lib/task-boards";
 import { KanbanBoard } from "./kanban-board";
 import { PricingGapsTab } from "./pricing-gaps-tab";
+import { TaskMapView } from "./task-map-view";
 import {
   filterByBoard,
   parseBoardParam,
@@ -68,6 +69,9 @@ import {
   type TaskStatus,
   type TaskWithNames,
 } from "@/types/task.types";
+
+/** Every tab `?tab=` may deep-link to. */
+const TAB_IDS = ["tasks", "kanban", "roadmap", "marketing", "gaps", "pricing"] as const;
 
 /** Small badge on sourced tasks - where the work came from. */
 const SOURCE_BADGE: Partial<Record<TaskSource, string>> = {
@@ -100,15 +104,9 @@ export function TasksClient() {
   // ONE top-level useSearchParams for the whole page - ?tab=, ?task= and now
   // ?board= all read from this same instance (never a second hook call).
   const searchParams = useSearchParams();
-  // /tasks?tab=gaps or ?tab=kanban or ?tab=pricing deep-links straight to that tab.
-  const initialTab =
-    searchParams.get("tab") === "gaps"
-      ? "gaps"
-      : searchParams.get("tab") === "kanban"
-        ? "kanban"
-        : searchParams.get("tab") === "pricing"
-          ? "pricing"
-          : "tasks";
+  // /tasks?tab=<id> deep-links straight to that tab (TAB_IDS); anything else opens Tasks.
+  const tabParam = searchParams.get("tab") ?? "";
+  const initialTab = (TAB_IDS as readonly string[]).includes(tabParam) ? tabParam : "tasks";
   const initialTaskId = searchParams.get("task");
   const boardLens = parseBoardParam(searchParams.get("board"));
   const isManager = !!user && (ADMIN_ROLES as readonly string[]).includes(user.role);
@@ -452,6 +450,8 @@ export function TasksClient() {
       <TabsList>
         <TabsTrigger value="tasks">Tasks</TabsTrigger>
         <TabsTrigger value="kanban">Kanban</TabsTrigger>
+        <TabsTrigger value="roadmap">Roadmap</TabsTrigger>
+        <TabsTrigger value="marketing">Marketing</TabsTrigger>
         <TabsTrigger value="gaps">Creative gaps</TabsTrigger>
         <TabsTrigger value="pricing">Pricing</TabsTrigger>
       </TabsList>
@@ -519,6 +519,28 @@ export function TasksClient() {
         />
       </TabsContent>
 
+      {/* Roadmap / Marketing read the WHOLE board (their own assignee filter inside), not the
+          board lens or the my-tasks switch - they are the team map. */}
+      <TabsContent value="roadmap" className="mt-4">
+        <TaskMapView
+          mode="roadmap"
+          tasks={tasks}
+          loading={loading}
+          onOpenTask={(task) => setEditor({ open: true, task })}
+          onAddTask={(defaults) => setEditor({ open: true, task: null, defaults })}
+        />
+      </TabsContent>
+
+      <TabsContent value="marketing" className="mt-4">
+        <TaskMapView
+          mode="marketing"
+          tasks={tasks}
+          loading={loading}
+          onOpenTask={(task) => setEditor({ open: true, task })}
+          onAddTask={(defaults) => setEditor({ open: true, task: null, defaults })}
+        />
+      </TabsContent>
+
       <TabsContent value="gaps" className="mt-4">
         <GapsTab
           onCreateTask={(gap) =>
@@ -538,7 +560,7 @@ export function TasksClient() {
       </TabsContent>
 
       <TaskEditor
-        key={`${editor.task?.id ?? "new"}-${editor.prefill?.source_ref.row_id ?? ""}-${editor.open}`}
+        key={`${editor.task?.id ?? "new"}-${editor.prefill?.source_ref.row_id ?? ""}-${editor.defaults?.board ?? ""}${editor.defaults?.phase ?? ""}${editor.defaults?.channel ?? ""}-${editor.open}`}
         state={editor}
         isManager={isManager}
         editable={editableFields(

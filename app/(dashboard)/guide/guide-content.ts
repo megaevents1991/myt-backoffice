@@ -548,6 +548,10 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "ללוח יש גם תצוגת קאנבן (לשונית Kanban) לצד הטבלה — גוררים כרטיס כדי לשנות סטטוס. עדשת הלוח מעל שתיהן (הכול / Dev / Marketing / Ops) מצמצמת יחד את הטבלה, הספירות והקאנבן ללוח אחד בכל פעם.",
       ),
       t(
+        "The Roadmap tab is the product road map that used to be a separate app: every Dev-board task laid out by its phase (1-7), with done/total and a progress bar per phase. The Marketing tab does the same for the Marketing board by channel, with each campaign's progress. Click a card to open the task; the + next to a phase or channel creates a task already placed there. Both show the whole team - filter by name or search inside the tab.",
+        "לשונית Roadmap היא מפת הדרכים של המוצר שהייתה פעם אפליקציה נפרדת: כל משימות לוח הפיתוח מסודרות לפי השלב שלהן (1-7), עם הושלם/סה״כ ופס התקדמות לכל שלב. לשונית Marketing עושה אותו דבר ללוח השיווק לפי ערוץ, עם ההתקדמות של כל קמפיין. לחיצה על כרטיס פותחת את המשימה; ה־+ ליד שלב או ערוץ יוצר משימה שכבר משובצת שם. שתיהן מציגות את כל הצוות - מסננים לפי שם או מחפשים בתוך הלשונית.",
+      ),
+      t(
         "The Pricing tab (visible to everyone, not just admins) lists every open pricing problem - red price lights and frozen price-change rows - in one place, each with three buttons: Task opens a tracked task for it, Fix jumps straight to the field that actually fixes it, and Handled records that you dealt with it without touching a price - a price light stays hidden until the next nightly check (and comes back if it is still red), a frozen price row is marked reviewed with the note 'סומן כטופל' in front of the sync's original note. That mark is final - nothing reopens it. Only a price-change row closed through its TASK can come back: reopening that task restores the row and its original note.",
         "לשונית התמחור (גלויה לכולם, לא רק למנהלים) מרכזת כל בעיית תמחור פתוחה — רמזורים אדומים ושורות שינוי מחיר קפואות — במקום אחד, כל אחת עם שלושה כפתורים: משימה פותחת משימה עוקבת, לתקן קופץ ישר לשדה שבאמת מתקן את זה, וטופל מתעד שטיפלתם בלי לגעת במחיר — רמזור נשאר מוסתר עד הבדיקה הלילית הבאה (וחוזר אם הוא עדיין אדום), ושורת מחיר קפואה מסומנת כנבדקה עם 'סומן כטופל' לפני ההערה המקורית של הסנכרון. הסימון הזה סופי — שום דבר לא פותח אותו מחדש. רק שורת שינוי מחיר שנסגרה דרך המשימה שלה יכולה לחזור: פתיחה מחדש של אותה משימה משחזרת את השורה ואת ההערה המקורית.",
       ),
@@ -556,6 +560,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       { label: t("Tasks board", "לוח משימות"), href: "/tasks" },
       { label: t("Pricing tab", "לשונית תמחור"), href: "/tasks?tab=pricing" },
       { label: t("Kanban view", "תצוגת קאנבן"), href: "/tasks?tab=kanban" },
+      { label: t("Roadmap", "מפת דרכים"), href: "/tasks?tab=roadmap" },
+      { label: t("Marketing board", "לוח שיווק"), href: "/tasks?tab=marketing" },
       { label: t("Recurring rules", "כללים חוזרים"), href: "/tasks/rules", adminOnly: true },
     ],
   },
