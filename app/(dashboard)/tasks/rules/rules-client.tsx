@@ -479,7 +479,7 @@ export function RulesClient({
           <DialogHeader>
             <DialogTitle>{editing ? "עריכת כלל" : "כלל חדש"}</DialogTitle>
             <DialogDescription>
-              היום שהכלל רץ הוא לפי UTC — הקרון רץ ראשון 09:00 שעון ישראל.
+              היום שהכלל רץ הוא לפי UTC — הקרון רץ כל יום ב-06:00 UTC (08:00–09:00 שעון ישראל), וכל כלל רק ביום שלו.
             </DialogDescription>
           </DialogHeader>
 
@@ -682,7 +682,7 @@ export function RulesClient({
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">לפי UTC — הקרון רץ ראשון 09:00 שעון ישראל.</p>
+                <p className="text-xs text-muted-foreground">לפי UTC — הקרון רץ כל יום ב-06:00 UTC (08:00–09:00 שעון ישראל), וכל כלל רק ביום שלו.</p>
               </div>
               <div className="space-y-1.5">
                 <Label>משויך ל-</Label>

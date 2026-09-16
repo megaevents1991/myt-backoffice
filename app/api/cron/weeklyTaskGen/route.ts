@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { guardCronRoute } from "@/lib/auth/guards";
 import { runWeeklyTaskGen } from "@/lib/services/weekly-task-gen";
 
-// Sundays 06:00 UTC (vercel.json). ?dry_run=1 = zero writes.
+// Daily 06:00 UTC (vercel.json); each rule runs only on its own UTC weekday. ?dry_run=1 = zero writes.
 export const maxDuration = 300;
 
 export async function GET(request: NextRequest) {

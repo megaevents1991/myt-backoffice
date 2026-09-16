@@ -2,7 +2,7 @@
 // Pure only: planRule() + isRuleDueToday()/dueDateUtc(), fed synthetic rules and
 // candidates. No DB, no generators - lib/services/weekly-task-gen.ts (the impure
 // caller) is exercised separately by the read-only prod dry run in the task report.
-import { dueDateUtc, isRuleDueToday, planRule } from "../lib/services/weekly-task-plan";
+import { PER_ITEM_MAX_PER_RUN, dueDateUtc, isRuleDueToday, planRule } from "../lib/services/weekly-task-plan";
 import type { RuleCandidate } from "../lib/services/task-rules";
 import type { TaskRule } from "../types/task-rule.types";
 
@@ -137,6 +137,25 @@ check("due_date null when due_days null", dueDateUtc(NOW, null), null);
   const priceLightPerItem = rule({ domain: "price_light", mode: "per_item", due_days: null });
   const plan = planRule(priceLightPerItem, [candidate()], new Set(), false, NOW, ctx);
   check("per_item due_date null when due_days null", plan.create[0]?.due_date, null);
+}
+
+// --- per_item: cap per run --------------------------------------------------
+{
+  const gapsRule = rule({ domain: "creative_gaps", mode: "per_item" });
+  const many = Array.from({ length: PER_ITEM_MAX_PER_RUN + 7 }, (_, i) =>
+    candidate({ key: `team_logo:football_teams:${i}`, title: `T${i}` }),
+  );
+  const plan = planRule(gapsRule, many, new Set(["team_logo:football_teams:0"]), false, NOW, ctx);
+  check("per_item cap: creates exactly the cap", plan.create.length, PER_ITEM_MAX_PER_RUN);
+  check("per_item cap: open key still counted as existed", plan.existed, 1);
+  check("per_item cap: reports the rest", plan.skippedWhy, "cap: 6 more next run");
+  check("per_item cap: first created is the first fresh one", plan.create[0]?.title, "T1");
+}
+{
+  const gapsRule = rule({ domain: "creative_gaps", mode: "per_item" });
+  const exact = Array.from({ length: PER_ITEM_MAX_PER_RUN }, (_, i) => candidate({ key: `k:${i}` }));
+  const plan = planRule(gapsRule, exact, new Set(), false, NOW, ctx);
+  check("per_item cap: exactly the cap -> no skip note", plan.skippedWhy, undefined);
 }
 
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");

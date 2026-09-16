@@ -84,6 +84,84 @@ export async function notifyTaskAssigned(input: TaskAssignedInput): Promise<void
   }
 }
 
+/** How many titles the per-item summary mail lists before "ועוד N". */
+const SUMMARY_TITLES_MAX = 10;
+
+export interface RuleTasksCreatedInput {
+  ruleId: string;
+  ruleName: string;
+  assigneeId: string;
+  titles: string[];
+}
+
+/**
+ * ONE mail per assignee for a per-item rule's run (final review, I4) - a rule that
+ * opens 25 tasks must not send 25 mails. Best-effort like notifyTaskAssigned: a
+ * failure is logged and never fails the run. The caller never calls this on a dry run.
+ */
+export async function notifyRuleTasksCreated(input: RuleTasksCreatedInput): Promise<void> {
+  if (input.titles.length === 0) return;
+  try {
+    const { data, error } = await db
+      .from("user_profiles")
+      .select("id,email,display_name")
+      .eq("id", input.assigneeId)
+      .maybeSingle();
+    if (error) throw error;
+    const assignee = data as Profile | null;
+    if (!assignee?.email) return;
+
+    const boardUrl = `${appOrigin()}/tasks`;
+    const count = input.titles.length;
+    const shown = input.titles.slice(0, SUMMARY_TITLES_MAX);
+    const more = count - shown.length;
+    const subject = `${count} משימות חדשות מהכלל ${input.ruleName}`;
+
+    const items = shown
+      .map((title) => `<li style="padding:2px 0;">${escapeHtml(title)}</li>`)
+      .join("");
+    const html = `<!doctype html>
+<html dir="rtl" lang="he">
+  <body style="margin:0;padding:24px;background:#f5f5f5;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td align="center">
+        <table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border-radius:12px;padding:32px;" cellpadding="0" cellspacing="0" dir="rtl">
+          <tr><td style="text-align:right;font-size:13px;color:#6b7280;padding-bottom:4px;">MYT Admin · משימות חוזרות</td></tr>
+          <tr><td style="text-align:right;font-size:20px;font-weight:bold;color:#111827;padding-bottom:12px;">${escapeHtml(subject)}</td></tr>
+          <tr><td style="text-align:right;font-size:14px;color:#374151;line-height:1.6;padding-bottom:16px;">
+            <ul style="margin:0;padding-right:18px;">${items}</ul>
+            ${more > 0 ? `<div style="padding-top:6px;color:#6b7280;">ועוד ${more}</div>` : ""}
+          </td></tr>
+          <tr><td style="text-align:right;padding-bottom:12px;">
+            <a href="${escapeHtml(boardUrl)}" style="display:inline-block;background:#0A1A14;color:#5BFF95;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:bold;">ללוח המשימות</a>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+
+    await sendMail({
+      to: assignee.email,
+      subject,
+      html,
+      text: [
+        subject,
+        ...shown.map((title) => `• ${title}`),
+        more > 0 ? `ועוד ${more}` : "",
+        `לוח המשימות: ${boardUrl}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    });
+  } catch (error) {
+    console.error(
+      `tasks: rule summary mail failed for rule ${input.ruleId}`,
+      error instanceof Error ? error.message : JSON.stringify(error),
+    );
+  }
+}
+
 function taskAssignedHtml(params: {
   title: string;
   description: string | null;

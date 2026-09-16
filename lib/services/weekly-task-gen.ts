@@ -1,6 +1,6 @@
 /**
- * The weekly recurring-task run (Task 9, spec §2.1). One cron for every active
- * `task_rules` row: the rule is data, the generator (lib/services/task-rules/)
+ * The recurring-task run (Task 9, spec §2.1). One DAILY cron (06:00 UTC) for every
+ * active `task_rules` row, each rule running only on its own UTC weekday (`dow`): the rule is data, the generator (lib/services/task-rules/)
  * is code. Reads only against the domains it scans - it never writes a price
  * or removes an event. The insert is direct (not createTask): this runs with
  * no session, so `created_by` is always null ("המערכת").
@@ -17,7 +17,7 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { generatorFor } from "@/lib/services/task-rules";
 import { isoWeek } from "@/lib/services/task-rules/week";
-import { notifyTaskAssigned } from "@/lib/services/task-notify";
+import { notifyTaskAssigned, notifyRuleTasksCreated } from "@/lib/services/task-notify";
 import { isRuleDueToday, planRule, type TaskInsert } from "@/lib/services/weekly-task-plan";
 import { OPEN_TASK_STATUSES, type TaskSourceRef } from "@/types/task.types";
 import type { TaskRule } from "@/types/task-rule.types";
@@ -140,7 +140,7 @@ async function closeEarlierDigests(
   return closed;
 }
 
-/** A digest insert can lose a race to another concurrent run (the Sunday cron and a
+/** A digest insert can lose a race to another concurrent run (the daily cron and a
  *  manual "run now" overlapping) - `tasks_recurring_digest_week_uniq` (migration
  *  20260916210000) turns that into a Postgres 23505 instead of a duplicate row. That is
  *  "already exists", not a failure: the caller counts it in `existed`, never `errors`.
@@ -177,6 +177,7 @@ async function runOneRule(
   now: Date,
   summary: TaskGenSummary,
   dryRun: boolean,
+  deadline: number,
 ): Promise<void> {
   const generator = generatorFor(rule.domain);
   // Throws on failure (controller ruling) - propagates straight out of this function,
@@ -201,7 +202,18 @@ async function runOneRule(
   }
 
   let created = 0;
-  for (const task of plan.create) {
+  let budgetCut = 0;
+  const createdTitles: string[] = [];
+  for (let i = 0; i < plan.create.length; i++) {
+    // Checked per candidate (final review, I4): a long per-item rule must stop at the
+    // budget, not run the whole list past the function timeout. What was already created
+    // is still counted, touched (last_run_at) and audited below.
+    if (Date.now() > deadline) {
+      budgetCut = plan.create.length - i;
+      summary.skipped.push({ rule: rule.name, why: `budget: ${budgetCut} more next run` });
+      break;
+    }
+    const task = plan.create[i];
     const inserted = await insertTask(task);
     if (!inserted) {
       summary.errors.push(`${rule.name}: task insert failed`);
@@ -213,7 +225,10 @@ async function runOneRule(
     }
     created++;
     summary.created++;
-    if (task.assignee_id) {
+    createdTitles.push(task.title);
+    // A digest is one task - it keeps its own assignment mail. Per-item tasks are
+    // summarised in ONE mail after the loop instead of one mail per task.
+    if (task.assignee_id && rule.mode === "weekly_digest") {
       await notifyTaskAssigned({
         taskId: inserted.id,
         title: task.title,
@@ -225,6 +240,14 @@ async function runOneRule(
         assignerId: null,
       });
     }
+  }
+  if (rule.mode === "per_item" && rule.assignee_id && createdTitles.length > 0) {
+    await notifyRuleTasksCreated({
+      ruleId: rule.id,
+      ruleName: rule.name,
+      assigneeId: rule.assignee_id,
+      titles: createdTitles,
+    });
   }
   summary.existed += plan.existed;
 
@@ -246,13 +269,13 @@ async function runOneRule(
     action: "tasks.generated",
     entityType: "task_rule",
     entityId: rule.id,
-    metadata: { created, existed: plan.existed, closed, candidates: candidates.length },
+    metadata: { created, existed: plan.existed, closed, candidates: candidates.length, budget_cut: budgetCut },
   });
 }
 
 /**
  * Concurrency note: `tasks_recurring_digest_week_uniq` (migration 20260916210000) makes a
- * double-created weekly digest impossible even if the Sunday cron and a manual "run now"
+ * double-created weekly digest impossible even if the daily cron and a manual "run now"
  * overlap - the loser's insert hits Postgres 23505 and is counted in `existed` (see
  * insertTask above). Per-item tasks have NO such DB-level guard: two overlapping runs can
  * still insert the same candidate twice, because `loadOpenItemKeys()` is read once up
@@ -260,8 +283,8 @@ async function runOneRule(
  * here - per-item rows already rely on app-level dedupe only (same as the existing
  * price_light/creative_gap rows this reads against, which can themselves repeat), a
  * unique index over an arbitrary jsonb `source_ref` shape could fail to build against
- * that existing data, and in practice a manual run-now and the Sunday cron essentially
- * never overlap.
+ * that existing data, and in practice a manual run-now and the daily cron essentially
+ * never overlap, and PER_ITEM_MAX_PER_RUN bounds how many rows such an overlap can repeat.
  */
 export async function runWeeklyTaskGen(
   opts: { dryRun?: boolean; budgetMs?: number; ruleId?: string; now?: Date } = {},
@@ -307,7 +330,7 @@ export async function runWeeklyTaskGen(
       continue;
     }
     try {
-      await runOneRule(rule, week, now, summary, !!opts.dryRun);
+      await runOneRule(rule, week, now, summary, !!opts.dryRun, deadline);
       summary.ran++;
     } catch (e) {
       summary.errors.push(`${rule.name}: ${e instanceof Error ? e.message : "failed"}`);

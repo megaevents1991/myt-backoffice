@@ -46,6 +46,12 @@ export interface RulePlan {
 
 /** Per-item tasks carry the domain's own source (ruling #2) - "custom" has no per_item
  *  mode in practice (its generator always returns []), so it is left unmapped. */
+/** A per-item rule creates at most this many tasks in one run (final review, I4): a
+ *  broad creative rule could otherwise insert hundreds of rows in one go, flood the
+ *  assignee and run past the cron budget. The rest are reported as skipped and picked up
+ *  by the next run (they are still open candidates, so dedupe lets them through then). */
+export const PER_ITEM_MAX_PER_RUN = 25;
+
 const NATIVE_SOURCE: Partial<Record<RuleDomain, TaskSource>> = {
   price_light: "price_light",
   price_changes: "price_review",
@@ -57,9 +63,9 @@ const NATIVE_SOURCE: Partial<Record<RuleDomain, TaskSource>> = {
  *  Date#getUTCDay(). A manual "run now" (single ruleId) bypasses this in the caller -
  *  it never calls this helper.
  *
- *  `dow` and `now.getUTCDay()` are both UTC weekdays. The cron itself fires Sunday
+ *  `dow` and `now.getUTCDay()` are both UTC weekdays. The cron itself fires DAILY at
  *  06:00 UTC (08:00-09:00 Israel), where UTC and Israel agree on the date, so the
- *  scheduled run never crosses this boundary. A manual FULL run (no ruleId) triggered near
+ *  scheduled run never crosses this boundary - each rule is picked up on its own weekday. A manual FULL run (no ruleId) triggered near
  *  Israeli midnight, however, can evaluate the neighbouring UTC day - e.g. 01:00 Israel time
  *  (May-Oct, UTC+3) is still 22:00 UTC the day before. No behaviour change; just naming the
  *  edge so a "why did it skip today" question doesn't start from scratch. */
@@ -158,9 +164,14 @@ export function planRule(
   const nativeSource = NATIVE_SOURCE[rule.domain] ?? "recurring";
   const create: TaskInsert[] = [];
   let existed = 0;
+  let overCap = 0;
   for (const candidate of candidates) {
     if (openItemKeys.has(candidate.key)) {
       existed++;
+      continue;
+    }
+    if (create.length >= PER_ITEM_MAX_PER_RUN) {
+      overCap++;
       continue;
     }
     create.push({
@@ -175,5 +186,7 @@ export function planRule(
       board: rule.board,
     });
   }
-  return { create, existed, closeEarlierDigests: false };
+  return overCap > 0
+    ? { create, existed, closeEarlierDigests: false, skippedWhy: `cap: ${overCap} more next run` }
+    : { create, existed, closeEarlierDigests: false };
 }
