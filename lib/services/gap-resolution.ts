@@ -95,46 +95,106 @@ export function closedByTaskNote(taskId: string): string {
   return `נסגר במשימה ${taskId}`;
 }
 
-/** Flips this event's frozen (`needs_review`) base_price_sync_log rows to `reviewed`, with a note
- *  saying why. Scoped to `needs_review` only, so it never touches a row the cron already applied
- *  or skipped. Reused by markPricingGapHandled (lib/actions/pricing-gap-actions.ts) with its own
- *  note ("סומן כטופל") - the task-closing path below passes closedByTaskNote(taskId). Logs the
- *  affected row ids (controller ruling #1). */
-export async function setSyncLogReviewed(eventId: number, note: string): Promise<void> {
-  const { data, error } = await db
-    .from("base_price_sync_log")
-    .update({ status: "reviewed", note })
-    .eq("event_id", eventId)
-    .eq("status", "needs_review")
-    .select("id");
-  if (error) {
-    console.error("gap-resolution: set reviewed failed", JSON.stringify(error));
-    return;
-  }
-  const ids = (data ?? []).map((row: { id: number }) => row.id);
-  console.log(`gap-resolution: set reviewed event=${eventId} note=${JSON.stringify(note)} rows=${JSON.stringify(ids)}`);
+/** The Hebrew marker the "טופל" button (no task) stamps - a sibling of closedByTaskNote used the
+ *  same way by markNote/unmarkNote, so both close paths share one note format. */
+export const HANDLED_BY_BUTTON_NOTE = "סומן כטופל";
+
+const NOTE_MARKER_SEPARATOR = " | ";
+
+/**
+ * Stamps `marker` onto a row's note WITHOUT losing the original - controller ruling #1 (round 2):
+ * the original note holds the nightly `base-price-sync` arithmetic (why the row froze), which
+ * `/price-changes` shows people, and overwriting it with just the marker destroyed that
+ * explanation. An empty/null original leaves nothing worth keeping, so the marker stands alone.
+ */
+export function markNote(marker: string, original: string | null): string {
+  const trimmed = original?.trim();
+  return trimmed ? `${marker}${NOTE_MARKER_SEPARATOR}${trimmed}` : marker;
 }
 
 /**
- * Puts back to `needs_review` ONLY the rows THIS task closed - `status = 'reviewed'` AND
- * `note` equal exactly `closedByTaskNote(taskId)` (controller ruling #1). A row someone marked
- * with the "טופל" button, or that a different price_review task closed, is never touched: the
- * event is the shared unit, but only the task that closed a row may reopen it.
+ * Inverse of markNote: the ORIGINAL note this exact marker was stamped over (null if there was
+ * none), or `undefined` when `note` was NOT stamped by THIS marker - a different task's marker,
+ * the "טופל" button's marker, or a note that merely contains the marker somewhere later in the
+ * text. `undefined` means "not mine, leave it alone" - the only signal reopenSyncLogReview trusts
+ * before restoring a row.
  */
-async function reopenSyncLogReview(eventId: number, taskId: string): Promise<void> {
-  const note = closedByTaskNote(taskId);
+export function unmarkNote(marker: string, note: string | null): string | null | undefined {
+  if (note === marker) return null;
+  const prefix = `${marker}${NOTE_MARKER_SEPARATOR}`;
+  if (note != null && note.startsWith(prefix)) return note.slice(prefix.length);
+  return undefined;
+}
+
+/** Flips this event's frozen (`needs_review`) base_price_sync_log rows to `reviewed`, stamping
+ *  `marker` onto each row's note WITHOUT losing the original (markNote - controller ruling #1,
+ *  round 2). Scoped to `needs_review` only, so it never touches a row the cron already applied or
+ *  skipped. Reused by markPricingGapHandled (lib/actions/pricing-gap-actions.ts) with
+ *  HANDLED_BY_BUTTON_NOTE - the task-closing path below passes closedByTaskNote(taskId). Reads
+ *  each row's current note first (so nothing is overwritten sight-unseen), then updates rows one
+ *  at a time - there are only ever a few per event - and logs the affected ids. */
+export async function setSyncLogReviewed(eventId: number, marker: string): Promise<void> {
   const { data, error } = await db
     .from("base_price_sync_log")
-    .update({ status: "needs_review", note: "נפתח מחדש מהמשימה" })
+    .select("id,note")
     .eq("event_id", eventId)
-    .eq("status", "reviewed")
-    .eq("note", note)
-    .select("id");
+    .eq("status", "needs_review");
   if (error) {
-    console.error("gap-resolution: reopen review failed", JSON.stringify(error));
+    console.error("gap-resolution: set reviewed load failed", JSON.stringify(error));
     return;
   }
-  const ids = (data ?? []).map((row: { id: number }) => row.id);
+  const rows = (data ?? []) as { id: number; note: string | null }[];
+  const ids: number[] = [];
+  for (const row of rows) {
+    const { error: updateError } = await db
+      .from("base_price_sync_log")
+      .update({ status: "reviewed", note: markNote(marker, row.note) })
+      .eq("id", row.id);
+    if (updateError) {
+      console.error("gap-resolution: set reviewed update failed", row.id, JSON.stringify(updateError));
+      continue;
+    }
+    ids.push(row.id);
+  }
+  console.log(`gap-resolution: set reviewed event=${eventId} marker=${JSON.stringify(marker)} rows=${JSON.stringify(ids)}`);
+}
+
+/**
+ * Puts back to `needs_review` ONLY the rows THIS task closed - `status = 'reviewed'` AND a note
+ * stamped with exactly `closedByTaskNote(taskId)` (controller ruling #1) - and restores each
+ * row's ORIGINAL note (round 2: `unmarkNote`) instead of overwriting it with a generic "reopened"
+ * string, which would erase the nightly's arithmetic all over again. A row someone marked with the
+ * "טופל" button, or that a different price_review task closed, comes back `undefined` from
+ * `unmarkNote` and is skipped: the event is the shared unit, but only the task that closed a row
+ * may reopen it. The match itself is done IN MEMORY after a plain `eq` select (never a SQL `like`)
+ * so the marker's own characters never need escaping.
+ */
+async function reopenSyncLogReview(eventId: number, taskId: string): Promise<void> {
+  const marker = closedByTaskNote(taskId);
+  const { data, error } = await db
+    .from("base_price_sync_log")
+    .select("id,note")
+    .eq("event_id", eventId)
+    .eq("status", "reviewed");
+  if (error) {
+    console.error("gap-resolution: reopen review load failed", JSON.stringify(error));
+    return;
+  }
+  const rows = (data ?? []) as { id: number; note: string | null }[];
+  const ids: number[] = [];
+  for (const row of rows) {
+    const restored = unmarkNote(marker, row.note);
+    if (restored === undefined) continue; // not this task's row - leave it alone
+    const { error: updateError } = await db
+      .from("base_price_sync_log")
+      .update({ status: "needs_review", note: restored })
+      .eq("id", row.id);
+    if (updateError) {
+      console.error("gap-resolution: reopen review update failed", row.id, JSON.stringify(updateError));
+      continue;
+    }
+    ids.push(row.id);
+  }
   console.log(`gap-resolution: reopened review event=${eventId} task=${taskId} rows=${JSON.stringify(ids)}`);
 }
 

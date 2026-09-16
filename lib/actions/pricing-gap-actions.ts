@@ -17,7 +17,7 @@ import { openPriceLightTask as insertPriceLightTask } from "@/lib/services/price
 import { listEventMatches } from "@/lib/actions/price-light-actions";
 import { recordRepriced } from "@/lib/services/price-light-decisions";
 import { loadEventForLight } from "@/lib/services/price-light-store";
-import { parseGapKey, nextNightlyRun, setSyncLogReviewed } from "@/lib/services/gap-resolution";
+import { parseGapKey, nextNightlyRun, setSyncLogReviewed, HANDLED_BY_BUTTON_NOTE } from "@/lib/services/gap-resolution";
 import { OPEN_TASK_STATUSES, type TaskSourceRef } from "@/types/task.types";
 import type { Scope } from "@/types/price-light.types";
 import type { PricingGapListResult, PricingGapRow, PricingGapSource } from "@/types/pricing-gap.types";
@@ -189,8 +189,11 @@ async function priceReviewContext(
  */
 async function eventIsUsable(eventId: number): Promise<{ ok: true } | { ok: false; error: string }> {
   const { data, error } = await db.from("events").select("id,is_deleted,is_test").eq("id", eventId).maybeSingle();
-  if (error) console.error("pricing-gaps: event check failed", JSON.stringify(error));
-  if (error || !data || data.is_deleted != null || data.is_test) {
+  if (error) {
+    console.error("pricing-gaps: event check failed", JSON.stringify(error));
+    return { ok: false, error: "שגיאה בבדיקת האירוע" };
+  }
+  if (!data || data.is_deleted != null || data.is_test) {
     return { ok: false, error: "האירוע לא נמצא" };
   }
   return { ok: true };
@@ -281,7 +284,7 @@ export async function markPricingGapHandled(key: string): Promise<Ok> {
     }
 
     if (parsed.kind === "price_review") {
-      await setSyncLogReviewed(parsed.rowId, "סומן כטופל");
+      await setSyncLogReviewed(parsed.rowId, HANDLED_BY_BUTTON_NOTE);
       return { ok: true };
     }
 

@@ -3,7 +3,16 @@
 // closes or reopens its gap, gap-key parsing, and the next-nightly cutoff time. The
 // DB writes themselves (dismissCreativeGap, recordRepriced, base_price_sync_log
 // flips) are verified in the browser - see task-15-report.md.
-import { closedByTaskNote, gapAction, gapSourceOf, nextNightlyRun, parseGapKey } from "../lib/services/gap-resolution";
+import {
+  closedByTaskNote,
+  gapAction,
+  gapSourceOf,
+  HANDLED_BY_BUTTON_NOTE,
+  markNote,
+  nextNightlyRun,
+  parseGapKey,
+  unmarkNote,
+} from "../lib/services/gap-resolution";
 
 let failed = 0;
 function check(name: string, got: unknown, want: unknown) {
@@ -41,6 +50,46 @@ check("closed-by-task note format", closedByTaskNote("abc-123"), "נסגר במ�
 check("closed-by-task note format - different task", closedByTaskNote("xyz-999"), "נסגר במשימה xyz-999");
 check("closed-by-task notes for different tasks are distinct",
   closedByTaskNote("task-a") === closedByTaskNote("task-b"), false);
+
+// markNote/unmarkNote (controller ruling #1, fix round 2) - closing a price-change row must
+// keep the nightly's original note, not overwrite it, and a reopen must only ever restore a
+// note THIS marker stamped.
+const taskAMarker = closedByTaskNote("task-a");
+const taskBMarker = closedByTaskNote("task-b");
+
+check("markNote - empty original (null) keeps just the marker", markNote(taskAMarker, null), taskAMarker);
+check("markNote - empty original (blank string) keeps just the marker", markNote(taskAMarker, "   "), taskAMarker);
+check(
+  "markNote - original kept alongside the marker",
+  markNote(taskAMarker, "base-price-sync: flight $120 -> $540, frozen (>$400)"),
+  `${taskAMarker} | base-price-sync: flight $120 -> $540, frozen (>$400)`,
+);
+check(
+  "unmarkNote - round-trip restores exactly (with an original note)",
+  unmarkNote(taskAMarker, markNote(taskAMarker, "base-price-sync arithmetic here")),
+  "base-price-sync arithmetic here",
+);
+check(
+  "unmarkNote - round-trip restores exactly (no original note)",
+  unmarkNote(taskAMarker, markNote(taskAMarker, null)),
+  null,
+);
+check(
+  "unmarkNote - a different task's marker is not ours",
+  unmarkNote(taskAMarker, markNote(taskBMarker, "some note")),
+  undefined,
+);
+check(
+  "unmarkNote - the button's marker is not ours for a task",
+  unmarkNote(taskAMarker, markNote(HANDLED_BY_BUTTON_NOTE, "some note")),
+  undefined,
+);
+check(
+  "unmarkNote - a note that merely contains the marker later in the text is not ours",
+  unmarkNote(taskAMarker, `some unrelated note mentioning ${taskAMarker} in passing`),
+  undefined,
+);
+check("unmarkNote - null note is not ours", unmarkNote(taskAMarker, null), undefined);
 
 // Next nightly run - 00:30 UTC, strictly after `now`.
 check(
