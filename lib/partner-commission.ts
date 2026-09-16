@@ -169,6 +169,28 @@ export function commissionForReservation(
   return gross;
 }
 
+/** Statuses that will never be paid - no commission is on the way. */
+const CLOSED_STATUSES = new Set(["Cancelled", "Lost", "24Save"]);
+
+/**
+ * What an open (not yet paid) reservation will earn once it is paid - shown
+ * greyed as "צפוי" so a partner sees their coupon/link order counted before
+ * staff mark it Paid (אלון, 2026-09-16). Display only: every total and the
+ * monthly report still go through commissionForReservation. 0 for paid and
+ * closed rows.
+ */
+export function expectedCommissionForReservation(
+  reservation: ReservationLike,
+  terms: CommissionTerms,
+): number {
+  if (isPaid(reservation)) return 0;
+  if (CLOSED_STATUSES.has(reservation.status ?? "")) return 0;
+  return commissionForReservation(
+    { ...reservation, status: PAID_STATUS },
+    terms,
+  );
+}
+
 /** Commission in USD earned by the paid reservations in the list. */
 export function commissionForReservations(
   reservations: ReservationLike[],
