@@ -42,6 +42,7 @@ function feedEvents() {
 export async function getCreativeGapCounts(): Promise<GapCounts> {
   await requireStaff();
 
+  const twins = loadTwinCategoryIds();
   const [
     eventCreative,
     eventCard,
@@ -63,16 +64,21 @@ export async function getCreativeGapCounts(): Promise<GapCounts> {
       .select("id", { count: "exact", head: true })
       .eq("is_deleted", false)
       .is("logo_url", null),
+    // The blob IS the main picture of a team / artist - the page hero shows it
+    // first and falls back to image_url only without one. No gap unless both
+    // are missing (Dor, 2026-09-16).
     db
       .from("football_teams")
       .select("id", { count: "exact", head: true })
       .eq("is_deleted", false)
-      .is("image_url", null),
+      .is("image_url", null)
+      .is("art_image_url", null),
     db
       .from("artists")
       .select("id", { count: "exact", head: true })
       .eq("is_deleted", false)
-      .is("image_url", null),
+      .is("image_url", null)
+      .is("art_image_url", null),
     db
       .from("football_teams")
       .select("id", { count: "exact", head: true })
@@ -83,14 +89,9 @@ export async function getCreativeGapCounts(): Promise<GapCounts> {
       .select("id", { count: "exact", head: true })
       .eq("is_deleted", false)
       .eq("gallery", "[]"),
-    // Only categories that are switched on: an inactive one has no tile and
-    // no /c/ page, so its missing image is noise (Tom, 2026-09-10).
-    db
-      .from("categories")
-      .select("id", { count: "exact", head: true })
-      .eq("is_deleted", false)
-      .eq("is_active", true)
-      .is("image_url", null),
+    twins
+      .then((ids) => listCategoryImageGaps(ids))
+      .then((rows) => ({ count: rows.length, error: null })),
     db
       .from("blog_posts")
       .select("id", { count: "exact", head: true })
@@ -107,7 +108,9 @@ export async function getCreativeGapCounts(): Promise<GapCounts> {
       .eq("is_deleted", false)
       .is("bio", null),
     // jsonb emptiness is not a PostgREST filter - the list does it in code.
-    listCategoryContentGaps().then((rows) => ({ count: rows.length, error: null })),
+    twins
+      .then((ids) => listCategoryContentGaps(ids))
+      .then((rows) => ({ count: rows.length, error: null })),
   ]);
 
   const results = [
@@ -163,6 +166,103 @@ const TEAM_ANCHOR: Record<string, string> = {
 
 const LIST_LIMIT = 300;
 
+/** Hubs whose leaves the site renders as a team / artist page. */
+const PERSON_HUBS = ["teams", "artists"] as const;
+type PersonHub = (typeof PERSON_HUBS)[number];
+
+interface NameRow {
+  name: string | null;
+  name_english: string | null;
+}
+
+const norm = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
+
+/**
+ * Categories the site renders AS a team / artist page: a leaf under the
+ * "teams" / "artists" hub whose name matches a live row - the same match as
+ * myt-main app/c/[...slug]/page.tsx. On those pages the category's own image
+ * and text never show (the team's / artist's blob, bio and gallery do), so
+ * they are not category gaps; the team / artist gaps cover them
+ * (Dor, 2026-09-16: "עמוד קבוצה זה מה שחשוב").
+ */
+async function loadTwinCategoryIds(): Promise<Set<number>> {
+  const [cats, teams, artists] = await Promise.all([
+    db.from("categories").select("id,name,name_english,slug,parent_id").eq("is_deleted", false),
+    db
+      .from("football_teams")
+      .select("name,name_english")
+      .eq("is_deleted", false)
+      .eq("is_active", true),
+    db.from("artists").select("name,name_english").eq("is_deleted", false).eq("is_active", true),
+  ]);
+  for (const [what, res] of [
+    ["categories", cats],
+    ["teams", teams],
+    ["artists", artists],
+  ] as const) {
+    if (res.error) console.error(`creative-gaps: twins ${what} failed`, JSON.stringify(res.error));
+  }
+
+  type CatRow = NameRow & { id: number; slug: string | null; parent_id: number | null };
+  const categories = (cats.data ?? []) as CatRow[];
+  const hubById = new Map<number, PersonHub>();
+  for (const c of categories) {
+    const hub = PERSON_HUBS.find((slug) => slug === c.slug);
+    if (hub) hubById.set(c.id, hub);
+  }
+  // main only renders a twin that has both names
+  const named = (rows: NameRow[] | null) =>
+    (rows ?? []).filter((p) => !!norm(p.name) && !!norm(p.name_english));
+  const people: Record<PersonHub, NameRow[]> = {
+    teams: named(teams.data),
+    artists: named(artists.data),
+  };
+
+  const twins = new Set<number>();
+  for (const c of categories) {
+    const hub = c.parent_id != null ? hubById.get(c.parent_id) : undefined;
+    if (!hub) continue;
+    const en = norm(c.name_english);
+    const he = norm(c.name);
+    const matched = people[hub].some(
+      (p) =>
+        (!!en && (norm(p.name_english) === en || norm(p.name) === en)) || norm(p.name) === he,
+    );
+    if (matched) twins.add(c.id);
+  }
+  return twins;
+}
+
+/**
+ * Active categories with no image. Only switched-on ones: an inactive one has
+ * no tile and no /c/ page (Tom, 2026-09-10). Team / artist twins are skipped.
+ */
+async function listCategoryImageGaps(twins: Set<number>): Promise<GapItem[]> {
+  const { data, error } = await db
+    .from("categories")
+    .select("id,name,name_english")
+    .eq("is_deleted", false)
+    .eq("is_active", true)
+    .is("image_url", null)
+    .order("name")
+    .limit(LIST_LIMIT * 2);
+  if (error) {
+    console.error("creative-gaps: category image failed", JSON.stringify(error));
+    return [];
+  }
+  return (data ?? [])
+    .filter((row: { id: number }) => !twins.has(row.id))
+    .slice(0, LIST_LIMIT)
+    .map((row: Record<string, string | number | null>) => ({
+      kind: "category_image" as const,
+      table: "categories",
+      row_id: row.id as number,
+      label: String(row.name || row.name_english || row.id),
+      url: `/templates/categories/${row.id}/edit`,
+      fixUrl: `/templates/categories/${row.id}/edit#fix-image`,
+    }));
+}
+
 /**
  * "Has text for the page" - the fields the site renders as prose or cards
  * (intro, marketing text, facts, stadiums, FAQ, city info). Galleries, tile
@@ -181,11 +281,14 @@ function hasPageText(content: CategoryPageContent | null | undefined): boolean {
 }
 
 /**
- * Active categories whose page has no text at all. Most of these are the
- * per-team / per-artist category pages (taxonomy v2), so they take the same
- * on-sale ranking as the team itself when a context is given.
+ * Active categories whose page has no text at all. Team / artist twins are
+ * skipped - their page text is the team's / artist's bio. Takes the on-sale
+ * ranking when a context is given.
  */
-async function listCategoryContentGaps(ctx?: GapContext): Promise<GapItem[]> {
+async function listCategoryContentGaps(
+  twins: Set<number>,
+  ctx?: GapContext,
+): Promise<GapItem[]> {
   const { data, error } = await db
     .from("categories")
     .select("id,name,name_english,page_content")
@@ -199,7 +302,8 @@ async function listCategoryContentGaps(ctx?: GapContext): Promise<GapItem[]> {
   }
   return (data ?? [])
     .filter(
-      (row: { page_content: CategoryPageContent | null }) => !hasPageText(row.page_content),
+      (row: { id: number; page_content: CategoryPageContent | null }) =>
+        !twins.has(row.id) && !hasPageText(row.page_content),
     )
     .slice(0, LIST_LIMIT)
     .map((row: Record<string, string | number | null>) => ({
@@ -216,18 +320,19 @@ async function listCategoryContentGaps(ctx?: GapContext): Promise<GapItem[]> {
 /** Per-list context: the on-tour counter, built once per page load. */
 interface GapContext {
   live: (nameEnglish?: string | null) => number;
+  /** Category ids the site renders as a team / artist page. */
+  twins: Set<number>;
 }
 
 async function buildGapContext(): Promise<GapContext> {
-  const { data, error } = await db
-    .from("events")
-    .select("name_english,date")
-    .is("is_deleted", null)
-    .gte("date", todayISO());
+  const [{ data, error }, twins] = await Promise.all([
+    db.from("events").select("name_english,date").is("is_deleted", null).gte("date", todayISO()),
+    loadTwinCategoryIds(),
+  ]);
   if (error) {
     console.error("creative-gaps: live events failed", JSON.stringify(error));
   }
-  return { live: buildLiveEventCounter((data ?? []) as OnTourEvent[]) };
+  return { live: buildLiveEventCounter((data ?? []) as OnTourEvent[]), twins };
 }
 
 /** Concrete rows for one gap kind - the drill-down tab. */
@@ -307,7 +412,7 @@ async function listGapsOfKind(kind: GapKind, ctx: GapContext): Promise<GapItem[]
           kind === "team_logo"
             ? query.is("logo_url", null)
             : kind === "team_hero"
-              ? query.is("image_url", null)
+              ? query.is("image_url", null).is("art_image_url", null)
               : kind === "team_bio"
                 ? query.is("bio", null)
                 : query.eq("gallery", "[]");
@@ -344,7 +449,7 @@ async function listGapsOfKind(kind: GapKind, ctx: GapContext): Promise<GapItem[]
           .limit(LIST_LIMIT);
         query =
           kind === "artist_hero"
-            ? query.is("image_url", null)
+            ? query.is("image_url", null).is("art_image_url", null)
             : kind === "artist_bio"
               ? query.is("bio", null)
               : query.eq("gallery", "[]");
@@ -365,26 +470,9 @@ async function listGapsOfKind(kind: GapKind, ctx: GapContext): Promise<GapItem[]
         );
       }
       case "category_content":
-        return listCategoryContentGaps(ctx);
-      case "category_image": {
-        const { data, error } = await db
-          .from("categories")
-          .select("id,name,name_english")
-          .eq("is_deleted", false)
-          .eq("is_active", true)
-          .is("image_url", null)
-          .order("name")
-          .limit(LIST_LIMIT);
-        if (error) throw error;
-        return (data ?? []).map((row: Record<string, string | number | null>) => ({
-          kind,
-          table: "categories",
-          row_id: row.id,
-          label: row.name || row.name_english || String(row.id),
-          url: `/templates/categories/${row.id}/edit`,
-          fixUrl: `/templates/categories/${row.id}/edit#fix-image`,
-        }));
-      }
+        return listCategoryContentGaps(ctx.twins, ctx);
+      case "category_image":
+        return listCategoryImageGaps(ctx.twins);
       case "blog_hero": {
         const { data, error } = await db
           .from("blog_posts")
@@ -411,12 +499,8 @@ async function listGapsOfKind(kind: GapKind, ctx: GapContext): Promise<GapItem[]
 }
 
 /**
- * An artist / team gap row. Two extras over the plain shape:
- * - liveEvents: packages selling now (main's on-tour rule) - the queue puts
- *   these ahead of wishlist entities.
- * - demoted: a hero gap on an entity that already has blob card-art. Cards on
- *   the site look right, only the page hero is missing - still listed, but
- *   ranked after the fully-missing ones.
+ * An artist / team gap row, plus liveEvents: packages selling now (main's
+ * on-tour rule) - the queue puts these ahead of wishlist entities.
  */
 function personGap(input: {
   kind: GapKind;
@@ -428,9 +512,6 @@ function personGap(input: {
   ctx: GapContext;
 }): GapItem {
   const { kind, row, ctx } = input;
-  const liveEvents = ctx.live(String(row.name_english ?? ""));
-  const demoted =
-    (kind === "team_hero" || kind === "artist_hero") && !!row.art_image_url;
   return {
     kind,
     table: input.table,
@@ -438,9 +519,7 @@ function personGap(input: {
     label: input.label,
     url: input.url,
     fixUrl: input.fixUrl,
-    liveEvents,
-    demoted,
-    detail: demoted ? "יש בלוב לכרטיסים · חסרה תמונת ראש לעמוד" : undefined,
+    liveEvents: ctx.live(String(row.name_english ?? "")),
   };
 }
 
@@ -448,7 +527,7 @@ function personGap(input: {
  * Every gap, in one list - what the gaps tab shows. Ordered by severity so the
  * things that block advertising sit above the page-quality ones; inside a
  * severity, artists / teams with packages selling NOW come before the wishlist
- * ones and blob-demoted hero gaps drop to the end; then by type so identical
+ * ones; then by type so identical
  * work stays together (all the missing crests in a row).
  *
  * Per-kind queries are capped, so the merged list is capped too; the count on
@@ -471,7 +550,6 @@ export async function listAllCreativeGaps(): Promise<GapItem[]> {
   const severityRank = (kind: GapKind) =>
     GAP_META[kind].severity === "crit" ? 0 : 1;
   const liveRank = (item: GapItem) => ((item.liveEvents ?? 0) > 0 ? 0 : 1);
-  const demotedRank = (item: GapItem) => (item.demoted ? 1 : 0);
 
   return lists
     .flat()
@@ -480,7 +558,6 @@ export async function listAllCreativeGaps(): Promise<GapItem[]> {
       (a, b) =>
         severityRank(a.kind) - severityRank(b.kind) ||
         liveRank(a) - liveRank(b) ||
-        demotedRank(a) - demotedRank(b) ||
         GAP_KINDS.indexOf(a.kind) - GAP_KINDS.indexOf(b.kind) ||
         (b.liveEvents ?? 0) - (a.liveEvents ?? 0) ||
         a.label.localeCompare(b.label),

@@ -429,8 +429,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "הרדאר עוקב אחרי 12 סוגים: קריאייטיבים ותמונות קארד (חוסמים), סמלי קבוצות, תמונות ראשיות, גלריות אווירה, תמונות קטגוריה ובלוג, וטקסט לעמוד (ביו של קבוצה/אמן, תוכן עמוד קטגוריה) — איכות. רק קטגוריות פעילות נבדקות. \"Done\" מתייק חוסר כוזב (למשל סמל שקיים במקום אחר) עם אפשרות ביטול.",
       ),
       t(
-        "Queue order: artists and teams with packages on sale right now (the site's on-tour rule) come before the wishlist ones - a green \"N on sale\" badge marks them. A hero gap on an entity that already has blob card-art is greyed and sinks to the bottom: cards look right, only the page hero is missing.",
-        "סדר התור: אמנים וקבוצות עם חבילות שנמכרות עכשיו (כלל ה-on-tour של האתר) לפני אלה שב-wishlist — תג ירוק \"N on sale\" מסמן אותם. חוסר תמונת ראש למי שכבר יש לו בלוב מואפר ויורד לתחתית: הכרטיסים נראים טוב, חסרה רק תמונת הראש של העמוד.",
+        "Queue order: artists and teams with packages on sale right now (the site's on-tour rule) come before the wishlist ones - a green \"N on sale\" badge marks them. The blob is the main picture of an artist / team, so a missing hero is a gap only when there is no blob either. A category that the site shows as a team / artist page (a leaf under Teams / Artists matching that team or artist by name) is not checked for image or text - the team / artist page is what counts.",
+        "סדר התור: אמנים וקבוצות עם חבילות שנמכרות עכשיו (כלל ה-on-tour של האתר) לפני אלה שב-wishlist — תג ירוק \"N on sale\" מסמן אותם. הבלוב הוא התמונה הראשית של אמן / קבוצה, ולכן חוסר תמונת ראש נחשב פער רק כשאין גם בלוב. קטגוריה שהאתר מציג כעמוד קבוצה / אמן (בת של Teams / Artists שהשם שלה תואם לקבוצה או לאמן) לא נבדקת לתמונה או לטקסט - עמוד הקבוצה / האמן הוא מה שחשוב.",
       ),
     ],
     links: [

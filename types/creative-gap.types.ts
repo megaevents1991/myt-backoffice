@@ -52,14 +52,14 @@ export const GAP_META: Record<GapKind, GapMeta> = {
   },
   team_hero: {
     kind: "team_hero",
-    label: "קבוצות בלי תמונה ראשית",
+    label: "קבוצות בלי בלוב ובלי תמונה ראשית",
     short: "תמונת קבוצה",
     severity: "warn",
     href: "/templates/football",
   },
   artist_hero: {
     kind: "artist_hero",
-    label: "אמנים בלי תמונה ראשית",
+    label: "אמנים בלי בלוב ובלי תמונה ראשית",
     short: "תמונת אמן",
     severity: "warn",
     href: "/templates/artists",
@@ -142,12 +142,6 @@ export interface GapItem {
    * wishlist in the queue; 0 / undefined for events, categories, posts.
    */
   liveEvents?: number;
-  /**
-   * The page still lacks its hero photo but the entity has blob card-art, so
-   * cards on the site already look right - listed, but ranked below the
-   * fully-missing ones (Dor, 2026-09-10: "להשאיר מונמך").
-   */
-  demoted?: boolean;
 }
 
 /**

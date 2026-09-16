@@ -541,21 +541,14 @@ function GapsTab({ onCreateTask }: { onCreateTask: (gap: GapItem) => void }) {
               const hasTask = taken.has(key);
               const live = item.liveEvents ?? 0;
               return (
-                <tr key={key} className={cn("border-t", item.demoted && "opacity-70")}>
+                <tr key={key} className="border-t">
                   <td className="whitespace-nowrap px-3 py-2">
                     <span
-                      title={
-                        item.demoted
-                          ? "יש בלוב לכרטיסים - חסרה רק תמונת הראש של העמוד"
-                          : undefined
-                      }
                       className={cn(
                         "inline-flex rounded-full px-2 py-0.5 text-xs font-semibold",
-                        item.demoted
-                          ? "bg-muted text-muted-foreground"
-                          : meta.severity === "crit"
-                            ? "bg-destructive/15 text-destructive"
-                            : "bg-warning-muted text-warning",
+                        meta.severity === "crit"
+                          ? "bg-destructive/15 text-destructive"
+                          : "bg-warning-muted text-warning",
                       )}
                     >
                       {meta.short}

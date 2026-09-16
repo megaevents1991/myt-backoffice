@@ -59,8 +59,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   team crest → `/assets?q=<team>`, missing creative → the event's `#fix-price`
 >   when `campaign_skip_reason` mentions price (the pipeline's only skip).
 >   Queue order (2026-09-10): severity → artists/teams **on sale now** (main's
->   on-tour rule, mirrored in `lib/on-tour.ts`) before wishlist ones → hero
->   gaps on entities that already have blob art sink last (`demoted`) → kind.
+>   on-tour rule, mirrored in `lib/on-tour.ts`) before wishlist ones → kind. **Blob = main picture (2026-09-16):** `team_hero` / `artist_hero`
+>   fire only when BOTH `image_url` and `art_image_url` are null (main's
+>   `DetailHero` shows the blob first). Category "twins" (a leaf under the
+>   `teams` / `artists` hub matching an active team/artist by name, same match
+>   as main's `app/c/[...slug]`) are skipped by `category_image` /
+>   `category_content` - main renders the team/artist page there.
 >   Only `is_active` categories are checked. Assigning a task to someone else
 >   mails them (`lib/services/task-notify.ts`); a gap task set to **done**
 >   dismisses its gap (reopen restores). `/price-changes` rows can spawn a
@@ -209,12 +213,18 @@ these tables.
   one language at a time starting at `default_lang`, with a client-facing toggle; a
   single language hides the toggle and hides the other tab in the builder too.
 - Invite emails go out through `lib/email.ts` (shared ZeptoMail transport).
-- **Travellers count (2026-09-16):** a number question flagged `config.traveler_count`
-  ("Travellers count" switch in the field editor, one per form - flagging another unflags
-  the first) is the party size. The trips report (`lib/forms/report.ts` `travelerField`)
-  sums it per trip and overall as `sum / answered` ("81 / 17" = 81 travellers across the
-  17 forms that filled it - a blank is not a party of zero). With no flag it falls back to
-  the first client-facing number question, so older forms keep counting.
+- **Travellers (2026-09-16):** two numbers that must never be confused.
+  *Reported* = the sum of the party-size question, a number question flagged
+  `config.traveler_count` ("Travellers count" switch in the field editor, one per form -
+  flagging another unflags the first; no flag = the first client-facing number question).
+  One form often covers a whole family, and a blank form is not a party of zero, so it is
+  left out. *Trip size* = `form_invites.total_travelers`, typed by staff when minting the
+  trip link or later by clicking the trip's Travellers cell in the report
+  (`setTripTotalTravelers`, audited). A trip row reads `reported / size` ("15 / 17");
+  with no size set it shows the reported number alone. The summary card measures
+  coverage over SIZED trips only (`sumTravelers`) and names travellers on unsized trips
+  separately - mixing them in would put people in the numerator with no seat in the
+  denominator. The "no trip" bucket can never be sized.
 - **Staff edits (2026-09-16):** the report popup's **עריכה** lets staff and
   `forms_operator` correct the OPEN answers only - `STAFF_EDITABLE_TYPES` (text, number,
   email, phone, date). Ratings, scales and choices are never editable (they feed the
