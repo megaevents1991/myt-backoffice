@@ -11,6 +11,7 @@ import { requireStaff } from "@/lib/auth/guards";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 
 // Tables aren't in Supabase generated types - cast to bypass never inference.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const tbl = (table: string) => (supabase as any).from(table);
 
 // `orderBy` must be a real column on `table`.
@@ -77,33 +78,8 @@ export async function updateRow<T>(
   return data[0] as T;
 }
 
-/**
- * Persist a full manual ordering: row at index i gets display_order = i + 1.
- * Used by the Templates → Homepage order screens (artists / football_teams).
- */
-export async function saveRowOrder(
-  table: string,
-  orderedIds: number[],
-  revalidate: string[],
-): Promise<void> {
-  await requireStaff();
-  const stamp = new Date().toISOString();
-  const results = await Promise.all(
-    orderedIds.map((id, i) =>
-      tbl(table)
-        .update({ display_order: i + 1, updated_at: stamp })
-        .eq("id", id),
-    ),
-  );
-  const failed = results.find((r) => r.error);
-  if (failed?.error) throw failed.error;
-  revalidate.forEach((p) => revalidatePath(p));
-  await logAudit({
-    action: "update",
-    entityType: table,
-    changes: { display_order: orderedIds },
-  });
-}
+// (saveRowOrder / display_order left with the /homepage board on 2026-09-16 -
+// carousel order now lives in homepage_items, lib/actions/homepage-actions.ts.)
 
 export async function softDeleteRow<T>(
   table: string,

@@ -193,6 +193,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Website",
     defaultCollapsed: true,
     items: [
+      {
+        name: "Homepage",
+        href: "/homepage",
+        icon: Home,
+        keywords: "homepage layout sections carousel hero order עמוד הבית סדר",
+      },
       { name: "Assets", href: "/assets", icon: Images, keywords: "media library" },
       { name: "Storage", href: "/storage", icon: Database, keywords: "files buckets" },
       {
@@ -319,6 +325,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   factory: "Events Factory",
   guide: "Guide",
   "event-tags": "Tags & Rules",
+  homepage: "Homepage",
   templates: "Templates",
   categories: "Categories",
   artists: "Artists",
