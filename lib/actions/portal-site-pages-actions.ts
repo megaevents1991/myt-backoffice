@@ -3,6 +3,7 @@
 import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { flattenWithPath, slugPathOf } from "@/lib/taxonomy-tree";
+import { findCategoryTwin } from "@/lib/services/category-twins";
 import type { EventCategory } from "@/types/taxonomy.types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -36,22 +37,17 @@ interface PersonRow {
   slug: string;
 }
 
+// The name-matching rule lives in lib/services/category-twins.ts (findCategoryTwin),
+// shared with the creative-gaps radar and mirroring main's /c/ page exactly: the
+// FIRST name match in the active, name-ordered roster decides, so the whole roster
+// travels with each lookup.
 function twinFor(
   person: PersonRow,
   hubId: number | undefined,
   categories: EventCategory[],
+  roster: PersonRow[],
 ): EventCategory | null {
-  if (hubId == null) return null;
-  const en = (person.name_english ?? "").trim().toLowerCase();
-  const he = person.name.trim().toLowerCase();
-  return (
-    categories.find((c) => {
-      if (c.parent_id !== hubId) return false;
-      const catEn = (c.name_english ?? "").trim().toLowerCase();
-      const catHe = c.name.trim().toLowerCase();
-      return (!!en && (catEn === en || catHe === en)) || (!!he && catHe === he);
-    }) ?? null
-  );
+  return findCategoryTwin(person, hubId, categories, roster);
 }
 
 export async function listSitePages(): Promise<SitePageOption[]> {
@@ -100,7 +96,7 @@ export async function listSitePages(): Promise<SitePageOption[]> {
     ] as const
   ).flatMap(([kind, rows, legacyPrefix]) =>
     rows.flatMap((person): SitePageOption[] => {
-      const twin = twinFor(person, hubIds[kind], categories);
+      const twin = twinFor(person, hubIds[kind], categories, rows);
       if (twin) {
         // The category row lists this page too - keep one entry, labelled
         // as the person so it reads naturally in the search.

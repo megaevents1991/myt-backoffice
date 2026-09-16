@@ -37,6 +37,14 @@ const STATUS_STYLE: Record<string, string> = {
   needs_review: "bg-warning-muted text-warning",
   skipped: "bg-muted text-muted-foreground",
   error: "bg-destructive/15 text-destructive",
+  // Closed from the Pricing tab / a price_review task, not by the cron or an
+  // admin here (lib/services/gap-resolution.ts, lib/actions/pricing-gap-actions.ts).
+  reviewed: "bg-success-muted text-success",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  needs_review: "needs review",
+  reviewed: "נבדק",
 };
 
 // The sync logs every visit since 2026-09-07 (skips included, so "why did
@@ -241,7 +249,7 @@ export function PriceChangesClient() {
               STATUS_STYLE[row.original.status] ?? "bg-muted text-muted-foreground",
             )}
           >
-            {row.original.status === "needs_review" ? "needs review" : row.original.status}
+            {STATUS_LABEL[row.original.status] ?? row.original.status}
           </span>
         ),
       },

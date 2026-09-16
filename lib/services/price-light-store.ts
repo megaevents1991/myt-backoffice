@@ -10,6 +10,7 @@ import {
 import type {
   ExtractedAttrs, Light, LightDetail, LightOverride, LightScopeDetail, MatchRow, MatchTrigger, Scope,
 } from "@/types/price-light.types";
+import { redSinceUpdate, type Lights } from "@/lib/services/price-light-red-since";
 
 // New tables predate the generated DB types - one boundary cast (repo pattern).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,7 +21,7 @@ export const LIGHT_EVENT_COLUMNS =
   "base_flight_price,base_hotel_price,tickets_and_rates,skip_flight,ticket_only_markup," +
   "markup_ticket,markup_flight,markup_hotel,event_additional_markup,is_deleted,is_test," +
   "light_package,light_ticket,light_detail,light_checked_at,light_silenced_until," +
-  "price_drop_usd,price_drop_from,price_drop_until";
+  "light_red_since,price_drop_usd,price_drop_from,price_drop_until";
 
 export interface LightEvent extends PricedEvent {
   id: number;
@@ -33,12 +34,16 @@ export interface LightEvent extends PricedEvent {
   light_checked_at: string | null;
   /** A red light muted until this instant ("השאר בפיד"). Cleared here the moment no scope is red. */
   light_silenced_until: string | null;
+  /** When the event last ENTERED red (either scope). Null = not red. */
+  light_red_since: string | null;
   price_drop_usd: number | null;
   price_drop_from: number | null;
   price_drop_until: string | null;
 }
 
-export type Lights = { package: Light | null; ticket: Light | null };
+// Pure red-since rule lives in its own module so its self-test runs without env vars
+// (this file pulls in the Supabase client and the scraper registry at load).
+export { redSinceUpdate, type Lights } from "@/lib/services/price-light-red-since";
 
 export async function loadEventForLight(eventId: number): Promise<LightEvent | null> {
   const { data, error } = await db.from("events").select(LIGHT_EVENT_COLUMNS).eq("id", eventId).maybeSingle();
@@ -165,12 +170,14 @@ export async function recomputeEventLights(
   // "unchecked" is not "no longer red": a competitor site blocked for two weeks turns a real red
   // into unchecked without anyone deciding anything, and must not lift a mute on its way.
   const clearSilence = lightSettled(after.package) && lightSettled(after.ticket) && event.light_silenced_until != null;
+  const redSince = redSinceUpdate(before, after, event.light_red_since, now);
   if (!opts.dryRun) {
     const { error } = await db
       .from("events")
       .update({
         light_package: after.package, light_ticket: after.ticket, light_detail: detail, light_checked_at: now,
         ...(clearSilence ? { light_silenced_until: null } : {}),
+        ...(redSince ?? {}),
       })
       .eq("id", eventId);
     if (error) { console.error(`price-light: write lights ${eventId} (${trigger}) failed`, JSON.stringify(error)); throw error; }

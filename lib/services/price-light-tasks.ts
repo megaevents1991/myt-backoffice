@@ -7,7 +7,7 @@ import { logAudit } from "@/lib/audit";
 import { lightSettled, signedUsd } from "@/lib/services/price-light";
 import type { LightEvent, Lights } from "@/lib/services/price-light-store";
 import type { LightDecisionSnapshot, LightScopeDetail, MatchRow, Scope } from "@/types/price-light.types";
-import type { TaskSourceRef } from "@/types/task.types";
+import { OPEN_TASK_STATUSES, type TaskSourceRef } from "@/types/task.types";
 
 // New table predates the generated DB types - one boundary cast (repo pattern).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,7 +47,7 @@ async function openTaskFor(eventId: number, scope: Scope): Promise<{ id: string;
     .select("id,description")
     .eq("source", "price_light")
     .is("deleted_at", null)
-    .in("status", ["todo", "in_progress"])
+    .in("status", OPEN_TASK_STATUSES)
     .contains("source_ref", { row_id: eventId, kind: scope })
     .limit(1)
     .maybeSingle();
