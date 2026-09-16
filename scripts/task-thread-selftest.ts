@@ -1,6 +1,7 @@
 // scripts/task-thread-selftest.ts - `npx tsx scripts/task-thread-selftest.ts`
 // Pure helpers only: the DB paths are verified in the browser.
 import { diffActivities } from "../lib/services/task-activity";
+import { isValidTaskAttachmentPath } from "../lib/tasks/attachment-path";
 
 let failed = 0;
 function check(name: string, got: unknown, want: unknown) {
@@ -19,6 +20,15 @@ check("two fields", diffActivities({ priority: "low", due_date: null }, { priori
 check("untracked field ignored", diffActivities({ title: "a" }, { title: "b" }), []);
 check("number to string", diffActivities({ progress: 10 }, { progress: 60 }),
   [{ field: "progress", from: "10", to: "60" }]);
+
+// Attachment path validation: reject traversals, nested dirs, non-strings; accept valid paths
+const taskId = "task-123";
+check("path rejects traversal", isValidTaskAttachmentPath(taskId, `${taskId}/../other/x.png`), false);
+check("path rejects absolute", isValidTaskAttachmentPath(taskId, "/etc/passwd"), false);
+check("path rejects nested dirs", isValidTaskAttachmentPath(taskId, `${taskId}/sub/dir/x.png`), false);
+check("path rejects non-string", isValidTaskAttachmentPath(taskId, 123), false);
+check("path accepts valid uuid", isValidTaskAttachmentPath(taskId, `${taskId}/3f9a-uuid.png`), true);
+check("path accepts uuid-like name", isValidTaskAttachmentPath(taskId, `${taskId}/a1b2c3d4-e5f6-47g8-h9i0-j1k2l3m4n5o6.png`), true);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

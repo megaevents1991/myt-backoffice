@@ -285,6 +285,8 @@ export async function updateTask(
     .eq("id", id)
     .maybeSingle();
   if (beforeError) console.error("tasks: before-read failed", JSON.stringify(beforeError));
+  // Tradeoff: if before-read fails, diffActivities records every patched field as changing from
+  // null (not true, but safe: the actual edit succeeded so audit has the final state).
 
   const { data: after, error } = await db
     .from("tasks")
@@ -343,6 +345,8 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
     .eq("id", id)
     .maybeSingle();
   if (beforeError) console.error("tasks: before-read failed", JSON.stringify(beforeError));
+  // Tradeoff: if before-read fails, activity records status as changing from null (not true,
+  // but safe: the actual update succeeded so audit has the final state).
   const previousStatus = (beforeRow?.status as TaskStatus | undefined) ?? null;
 
   let query = db

@@ -3,13 +3,14 @@
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
-import { ADMIN_ROLES } from "@/types/auth.types";
+import { ADMIN_ROLES, STAFF_ROLES } from "@/types/auth.types";
 import type {
   Ok,
   TaskAttachment,
   TaskComment,
   TaskCommentWithAuthor,
 } from "@/types/task-comment.types";
+import { isValidTaskAttachmentPath } from "@/lib/tasks/attachment-path";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
@@ -18,7 +19,6 @@ const COMMENT_COLUMNS =
   "id,task_id,author_id,kind,body,activity,attachments,mentions,edited_at,deleted_at,created_at";
 
 const BODY_MAX = 5000;
-const STAFF = ["superadmin", "admin", "editor"];
 
 function isManager(role: string): boolean {
   return (ADMIN_ROLES as readonly string[]).includes(role);
@@ -81,13 +81,13 @@ async function signedUrlMap(paths: string[]): Promise<Map<string, string>> {
 /** Attachments arrive from the client and are not trusted with a path: an
  *  entry must be a well-shaped TaskAttachment whose storage path lives under
  *  THIS task's folder - otherwise a forged path could attach (and later sign
- *  a URL for) another task's file. */
+ *  a URL for) another task's file. Paths are validated against traversal
+ *  segments (.. / //) and checked to the exact storage shape. */
 function isOwnAttachment(taskId: string, value: unknown): value is TaskAttachment {
   if (!value || typeof value !== "object") return false;
   const a = value as Record<string, unknown>;
   return (
-    typeof a.path === "string" &&
-    a.path.startsWith(`${taskId}/`) &&
+    isValidTaskAttachmentPath(taskId, a.path) &&
     typeof a.name === "string" &&
     typeof a.mime === "string" &&
     typeof a.size === "number"
@@ -145,7 +145,7 @@ async function staffIdsOnly(ids: string[]): Promise<string[]> {
     return [];
   }
   return (data ?? [])
-    .filter((user: { role: string }) => STAFF.includes(user.role))
+    .filter((user: { role: string }) => (STAFF_ROLES as readonly string[]).includes(user.role))
     .map((user: { id: string }) => user.id);
 }
 
