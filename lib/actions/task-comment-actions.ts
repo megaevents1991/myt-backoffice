@@ -21,7 +21,10 @@ const COMMENT_COLUMNS =
   "id,task_id,author_id,kind,body,activity,attachments,mentions,edited_at,deleted_at,created_at";
 
 const BODY_MAX = 5000;
-const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+// Must stay under experimental.serverActions.bodySizeLimit ("3mb") in next.config.mjs -
+// Next rejects the whole request before this action ever runs, so this ceiling only
+// matters (and its Hebrew message only shows) while it sits below that framework limit.
+const ATTACHMENT_MAX_BYTES = 2.5 * 1024 * 1024;
 const EXT: Record<string, string> = {
   "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif",
 };
@@ -95,7 +98,7 @@ export async function uploadTaskAttachment(
   const file = form.get("file");
   if (!(file instanceof File)) return { ok: false, error: "לא התקבל קובץ" };
   if (file.size === 0) return { ok: false, error: "הקובץ ריק" };
-  if (file.size > ATTACHMENT_MAX_BYTES) return { ok: false, error: "הקובץ גדול מ-5MB" };
+  if (file.size > ATTACHMENT_MAX_BYTES) return { ok: false, error: "הקובץ גדול מ-2.5MB" };
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const mime = sniffImageMime(new Uint8Array(buffer.subarray(0, 12)));
@@ -105,6 +108,7 @@ export async function uploadTaskAttachment(
   // orphan folders no screen will ever show.
   const { data: task, error: taskError } = await db
     .from("tasks").select("id").eq("id", taskId).is("deleted_at", null).maybeSingle();
+  if (taskError) console.error("task-comments: task lookup failed", JSON.stringify(taskError));
   if (taskError || !task) return { ok: false, error: "המשימה לא נמצאה" };
 
   const path = `${taskId}/${randomUUID()}.${EXT[mime]}`;
