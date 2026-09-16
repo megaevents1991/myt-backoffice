@@ -44,14 +44,14 @@ export interface RulePlan {
   skippedWhy?: string;
 }
 
-/** Per-item tasks carry the domain's own source (ruling #2) - "custom" has no per_item
- *  mode in practice (its generator always returns []), so it is left unmapped. */
 /** A per-item rule creates at most this many tasks in one run (final review, I4): a
  *  broad creative rule could otherwise insert hundreds of rows in one go, flood the
  *  assignee and run past the cron budget. The rest are reported as skipped and picked up
  *  by the next run (they are still open candidates, so dedupe lets them through then). */
 export const PER_ITEM_MAX_PER_RUN = 25;
 
+/** Per-item tasks carry the domain's own source (ruling #2) - "custom" has no per_item
+ *  mode in practice (its generator always returns []), so it is left unmapped. */
 const NATIVE_SOURCE: Partial<Record<RuleDomain, TaskSource>> = {
   price_light: "price_light",
   price_changes: "price_review",
