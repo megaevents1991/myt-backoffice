@@ -69,6 +69,9 @@ export interface TaskSourceRef {
   label: string;
   /** Backoffice path that fixes the gap. */
   url: string;
+  /** recurring weekly_digest only - the ISO week ("2026-W38") this digest covers, the
+   *  dedupe key alongside row_id (see isoWeek in lib/services/task-rules/week.ts). */
+  week?: string;
 }
 
 export interface Task {
