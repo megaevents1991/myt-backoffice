@@ -477,6 +477,37 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    id: "homepage",
+    title: t("Homepage layout", "עמוד הבית"),
+    intro: t(
+      "A dummy of the customer site's homepage. Sections are dragged into order or hidden; inside every carousel section you pin the items that open it. Whatever is not pinned follows the section's automatic rule after the pinned items.",
+      "עמוד דמה של דף הבית באתר. גוררים סקשנים לסדר או מסתירים; בתוך כל סקשן קרוסלה מצמידים את הפריטים שפותחים אותו. מה שלא מוצמד ממשיך לפי החוקיות האוטומטית אחרי המוצמדים.",
+    ),
+    points: [
+      t(
+        "Hero ring - always first. Pinned artists/teams in your order, then every other artist/team with an available event, artist-team alternating.",
+        "הירו - תמיד ראשון. אמנים/קבוצות מוצמדים לפי הסדר שלך, אחריהם כל אמן/קבוצה עם אירוע זמין, אמן-קבוצה לסירוגין.",
+      ),
+      t(
+        "Most wanted - one row, up to 12. Pinned first, then events marked Prioritized, then auto-fill (never VIP, never plain sports events).",
+        "המבוקשים ביותר — שורה אחת, עד 12. מוצמדים ראשונים, אחריהם אירועים מסומנים Prioritized, ואז השלמה אוטומטית (לא VIP, לא אירועי ספורט רגילים).",
+      ),
+      t(
+        "Newest - one row, up to 12. Pinned first, then the most recently created events, skipping anything already in Most wanted.",
+        "החדשים ביותר — שורה אחת, עד 12. מוצמדים ראשונים, אחריהם האירועים שנוצרו לאחרונה, בלי כאלה שכבר במבוקשים.",
+      ),
+      t(
+        "Football / Artists rows - every active team/artist. Those with an available event always jump ahead; inside each group your pinned order first, the rest by name.",
+        "שורות כדורגל / אמנים — כל קבוצה/אמן פעילים. מי שיש לו אירוע זמין תמיד קופץ קדימה; בתוך כל קבוצה קודם הסדר המוצמד, השאר לפי שם.",
+      ),
+      t(
+        "Saving refreshes the live site by itself (allow a minute). The old Templates → Homepage Order screens and the person 'Featured order' field are gone - this board replaces them.",
+        "שמירה מרעננת את האתר לבד (עד דקה). מסכי Templates → Homepage Order הישנים ושדה 'Featured order' של אמן/קבוצה הוסרו — הלוח הזה מחליף אותם.",
+      ),
+    ],
+    links: [{ label: t("Open the Homepage board", "פתח את לוח עמוד הבית"), href: "/homepage" }],
+  },
+  {
     id: "tasks",
     title: t("Tasks", "משימות"),
     intro: t(

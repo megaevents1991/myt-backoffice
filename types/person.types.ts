@@ -29,8 +29,10 @@ export interface Person {
   seo_title: string | null;
   meta_description: string | null;
   meta_tags: string | null;
+  // LEGACY (2026-09-16): hero ring + section-carousel order moved to the
+  // `homepage_items` table (/homepage board). Both columns stay in the DB but
+  // nothing writes them any more; main no longer reads them.
   featured_order: number | null;
-  // Homepage section-carousel order (כדורגל / אמנים מובילים) - Templates → Homepage order.
   display_order: number | null;
   // Page enrichments (doc 19b/20/21/24) - read by myt-main artist/team pages.
   hero_video_url: string | null;
@@ -43,10 +45,15 @@ export interface Person {
   updated_at: string;
 }
 
-// display_order excluded - managed only by the Homepage Order screen.
+// The two legacy order columns are excluded - placement lives on /homepage.
 export type CreatePersonData = Omit<
   Person,
-  "id" | "display_order" | "is_deleted" | "created_at" | "updated_at"
+  | "id"
+  | "display_order"
+  | "featured_order"
+  | "is_deleted"
+  | "created_at"
+  | "updated_at"
 >;
 export type UpdatePersonData = Partial<CreatePersonData>;
 

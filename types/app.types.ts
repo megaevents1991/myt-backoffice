@@ -47,6 +47,9 @@ export type Event = {
   base_flight_price: number;
   base_hotel_price: number;
   is_prioritized: boolean;
+  // Row creation time (Postgres default). Main's homepage "החדשים ביותר" row
+  // sorts by it; the events list never selects it, so keep optional. Synced to main.
+  created_at?: string;
   skip_flight?: boolean;
   // Extra per-ticket markup (USD) added when skip_flight is true.
   // Compensates for the markup normally embedded in base_flight_price.

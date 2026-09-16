@@ -45,6 +45,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > stats, activity feed, user log. **Reporting only** - the monthly report and
 > commission maths never read it.
 
+> **✅ Homepage layout board (`/homepage`, 2026-09-16).** Spec
+> `docs/superpowers/specs/2026-09-16-homepage-layout-design.md`. One dummy of
+> main's homepage where staff drag SECTIONS into order / hide them and pin the
+> ITEMS that open each carousel - tables `homepage_sections` (key, position,
+> is_visible) and `homepage_items` (section, kind `event|artist|team`, ref_id =
+> `events.id` as text or the person SLUG, position); RLS on, no policies, main
+> reads them with its service client (`lib/homepageLayout.ts`, `app/page.tsx`).
+> Keys mirror `types/homepage.types.ts` ↔ main: `hero` (always first),
+> `most_wanted`, `newest`, `football`, `artists`, `reviews`, `more_events`.
+> What is NOT pinned follows each section's automatic rule after the pinned
+> items (hero: every available artist/team interleaved; most wanted: Prioritized
+> then fill, 12 max; newest: `created_at desc`, 12 max, minus most-wanted;
+> football/artists: available-first, then name). One Save
+> (`saveHomepageLayout`) replaces the whole layout, audits `homepage_layout`,
+> pings main's revalidate. **Replaced:** Templates → Homepage Order screens,
+> `PeopleOrderList`, `saveRowOrder` and the person "Featured order" field -
+> `display_order` / `featured_order` stay as columns, nothing writes them, main
+> no longer reads them (the migration backfilled `homepage_items` from both so
+> the deploy changed nothing visually). Main's vertical hubs also take their
+> cover-strip order from the `hero` pins. The board tolerates the migration not
+> being applied yet (default layout, nothing pinned).
+
 > **✅ Redesign + Events Factory + Guide (branch `feat/backoffice-redesign`, 2026-09-02).**
 > Everything below is on that branch, migrations already applied to prod.
 >

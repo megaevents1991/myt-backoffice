@@ -73,7 +73,6 @@ const schema = z.object({
   seo_title: z.string().optional(),
   meta_description: z.string().optional(),
   meta_tags: z.string().optional(),
-  featured_order: z.string().optional(), // "" = not featured
   hero_video_url: z.string().optional(),
   banners: z.string().optional(),
   videos: z.string().optional(),
@@ -123,8 +122,6 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
       seo_title: initial?.seo_title ?? "",
       meta_description: initial?.meta_description ?? "",
       meta_tags: initial?.meta_tags ?? "",
-      featured_order:
-        initial?.featured_order != null ? String(initial.featured_order) : "",
       hero_video_url: initial?.hero_video_url ?? "",
       banners: bannersText(initial?.banners),
       videos: videosText(initial?.videos),
@@ -200,8 +197,6 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           seo_title: values.seo_title || null,
           meta_description: values.meta_description || null,
           meta_tags: values.meta_tags || null,
-          featured_order:
-            values.featured_order === "" ? null : Number(values.featured_order),
           hero_video_url: values.hero_video_url || null,
           banners: parseBanners(values.banners),
           gallery,
@@ -242,14 +237,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
               <FormMessage />
             </FormItem>
           )} />
-          <FormField control={form.control} name="featured_order" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Featured order</FormLabel>
-              <FormControl><Input type="number" placeholder="(blank = not in carousel)" {...field} /></FormControl>
-              <FormDescription>Lower shows first in the homepage carousel.</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )} />
+          {/* Hero / carousel placement is set on the Homepage board (/homepage), not per person. */}
           <FormField control={form.control} name="preview_text" render={({ field }) => (
             <FormItem className="md:col-span-2"><FormLabel>Preview text</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
           )} />

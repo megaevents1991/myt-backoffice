@@ -7,7 +7,6 @@ import {
   createRow,
   updateRow,
   softDeleteRow,
-  saveRowOrder,
 } from "./template-crud";
 import type {
   Person,
@@ -57,10 +56,4 @@ export async function softDeleteFootballTeam(id: number): Promise<Person> {
   await requireStaff();
   return softDeleteRow<Person>(TABLE, id, REVALIDATE);
 }
-/** Homepage "כדורגל" carousel order - index in the array = position. */
-export async function saveFootballTeamsOrder(
-  orderedIds: number[],
-): Promise<void> {
-  await requireStaff();
-  return saveRowOrder(TABLE, orderedIds, REVALIDATE);
-}
+// Homepage carousel / hero order moved to /homepage (homepage_items) - 2026-09-16.

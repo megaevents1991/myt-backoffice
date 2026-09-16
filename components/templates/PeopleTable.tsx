@@ -95,7 +95,6 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
             <TableHead>Name</TableHead>
             <TableHead>English</TableHead>
             <TableHead>Slug</TableHead>
-            <TableHead>Featured</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -138,7 +137,6 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
                 <TableCell className="font-medium">{r.name}</TableCell>
                 <TableCell className="text-muted-foreground">{r.name_english ?? "-"}</TableCell>
                 <TableCell className="text-muted-foreground text-xs">{r.slug}</TableCell>
-                <TableCell>{r.featured_order ?? "-"}</TableCell>
                 <TableCell>
                   <Badge variant={r.is_active ? "outline" : "destructive"}>
                     {r.is_active ? "Active" : "Hidden"}
