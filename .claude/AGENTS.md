@@ -31,7 +31,7 @@ prices, handles reservations. Writes the Supabase data `../myt-main` reads.
 ## Before you push
 
 1. `/review-my-code` (or `/review`) 2. `/cron-review` if you touched a sync/cron
-2. `/sync-types` if types changed 4. `tsc --noEmit` 5. Feature branch, never commit to `main`.
+2. `/sync-types` if types changed 4. `tsc --noEmit` 5. Work on `master` directly by default - open a branch/worktree only when asked (migrations are still applied only from `master`, never from a branch).
 
 ## Useful commands
 

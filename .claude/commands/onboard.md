@@ -13,7 +13,7 @@ Walk through, reading the real files:
    `vercel.json`; how providers (Sports/LIVE/P1/TixStock/XS2Event) map into `events`.
 6. **Pricing** - base prices + per-currency markups set here; main adds the final 175.
 7. **Mutations** - Server Actions in `lib/actions`; shadcn/ui in `components/`.
-8. **Workflow** - feature branch, `/review-my-code` + `/cron-review` before push, `/sync-types`
+8. **Workflow** - work on `master` by default (branch/worktree only when asked), `/review-my-code` + `/cron-review` before push, `/sync-types`
    if types change, never an AI co-author line.
 
 End with: "Use `/new-provider-sync` for a new provider, `/review` before a PR."
