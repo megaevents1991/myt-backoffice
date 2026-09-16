@@ -119,16 +119,34 @@ export const priceChangesGenerator: RuleGenerator = {
 
     const eventIds = [...byEvent.keys()];
     const nameOf = new Map<number, string>();
+    // Final review (I7): a frozen row whose event was soft-deleted or is a test event is not a
+    // pricing problem anyone can act on - and "הסר מהאתר" / a test flag would otherwise leave
+    // it on the Pricing tab and in rule tasks forever. Such events are dropped here.
+    const dropped = new Set<number>();
     for (const idsChunk of chunk(eventIds, NAME_LOOKUP_CHUNK)) {
-      const { data, error } = await db.from("events").select("id,name").in("id", idsChunk);
+      const { data, error } = await db
+        .from("events")
+        .select("id,name,is_deleted,is_test")
+        .in("id", idsChunk);
       if (error) {
         console.error("task-rules/price-changes: event names failed", JSON.stringify(error));
         throw new Error("price-changes: event names load failed");
       }
-      for (const e of (data ?? []) as { id: number; name: string }[]) nameOf.set(e.id, e.name);
+      for (const e of (data ?? []) as {
+        id: number;
+        name: string;
+        is_deleted: string | null;
+        is_test: boolean | null;
+      }[]) {
+        if (e.is_deleted != null || e.is_test) {
+          dropped.add(e.id);
+          continue;
+        }
+        nameOf.set(e.id, e.name);
+      }
     }
 
-    return [...byEvent.values()].map(({ row, deviation }) => {
+    return [...byEvent.values()].filter(({ row }) => !dropped.has(row.event_id)).map(({ row, deviation }) => {
       const label = nameOf.get(row.event_id) ?? `#${row.event_id}`;
       return {
         key: `price_review:events:${row.event_id}`,

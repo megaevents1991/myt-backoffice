@@ -11,6 +11,7 @@ import {
   markNote,
   nextNightlyRun,
   parseGapKey,
+  shouldRecordRepriced,
   unmarkNote,
 } from "../lib/services/gap-resolution";
 
@@ -34,6 +35,16 @@ check("cancelled closes", gapAction("cancelled"), "close");
 check("todo reopens", gapAction("todo"), "reopen");
 check("in_progress reopens", gapAction("in_progress"), "reopen");
 check("paused reopens", gapAction("paused"), "reopen");
+
+// price_light close (final review, I6): only DONE on a still-red light is a "repriced" lesson.
+check("price_light done + red records repriced", shouldRecordRepriced("done", "red"), true);
+check("price_light cancelled + red records nothing", shouldRecordRepriced("cancelled", "red"), false);
+check("price_light done + green records nothing", shouldRecordRepriced("done", "green"), false);
+check("price_light done + unchecked records nothing", shouldRecordRepriced("done", "unchecked"), false);
+check("price_light done + no snapshot records nothing", shouldRecordRepriced("done", null), false);
+check("price_light reopen records nothing", shouldRecordRepriced("todo", "red"), false);
+// creative and price_review keep closing on both done and cancelled.
+check("creative/price_review: cancelled still closes", gapAction("cancelled"), "close");
 
 // Key parsing - same shape RuleCandidate.key / openTaskGapKeys() produce.
 check("key parses price_light package", parseGapKey("package:events:123"), { kind: "package", table: "events", rowId: 123 });

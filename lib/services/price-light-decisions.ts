@@ -60,7 +60,8 @@ export async function snapshotFor(eventId: number, scope?: Scope): Promise<Light
  * to fix our price. Nothing else happens here - the price itself is edited on the
  * event page, and the light never writes a price. Three entry points reach this:
  * - /price-light's own "הוזל" button (markRepriced, admin-gated).
- * - a price_light task reaching done/cancelled (gap-resolution.ts resolveGapForTask).
+ * - a price_light task marked DONE while its light is still red (gap-resolution.ts
+ *   resolveGapForTask - cancelled records nothing).
  * - the Pricing tab's "טופל" button on a red light row (markPricingGapHandled).
  *
  * `actorId` is only a fallback for a caller with no live cookie session. Controller ruling #4:

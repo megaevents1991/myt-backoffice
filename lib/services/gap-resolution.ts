@@ -40,6 +40,17 @@ export function gapAction(status: TaskStatus): "close" | "reopen" {
   return status === "done" || status === "cancelled" ? "close" : "reopen";
 }
 
+/**
+ * Whether closing a price_light task records a "repriced" decision (final review, I6).
+ * Only a task marked DONE while its scope's light is still RED is a human saying "the
+ * gap was real and I fixed our price". A cancelled task is "not worth doing" - the
+ * opposite lesson - and a task closed after the light already left red has nothing to
+ * teach, so neither writes anything.
+ */
+export function shouldRecordRepriced(status: TaskStatus, currentLight: string | null | undefined): boolean {
+  return status === "done" && currentLight === "red";
+}
+
 // ---- pure helpers shared with the Pricing tab (lib/actions/pricing-gap-actions.ts) -------------
 
 /** A gap-list key of the form "{kind}:{table}:{row_id}" - the exact shape both
@@ -220,20 +231,27 @@ async function resolvePricing(
   ref: TaskSourceRef,
   action: "close" | "reopen",
   taskId: string,
+  status: TaskStatus,
 ): Promise<void> {
   if (source === "price_light") {
     // "בפתיחה מחדש אין מה לבטל" (brief) - the light recomputes nightly regardless of
     // this task, and a "repriced" decision is a record of a human's judgment, not a
-    // state to roll back.
-    if (action !== "close") return;
+    // state to roll back. Cancelled records nothing either (shouldRecordRepriced).
+    if (status !== "done") return;
     const scope: Scope = ref.kind === "ticket" ? "ticket" : "package";
     // Dynamic import: price-light-decisions.ts pulls in the competitor-scraper
     // registry (via price-light-store.ts), which reads provider env vars at
     // module load - fine inside Next.js, but it would make importing this file
     // alone (e.g. the self-test, which never takes this branch) blow up under
     // plain `npx tsx` with no .env loaded.
-    const { recordRepriced } = await import("@/lib/services/price-light-decisions");
-    const result = await recordRepriced(Number(ref.row_id), scope, null);
+    const { recordRepriced, snapshotFor } = await import("@/lib/services/price-light-decisions");
+    const eventId = Number(ref.row_id);
+    const snapshot = await snapshotFor(eventId, scope);
+    if (!shouldRecordRepriced(status, snapshot?.light)) {
+      console.log(`gap-resolution: task ${taskId} done but ${scope} light is ${snapshot?.light ?? "unknown"} - no repriced record`);
+      return;
+    }
+    const result = await recordRepriced(eventId, scope, null);
     if (!result.ok) console.error("gap-resolution: recordRepriced failed on task close", taskId, result.error);
     return;
   }
@@ -250,7 +268,8 @@ async function resolvePricing(
  * every gap family:
  * - creative_gap -> dismiss/restore the creative gap (unchanged from the branch
  *   this replaces).
- * - price_light -> record a "repriced" decision on close only.
+ * - price_light -> record a "repriced" decision only when the task is DONE and the
+ *   scope's light is still red; cancelled (or already-settled) records nothing.
  * - price_review -> flip the event's frozen base_price_sync_log row(s) between
  *   needs_review and reviewed.
  * - recurring -> always a weekly digest here (source_ref.kind === "rule"); a
@@ -270,7 +289,7 @@ export async function resolveGapForTask(
     if (family === "creative") {
       await resolveCreative(task.source_ref, action);
     } else if (family === "pricing") {
-      await resolvePricing(task.source, task.source_ref, action, task.id);
+      await resolvePricing(task.source, task.source_ref, action, task.id, status);
     }
     // "recurring" (always a digest) and everything else: no-op by design.
   } catch (e) {
