@@ -49,13 +49,20 @@ function userText(entry) {
       .filter((c) => c?.type === "text" && typeof c.text === "string")
       .map((c) => c.text)
       .join("\n");
+  // A slash command is stored as ONLY its wrapper - `<command-message>` +
+  // `<command-name>/commit-push</command-name>` - with the expanded body in a
+  // separate isMeta entry this scan skips. Stripping the wrapper blank
+  // (2026-09-16) made the hook fall back to Dor's previous message and deny
+  // `/commit-push` itself. The command name IS what he typed - keep it.
+  const commandName =
+    text.match(/<command-name>\s*([^<]+?)\s*<\/command-name>/)?.[1] ?? "";
   // Drop harness-injected blocks (system reminders, slash-command wrappers).
   text = text.replace(
     /<(system-reminder|command-[a-z-]+|local-command-[a-z-]+)>[\s\S]*?<\/\1>/g,
     "",
   );
   text = text.replace(/<[a-z-]+>[\s\S]*$/g, (m) => (m.length > 200 ? "" : m));
-  text = text.trim();
+  text = [commandName, text.trim()].filter(Boolean).join("\n").trim();
   return text || null;
 }
 
