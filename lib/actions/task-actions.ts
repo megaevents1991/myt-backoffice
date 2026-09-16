@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase-server";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
 import { logAudit } from "@/lib/audit";
+import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { notifyTaskAssigned } from "@/lib/services/task-notify";
 import {
   dismissCreativeGap,
@@ -183,6 +184,7 @@ export async function createTask(input: {
     entityId: data.id,
     changes: { title, assignee_id: assigneeId, priority: input.priority },
   });
+  if (input.source === "price_light") invalidatePriceLight("rows");
 
   // Assigning someone else = they get a mail. Self-assignment stays quiet.
   if (assigneeId && assigneeId !== session.sub) {
@@ -308,6 +310,9 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
     entityId: id,
     changes: { status },
   });
+  // /price-light's "ממתינים להחלטה" excludes events with an open price-light task - closing or
+  // reopening one changes that screen, which caches its rows (lib/services/price-light-cache).
+  invalidatePriceLight("rows");
 
   // A gap task marked done files the gap away with it (Tom, 2026-09-10: the
   // radar kept listing it as "assigned to task" after the work was done).
@@ -346,6 +351,7 @@ export async function deleteTask(id: string): Promise<Result> {
   }
 
   await logAudit({ action: "task.delete", entityType: "task", entityId: id });
+  invalidatePriceLight("rows");
   return { ok: true };
 }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardCronRoute } from "@/lib/auth/guards";
 import { runBasePriceSync } from "@/lib/services/base-price-sync";
+import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 
 // Nightly at 01:30 UTC (vercel.json). Manual trigger with the legacy
 // ?key= fallback; add &dry_run=1 to compute the full report with ZERO
@@ -13,6 +14,7 @@ export async function GET(request: NextRequest) {
   const dryRun = new URL(request.url).searchParams.get("dry_run") === "1";
   try {
     const summary = await runBasePriceSync({ dryRun, budgetMs: 270_000 });
+    if (!dryRun && summary.applied.length > 0) invalidatePriceLight("rows"); // base prices moved -> `our_usd_now` on /price-light
     console.log(
       `[base-price-sync] scanned=${summary.scanned} applied=${summary.applied.length} review=${summary.needsReview.length} errors=${summary.errors.length} remaining=${summary.remaining}${dryRun ? " (dry-run)" : ""}`,
     );

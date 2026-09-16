@@ -1,6 +1,8 @@
 "use server";
 
+import { unstable_cache } from "next/cache";
 import { requireAdmin, requireStaff } from "@/lib/auth/guards";
+import { invalidatePriceLight, PRICE_LIGHT_TAG, PRICE_LIGHT_TTL_S } from "@/lib/services/price-light-cache";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { fetchPaged } from "@/lib/supabase-paged";
@@ -98,6 +100,7 @@ export async function recheckEvent(
       ? { aiMemory, aiBudget: { remaining: RECHECK_AI_CALLS } }
       : { judge: null });
     if (!result) return { ok: false, error: "event not found or deleted" };
+    invalidatePriceLight("rows", "cost");
     return { ok: true, lights: result.lights.after, detail: result.lights.detail, checked_at: new Date().toISOString() };
   } catch (e) {
     console.error("recheckEvent failed", e);
@@ -264,6 +267,7 @@ export async function refreshOurOffer(
     if (!data) return { ok: false, error: "event not found" };
     const ours = await describeOurOffer(data as OurOfferEvent);
     await storeOurOffer(eventId, ours);
+    invalidatePriceLight("rows");
     const comparison = await buildComparison(eventId);
     return comparison ? { ok: true, comparison } : { ok: false, error: "event not found" };
   } catch (e) {
@@ -353,6 +357,7 @@ export async function silenceRedLight(eventId: number, days: number = SILENCE_DA
       return { ok: false, error: "update failed" };
     }
     await logAudit({ action: "price_light.silenced", entityType: "event", entityId: eventId, metadata: { ...(snapshot ?? {}), days: safeDays, until } });
+    invalidatePriceLight("rows");
     return { ok: true };
   } catch (e) {
     console.error("silenceRedLight failed", e);
@@ -406,6 +411,7 @@ export async function setLightOverride(eventId: number, scope: Scope, light: Lig
       // nothing. When there was no light to snapshot, `light` falls back to the new one.
       metadata: { ...(before ?? { scope, light }), to_light: light, note: trimmed },
     });
+    invalidatePriceLight("rows");
     return { ok: true };
   } catch (e) {
     console.error("setLightOverride failed", e);
@@ -430,6 +436,7 @@ export async function clearLightOverride(eventId: number): Promise<Ok> {
     }
     await recomputeEventLights(eventId, "manual");
     await logAudit({ action: "price_light.override_cleared", entityType: "event", entityId: eventId });
+    invalidatePriceLight("rows");
     return { ok: true };
   } catch (e) {
     console.error("clearLightOverride failed", e);
@@ -450,7 +457,9 @@ export async function openPriceLightTask(
     const detail = event.light_detail?.[scope];
     if (!detail) return { ok: false, error: "no light detail for scope" };
     const { matches } = await listEventMatches(eventId);
-    return await insertPriceLightTask(event, scope, detail, matches, { id: session.sub });
+    const opened = await insertPriceLightTask(event, scope, detail, matches, { id: session.sub });
+    if (opened.ok) invalidatePriceLight("rows"); // `has_open_task` drops the row out of "ממתינים להחלטה"
+    return opened;
   } catch (e) {
     console.error("openPriceLightTask failed", e);
     return { ok: false, error: e instanceof Error ? e.message : "failed" };
@@ -464,7 +473,7 @@ export async function removeEventFromSite(eventId: number): Promise<Ok> {
     // Snapshot first: after the soft delete the event drops out of every light query, and the
     // comparison a human refused to match would be unrecoverable.
     const snapshot = await snapshotFor(eventId);
-    await softDeleteEvent(eventId);
+    await softDeleteEvent(eventId); // invalidates the rows cache itself
     await logAudit({ action: "price_light.removed", entityType: "event", entityId: eventId, metadata: { ...(snapshot ?? {}) } });
     return { ok: true };
   } catch (e) {
@@ -694,10 +703,26 @@ function buildScopeCell(
  * 426 events are red, so the first answer is about half the rows and bytes (550ms / 0.86 MB vs
  * 1.0s / 1.46 MB from Israel) - a half-second earlier table, not an order of magnitude. Same
  * shape, same code path - only the event filter differs - so a red row looks identical in both.
+ *
+ * Cached (lib/services/price-light-cache.ts): the answer is kept under the `rows` tag for
+ * PRICE_LIGHT_TTL_S.rows seconds or until a write path invalidates it - a decision here, a
+ * recheck, an event edit, a task closing, the nightly. Auth stays OUTSIDE the cached function:
+ * `unstable_cache` cannot read cookies, and the cache is shared by every staff member anyway.
+ * A payload over Vercel's 2 MB data-cache item limit is silently not cached (today's full
+ * list is about half that) - the screen then simply behaves as before this cache existed.
  */
 export async function listPriceLight(opts: { onlyRed?: boolean } = {}): Promise<PriceLightRow[]> {
   await requireStaff();
-  const events = await loadListedEvents(opts.onlyRed === true);
+  return cachedPriceLightRows(opts.onlyRed === true);
+}
+
+const cachedPriceLightRows = unstable_cache(buildPriceLightRows, ["price-light-rows"], {
+  tags: [PRICE_LIGHT_TAG.rows],
+  revalidate: PRICE_LIGHT_TTL_S.rows,
+});
+
+async function buildPriceLightRows(onlyRed: boolean): Promise<PriceLightRow[]> {
+  const events = await loadListedEvents(onlyRed);
   if (events.length === 0) return [];
 
   const eventIds = events.map((e) => e.id);
@@ -791,8 +816,16 @@ async function crawlPanelRow(competitor: CompetitorKey): Promise<CrawlPanelRow> 
  */
 export async function listCrawlRuns(): Promise<CrawlPanelRow[]> {
   await requireStaff();
-  return Promise.all(ACTIVE_COMPETITORS.map(crawlPanelRow));
+  return cachedCrawlPanel();
 }
+
+// Invalidated by every crawl-run write (price-light-crawl.ts insertRun/finishRun); the TTL
+// covers a run written from outside Next (scripts/crawl-local.ts).
+const cachedCrawlPanel = unstable_cache(
+  () => Promise.all(ACTIVE_COMPETITORS.map(crawlPanelRow)),
+  ["price-light-runs"],
+  { tags: [PRICE_LIGHT_TAG.runs], revalidate: PRICE_LIGHT_TTL_S.runs },
+);
 
 /**
  * "סרוק עכשיו" on the crawl panel: run one competitor's crawl on demand (or a dry run).
@@ -820,6 +853,7 @@ export async function triggerCrawl(
       entityId: competitor,
       metadata: { dry_run: dryRun, status: summary.status, listings: summary.listings },
     });
+    invalidatePriceLight("runs");
     return { ok: true, summary };
   } catch (e) {
     console.error("triggerCrawl failed", e);
@@ -838,6 +872,16 @@ const AI_COST_FETCH_MAX = 50_000;
  */
 export async function aiCostThisMonth(): Promise<{ usd: number; calls: number }> {
   await requireStaff();
+  return cachedAiCost();
+}
+
+// Invalidated by the paths that spend AI inside a request (recheck) and by the nightly at its end.
+const cachedAiCost = unstable_cache(sumAiCostThisMonth, ["price-light-cost"], {
+  tags: [PRICE_LIGHT_TAG.cost],
+  revalidate: PRICE_LIGHT_TTL_S.cost,
+});
+
+async function sumAiCostThisMonth(): Promise<{ usd: number; calls: number }> {
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
   const { rows, error, truncated } = await fetchPaged<{ id: number; ai_verdict: { cost_usd?: number; cached?: boolean } | null }>(

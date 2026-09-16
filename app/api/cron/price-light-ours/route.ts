@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardCronRoute } from "@/lib/auth/guards";
 import { runOurOfferPass } from "@/lib/services/our-offer-detail";
+import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 
 /**
  * Nightly (vercel.json, 02:40 UTC - after base-price-sync has finished its own Amadeus searches):
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
   const limit = Number.isInteger(limitParam) && limitParam > 0 ? limitParam : undefined;
   try {
     const summary = await runOurOfferPass({ dryRun, limit });
+    if (!dryRun && summary.described > 0) invalidatePriceLight("rows"); // `light_detail.ours` feeds the rows' "ours" lines
     console.log(
       `[price-light-ours] candidates=${summary.candidates} described=${summary.described} fresh=${summary.fresh} ` +
       `withErrors=${summary.withErrors} failedWrites=${summary.failedWrites} remaining=${summary.remaining}` +

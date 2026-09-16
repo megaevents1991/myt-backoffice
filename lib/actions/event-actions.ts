@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import type { Event } from "@/types/app.types";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
+import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { applyTagRules } from "@/lib/services/auto-tagger";
 
 // Exactly the columns the events LIST page reads (table cells, filters,
@@ -100,6 +101,7 @@ export async function createEvent(event: Omit<Event, "id">) {
   } catch (e) {
     console.error("price-light on create failed:", e);
   }
+  invalidatePriceLight("rows");
   return created;
 }
 
@@ -128,6 +130,9 @@ export async function updateEvent(id: number, input: Partial<Event>) {
     entityId: id,
     changes: diffChanges(before, event),
   });
+  // /price-light caches its rows; a saved price/date/name must show there at once - the "הוזל"
+  // flow edits the base price here and goes straight back to that screen.
+  invalidatePriceLight("rows");
   return data[0] as Event;
 }
 
@@ -149,6 +154,7 @@ export async function softDeleteEvent(id: number) {
     entityId: id,
     changes: { is_deleted: formattedDate },
   });
+  invalidatePriceLight("rows");
   return data[0] as Event;
 }
 
@@ -171,6 +177,7 @@ export async function bulkSoftDeleteEvents(ids: number[]) {
     changes: { is_deleted: formattedDate },
     metadata: { ids, count: ids.length },
   });
+  invalidatePriceLight("rows");
   return data as Event[];
 }
 
@@ -308,5 +315,6 @@ export async function syncEventPrices(id: number) {
     entityType: "event",
     entityId: id,
   });
+  invalidatePriceLight("rows"); // ticket prices moved -> `our_usd_now` on /price-light
   return result;
 }

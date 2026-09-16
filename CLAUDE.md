@@ -402,7 +402,14 @@ yet); `listCrawlRuns` runs its 20 small reads concurrently. Measured before: 6s+
 load asks `listPriceLight({ onlyRed: true })` (events with a red light on either scope - the default "ממתינים להחלטה"
 view is a subset of them) and paints the table from that, then fetches the full list and swaps it in; until then every
 non-red tile/view count shows "…" and a non-red view reads "טוען…", never a false 0 or "empty". A sequence counter drops
-a stale answer, so a decision's refresh can never be overwritten by the opening full list.
+a stale answer, so a decision's refresh can never be overwritten by the opening full list. **Cached:** the three loads
+are `unstable_cache`d under the tags in `lib/services/price-light-cache.ts` (rows 300s, panel 120s, AI cost 120s) with
+auth kept outside the cached function; every write path that changes the screen calls `invalidatePriceLight(...)` ONCE
+after its write - the decisions/recheck/refresh-ours actions, `insertRun`/`finishRun`, task status/delete/create
+(open-task flag), `createEvent`/`updateEvent`/soft-deletes/`syncEventPrices`, and the nightly / ours / base-price-sync
+crons at the end of a run. Outside a Next request (`scripts/crawl-local.ts`) the helper is a no-op. A payload over
+Vercel's 2 MB data-cache item limit is silently not cached (today's full list is ~half that). The TTLs are the net for
+any write path not wired (the 2-hourly ticket price sync).
 
 **Partner pass (2026-09-14): every competitor, contents side by side, a package/ticket lens.**
 (a) **Matching coverage.** 357 of 426 live events had NO priced package competitor, and 840 package

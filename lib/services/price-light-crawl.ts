@@ -8,6 +8,7 @@ import { multiCurrencyExchangeRateService } from "@/lib/services/ticket-price-sy
 import { browserMode, PAGE_TIMEOUT_MS, randomPause, scrapeEnabled, shortPause, withBrowser } from "@/lib/services/browser";
 import { ACTIVE_COMPETITORS, scraperFor, type CompetitorScraper, type CrawlContext, type DetailInput, type Listing } from "@/lib/services/competitor-scrapers";
 import { ruleMatchScore } from "@/lib/services/price-light";
+import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import type { CompetitorKey, CrawlStatus, CrawlTrigger, Currency } from "@/types/price-light.types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -628,6 +629,7 @@ async function insertRun(s: CrawlSummary, trigger: CrawlTrigger, mode: string): 
     ...(s.status !== "running" ? { finished_at: new Date().toISOString() } : {}),
   }).select("id").single();
   if (error) { console.error("price-light-crawl: run insert failed", JSON.stringify(error)); return null; }
+  invalidatePriceLight("runs"); // the panel shows "running" / "skipped" the moment the row exists
   return data.id as number;
 }
 
@@ -641,10 +643,11 @@ async function finishRun(s: CrawlSummary): Promise<void> {
     status: s.status, finished_at: new Date().toISOString(), pages: s.pages + s.detailPages, listings: s.listings, note: s.note,
   };
   const { error } = await db.from("competitor_crawl_runs").update(payload).eq("id", s.runId);
-  if (!error) return;
+  if (!error) { invalidatePriceLight("runs"); return; }
   console.error(`price-light-crawl: run ${s.runId} finish failed, retrying in 2s`, JSON.stringify(error));
   await new Promise((r) => setTimeout(r, 2_000));
   const { error: retryError } = await db.from("competitor_crawl_runs").update(payload).eq("id", s.runId);
+  if (!retryError) invalidatePriceLight("runs");
   if (retryError) {
     console.error(
       `price-light-crawl: run ${s.runId} finish failed after retry - row stuck as "running", ages out of the lock after ${LOCK_STALE_MS / 60_000}min`,
