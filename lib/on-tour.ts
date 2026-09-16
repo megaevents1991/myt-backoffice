@@ -85,6 +85,19 @@ export function eventRelatesToTeam(eventName: string, teamName: string): boolean
   return sides.some((side) => sideIsTeam(side, teamName));
 }
 
+/**
+ * Main's `eventMatchesName`: substring + fixture refinement, OR a fixture side
+ * that IS the team once qualifiers are stripped - team "Atletico Madrid" vs
+ * event "Atlético de Madrid", "Paris Saint-Germain FC" vs "Paris Saint-Germain".
+ */
+export function eventMatchesName(eventName: string | null | undefined, searchName: string): boolean {
+  const needle = normalizeName(searchName);
+  if (!needle || !eventName) return false;
+  if (normalizeName(eventName).includes(needle)) return eventRelatesToTeam(eventName, searchName);
+  const sides = fixtureSides(eventName);
+  return !!sides && sides.some((side) => sideIsTeam(side, searchName));
+}
+
 export interface OnTourEvent {
   name_english: string | null;
   date: string;
@@ -102,19 +115,11 @@ export function buildLiveEventCounter(
   const cutoff = futureDateISO(AVAILABILITY_WINDOW_DAYS);
   const live = events
     .filter((e) => !e.is_deleted && e.name_english && e.date >= cutoff)
-    .map((e) => {
-      const raw = e.name_english as string;
-      return { raw, norm: normalizeName(raw) };
-    });
+    .map((e) => e.name_english as string);
 
   return (nameEnglish) => {
     const needle = nameEnglish?.trim();
     if (!needle) return 0;
-    const low = normalizeName(needle);
-    let count = 0;
-    for (const n of live) {
-      if (n.norm.includes(low) && eventRelatesToTeam(n.raw, needle)) count++;
-    }
-    return count;
+    return live.filter((raw) => eventMatchesName(raw, needle)).length;
   };
 }
