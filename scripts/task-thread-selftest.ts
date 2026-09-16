@@ -3,6 +3,7 @@
 import { randomUUID } from "crypto";
 import { diffActivities } from "../lib/services/task-activity";
 import { isValidTaskAttachmentPath } from "../lib/tasks/attachment-path";
+import { mentionsStillInBody } from "../lib/tasks/mentions";
 
 let failed = 0;
 function check(name: string, got: unknown, want: unknown) {
@@ -33,6 +34,23 @@ check("path accepts uuid-like name", isValidTaskAttachmentPath(taskId, `${taskId
 // The real upload path: taskId/{randomUUID()}.{ext} - confirms a genuine
 // crypto.randomUUID() (hyphens + lowercase hex) fits the accepted shape.
 check("path accepts real randomUUID", isValidTaskAttachmentPath(taskId, `${taskId}/${randomUUID()}.png`), true);
+
+// Mention pruning: keep only IDs whose @<label> still appears in the body
+check("mention kept when label present", mentionsStillInBody("@Tom said hi", [{ id: "id1", label: "Tom" }]), ["id1"]);
+check("mention dropped when label removed", mentionsStillInBody("said hi", [{ id: "id1", label: "Tom" }]), []);
+check("two people, one removed",
+  mentionsStillInBody("@Alice said @Bob replied", [{ id: "id1", label: "Alice" }, { id: "id2", label: "Bob" }]),
+  ["id1", "id2"]);
+check("two people, one removed v2",
+  mentionsStillInBody("@Alice said", [{ id: "id1", label: "Alice" }, { id: "id2", label: "Bob" }]),
+  ["id1"]);
+// Edge case: @Dor vs @Doron - word boundary prevents matching "@Dor" inside "@Doron"
+check("prefix label does not match longer name",
+  mentionsStillInBody("@Doron replied", [{ id: "id1", label: "Dor" }, { id: "id2", label: "Doron" }]),
+  ["id2"]);
+check("both Dor and Doron present",
+  mentionsStillInBody("@Dor and @Doron replied", [{ id: "id1", label: "Dor" }, { id: "id2", label: "Doron" }]),
+  ["id1", "id2"]);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

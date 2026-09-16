@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Paperclip } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { mentionsStillInBody } from "@/lib/tasks/mentions";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -141,6 +142,7 @@ export function TaskThread({ taskId }: { taskId: string }) {
 
   const [body, setBody] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
+  const [pickedMentions, setPickedMentions] = useState<Array<{ id: string; label: string }>>([]);
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [sending, setSending] = useState(false);
@@ -194,21 +196,24 @@ export function TaskThread({ taskId }: { taskId: string }) {
       if (!file.type.startsWith("image/")) continue;
       const id = crypto.randomUUID();
       setPending((prev) => [...prev, { id, name: file.name }]);
-      const shrunk = await shrinkToMaxWidth(file, MAX_SHRUNK_WIDTH);
-      const form = new FormData();
-      form.set("file", shrunk.file);
-      form.set("width", String(shrunk.width));
-      form.set("height", String(shrunk.height));
-      const result = await uploadTaskAttachment(taskId, form);
-      setPending((prev) => prev.filter((item) => item.id !== id));
-      if (!result.ok) {
-        toast({ title: result.error, variant: "destructive" });
-        continue;
+      try {
+        const shrunk = await shrinkToMaxWidth(file, MAX_SHRUNK_WIDTH);
+        const form = new FormData();
+        form.set("file", shrunk.file);
+        form.set("width", String(shrunk.width));
+        form.set("height", String(shrunk.height));
+        const result = await uploadTaskAttachment(taskId, form);
+        if (!result.ok) {
+          toast({ title: result.error, variant: "destructive" });
+          continue;
+        }
+        setAttachments((prev) => [
+          ...prev,
+          { ...result.attachment, previewUrl: URL.createObjectURL(shrunk.file) },
+        ]);
+      } finally {
+        setPending((prev) => prev.filter((item) => item.id !== id));
       }
-      setAttachments((prev) => [
-        ...prev,
-        { ...result.attachment, previewUrl: URL.createObjectURL(shrunk.file) },
-      ]);
     }
   }
 
@@ -234,7 +239,10 @@ export function TaskThread({ taskId }: { taskId: string }) {
     const cursor = mention.start + 1 + mention.query.length;
     const next = `${body.slice(0, mention.start)}@${name} ${body.slice(cursor)}`;
     setBody(next);
-    setMentions((prev) => (prev.includes(person.id) ? prev : [...prev, person.id]));
+    if (!mentions.includes(person.id)) {
+      setMentions((prev) => [...prev, person.id]);
+      setPickedMentions((prev) => [...prev, { id: person.id, label: name }]);
+    }
     setMention(null);
     requestAnimationFrame(() => textareaRef.current?.focus());
   }
@@ -266,8 +274,10 @@ export function TaskThread({ taskId }: { taskId: string }) {
   function onKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (onMentionKeyDown(event)) return;
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault();
-      send();
+      if (pending.length === 0) {
+        event.preventDefault();
+        send();
+      }
     }
   }
 
@@ -290,7 +300,7 @@ export function TaskThread({ taskId }: { taskId: string }) {
 
   async function send() {
     const trimmed = body.trim();
-    if (sending || (!trimmed && attachments.length === 0)) return;
+    if (sending || pending.length > 0 || (!trimmed && attachments.length === 0)) return;
     setSending(true);
     try {
       // Strip the local-only preview blob URL before it crosses the server
@@ -303,11 +313,13 @@ export function TaskThread({ taskId }: { taskId: string }) {
         width: a.width,
         height: a.height,
       }));
+      // Prune mention IDs whose @<label> no longer appears in the body text
+      const prunedMentions = mentionsStillInBody(trimmed, pickedMentions);
       const result = await addTaskComment({
         taskId,
         body: trimmed,
         attachments: payloadAttachments,
-        mentions,
+        mentions: prunedMentions,
       });
       if (!result.ok) {
         toast({ title: result.error, variant: "destructive" });
@@ -317,6 +329,7 @@ export function TaskThread({ taskId }: { taskId: string }) {
       setBody("");
       setAttachments([]);
       setMentions([]);
+      setPickedMentions([]);
       await load();
     } finally {
       setSending(false);
@@ -486,6 +499,7 @@ export function TaskThread({ taskId }: { taskId: string }) {
             onChange={onBodyChange}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
+            onBlur={() => setMention(null)}
           />
           {mention && filteredStaff.length > 0 && (
             <div
@@ -503,6 +517,7 @@ export function TaskThread({ taskId }: { taskId: string }) {
                     "block w-full px-2 py-1.5 text-start text-sm hover:bg-accent",
                     index === highlighted && "bg-accent",
                   )}
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => selectMention(person)}
                 >
                   {person.display_name || person.email}
@@ -559,7 +574,7 @@ export function TaskThread({ taskId }: { taskId: string }) {
           <Button
             type="button"
             onClick={send}
-            disabled={sending || (!body.trim() && attachments.length === 0)}
+            disabled={sending || pending.length > 0 || (!body.trim() && attachments.length === 0)}
           >
             {sending ? "שולח…" : "שלח"}
           </Button>
