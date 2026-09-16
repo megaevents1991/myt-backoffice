@@ -215,7 +215,8 @@ export async function addTaskComment(input: {
   await logAudit({ action: "task.comment", entityType: "task", entityId: input.taskId, changes: { comment_id: data.id, mentions } });
 
   if (mentions.length) {
-    const { data: task } = await db.from("tasks").select("title").eq("id", input.taskId).maybeSingle();
+    const { data: task, error: taskError } = await db.from("tasks").select("title").eq("id", input.taskId).maybeSingle();
+    if (taskError) console.error("task-comments: title lookup failed", JSON.stringify(taskError));
     await notifyTaskMention({
       taskId: input.taskId,
       taskTitle: task?.title ?? "משימה",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -98,14 +98,17 @@ function gapPrefill(gap: GapItem): TaskPrefill {
 export function TasksClient() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
   // /tasks?tab=gaps deep-links straight to the gaps tab (dashboard panel).
-  const initialTab = useSearchParams().get("tab") === "gaps" ? "gaps" : "tasks";
+  const initialTab = searchParams.get("tab") === "gaps" ? "gaps" : "tasks";
+  const initialTaskId = searchParams.get("task");
   const isManager = !!user && (ADMIN_ROLES as readonly string[]).includes(user.role);
 
   const [tasks, setTasks] = useState<TaskWithNames[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("open");
   const [editor, setEditor] = useState<TaskEditorState>({ open: false, task: null });
+  const handledTaskRef = useRef<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -121,12 +124,14 @@ export function TasksClient() {
   }, [reload]);
 
   useEffect(() => {
-    if (loading || !tasks.length) return;
-    const taskId = useSearchParams().get("task");
-    if (!taskId) return;
-    const found = tasks.find((t) => t.id === taskId);
-    if (found) setEditor({ open: true, task: found });
-  }, [loading, tasks]);
+    if (loading || !tasks.length || !initialTaskId) return;
+    if (handledTaskRef.current === initialTaskId) return;
+    const found = tasks.find((t) => t.id === initialTaskId);
+    if (found) {
+      setEditor({ open: true, task: found });
+    }
+    handledTaskRef.current = initialTaskId;
+  }, [loading, tasks, initialTaskId]);
 
   const filtered = useMemo(() => {
     switch (view) {
