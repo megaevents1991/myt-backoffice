@@ -10,7 +10,7 @@ import { RulesClient } from "./rules-client";
 // error boundary instead of the page.
 export default async function TaskRulesPage() {
   await requireAdmin();
-  const [rules, staff] = await Promise.all([listTaskRules(), listStaffForMentions()]);
+  const [rulesResult, staff] = await Promise.all([listTaskRules(), listStaffForMentions()]);
 
   return (
     <div className="space-y-6">
@@ -18,7 +18,11 @@ export default async function TaskRulesPage() {
         title="כללי משימות אוטומטיות"
         description="כללים שרצים כל שבוע: רמזור אדום, שינויי מחיר קפואים ופערים ויזואליים הופכים למשימה בלי שאף אחד יזכור לפתוח את המסך."
       />
-      <RulesClient initialRules={rules} staff={staff} />
+      <RulesClient
+        initialRules={rulesResult.ok ? rulesResult.rules : []}
+        initialError={rulesResult.ok ? null : rulesResult.error}
+        staff={staff}
+      />
     </div>
   );
 }

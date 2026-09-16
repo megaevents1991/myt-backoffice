@@ -161,15 +161,20 @@ function matchSummary(rule: TaskRuleWithNames): string {
   return parts.length ? parts.join(" · ") : "ללא סינון";
 }
 
+const ACTION_FAILED_MSG = "הפעולה נכשלה — ייתכן שההתחברות פגה";
+
 export function RulesClient({
   initialRules,
+  initialError,
   staff,
 }: {
   initialRules: TaskRuleWithNames[];
+  initialError: string | null;
   staff: StaffMentionOption[];
 }) {
   const { toast } = useToast();
   const [rules, setRules] = useState<TaskRuleWithNames[]>(initialRules);
+  const [loadError, setLoadError] = useState<string | null>(initialError);
   const [loading, setLoading] = useState(false);
 
   const [editorOpen, setEditorOpen] = useState(false);
@@ -184,7 +189,15 @@ export function RulesClient({
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      setRules(await listTaskRules());
+      const result = await listTaskRules();
+      if (result.ok) {
+        setRules(result.rules);
+        setLoadError(null);
+      } else {
+        setLoadError(result.error);
+      }
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : ACTION_FAILED_MSG);
     } finally {
       setLoading(false);
     }
@@ -223,6 +236,12 @@ export function RulesClient({
       toast({ title: editing ? "הכלל עודכן" : "הכלל נוצר", description: result.rule.name });
       setEditorOpen(false);
       await reload();
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: ACTION_FAILED_MSG,
+        description: e instanceof Error ? e.message : undefined,
+      });
     } finally {
       setSaving(false);
     }
@@ -230,12 +249,20 @@ export function RulesClient({
 
   const toggleActive = useCallback(
     async (rule: TaskRuleWithNames, active: boolean) => {
-      const result = await updateTaskRule(rule.id, { ...formToInput(formFromRule(rule)), active });
-      if (!result.ok) {
-        toast({ variant: "destructive", title: "העדכון נכשל", description: result.error });
-        return;
+      try {
+        const result = await updateTaskRule(rule.id, { ...formToInput(formFromRule(rule)), active });
+        if (!result.ok) {
+          toast({ variant: "destructive", title: "העדכון נכשל", description: result.error });
+          return;
+        }
+        setRules((prev) => prev.map((r) => (r.id === rule.id ? result.rule : r)));
+      } catch (e) {
+        toast({
+          variant: "destructive",
+          title: ACTION_FAILED_MSG,
+          description: e instanceof Error ? e.message : undefined,
+        });
       }
-      setRules((prev) => prev.map((r) => (r.id === rule.id ? result.rule : r)));
     },
     [toast],
   );
@@ -244,20 +271,35 @@ export function RulesClient({
     async (rule: TaskRuleWithNames) => {
       setBusyId(rule.id);
       try {
-        const summary = await previewRule(rule.id);
-        setPreview({ rule, summary });
+        const result = await previewRule(rule.id);
+        if (!result.ok) {
+          toast({ variant: "destructive", title: `${rule.name}: לא ניתן להריץ תצוגה מקדימה`, description: result.error });
+          return;
+        }
+        setPreview({ rule, summary: result.summary });
+      } catch (e) {
+        toast({
+          variant: "destructive",
+          title: ACTION_FAILED_MSG,
+          description: e instanceof Error ? e.message : undefined,
+        });
       } finally {
         setBusyId(null);
       }
     },
-    [],
+    [toast],
   );
 
   const runNow = useCallback(
     async (rule: TaskRuleWithNames) => {
       setBusyId(rule.id);
       try {
-        const summary = await runRuleNow(rule.id);
+        const result = await runRuleNow(rule.id);
+        if (!result.ok) {
+          toast({ variant: "destructive", title: `${rule.name}: הריצה נכשלה`, description: result.error });
+          return;
+        }
+        const { summary } = result;
         if (summary.errors.length) {
           toast({
             variant: "destructive",
@@ -271,6 +313,12 @@ export function RulesClient({
           });
         }
         await reload();
+      } catch (e) {
+        toast({
+          variant: "destructive",
+          title: ACTION_FAILED_MSG,
+          description: e instanceof Error ? e.message : undefined,
+        });
       } finally {
         setBusyId(null);
       }
@@ -280,13 +328,21 @@ export function RulesClient({
 
   const remove = useCallback(
     async (rule: TaskRuleWithNames) => {
-      const result = await deleteTaskRule(rule.id);
-      if (!result.ok) {
-        toast({ variant: "destructive", title: "המחיקה נכשלה", description: result.error });
-        return;
+      try {
+        const result = await deleteTaskRule(rule.id);
+        if (!result.ok) {
+          toast({ variant: "destructive", title: "המחיקה נכשלה", description: result.error });
+          return;
+        }
+        toast({ title: "הכלל נמחק", description: rule.name });
+        await reload();
+      } catch (e) {
+        toast({
+          variant: "destructive",
+          title: ACTION_FAILED_MSG,
+          description: e instanceof Error ? e.message : undefined,
+        });
       }
-      toast({ title: "הכלל נמחק", description: rule.name });
-      await reload();
     },
     [reload, toast],
   );
@@ -388,9 +444,18 @@ export function RulesClient({
 
   return (
     <>
+      {loadError && (
+        <div
+          dir="rtl"
+          className="rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive"
+        >
+          טעינת הכללים נכשלה: {loadError}
+        </div>
+      )}
       <DataTable
         columns={columns}
         data={rules}
+        getRowId={(rule) => rule.id}
         searchColumn="name"
         searchPlaceholder="חיפוש כלל..."
         rightActions={
@@ -400,8 +465,12 @@ export function RulesClient({
           </Button>
         }
         emptyState={{
-          title: loading ? "טוען…" : "אין עדיין כללים",
-          description: loading ? undefined : "כלל ראשון שכדאי להתחיל ממנו: רמזור אדום שבועי.",
+          title: loading ? "טוען…" : loadError ? "לא ניתן לטעון את הכללים" : "אין עדיין כללים",
+          description: loading
+            ? undefined
+            : loadError
+              ? loadError
+              : "כלל ראשון שכדאי להתחיל ממנו: רמזור אדום שבועי.",
         }}
       />
 

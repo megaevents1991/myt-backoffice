@@ -48,19 +48,36 @@ async function attachAssigneeNames(rules: TaskRule[]): Promise<TaskRuleWithNames
   }));
 }
 
-/** Every rule, newest first - this is a short admin list, not a paged table. */
-export async function listTaskRules(): Promise<TaskRuleWithNames[]> {
+/** Every rule, newest first - this is a short admin list, not a paged table.
+ *  Returns `{ ok: false, error }` on a load failure (missing table, RLS,
+ *  connection) rather than silently returning an empty list - an empty list
+ *  and a broken table must never look the same to the person looking at the
+ *  screen (fix round 1, code review). */
+export async function listTaskRules(): Promise<
+  { ok: true; rules: TaskRuleWithNames[] } | { ok: false; error: string }
+> {
   await requireAdmin();
   const { data, error } = await db.from("task_rules").select("*").order("created_at", { ascending: false });
   if (error) {
-    // task_rules can be missing in an environment where Task 9's migration hasn't
-    // landed yet - an empty list, not a crashed page. runRuleNow/previewRule
-    // surface the real "table does not exist" message through their own
-    // summary.errors (runWeeklyTaskGen already handles this - see there).
     console.error("listTaskRules failed", JSON.stringify(error));
-    return [];
+    return { ok: false, error: error.message };
   }
-  return attachAssigneeNames((data ?? []) as TaskRule[]);
+  const rules = await attachAssigneeNames((data ?? []) as TaskRule[]);
+  return { ok: true, rules };
+}
+
+/** Confirms the rule still exists before running/previewing it - a rule
+ *  deleted in another tab must fail with a clear message, not silently
+ *  return an all-zero summary through `runWeeklyTaskGen`'s empty-result
+ *  path (fix round 1, code review). */
+async function requireRuleExists(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data, error } = await db.from("task_rules").select("id").eq("id", id).maybeSingle();
+  if (error) {
+    console.error("task-rule-actions: existence check failed", JSON.stringify(error));
+    return { ok: false, error: error.message };
+  }
+  if (!data) return { ok: false, error: "הכלל לא נמצא" };
+  return { ok: true };
 }
 
 export async function createTaskRule(
@@ -172,8 +189,13 @@ export async function deleteTaskRule(id: string): Promise<Ok> {
 
 /** "הרץ עכשיו" - runs this one rule for real, ignoring its day-of-week gate
  *  (a manual run is not the cron). */
-export async function runRuleNow(id: string): Promise<TaskGenSummary> {
+export async function runRuleNow(
+  id: string,
+): Promise<{ ok: true; summary: TaskGenSummary } | { ok: false; error: string }> {
   await requireAdmin();
+  const exists = await requireRuleExists(id);
+  if (!exists.ok) return exists;
+
   const summary = await runWeeklyTaskGen({ ruleId: id });
   await logAudit({
     action: "tasks.rule_run",
@@ -181,11 +203,17 @@ export async function runRuleNow(id: string): Promise<TaskGenSummary> {
     entityId: id,
     metadata: { created: summary.created, existed: summary.existed, closed: summary.closed, errors: summary.errors },
   });
-  return summary;
+  return { ok: true, summary };
 }
 
 /** "תצוגה מקדימה" - the exact same generator, zero writes. */
-export async function previewRule(id: string): Promise<TaskGenSummary> {
+export async function previewRule(
+  id: string,
+): Promise<{ ok: true; summary: TaskGenSummary } | { ok: false; error: string }> {
   await requireAdmin();
-  return runWeeklyTaskGen({ ruleId: id, dryRun: true });
+  const exists = await requireRuleExists(id);
+  if (!exists.ok) return exists;
+
+  const summary = await runWeeklyTaskGen({ ruleId: id, dryRun: true });
+  return { ok: true, summary };
 }
