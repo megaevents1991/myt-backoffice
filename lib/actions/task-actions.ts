@@ -2,6 +2,7 @@
 
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
+import { fetchPaged } from "@/lib/supabase-paged";
 
 // The generated database types predate the tasks table (regenerate with
 // `npm run db:types` once the migration lands on master) - cast once at the
@@ -11,23 +12,25 @@ const db = supabase as any;
 import { logAudit } from "@/lib/audit";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { notifyTaskAssigned } from "@/lib/services/task-notify";
-import {
-  dismissCreativeGap,
-  restoreCreativeGap,
-} from "@/lib/actions/creative-gap-actions";
-import { gapKey } from "@/types/creative-gap.types";
+import { resolveGapForTask } from "@/lib/services/gap-resolution";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import {
+  OPEN_TASK_STATUSES,
   TASK_PRIORITIES,
   TASK_SOURCES,
   TASK_STATUSES,
+  type MktChannel,
   type Task,
+  type TaskBoard,
   type TaskPriority,
   type TaskSource,
   type TaskSourceRef,
   type TaskStatus,
   type TaskWithNames,
 } from "@/types/task.types";
+import { validBoard, validChannel, validPhase, validProgress } from "@/lib/task-boards";
+import { diffActivities, recordActivity } from "@/lib/services/task-activity";
+import { editableFields, type EditableTaskField } from "@/lib/tasks/permissions";
 
 type Result = { ok: true } | { ok: false; error: string };
 type CreateResult = { ok: true; id: string } | { ok: false; error: string };
@@ -44,7 +47,8 @@ function isManager(role: string): boolean {
 }
 
 const TASK_COLUMNS =
-  "id,title,description,status,priority,assignee_id,created_by,due_date,source,source_ref,deleted_at,completed_at,created_at,updated_at";
+  "id,title,description,status,priority,assignee_id,created_by,due_date,source,source_ref," +
+  "board,phase,channel,progress,deleted_at,completed_at,created_at,updated_at";
 
 function validStatus(value: string): value is TaskStatus {
   return (TASK_STATUSES as readonly string[]).includes(value);
@@ -58,6 +62,60 @@ function validSource(value: string | undefined): value is TaskSource {
   return !!value && (TASK_SOURCES as readonly string[]).includes(value);
 }
 
+/** Sources only the server itself may stamp (the rules cron, the roadmap import). */
+const SERVER_ONLY_SOURCES: readonly TaskSource[] = ["recurring", "roadmap"];
+
+/** A client-supplied source_ref must have the shape every reader assumes - and its
+ *  url must be a same-site path, because it becomes a link in mails and the UI. */
+function validSourceRef(value: unknown): value is TaskSourceRef {
+  if (!value || typeof value !== "object") return false;
+  const ref = value as Record<string, unknown>;
+  return (
+    typeof ref.kind === "string" &&
+    typeof ref.table === "string" &&
+    typeof ref.label === "string" &&
+    (typeof ref.row_id === "string" || typeof ref.row_id === "number") &&
+    typeof ref.url === "string" &&
+    ref.url.startsWith("/") &&
+    !ref.url.startsWith("//")
+  );
+}
+
+/** Board read cap - far above today's size; a truncated read is logged, never hidden. */
+const TASKS_LIST_MAX = 5000;
+/** Task ids per comment-count query - keeps the `in (...)` filter well inside URL limits. */
+const COMMENT_COUNT_CHUNK = 200;
+const COMMENT_ROWS_MAX = 50_000;
+
+/** Comment counts in chunks of task ids (never one query per task). Each chunk pages its
+ *  comment rows; a failed chunk is logged and leaves only ITS tasks at 0. */
+async function commentCounts(taskIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  for (let i = 0; i < taskIds.length; i += COMMENT_COUNT_CHUNK) {
+    const chunk = taskIds.slice(i, i + COMMENT_COUNT_CHUNK);
+    const { rows, error, truncated } = await fetchPaged<{ id: string; task_id: string }>(
+      () =>
+        db
+          .from("task_comments")
+          .select("id,task_id")
+          .eq("kind", "comment")
+          .is("deleted_at", null)
+          .in("task_id", chunk)
+          .order("id", { ascending: true }),
+      COMMENT_ROWS_MAX,
+    );
+    if (error) {
+      console.error("tasks: comment counts failed for a chunk", JSON.stringify(error));
+      continue;
+    }
+    if (truncated) console.error(`tasks: comment counts truncated at ${COMMENT_ROWS_MAX} rows for a chunk`);
+    for (const row of rows) {
+      counts.set(row.task_id, (counts.get(row.task_id) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
 /** Attach display names without a DB relation (no FK join over PostgREST needed). */
 async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
   const ids = [
@@ -67,8 +125,15 @@ async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
         .filter((value): value is string => !!value),
     ),
   ];
+  const countOf = await commentCounts(rows.map((row) => row.id));
+
   if (ids.length === 0) {
-    return rows.map((row) => ({ ...row, assignee_name: null, created_by_name: null }));
+    return rows.map((row) => ({
+      ...row,
+      assignee_name: null,
+      created_by_name: null,
+      comment_count: countOf.get(row.id) ?? 0,
+    }));
   }
 
   const { data: users, error } = await db
@@ -85,29 +150,33 @@ async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
     ...row,
     assignee_name: row.assignee_id ? (nameOf.get(row.assignee_id) ?? null) : null,
     created_by_name: row.created_by ? (nameOf.get(row.created_by) ?? null) : null,
+    comment_count: countOf.get(row.id) ?? 0,
   }));
 }
 
-/** Managers see everything; editors only their own tasks. */
+/** Every staff member sees the whole board; editing stays scoped (see updateTask/setTaskStatus). */
 export async function listTasks(): Promise<TaskWithNames[]> {
-  const session = await requireStaff();
+  await requireStaff();
 
-  let query = db
-    .from("tasks")
-    .select(TASK_COLUMNS)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false });
-
-  if (!isManager(session.role)) {
-    query = query.eq("assignee_id", session.sub);
-  }
-
-  const { data, error } = await query;
+  // Everyone on staff sees the whole board (Dor, 16.09): the roadmap lives here
+  // now, and a board people cannot see is not a board. Editing stays narrow -
+  // an editor only changes the status/progress of tasks assigned to them.
+  const { rows, error, truncated } = await fetchPaged<Task>(
+    () =>
+      db
+        .from("tasks")
+        .select(TASK_COLUMNS)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true }),
+    TASKS_LIST_MAX,
+  );
   if (error) {
     console.error("tasks: list failed", JSON.stringify(error));
     return [];
   }
-  return withNames((data ?? []) as Task[]);
+  if (truncated) console.error(`tasks: list truncated at ${TASKS_LIST_MAX} rows`);
+  return withNames(rows);
 }
 
 /** The dashboard widget: my open tasks, most urgent first. */
@@ -119,7 +188,7 @@ export async function listMyOpenTasks(limit = 6): Promise<Task[]> {
     .select(TASK_COLUMNS)
     .is("deleted_at", null)
     .eq("assignee_id", session.sub)
-    .in("status", ["todo", "in_progress"])
+    .in("status", OPEN_TASK_STATUSES)
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) {
@@ -146,12 +215,41 @@ export async function createTask(input: {
   due_date?: string | null;
   source?: TaskSource;
   source_ref?: TaskSourceRef | null;
+  board?: TaskBoard;
+  phase?: number | null;
+  channel?: MktChannel | null;
+  progress?: number | null;
 }): Promise<CreateResult> {
   const session = await requireStaff();
 
   const title = input.title?.trim();
   if (!title) return { ok: false, error: "Title is required" };
   if (!validPriority(input.priority)) return { ok: false, error: "Bad priority" };
+  if (input.board !== undefined && !validBoard(input.board)) return { ok: false, error: "Bad board" };
+  if (!validPhase(input.phase)) return { ok: false, error: "Bad phase" };
+  if (!validChannel(input.channel)) return { ok: false, error: "Bad channel" };
+  if (!validProgress(input.progress)) return { ok: false, error: "Bad progress" };
+  if (input.source !== undefined && !validSource(input.source)) return { ok: false, error: "Bad source" };
+  if (input.source && SERVER_ONLY_SOURCES.includes(input.source)) {
+    return { ok: false, error: "Bad source" };
+  }
+  const source: TaskSource = input.source ?? "manual";
+  const sourceRef: TaskSourceRef | null = input.source_ref ?? null;
+  if (sourceRef !== null) {
+    if (!validSourceRef(sourceRef)) return { ok: false, error: "Bad source_ref" };
+  } else if (source !== "manual") {
+    return { ok: false, error: "Bad source_ref" };
+  }
+  // Only the shape fields travel - never whatever else the client put on the object.
+  const cleanRef: TaskSourceRef | null = sourceRef
+    ? {
+        kind: sourceRef.kind,
+        table: sourceRef.table,
+        row_id: sourceRef.row_id,
+        label: sourceRef.label,
+        url: sourceRef.url,
+      }
+    : null;
 
   // Editors may only create tasks for themselves.
   const assigneeId = isManager(session.role)
@@ -167,8 +265,12 @@ export async function createTask(input: {
       assignee_id: assigneeId,
       created_by: session.sub,
       due_date: input.due_date || null,
-      source: validSource(input.source) ? input.source : "manual",
-      source_ref: input.source_ref ?? null,
+      source,
+      source_ref: cleanRef,
+      board: input.board ?? "ops",
+      phase: input.phase ?? null,
+      channel: input.channel ?? null,
+      progress: input.progress ?? null,
     })
     .select("id")
     .single();
@@ -194,7 +296,7 @@ export async function createTask(input: {
       description: input.description?.trim() || null,
       priority: input.priority,
       dueDate: input.due_date || null,
-      sourceRef: input.source_ref ?? null,
+      sourceRef: cleanRef,
       assigneeId,
       assignerId: session.sub,
     });
@@ -210,11 +312,26 @@ export async function updateTask(
     priority?: TaskPriority;
     assignee_id?: string | null;
     due_date?: string | null;
+    board?: TaskBoard;
+    phase?: number | null;
+    channel?: MktChannel | null;
+    progress?: number | null;
   },
 ): Promise<Result> {
   const session = await requireStaff();
-  if (!isManager(session.role)) {
-    return { ok: false, error: "Only admins edit task details" };
+  const manager = isManager(session.role);
+
+  if (!manager) {
+    // The most permissive a non-admin can ever be (editing their OWN task) -
+    // any patch key outside that set is refused before we even know whose
+    // task this is. Real ownership is enforced below via the scoped queries.
+    const allowed = editableFields(session.role, true);
+    const disallowed = (Object.keys(patch) as EditableTaskField[]).filter(
+      (key) => !allowed.has(key),
+    );
+    if (disallowed.length > 0) {
+      return { ok: false, error: "רק מנהל עורך פרטי משימה" };
+    }
   }
 
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -232,23 +349,50 @@ export async function updateTask(
   }
   if (patch.assignee_id !== undefined) update.assignee_id = patch.assignee_id;
   if (patch.due_date !== undefined) update.due_date = patch.due_date || null;
+  if (patch.board !== undefined) {
+    if (!validBoard(patch.board)) return { ok: false, error: "Bad board" };
+    update.board = patch.board;
+  }
+  if (patch.phase !== undefined) {
+    if (!validPhase(patch.phase)) return { ok: false, error: "Bad phase" };
+    update.phase = patch.phase;
+  }
+  if (patch.channel !== undefined) {
+    if (!validChannel(patch.channel)) return { ok: false, error: "Bad channel" };
+    update.channel = patch.channel;
+  }
+  if (patch.progress !== undefined) {
+    if (!validProgress(patch.progress)) return { ok: false, error: "Bad progress" };
+    update.progress = patch.progress;
+  }
 
-  // The row as it was - needed to tell a re-assignment from a plain edit.
-  const { data: before } = await db
+  // The row as it was - needed to tell a re-assignment from a plain edit,
+  // and to diff every tracked field into the thread's activity rows below.
+  // Scoped the same way as the update itself for a non-admin, so a non-owner
+  // can never learn another task's fields through the activity diff.
+  let beforeQuery = db
     .from("tasks")
-    .select("assignee_id")
-    .eq("id", id)
-    .maybeSingle();
+    .select("status,assignee_id,priority,due_date,progress,board")
+    .eq("id", id);
+  if (!manager) beforeQuery = beforeQuery.eq("assignee_id", session.sub);
+  const { data: before, error: beforeError } = await beforeQuery.maybeSingle();
+  if (beforeError) console.error("tasks: before-read failed", JSON.stringify(beforeError));
+  // Tradeoff: if before-read fails, diffActivities records every patched field as changing from
+  // null (not true, but safe: the actual edit succeeded so audit has the final state).
 
-  const { data: after, error } = await db
-    .from("tasks")
-    .update(update)
-    .eq("id", id)
+  let updateQuery = db.from("tasks").update(update).eq("id", id);
+  if (!manager) updateQuery = updateQuery.eq("assignee_id", session.sub);
+  const { data: after, error } = await updateQuery
     .select("id,title,description,priority,assignee_id,due_date,source_ref")
     .maybeSingle();
   if (error) {
     console.error("tasks: update failed", JSON.stringify(error));
     return { ok: false, error: "Update failed" };
+  }
+  if (!after) {
+    // Nothing matched: for an editor it is not their task, for an admin the id is
+    // gone. Either way no activity row and no audit for a write that never happened.
+    return { ok: false, error: manager ? "המשימה לא נמצאה" : "לא המשימה שלך" };
   }
 
   await logAudit({
@@ -257,6 +401,10 @@ export async function updateTask(
     entityId: id,
     changes: update,
   });
+
+  for (const activity of diffActivities(before ?? {}, update)) {
+    await recordActivity(id, session.sub, activity);
+  }
 
   // Handed to a new person (not the editor themself) → mail them.
   const newAssignee = (after?.assignee_id as string | null) ?? null;
@@ -284,6 +432,18 @@ export async function updateTask(
 export async function setTaskStatus(id: string, status: TaskStatus): Promise<Result> {
   const session = await requireStaff();
   if (!validStatus(status)) return { ok: false, error: "Bad status" };
+
+  // The status as it was - read BEFORE the update, or an activity row would
+  // record "from" equal to "to".
+  const { data: beforeRow, error: beforeError } = await db
+    .from("tasks")
+    .select("status")
+    .eq("id", id)
+    .maybeSingle();
+  if (beforeError) console.error("tasks: before-read failed", JSON.stringify(beforeError));
+  // Tradeoff: if before-read fails, activity records status as changing from null (not true,
+  // but safe: the actual update succeeded so audit has the final state).
+  const previousStatus = (beforeRow?.status as TaskStatus | undefined) ?? null;
 
   let query = db
     .from("tasks")
@@ -314,24 +474,19 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
   // reopening one changes that screen, which caches its rows (lib/services/price-light-cache).
   invalidatePriceLight("rows");
 
-  // A gap task marked done files the gap away with it (Tom, 2026-09-10: the
-  // radar kept listing it as "assigned to task" after the work was done).
-  // Reopening the task puts the gap back on the list.
-  const row = data[0] as { source: string; source_ref: TaskSourceRef | null };
-  if (row.source === "creative_gap" && row.source_ref) {
-    const ref = row.source_ref;
-    if (status === "done") {
-      await dismissCreativeGap({
-        kind: ref.kind,
-        table: ref.table,
-        row_id: ref.row_id,
-        label: ref.label,
-        note: "נסגר במשימה",
-      });
-    } else if (status === "todo" || status === "in_progress") {
-      await restoreCreativeGap(gapKey(ref.kind, ref.table, ref.row_id));
-    }
+  // Reuses diffActivities' from===to skip: a no-op setTaskStatus call (same
+  // status re-applied) writes no activity row.
+  for (const activity of diffActivities({ status: previousStatus }, { status })) {
+    await recordActivity(id, session.sub, activity);
   }
+
+  // A gap task marked done takes its gap off every list that shows it, and
+  // reopening the task puts it back - one rule for every gap family, not just
+  // creative (Dor, 16.09: "אחרי שמשימה נעשתה - צריך להוריד אותה מה-gaps של כל
+  // אחד באשר הוא"). resolveGapForTask swallows its own errors, so a failed gap
+  // write never blocks this status change.
+  const row = data[0] as { source: TaskSource; source_ref: TaskSourceRef | null };
+  await resolveGapForTask({ id, source: row.source, source_ref: row.source_ref }, status);
   return { ok: true };
 }
 
@@ -348,6 +503,26 @@ export async function deleteTask(id: string): Promise<Result> {
   if (error) {
     console.error("tasks: delete failed", JSON.stringify(error));
     return { ok: false, error: "Delete failed" };
+  }
+
+  // The thread rows survive the soft delete; the images do not need to.
+  // Best-effort: list() defaults to 100 entries, so pass an explicit limit
+  // large enough to cover a task with many screenshots; a cleanup failure is
+  // logged and never fails the delete itself.
+  try {
+    const { data: files, error: listError } = await supabase.storage
+      .from("task-attachments")
+      .list(id, { limit: 1000 });
+    if (listError) {
+      console.error("tasks: attachment list failed", JSON.stringify(listError));
+    } else if (files?.length) {
+      const { error: removeError } = await supabase.storage
+        .from("task-attachments")
+        .remove(files.map((file) => `${id}/${file.name}`));
+      if (removeError) console.error("tasks: attachment cleanup failed", JSON.stringify(removeError));
+    }
+  } catch (cleanupError) {
+    console.error("tasks: attachment cleanup threw", JSON.stringify(cleanupError));
   }
 
   await logAudit({ action: "task.delete", entityType: "task", entityId: id });
@@ -369,7 +544,7 @@ export async function openTaskGapKeys(
     .from("tasks")
     .select("source_ref")
     .is("deleted_at", null)
-    .in("status", ["todo", "in_progress"])
+    .in("status", OPEN_TASK_STATUSES)
     .eq("source", source);
   if (error) {
     console.error("tasks: gap-keys failed", JSON.stringify(error));
