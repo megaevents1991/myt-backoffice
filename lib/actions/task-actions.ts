@@ -417,6 +417,26 @@ export async function deleteTask(id: string): Promise<Result> {
     return { ok: false, error: "Delete failed" };
   }
 
+  // The thread rows survive the soft delete; the images do not need to.
+  // Best-effort: list() defaults to 100 entries, so pass an explicit limit
+  // large enough to cover a task with many screenshots; a cleanup failure is
+  // logged and never fails the delete itself.
+  try {
+    const { data: files, error: listError } = await supabase.storage
+      .from("task-attachments")
+      .list(id, { limit: 1000 });
+    if (listError) {
+      console.error("tasks: attachment list failed", JSON.stringify(listError));
+    } else if (files?.length) {
+      const { error: removeError } = await supabase.storage
+        .from("task-attachments")
+        .remove(files.map((file) => `${id}/${file.name}`));
+      if (removeError) console.error("tasks: attachment cleanup failed", JSON.stringify(removeError));
+    }
+  } catch (cleanupError) {
+    console.error("tasks: attachment cleanup threw", JSON.stringify(cleanupError));
+  }
+
   await logAudit({ action: "task.delete", entityType: "task", entityId: id });
   return { ok: true };
 }

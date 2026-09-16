@@ -1,8 +1,10 @@
 "use server";
 
+import { randomUUID } from "crypto";
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
+import { sniffImageMime } from "@/lib/images/sniff";
 import { ADMIN_ROLES, STAFF_ROLES } from "@/types/auth.types";
 import type {
   Ok,
@@ -19,6 +21,10 @@ const COMMENT_COLUMNS =
   "id,task_id,author_id,kind,body,activity,attachments,mentions,edited_at,deleted_at,created_at";
 
 const BODY_MAX = 5000;
+const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+const EXT: Record<string, string> = {
+  "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif",
+};
 
 function isManager(role: string): boolean {
   return (ADMIN_ROLES as readonly string[]).includes(role);
@@ -76,6 +82,54 @@ async function signedUrlMap(paths: string[]): Promise<Map<string, string>> {
     if (item.path && item.signedUrl) out.set(item.path, item.signedUrl);
   }
   return out;
+}
+
+/** Upload one pasted/dropped image. The path is derived server-side from the
+ *  task id and a uuid - a client-supplied name never reaches the storage path. */
+export async function uploadTaskAttachment(
+  taskId: string,
+  form: FormData,
+): Promise<{ ok: true; attachment: TaskAttachment } | { ok: false; error: string }> {
+  await requireStaff();
+
+  const file = form.get("file");
+  if (!(file instanceof File)) return { ok: false, error: "לא התקבל קובץ" };
+  if (file.size === 0) return { ok: false, error: "הקובץ ריק" };
+  if (file.size > ATTACHMENT_MAX_BYTES) return { ok: false, error: "הקובץ גדול מ-5MB" };
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const mime = sniffImageMime(new Uint8Array(buffer.subarray(0, 12)));
+  if (!mime) return { ok: false, error: "אפשר להעלות תמונות בלבד (PNG/JPG/WebP/GIF)" };
+
+  // The task must exist and not be deleted - otherwise the bucket collects
+  // orphan folders no screen will ever show.
+  const { data: task, error: taskError } = await db
+    .from("tasks").select("id").eq("id", taskId).is("deleted_at", null).maybeSingle();
+  if (taskError || !task) return { ok: false, error: "המשימה לא נמצאה" };
+
+  const path = `${taskId}/${randomUUID()}.${EXT[mime]}`;
+  const { error } = await supabase.storage
+    .from("task-attachments")
+    .upload(path, buffer, { contentType: mime, upsert: false });
+  if (error) {
+    console.error("task-comments: upload failed", JSON.stringify(error));
+    return { ok: false, error: "ההעלאה נכשלה" };
+  }
+
+  const width = Number(form.get("width"));
+  const height = Number(form.get("height"));
+  return {
+    ok: true,
+    attachment: {
+      path,
+      // Display name only - never used to build a path.
+      name: (file.name || "screenshot").slice(0, 120),
+      mime,
+      size: file.size,
+      width: Number.isFinite(width) && width > 0 ? width : null,
+      height: Number.isFinite(height) && height > 0 ? height : null,
+    },
+  };
 }
 
 /** Attachments arrive from the client and are not trusted with a path: an

@@ -1,5 +1,6 @@
 // scripts/task-thread-selftest.ts - `npx tsx scripts/task-thread-selftest.ts`
 // Pure helpers only: the DB paths are verified in the browser.
+import { randomUUID } from "crypto";
 import { diffActivities } from "../lib/services/task-activity";
 import { isValidTaskAttachmentPath } from "../lib/tasks/attachment-path";
 
@@ -29,6 +30,9 @@ check("path rejects nested dirs", isValidTaskAttachmentPath(taskId, `${taskId}/s
 check("path rejects non-string", isValidTaskAttachmentPath(taskId, 123), false);
 check("path accepts valid uuid", isValidTaskAttachmentPath(taskId, `${taskId}/3f9a-uuid.png`), true);
 check("path accepts uuid-like name", isValidTaskAttachmentPath(taskId, `${taskId}/a1b2c3d4-e5f6-47g8-h9i0-j1k2l3m4n5o6.png`), true);
+// The real upload path: taskId/{randomUUID()}.{ext} - confirms a genuine
+// crypto.randomUUID() (hyphens + lowercase hex) fits the accepted shape.
+check("path accepts real randomUUID", isValidTaskAttachmentPath(taskId, `${taskId}/${randomUUID()}.png`), true);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);
