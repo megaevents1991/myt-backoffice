@@ -89,23 +89,72 @@ const categories = [
 
 check(
   "person -> category twin",
-  findCategoryTwin({ id: 10, name: "ליברפול", name_english: "Liverpool" }, 1, categories),
+  findCategoryTwin({ id: 10, name: "ליברפול", name_english: "Liverpool" }, 1, categories, teams),
   categories[0],
 );
 
 check(
   "person -> category, undefined hub -> null",
-  findCategoryTwin({ id: 10, name: "ליברפול", name_english: "Liverpool" }, undefined, categories),
+  findCategoryTwin({ id: 10, name: "ליברפול", name_english: "Liverpool" }, undefined, categories, teams),
   null,
 );
 
 check(
   "person -> category, person has no English name -> null (render gate)",
-  findCategoryTwin({ id: 10, name: "ליברפול", name_english: null }, 1, categories),
+  findCategoryTwin({ id: 10, name: "ליברפול", name_english: null }, 1, categories, [{ id: 10, name: "ליברפול", name_english: null }]),
   null,
 );
 
 // --- namesMatch, the shared primitive ---
+
+// --- final review: match FIRST, gate AFTER (main's exact order) ---
+
+// Two people match "ליברפול"; the first one (by the roster's name order) has no English name.
+const rosterFirstNoEnglish = [
+  { id: 30, name: "ליברפול", name_english: null },
+  { id: 31, name: "ליברפול", name_english: "Liverpool" },
+];
+check(
+  "first match lacks English name -> not a twin, even though a later person would pass",
+  findTwin({ id: 110, parent_id: 1, name: "ליברפול", name_english: null }, hubs, rosterFirstNoEnglish, artists),
+  null,
+);
+check(
+  "person -> category: a later person does not win a category the first match owns",
+  findCategoryTwin(
+    rosterFirstNoEnglish[1],
+    1,
+    [{ id: 110, parent_id: 1, name: "ליברפול", name_english: null }],
+    rosterFirstNoEnglish,
+  ),
+  null,
+);
+check(
+  "first match renderable -> twin",
+  findTwin(
+    { id: 111, parent_id: 1, name: "ליברפול", name_english: null },
+    hubs,
+    [rosterFirstNoEnglish[1], rosterFirstNoEnglish[0]],
+    artists,
+  ),
+  { kind: "team", id: 31, name: "ליברפול" },
+);
+// main compares the person's HEBREW name to the category's ENGLISH name, never the reverse.
+check(
+  "person name == category English name -> match",
+  namesMatch({ name: "x", name_english: "PSG" }, { name: "psg", name_english: "Paris Saint-Germain" }),
+  true,
+);
+check(
+  "person English name == category Hebrew name -> no match (main has no such branch)",
+  namesMatch({ name: "Coldplay", name_english: null }, { name: "קולדפליי", name_english: "Coldplay" }),
+  false,
+);
+check(
+  "category without an English name never matches on English",
+  namesMatch({ name: "x", name_english: null }, { name: "y", name_english: "" }),
+  false,
+);
 
 check("namesMatch symmetric English", namesMatch({ name: "x", name_english: "Coldplay" }, { name: "קולדפליי", name_english: "Coldplay" }), true);
 check("namesMatch no match", namesMatch({ name: "x", name_english: "y" }, { name: "z", name_english: "w" }), false);

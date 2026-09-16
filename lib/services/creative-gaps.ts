@@ -139,8 +139,20 @@ export async function buildGapContext(opts: GapLoadOptions = {}): Promise<GapCon
       .select("id,slug")
       .eq("is_deleted", false)
       .in("slug", [TWIN_HUB_SLUG.team, TWIN_HUB_SLUG.artist]),
-    db.from("football_teams").select("id,name,name_english").eq("is_deleted", false),
-    db.from("artists").select("id,name,name_english").eq("is_deleted", false),
+    // Same roster main renders from (lib/cms/people.ts listAll): active only, by name -
+    // findTwin takes the FIRST match, so the order matters.
+    db
+      .from("football_teams")
+      .select("id,name,name_english")
+      .eq("is_deleted", false)
+      .eq("is_active", true)
+      .order("name"),
+    db
+      .from("artists")
+      .select("id,name,name_english")
+      .eq("is_deleted", false)
+      .eq("is_active", true)
+      .order("name"),
   ]);
   const failures: [string, { error: unknown }][] = [
     ["live events", eventsRes],

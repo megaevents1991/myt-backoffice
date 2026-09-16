@@ -1,26 +1,22 @@
 /**
  * Team/artist <-> category "twin" matching (Task 16, tasks hub, 2026-09-16).
  *
- * myt-main's `app/c/[...slug]/page.tsx` renders a category page as
- * `TeamCmsPage` / `ArtistCmsPage` (blob art in the hero) instead of the
- * generic category page when the category's parent is the `teams` /
- * `artists` hub, its name matches a real team/artist, AND that matched
- * person has both a non-empty name and a non-empty English name
- * (`twin.fields.name && twin.fields.nameDBenglish` - main's actual render
- * gate). Anything short of that renders the generic category page instead,
- * which DOES show `categories.image_url`/`page_content` - so this file's
- * `isRenderable` check matters, not just the name match.
+ * Mirrors myt-main's `app/c/[...slug]/page.tsx` EXACTLY (final review): for a
+ * category whose parent is the `teams` / `artists` hub, main takes the ACTIVE
+ * roster ordered by name (`lib/cms/people.ts` listAll), finds the FIRST person
+ * whose name matches -
+ *   `(catEn && (personEn === catEn || personName === catEn)) || personName === catHe`
+ * (all trimmed + lowercased) - and only THEN renders `TeamCmsPage` /
+ * `ArtistCmsPage` if that first person has a non-empty name AND English name.
+ * Match first, gate after: if the first match lacks an English name the
+ * category is NOT a twin, even when a later person would also have matched and
+ * passed the gate. A non-twin renders the generic category page, which DOES
+ * show `categories.image_url`/`page_content`.
  *
- * `lib/actions/portal-site-pages-actions.ts` already had this exact rule
- * inline (`twinFor`, for the partner link builder); this file is that rule
- * pulled out so the creative-gaps radar (`lib/services/creative-gaps.ts`)
- * can reuse it byte-for-byte instead of a second, possibly-drifting matcher.
- * portal-site-pages-actions.ts now imports `findCategoryTwin` from here -
- * behaviour there is unchanged except that a person with no English name no
- * longer counts as a twin (it previously could match on Hebrew name alone;
- * that link now falls back to the legacy `/artists/<slug>` or
- * `/football/<slug>` route, exactly what main's own 308 does when no twin
- * exists - see the report for the one case this can affect).
+ * Callers must hand in the roster the way main reads it: `is_active = true`
+ * (and not deleted), ordered by `name`. Used by the creative-gaps radar
+ * (`lib/services/creative-gaps.ts`) and the partner link builder
+ * (`lib/actions/portal-site-pages-actions.ts`), so the two can never drift.
  */
 /** Hub slugs on the site (myt-main lib/cmsTwin.ts HUB_SLUG). */
 export const TWIN_HUB_SLUG = { team: "teams", artist: "artists" } as const;
@@ -50,11 +46,9 @@ export interface TwinMatch {
 }
 
 /**
- * The name-matching rule itself - lifted verbatim from
- * portal-site-pages-actions.ts's old inline `twinFor` body. Case/whitespace
- * insensitive; a category and a person match when either side's English name
- * equals the other's Hebrew name, or both English names match, or both
- * Hebrew names match.
+ * main's name comparison, verbatim (see the file header): a person matches a
+ * category when the category has an English name equal to the person's English
+ * OR Hebrew name, or the person's Hebrew name equals the category's Hebrew name.
  */
 export function namesMatch(
   category: Pick<TwinCategory, "name" | "name_english">,
@@ -62,44 +56,49 @@ export function namesMatch(
 ): boolean {
   const catEn = (category.name_english ?? "").trim().toLowerCase();
   const catHe = category.name.trim().toLowerCase();
-  const en = (person.name_english ?? "").trim().toLowerCase();
-  const he = person.name.trim().toLowerCase();
-  return (!!en && (catEn === en || catHe === en)) || (!!he && catHe === he);
+  const personEn = (person.name_english ?? "").trim().toLowerCase();
+  const personName = person.name.trim().toLowerCase();
+  return (!!catEn && (personEn === catEn || personName === catEn)) || personName === catHe;
 }
 
-/**
- * main's render gate: a matched person only actually gets `TeamCmsPage`/
- * `ArtistCmsPage` when BOTH names are non-empty. A person with a Hebrew name
- * but no English one still matches by name, but main falls back to the
- * generic category page for it - so it is not a twin here either.
- */
+/** main's render gate, applied to the FIRST match only. */
 function isRenderable(person: TwinPerson): boolean {
   return !!person.name.trim() && !!(person.name_english ?? "").trim();
 }
 
+/** The person main would render for this category (first match, then the gate), or null. */
+function twinPersonFor(category: TwinCategory, roster: TwinPerson[]): TwinPerson | null {
+  const first = roster.find((person) => namesMatch(category, person));
+  return first && isRenderable(first) ? first : null;
+}
+
 /**
- * Person -> its twin category, if any (the direction portal-site-pages-actions.ts
- * needs for the partner link builder). `hubId` is the id of the `teams` or
- * `artists` category depending on which roster `person` came from. Generic
- * over the caller's own category row shape (e.g. `EventCategory`, which
- * carries more fields than the bare `TwinCategory` this only needs to read)
- * so the caller gets back its own richer type, not a narrowed one.
+ * Person -> its twin category, if any (the direction the partner link builder
+ * needs). `hubId` is the id of the `teams` or `artists` category depending on
+ * which `roster` `person` came from; `roster` is that whole active,
+ * name-ordered list, because whether `person` wins a category depends on who
+ * else matches it first. Generic over the caller's own category row shape so
+ * the caller gets back its own richer type.
  */
 export function findCategoryTwin<C extends TwinCategory>(
   person: TwinPerson,
   hubId: number | undefined,
   categories: C[],
+  roster: TwinPerson[],
 ): C | null {
-  if (hubId == null || !isRenderable(person)) return null;
-  return categories.find((c) => c.parent_id === hubId && namesMatch(c, person)) ?? null;
+  if (hubId == null) return null;
+  return (
+    categories.find(
+      (c) => c.parent_id === hubId && twinPersonFor(c, roster)?.id === person.id,
+    ) ?? null
+  );
 }
 
 /**
  * Category -> its team/artist twin, if any (the direction the creative-gaps
- * radar needs). Gated on the category's parent being the right hub, same as
- * main's cmsTwin.ts; checks the team roster when the parent is `teams`, the
- * artist roster when it's `artists`, never both. A candidate that fails
- * `isRenderable` is skipped, same as `findCategoryTwin`.
+ * radar needs). Gated on the category's parent being the right hub; checks the
+ * team roster when the parent is `teams`, the artist roster when it's
+ * `artists`, never both.
  */
 export function findTwin(
   category: TwinCategory,
@@ -111,11 +110,11 @@ export function findTwin(
   const teamHubId = hubs.find((h) => h.slug === TWIN_HUB_SLUG.team)?.id;
   const artistHubId = hubs.find((h) => h.slug === TWIN_HUB_SLUG.artist)?.id;
   if (teamHubId != null && category.parent_id === teamHubId) {
-    const team = teams.find((t) => isRenderable(t) && namesMatch(category, t));
+    const team = twinPersonFor(category, teams);
     if (team) return { kind: "team", id: team.id, name: team.name };
   }
   if (artistHubId != null && category.parent_id === artistHubId) {
-    const artist = artists.find((a) => isRenderable(a) && namesMatch(category, a));
+    const artist = twinPersonFor(category, artists);
     if (artist) return { kind: "artist", id: artist.id, name: artist.name };
   }
   return null;

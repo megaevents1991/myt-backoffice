@@ -37,16 +37,17 @@ interface PersonRow {
   slug: string;
 }
 
-// The actual name-matching rule now lives in lib/services/category-twins.ts
-// (findCategoryTwin/namesMatch), shared with the creative-gaps radar - moved
-// there in Task 16 so the two callers can't drift apart. Behaviour here is
-// unchanged: same hub gate, same name comparison.
+// The name-matching rule lives in lib/services/category-twins.ts (findCategoryTwin),
+// shared with the creative-gaps radar and mirroring main's /c/ page exactly: the
+// FIRST name match in the active, name-ordered roster decides, so the whole roster
+// travels with each lookup.
 function twinFor(
   person: PersonRow,
   hubId: number | undefined,
   categories: EventCategory[],
+  roster: PersonRow[],
 ): EventCategory | null {
-  return findCategoryTwin(person, hubId, categories);
+  return findCategoryTwin(person, hubId, categories, roster);
 }
 
 export async function listSitePages(): Promise<SitePageOption[]> {
@@ -95,7 +96,7 @@ export async function listSitePages(): Promise<SitePageOption[]> {
     ] as const
   ).flatMap(([kind, rows, legacyPrefix]) =>
     rows.flatMap((person): SitePageOption[] => {
-      const twin = twinFor(person, hubIds[kind], categories);
+      const twin = twinFor(person, hubIds[kind], categories, rows);
       if (twin) {
         // The category row lists this page too - keep one entry, labelled
         // as the person so it reads naturally in the search.
