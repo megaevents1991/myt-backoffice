@@ -31,6 +31,7 @@ import {
   type TaskWithNames,
 } from "@/types/task.types";
 import { validBoard, validChannel, validPhase, validProgress } from "@/lib/task-boards";
+import { diffActivities, recordActivity } from "@/lib/services/task-activity";
 
 type Result = { ok: true } | { ok: false; error: string };
 type CreateResult = { ok: true; id: string } | { ok: false; error: string };
@@ -276,12 +277,14 @@ export async function updateTask(
     update.progress = patch.progress;
   }
 
-  // The row as it was - needed to tell a re-assignment from a plain edit.
-  const { data: before } = await db
+  // The row as it was - needed to tell a re-assignment from a plain edit,
+  // and to diff every tracked field into the thread's activity rows below.
+  const { data: before, error: beforeError } = await db
     .from("tasks")
-    .select("assignee_id")
+    .select("status,assignee_id,priority,due_date,progress,board")
     .eq("id", id)
     .maybeSingle();
+  if (beforeError) console.error("tasks: before-read failed", JSON.stringify(beforeError));
 
   const { data: after, error } = await db
     .from("tasks")
@@ -300,6 +303,10 @@ export async function updateTask(
     entityId: id,
     changes: update,
   });
+
+  for (const activity of diffActivities(before ?? {}, update)) {
+    await recordActivity(id, session.sub, activity);
+  }
 
   // Handed to a new person (not the editor themself) → mail them.
   const newAssignee = (after?.assignee_id as string | null) ?? null;
@@ -328,6 +335,16 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
   const session = await requireStaff();
   if (!validStatus(status)) return { ok: false, error: "Bad status" };
 
+  // The status as it was - read BEFORE the update, or an activity row would
+  // record "from" equal to "to".
+  const { data: beforeRow, error: beforeError } = await db
+    .from("tasks")
+    .select("status")
+    .eq("id", id)
+    .maybeSingle();
+  if (beforeError) console.error("tasks: before-read failed", JSON.stringify(beforeError));
+  const previousStatus = (beforeRow?.status as TaskStatus | undefined) ?? null;
+
   let query = db
     .from("tasks")
     .update({
@@ -353,6 +370,12 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
     entityId: id,
     changes: { status },
   });
+
+  // Reuses diffActivities' from===to skip: a no-op setTaskStatus call (same
+  // status re-applied) writes no activity row.
+  for (const activity of diffActivities({ status: previousStatus }, { status })) {
+    await recordActivity(id, session.sub, activity);
+  }
 
   // A gap task marked done files the gap away with it (Tom, 2026-09-10: the
   // radar kept listing it as "assigned to task" after the work was done).
