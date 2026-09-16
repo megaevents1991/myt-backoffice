@@ -2,6 +2,7 @@
 
 import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
+import { fromPortalHistory, portalHistoryFrom } from "@/lib/portal-history";
 import { PAID_STATUS } from "@/lib/partner-commission";
 import {
   resolvePortalScope,
@@ -56,6 +57,10 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
   // An agent in a multi-user office only ever sees their OWN activity;
   // managers and solo agents see the whole office's feed.
   const isolate = session.role === "agent" && !scope.soloOffice;
+  // Staff-set portal cut-off (lib/portal-history) - only bookings carry it;
+  // quotes/packages/coupons are created in the portal itself, so they cannot
+  // predate the partner's start.
+  const historyFrom = await portalHistoryFrom(code);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let quotesQuery = (supabase as any)
@@ -81,14 +86,17 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
         ? quotesQuery
         : Promise.resolve({ data: [], error: null }),
       packagesQuery,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any)
-        .from("reservations")
-        .select(
-          "id,created_at,status,main_contact_first_name,event_order_info,voucher_state,coupon_code,agent_user_id",
-        )
-        .is("is_deleted", null)
-        .eq("aff_partner_tracking_code", code)
+      fromPortalHistory(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from("reservations")
+          .select(
+            "id,created_at,status,main_contact_first_name,event_order_info,voucher_state,coupon_code,agent_user_id",
+          )
+          .is("is_deleted", null)
+          .eq("aff_partner_tracking_code", code),
+        historyFrom,
+      )
         .order("created_at", { ascending: false })
         .limit(FEED_LIMIT),
       // Coupons are office-level (no creator column) - an isolated agent gets
@@ -111,13 +119,16 @@ export async function getPortalActivityFeed(): Promise<PortalActivityItem[]> {
     // agent_user_id not migrated yet - retry without it; the isolation
     // filter below then relies on UTM attribution alone (override
     // contributes nothing until the migration lands).
-    reservationsResult = await supabase
-      .from("reservations")
-      .select(
-        "id,created_at,status,main_contact_first_name,event_order_info,voucher_state,coupon_code",
-      )
-      .is("is_deleted", null)
-      .eq("aff_partner_tracking_code", code)
+    reservationsResult = await fromPortalHistory(
+      supabase
+        .from("reservations")
+        .select(
+          "id,created_at,status,main_contact_first_name,event_order_info,voucher_state,coupon_code",
+        )
+        .is("is_deleted", null)
+        .eq("aff_partner_tracking_code", code),
+      historyFrom,
+    )
       .order("created_at", { ascending: false })
       .limit(FEED_LIMIT);
   }
@@ -471,6 +482,10 @@ export async function getPortalUserActivity(
 ): Promise<PortalUserActivity> {
   const session = await requirePartner();
   const { from, to } = await rangeWindowISO(range);
+  // Staff-set portal cut-off (lib/portal-history). Applied to the ORDERS only:
+  // the browsing log is the partner's own traffic, and a simulation older than
+  // the cut-off simply finds no order to claim.
+  const historyFrom = await portalHistoryFrom(session.partner_code);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query = (supabase as any)
@@ -513,6 +528,7 @@ export async function getPortalUserActivity(
       new Date(Date.parse(to) + ORDER_MATCH_WINDOW_MS).toISOString(),
     );
   }
+  ordersQuery = fromPortalHistory(ordersQuery, historyFrom);
 
   const [{ data, error }, ordersResult] = await Promise.all([
     query,

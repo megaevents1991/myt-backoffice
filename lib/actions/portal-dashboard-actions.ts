@@ -2,6 +2,7 @@
 
 import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
+import { fromPortalHistory, portalHistoryFrom } from "@/lib/portal-history";
 import {
   commissionForReservation,
   commissionForReservations,
@@ -194,6 +195,9 @@ export async function getPortalDashboard(
   const scope = await resolvePortalScope(session);
   const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
   const { from, to } = await rangeWindowISO(range);
+  // Staff-set portal cut-off (lib/portal-history) - same date the reservations
+  // page applies, so the dashboard's counts match its list.
+  const historyFrom = await portalHistoryFrom(code);
 
   const today = new Date().toISOString().slice(0, 10);
   const newSince = new Date(Date.now() - 30 * 86_400_000).toISOString();
@@ -214,13 +218,16 @@ export async function getPortalDashboard(
       .select("commission,commission_type,user_discount")
       .eq("partner_tracking_code", code)
       .maybeSingle(),
-    supabase
-      .from("reservations")
-      .select(
-        "id,created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,partner_settlement_method,billed_at,coupon_code,coupon_discount_usd,commission_type,commission_rate,agent_user_id",
-      )
-      .is("is_deleted", null)
-      .eq("aff_partner_tracking_code", code),
+    fromPortalHistory(
+      supabase
+        .from("reservations")
+        .select(
+          "id,created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,partner_settlement_method,billed_at,coupon_code,coupon_discount_usd,commission_type,commission_rate,agent_user_id",
+        )
+        .is("is_deleted", null)
+        .eq("aff_partner_tracking_code", code),
+      historyFrom,
+    ),
     supabase
       .from("coupons")
       .select("is_active,times_used")
@@ -262,13 +269,16 @@ export async function getPortalDashboard(
   if (reservationsResult.error?.code === "42703") {
     // agent_user_id not migrated yet - retry without it; every row simply
     // merges to its UTM attribution below (override contributes nothing).
-    reservationsResult = await supabase
-      .from("reservations")
-      .select(
-        "id,created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,partner_settlement_method,billed_at,coupon_code,coupon_discount_usd,commission_type,commission_rate",
-      )
-      .is("is_deleted", null)
-      .eq("aff_partner_tracking_code", code);
+    reservationsResult = await fromPortalHistory(
+      supabase
+        .from("reservations")
+        .select(
+          "id,created_at,status,user_shown_price,event_order_info,flight_order_info,hotel_order_info,quote_id,partner_settlement_method,billed_at,coupon_code,coupon_discount_usd,commission_type,commission_rate",
+        )
+        .is("is_deleted", null)
+        .eq("aff_partner_tracking_code", code),
+      historyFrom,
+    );
   }
 
   // A thrown error here used to take the WHOLE portal down with a bare

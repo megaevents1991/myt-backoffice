@@ -86,6 +86,13 @@ export type Partner = {
   voucher_payment_allowed: boolean;
   /** The partner's company/VAT number (ח.פ), printed on the monthly report. */
   supplier_number: number | null;
+  /**
+   * `YYYY-MM-DD`. The portal shows bookings created on/after this date only -
+   * for a partner starting fresh on a code that already has history. NULL =
+   * everything. Reporting cut-off only: the monthly report and commission
+   * maths never read it.
+   */
+  portal_history_from?: string | null;
   type: PartnerType | null;
   is_active: boolean;
 };

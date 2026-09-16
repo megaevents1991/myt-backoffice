@@ -61,6 +61,8 @@ type FormState = {
   voucher_payment_allowed: boolean;
   user_discount: string;
   supplier_number: string;
+  /** `YYYY-MM-DD` or "" - the native date input's own value shape. */
+  portal_history_from: string;
   is_active: boolean;
 };
 
@@ -78,6 +80,7 @@ const EMPTY_FORM: FormState = {
   voucher_payment_allowed: false,
   user_discount: "5",
   supplier_number: "",
+  portal_history_from: "",
   is_active: true,
 };
 
@@ -134,6 +137,7 @@ export default function PartnerPage({
           voucher_payment_allowed: account.voucher_payment_allowed,
           user_discount: String(account.user_discount ?? 0),
           supplier_number: account.supplier_number?.toString() ?? "",
+          portal_history_from: account.portal_history_from ?? "",
           is_active: account.is_active,
         });
         setUserId(account.user_id);
@@ -185,6 +189,7 @@ export default function PartnerPage({
         voucher_payment_allowed: form.voucher_payment_allowed,
         user_discount: Number(form.user_discount),
         supplier_number: form.supplier_number ? Number(form.supplier_number) : null,
+        portal_history_from: form.portal_history_from || null,
         is_active: form.is_active,
       };
 
@@ -585,6 +590,22 @@ export default function PartnerPage({
                 />
                 <p className="text-xs text-muted-foreground">
                   Optional - printed on the monthly invoice-style report.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="portal_history_from">Portal History From</Label>
+                <Input
+                  id="portal_history_from"
+                  name="portal_history_from"
+                  type="date"
+                  value={form.portal_history_from}
+                  onChange={handleChange}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Empty = every booking on this code. Set a date when a partner
+                  starts fresh on a code that already has history - the portal
+                  hides earlier bookings. Reporting only: the monthly report and
+                  commission are not affected.
                 </p>
               </div>
             </div>

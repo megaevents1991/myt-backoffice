@@ -28,6 +28,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > rebalance (`lib/services/influencer-coupon.ts`). myt-main multiplies a
 > per-person fixed coupon by the ticket count (`getCouponDiscountUsd`,
 > validate route, confirm-order) - other coupons stay per order.
+>
+> **Portal history cut-off (2026-09-16):** `partners.portal_history_from`
+> (date, null = all) - set in the partner editor ("Portal History From") for a
+> partner starting fresh on a code that already has bookings (Aviran: code
+> since 03/2025, portal since 09/2026, saw a 06/2025 customer). Every portal
+> surface that lists/counts bookings applies it via `lib/portal-history.ts`
+> (`portalHistoryFrom` + `fromPortalHistory`): reservations page, dashboard,
+> stats, activity feed, user log. **Reporting only** - the monthly report and
+> commission maths never read it.
 
 > **✅ Redesign + Events Factory + Guide (branch `feat/backoffice-redesign`, 2026-09-02).**
 > Everything below is on that branch, migrations already applied to prod.

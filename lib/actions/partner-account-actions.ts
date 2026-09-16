@@ -53,6 +53,12 @@ export interface PartnerAccountInput {
   voucher_payment_allowed: boolean;
   /** Company/VAT number (ח.פ). */
   supplier_number?: number | null;
+  /**
+   * `YYYY-MM-DD` - the portal shows bookings from this date only (null = all).
+   * Reporting cut-off for a partner starting fresh on a code that already has
+   * history; the monthly report and commission never read it (lib/portal-history).
+   */
+  portal_history_from?: string | null;
   is_active: boolean;
 }
 
@@ -101,6 +107,12 @@ function validate(input: PartnerAccountInput): string | null {
   ) {
     return "Company number (ח.פ) must be a number";
   }
+  if (
+    input.portal_history_from != null &&
+    !/^\d{4}-\d{2}-\d{2}$/.test(input.portal_history_from)
+  ) {
+    return "Portal history start must be a date (YYYY-MM-DD)";
+  }
   return null;
 }
 
@@ -118,16 +130,28 @@ function partnerRow(input: PartnerAccountInput) {
     voucher_payment_allowed:
       input.type === "agent" && input.voucher_payment_allowed,
     supplier_number: input.supplier_number ?? null,
+    portal_history_from: input.portal_history_from || null,
     type: input.type as PartnerType,
     is_active: input.is_active,
   };
 }
 
-/** The coupon_cap column may not be migrated yet (PGRST204/42703). */
+/** A recently added column may not be migrated yet (PGRST204/42703). */
 function isMissingColumnError(
   error: { code?: string } | null | undefined,
 ): boolean {
   return error?.code === "PGRST204" || error?.code === "42703";
+}
+
+/**
+ * The columns added by migrations that may not have landed on the DB the app
+ * is talking to (a preview deploy ahead of master). On a missing-column error
+ * the write is retried without them - everything older is saved regardless.
+ */
+function withoutUnmigratedColumns<T extends Record<string, unknown>>(row: T) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { coupon_cap: _cap, portal_history_from: _from, ...rest } = row;
+  return rest;
 }
 
 async function findLinkedUser(trackingCode: string) {
@@ -199,13 +223,10 @@ export async function createPartnerAccount(
     .from("partners")
     .insert(insertRow);
   if (isMissingColumnError(partnerError)) {
-    // coupon_cap not migrated yet - save the partner without it.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { coupon_cap: _skip, ...withoutCap } = insertRow;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ({ error: partnerError } = await (supabase as any)
       .from("partners")
-      .insert(withoutCap));
+      .insert(withoutUnmigratedColumns(insertRow)));
   }
   if (partnerError) {
     console.error(
@@ -322,13 +343,10 @@ export async function updatePartnerAccount(
     .update(updateRow)
     .eq("partner_tracking_code", trackingCode);
   if (isMissingColumnError(partnerError)) {
-    // coupon_cap not migrated yet - update everything else.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { coupon_cap: _skip, ...withoutCap } = updateRow;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ({ error: partnerError } = await (supabase as any)
       .from("partners")
-      .update(withoutCap)
+      .update(withoutUnmigratedColumns(updateRow))
       .eq("partner_tracking_code", trackingCode));
   }
   if (partnerError) {
@@ -533,14 +551,26 @@ export async function getPartnerAccount(
 ): Promise<PartnerAccount | null> {
   await requireAdmin();
 
-  let { data: partner, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let { data: partner, error } = await (supabase as any)
     .from("partners")
     .select(
-      "partner_tracking_code,name_hebrew,email,commission,commission_type,credit_per_ticket,coupon_cap,voucher_payment_allowed,user_discount,supplier_number,type,is_active",
+      "partner_tracking_code,name_hebrew,email,commission,commission_type,credit_per_ticket,coupon_cap,voucher_payment_allowed,user_discount,supplier_number,portal_history_from,type,is_active",
     )
     .eq("partner_tracking_code", trackingCode)
     .maybeSingle();
-  // Migration race: coupon_cap may not exist yet.
+  // Migration race, newest column first: a preview deploy ahead of master has
+  // coupon_cap but not portal_history_from - dropping both at once would blank
+  // the Coupon Cap field there. Only if THAT still 42703s is coupon_cap dropped.
+  if (error && error.code === "42703") {
+    ({ data: partner, error } = await supabase
+      .from("partners")
+      .select(
+        "partner_tracking_code,name_hebrew,email,commission,commission_type,credit_per_ticket,coupon_cap,voucher_payment_allowed,user_discount,supplier_number,type,is_active",
+      )
+      .eq("partner_tracking_code", trackingCode)
+      .maybeSingle());
+  }
   if (error && error.code === "42703") {
     ({ data: partner, error } = await supabase
       .from("partners")
@@ -567,6 +597,7 @@ export async function getPartnerAccount(
     voucher_payment_allowed: boolean | null;
     user_discount: number;
     supplier_number: number | null;
+    portal_history_from?: string | null;
     type: PartnerType | null;
     is_active: boolean;
   };
@@ -592,6 +623,7 @@ export async function getPartnerAccount(
     voucher_payment_allowed: row.voucher_payment_allowed ?? false,
     user_discount: row.user_discount ?? 0,
     supplier_number: row.supplier_number,
+    portal_history_from: row.portal_history_from ?? null,
     is_active: row.is_active,
     user_id: profile?.id ?? null,
     user_email: profile?.email ?? null,
