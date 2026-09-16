@@ -15,6 +15,7 @@ import {
   type Lights,
 } from "@/lib/services/price-light-store";
 import { openPriceLightTask as insertPriceLightTask } from "@/lib/services/price-light-tasks";
+import { lightSnapshot, recordRepriced, snapshotFor } from "@/lib/services/price-light-decisions";
 import { OPEN_TASK_STATUSES } from "@/types/task.types";
 import {
   cheapestAvailableTicket, competitorsFor, kindOf, ourNights, ourOfferLines, ourPackageUsd, ourTicketUsd,
@@ -42,7 +43,6 @@ import {
   type PriceLightComparison,
   type CrawlStatus,
   type Light,
-  type LightDecisionSnapshot,
   type LightDetail,
   type LightOverride,
   type LightScopeDetail,
@@ -273,44 +273,9 @@ export async function refreshOurOffer(
   }
 }
 
-/**
- * What the comparison looked like when a human decided something about it.
- *
- * Every decision below stamps one of these into its audit metadata, because that row is what the
- * price-light agent learns from (lib/agents/price-light.agent.ts) and "someone removed event 812"
- * is not a lesson. Taken BEFORE the decision's own write, so an override records the light it
- * overruled rather than the one it installed.
- */
-function lightSnapshot(event: LightEvent, scope: Scope): LightDecisionSnapshot | null {
-  const detail = event.light_detail?.[scope];
-  const light = scope === "package" ? event.light_package : event.light_ticket;
-  if (!detail || !light) return null;
-  return {
-    scope,
-    light,
-    diff_usd: detail.diff_usd,
-    our_usd: detail.our_usd,
-    competitor: detail.competitor,
-    normalized_usd: detail.normalized_usd,
-    nights_ours: detail.nights?.ours ?? null,
-    nights_theirs: detail.nights?.theirs ?? null,
-    uncertainty_usd: detail.uncertainty_usd ?? null,
-  };
-}
-
-/** The scope a scope-less decision (mute, remove) is really about: the red one, package first. */
-function decidedScope(event: LightEvent): Scope {
-  if (event.light_package === "red") return "package";
-  if (event.light_ticket === "red") return "ticket";
-  return "package";
-}
-
-/** Snapshot for a decision taken on `eventId`, or null when the event or its light is gone. */
-async function snapshotFor(eventId: number, scope?: Scope): Promise<LightDecisionSnapshot | null> {
-  const event = await loadEventForLight(eventId);
-  if (!event) return null;
-  return lightSnapshot(event, scope ?? decidedScope(event));
-}
+// lightSnapshot / snapshotFor moved to lib/services/price-light-decisions.ts (2026-09-16) so a
+// price_light task-closing rule and the all-staff Pricing tab can stamp the exact same evidence
+// without going through this admin-gated file. Imported above.
 
 /**
  * "הוזל": records that a human looked at a red light, judged the gap REAL, and went to fix our
@@ -320,21 +285,10 @@ async function snapshotFor(eventId: number, scope?: Scope): Promise<LightDecisio
  */
 export async function markRepriced(eventId: number, scope: Scope): Promise<Ok> {
   // Admin, like every other decision here: it is only reachable from the admin-only /price-light
-  // screen, and what it writes becomes evidence the agent learns from.
-  await requireAdmin();
-  try {
-    const snapshot = await snapshotFor(eventId, scope);
-    await logAudit({
-      action: "price_light.repriced",
-      entityType: "event",
-      entityId: eventId,
-      metadata: { ...(snapshot ?? { scope }) },
-    });
-    return { ok: true };
-  } catch (e) {
-    console.error("markRepriced failed", e);
-    return { ok: false, error: e instanceof Error ? e.message : "failed" };
-  }
+  // screen, and what it writes becomes evidence the agent learns from. The write itself is shared
+  // with the task-closing rule and the Pricing tab - see lib/services/price-light-decisions.ts.
+  const session = await requireAdmin();
+  return recordRepriced(eventId, scope, session.sub);
 }
 
 /** "מזכיר לי מאוחר יותר": mute a red light for `days` (default SILENCE_DAYS) without touching the light itself. */

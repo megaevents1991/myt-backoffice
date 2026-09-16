@@ -44,6 +44,7 @@ import {
 import { editableFields } from "@/lib/tasks/permissions";
 import { BOARD_META } from "@/lib/task-boards";
 import { KanbanBoard } from "./kanban-board";
+import { PricingGapsTab } from "./pricing-gaps-tab";
 import {
   filterByBoard,
   parseBoardParam,
@@ -99,13 +100,15 @@ export function TasksClient() {
   // ONE top-level useSearchParams for the whole page - ?tab=, ?task= and now
   // ?board= all read from this same instance (never a second hook call).
   const searchParams = useSearchParams();
-  // /tasks?tab=gaps or ?tab=kanban deep-links straight to that tab.
+  // /tasks?tab=gaps or ?tab=kanban or ?tab=pricing deep-links straight to that tab.
   const initialTab =
     searchParams.get("tab") === "gaps"
       ? "gaps"
       : searchParams.get("tab") === "kanban"
         ? "kanban"
-        : "tasks";
+        : searchParams.get("tab") === "pricing"
+          ? "pricing"
+          : "tasks";
   const initialTaskId = searchParams.get("task");
   const boardLens = parseBoardParam(searchParams.get("board"));
   const isManager = !!user && (ADMIN_ROLES as readonly string[]).includes(user.role);
@@ -450,6 +453,7 @@ export function TasksClient() {
         <TabsTrigger value="tasks">Tasks</TabsTrigger>
         <TabsTrigger value="kanban">Kanban</TabsTrigger>
         <TabsTrigger value="gaps">Creative gaps</TabsTrigger>
+        <TabsTrigger value="pricing">Pricing</TabsTrigger>
       </TabsList>
 
       <TabsContent value="tasks" className="mt-4">
@@ -515,6 +519,15 @@ export function TasksClient() {
           onCreateTask={(gap) =>
             setEditor({ open: true, task: null, prefill: gapPrefill(gap) })
           }
+        />
+      </TabsContent>
+
+      <TabsContent value="pricing" className="mt-4">
+        <PricingGapsTab
+          onOpenTask={(taskId) => {
+            const found = tasks.find((t) => t.id === taskId);
+            if (found) setEditor({ open: true, task: found });
+          }}
         />
       </TabsContent>
 

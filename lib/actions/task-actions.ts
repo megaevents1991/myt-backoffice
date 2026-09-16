@@ -10,11 +10,7 @@ import { supabase } from "@/lib/supabase-server";
 const db = supabase as any;
 import { logAudit } from "@/lib/audit";
 import { notifyTaskAssigned } from "@/lib/services/task-notify";
-import {
-  dismissCreativeGap,
-  restoreCreativeGap,
-} from "@/lib/actions/creative-gap-actions";
-import { gapKey } from "@/types/creative-gap.types";
+import { resolveGapForTask } from "@/lib/services/gap-resolution";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   OPEN_TASK_STATUSES,
@@ -416,24 +412,13 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
     await recordActivity(id, session.sub, activity);
   }
 
-  // A gap task marked done files the gap away with it (Tom, 2026-09-10: the
-  // radar kept listing it as "assigned to task" after the work was done).
-  // Reopening the task puts the gap back on the list.
-  const row = data[0] as { source: string; source_ref: TaskSourceRef | null };
-  if (row.source === "creative_gap" && row.source_ref) {
-    const ref = row.source_ref;
-    if (status === "done") {
-      await dismissCreativeGap({
-        kind: ref.kind,
-        table: ref.table,
-        row_id: ref.row_id,
-        label: ref.label,
-        note: "נסגר במשימה",
-      });
-    } else if ((OPEN_TASK_STATUSES as readonly string[]).includes(status)) {
-      await restoreCreativeGap(gapKey(ref.kind, ref.table, ref.row_id));
-    }
-  }
+  // A gap task marked done takes its gap off every list that shows it, and
+  // reopening the task puts it back - one rule for every gap family, not just
+  // creative (Dor, 16.09: "אחרי שמשימה נעשתה - צריך להוריד אותה מה-gaps של כל
+  // אחד באשר הוא"). resolveGapForTask swallows its own errors, so a failed gap
+  // write never blocks this status change.
+  const row = data[0] as { source: TaskSource; source_ref: TaskSourceRef | null };
+  await resolveGapForTask({ id, source: row.source, source_ref: row.source_ref }, status);
   return { ok: true };
 }
 
