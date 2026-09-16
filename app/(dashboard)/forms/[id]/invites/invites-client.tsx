@@ -78,6 +78,7 @@ export function InvitesClient({
   const [lang, setLang] = useState<FormLang>(defaultLang);
   const [codePrefix, setCodePrefix] = useState("");
   const [codeNum, setCodeNum] = useState("");
+  const [totalTravelers, setTotalTravelers] = useState("");
   const [staffAnswers, setStaffAnswers] = useState<AnswerMap>({});
   const [pending, startTransition] = useTransition();
 
@@ -92,11 +93,13 @@ export function InvitesClient({
           tripCodeNum: codeNum,
           lang,
           staffAnswers,
+          totalTravelers: totalTravelers.trim() === "" ? null : totalTravelers.trim(),
         });
         await navigator.clipboard.writeText(url);
         toast({ title: "Trip link copied - share it with the group", description: url });
         setCodePrefix("");
         setCodeNum("");
+        setTotalTravelers("");
         setStaffAnswers({});
         window.location.reload();
       } catch (error) {
@@ -237,6 +240,31 @@ export function InvitesClient({
               </div>
               <p className="text-xs text-muted-foreground">
                 Letters + number. The report groups and filters by both parts.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="trip-total-travelers"
+                className="text-xs font-medium text-muted-foreground"
+              >
+                Travellers on the trip
+              </Label>
+              <Input
+                id="trip-total-travelers"
+                dir="ltr"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                className="w-28"
+                placeholder="17"
+                value={totalTravelers}
+                onChange={(e) => setTotalTravelers(e.target.value.replace(/[^\d]/g, ""))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional. The report shows answers against it (15 / 17). You can
+                set or change it later from the report.
               </p>
             </div>
 

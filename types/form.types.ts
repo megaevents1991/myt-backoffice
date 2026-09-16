@@ -192,6 +192,13 @@ export type FormInvite = {
   /** Split trip code ("BBC" + "124") - the trip identity trip reports group by. */
   trip_code_prefix: string | null;
   trip_code_num: string | null;
+  /**
+   * How many travellers the trip actually had, set by staff - the denominator
+   * the reported travellers are measured against ("15 answered of 17"). Null
+   * means nobody has said, and the report shows the reported sum alone. It is
+   * never derived from the answers.
+   */
+  total_travelers: number | null;
   prefill: Record<string, AnswerValue>;
   reservation_id: number | null;
   event_id: number | null;

@@ -46,6 +46,7 @@ export default async function FormReportPage({
       </div>
 
       <ReportClient
+        formId={formId}
         report={report}
         ratingFields={ratingFields}
         fields={loaded.fields.filter(

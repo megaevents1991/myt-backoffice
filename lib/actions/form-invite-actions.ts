@@ -28,8 +28,30 @@ const invitesTable = () => (supabase as any).from("form_invites");
 
 const INVITE_COLUMNS =
   "id,form_id,token,recipient_name,recipient_email,recipient_phone,lang," +
-  "multi_use,label,trip_code_prefix,trip_code_num,prefill,reservation_id,event_id," +
+  "multi_use,label,trip_code_prefix,trip_code_num,total_travelers,prefill,reservation_id,event_id," +
   "sent_at,opened_at,submitted_at,send_error,created_at";
+
+/**
+ * A trip of more than a couple thousand people is a typo, not a trip - the cap
+ * keeps a slipped keystroke from poisoning the report's denominator.
+ */
+const MAX_TOTAL_TRAVELERS = 2000;
+
+/**
+ * Staff-entered trip size: a whole number, or null for "nobody has said".
+ * Anything else (text, negative, fractional, absurd) is rejected rather than
+ * quietly coerced, because this number is a report denominator.
+ */
+function parseTotalTravelers(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isInteger(n) || n < 0 || n > MAX_TOTAL_TRAVELERS) {
+    throw new Error(
+      `Total travellers: a whole number between 0 and ${MAX_TOTAL_TRAVELERS}`,
+    );
+  }
+  return n;
+}
 
 /** One recipient sent at a time keeps a bad address from aborting the batch. */
 const MAX_RECIPIENTS_PER_SEND = 200;
@@ -297,6 +319,8 @@ export async function createTripLink(
     tripCodeNum: string;
     lang: FormLang;
     staffAnswers: AnswerMap;
+    /** How many travellers are on the trip; optional, editable later. */
+    totalTravelers?: number | string | null;
   },
 ): Promise<{ url: string; invite: FormInvite }> {
   const actor = await requireFormsAccess();
@@ -312,6 +336,7 @@ export async function createTripLink(
   if (!/^\d{1,8}$/.test(num)) {
     throw new Error("Trip code number: digits only");
   }
+  const totalTravelers = parseTotalTravelers(input.totalTravelers);
 
   const { data: form, error: formError } = await formsTable()
     .select("id,is_deleted,languages,default_lang")
@@ -368,6 +393,7 @@ export async function createTripLink(
       label: `${prefix}-${num}`,
       trip_code_prefix: prefix,
       trip_code_num: num,
+      total_travelers: totalTravelers,
       prefill,
     })
     .select(INVITE_COLUMNS);
@@ -418,6 +444,57 @@ export async function createInviteLink(
     url: `${appOrigin()}/f/i/${token}?lang=${recipient.lang}`,
     invite: data[0] as FormInvite,
   };
+}
+
+export type SetTotalTravelersResult =
+  | { ok: true; total: number | null }
+  | { ok: false; message: string };
+
+/**
+ * Set (or clear) how many travellers a trip had, after the link was minted -
+ * the usual case, since the group size is often known only once everyone has
+ * flown. Staff and operators who can see the form may set it; the value is a
+ * plain count and never touches anybody's answers.
+ *
+ * Returns a result rather than throwing: Next masks thrown Server Action
+ * errors in production, and the caller needs the reason to show it inline.
+ */
+export async function setTripTotalTravelers(
+  inviteId: number,
+  formId: number,
+  total: number | string | null,
+): Promise<SetTotalTravelersResult> {
+  const actor = await requireFormsAccess();
+  await requireFormVisible(actor, formId);
+
+  let value: number | null;
+  try {
+    value = parseTotalTravelers(total);
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
+  }
+
+  const { data, error } = await invitesTable()
+    .update({ total_travelers: value })
+    .eq("id", inviteId)
+    .eq("form_id", formId)
+    .select("id");
+  if (error) {
+    console.error("setTripTotalTravelers failed:", JSON.stringify(error));
+    return { ok: false, message: "Saving failed." };
+  }
+  if (!data || data.length === 0) return { ok: false, message: "Trip not found." };
+
+  await logAudit({
+    action: "update",
+    entityType: "form_invite",
+    entityId: inviteId,
+    changes: { total_travelers: value },
+    metadata: { form_id: formId },
+  });
+  revalidatePath(`/forms/${formId}/invites`);
+  revalidatePath(`/forms/${formId}/report`);
+  return { ok: true, total: value };
 }
 
 export async function deleteInvite(

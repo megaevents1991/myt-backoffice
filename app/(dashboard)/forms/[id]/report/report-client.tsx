@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Loader2, Pencil, StickyNote, Star, Users, X } from "lucide-react";
+import { Check, ChevronDown, Loader2, Pencil, StickyNote, Star, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,9 @@ import {
 } from "@/components/ui/table";
 import { adminLabel } from "@/lib/forms/i18n";
 import { updateFormResponseAnswers } from "@/lib/actions/form-response-actions";
-import type { TripReport, TripRow } from "@/lib/forms/report";
+import { setTripTotalTravelers } from "@/lib/actions/form-invite-actions";
+import { sumTravelers } from "@/lib/forms/report";
+import type { TravelerStat, TripReport, TripRow } from "@/lib/forms/report";
 import { STAFF_EDITABLE_TYPES } from "@/types/form.types";
 import type {
   AnswerMap,
@@ -44,6 +46,7 @@ import type {
 type RatingFieldInfo = { id: number; label: string; reviewScore: boolean };
 
 type Props = {
+  formId: number;
   report: TripReport;
   ratingFields: RatingFieldInfo[];
   /** Every client-facing question, in form order - powers the response popup. */
@@ -75,10 +78,24 @@ function answerOf(
   return value !== undefined && value !== null && value !== "" ? value : undefined;
 }
 
-/** "27 / 12" - travellers summed over the forms that filled the question. */
-function fmtTravelers(stat: { sum: number; answered: number } | null): string {
-  if (!stat || stat.answered === 0) return "-";
-  return `${stat.sum} / ${stat.answered}`;
+/**
+ * "15 / 17" - travellers the answers account for, of the trip's staff-set
+ * size. With no size set, the reported number stands alone.
+ */
+function fmtTravelers(stat: TravelerStat | null): string {
+  if (!stat) return "-";
+  if (stat.total !== null) return `${stat.reported} / ${stat.total}`;
+  return stat.forms > 0 ? String(stat.reported) : "-";
+}
+
+/** A trip row with its size replaced by one typed in this session. */
+function withTotal(
+  stat: TravelerStat | null,
+  total: number | null,
+  hasTravelerField: boolean,
+): TravelerStat | null {
+  if (total === null && !hasTravelerField) return null;
+  return { reported: stat?.reported ?? 0, forms: stat?.forms ?? 0, total };
 }
 
 /** True when any free-text answer (long_text) came back non-empty. */
@@ -128,7 +145,13 @@ function AvgBadge({ avg }: { avg: number | null }) {
   );
 }
 
-export function ReportClient({ report, ratingFields, fields, responses }: Props) {
+export function ReportClient({
+  formId,
+  report,
+  ratingFields,
+  fields,
+  responses,
+}: Props) {
   const [prefix, setPrefix] = useState("");
   const [num, setNum] = useState("");
   const [escort, setEscort] = useState("");
@@ -147,6 +170,27 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
   const viewing =
     viewingId === null ? null : (rows.find((r) => r.id === viewingId) ?? null);
 
+  // Trip sizes typed in this session, keyed by invite id - the row and the
+  // summary move at once instead of waiting for router.refresh().
+  const [sizes, setSizes] = useState<Record<number, number | null>>({});
+  const hasTravelerField = report.travelerFieldId !== null;
+  const allTrips = useMemo(
+    () =>
+      report.trips.map((trip) =>
+        trip.inviteId !== null && trip.inviteId in sizes
+          ? {
+              ...trip,
+              travelers: withTotal(trip.travelers, sizes[trip.inviteId], hasTravelerField),
+            }
+          : trip,
+      ),
+    [report.trips, sizes, hasTravelerField],
+  );
+  // The column is where a size gets typed, so it shows whenever there is a
+  // trip to size - not only once a size or a traveller question exists.
+  const showTravelers =
+    hasTravelerField || report.trips.some((trip) => trip.inviteId !== null);
+
   // Departure years present in the data, newest first - the annual filter.
   const yearOptions = useMemo(() => {
     const years = new Set<string>();
@@ -160,7 +204,7 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
     const p = prefix.trim().toUpperCase();
     const n = num.trim();
     const e = escort.trim();
-    return report.trips.filter((trip) => {
+    return allTrips.filter((trip) => {
       if (p && !(trip.prefix ?? "").startsWith(p)) return false;
       if (n && !(trip.num ?? "").startsWith(n)) return false;
       if (e && !(trip.escort ?? "").includes(e)) return false;
@@ -172,22 +216,13 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
         return false;
       return true;
     });
-  }, [report.trips, prefix, num, escort, fromDate, year]);
+  }, [allTrips, prefix, num, escort, fromDate, year]);
 
   // The summary reflects what is FILTERED, so a year filter = an annual report.
   const filtered = useMemo(() => {
     const tripRows = trips.filter((t) => t.inviteId !== null);
     const count = trips.reduce((sum, t) => sum + t.responseCount, 0);
-    const travelers =
-      report.totals.travelers === null
-        ? null
-        : trips.reduce(
-            (acc, t) => ({
-              sum: acc.sum + (t.travelers?.sum ?? 0),
-              answered: acc.answered + (t.travelers?.answered ?? 0),
-            }),
-            { sum: 0, answered: 0 },
-          );
+    const travelers = sumTravelers(trips);
     const weighted = trips
       .filter((t) => t.overallAvg !== null && t.responseCount > 0)
       .reduce(
@@ -207,7 +242,25 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
       travelers,
       overallAvg: weighted.n > 0 ? weighted.sum / weighted.n : null,
     };
-  }, [trips, report.totals.travelers]);
+  }, [trips]);
+
+  // Card: coverage over SIZED trips only (see sumTravelers); travellers on
+  // unsized trips are named in the hint instead of padding the ratio.
+  const travelersCard = (() => {
+    const t = filtered.travelers;
+    if (!t) return null;
+    if (t.total === null) {
+      return {
+        value: t.forms > 0 ? String(t.reported) : "-",
+        hint: "reported · no trip size set yet",
+      };
+    }
+    const parts = [
+      `reported of ${t.sizedTrips} sized trip${t.sizedTrips === 1 ? "" : "s"}`,
+    ];
+    if (t.unsizedReported > 0) parts.push(`+${t.unsizedReported} on unsized trips`);
+    return { value: `${t.sizedReported} / ${t.total}`, hint: parts.join(" · ") };
+  })();
 
   const responsesOf = (tripInviteId: number | null) =>
     rows.filter((r) =>
@@ -223,20 +276,14 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
       <div
         className={cn(
           "grid gap-4 sm:grid-cols-3",
-          filtered.travelers !== null && "lg:grid-cols-4",
+          travelersCard !== null && "lg:grid-cols-4",
         )}
       >
         {[
           { label: "Trips", value: String(filtered.tripCount), hint: null },
           { label: "Responses", value: String(filtered.responseCount), hint: null },
-          ...(filtered.travelers !== null
-            ? [
-                {
-                  label: "Travellers",
-                  value: fmtTravelers(filtered.travelers),
-                  hint: "total travellers / forms that filled it",
-                },
-              ]
+          ...(travelersCard !== null
+            ? [{ label: "Travellers", ...travelersCard }]
             : []),
           {
             label: "Overall average",
@@ -302,10 +349,10 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
               <TableHead>Escort</TableHead>
               <TableHead>Departure</TableHead>
               <TableHead className="text-center">Responses</TableHead>
-              {report.totals.travelers !== null && (
+              {showTravelers && (
                 <TableHead
                   className="text-center"
-                  title="total travellers / forms that filled it"
+                  title="Travellers the answers account for / travellers on the trip. Click a trip's number to set its size."
                 >
                   Travellers
                 </TableHead>
@@ -317,7 +364,10 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
           <TableBody>
             {trips.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                <TableCell
+                  colSpan={showTravelers ? 8 : 7}
+                  className="h-24 text-center text-muted-foreground"
+                >
                   No trips match the filters.
                 </TableCell>
               </TableRow>
@@ -330,7 +380,11 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
                 ratingFields={ratingFields}
                 fields={fields}
                 travelerFieldId={report.travelerFieldId}
-                showTravelers={report.totals.travelers !== null}
+                showTravelers={showTravelers}
+                formId={formId}
+                onSized={(inviteId, total) =>
+                  setSizes((prev) => ({ ...prev, [inviteId]: total }))
+                }
                 open={openTrip === trip.inviteId}
                 onToggle={() =>
                   setOpenTrip(openTrip === trip.inviteId ? undefined : trip.inviteId)
@@ -600,12 +654,146 @@ function ResponseDialog({
   );
 }
 
+/**
+ * The Travellers cell of a trip row: "reported / size", and a click sets the
+ * size in place. The "no trip" bucket has no link to size, so it only reads.
+ * Clicks stop here - the row itself toggles open on click.
+ */
+function TripSizeCell({
+  trip,
+  formId,
+  onSized,
+}: {
+  trip: TripRow;
+  formId: number;
+  onSized: (inviteId: number, total: number | null) => void;
+}) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const inviteId = trip.inviteId;
+
+  if (inviteId === null) return <>{fmtTravelers(trip.travelers)}</>;
+
+  function begin(event: React.MouseEvent) {
+    event.stopPropagation();
+    setValue(trip.travelers?.total != null ? String(trip.travelers.total) : "");
+    setError(null);
+    setEditing(true);
+  }
+
+  function cancel() {
+    setEditing(false);
+    setError(null);
+  }
+
+  function save() {
+    if (inviteId === null) return;
+    const raw = value.trim();
+    startTransition(async () => {
+      try {
+        const result = await setTripTotalTravelers(
+          inviteId,
+          formId,
+          raw === "" ? null : raw,
+        );
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        onSized(inviteId, result.total);
+        setEditing(false);
+        router.refresh();
+      } catch (e) {
+        console.error("setTripTotalTravelers threw:", e);
+        setError("Saving failed.");
+      }
+    });
+  }
+
+  if (editing) {
+    return (
+      <div
+        className="inline-flex flex-col items-center gap-1"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-muted-foreground">
+            {trip.travelers?.reported ?? 0} /
+          </span>
+          <Input
+            autoFocus
+            type="number"
+            inputMode="numeric"
+            min={0}
+            step={1}
+            value={value}
+            disabled={pending}
+            aria-label={`Travellers on trip ${trip.code ?? ""}`}
+            aria-invalid={error !== null}
+            placeholder="?"
+            className="h-7 w-16 px-1.5 text-center"
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") save();
+              if (event.key === "Escape") cancel();
+            }}
+          />
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            onClick={save}
+            disabled={pending}
+            aria-label="Save trip size"
+          >
+            {pending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Check className="h-3.5 w-3.5" />
+            )}
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            onClick={cancel}
+            disabled={pending}
+            aria-label="Cancel"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        {error && <span className="text-[11px] text-destructive">{error}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={begin}
+      title="Set how many travellers were on this trip"
+      className="group inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span>{fmtTravelers(trip.travelers)}</span>
+      <Pencil className="h-3 w-3 text-muted-foreground opacity-40 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+    </button>
+  );
+}
+
 function TripRows({
   trip,
   ratingFields,
   fields,
   travelerFieldId,
   showTravelers,
+  formId,
+  onSized,
   open,
   onToggle,
   responses,
@@ -616,6 +804,8 @@ function TripRows({
   fields: FormField[];
   travelerFieldId: number | null;
   showTravelers: boolean;
+  formId: number;
+  onSized: (inviteId: number, total: number | null) => void;
   open: boolean;
   onToggle: () => void;
   responses: FormResponseRow[];
@@ -652,7 +842,7 @@ function TripRows({
         </TableCell>
         {showTravelers && (
           <TableCell className="text-center tabular-nums">
-            {fmtTravelers(trip.travelers)}
+            <TripSizeCell trip={trip} formId={formId} onSized={onSized} />
           </TableCell>
         )}
         <TableCell>
@@ -667,7 +857,7 @@ function TripRows({
 
       {open && (
         <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableCell colSpan={8} className="p-4">
+          <TableCell colSpan={showTravelers ? 8 : 7} className="p-4">
             <div className="grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
               {/* Per-question averages */}
               <div>

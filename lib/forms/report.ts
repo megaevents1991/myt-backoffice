@@ -14,6 +14,8 @@ export type ReportInvite = {
   id: number;
   trip_code_prefix: string | null;
   trip_code_num: string | null;
+  /** Staff-set trip size; null until somebody types it. */
+  total_travelers: number | null;
   prefill: AnswerMap;
   created_at: string;
 };
@@ -38,8 +40,19 @@ export type FieldStat = {
  * left blank is not a party of zero.
  */
 export type TravelerStat = {
-  sum: number;
-  answered: number;
+  reported: number;
+  forms: number;
+  total: number | null;
+};
+
+/** Several trips rolled up - see `sumTravelers` for why the ratio is split. */
+export type TravelerTotals = TravelerStat & {
+  /** How many of the rolled-up trips have a staff-set size. */
+  sizedTrips: number;
+  /** Travellers reported on sized trips - the numerator of `total`. */
+  sizedReported: number;
+  /** Travellers reported on trips nobody sized yet - outside the ratio. */
+  unsizedReported: number;
 };
 
 export type TripRow = {
@@ -70,7 +83,7 @@ export type TripReport = {
   totals: {
     tripCount: number;
     responseCount: number;
-    travelers: TravelerStat | null;
+    travelers: TravelerTotals | null;
     overallAvg: number | null;
     perField: FieldStat[];
   };
@@ -112,14 +125,19 @@ export function travelerField(fields: FormField[]): FormField | null {
 function travelerStats(
   field: FormField | null,
   responses: ReportResponse[],
+  total: number | null,
 ): TravelerStat | null {
-  if (!field) return null;
-  const values = fieldValues(field.id, responses).filter(
-    (v) => Number.isFinite(v) && v >= 0,
-  );
+  // A trip with a staff-set size still has travellers to account for even
+  // when the form never asked "how many of you", so the row survives either
+  // source on its own.
+  if (!field && total === null) return null;
+  const values = field
+    ? fieldValues(field.id, responses).filter((v) => Number.isFinite(v) && v >= 0)
+    : [];
   return {
-    sum: values.reduce((sum, v) => sum + v, 0),
-    answered: values.length,
+    reported: values.reduce((sum, v) => sum + v, 0),
+    forms: values.length,
+    total,
   };
 }
 
@@ -202,7 +220,7 @@ export function buildTripReport(input: {
       departure: firstStaffValue(staffFields, invite.prefill, "date"),
       staffInfo: staffDisplay(staffFields, invite.prefill, labelFor),
       responseCount: own.length,
-      travelers: travelerStats(travelers, own),
+      travelers: travelerStats(travelers, own, invite.total_travelers ?? null),
       overallAvg,
       perField,
       lastSubmittedAt:
@@ -224,7 +242,8 @@ export function buildTripReport(input: {
       departure: null,
       staffInfo: [],
       responseCount: bucket.length,
-      travelers: travelerStats(travelers, bucket),
+      // The "no trip" bucket has no invite, so nobody can have set its size.
+      travelers: travelerStats(travelers, bucket, null),
       overallAvg,
       perField,
       lastSubmittedAt: bucket
@@ -247,10 +266,44 @@ export function buildTripReport(input: {
     totals: {
       tripCount: tripInvites.length,
       responseCount: responses.length,
-      travelers: travelerStats(travelers, responses),
+      travelers: sumTravelers(trips),
       overallAvg,
       perField,
     },
     travelerFieldId: travelers?.id ?? null,
+  };
+}
+
+/**
+ * Roll trip rows up into one figure.
+ *
+ * The coverage ratio is measured ONLY over trips somebody sized: `sizedReported`
+ * of `total`. Mixing in travellers reported on unsized trips would put people
+ * in the numerator who have no seat in the denominator ("81 / 17"). Those are
+ * kept apart as `unsizedReported`. `total` is null when no trip was sized - a
+ * grand total of zero would read as "nobody travelled".
+ *
+ * Exported so the report screen can recompute it over the FILTERED rows.
+ */
+export function sumTravelers(
+  rows: Pick<TripRow, "travelers">[],
+): TravelerTotals | null {
+  const stats = rows
+    .map((row) => row.travelers)
+    .filter((stat): stat is TravelerStat => stat !== null);
+  if (stats.length === 0) return null;
+  const sized = stats.filter((stat) => stat.total !== null);
+  const reported = stats.reduce((sum, stat) => sum + stat.reported, 0);
+  const sizedReported = sized.reduce((sum, stat) => sum + stat.reported, 0);
+  return {
+    reported,
+    forms: stats.reduce((sum, stat) => sum + stat.forms, 0),
+    total:
+      sized.length > 0
+        ? sized.reduce((sum, stat) => sum + (stat.total ?? 0), 0)
+        : null,
+    sizedTrips: sized.length,
+    sizedReported,
+    unsizedReported: reported - sizedReported,
   };
 }

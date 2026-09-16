@@ -34,7 +34,7 @@ export async function getFormTripReport(
       .eq("form_id", formId)
       .order("position", { ascending: true }),
     table("form_invites")
-      .select("id,trip_code_prefix,trip_code_num,prefill,created_at")
+      .select("id,trip_code_prefix,trip_code_num,total_travelers,prefill,created_at")
       .eq("form_id", formId),
     table("form_responses")
       .select("invite_id,answers,submitted_at")
@@ -67,9 +67,17 @@ export async function getFormTripReport(
       id: number;
       trip_code_prefix: string | null;
       trip_code_num: string | null;
+      total_travelers: number | null;
       prefill: AnswerMap | null;
       created_at: string;
-    }[]).map((invite) => ({ ...invite, prefill: invite.prefill ?? {} })),
+    }[]).map((invite) => ({
+      id: invite.id,
+      trip_code_prefix: invite.trip_code_prefix,
+      trip_code_num: invite.trip_code_num,
+      total_travelers: invite.total_travelers ?? null,
+      prefill: invite.prefill ?? {},
+      created_at: invite.created_at,
+    })),
     responses: (responsesRes.data ?? []) as {
       invite_id: number | null;
       answers: AnswerMap;
