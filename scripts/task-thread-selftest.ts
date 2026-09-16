@@ -52,5 +52,22 @@ check("both Dor and Doron present",
   mentionsStillInBody("@Dor and @Doron replied", [{ id: "id1", label: "Dor" }, { id: "id2", label: "Doron" }]),
   ["id1", "id2"]);
 
+// Hebrew names: Unicode lookarounds handle Hebrew letters correctly
+check("Hebrew label kept",
+  mentionsStillInBody("שלום @תומס מה נשמע", [{ id: "id1", label: "תומס" }]),
+  ["id1"]);
+check("Hebrew label at end of body",
+  mentionsStillInBody("תודה @תומס", [{ id: "id1", label: "תומס" }]),
+  ["id1"]);
+check("Hebrew label followed by punctuation",
+  mentionsStillInBody("@תומס, תבדוק", [{ id: "id1", label: "תומס" }]),
+  ["id1"]);
+check("Hebrew prefix collision",
+  mentionsStillInBody("@דורון תבדוק", [{ id: "id1", label: "דור" }, { id: "id2", label: "דורון" }]),
+  ["id2"]);
+check("mixed English and Hebrew",
+  mentionsStillInBody("@Tom (Ops) ו-@תומס", [{ id: "id1", label: "Tom (Ops)" }, { id: "id2", label: "תומס" }]),
+  ["id1", "id2"]);
+
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);
