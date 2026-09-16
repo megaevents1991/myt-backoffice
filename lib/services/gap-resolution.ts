@@ -79,28 +79,63 @@ export function nextNightlyRun(now: Date): Date {
 
 // ---- price_review writes (shared by the task rule below and the Pricing tab's own button) ------
 
+/**
+ * The exact note a `price_review` task's close stamps onto the rows it closes - and the ONLY
+ * thing a reopen is allowed to match on. Pulled out as a pure helper (controller ruling #1) so
+ * the self-test can assert the format without a DB, and so `setSyncLogReviewed` (write) and
+ * `reopenSyncLogReview` (match) can never drift apart.
+ *
+ * Scoping the reopen to this exact note - not just "reviewed rows of this event" - matters
+ * because the event is the unit the tab and its price_review tasks share, but a row can turn
+ * `reviewed` for THREE different reasons: this task closing it, a DIFFERENT price_review task
+ * closing it, or the "טופל" button (no task at all, note "סומן כטופל"). Only the first may be
+ * undone by reopening this task.
+ */
+export function closedByTaskNote(taskId: string): string {
+  return `נסגר במשימה ${taskId}`;
+}
+
 /** Flips this event's frozen (`needs_review`) base_price_sync_log rows to `reviewed`, with a note
  *  saying why. Scoped to `needs_review` only, so it never touches a row the cron already applied
  *  or skipped. Reused by markPricingGapHandled (lib/actions/pricing-gap-actions.ts) with its own
- *  note ("סומן כטופל") - this file's own callers pass "נסגר במשימה". */
+ *  note ("סומן כטופל") - the task-closing path below passes closedByTaskNote(taskId). Logs the
+ *  affected row ids (controller ruling #1). */
 export async function setSyncLogReviewed(eventId: number, note: string): Promise<void> {
-  const { error } = await db
+  const { data, error } = await db
     .from("base_price_sync_log")
     .update({ status: "reviewed", note })
     .eq("event_id", eventId)
-    .eq("status", "needs_review");
-  if (error) console.error("gap-resolution: set reviewed failed", JSON.stringify(error));
+    .eq("status", "needs_review")
+    .select("id");
+  if (error) {
+    console.error("gap-resolution: set reviewed failed", JSON.stringify(error));
+    return;
+  }
+  const ids = (data ?? []).map((row: { id: number }) => row.id);
+  console.log(`gap-resolution: set reviewed event=${eventId} note=${JSON.stringify(note)} rows=${JSON.stringify(ids)}`);
 }
 
-/** Puts a reviewed row back to `needs_review` - the task coming back to life means the freeze is
- *  unresolved again. */
-async function reopenSyncLogReview(eventId: number): Promise<void> {
-  const { error } = await db
+/**
+ * Puts back to `needs_review` ONLY the rows THIS task closed - `status = 'reviewed'` AND
+ * `note` equal exactly `closedByTaskNote(taskId)` (controller ruling #1). A row someone marked
+ * with the "טופל" button, or that a different price_review task closed, is never touched: the
+ * event is the shared unit, but only the task that closed a row may reopen it.
+ */
+async function reopenSyncLogReview(eventId: number, taskId: string): Promise<void> {
+  const note = closedByTaskNote(taskId);
+  const { data, error } = await db
     .from("base_price_sync_log")
     .update({ status: "needs_review", note: "נפתח מחדש מהמשימה" })
     .eq("event_id", eventId)
-    .eq("status", "reviewed");
-  if (error) console.error("gap-resolution: reopen review failed", JSON.stringify(error));
+    .eq("status", "reviewed")
+    .eq("note", note)
+    .select("id");
+  if (error) {
+    console.error("gap-resolution: reopen review failed", JSON.stringify(error));
+    return;
+  }
+  const ids = (data ?? []).map((row: { id: number }) => row.id);
+  console.log(`gap-resolution: reopened review event=${eventId} task=${taskId} rows=${JSON.stringify(ids)}`);
 }
 
 // ---- per-family writes ---------------------------------------------------------------------
@@ -120,7 +155,12 @@ async function resolveCreative(ref: TaskSourceRef, action: "close" | "reopen"): 
   }
 }
 
-async function resolvePricing(source: TaskSource, ref: TaskSourceRef, action: "close" | "reopen"): Promise<void> {
+async function resolvePricing(
+  source: TaskSource,
+  ref: TaskSourceRef,
+  action: "close" | "reopen",
+  taskId: string,
+): Promise<void> {
   if (source === "price_light") {
     // "בפתיחה מחדש אין מה לבטל" (brief) - the light recomputes nightly regardless of
     // this task, and a "repriced" decision is a record of a human's judgment, not a
@@ -133,13 +173,14 @@ async function resolvePricing(source: TaskSource, ref: TaskSourceRef, action: "c
     // alone (e.g. the self-test, which never takes this branch) blow up under
     // plain `npx tsx` with no .env loaded.
     const { recordRepriced } = await import("@/lib/services/price-light-decisions");
-    await recordRepriced(Number(ref.row_id), scope, null);
+    const result = await recordRepriced(Number(ref.row_id), scope, null);
+    if (!result.ok) console.error("gap-resolution: recordRepriced failed on task close", taskId, result.error);
     return;
   }
   if (source === "price_review") {
     const eventId = Number(ref.row_id);
-    if (action === "close") await setSyncLogReviewed(eventId, "נסגר במשימה");
-    else await reopenSyncLogReview(eventId);
+    if (action === "close") await setSyncLogReviewed(eventId, closedByTaskNote(taskId));
+    else await reopenSyncLogReview(eventId, taskId);
   }
 }
 
@@ -169,7 +210,7 @@ export async function resolveGapForTask(
     if (family === "creative") {
       await resolveCreative(task.source_ref, action);
     } else if (family === "pricing") {
-      await resolvePricing(task.source, task.source_ref, action);
+      await resolvePricing(task.source, task.source_ref, action, task.id);
     }
     // "recurring" (always a digest) and everything else: no-op by design.
   } catch (e) {

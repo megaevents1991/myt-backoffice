@@ -31,3 +31,14 @@ export interface PricingGapRow {
    *  link to it instead of a "משימה" button. */
   openTaskId: string | null;
 }
+
+/**
+ * Controller ruling #2 (fix round 1): the two generators are loaded independently
+ * (`Promise.allSettled` in `listPricingGaps`), so one throwing (today: `price_light`, until
+ * `events.light_red_since` is migrated) no longer hides rows the other one loaded fine.
+ * `ok: false` is reserved for auth/unexpected failures (e.g. `requireStaff()` itself throwing) -
+ * a single generator failing is reported per-source in `errors` alongside the rows that DID load.
+ */
+export type PricingGapListResult =
+  | { ok: true; rows: PricingGapRow[]; errors: { source: PricingGapSource; error: string }[] }
+  | { ok: false; error: string };

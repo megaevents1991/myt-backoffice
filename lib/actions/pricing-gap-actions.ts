@@ -20,7 +20,7 @@ import { loadEventForLight } from "@/lib/services/price-light-store";
 import { parseGapKey, nextNightlyRun, setSyncLogReviewed } from "@/lib/services/gap-resolution";
 import { OPEN_TASK_STATUSES, type TaskSourceRef } from "@/types/task.types";
 import type { Scope } from "@/types/price-light.types";
-import type { PricingGapRow } from "@/types/pricing-gap.types";
+import type { PricingGapListResult, PricingGapRow, PricingGapSource } from "@/types/pricing-gap.types";
 
 // base_price_sync_log + events predate the generated database types - same
 // boundary-cast pattern as base-price-log-actions.ts.
@@ -28,7 +28,6 @@ import type { PricingGapRow } from "@/types/pricing-gap.types";
 const db = supabase as any;
 
 type Ok = { ok: true } | { ok: false; error: string };
-type ListResult = { ok: true; rows: PricingGapRow[] } | { ok: false; error: string };
 type TaskResult = { ok: true; taskId: string; existed: boolean } | { ok: false; error: string };
 
 // The generators only put numbers in their Hebrew description text (RuleCandidate
@@ -98,25 +97,47 @@ async function loadOpenTaskIds(source: "price_light" | "price_review"): Promise<
  * Every open pricing gap, from the SAME generators the weekly digest runs
  * (lib/services/task-rules) - "what counts as an open pricing gap" stays defined
  * in one place, never re-split between this screen and the cron. Each generator
- * THROWS when its data cannot load (see RuleGenerator.candidates jsdoc) - a throw
- * here fails the WHOLE list rather than silently reading it as "no gaps" (today,
- * price_light throws because events.light_red_since is not migrated in this
- * environment yet - expected, and exactly what the banner is for).
+ * THROWS when its data cannot load (see RuleGenerator.candidates jsdoc) - controller
+ * ruling #2: the two generators are loaded independently (`Promise.allSettled`), so
+ * one throwing (today: price_light, until `events.light_red_since` is migrated in
+ * this environment) reports itself in `errors` instead of hiding the rows the OTHER
+ * generator loaded fine. `ok: false` is reserved for requireStaff()/unexpected
+ * failures outside either generator's own try path.
  */
-export async function listPricingGaps(): Promise<ListResult> {
+export async function listPricingGaps(): Promise<PricingGapListResult> {
   await requireStaff();
   try {
-    const [lightCandidates, changeCandidates, lightTaskIds, reviewTaskIds] = await Promise.all([
+    const [lightSettled, changeSettled] = await Promise.allSettled([
       generatorFor("price_light").candidates({}),
       generatorFor("price_changes").candidates({}),
-      loadOpenTaskIds("price_light"),
-      loadOpenTaskIds("price_review"),
     ]);
-    const rows: PricingGapRow[] = [
-      ...lightCandidates.map((c) => lightRow(c, lightTaskIds.get(c.key) ?? null)),
-      ...changeCandidates.map((c) => changeRow(c, reviewTaskIds.get(c.key) ?? null)),
-    ];
-    return { ok: true, rows };
+
+    const errors: { source: PricingGapSource; error: string }[] = [];
+    const rows: PricingGapRow[] = [];
+
+    if (lightSettled.status === "fulfilled") {
+      const lightTaskIds = await loadOpenTaskIds("price_light");
+      rows.push(...lightSettled.value.map((c) => lightRow(c, lightTaskIds.get(c.key) ?? null)));
+    } else {
+      console.error("listPricingGaps: price_light failed", lightSettled.reason);
+      errors.push({
+        source: "price_light",
+        error: lightSettled.reason instanceof Error ? lightSettled.reason.message : "טעינת הרמזור נכשלה",
+      });
+    }
+
+    if (changeSettled.status === "fulfilled") {
+      const reviewTaskIds = await loadOpenTaskIds("price_review");
+      rows.push(...changeSettled.value.map((c) => changeRow(c, reviewTaskIds.get(c.key) ?? null)));
+    } else {
+      console.error("listPricingGaps: price_changes failed", changeSettled.reason);
+      errors.push({
+        source: "price_changes",
+        error: changeSettled.reason instanceof Error ? changeSettled.reason.message : "טעינת שינויי המחיר נכשלה",
+      });
+    }
+
+    return { ok: true, rows, errors };
   } catch (e) {
     console.error("listPricingGaps failed", e);
     return { ok: false, error: e instanceof Error ? e.message : "טעינת הפערים נכשלה" };
@@ -160,6 +181,21 @@ async function priceReviewContext(
   return { label, title, description };
 }
 
+/**
+ * One-select existence check (controller ruling #3): a gap row's key was parsed out of a
+ * candidate list computed moments earlier, so the event it points at might already be gone by
+ * the time a button is clicked - soft-deleted (`is_deleted`), or a test event nobody should be
+ * writing tasks/audit rows for. Both write actions below check this before touching anything.
+ */
+async function eventIsUsable(eventId: number): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data, error } = await db.from("events").select("id,is_deleted,is_test").eq("id", eventId).maybeSingle();
+  if (error) console.error("pricing-gaps: event check failed", JSON.stringify(error));
+  if (error || !data || data.is_deleted != null || data.is_test) {
+    return { ok: false, error: "האירוע לא נמצא" };
+  }
+  return { ok: true };
+}
+
 /** "משימה": open (or reuse) the task a gap becomes - a price_light red scope opens
  *  the same task openPriceLightTask does on /price-light, a price_changes row opens
  *  a price_review task shaped exactly like price-changes-client.tsx's own
@@ -171,6 +207,9 @@ export async function openPricingGapTask(key: string): Promise<TaskResult> {
   if (!parsed) return { ok: false, error: "מפתח פער לא תקין" };
 
   try {
+    const usable = await eventIsUsable(parsed.rowId);
+    if (!usable.ok) return usable;
+
     if (parsed.kind === "package" || parsed.kind === "ticket") {
       const scope: Scope = parsed.kind;
       const event = await loadEventForLight(parsed.rowId);
@@ -225,6 +264,9 @@ export async function markPricingGapHandled(key: string): Promise<Ok> {
   if (!parsed) return { ok: false, error: "מפתח פער לא תקין" };
 
   try {
+    const usable = await eventIsUsable(parsed.rowId);
+    if (!usable.ok) return usable;
+
     if (parsed.kind === "package" || parsed.kind === "ticket") {
       const scope: Scope = parsed.kind;
       const result = await recordRepriced(parsed.rowId, scope, session.sub);

@@ -49,7 +49,11 @@ const SCOPE_LABEL: Record<string, string> = {
 export function PricingGapsTab({ onOpenTask }: { onOpenTask: (taskId: string) => void }) {
   const { toast } = useToast();
   const [rows, setRows] = useState<PricingGapRow[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // A whole-call failure (auth/unexpected - requireStaff() itself, say): nothing loaded at all.
+  const [fatalError, setFatalError] = useState<string | null>(null);
+  // Per-source failures (controller ruling #2): one generator can throw while the other's rows
+  // still show - each gets its own banner instead of one hiding both.
+  const [sourceErrors, setSourceErrors] = useState<{ source: PricingGapSource; error: string }[]>([]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   const [sourceFilter, setSourceFilter] = useState<PricingGapSource | "all">("all");
@@ -63,11 +67,13 @@ export function PricingGapsTab({ onOpenTask }: { onOpenTask: (taskId: string) =>
     const result = await listPricingGaps();
     if (!result.ok) {
       setRows([]);
-      setLoadError(result.error);
+      setFatalError(result.error);
+      setSourceErrors([]);
       return;
     }
     setRows(result.rows);
-    setLoadError(null);
+    setFatalError(null);
+    setSourceErrors(result.errors);
   }, []);
 
   useEffect(() => {
@@ -228,15 +234,24 @@ export function PricingGapsTab({ onOpenTask }: { onOpenTask: (taskId: string) =>
     return <Skeleton className="h-64 w-full" />;
   }
 
+  const hasError = Boolean(fatalError) || sourceErrors.length > 0;
+
   return (
     <div className="space-y-3">
-      {loadError && (
+      {fatalError && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>טעינת פערי התמחור נכשלה</AlertTitle>
-          <AlertDescription>{loadError}</AlertDescription>
+          <AlertDescription>{fatalError}</AlertDescription>
         </Alert>
       )}
+      {sourceErrors.map((e) => (
+        <Alert variant="destructive" key={e.source}>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>טעינת {SOURCE_LABEL[e.source]} נכשלה</AlertTitle>
+          <AlertDescription>{e.error}</AlertDescription>
+        </Alert>
+      ))}
       <DataTable
         columns={columns}
         data={visible}
@@ -244,8 +259,8 @@ export function PricingGapsTab({ onOpenTask }: { onOpenTask: (taskId: string) =>
         searchColumn="eventName"
         searchPlaceholder="חיפוש אירוע..."
         emptyState={{
-          title: loadError ? "אין מה להציג" : "אין פערי תמחור פתוחים",
-          description: loadError
+          title: hasError ? "אין מה להציג" : "אין פערי תמחור פתוחים",
+          description: hasError
             ? "נסו לרענן את הדף - ראו את השגיאה למעלה."
             : "כל האורות ירוקים ואין שינויי מחיר תקועים.",
         }}

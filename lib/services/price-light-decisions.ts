@@ -63,23 +63,28 @@ export async function snapshotFor(eventId: number, scope?: Scope): Promise<Light
  * - a price_light task reaching done/cancelled (gap-resolution.ts resolveGapForTask).
  * - the Pricing tab's "טופל" button on a red light row (markPricingGapHandled).
  *
- * `actorId` is only a fallback for a caller with no live cookie session - logAudit
- * still prefers the request's own session when one is present (every real caller
- * here runs inside a "use server" action that already resolved one), so the audit
- * row keeps writing the full actor (id + email + role) it always has.
+ * `actorId` is only a fallback for a caller with no live cookie session. Controller ruling #4:
+ * `actor` is passed to logAudit ONLY when there is no session - passing an explicit actor on
+ * every call (even one built to match the session exactly) skips logAudit's own enrichment,
+ * which also stamps `impersonated_by`/`impersonated_by_id` metadata when a superadmin is
+ * acting as a partner. Leaving `actor` out when a session exists lets logAudit resolve it
+ * itself, so this write carries the same impersonation metadata markRepriced always did.
+ *
+ * Controller ruling #3: writes nothing when the event has no price-light snapshot for this
+ * scope (event not found, or never priced) - an audit row with no evidence behind it is worse
+ * than none.
  */
 export async function recordRepriced(eventId: number, scope: Scope, actorId: string | null): Promise<Ok> {
   try {
     const snapshot = await snapshotFor(eventId, scope);
+    if (!snapshot) return { ok: false, error: "אין נתוני רמזור לאירוע הזה" };
     const session = await getSession().catch(() => null);
     await logAudit({
       action: "price_light.repriced",
       entityType: "event",
       entityId: eventId,
-      metadata: { ...(snapshot ?? { scope }) },
-      actor: session
-        ? { id: session.sub, email: session.email, role: session.role }
-        : { id: actorId, email: null, role: null },
+      metadata: { ...snapshot },
+      ...(session ? {} : { actor: { id: actorId, email: null, role: null } }),
     });
     return { ok: true };
   } catch (e) {

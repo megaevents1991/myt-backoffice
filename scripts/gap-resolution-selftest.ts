@@ -3,7 +3,7 @@
 // closes or reopens its gap, gap-key parsing, and the next-nightly cutoff time. The
 // DB writes themselves (dismissCreativeGap, recordRepriced, base_price_sync_log
 // flips) are verified in the browser - see task-15-report.md.
-import { gapAction, gapSourceOf, nextNightlyRun, parseGapKey } from "../lib/services/gap-resolution";
+import { closedByTaskNote, gapAction, gapSourceOf, nextNightlyRun, parseGapKey } from "../lib/services/gap-resolution";
 
 let failed = 0;
 function check(name: string, got: unknown, want: unknown) {
@@ -34,6 +34,13 @@ check("malformed key - too few parts rejected", parseGapKey("package:events"), n
 check("malformed key - too many parts rejected", parseGapKey("package:events:123:extra"), null);
 check("malformed key - non-numeric row rejected", parseGapKey("package:events:abc"), null);
 check("malformed key - empty string rejected", parseGapKey(""), null);
+
+// Close-by-task note format (controller ruling #1) - the exact string a price_review task's
+// close writes, and the exact string a reopen must match to know a row is "its own" to undo.
+check("closed-by-task note format", closedByTaskNote("abc-123"), "נסגר במשימה abc-123");
+check("closed-by-task note format - different task", closedByTaskNote("xyz-999"), "נסגר במשימה xyz-999");
+check("closed-by-task notes for different tasks are distinct",
+  closedByTaskNote("task-a") === closedByTaskNote("task-b"), false);
 
 // Next nightly run - 00:30 UTC, strictly after `now`.
 check(
