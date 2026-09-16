@@ -110,7 +110,7 @@ export interface GapContext {
   live: (nameEnglish?: string | null) => number;
 }
 
-export async function buildGapContext(): Promise<GapContext> {
+export async function buildGapContext(opts: GapLoadOptions = {}): Promise<GapContext> {
   const { data, error } = await db
     .from("events")
     .select("name_english,date")
@@ -118,6 +118,7 @@ export async function buildGapContext(): Promise<GapContext> {
     .gte("date", todayISO());
   if (error) {
     console.error("creative-gaps: live events failed", JSON.stringify(error));
+    if (opts.strict) throw new Error("creative-gaps: live events context failed");
   }
   return { live: buildLiveEventCounter((data ?? []) as OnTourEvent[]) };
 }
@@ -365,15 +366,21 @@ function personGap(input: {
  * `Promise.all` instead of quietly reading as "no gaps" for that kind.
  */
 export async function computeOpenCreativeGaps(opts: GapLoadOptions = {}): Promise<GapItem[]> {
-  const ctx = await buildGapContext();
+  const ctx = await buildGapContext(opts);
   const [lists, dismissed] = await Promise.all([
     Promise.all(GAP_KINDS.map((kind) => listGapsOfKind(kind, ctx, opts))),
     db
       .from("creative_gap_dismissals")
       .select("gap_key")
-      .then(({ data }: { data: { gap_key: string }[] | null }) =>
-        new Set((data ?? []).map((row) => row.gap_key)),
-      ),
+      .then(({ data, error }: { data: { gap_key: string }[] | null; error: unknown }) => {
+        if (error) {
+          console.error("creative-gaps: dismissals failed", JSON.stringify(error));
+          if (opts.strict) throw new Error("creative-gaps: dismissals failed");
+        }
+        // Non-strict (unchanged): an unreadable dismissal list is treated as "no
+        // dismissals" rather than hiding the whole gap list behind it.
+        return new Set((data ?? []).map((row) => row.gap_key));
+      }),
   ]);
 
   const severityRank = (kind: GapKind) =>
