@@ -6,6 +6,11 @@
 export const TASK_STATUSES = ["todo", "in_progress", "paused", "done", "cancelled"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
+/** "paused" counts as OPEN - the DB's partial "open tasks" index includes it,
+ *  so every "still open" filter (dashboards, dedupe-on-open-task checks) reads
+ *  from here rather than hand-listing statuses. */
+export const OPEN_TASK_STATUSES = ["todo", "in_progress", "paused"] as const;
+
 export const TASK_PRIORITIES = ["urgent", "high", "medium", "low"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 

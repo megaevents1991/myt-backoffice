@@ -17,16 +17,20 @@ import {
 import { gapKey } from "@/types/creative-gap.types";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import {
+  OPEN_TASK_STATUSES,
   TASK_PRIORITIES,
   TASK_SOURCES,
   TASK_STATUSES,
+  type MktChannel,
   type Task,
+  type TaskBoard,
   type TaskPriority,
   type TaskSource,
   type TaskSourceRef,
   type TaskStatus,
   type TaskWithNames,
 } from "@/types/task.types";
+import { validBoard, validChannel, validPhase, validProgress } from "@/lib/task-boards";
 
 type Result = { ok: true } | { ok: false; error: string };
 type CreateResult = { ok: true; id: string } | { ok: false; error: string };
@@ -43,7 +47,8 @@ function isManager(role: string): boolean {
 }
 
 const TASK_COLUMNS =
-  "id,title,description,status,priority,assignee_id,created_by,due_date,source,source_ref,deleted_at,completed_at,created_at,updated_at,board,phase,channel,progress";
+  "id,title,description,status,priority,assignee_id,created_by,due_date,source,source_ref," +
+  "board,phase,channel,progress,deleted_at,completed_at,created_at,updated_at";
 
 function validStatus(value: string): value is TaskStatus {
   return (TASK_STATUSES as readonly string[]).includes(value);
@@ -126,7 +131,7 @@ export async function listMyOpenTasks(limit = 6): Promise<Task[]> {
     .select(TASK_COLUMNS)
     .is("deleted_at", null)
     .eq("assignee_id", session.sub)
-    .in("status", ["todo", "in_progress"])
+    .in("status", OPEN_TASK_STATUSES)
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) {
@@ -153,12 +158,20 @@ export async function createTask(input: {
   due_date?: string | null;
   source?: TaskSource;
   source_ref?: TaskSourceRef | null;
+  board?: TaskBoard;
+  phase?: number | null;
+  channel?: MktChannel | null;
+  progress?: number | null;
 }): Promise<CreateResult> {
   const session = await requireStaff();
 
   const title = input.title?.trim();
   if (!title) return { ok: false, error: "Title is required" };
   if (!validPriority(input.priority)) return { ok: false, error: "Bad priority" };
+  if (input.board !== undefined && !validBoard(input.board)) return { ok: false, error: "Bad board" };
+  if (!validPhase(input.phase)) return { ok: false, error: "Bad phase" };
+  if (!validChannel(input.channel)) return { ok: false, error: "Bad channel" };
+  if (!validProgress(input.progress)) return { ok: false, error: "Bad progress" };
 
   // Editors may only create tasks for themselves.
   const assigneeId = isManager(session.role)
@@ -176,6 +189,10 @@ export async function createTask(input: {
       due_date: input.due_date || null,
       source: validSource(input.source) ? input.source : "manual",
       source_ref: input.source_ref ?? null,
+      board: input.board ?? "ops",
+      phase: input.phase ?? null,
+      channel: input.channel ?? null,
+      progress: input.progress ?? null,
     })
     .select("id")
     .single();
@@ -216,6 +233,10 @@ export async function updateTask(
     priority?: TaskPriority;
     assignee_id?: string | null;
     due_date?: string | null;
+    board?: TaskBoard;
+    phase?: number | null;
+    channel?: MktChannel | null;
+    progress?: number | null;
   },
 ): Promise<Result> {
   const session = await requireStaff();
@@ -238,6 +259,22 @@ export async function updateTask(
   }
   if (patch.assignee_id !== undefined) update.assignee_id = patch.assignee_id;
   if (patch.due_date !== undefined) update.due_date = patch.due_date || null;
+  if (patch.board !== undefined) {
+    if (!validBoard(patch.board)) return { ok: false, error: "Bad board" };
+    update.board = patch.board;
+  }
+  if (patch.phase !== undefined) {
+    if (!validPhase(patch.phase)) return { ok: false, error: "Bad phase" };
+    update.phase = patch.phase;
+  }
+  if (patch.channel !== undefined) {
+    if (!validChannel(patch.channel)) return { ok: false, error: "Bad channel" };
+    update.channel = patch.channel;
+  }
+  if (patch.progress !== undefined) {
+    if (!validProgress(patch.progress)) return { ok: false, error: "Bad progress" };
+    update.progress = patch.progress;
+  }
 
   // The row as it was - needed to tell a re-assignment from a plain edit.
   const { data: before } = await db
@@ -331,7 +368,7 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
         label: ref.label,
         note: "נסגר במשימה",
       });
-    } else if (status === "todo" || status === "in_progress") {
+    } else if ((OPEN_TASK_STATUSES as readonly string[]).includes(status)) {
       await restoreCreativeGap(gapKey(ref.kind, ref.table, ref.row_id));
     }
   }
@@ -371,7 +408,7 @@ export async function openTaskGapKeys(
     .from("tasks")
     .select("source_ref")
     .is("deleted_at", null)
-    .in("status", ["todo", "in_progress"])
+    .in("status", OPEN_TASK_STATUSES)
     .eq("source", source);
   if (error) {
     console.error("tasks: gap-keys failed", JSON.stringify(error));

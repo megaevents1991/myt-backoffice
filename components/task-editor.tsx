@@ -23,14 +23,20 @@ import {
 } from "@/components/ui/select";
 import { createTask, updateTask } from "@/lib/actions/task-actions";
 import { listUsers } from "@/lib/actions/user-actions";
+import { BOARD_META, CHANNEL_META, PHASES } from "@/lib/task-boards";
 import { STAFF_ROLES, type UserProfile } from "@/types/auth.types";
 import {
+  MKT_CHANNELS,
+  TASK_BOARDS,
   TASK_PRIORITIES,
+  type MktChannel,
+  type TaskBoard,
   type TaskPriority,
   type TaskSource,
   type TaskSourceRef,
   type TaskWithNames,
 } from "@/types/task.types";
+import { Slider } from "@/components/ui/slider";
 
 export const PRIORITY_LABEL: Record<TaskPriority, string> = {
   urgent: "Urgent",
@@ -89,8 +95,25 @@ export function TaskEditor({
   );
   const [assignee, setAssignee] = useState<string>(task?.assignee_id ?? "unassigned");
   const [dueDate, setDueDate] = useState(task?.due_date ?? "");
+  const [board, setBoard] = useState<TaskBoard>(task?.board ?? "ops");
+  const [phase, setPhase] = useState<number | null>(task?.phase ?? null);
+  const [channel, setChannel] = useState<MktChannel | null>(task?.channel ?? null);
+  const [progress, setProgress] = useState<number>(task?.progress ?? 0);
   const [saving, setSaving] = useState(false);
   const [staff, setStaff] = useState<UserProfile[]>([]);
+
+  // A board switch drops the fields the OLD board owned - otherwise a task
+  // moved from marketing to dev keeps a ghost channel/progress (or a dev task
+  // keeps a phase after becoming a marketing one).
+  const onBoardChange = (value: string) => {
+    const next = value as TaskBoard;
+    setBoard(next);
+    if (next !== "dev") setPhase(null);
+    if (next !== "marketing") {
+      setChannel(null);
+      setProgress(0);
+    }
+  };
 
   useEffect(() => {
     if (!state.open || !isManager) return;
@@ -109,6 +132,11 @@ export function TaskEditor({
     setSaving(true);
     try {
       const assigneeId = assignee === "unassigned" ? null : assignee;
+      // Belt and suspenders on top of onBoardChange - never send a phase/channel
+      // that doesn't belong to the selected board.
+      const effectivePhase = board === "dev" ? phase : null;
+      const effectiveChannel = board === "marketing" ? channel : null;
+      const effectiveProgress = board === "marketing" ? progress : null;
       const result = task
         ? await updateTask(task.id, {
             title,
@@ -116,6 +144,10 @@ export function TaskEditor({
             priority,
             assignee_id: assigneeId,
             due_date: dueDate || null,
+            board,
+            phase: effectivePhase,
+            channel: effectiveChannel,
+            progress: effectiveProgress,
           })
         : await createTask({
             title,
@@ -125,6 +157,10 @@ export function TaskEditor({
             due_date: dueDate || null,
             source: prefill?.source ?? "manual",
             source_ref: prefill?.source_ref ?? null,
+            board,
+            phase: effectivePhase,
+            channel: effectiveChannel,
+            progress: effectiveProgress,
           });
       if (!result.ok) {
         toast({
@@ -199,6 +235,78 @@ export function TaskEditor({
               />
             </div>
           </div>
+          <div className="space-y-2">
+            <Label>Board</Label>
+            <Select value={board} onValueChange={onBoardChange}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TASK_BOARDS.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {BOARD_META[value].label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {board === "dev" && (
+            <div className="space-y-2">
+              <Label>Phase</Label>
+              <Select
+                value={phase === null ? "none" : String(phase)}
+                onValueChange={(value) => setPhase(value === "none" ? null : Number(value))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">ללא</SelectItem>
+                  {Object.entries(PHASES).map(([value, meta]) => (
+                    <SelectItem key={value} value={value}>
+                      {value}. {meta.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {board === "marketing" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Channel</Label>
+                <Select
+                  value={channel ?? "none"}
+                  onValueChange={(value) =>
+                    setChannel(value === "none" ? null : (value as MktChannel))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">ללא</SelectItem>
+                    {MKT_CHANNELS.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {CHANNEL_META[value].label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Progress ({progress}%)</Label>
+                <Slider
+                  className="mt-3"
+                  value={[progress]}
+                  min={0}
+                  max={100}
+                  step={5}
+                  onValueChange={(values) => setProgress(values[0] ?? 0)}
+                />
+              </div>
+            </div>
+          )}
           {isManager && (
             <div className="space-y-2">
               <Label>Assign to</Label>

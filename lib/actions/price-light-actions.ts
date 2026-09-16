@@ -15,6 +15,7 @@ import {
   type Lights,
 } from "@/lib/services/price-light-store";
 import { openPriceLightTask as insertPriceLightTask } from "@/lib/services/price-light-tasks";
+import { OPEN_TASK_STATUSES } from "@/types/task.types";
 import {
   cheapestAvailableTicket, competitorsFor, kindOf, ourNights, ourOfferLines, ourPackageUsd, ourTicketUsd,
 } from "@/lib/services/price-light";
@@ -538,7 +539,7 @@ async function loadOpenPriceLightTaskKeys(): Promise<Set<string>> {
         .select("id,source_ref")
         .eq("source", "price_light")
         .is("deleted_at", null)
-        .in("status", ["todo", "in_progress"])
+        .in("status", OPEN_TASK_STATUSES)
         .order("id", { ascending: true }),
     LIST_TASKS_MAX,
   );

@@ -49,6 +49,7 @@ import {
   type GapKind,
 } from "@/types/creative-gap.types";
 import {
+  OPEN_TASK_STATUSES,
   PRIORITY_ORDER,
   type TaskPriority,
   type TaskSource,
@@ -123,7 +124,7 @@ export function TasksClient() {
     switch (view) {
       case "open":
         return tasks.filter(
-          (task) => task.status === "todo" || task.status === "in_progress",
+          (task) => (OPEN_TASK_STATUSES as readonly string[]).includes(task.status),
         );
       case "done":
         return tasks.filter(
@@ -146,7 +147,7 @@ export function TasksClient() {
 
   const counts = useMemo(() => {
     const open = tasks.filter(
-      (task) => task.status === "todo" || task.status === "in_progress",
+      (task) => (OPEN_TASK_STATUSES as readonly string[]).includes(task.status),
     ).length;
     return { open, done: tasks.length - open, all: tasks.length };
   }, [tasks]);
