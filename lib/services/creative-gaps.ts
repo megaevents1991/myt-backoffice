@@ -62,12 +62,21 @@ function hasPageText(content: CategoryPageContent | null | undefined): boolean {
   );
 }
 
+/** Options threaded down from computeOpenCreativeGaps() to every per-kind loader.
+ *  See the doc comment on `strict` there for why the two callers differ. */
+export interface GapLoadOptions {
+  strict?: boolean;
+}
+
 /**
  * Active categories whose page has no text at all. Most of these are the
  * per-team / per-artist category pages (taxonomy v2), so they take the same
  * on-sale ranking as the team itself when a context is given.
  */
-export async function listCategoryContentGaps(ctx?: GapContext): Promise<GapItem[]> {
+export async function listCategoryContentGaps(
+  ctx?: GapContext,
+  opts: GapLoadOptions = {},
+): Promise<GapItem[]> {
   const { data, error } = await db
     .from("categories")
     .select("id,name,name_english,page_content")
@@ -77,6 +86,7 @@ export async function listCategoryContentGaps(ctx?: GapContext): Promise<GapItem
     .limit(LIST_LIMIT * 2);
   if (error) {
     console.error("creative-gaps: category content failed", JSON.stringify(error));
+    if (opts.strict) throw new Error("creative-gaps: category_content failed");
     return [];
   }
   return (data ?? [])
@@ -113,7 +123,11 @@ export async function buildGapContext(): Promise<GapContext> {
 }
 
 /** Concrete rows for one gap kind - the drill-down tab. */
-export async function listGapsOfKind(kind: GapKind, ctx: GapContext): Promise<GapItem[]> {
+export async function listGapsOfKind(
+  kind: GapKind,
+  ctx: GapContext,
+  opts: GapLoadOptions = {},
+): Promise<GapItem[]> {
   try {
     switch (kind) {
       case "event_creative": {
@@ -242,7 +256,7 @@ export async function listGapsOfKind(kind: GapKind, ctx: GapContext): Promise<Ga
         );
       }
       case "category_content":
-        return listCategoryContentGaps(ctx);
+        return listCategoryContentGaps(ctx, opts);
       case "category_image": {
         const { data, error } = await db
           .from("categories")
@@ -283,6 +297,10 @@ export async function listGapsOfKind(kind: GapKind, ctx: GapContext): Promise<Ga
     }
   } catch (error) {
     console.error(`creative-gaps: list ${kind} failed`, JSON.stringify(error));
+    // strict (the rule generator): propagate so the whole Promise.all rejects instead of
+    // reading this kind's failure as "no gaps". Non-strict (the /tasks gaps tab, unchanged):
+    // this kind degrades to an empty list, exactly today's behaviour.
+    if (opts.strict) throw error instanceof Error ? error : new Error(`creative-gaps: ${kind} failed`);
     return [];
   }
 }
@@ -335,11 +353,21 @@ function personGap(input: {
  * Session-free: no auth check here. `listAllCreativeGaps()` in
  * creative-gap-actions.ts is the staff-facing entry point (requireStaff() +
  * this); the weekly cron's creative_gaps rule generator calls this directly.
+ *
+ * `strict` (default false) governs what a per-kind DB failure does, and the two
+ * callers deliberately differ: the `/tasks` gaps tab (`listAllCreativeGaps`,
+ * unchanged, calls with no options) shows a partial list rather than an empty
+ * screen when one kind's query fails - that's today's behaviour and stays.
+ * The `creative_gaps` rule generator (`lib/services/task-rules/creative-gaps.ts`)
+ * calls with `{ strict: true }`, because the weekly cron auto-closes a digest
+ * task the moment its generator returns zero candidates - a swallowed failure
+ * there would silently close an open digest, so it must reject the whole
+ * `Promise.all` instead of quietly reading as "no gaps" for that kind.
  */
-export async function computeOpenCreativeGaps(): Promise<GapItem[]> {
+export async function computeOpenCreativeGaps(opts: GapLoadOptions = {}): Promise<GapItem[]> {
   const ctx = await buildGapContext();
   const [lists, dismissed] = await Promise.all([
-    Promise.all(GAP_KINDS.map((kind) => listGapsOfKind(kind, ctx))),
+    Promise.all(GAP_KINDS.map((kind) => listGapsOfKind(kind, ctx, opts))),
     db
       .from("creative_gap_dismissals")
       .select("gap_key")

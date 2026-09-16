@@ -8,11 +8,13 @@ export const creativeGapsGenerator: RuleGenerator = {
   screenUrl: "/tasks?tab=gaps",
   digestTitle: (count) => `פערי קריאייטיב — ${count} נכסים חסרים`,
   async candidates(match) {
-    // No try/catch here: computeOpenCreativeGaps() itself never throws today (each
-    // per-kind query already logs and degrades to [] internally, unchanged in this
-    // fix round), but a generator must never turn a load failure into a silent "no
-    // gaps" - if that ever changes, the throw is meant to propagate.
-    const gaps = await computeOpenCreativeGaps();
+    // strict: true - a per-kind DB failure must reject the whole call, not degrade to
+    // an empty list for that kind. The /tasks gaps tab (listAllCreativeGaps) still calls
+    // with no options and keeps showing a partial list on a failing kind; this generator
+    // cannot, because the weekly cron auto-closes a digest task once candidates() returns
+    // zero - a swallowed failure here would silently close an open digest. No try/catch:
+    // the throw is meant to propagate out of candidates().
+    const gaps = await computeOpenCreativeGaps({ strict: true });
 
     const kinds = match.kinds && match.kinds.length > 0 ? new Set(match.kinds) : null;
     // 0 = every gap, 1 = severe only - GapMeta only has "crit"/"warn", so "severe" means crit.
