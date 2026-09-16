@@ -3,6 +3,7 @@
 import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { flattenWithPath, slugPathOf } from "@/lib/taxonomy-tree";
+import { findCategoryTwin } from "@/lib/services/category-twins";
 import type { EventCategory } from "@/types/taxonomy.types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -36,22 +37,16 @@ interface PersonRow {
   slug: string;
 }
 
+// The actual name-matching rule now lives in lib/services/category-twins.ts
+// (findCategoryTwin/namesMatch), shared with the creative-gaps radar - moved
+// there in Task 16 so the two callers can't drift apart. Behaviour here is
+// unchanged: same hub gate, same name comparison.
 function twinFor(
   person: PersonRow,
   hubId: number | undefined,
   categories: EventCategory[],
 ): EventCategory | null {
-  if (hubId == null) return null;
-  const en = (person.name_english ?? "").trim().toLowerCase();
-  const he = person.name.trim().toLowerCase();
-  return (
-    categories.find((c) => {
-      if (c.parent_id !== hubId) return false;
-      const catEn = (c.name_english ?? "").trim().toLowerCase();
-      const catHe = c.name.trim().toLowerCase();
-      return (!!en && (catEn === en || catHe === en)) || (!!he && catHe === he);
-    }) ?? null
-  );
+  return findCategoryTwin(person, hubId, categories);
 }
 
 export async function listSitePages(): Promise<SitePageOption[]> {

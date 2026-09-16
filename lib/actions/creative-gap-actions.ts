@@ -39,6 +39,10 @@ const db = supabase as any;
 export async function getCreativeGapCounts(): Promise<GapCounts> {
   await requireStaff();
 
+  // Needed so category_content's count excludes artist-twin categories the
+  // same way the list does (Task 16) - see listCategoryContentGaps().
+  const ctx = await buildGapContext();
+
   const [
     eventCreative,
     eventCard,
@@ -60,16 +64,20 @@ export async function getCreativeGapCounts(): Promise<GapCounts> {
       .select("id", { count: "exact", head: true })
       .eq("is_deleted", false)
       .is("logo_url", null),
+    // Blob card-art satisfies the page hero (Task 16) - mirrors the
+    // team_hero/artist_hero query filters in creative-gaps.ts.
     db
       .from("football_teams")
       .select("id", { count: "exact", head: true })
       .eq("is_deleted", false)
-      .is("image_url", null),
+      .is("image_url", null)
+      .is("art_image_url", null),
     db
       .from("artists")
       .select("id", { count: "exact", head: true })
       .eq("is_deleted", false)
-      .is("image_url", null),
+      .is("image_url", null)
+      .is("art_image_url", null),
     db
       .from("football_teams")
       .select("id", { count: "exact", head: true })
@@ -104,7 +112,7 @@ export async function getCreativeGapCounts(): Promise<GapCounts> {
       .eq("is_deleted", false)
       .is("bio", null),
     // jsonb emptiness is not a PostgREST filter - the list does it in code.
-    listCategoryContentGaps().then((rows) => ({ count: rows.length, error: null })),
+    listCategoryContentGaps(ctx).then((rows) => ({ count: rows.length, error: null })),
   ]);
 
   const results = [

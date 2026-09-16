@@ -15,6 +15,14 @@
  */
 import { supabase } from "@/lib/supabase-server";
 import { buildLiveEventCounter, type OnTourEvent } from "@/lib/on-tour";
+import {
+  findTwin,
+  TWIN_HUB_SLUG,
+  type TwinCategory,
+  type TwinHub,
+  type TwinMatch,
+  type TwinPerson,
+} from "@/lib/services/category-twins";
 import type { CategoryPageContent } from "@/types/page-content.types";
 import { GAP_KINDS, GAP_META, gapKey, type GapItem, type GapKind } from "@/types/creative-gap.types";
 
@@ -72,6 +80,12 @@ export interface GapLoadOptions {
  * Active categories whose page has no text at all. Most of these are the
  * per-team / per-artist category pages (taxonomy v2), so they take the same
  * on-sale ranking as the team itself when a context is given.
+ *
+ * A category that is really a TEAM's page (its twin, see category-twins.ts)
+ * still counts - main's `TeamCmsPage` renders the category's `page_content`.
+ * A category that is really an ARTIST's page does not - `ArtistCmsPage`
+ * never reads `page_content`, so an empty one there isn't a gap (Dor,
+ * 16.09: the category-twin text gap only applies to teams).
  */
 export async function listCategoryContentGaps(
   ctx?: GapContext,
@@ -79,7 +93,7 @@ export async function listCategoryContentGaps(
 ): Promise<GapItem[]> {
   const { data, error } = await db
     .from("categories")
-    .select("id,name,name_english,page_content")
+    .select("id,parent_id,name,name_english,page_content")
     .eq("is_deleted", false)
     .eq("is_active", true)
     .order("name")
@@ -93,6 +107,7 @@ export async function listCategoryContentGaps(
     .filter(
       (row: { page_content: CategoryPageContent | null }) => !hasPageText(row.page_content),
     )
+    .filter((row: TwinCategory) => (ctx ? ctx.twinOf(row)?.kind !== "artist" : true))
     .slice(0, LIST_LIMIT)
     .map((row: Record<string, string | number | null>) => ({
       kind: "category_content" as const,
@@ -105,22 +120,47 @@ export async function listCategoryContentGaps(
     }));
 }
 
-/** Per-list context: the on-tour counter, built once per page load. */
+/**
+ * Per-list context, built ONCE per computeOpenCreativeGaps() call (or per
+ * listCreativeGaps() drill-down): the on-tour counter, and the category-twin
+ * lookup (Task 16) - hubs/teams/artists loaded once here rather than once per
+ * category.
+ */
 export interface GapContext {
   live: (nameEnglish?: string | null) => number;
+  twinOf: (category: TwinCategory) => TwinMatch | null;
 }
 
 export async function buildGapContext(opts: GapLoadOptions = {}): Promise<GapContext> {
-  const { data, error } = await db
-    .from("events")
-    .select("name_english,date")
-    .is("is_deleted", null)
-    .gte("date", todayISO());
-  if (error) {
-    console.error("creative-gaps: live events failed", JSON.stringify(error));
-    if (opts.strict) throw new Error("creative-gaps: live events context failed");
+  const [eventsRes, hubsRes, teamsRes, artistsRes] = await Promise.all([
+    db.from("events").select("name_english,date").is("is_deleted", null).gte("date", todayISO()),
+    db
+      .from("categories")
+      .select("id,slug")
+      .eq("is_deleted", false)
+      .in("slug", [TWIN_HUB_SLUG.team, TWIN_HUB_SLUG.artist]),
+    db.from("football_teams").select("id,name,name_english").eq("is_deleted", false),
+    db.from("artists").select("id,name,name_english").eq("is_deleted", false),
+  ]);
+  const failures: [string, { error: unknown }][] = [
+    ["live events", eventsRes],
+    ["twin hubs", hubsRes],
+    ["twin teams", teamsRes],
+    ["twin artists", artistsRes],
+  ];
+  for (const [label, res] of failures) {
+    if (res.error) {
+      console.error(`creative-gaps: ${label} failed`, JSON.stringify(res.error));
+      if (opts.strict) throw new Error(`creative-gaps: ${label} context failed`);
+    }
   }
-  return { live: buildLiveEventCounter((data ?? []) as OnTourEvent[]) };
+  const hubs = (hubsRes.data ?? []) as TwinHub[];
+  const teams = (teamsRes.data ?? []) as TwinPerson[];
+  const artists = (artistsRes.data ?? []) as TwinPerson[];
+  return {
+    live: buildLiveEventCounter((eventsRes.data ?? []) as OnTourEvent[]),
+    twinOf: (category) => findTwin(category, hubs, teams, artists),
+  };
 }
 
 /** Concrete rows for one gap kind - the drill-down tab. */
@@ -199,7 +239,10 @@ export async function listGapsOfKind(
           kind === "team_logo"
             ? query.is("logo_url", null)
             : kind === "team_hero"
-              ? query.is("image_url", null)
+              // Blob card-art satisfies the page hero (Dor, 16.09: "יש בלוב
+              // לא מחייב הירו") - a team with art_image_url isn't a gap at
+              // all, not merely demoted.
+              ? query.is("image_url", null).is("art_image_url", null)
               : kind === "team_bio"
                 ? query.is("bio", null)
                 : query.eq("gallery", "[]");
@@ -236,7 +279,8 @@ export async function listGapsOfKind(
           .limit(LIST_LIMIT);
         query =
           kind === "artist_hero"
-            ? query.is("image_url", null)
+            // Blob card-art satisfies the page hero, same as team_hero above.
+            ? query.is("image_url", null).is("art_image_url", null)
             : kind === "artist_bio"
               ? query.is("bio", null)
               : query.eq("gallery", "[]");
@@ -261,21 +305,44 @@ export async function listGapsOfKind(
       case "category_image": {
         const { data, error } = await db
           .from("categories")
-          .select("id,name,name_english")
+          .select("id,parent_id,name,name_english")
           .eq("is_deleted", false)
           .eq("is_active", true)
           .is("image_url", null)
           .order("name")
           .limit(LIST_LIMIT);
         if (error) throw error;
-        return (data ?? []).map((row: Record<string, string | number | null>) => ({
-          kind,
-          table: "categories",
-          row_id: row.id,
-          label: row.name || row.name_english || String(row.id),
-          url: `/templates/categories/${row.id}/edit`,
-          fixUrl: `/templates/categories/${row.id}/edit#fix-image`,
-        }));
+        return (data ?? []).map((row: TwinCategory) => {
+          const twin = ctx.twinOf(row);
+          // A twin category still needs a picture on the site - it's just
+          // uploaded through the team/artist editor (which fills the twin
+          // category's image_url too, see category-twins.ts fillTwinCategoryImage),
+          // not the category editor itself.
+          if (twin) {
+            const editPath =
+              twin.kind === "team"
+                ? `/templates/football/${twin.id}/edit`
+                : `/templates/artists/${twin.id}/edit`;
+            return {
+              kind,
+              table: "categories",
+              row_id: row.id,
+              label: `${twin.name} (כרטיס עמוד הקבוצה/האמן)`,
+              url: `/templates/categories/${row.id}/edit`,
+              fixUrl: `${editPath}#fix-image`,
+              detail:
+                "התמונה מופיעה בכרטיס בעמוד הקבוצות/האמנים. העלאת תמונה לקבוצה ממלאת אותה.",
+            };
+          }
+          return {
+            kind,
+            table: "categories",
+            row_id: row.id,
+            label: row.name || row.name_english || String(row.id),
+            url: `/templates/categories/${row.id}/edit`,
+            fixUrl: `/templates/categories/${row.id}/edit#fix-image`,
+          };
+        });
       }
       case "blog_hero": {
         const { data, error } = await db
@@ -307,12 +374,15 @@ export async function listGapsOfKind(
 }
 
 /**
- * An artist / team gap row. Two extras over the plain shape:
- * - liveEvents: packages selling now (main's on-tour rule) - the queue puts
- *   these ahead of wishlist entities.
- * - demoted: a hero gap on an entity that already has blob card-art. Cards on
- *   the site look right, only the page hero is missing - still listed, but
- *   ranked after the fully-missing ones.
+ * An artist / team gap row. `liveEvents` (packages selling now, main's
+ * on-tour rule) puts those ahead of wishlist entities in the queue.
+ *
+ * Used to also carry `demoted` for a team_hero/artist_hero row whose entity
+ * already had blob card-art - Dor, 16.09: "יש בלוב לא מחייב הירו" retired
+ * that idea outright, so a row with `art_image_url` set isn't listed at all
+ * any more (see the team_hero/artist_hero query filters above), not merely
+ * ranked lower. `GapItem.demoted` stays declared (the /tasks gaps tab still
+ * reads it) but personGap never sets it true any more.
  */
 function personGap(input: {
   kind: GapKind;
@@ -324,9 +394,6 @@ function personGap(input: {
   ctx: GapContext;
 }): GapItem {
   const { kind, row, ctx } = input;
-  const liveEvents = ctx.live(String(row.name_english ?? ""));
-  const demoted =
-    (kind === "team_hero" || kind === "artist_hero") && !!row.art_image_url;
   return {
     kind,
     table: input.table,
@@ -334,9 +401,7 @@ function personGap(input: {
     label: input.label,
     url: input.url,
     fixUrl: input.fixUrl,
-    liveEvents,
-    demoted,
-    detail: demoted ? "יש בלוב לכרטיסים · חסרה תמונת ראש לעמוד" : undefined,
+    liveEvents: ctx.live(String(row.name_english ?? "")),
   };
 }
 
@@ -344,9 +409,9 @@ function personGap(input: {
  * Every gap, in one list - what the gaps tab shows, and what the
  * `creative_gaps` rule generator filters. Ordered by severity so the things
  * that block advertising sit above the page-quality ones; inside a severity,
- * artists / teams with packages selling NOW come before the wishlist ones and
- * blob-demoted hero gaps drop to the end; then by type so identical work
- * stays together (all the missing crests in a row).
+ * artists / teams with packages selling NOW come before the wishlist ones;
+ * then by type so identical work stays together (all the missing crests in
+ * a row).
  *
  * Per-kind queries are capped, so the merged list is capped too; the count on
  * the dashboard panel is the exact total, this is the work queue.
@@ -386,7 +451,6 @@ export async function computeOpenCreativeGaps(opts: GapLoadOptions = {}): Promis
   const severityRank = (kind: GapKind) =>
     GAP_META[kind].severity === "crit" ? 0 : 1;
   const liveRank = (item: GapItem) => ((item.liveEvents ?? 0) > 0 ? 0 : 1);
-  const demotedRank = (item: GapItem) => (item.demoted ? 1 : 0);
 
   return lists
     .flat()
@@ -395,7 +459,6 @@ export async function computeOpenCreativeGaps(opts: GapLoadOptions = {}): Promis
       (a, b) =>
         severityRank(a.kind) - severityRank(b.kind) ||
         liveRank(a) - liveRank(b) ||
-        demotedRank(a) - demotedRank(b) ||
         GAP_KINDS.indexOf(a.kind) - GAP_KINDS.indexOf(b.kind) ||
         (b.liveEvents ?? 0) - (a.liveEvents ?? 0) ||
         a.label.localeCompare(b.label),
