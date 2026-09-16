@@ -10,6 +10,7 @@ import {
 import type {
   ExtractedAttrs, Light, LightDetail, LightOverride, LightScopeDetail, MatchRow, MatchTrigger, Scope,
 } from "@/types/price-light.types";
+import { redSinceUpdate, type Lights } from "@/lib/services/price-light-red-since";
 
 // New tables predate the generated DB types - one boundary cast (repo pattern).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,26 +41,9 @@ export interface LightEvent extends PricedEvent {
   price_drop_until: string | null;
 }
 
-export type Lights = { package: Light | null; ticket: Light | null };
-
-/** When did this event become red? Written by recomputeEventLights, read by the
- *  price_light rule's `min_weeks_red`. Null return = write nothing. */
-export function redSinceUpdate(
-  before: Lights,
-  after: Lights,
-  current: string | null,
-  now: string,
-): { light_red_since: string | null } | null {
-  const wasRed = before.package === "red" || before.ticket === "red";
-  const isRed = after.package === "red" || after.ticket === "red";
-  if (isRed) {
-    // A red with no stamp gets one now - including rows that were red before
-    // the column existed. "Red since we started counting" beats "unknown".
-    return current ? null : { light_red_since: now };
-  }
-  if (wasRed || current) return { light_red_since: null };
-  return null;
-}
+// Pure red-since rule lives in its own module so its self-test runs without env vars
+// (this file pulls in the Supabase client and the scraper registry at load).
+export { redSinceUpdate, type Lights } from "@/lib/services/price-light-red-since";
 
 export async function loadEventForLight(eventId: number): Promise<LightEvent | null> {
   const { data, error } = await db.from("events").select(LIGHT_EVENT_COLUMNS).eq("id", eventId).maybeSingle();

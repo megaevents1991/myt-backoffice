@@ -1,4 +1,4 @@
-import { redSinceUpdate } from "../lib/services/price-light-store";
+import { redSinceUpdate } from "../lib/services/price-light-red-since";
 
 const NOW = "2026-09-16T00:00:00.000Z";
 const OLD = "2026-09-01T00:00:00.000Z";
