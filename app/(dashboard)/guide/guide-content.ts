@@ -279,8 +279,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "\"השאר בפיד\" (השתקה) מתנקה מעצמה: ברגע שהאור של האירוע יורד מאדום, ההשתקה מוסרת באותו עדכון — כך שהשתקה שנקבעה לפני חודשים לא יכולה להסתיר בשקט את האדום הבא של אותו אירוע.",
       ),
       t(
-        "The /price-light screen and its dashboard summary card are admins-only - an editor sees neither the screen nor the red count.",
-        "מסך /price-light וכרטיס הסיכום שלו בדשבורד הם למנהלים בלבד — עורך לא רואה לא את המסך ולא את מספר האדומים.",
+        "The /price-light screen and its dashboard summary card are admins-only - an editor sees neither the screen nor the red count. Red lights do reach all staff in one place: the Pricing tab on /tasks lists them, and a price-light task on the shared board carries the competitor lines in its description.",
+        "מסך /price-light וכרטיס הסיכום שלו בדשבורד הם למנהלים בלבד — עורך לא רואה לא את המסך ולא את מספר האדומים. רמזורים אדומים כן מגיעים לכל הצוות במקום אחד: לשונית התמחור ב־/tasks מציגה אותם, ומשימת רמזור על הלוח המשותף כוללת בתיאור שלה את שורות המתחרים.",
       ),
       t(
         "The competitors panel on the same screen shows each site's last run, catalog size, next due time, and whether its circuit breaker is open. \"סרוק עכשיו\" forces an immediate crawl of one site - except LiveTickets, which has no crawl button because its numbers already refresh overnight from the live_events sync, not from browsing a page, and ISSTA, whose site serves our servers a page without any packages: it is crawled every three days from an office computer in Israel, and this panel only shows the run that leaves behind.",
@@ -497,8 +497,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "משימה שנולדה מחוסר קריאייטיב או משורת מחיר קפואה נושאת קישור \"Do\" שנוחת על הפקד המתקן המדויק — שדה הסמל, סקשן המחיר, בוחר הגלריה.",
       ),
       t(
-        "Assigning a task to someone else emails them (title, priority, due date, the Do link). Any task closed as Done or Cancelled that was born from a gap - creative, price light or a frozen price change - files that gap away automatically; reopening the task brings the gap straight back.",
-        "שיבוץ משימה למישהו אחר שולח לו מייל (כותרת, עדיפות, תאריך יעד, קישור Do). כל משימה שנסגרת כבוצעה או בוטלה ונולדה מחוסר — קריאייטיב, רמזור מחיר או שינוי מחיר קפוא — מתייקת את החוסר אוטומטית; פתיחה מחדש של המשימה מחזירה את החוסר מיד.",
+        "Assigning a task to someone else emails them (title, priority, due date, the Do link). A task born from a creative gap or a frozen price change files that gap away when it is closed as Done or Cancelled; reopening the task brings the gap straight back. A price-light task closed as Done while the light is still red records that the price was fixed (the lesson the price-light agent learns from); Cancelled records nothing, and the light itself only changes at the next nightly check.",
+        "שיבוץ משימה למישהו אחר שולח לו מייל (כותרת, עדיפות, תאריך יעד, קישור Do). משימה שנולדה מחוסר קריאייטיב או משינוי מחיר קפוא מתייקת את החוסר כשהיא נסגרת כבוצעה או בוטלה; פתיחה מחדש של המשימה מחזירה את החוסר מיד. משימת רמזור שנסגרת כבוצעה כשהרמזור עדיין אדום רושמת שהמחיר תוקן (הלקח שסוכן הרמזור לומד ממנו); ביטול לא רושם כלום, והרמזור עצמו משתנה רק בבדיקה הלילית הבאה.",
       ),
       t(
         "The Creative gaps tab is one unified queue, most blocking first, with type filter pills (All is the default). Do / Create task / Done on every row.",
@@ -509,16 +509,16 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "פותחים משימה כדי לראות את הפתיל שלה למטה — כל תגובה, צילום מסך ושינוי סטטוס בגלילה כרונולוגית אחת. מדביקים צילום מסך ישר מהלוח (מוקטן אוטומטית); מקלידים @ ושם כדי לתייג עמית — הוא מקבל מייל עם קטע מהתגובה. המערכת כותבת שורות משלה לאותו פתיל בכל פעם שסטטוס, שיוך, עדיפות, תאריך יעד, התקדמות או לוח של המשימה משתנים, כך שכל ההיסטוריה של משימה חיה במקום אחד ולא מפוזרת בין עריכות.",
       ),
       t(
-        "Recurring rules (admins, /tasks/rules) create tasks automatically every week without anyone remembering to look - one rule can either drop a single weekly summary task, or open one task per item it finds (say, one per event whose price light has been red too long). Each rule has a day of the week it runs on, always read in UTC, not Israel time - the whole batch actually runs Sunday mornings.",
-        "כללים חוזרים (מנהלים, /tasks/rules) יוצרים משימות אוטומטית כל שבוע בלי שמישהו צריך לזכור לבדוק — כלל אחד יכול להטיל משימת סיכום שבועית אחת, או לפתוח משימה לכל פריט שהוא מוצא (למשל, אחת לכל אירוע שהרמזור שלו אדום יותר מדי זמן). לכל כלל יום בשבוע שבו הוא רץ, נקרא תמיד לפי UTC ולא לפי שעון ישראל — כל האצווה בפועל רצה בבוקרי יום ראשון.",
+        "Recurring rules (admins, /tasks/rules) create tasks automatically every week without anyone remembering to look - one rule can either drop a single weekly summary task, or open one task per item it finds (say, one per event whose price light has been red too long). Each rule has a day of the week it runs on, always read in UTC, not Israel time - the check itself runs every morning at 06:00 UTC and each rule fires only on its own day. A per-item rule opens at most 25 tasks per run (the rest follow on its next run) and its assignee gets one summary email listing them, not one email per task.",
+        "כללים חוזרים (מנהלים, /tasks/rules) יוצרים משימות אוטומטית כל שבוע בלי שמישהו צריך לזכור לבדוק — כלל אחד יכול להטיל משימת סיכום שבועית אחת, או לפתוח משימה לכל פריט שהוא מוצא (למשל, אחת לכל אירוע שהרמזור שלו אדום יותר מדי זמן). לכל כלל יום בשבוע שבו הוא רץ, נקרא תמיד לפי UTC ולא לפי שעון ישראל — הבדיקה עצמה רצה כל בוקר ב־06:00 UTC וכל כלל פועל רק ביום שלו. כלל "משימה לכל פריט" פותח לכל היותר 25 משימות בריצה (השאר בריצה הבאה שלו), והמשובץ מקבל מייל סיכום אחד עם הרשימה ולא מייל לכל משימה.",
       ),
       t(
         "The board also has a Kanban view (the Kanban tab) alongside the table - drag a card to change its status. The board lens above both (All / Dev / Marketing / Ops) narrows the table, its counts and the Kanban together to one board at a time.",
         "ללוח יש גם תצוגת קאנבן (לשונית Kanban) לצד הטבלה — גוררים כרטיס כדי לשנות סטטוס. עדשת הלוח מעל שתיהן (הכול / Dev / Marketing / Ops) מצמצמת יחד את הטבלה, הספירות והקאנבן ללוח אחד בכל פעם.",
       ),
       t(
-        "The Pricing tab (visible to everyone, not just admins) lists every open pricing problem - red price lights and frozen price-change rows - in one place, each with three buttons: Task opens a tracked task for it, Fix jumps straight to the field that actually fixes it, and Handled records that you dealt with it without touching a price - a price light stays hidden until the next nightly check, a frozen price row is marked closed but keeps its original note so reopening it later restores exactly what the sync wrote.",
-        "לשונית התמחור (גלויה לכולם, לא רק למנהלים) מרכזת כל בעיית תמחור פתוחה — רמזורים אדומים ושורות שינוי מחיר קפואות — במקום אחד, כל אחת עם שלושה כפתורים: משימה פותחת משימה עוקבת, לתקן קופץ ישר לשדה שבאמת מתקן את זה, וטופל מתעד שטיפלתם בלי לגעת במחיר — רמזור נשאר מוסתר עד הבדיקה הלילית הבאה, ושורת מחיר קפואה מסומנת כסגורה אבל שומרת את ההערה המקורית שלה כך שפתיחה מחדש מאוחר יותר משחזרת בדיוק את מה שהסנכרון כתב.",
+        "The Pricing tab (visible to everyone, not just admins) lists every open pricing problem - red price lights and frozen price-change rows - in one place, each with three buttons: Task opens a tracked task for it, Fix jumps straight to the field that actually fixes it, and Handled records that you dealt with it without touching a price - a price light stays hidden until the next nightly check (and comes back if it is still red), a frozen price row is marked reviewed with the note 'סומן כטופל' in front of the sync's original note. That mark is final - nothing reopens it. Only a price-change row closed through its TASK can come back: reopening that task restores the row and its original note.",
+        "לשונית התמחור (גלויה לכולם, לא רק למנהלים) מרכזת כל בעיית תמחור פתוחה — רמזורים אדומים ושורות שינוי מחיר קפואות — במקום אחד, כל אחת עם שלושה כפתורים: משימה פותחת משימה עוקבת, לתקן קופץ ישר לשדה שבאמת מתקן את זה, וטופל מתעד שטיפלתם בלי לגעת במחיר — רמזור נשאר מוסתר עד הבדיקה הלילית הבאה (וחוזר אם הוא עדיין אדום), ושורת מחיר קפואה מסומנת כנבדקה עם 'סומן כטופל' לפני ההערה המקורית של הסנכרון. הסימון הזה סופי — שום דבר לא פותח אותו מחדש. רק שורת שינוי מחיר שנסגרה דרך המשימה שלה יכולה לחזור: פתיחה מחדש של אותה משימה משחזרת את השורה ואת ההערה המקורית.",
       ),
     ],
     links: [
