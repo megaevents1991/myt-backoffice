@@ -142,7 +142,7 @@ async function closeEarlierDigests(
 
 /** A digest insert can lose a race to another concurrent run (the Sunday cron and a
  *  manual "run now" overlapping) - `tasks_recurring_digest_week_uniq` (migration
- *  20260916120000) turns that into a Postgres 23505 instead of a duplicate row. That is
+ *  20260916210000) turns that into a Postgres 23505 instead of a duplicate row. That is
  *  "already exists", not a failure: the caller counts it in `existed`, never `errors`.
  *  The index only covers `source = 'recurring'` rows, so a 23505 elsewhere would be a
  *  real, unexpected conflict and falls through to the normal error path. */
@@ -251,7 +251,7 @@ async function runOneRule(
 }
 
 /**
- * Concurrency note: `tasks_recurring_digest_week_uniq` (migration 20260916120000) makes a
+ * Concurrency note: `tasks_recurring_digest_week_uniq` (migration 20260916210000) makes a
  * double-created weekly digest impossible even if the Sunday cron and a manual "run now"
  * overlap - the loser's insert hits Postgres 23505 and is counted in `existed` (see
  * insertTask above). Per-item tasks have NO such DB-level guard: two overlapping runs can

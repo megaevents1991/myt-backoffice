@@ -22,7 +22,7 @@
  *      validation is what actually refuses bad input).
  *   2. Every `as` key used in the data has a `--people` mapping.
  *   3. REAL runs only: a cheap probe select refuses outright if `tasks.board` is missing
- *      (production hasn't run migration 20260916120000_tasks_hub yet) - checked before the
+ *      (production hasn't run migration 20260916210000_tasks_hub yet) - checked before the
  *      people/user_profiles round trip so the refusal doesn't depend on which emails were
  *      passed. --dry-run skips this and reports anyway.
  *   4. Every mapped email actually has a `user_profiles` row - matched case-insensitively
@@ -214,7 +214,7 @@ async function refuseIfBoardMissing(): Promise<void> {
   const probe = await db.from("tasks").select("board").limit(1);
   if (probe.error && isMissingColumnError(probe.error)) {
     fatal(
-      "Refusing real import: tasks.board column does not exist yet - apply migration 20260916120000_tasks_hub first.",
+      "Refusing real import: tasks.board column does not exist yet - apply migration 20260916210000_tasks_hub first.",
     );
   }
   if (probe.error) fatal(`failed to probe tasks.board: ${JSON.stringify(probe.error)}`);
