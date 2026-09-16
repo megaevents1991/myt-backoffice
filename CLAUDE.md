@@ -209,6 +209,18 @@ these tables.
   one language at a time starting at `default_lang`, with a client-facing toggle; a
   single language hides the toggle and hides the other tab in the builder too.
 - Invite emails go out through `lib/email.ts` (shared ZeptoMail transport).
+- **Travellers count (2026-09-16):** a number question flagged `config.traveler_count`
+  ("Travellers count" switch in the field editor, one per form - flagging another unflags
+  the first) is the party size. The trips report (`lib/forms/report.ts` `travelerField`)
+  sums it per trip and overall as `sum / answered` ("81 / 17" = 81 travellers across the
+  17 forms that filled it - a blank is not a party of zero). With no flag it falls back to
+  the first client-facing number question, so older forms keep counting.
+- **Staff edits (2026-09-16):** the report popup's **עריכה** lets staff and
+  `forms_operator` correct the OPEN answers only - `STAFF_EDITABLE_TYPES` (text, number,
+  email, phone, date). Ratings, scales and choices are never editable (they feed the
+  averages and the review gate). `updateFormResponseAnswers` re-validates with the same
+  field schema as the public submit, merges into `answers`, and writes an `audit_log` row
+  (`update` / `form_response`, `changes` = before/after per field). No `edited_at` column.
 
 ### Cron Jobs (Vercel)
 

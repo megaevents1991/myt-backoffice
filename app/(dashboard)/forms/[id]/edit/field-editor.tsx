@@ -245,6 +245,27 @@ export function FieldEditor({
                     </Label>
                   </div>
                 )}
+                {field.type === "number" && !field.staff_only && (
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id={`travelers-${field.id}`}
+                      checked={field.config.traveler_count === true}
+                      onCheckedChange={(checked) => {
+                        const config = { ...field.config };
+                        if (checked) config.traveler_count = true;
+                        else delete config.traveler_count;
+                        onChange({ config });
+                      }}
+                    />
+                    <Label
+                      htmlFor={`travelers-${field.id}`}
+                      className="text-sm"
+                      title="The trips report sums this question as the party size"
+                    >
+                      Travellers count
+                    </Label>
+                  </div>
+                )}
               </div>
             )}
           </div>

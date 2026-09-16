@@ -235,7 +235,19 @@ export function FormBuilder({ form, initialFields }: Props) {
 
   function updateField(index: number, patch: Partial<FormFieldDraft>) {
     setDirty(true);
-    setFields((prev) => prev.map((field, i) => (i === index ? { ...field, ...patch } : field)));
+    // Only one question is the party size: flagging this one unflags the rest.
+    const claimsTravelers = patch.config?.traveler_count === true;
+    setFields((prev) =>
+      prev.map((field, i) => {
+        if (i === index) return { ...field, ...patch };
+        if (claimsTravelers && field.config.traveler_count) {
+          const config = { ...field.config };
+          delete config.traveler_count;
+          return { ...field, config };
+        }
+        return field;
+      }),
+    );
   }
 
   function addField(type: FormFieldType) {

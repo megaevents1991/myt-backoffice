@@ -31,6 +31,17 @@ export type FieldStat = {
   count: number;
 };
 
+/**
+ * Party-size totals: `sum` of the traveller-count answers over the responses
+ * that filled it, and how many responses (`answered`) did. Read as
+ * "27 travellers across 12 forms" - never sum / responseCount, since a form
+ * left blank is not a party of zero.
+ */
+export type TravelerStat = {
+  sum: number;
+  answered: number;
+};
+
 export type TripRow = {
   /** null = the "no trip" bucket. */
   inviteId: number | null;
@@ -45,6 +56,8 @@ export type TripRow = {
   /** Every staff answer, labeled, for display. */
   staffInfo: { label: string; value: string }[];
   responseCount: number;
+  /** null when the form has no traveller-count question at all. */
+  travelers: TravelerStat | null;
   /** Flat mean over every rating answer of the trip (not a mean of means). */
   overallAvg: number | null;
   perField: FieldStat[];
@@ -57,9 +70,12 @@ export type TripReport = {
   totals: {
     tripCount: number;
     responseCount: number;
+    travelers: TravelerStat | null;
     overallAvg: number | null;
     perField: FieldStat[];
   };
+  /** The question the traveller totals were read from, for the popup/list. */
+  travelerFieldId: number | null;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -75,6 +91,36 @@ function fieldValues(fieldId: number, responses: ReportResponse[]): number[] {
   return responses
     .map((r) => r.answers[key])
     .filter((v): v is number => typeof v === "number");
+}
+
+/**
+ * The party-size question: the number field flagged `traveler_count`, else the
+ * first client-facing number question (how the report guessed before the flag
+ * existed - keeps older forms counting without a re-save).
+ */
+export function travelerField(fields: FormField[]): FormField | null {
+  const numbers = fields.filter(
+    (field) => field.type === "number" && !field.staff_only,
+  );
+  return (
+    numbers.find((field) => field.config?.traveler_count === true) ??
+    numbers[0] ??
+    null
+  );
+}
+
+function travelerStats(
+  field: FormField | null,
+  responses: ReportResponse[],
+): TravelerStat | null {
+  if (!field) return null;
+  const values = fieldValues(field.id, responses).filter(
+    (v) => Number.isFinite(v) && v >= 0,
+  );
+  return {
+    sum: values.reduce((sum, v) => sum + v, 0),
+    answered: values.length,
+  };
 }
 
 function fieldStats(
@@ -117,12 +163,15 @@ function firstStaffValue(
 export function buildTripReport(input: {
   ratingFields: FormField[];
   staffFields: FormField[];
+  /** Every field of the form - the traveller question is looked up here. */
+  fields?: FormField[];
   invites: ReportInvite[];
   responses: ReportResponse[];
   /** Admin label resolver, injected so this stays import-light. */
   labelFor: (field: FormField) => string;
 }): TripReport {
   const { ratingFields, staffFields, invites, responses, labelFor } = input;
+  const travelers = travelerField(input.fields ?? []);
 
   const tripInvites = invites.filter(
     (invite) => invite.trip_code_prefix && invite.trip_code_num,
@@ -153,6 +202,7 @@ export function buildTripReport(input: {
       departure: firstStaffValue(staffFields, invite.prefill, "date"),
       staffInfo: staffDisplay(staffFields, invite.prefill, labelFor),
       responseCount: own.length,
+      travelers: travelerStats(travelers, own),
       overallAvg,
       perField,
       lastSubmittedAt:
@@ -174,6 +224,7 @@ export function buildTripReport(input: {
       departure: null,
       staffInfo: [],
       responseCount: bucket.length,
+      travelers: travelerStats(travelers, bucket),
       overallAvg,
       perField,
       lastSubmittedAt: bucket
@@ -196,8 +247,10 @@ export function buildTripReport(input: {
     totals: {
       tripCount: tripInvites.length,
       responseCount: responses.length,
+      travelers: travelerStats(travelers, responses),
       overallAvg,
       perField,
     },
+    travelerFieldId: travelers?.id ?? null,
   };
 }

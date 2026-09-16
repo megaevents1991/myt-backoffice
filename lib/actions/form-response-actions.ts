@@ -9,9 +9,9 @@ import {
   requireStaff,
 } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
-import { validateAnswers } from "@/lib/forms/validation";
-import { strings } from "@/lib/forms/i18n";
-import { resolveLang } from "@/types/form.types";
+import { buildFieldSchema, isEmptyAnswer, validateAnswers } from "@/lib/forms/validation";
+import { fieldAdminLabel, strings } from "@/lib/forms/i18n";
+import { STAFF_EDITABLE_TYPES, resolveLang } from "@/types/form.types";
 import type {
   AnswerMap,
   AnswerValue,
@@ -473,4 +473,108 @@ export async function deleteFormResponse(
   });
   revalidatePath(`/forms/${formId}/responses`);
   return true;
+}
+
+export type EditAnswersResult =
+  | { ok: true; answers: AnswerMap }
+  | { ok: false; errors: Record<string, string> }
+  | { ok: false; message: string };
+
+/**
+ * Staff/operator correction of a submitted response - a typo in a name, "13"
+ * where the family meant 3 travellers. Only the OPEN answers are writable
+ * (`STAFF_EDITABLE_TYPES`): ratings, scales and choices stay exactly as the
+ * client left them, so the averages and the review gate are never hand-tuned.
+ *
+ * `patch` is keyed by field id like `answers`. Keys that are not an editable,
+ * client-facing field of this form are dropped; the rest are validated with
+ * the same field schema the public submit uses. An empty value clears the
+ * answer (stored as null) unless the field is required. The write is a merge
+ * into the existing map and every edit lands in the audit log with before/after.
+ */
+export async function updateFormResponseAnswers(
+  responseId: number,
+  formId: number,
+  patch: Record<string, unknown>,
+): Promise<EditAnswersResult> {
+  const actor = await requireFormsAccess();
+  await requireFormVisible(actor, formId);
+
+  const [responseRes, fieldsRes] = await Promise.all([
+    responsesTable()
+      .select("id,form_id,answers")
+      .eq("id", responseId)
+      .eq("form_id", formId)
+      .maybeSingle(),
+    fieldsTable().select(FIELD_COLUMNS).eq("form_id", formId),
+  ]);
+  if (responseRes.error) {
+    console.error("updateFormResponseAnswers load failed:", JSON.stringify(responseRes.error));
+    return { ok: false, message: "Could not load the response." };
+  }
+  if (fieldsRes.error) {
+    console.error("updateFormResponseAnswers fields failed:", JSON.stringify(fieldsRes.error));
+    return { ok: false, message: "Could not load the form." };
+  }
+  if (!responseRes.data) return { ok: false, message: "Response not found." };
+
+  const fields = (fieldsRes.data ?? []) as FormField[];
+  const editable = new Map(
+    fields
+      .filter((f) => STAFF_EDITABLE_TYPES.includes(f.type) && !f.staff_only)
+      .map((f) => [String(f.id), f] as const),
+  );
+
+  const before = (responseRes.data.answers ?? {}) as AnswerMap;
+  const next: AnswerMap = { ...before };
+  const changed: Record<string, { from: AnswerValue; to: AnswerValue }> = {};
+  const errors: Record<string, string> = {};
+
+  for (const [key, raw] of Object.entries(patch ?? {})) {
+    const field = editable.get(key);
+    if (!field) continue; // not this form, not editable, or forged
+
+    let value: AnswerValue;
+    if (isEmptyAnswer(raw)) {
+      if (field.required) {
+        errors[key] = `${fieldAdminLabel(field)}: required`;
+        continue;
+      }
+      value = null;
+    } else {
+      const schema = buildFieldSchema(field);
+      const parsed = schema ? schema.safeParse(raw) : null;
+      if (!parsed || !parsed.success) {
+        errors[key] = `${fieldAdminLabel(field)}: invalid value`;
+        continue;
+      }
+      value = parsed.data as AnswerValue;
+    }
+    if (value !== (before[key] ?? null)) {
+      next[key] = value;
+      changed[key] = { from: before[key] ?? null, to: value };
+    }
+  }
+
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  if (Object.keys(changed).length === 0) return { ok: true, answers: before };
+
+  const { error } = await responsesTable()
+    .update({ answers: next })
+    .eq("id", responseId)
+    .eq("form_id", formId);
+  if (error) {
+    console.error("updateFormResponseAnswers write failed:", JSON.stringify(error));
+    return { ok: false, message: "Saving failed." };
+  }
+
+  await logAudit({
+    action: "update",
+    entityType: "form_response",
+    entityId: responseId,
+    changes: changed,
+    metadata: { form_id: formId },
+  });
+  revalidatePath(`/forms/${formId}/report`);
+  return { ok: true, answers: next };
 }

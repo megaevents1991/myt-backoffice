@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ChevronDown, StickyNote, Star, Users } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { ChevronDown, Loader2, Pencil, StickyNote, Star, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -28,8 +31,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { adminLabel } from "@/lib/forms/i18n";
+import { updateFormResponseAnswers } from "@/lib/actions/form-response-actions";
 import type { TripReport, TripRow } from "@/lib/forms/report";
-import type { AnswerValue, FormField, FormResponseRow } from "@/types/form.types";
+import { STAFF_EDITABLE_TYPES } from "@/types/form.types";
+import type {
+  AnswerMap,
+  AnswerValue,
+  FormField,
+  FormResponseRow,
+} from "@/types/form.types";
 
 type RatingFieldInfo = { id: number; label: string; reviewScore: boolean };
 
@@ -53,6 +63,22 @@ function answerOfType(
     if (value !== undefined && value !== null && value !== "") return value;
   }
   return undefined;
+}
+
+/** The answer of one specific field, when it was actually answered. */
+function answerOf(
+  answers: FormResponseRow["answers"],
+  fieldId: number | null,
+): AnswerValue | undefined {
+  if (fieldId === null) return undefined;
+  const value = answers[String(fieldId)];
+  return value !== undefined && value !== null && value !== "" ? value : undefined;
+}
+
+/** "27 / 12" - travellers summed over the forms that filled the question. */
+function fmtTravelers(stat: { sum: number; answered: number } | null): string {
+  if (!stat || stat.answered === 0) return "-";
+  return `${stat.sum} / ${stat.answered}`;
 }
 
 /** True when any free-text answer (long_text) came back non-empty. */
@@ -109,7 +135,17 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
   const [fromDate, setFromDate] = useState("");
   const [year, setYear] = useState("all");
   const [openTrip, setOpenTrip] = useState<number | null | undefined>(undefined);
-  const [viewing, setViewing] = useState<FormResponseRow | null>(null);
+  const [viewingId, setViewingId] = useState<number | null>(null);
+  // Answers corrected in the popup this session - shown at once, while
+  // router.refresh() brings the recomputed report (traveller sums) behind it.
+  const [edited, setEdited] = useState<Record<number, AnswerMap>>({});
+  const rows = useMemo(
+    () =>
+      responses.map((r) => (edited[r.id] ? { ...r, answers: edited[r.id] } : r)),
+    [responses, edited],
+  );
+  const viewing =
+    viewingId === null ? null : (rows.find((r) => r.id === viewingId) ?? null);
 
   // Departure years present in the data, newest first - the annual filter.
   const yearOptions = useMemo(() => {
@@ -140,8 +176,18 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
 
   // The summary reflects what is FILTERED, so a year filter = an annual report.
   const filtered = useMemo(() => {
-    const rows = trips.filter((t) => t.inviteId !== null);
+    const tripRows = trips.filter((t) => t.inviteId !== null);
     const count = trips.reduce((sum, t) => sum + t.responseCount, 0);
+    const travelers =
+      report.totals.travelers === null
+        ? null
+        : trips.reduce(
+            (acc, t) => ({
+              sum: acc.sum + (t.travelers?.sum ?? 0),
+              answered: acc.answered + (t.travelers?.answered ?? 0),
+            }),
+            { sum: 0, answered: 0 },
+          );
     const weighted = trips
       .filter((t) => t.overallAvg !== null && t.responseCount > 0)
       .reduce(
@@ -156,14 +202,15 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
         { sum: 0, n: 0 },
       );
     return {
-      tripCount: rows.length,
+      tripCount: tripRows.length,
       responseCount: count,
+      travelers,
       overallAvg: weighted.n > 0 ? weighted.sum / weighted.n : null,
     };
-  }, [trips]);
+  }, [trips, report.totals.travelers]);
 
   const responsesOf = (tripInviteId: number | null) =>
-    responses.filter((r) =>
+    rows.filter((r) =>
       tripInviteId === null
         ? r.invite_id === null ||
           !report.trips.some((t) => t.inviteId === r.invite_id)
@@ -173,13 +220,28 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
   return (
     <div className="space-y-6">
       {/* Summary - follows the active filters */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div
+        className={cn(
+          "grid gap-4 sm:grid-cols-3",
+          filtered.travelers !== null && "lg:grid-cols-4",
+        )}
+      >
         {[
-          { label: "Trips", value: String(filtered.tripCount) },
-          { label: "Responses", value: String(filtered.responseCount) },
+          { label: "Trips", value: String(filtered.tripCount), hint: null },
+          { label: "Responses", value: String(filtered.responseCount), hint: null },
+          ...(filtered.travelers !== null
+            ? [
+                {
+                  label: "Travellers",
+                  value: fmtTravelers(filtered.travelers),
+                  hint: "total travellers / forms that filled it",
+                },
+              ]
+            : []),
           {
             label: "Overall average",
             value: filtered.overallAvg === null ? "-" : filtered.overallAvg.toFixed(2),
+            hint: null,
           },
         ].map((card) => (
           <div key={card.label} className="rounded-lg border bg-card p-4">
@@ -187,6 +249,9 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
               {card.label}
             </p>
             <p className="mt-1 text-3xl font-bold tabular-nums">{card.value}</p>
+            {card.hint && (
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{card.hint}</p>
+            )}
           </div>
         ))}
       </div>
@@ -237,6 +302,14 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
               <TableHead>Escort</TableHead>
               <TableHead>Departure</TableHead>
               <TableHead className="text-center">Responses</TableHead>
+              {report.totals.travelers !== null && (
+                <TableHead
+                  className="text-center"
+                  title="total travellers / forms that filled it"
+                >
+                  Travellers
+                </TableHead>
+              )}
               <TableHead>Average</TableHead>
               <TableHead>Last response</TableHead>
             </TableRow>
@@ -244,7 +317,7 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
           <TableBody>
             {trips.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                   No trips match the filters.
                 </TableCell>
               </TableRow>
@@ -256,12 +329,14 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
                 trip={trip}
                 ratingFields={ratingFields}
                 fields={fields}
+                travelerFieldId={report.travelerFieldId}
+                showTravelers={report.totals.travelers !== null}
                 open={openTrip === trip.inviteId}
                 onToggle={() =>
                   setOpenTrip(openTrip === trip.inviteId ? undefined : trip.inviteId)
                 }
                 responses={responsesOf(trip.inviteId)}
-                onView={setViewing}
+                onView={(r) => setViewingId(r.id)}
               />
             ))}
           </TableBody>
@@ -271,40 +346,205 @@ export function ReportClient({ report, ratingFields, fields, responses }: Props)
       <ResponseDialog
         response={viewing}
         fields={fields}
-        onClose={() => setViewing(null)}
+        onClose={() => setViewingId(null)}
+        onSaved={(id, answers) => setEdited((prev) => ({ ...prev, [id]: answers }))}
       />
     </div>
   );
 }
 
-/** The full submission, question by question, in form order. */
+/** Free text and long strings read better as a block under the label. */
+function stacked(field: FormField, value: AnswerValue): boolean {
+  if (field.type === "long_text") return true;
+  return typeof value === "string" && value.length > 40;
+}
+
+const fieldEditable = (field: FormField) => STAFF_EDITABLE_TYPES.includes(field.type);
+
+const asText = (value: AnswerValue | undefined) =>
+  value === undefined || value === null ? "" : String(value);
+
+/**
+ * The full submission, question by question, in form order. "עריכה" turns the
+ * open answers (text, number, date...) into inputs so staff can fix a typo -
+ * ratings and choices stay read-only; the server enforces the same rule.
+ */
 function ResponseDialog({
   response,
   fields,
   onClose,
+  onSaved,
 }: {
   response: FormResponseRow | null;
   fields: FormField[];
   onClose: () => void;
+  onSaved: (responseId: number, answers: AnswerMap) => void;
 }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
   const name = response ? answerOfType(fields, response.answers, "short_text") : null;
+  const canEdit = fields.some(fieldEditable);
+
+  function startEdit() {
+    if (!response) return;
+    const next: Record<string, string> = {};
+    for (const field of fields) {
+      if (fieldEditable(field)) {
+        next[String(field.id)] = asText(response.answers[String(field.id)]);
+      }
+    }
+    setDraft(next);
+    setErrors({});
+    setMessage(null);
+    setEditing(true);
+  }
+
+  function stopEdit() {
+    setEditing(false);
+    setDraft({});
+    setErrors({});
+    setMessage(null);
+  }
+
+  function close() {
+    stopEdit();
+    onClose();
+  }
+
+  function save() {
+    if (!response) return;
+    const patch: Record<string, string> = {};
+    for (const [key, value] of Object.entries(draft)) {
+      if (value !== asText(response.answers[key])) patch[key] = value;
+    }
+    if (Object.keys(patch).length === 0) {
+      stopEdit();
+      return;
+    }
+    setErrors({});
+    setMessage(null);
+    startTransition(async () => {
+      try {
+        const result = await updateFormResponseAnswers(
+          response.id,
+          response.form_id,
+          patch,
+        );
+        if (!result.ok) {
+          if ("errors" in result) setErrors(result.errors);
+          else setMessage(result.message);
+          return;
+        }
+        onSaved(response.id, result.answers);
+        stopEdit();
+        router.refresh();
+      } catch (e) {
+        console.error("updateFormResponseAnswers threw:", e);
+        setMessage("Saving failed.");
+      }
+    });
+  }
+
   return (
-    <Dialog open={response !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+    <Dialog open={response !== null} onOpenChange={(open) => !open && close()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle dir="rtl" className="text-right">
-            {name ? String(name) : "תשובה"}
-            <span className="ms-2 text-sm font-normal text-muted-foreground">
-              {response && new Date(response.submitted_at).toLocaleString()}
+          <DialogTitle
+            dir="rtl"
+            className="flex items-center justify-between gap-3 pe-6 text-right"
+          >
+            <span className="min-w-0 truncate">
+              {name ? String(name) : "תשובה"}
+              <span className="ms-2 text-sm font-normal text-muted-foreground">
+                {response && new Date(response.submitted_at).toLocaleString()}
+              </span>
             </span>
+            {canEdit && !editing && (
+              <Button type="button" variant="outline" size="sm" onClick={startEdit}>
+                <Pencil className="me-1.5 h-3.5 w-3.5" />
+                עריכה
+              </Button>
+            )}
           </DialogTitle>
         </DialogHeader>
+
         {response && (
           <div dir="rtl" className="space-y-1.5">
             {fields.map((field) => {
-              const value = response.answers[String(field.id)];
-              const answered =
-                value !== undefined && value !== null && value !== "";
+              const key = String(field.id);
+              const value = response.answers[key];
+              const answered = value !== undefined && value !== null && value !== "";
+              const label = adminLabel(field.label_en, field.label_he);
+              const error = errors[key];
+
+              if (editing && fieldEditable(field)) {
+                const inputProps = {
+                  value: draft[key] ?? "",
+                  disabled: pending,
+                  "aria-invalid": Boolean(error),
+                  onChange: (
+                    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+                  ) => setDraft((prev) => ({ ...prev, [key]: e.target.value })),
+                };
+                const rtl = field.type === "short_text" || field.type === "long_text";
+                return (
+                  <div
+                    key={field.id}
+                    className={cn(
+                      "space-y-1 rounded-md border px-3 py-2 text-sm",
+                      error && "border-destructive",
+                    )}
+                  >
+                    <span className="block text-right text-xs font-medium text-muted-foreground">
+                      {label}
+                      {field.required && <span className="text-destructive"> *</span>}
+                    </span>
+                    {field.type === "long_text" ? (
+                      <Textarea rows={3} dir="rtl" className="text-right" {...inputProps} />
+                    ) : (
+                      <Input
+                        type={
+                          field.type === "number"
+                            ? "number"
+                            : field.type === "date"
+                              ? "date"
+                              : field.type === "email"
+                                ? "email"
+                                : "text"
+                        }
+                        dir={rtl ? "rtl" : "ltr"}
+                        className={rtl ? "text-right" : ""}
+                        min={field.type === "number" ? field.config.min : undefined}
+                        max={field.type === "number" ? field.config.max : undefined}
+                        step={field.type === "number" ? (field.config.step ?? "any") : undefined}
+                        {...inputProps}
+                      />
+                    )}
+                    {error && <p className="text-xs text-destructive">{error}</p>}
+                  </div>
+                );
+              }
+
+              // Long answers: label on top, full-width text below - a side-by-side
+              // row squeezed them into a narrow column and broke every word.
+              if (answered && stacked(field, value)) {
+                return (
+                  <div key={field.id} className="rounded-md border px-3 py-2 text-sm">
+                    <span className="block text-right text-xs font-medium text-muted-foreground">
+                      {label}
+                    </span>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-right font-semibold leading-relaxed">
+                      {formatAnswer(field, value)}
+                    </p>
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={field.id}
@@ -313,9 +553,7 @@ function ResponseDialog({
                     !answered && "opacity-45",
                   )}
                 >
-                  <span className="min-w-0 flex-1 text-right font-medium">
-                    {adminLabel(field.label_en, field.label_he)}
-                  </span>
+                  <span className="min-w-0 flex-1 text-right font-medium">{label}</span>
                   <span className="shrink-0 text-left">
                     {!answered ? (
                       <span className="text-muted-foreground">—</span>
@@ -325,7 +563,7 @@ function ResponseDialog({
                         {String(value)}
                       </span>
                     ) : (
-                      <span className="max-w-[220px] whitespace-pre-wrap break-words font-semibold">
+                      <span className="whitespace-pre-wrap break-words font-semibold">
                         {formatAnswer(field, value)}
                       </span>
                     )}
@@ -333,6 +571,28 @@ function ResponseDialog({
                 </div>
               );
             })}
+
+            {editing && (
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <span className="text-xs text-destructive">{message}</span>
+                <span className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={stopEdit}
+                    disabled={pending}
+                  >
+                    <X className="me-1 h-3.5 w-3.5" />
+                    ביטול
+                  </Button>
+                  <Button type="button" size="sm" onClick={save} disabled={pending}>
+                    {pending && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
+                    שמור
+                  </Button>
+                </span>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>
@@ -344,6 +604,8 @@ function TripRows({
   trip,
   ratingFields,
   fields,
+  travelerFieldId,
+  showTravelers,
   open,
   onToggle,
   responses,
@@ -352,6 +614,8 @@ function TripRows({
   trip: TripRow;
   ratingFields: RatingFieldInfo[];
   fields: FormField[];
+  travelerFieldId: number | null;
+  showTravelers: boolean;
   open: boolean;
   onToggle: () => void;
   responses: FormResponseRow[];
@@ -386,6 +650,11 @@ function TripRows({
         <TableCell className="text-center font-semibold tabular-nums">
           {trip.responseCount}
         </TableCell>
+        {showTravelers && (
+          <TableCell className="text-center tabular-nums">
+            {fmtTravelers(trip.travelers)}
+          </TableCell>
+        )}
         <TableCell>
           <AvgBadge avg={trip.overallAvg} />
         </TableCell>
@@ -398,7 +667,7 @@ function TripRows({
 
       {open && (
         <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableCell colSpan={7} className="p-4">
+          <TableCell colSpan={8} className="p-4">
             <div className="grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
               {/* Per-question averages */}
               <div>
@@ -449,7 +718,7 @@ function TripRows({
                           ? ratings.reduce((s, v) => s + v, 0) / ratings.length
                           : null;
                       const name = answerOfType(fields, response.answers, "short_text");
-                      const passengers = answerOfType(fields, response.answers, "number");
+                      const passengers = answerOf(response.answers, travelerFieldId);
                       return (
                         <button
                           key={response.id}

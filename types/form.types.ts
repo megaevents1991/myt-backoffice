@@ -34,6 +34,20 @@ export const TEXTUAL_TYPES: FormFieldType[] = [
   "phone",
 ];
 
+/**
+ * The "open" answers staff may correct after submission (a typo, 13 instead
+ * of 3 travellers). Ratings, scales and choices are deliberately NOT here -
+ * they feed the review gate and the averages, so a human never rewrites them.
+ */
+export const STAFF_EDITABLE_TYPES: FormFieldType[] = [
+  "short_text",
+  "long_text",
+  "number",
+  "email",
+  "phone",
+  "date",
+];
+
 export type FormLang = "en" | "he";
 export type FormStatus = "draft" | "live" | "closed";
 
@@ -89,6 +103,13 @@ export type FormFieldConfig = {
    * When NO field of a form is flagged, every rating field counts.
    */
   review_score?: boolean;
+  /**
+   * Number fields only: this question is the party size ("how many
+   * travellers"). The trips report sums it per trip and overall. At most one
+   * field per form carries it; when none does, the report falls back to the
+   * first number question.
+   */
+  traveler_count?: boolean;
 };
 
 export type FormField = {

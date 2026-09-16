@@ -321,6 +321,7 @@ function normalizeConfig(config: FormFieldDraft["config"] | undefined) {
     out.show_if = { field: raw.show_if.field, equals: raw.show_if.equals };
   }
   if (raw.review_score === true) out.review_score = true;
+  if (raw.traveler_count === true) out.traveler_count = true;
   return out;
 }
 

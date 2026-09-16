@@ -62,6 +62,7 @@ export async function getFormTripReport(
   const report = buildTripReport({
     ratingFields,
     staffFields,
+    fields,
     invites: ((invitesRes.data ?? []) as {
       id: number;
       trip_code_prefix: string | null;
