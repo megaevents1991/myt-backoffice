@@ -1619,6 +1619,7 @@ export type Database = {
           sent_at: string | null
           submitted_at: string | null
           token: string
+          total_travelers: number | null
           trip_code_num: string | null
           trip_code_prefix: string | null
         }
@@ -1640,6 +1641,7 @@ export type Database = {
           sent_at?: string | null
           submitted_at?: string | null
           token: string
+          total_travelers?: number | null
           trip_code_num?: string | null
           trip_code_prefix?: string | null
         }
@@ -1661,6 +1663,7 @@ export type Database = {
           sent_at?: string | null
           submitted_at?: string | null
           token?: string
+          total_travelers?: number | null
           trip_code_num?: string | null
           trip_code_prefix?: string | null
         }
@@ -1897,6 +1900,51 @@ export type Database = {
             referencedColumns: ["place_id"]
           },
         ]
+      }
+      homepage_items: {
+        Row: {
+          kind: string
+          position: number
+          ref_id: string
+          section: string
+          updated_at: string
+        }
+        Insert: {
+          kind: string
+          position?: number
+          ref_id: string
+          section: string
+          updated_at?: string
+        }
+        Update: {
+          kind?: string
+          position?: number
+          ref_id?: string
+          section?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      homepage_sections: {
+        Row: {
+          is_visible: boolean
+          key: string
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          is_visible?: boolean
+          key: string
+          position?: number
+          updated_at?: string
+        }
+        Update: {
+          is_visible?: boolean
+          key?: string
+          position?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       hotels: {
         Row: {
@@ -2350,6 +2398,7 @@ export type Database = {
           partner_tracking_code: string
           password: string
           payment_card: Json | null
+          portal_history_from: string | null
           supplier_number: number | null
           type: string | null
           user_discount: number
@@ -2369,6 +2418,7 @@ export type Database = {
           partner_tracking_code: string
           password: string
           payment_card?: Json | null
+          portal_history_from?: string | null
           supplier_number?: number | null
           type?: string | null
           user_discount?: number
@@ -2388,6 +2438,7 @@ export type Database = {
           partner_tracking_code?: string
           password?: string
           payment_card?: Json | null
+          portal_history_from?: string | null
           supplier_number?: number | null
           type?: string | null
           user_discount?: number
@@ -3306,6 +3357,17 @@ export type Database = {
         Returns: {
           affiliate_id: string
           visitors: number
+        }[]
+      }
+      price_light_newest_matches: {
+        Args: { event_ids: number[]; since: string }
+        Returns: {
+          created_at: string
+          event_id: number
+          id: number
+          method: string
+          scope: string
+          url: string
         }[]
       }
       tracking_code_is_real_partner: {
