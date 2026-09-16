@@ -76,14 +76,21 @@ export function KanbanBoard({
   }, []);
 
   const move = async (id: string, status: TaskStatus) => {
-    const previous = localTasks;
-    const moved = previous.find((task) => task.id === id);
+    const moved = localTasks.find((task) => task.id === id);
     if (!moved || moved.status === status) return;
+    const previousStatus = moved.status;
     setLocalTasks((current) =>
       current.map((task) => (task.id === id ? { ...task, status } : task)),
     );
     const ok = await onStatusChange(id, status);
-    if (!ok) setLocalTasks(previous);
+    // Roll back only the one card - restoring the whole snapshot would also
+    // discard any fresher state (another card's move, a reload) that landed
+    // while this request was in flight.
+    if (!ok) {
+      setLocalTasks((current) =>
+        current.map((task) => (task.id === id ? { ...task, status: previousStatus } : task)),
+      );
+    }
   };
 
   const isOwnTask = (task: TaskWithNames) => !!userId && task.assignee_id === userId;
@@ -113,8 +120,20 @@ export function KanbanBoard({
         return (
           <section
             key={status}
-            onDragOver={(event) => canDrag && event.preventDefault()}
+            onDragOver={(event) => {
+              // Only claim this as a valid dropzone for one of OUR cards -
+              // anything else (a file from the OS, text from another app)
+              // must fall through to the browser's own handling instead of
+              // being silently "accepted" here.
+              if (canDrag && event.dataTransfer.types.includes(DRAG_MIME)) {
+                event.preventDefault();
+              }
+            }}
             onDrop={(event) => {
+              // Always prevent the browser's default drop action first (e.g.
+              // navigating to / opening a dropped file) - reading the id only
+              // decides whether WE act on it, it must not gate this.
+              event.preventDefault();
               if (!canDrag) return;
               const id = event.dataTransfer.getData(DRAG_MIME);
               if (id) void move(id, status);
@@ -191,6 +210,16 @@ function KanbanCard({
       draggable={canDrag}
       onDragStart={(event) => event.dataTransfer.setData(DRAG_MIME, task.id)}
       onClick={onClick}
+      role="button"
+      tabIndex={0}
+      aria-label={task.title}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        // Space would otherwise scroll the column - this key press opens the
+        // task instead, same as a click.
+        event.preventDefault();
+        onClick();
+      }}
       className={cn(
         "rounded-lg border bg-card p-3 shadow-sm",
         canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
@@ -230,7 +259,15 @@ function KanbanCard({
       </div>
 
       {canPickStatus && (
-        <div className="mt-2" onClick={(event) => event.stopPropagation()}>
+        // Stops the click/keydown from reaching the card's own handler above -
+        // this select only ever appears when the card isn't draggable (mobile
+        // vs desktop are mutually exclusive), so there is no drag gesture to
+        // protect here, just the card's own open-on-click/Enter/Space.
+        <div
+          className="mt-2"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
           <Select value={task.status} onValueChange={(value) => onStatusPick(value as TaskStatus)}>
             <SelectTrigger className="h-8 text-xs">
               <SelectValue />
