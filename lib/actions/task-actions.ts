@@ -2,6 +2,7 @@
 
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
+import { fetchPaged } from "@/lib/supabase-paged";
 
 // The generated database types predate the tasks table (regenerate with
 // `npm run db:types` once the migration lands on master) - cast once at the
@@ -60,23 +61,56 @@ function validSource(value: string | undefined): value is TaskSource {
   return !!value && (TASK_SOURCES as readonly string[]).includes(value);
 }
 
-/** One query for every comment count on this page - never a query per task. */
+/** Sources only the server itself may stamp (the rules cron, the roadmap import). */
+const SERVER_ONLY_SOURCES: readonly TaskSource[] = ["recurring", "roadmap"];
+
+/** A client-supplied source_ref must have the shape every reader assumes - and its
+ *  url must be a same-site path, because it becomes a link in mails and the UI. */
+function validSourceRef(value: unknown): value is TaskSourceRef {
+  if (!value || typeof value !== "object") return false;
+  const ref = value as Record<string, unknown>;
+  return (
+    typeof ref.kind === "string" &&
+    typeof ref.table === "string" &&
+    typeof ref.label === "string" &&
+    (typeof ref.row_id === "string" || typeof ref.row_id === "number") &&
+    typeof ref.url === "string" &&
+    ref.url.startsWith("/") &&
+    !ref.url.startsWith("//")
+  );
+}
+
+/** Board read cap - far above today's size; a truncated read is logged, never hidden. */
+const TASKS_LIST_MAX = 5000;
+/** Task ids per comment-count query - keeps the `in (...)` filter well inside URL limits. */
+const COMMENT_COUNT_CHUNK = 200;
+const COMMENT_ROWS_MAX = 50_000;
+
+/** Comment counts in chunks of task ids (never one query per task). Each chunk pages its
+ *  comment rows; a failed chunk is logged and leaves only ITS tasks at 0. */
 async function commentCounts(taskIds: string[]): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
-  if (taskIds.length === 0) return counts;
-
-  const { data, error } = await db
-    .from("task_comments")
-    .select("task_id")
-    .eq("kind", "comment")
-    .is("deleted_at", null)
-    .in("task_id", taskIds);
-  if (error) {
-    console.error("tasks: comment counts failed", JSON.stringify(error));
-    return counts;
-  }
-  for (const row of (data ?? []) as { task_id: string }[]) {
-    counts.set(row.task_id, (counts.get(row.task_id) ?? 0) + 1);
+  for (let i = 0; i < taskIds.length; i += COMMENT_COUNT_CHUNK) {
+    const chunk = taskIds.slice(i, i + COMMENT_COUNT_CHUNK);
+    const { rows, error, truncated } = await fetchPaged<{ id: string; task_id: string }>(
+      () =>
+        db
+          .from("task_comments")
+          .select("id,task_id")
+          .eq("kind", "comment")
+          .is("deleted_at", null)
+          .in("task_id", chunk)
+          .order("id", { ascending: true }),
+      COMMENT_ROWS_MAX,
+    );
+    if (error) {
+      console.error("tasks: comment counts failed for a chunk", JSON.stringify(error));
+      continue;
+    }
+    if (truncated) console.error(`tasks: comment counts truncated at ${COMMENT_ROWS_MAX} rows for a chunk`);
+    for (const row of rows) {
+      counts.set(row.task_id, (counts.get(row.task_id) ?? 0) + 1);
+    }
   }
   return counts;
 }
@@ -126,16 +160,22 @@ export async function listTasks(): Promise<TaskWithNames[]> {
   // Everyone on staff sees the whole board (Dor, 16.09): the roadmap lives here
   // now, and a board people cannot see is not a board. Editing stays narrow -
   // an editor only changes the status/progress of tasks assigned to them.
-  const { data, error } = await db
-    .from("tasks")
-    .select(TASK_COLUMNS)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false });
+  const { rows, error, truncated } = await fetchPaged<Task>(
+    () =>
+      db
+        .from("tasks")
+        .select(TASK_COLUMNS)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true }),
+    TASKS_LIST_MAX,
+  );
   if (error) {
     console.error("tasks: list failed", JSON.stringify(error));
     return [];
   }
-  return withNames((data ?? []) as Task[]);
+  if (truncated) console.error(`tasks: list truncated at ${TASKS_LIST_MAX} rows`);
+  return withNames(rows);
 }
 
 /** The dashboard widget: my open tasks, most urgent first. */
@@ -188,6 +228,27 @@ export async function createTask(input: {
   if (!validPhase(input.phase)) return { ok: false, error: "Bad phase" };
   if (!validChannel(input.channel)) return { ok: false, error: "Bad channel" };
   if (!validProgress(input.progress)) return { ok: false, error: "Bad progress" };
+  if (input.source !== undefined && !validSource(input.source)) return { ok: false, error: "Bad source" };
+  if (input.source && SERVER_ONLY_SOURCES.includes(input.source)) {
+    return { ok: false, error: "Bad source" };
+  }
+  const source: TaskSource = input.source ?? "manual";
+  const sourceRef: TaskSourceRef | null = input.source_ref ?? null;
+  if (sourceRef !== null) {
+    if (!validSourceRef(sourceRef)) return { ok: false, error: "Bad source_ref" };
+  } else if (source !== "manual") {
+    return { ok: false, error: "Bad source_ref" };
+  }
+  // Only the shape fields travel - never whatever else the client put on the object.
+  const cleanRef: TaskSourceRef | null = sourceRef
+    ? {
+        kind: sourceRef.kind,
+        table: sourceRef.table,
+        row_id: sourceRef.row_id,
+        label: sourceRef.label,
+        url: sourceRef.url,
+      }
+    : null;
 
   // Editors may only create tasks for themselves.
   const assigneeId = isManager(session.role)
@@ -203,8 +264,8 @@ export async function createTask(input: {
       assignee_id: assigneeId,
       created_by: session.sub,
       due_date: input.due_date || null,
-      source: validSource(input.source) ? input.source : "manual",
-      source_ref: input.source_ref ?? null,
+      source,
+      source_ref: cleanRef,
       board: input.board ?? "ops",
       phase: input.phase ?? null,
       channel: input.channel ?? null,
@@ -233,7 +294,7 @@ export async function createTask(input: {
       description: input.description?.trim() || null,
       priority: input.priority,
       dueDate: input.due_date || null,
-      sourceRef: input.source_ref ?? null,
+      sourceRef: cleanRef,
       assigneeId,
       assignerId: session.sub,
     });
@@ -326,8 +387,10 @@ export async function updateTask(
     console.error("tasks: update failed", JSON.stringify(error));
     return { ok: false, error: "Update failed" };
   }
-  if (!manager && !after) {
-    return { ok: false, error: "לא המשימה שלך" };
+  if (!after) {
+    // Nothing matched: for an editor it is not their task, for an admin the id is
+    // gone. Either way no activity row and no audit for a write that never happened.
+    return { ok: false, error: manager ? "המשימה לא נמצאה" : "לא המשימה שלך" };
   }
 
   await logAudit({

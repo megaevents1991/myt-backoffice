@@ -232,7 +232,12 @@ export async function addTaskComment(input: {
 async function staffIdsOnly(ids: string[]): Promise<string[]> {
   const unique = [...new Set(ids)];
   if (!unique.length) return [];
-  const { data, error } = await db.from("user_profiles").select("id,role").in("id", unique);
+  // Same gate as listStaffForMentions: an inactive profile is never mentionable/mailed.
+  const { data, error } = await db
+    .from("user_profiles")
+    .select("id,role")
+    .in("id", unique)
+    .eq("is_active", true);
   if (error) {
     console.error("task-comments: mention check failed", JSON.stringify(error));
     return [];

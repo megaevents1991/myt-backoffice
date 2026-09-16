@@ -70,13 +70,21 @@ export async function listTaskRules(): Promise<
  *  deleted in another tab must fail with a clear message, not silently
  *  return an all-zero summary through `runWeeklyTaskGen`'s empty-result
  *  path (fix round 1, code review). */
-async function requireRuleExists(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { data, error } = await db.from("task_rules").select("id").eq("id", id).maybeSingle();
+async function requireRuleExists(
+  id: string,
+  opts: { mustBeActive?: boolean } = {},
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data, error } = await db.from("task_rules").select("id,active").eq("id", id).maybeSingle();
   if (error) {
     console.error("task-rule-actions: existence check failed", JSON.stringify(error));
     return { ok: false, error: error.message };
   }
   if (!data) return { ok: false, error: "הכלל לא נמצא" };
+  // runWeeklyTaskGen only loads active rules, so running/previewing an inactive one
+  // would quietly report "nothing happened" - say why instead.
+  if (opts.mustBeActive && !(data as { active: boolean }).active) {
+    return { ok: false, error: "הכלל כבוי — הפעל אותו כדי להריץ" };
+  }
   return { ok: true };
 }
 
@@ -193,7 +201,7 @@ export async function runRuleNow(
   id: string,
 ): Promise<{ ok: true; summary: TaskGenSummary } | { ok: false; error: string }> {
   await requireAdmin();
-  const exists = await requireRuleExists(id);
+  const exists = await requireRuleExists(id, { mustBeActive: true });
   if (!exists.ok) return exists;
 
   const summary = await runWeeklyTaskGen({ ruleId: id });
@@ -211,7 +219,7 @@ export async function previewRule(
   id: string,
 ): Promise<{ ok: true; summary: TaskGenSummary } | { ok: false; error: string }> {
   await requireAdmin();
-  const exists = await requireRuleExists(id);
+  const exists = await requireRuleExists(id, { mustBeActive: true });
   if (!exists.ok) return exists;
 
   const summary = await runWeeklyTaskGen({ ruleId: id, dryRun: true });
