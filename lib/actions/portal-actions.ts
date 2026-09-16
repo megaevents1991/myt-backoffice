@@ -13,6 +13,7 @@ import { fromPortalHistory, portalHistoryFrom } from "@/lib/portal-history";
 import {
   commissionForReservation,
   commissionForReservations,
+  expectedCommissionForReservation,
   countReservationTickets,
   countTickets,
   describeCommission,
@@ -70,7 +71,12 @@ export interface PortalCoupon {
 }
 
 /** How the order arrived at the site - the portal's per-row source label. */
-export type PortalReservationSource = "voucher" | "package" | "quote" | "link";
+export type PortalReservationSource =
+  | "voucher"
+  | "package"
+  | "quote"
+  | "coupon"
+  | "link";
 
 export interface PortalReservation {
   id: number;
@@ -96,6 +102,9 @@ export interface PortalReservation {
   voucher_state: "sent" | "received" | "collected" | null;
   /** What this booking earns the partner. Zero until it is paid. */
   commission_usd: number;
+  /** What an open booking will earn once paid (display only, "צפוי").
+   *  Zero for paid and cancelled/lost/held rows. */
+  expected_commission_usd: number;
   /** agent_card orders: the commission was deducted from the charge itself -
    *  nothing further to pay out (the cell says so instead of showing 0). */
   settled_at_charge: boolean;
@@ -657,6 +666,9 @@ export async function getPortalReservations(
           : null,
       },
       commission_usd: round2(commissionForReservation(r, terms)),
+      expected_commission_usd: round2(
+        expectedCommissionForReservation(r, terms),
+      ),
       settled_at_charge:
         r.partner_settlement_method === "agent_card" &&
         r.status === PAID_STATUS,
@@ -665,7 +677,9 @@ export async function getPortalReservations(
       hold_expires_at:
         r.status === HOLD_STATUS ? holdExpiry(r.created_at) : null,
       // Priority: a voucher settlement outranks everything (it also overwrites
-      // coupon_code), then the signed quote, then the package link. A plain
+      // coupon_code), then the signed quote, then the package link, then a
+      // coupon (main refuses a coupon on a partner-link visit since
+      // 2026-09-16, so a coupon row arrived through the code). A plain
       // tracking link - and every pre-attribution row - reads "link".
       source: (r.partner_settlement_method === "voucher"
         ? "voucher"
@@ -673,7 +687,9 @@ export async function getPortalReservations(
           ? "quote"
           : r.source_share_token
             ? "package"
-            : "link") as PortalReservationSource,
+            : r.coupon_code
+              ? "coupon"
+              : "link") as PortalReservationSource,
       agent_sub: mergedOwner(r),
       agent_name: (() => {
         const owner = mergedOwner(r);

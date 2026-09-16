@@ -28,6 +28,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > rebalance (`lib/services/influencer-coupon.ts`). myt-main multiplies a
 > per-person fixed coupon by the ticket count (`getCouponDiscountUsd`,
 > validate route, confirm-order) - other coupons stay per order.
+> **No coupon on a partner-link visit (2026-09-16):** a visitor who came
+> through an agent/affiliate link (tracked partner or the `myt_utm`
+> influencer primary) gets no coupon field on main, and confirm-order rejects
+> one (`partnerLinkCode`); a coupon order's partner now beats a plain
+> client-sent source like "google" in attribution. Portal rows show a
+> "קופון" source and a greyed "צפוי" commission while not yet Paid
+> (`expectedCommissionForReservation` - display only).
 >
 > **Portal history cut-off (2026-09-16):** `partners.portal_history_from`
 > (date, null = all) - set in the partner editor ("Portal History From") for a

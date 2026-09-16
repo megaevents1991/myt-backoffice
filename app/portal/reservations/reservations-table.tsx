@@ -52,11 +52,12 @@ function formatDate(value: string | null): string {
 }
 
 /** How the customer arrived. An influencer has no voucher flow, so their rows
- *  only ever read link / package / quote. */
+ *  only ever read link / package / quote / coupon. */
 const SOURCE_LABELS: Record<PortalReservationSource, string> = {
   voucher: "שובר",
   quote: "הצעת מחיר",
   package: "לינק אישי",
+  coupon: "קופון",
   link: "לינק",
 };
 
@@ -445,6 +446,13 @@ export function ReservationsTable({
                           {reservation.billed ? "דווח" : "לתשלום"}
                         </div>
                       </>
+                    ) : reservation.expected_commission_usd > 0 ? (
+                      <div className="text-muted-foreground">
+                        <span>
+                          {usdExact.format(reservation.expected_commission_usd)}
+                        </span>
+                        <div className="text-xs">צפוי</div>
+                      </div>
                     ) : (
                       <span className="text-muted-foreground">-</span>
                     )}
