@@ -120,6 +120,14 @@ export function TasksClient() {
     reload();
   }, [reload]);
 
+  useEffect(() => {
+    if (loading || !tasks.length) return;
+    const taskId = useSearchParams().get("task");
+    if (!taskId) return;
+    const found = tasks.find((t) => t.id === taskId);
+    if (found) setEditor({ open: true, task: found });
+  }, [loading, tasks]);
+
   const filtered = useMemo(() => {
     switch (view) {
       case "open":

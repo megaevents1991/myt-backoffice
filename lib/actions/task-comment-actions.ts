@@ -5,6 +5,7 @@ import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { sniffImageMime } from "@/lib/images/sniff";
+import { notifyTaskMention } from "@/lib/services/task-mention-notify";
 import { ADMIN_ROLES, STAFF_ROLES } from "@/types/auth.types";
 import type {
   Ok,
@@ -212,6 +213,18 @@ export async function addTaskComment(input: {
   }
 
   await logAudit({ action: "task.comment", entityType: "task", entityId: input.taskId, changes: { comment_id: data.id, mentions } });
+
+  if (mentions.length) {
+    const { data: task } = await db.from("tasks").select("title").eq("id", input.taskId).maybeSingle();
+    await notifyTaskMention({
+      taskId: input.taskId,
+      taskTitle: task?.title ?? "משימה",
+      body,
+      authorId: session.sub,
+      mentionIds: mentions,
+    });
+  }
+
   return { ok: true, id: data.id };
 }
 
