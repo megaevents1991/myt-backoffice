@@ -8,6 +8,7 @@ import { sniffImageMime } from "@/lib/images/sniff";
 import { ADMIN_ROLES, STAFF_ROLES } from "@/types/auth.types";
 import type {
   Ok,
+  StaffMentionOption,
   TaskAttachment,
   TaskComment,
   TaskCommentWithAuthor,
@@ -85,6 +86,26 @@ async function signedUrlMap(paths: string[]): Promise<Map<string, string>> {
     if (item.path && item.signedUrl) out.set(item.path, item.signedUrl);
   }
   return out;
+}
+
+/** Staff list for the @mention picker. `listUsers` (user-actions.ts) is
+ *  admin-only, so an editor writing a comment would be refused - this is the
+ *  same staff-active filter, requireStaff-guarded, and shaped down to just
+ *  what the picker needs. */
+export async function listStaffForMentions(): Promise<StaffMentionOption[]> {
+  await requireStaff();
+
+  const { data, error } = await db
+    .from("user_profiles")
+    .select("id,display_name,email")
+    .in("role", STAFF_ROLES)
+    .eq("is_active", true)
+    .order("display_name", { ascending: true });
+  if (error) {
+    console.error("task-comments: list staff failed", JSON.stringify(error));
+    return [];
+  }
+  return (data ?? []) as StaffMentionOption[];
 }
 
 /** Upload one pasted/dropped image. The path is derived server-side from the

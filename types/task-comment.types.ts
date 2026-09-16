@@ -54,3 +54,10 @@ export interface TaskCommentWithAuthor extends TaskComment {
   /** Signed URLs for `attachments`, same order, valid one hour. */
   attachment_urls: string[];
 }
+
+/** One staff member, for the @mention picker only - never a full UserProfile. */
+export interface StaffMentionOption {
+  id: string;
+  display_name: string | null;
+  email: string;
+}

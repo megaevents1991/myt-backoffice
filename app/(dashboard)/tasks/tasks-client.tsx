@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Check, Pencil, Plus, RotateCcw, Trash2, Wrench } from "lucide-react";
+import { Check, MessageSquare, Pencil, Plus, RotateCcw, Trash2, Wrench } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -270,6 +270,20 @@ export function TasksClient() {
             </SelectContent>
           </Select>
         ),
+      },
+      {
+        id: "comments",
+        header: "",
+        cell: ({ row }) =>
+          row.original.comment_count > 0 ? (
+            <span
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+              title={`${row.original.comment_count} comments`}
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              {row.original.comment_count}
+            </span>
+          ) : null,
       },
       {
         id: "actions",

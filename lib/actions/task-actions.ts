@@ -63,6 +63,27 @@ function validSource(value: string | undefined): value is TaskSource {
   return !!value && (TASK_SOURCES as readonly string[]).includes(value);
 }
 
+/** One query for every comment count on this page - never a query per task. */
+async function commentCounts(taskIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (taskIds.length === 0) return counts;
+
+  const { data, error } = await db
+    .from("task_comments")
+    .select("task_id")
+    .eq("kind", "comment")
+    .is("deleted_at", null)
+    .in("task_id", taskIds);
+  if (error) {
+    console.error("tasks: comment counts failed", JSON.stringify(error));
+    return counts;
+  }
+  for (const row of (data ?? []) as { task_id: string }[]) {
+    counts.set(row.task_id, (counts.get(row.task_id) ?? 0) + 1);
+  }
+  return counts;
+}
+
 /** Attach display names without a DB relation (no FK join over PostgREST needed). */
 async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
   const ids = [
@@ -72,13 +93,14 @@ async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
         .filter((value): value is string => !!value),
     ),
   ];
+  const countOf = await commentCounts(rows.map((row) => row.id));
+
   if (ids.length === 0) {
     return rows.map((row) => ({
       ...row,
       assignee_name: null,
       created_by_name: null,
-      // Populated by a later task (comment count query); honest zero until then.
-      comment_count: 0,
+      comment_count: countOf.get(row.id) ?? 0,
     }));
   }
 
@@ -96,8 +118,7 @@ async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
     ...row,
     assignee_name: row.assignee_id ? (nameOf.get(row.assignee_id) ?? null) : null,
     created_by_name: row.created_by ? (nameOf.get(row.created_by) ?? null) : null,
-    // Populated by a later task (comment count query); honest zero until then.
-    comment_count: 0,
+    comment_count: countOf.get(row.id) ?? 0,
   }));
 }
 

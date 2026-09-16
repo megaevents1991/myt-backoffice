@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { createTask, updateTask } from "@/lib/actions/task-actions";
 import { listUsers } from "@/lib/actions/user-actions";
+import { TaskThread } from "@/components/task-thread";
 import { BOARD_META, CHANNEL_META, PHASES } from "@/lib/task-boards";
 import { STAFF_ROLES, type UserProfile } from "@/types/auth.types";
 import {
@@ -183,7 +185,9 @@ export function TaskEditor({
 
   return (
     <Dialog open={state.open} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className={cn("sm:max-w-md", task && "flex max-h-[85vh] flex-col overflow-y-auto sm:max-w-lg")}
+      >
         <DialogHeader>
           <DialogTitle>{task ? "Edit task" : "New task"}</DialogTitle>
         </DialogHeader>
@@ -334,6 +338,14 @@ export function TaskEditor({
             </p>
           )}
         </div>
+
+        {/* No thread on a brand-new task - there is no task id to hang comments off yet. */}
+        {task && (
+          <div className="mt-2 border-t pt-4">
+            <TaskThread taskId={task.id} />
+          </div>
+        )}
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
