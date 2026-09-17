@@ -11,8 +11,8 @@
  * Meant to be run DAILY by Windows Task Scheduler (a machine that is off some days): the
  * script itself decides whether the site is due - it only crawls when the newest real run
  * (ok/partial/blocked/error, not skipped/running) is older than the scraper's `intervalHours`
- * (72h on ISSTA) - and exits 0 with "not due" otherwise. That is what turns "every day the
- * machine is on" into "every ~3 days, catching up after off days" without a stateful trigger.
+ * (168h on ISSTA) - and exits 0 with "not due" otherwise. That is what turns "every day the
+ * machine is on" into "once a week, catching up after off days" without a stateful trigger.
  * `--force` skips the due check (a manual refresh), `--dry-run` browses but writes nothing.
  *
  * Exit code: 0 on ok/partial/not-due/skipped, 1 on blocked/error or a crash, so the task's

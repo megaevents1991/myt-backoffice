@@ -101,11 +101,11 @@ export const issta: CompetitorScraper = {
   key: "issta",
   scopes: ["package"],
   kinds: ["sports"],
-  // 72h - see the note on golasso.ts: one site per hourly tick, each site every ~3 days.
-  intervalHours: 72,
+  // Weekly (168h) - see the note on golasso.ts: one site per tick, each site once a week.
+  intervalHours: 168,
   mode: "fetch",
   // Vercel's IP gets card-less pages (see the field's doc in types.ts); an Israeli machine runs
-  // scripts/crawl-local.ts every ~3 days instead, and Vercel only reads the run it leaves behind.
+  // scripts/crawl-local.ts once a week instead, and Vercel only reads the run it leaves behind.
   crawlFrom: "local",
   covers: coversEvent,
   async *crawl(ctx: CrawlContext): AsyncGenerator<Listing> {

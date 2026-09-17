@@ -254,6 +254,9 @@ const EVENTS_LOAD_MAX_ROWS = 5_000;
  *  every fetched row drags its `detail_text` along (up to 2000 chars) - reading the whole
  *  570-long queue to use its head would be a ~1MB round trip per crawl for nothing. */
 export const DETAIL_FETCH_MAX = 80;
+/** Hard ceiling on detail pages one visit may open, whatever the time budget allows - the
+ *  budget alone let a fast site serve ~20 a run. Gentle on purpose (2026-09-17). */
+export const DETAIL_PAGES_PER_RUN = 10;
 
 interface DetailPick {
   id: number; event_date: string | null; detail_text: string | null;
@@ -551,7 +554,7 @@ export async function runCrawl(
     const byId = new Map(fetched.map((r) => [r.id, r]));
     const rows = want.map((id) => byId.get(id)).filter((r): r is DetailRow => r != null);
     // Golasso/LiveEvents fetch their detail pages rather than navigating the browser to them,
-    // so the honest pacing is the same-site GET pause (5-15s), not the 20-60s page-load one.
+    // so the honest pacing is the same-site GET pause (8-20s), not the 30-90s page-load one.
     const detailPause = (scraper.detailMode ?? scraper.mode) === "fetch" ? c.pauseShort : c.pause;
     const total = rows.length;
     for (const row of rows) {
@@ -560,6 +563,11 @@ export async function runCrawl(
         // it partial would drown the "partial-coverage crawls" view in healthy runs (I2d).
         const cutNote = `details cut at budget (${summary.detailPages} of ${total} queued enriched)`;
         summary.note = summary.note ? `${summary.note} | ${cutNote}` : cutNote;
+        break;
+      }
+      if (summary.detailPages >= DETAIL_PAGES_PER_RUN) {
+        const capNote = `details capped at ${DETAIL_PAGES_PER_RUN} per run (${total} queued)`;
+        summary.note = summary.note ? `${summary.note} | ${capNote}` : capNote;
         break;
       }
       await detailPause();

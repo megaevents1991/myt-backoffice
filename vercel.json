@@ -58,7 +58,7 @@
     },
     {
       "path": "/api/cron/price-light-crawl",
-      "schedule": "7 * * * *"
+      "schedule": "7 */6 * * *"
     },
     {
       "path": "/api/cron/price-light-nightly",

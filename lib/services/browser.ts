@@ -12,10 +12,12 @@ export { UAS };
 const VIEWPORTS = [{ width: 1366, height: 768 }, { width: 1536, height: 864 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }];
 
 export const PAGE_TIMEOUT_MS = 45_000;
-export const PAUSE_MIN_MS = 20_000;
-export const PAUSE_MAX_MS = 60_000;
-export const PAUSE_SHORT_MIN_MS = 5_000;
-export const PAUSE_SHORT_MAX_MS = 15_000;
+// Slowed 2026-09-17 (was 20-60s / 5-15s): the sampled sites pushed back, so every visit
+// spaces its requests wider - inside a fixed run budget that also means fewer of them.
+export const PAUSE_MIN_MS = 30_000;
+export const PAUSE_MAX_MS = 90_000;
+export const PAUSE_SHORT_MIN_MS = 8_000;
+export const PAUSE_SHORT_MAX_MS = 20_000;
 // Applied in BOTH modes (harden()) so a remote CDP provider that doesn't
 // pre-configure Hebrew locale itself still sees an Israeli Accept-Language.
 const ACCEPT_LANGUAGE = "he-IL,he;q=0.9,en-US;q=0.8";
@@ -36,7 +38,7 @@ export async function randomPause(): Promise<void> {
 }
 
 /** Between paginated GETs of the SAME site in fetch mode (a person clicking league tabs) -
- *  the full 20-60s pause is for browser page loads and for switching sites. */
+ *  the full 30-90s pause is for browser page loads and for switching sites. */
 export async function shortPause(): Promise<void> {
   const ms = PAUSE_SHORT_MIN_MS + Math.floor(Math.random() * (PAUSE_SHORT_MAX_MS - PAUSE_SHORT_MIN_MS));
   await new Promise((r) => setTimeout(r, ms));

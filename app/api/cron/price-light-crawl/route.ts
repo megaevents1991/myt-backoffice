@@ -4,7 +4,7 @@ import { pickDueCompetitor, runCrawl } from "@/lib/services/price-light-crawl";
 import { ACTIVE_COMPETITORS } from "@/lib/services/competitor-scrapers";
 import type { CompetitorKey } from "@/types/price-light.types";
 
-// Hourly tick (vercel.json "7 * * * *"): crawls at most ONE competitor whose
+// Tick every 6h (vercel.json "7 */6 * * *" - sites are weekly now, hourly was pointless): crawls at most ONE competitor whose
 // interval elapsed. Most ticks do nothing. ?competitor=<key> forces one site,
 // ?dry_run=1 crawls without writing.
 export const maxDuration = 300;
