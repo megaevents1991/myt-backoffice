@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase-server";
 import { takeBudget, type AgentBudget } from "@/lib/agents/switch";
 import {
   DATE_TOLERANCE_DAYS, LIGHT_STALE_DAYS, competitorsFor, kindOf, listingNights, normalize, ourNightRateUsd,
-  ourNights, ourPackageUsd, ourTicketUsd, pickRuleMatch, ruleSaysAbsent, type MatchCandidate,
+  ourFromUsd, ourNights, ourTicketUsd, pickRuleMatch, ruleSaysAbsent, type MatchCandidate,
 } from "@/lib/services/price-light";
 import { ACTIVE_COMPETITORS, scraperFor } from "@/lib/services/competitor-scrapers";
 import { isMultiMatchText } from "@/lib/services/offer-detail";
@@ -231,7 +231,8 @@ export async function matchEvent(
 ): Promise<MatchOutcome> {
   const out: MatchOutcome = { competitor, scope, status: "skipped", wrote: false, listingId: null, note: null };
   const judge = opts.judge === undefined ? makeJudge(opts.aiMemory) : opts.judge;
-  const ourUsd = scope === "package" ? ourPackageUsd(event) : ourTicketUsd(event);
+  // Package: our margin-free "from" price - what the light compares (2026-09-17).
+  const ourUsd = scope === "package" ? ourFromUsd(event) : ourTicketUsd(event);
   const prev = await latestRow(event.id, competitor, scope);
 
   const write = async (row: Record<string, unknown>) => {
@@ -242,7 +243,7 @@ export async function matchEvent(
 
   if (ourUsd == null) {
     out.status = "na";
-    if (prev?.status !== "na") await write({ status: "na", method: "rule", note: scope === "package" ? "skip_flight or no ticket" : "no ticket_only_markup" });
+    if (prev?.status !== "na") await write({ status: "na", method: "rule", note: scope === "package" ? "no ticket or no flight/hotel base" : "no ticket_only_markup" });
     return out;
   }
 

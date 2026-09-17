@@ -18,7 +18,8 @@ import {
 } from "@/lib/services/price-light-store";
 import { openPriceLightTask as insertPriceLightTask } from "@/lib/services/price-light-tasks";
 import {
-  cheapestAvailableTicket, competitorsFor, kindOf, ourNights, ourOfferLines, ourPackageUsd, ourTicketUsd,
+  cheapestAvailableTicket, competitorsFor, kindOf, ourFromUsd, ourNights, ourOfferLines, ourPackageUsd, ourTicketUsd,
+  totalMarkupUsd,
 } from "@/lib/services/price-light";
 import { formatOfferLines, parseOfferDetail } from "@/lib/services/offer-detail";
 import {
@@ -175,7 +176,8 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
   const ruleText = (key: "flight" | "hotel") => ruleLines.find((l) => l.key === key)?.detail ?? null;
 
   const offersFor = (scope: Scope): ComparisonOffer[] => {
-    const ourUsd = scope === "package" ? ourPackageUsd(event) : ourTicketUsd(event);
+    // Package: the margin-free "from" price the light compares; the site price rides along.
+    const ourUsd = scope === "package" ? ourFromUsd(event) : ourTicketUsd(event);
     if (ourUsd == null) return [];
     const detail = event.light_detail?.[scope];
     const oursLines: OfferLines = scope === "package"
@@ -192,6 +194,8 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
       return: scope === "package" ? event.def_date_return ?? null : null,
       nights: scope === "package" ? ourNights(event) : null,
       lines: oursLines, multi_match: false, seen_at: ours?.at ?? null,
+      site_usd: scope === "package" ? ourPackageUsd(event) : null,
+      markup_usd: scope === "package" ? totalMarkupUsd(event) || null : null,
     };
 
     const theirs = competitorsFor(kindOf(event), scope, ACTIVE_COMPETITORS).map<ComparisonOffer>((competitor) => {
@@ -221,6 +225,8 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
         lines: scope === "ticket" ? { flight: null, hotel: null, ticket: lines.ticket } : lines,
         multi_match: parsed?.multiMatch ?? false,
         seen_at: listing?.last_seen_at ?? m?.created_at ?? null,
+        site_usd: null,
+        markup_usd: null,
       };
     });
     // The one that set the light first, then the priced ones cheapest-first, then everyone else.
@@ -665,7 +671,8 @@ function buildScopeCell(
     diff_usd: detail?.diff_usd ?? null,
     our_usd: detail?.our_usd ?? null,
     // Pure arithmetic over columns already loaded - no extra query, no write on a read path.
-    our_usd_now: scope === "package" ? ourPackageUsd(event) : ourTicketUsd(event),
+    our_usd_now: scope === "package" ? ourFromUsd(event) : ourTicketUsd(event),
+    site_usd: scope === "package" ? ourPackageUsd(event) : null,
     competitor: decided,
     normalized_usd: detail?.normalized_usd ?? null,
     raw: detail?.raw ?? null,

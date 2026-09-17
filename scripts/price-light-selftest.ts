@@ -7,13 +7,14 @@ import {
   BAG_USD, CONNECTION_USD, STAR_STEP_USD, NIGHT_USD, BREAKFAST_USD, TRANSFER_USD,
   NIGHTS_FALLBACK, NIGHT_RATE_MIN_USD, NIGHT_RATE_MAX_USD,
   ourPackageUsd, ourTicketUsd, ourNights, ourNightRateUsd, listingNights, nightsUncertaintyUsd,
-  cheapestAvailableTicket, ourOfferLines,
+  cheapestAvailableTicket, ourOfferLines, ourFromUsd, ourNetFlightUsd, ourNetHotelUsd,
   kindOf, competitorsFor, normalize,
   computeScopeLight, decidePriceDrop, pickRuleMatch, candidateCoversDate, signedUsd,
   nameTokens, ruleMatchScore, ruleSaysAbsent, isMultiMatchTitle, RULE_MATCH_MIN_SCORE, RULE_ABSENT_BELOW,
   type PricedEvent, type LatestMatch,
 } from "../lib/services/price-light.ts";
 import { UNKNOWN_ATTRS } from "../types/price-light.types.ts";
+import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "../lib/services/price-margins.ts";
 import { airlineFromCode, bagFrom, formatOfferLines, isMultiMatchText, parseOfferDetail } from "../lib/services/offer-detail.ts";
 
 const NOW = "2026-09-10T12:00:00.000Z";
@@ -64,10 +65,13 @@ assert.deepEqual(competitorsFor("sports", "ticket", ["liveevents", "livetickets"
 // duration: the nights each side actually sells, and what one night is worth on THIS event
 assert.equal(ourNights({ ...base, def_date_return: null }), null);        // no window = no guess (was a flat 3)
 assert.equal(ourNights({ ...base, def_date_return: "2026-10-24" }), null); // return <= depart
-assert.equal(ourNightRateUsd(base), Math.round(400 / 3));                  // our own hotel base, per night
+// 2026-09-17: the rate is the NET hotel (base minus the rule's +$120), not the base itself
+assert.equal(ourNightRateUsd(base), Math.round((400 - 120) / 3));          // our own net hotel, per night
+assert.equal(ourNightRateUsd({ ...base, light_detail: { ours: { hotel: { usd: 300 } } } }), 100); // searched net wins
 assert.equal(ourNightRateUsd({ ...base, base_hotel_price: 0 }), NIGHT_USD);        // no hotel number = fallback
+assert.equal(ourNightRateUsd({ ...base, base_hotel_price: 100 }), NIGHT_RATE_MIN_USD); // hand-typed base (no margin) kept whole: 100/3, clamped up
 assert.equal(ourNightRateUsd({ ...base, def_date_depart: null }), NIGHT_USD);      // no window = fallback
-assert.equal(ourNightRateUsd({ ...base, base_hotel_price: 30 }), NIGHT_RATE_MIN_USD);      // clamped up
+assert.equal(ourNightRateUsd({ ...base, base_hotel_price: 150 }), NIGHT_RATE_MIN_USD);     // net 30 -> 10/night, clamped up
 assert.equal(ourNightRateUsd({ ...base, base_hotel_price: 9_000 }), NIGHT_RATE_MAX_USD);   // clamped down
 // a detail page that said nothing still leaves the card's travel window to measure
 assert.equal(listingNights(null, { travel_depart: "2026-10-24", travel_return: "2026-10-27" }), 3);
@@ -192,12 +196,17 @@ const lines = ourOfferLines({
     { price: 200, available: false, category: "CAT1", description: "לא זמין" },
   ],
 });
-assert.deepEqual(lines.map((l) => l.key), ["flight", "hotel", "ticket"]);
+assert.deepEqual(lines.map((l) => l.key), ["flight", "hotel", "ticket", "markup"]);
 assert.ok(lines[0].detail.includes("ישירה"));
-assert.equal(lines[0].usd, 500);
+assert.equal(lines[0].usd, 400);                       // NET: base 500 minus the rule's +$100
+assert.ok(lines[0].detail.includes("ללא תוספת $100"));
+assert.ok(lines[0].detail.includes("בסיס פחות תוספת"));
 assert.ok(lines[1].detail.includes("3★"));
 assert.ok(lines[1].detail.includes("3 לילות"));
-assert.equal(lines[1].usd, 400);
+assert.equal(lines[1].usd, 280);                       // NET: base 400 minus the rule's +$120
+assert.ok(lines[1].detail.includes("ללא תוספת $120"));
+assert.equal(lines[3].label, "עמלות לקוח");
+assert.equal(lines[3].usd, 175);
 // the ticket is NAMED - the one field we really do store - and it is the cheapest AVAILABLE one
 assert.ok(lines[2].detail.includes("CAT3"));
 assert.ok(lines[2].detail.includes("מאחורי השער"));
@@ -208,6 +217,37 @@ assert.ok(ourOfferLines({ ...base, def_date_depart: null })[1].detail.includes("
 // missing components say so instead of showing $0
 assert.ok(ourOfferLines({ ...base, base_flight_price: 0 })[0].detail.includes("אין מחיר"));
 assert.ok(ourOfferLines({ ...base, tickets_and_rates: [] })[2].detail.includes("אין כרטיס"));
+
+// the light's "from" price: the SITE price minus the rule's margins (Dor, 2026-09-17)
+assert.equal(FLIGHT_MARGIN_USD, 100);
+assert.equal(HOTEL_MARGIN_USD, 120);
+assert.equal(ourFromUsd(base), 400 + 280 + 300 + 175);
+assert.equal(ourPackageUsd(base), 500 + 400 + 300 + 175);                        // site price unchanged
+const searched: PricedEvent = { ...base, light_detail: { ours: { flight: { usd: 380 }, hotel: { usd: 260 } } } };
+assert.equal(ourFromUsd(searched), 380 + 260 + 300 + 175);                        // the last search wins
+assert.equal(ourPackageUsd(searched), 500 + 400 + 300 + 175);
+const zeroFlight: PricedEvent = { ...base, light_detail: { ours: { flight: { usd: 0 }, hotel: { usd: 260 } } } };
+assert.equal(ourNetFlightUsd(zeroFlight), 400);                                   // 0 = no search -> base minus margin
+assert.equal(ourNetHotelUsd(zeroFlight), 260);
+assert.equal(ourFromUsd(zeroFlight), 400 + 260 + 300 + 175);
+assert.equal(ourPackageUsd(zeroFlight), 500 + 400 + 300 + 175);
+assert.equal(ourNetFlightUsd({ ...base, light_detail: { ours: { flight: { usd: null }, hotel: null } } }), 400);
+assert.equal(ourFromUsd({ ...base, base_flight_price: 80 }), 80 + 280 + 300 + 175); // at/below the margin = hand-typed, never carried one
+assert.ok(ourOfferLines({ ...base, base_flight_price: 80 })[0].detail.includes("בסיס ידני"));
+assert.equal(ourNetHotelUsd({ ...base, base_hotel_price: 120 }), 120);
+assert.equal(ourPackageUsd({ ...base, base_flight_price: 80 }), 80 + 400 + 300 + 175);
+assert.equal(ourFromUsd({ ...base, base_flight_price: 0, light_detail: { ours: { flight: { usd: 380 } } } }), null); // no site price = no from price
+assert.equal(ourFromUsd({ ...base, tickets_and_rates: [] }), null);
+for (const e of [base, searched, zeroFlight]) {
+  const ls = ourOfferLines(e);
+  assert.equal(ls.length, 4);
+  assert.ok(Math.abs(ls.reduce((sum, l) => sum + (l.usd ?? 0), 0) - (ourFromUsd(e) ?? NaN)) <= 1);
+}
+const searchedLines = ourOfferLines(searched);
+assert.equal(searchedLines[0].usd, 380);
+assert.ok(searchedLines[0].detail.includes("מהחיפוש האחרון"));
+assert.equal(searchedLines[1].usd, 260);
+assert.ok(searchedLines[1].detail.includes("מהחיפוש האחרון"));
 
 // price drop
 assert.deepEqual(decidePriceDrop({ today: "2026-09-10", todayUsd: 1300, refUsd: 1400, current: null }), { usd: 100, from: 1400, until: "2026-09-24" });

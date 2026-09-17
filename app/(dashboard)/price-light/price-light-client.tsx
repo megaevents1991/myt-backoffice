@@ -410,7 +410,9 @@ export function PriceLightClient() {
       },
       {
         id: "ours",
-        header: "המחיר שלנו",
+        // The light compares our margin-free "from" price (2026-09-17); the site card price, which
+        // carries the rule's +$100/+$120, sits muted beneath so the two are never confused.
+        header: "החל מ- (שלנו)",
         cell: ({ row }) => (
           <div className="space-y-1 text-xs tabular-nums">
             {cellsIn(row.original, scope).map((cell) => {
@@ -418,12 +420,17 @@ export function PriceLightClient() {
               // the recorded one stays visible, struck through, so the drift is legible.
               const moved = cell.our_usd != null && cell.our_usd_now != null && cell.our_usd_now !== cell.our_usd;
               return (
-                <div key={cell.scope} className="flex items-baseline gap-1">
-                  <span className="text-muted-foreground">{SCOPE_HE[cell.scope]}</span>
-                  <span className="font-medium">
-                    {cell.our_usd_now != null ? `$${cell.our_usd_now}` : cell.our_usd != null ? `$${cell.our_usd}` : "—"}
-                  </span>
-                  {moved && <span className="text-muted-foreground line-through">${cell.our_usd}</span>}
+                <div key={cell.scope}>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-muted-foreground">{SCOPE_HE[cell.scope]}</span>
+                    <span className="font-medium">
+                      {cell.our_usd_now != null ? `$${cell.our_usd_now}` : cell.our_usd != null ? `$${cell.our_usd}` : "—"}
+                    </span>
+                    {moved && <span className="text-muted-foreground line-through">${cell.our_usd}</span>}
+                  </div>
+                  {cell.site_usd != null && (
+                    <div className="text-[11px] text-muted-foreground">באתר ${cell.site_usd}</div>
+                  )}
                 </div>
               );
             })}

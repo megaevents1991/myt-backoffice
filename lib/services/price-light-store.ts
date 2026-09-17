@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase-server";
 import { ACTIVE_COMPETITORS } from "@/lib/services/competitor-scrapers";
 import {
   competitorsFor, computeScopeLight, decidePriceDrop, kindOf, lightSettled, minAvailableTicketUsd,
-  nightsUncertaintyUsd, ourNightRateUsd, ourNights, ourPackageUsd, ourTicketUsd, totalMarkupUsd,
+  nightsUncertaintyUsd, ourFromUsd, ourNightRateUsd, ourNights, ourPackageUsd, ourTicketUsd, totalMarkupUsd,
   OVERRIDE_DRIFT_USD, PRICE_DROP_LOOKBACK_DAYS, type LatestMatch, type PricedEvent,
 } from "@/lib/services/price-light";
 import type {
@@ -98,7 +98,8 @@ function scopeDetail(
   now: string,
 ): LightScopeDetail {
   const competitors = competitorsFor(kindOf(event), scope, ACTIVE_COMPETITORS);
-  const ourUsd = scope === "package" ? ourPackageUsd(event) : ourTicketUsd(event);
+  // The light compares our margin-free "from" price, not the site card price (2026-09-17).
+  const ourUsd = scope === "package" ? ourFromUsd(event) : ourTicketUsd(event);
   const nightsOurs = ourNights(event);
   const nightRate = ourNightRateUsd(event);
   const scoped = matches.filter((m) => m.scope === scope).map((m) => {
@@ -198,6 +199,7 @@ export async function writeSnapshotAndTag(
   today: string,
   opts: { dryRun?: boolean } = {},
 ): Promise<{ tagged: boolean; cleared: boolean; packageUsd: number | null }> {
+  // The SITE price, not ourFromUsd: the snapshot history and the drop tag track what customers see.
   const packageUsd = ourPackageUsd(event);
   const ticketUsd = ourTicketUsd(event);
   const snapshot = {

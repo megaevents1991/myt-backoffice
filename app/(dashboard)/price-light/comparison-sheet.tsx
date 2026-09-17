@@ -4,7 +4,7 @@
 // partner's format (2026-09-14): "טיסות: אל על עם מזוודה ישיר 16-20 | מלון: שם מלון כולל ארוחת בוקר או
 // ללא | סוג כרטיס". Loaded on demand - detail pages are long, the list never carries them.
 import { useCallback, useEffect, useState } from "react";
-import { BedDouble, ExternalLink, Loader2, Plane, RefreshCw, Ticket } from "lucide-react";
+import { BedDouble, ExternalLink, Loader2, Percent, Plane, RefreshCw, Ticket } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { getPriceLightComparison, refreshOurOffer } from "@/lib/actions/price-light-actions";
 import { signedUsd } from "@/lib/services/price-light";
+import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "@/lib/services/price-margins";
 import { COMPETITOR_LABEL, PILL } from "@/app/(dashboard)/events/price-light-ui";
 import type { ComparisonOffer, PriceLightComparison, Scope } from "@/types/price-light.types";
 
@@ -91,6 +92,13 @@ function OfferCard({ offer, scope }: { offer: ComparisonOffer; scope: Scope }) {
         </div>
       </div>
 
+      {/* Our headline is the margin-free "from" price the light compares; the site price is not. */}
+      {ours && offer.site_usd != null && (
+        <div className="mt-0.5 text-end text-muted-foreground tabular-nums">
+          באתר ${offer.site_usd.toLocaleString("en-US")} (כולל +${FLIGHT_MARGIN_USD}/+${HOTEL_MARGIN_USD})
+        </div>
+      )}
+
       {status && <div className="mt-1 text-muted-foreground">{status}</div>}
 
       {!empty && (
@@ -103,6 +111,9 @@ function OfferCard({ offer, scope }: { offer: ComparisonOffer; scope: Scope }) {
             </>
           )}
           <Line icon={Ticket} label="כרטיס" text={offer.lines.ticket} />
+          {ours && scope === "package" && offer.markup_usd != null && (
+            <Line icon={Percent} label="עמלות" text={`מארקאפ האתר · $${offer.markup_usd.toLocaleString("en-US")}`} />
+          )}
           {scope === "package" && (travel || offer.nights != null) && (
             <div className="text-muted-foreground">
               {travel}

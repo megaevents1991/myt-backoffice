@@ -301,6 +301,12 @@ export interface PriceLightScopeCell {
    * verdict; this is shown beside it so nobody reads a stale number as today's price.
    */
   our_usd_now: number | null;
+  /**
+   * The SITE card price (`ourPackageUsd`, including the pricing rule's +$100/+$120 margins) for a
+   * package cell; null for ticket. `our_usd` / `our_usd_now` are the margin-free "from" price the
+   * light compares (2026-09-17) - this is shown beside them so the two are never confused.
+   */
+  site_usd: number | null;
   competitor: CompetitorKey | null;
   normalized_usd: number | null;
   raw: number | null;
@@ -374,6 +380,10 @@ export interface ComparisonOffer {
   lines: OfferLines;
   multi_match: boolean;
   seen_at: string | null;
+  /** Ours, package only: the SITE card price (with the rule's margins) - `usd` is the "from" price. */
+  site_usd: number | null;
+  /** Ours, package only: the site markup inside the "from" price. null for competitors. */
+  markup_usd: number | null;
 }
 
 export interface PriceLightComparison {
