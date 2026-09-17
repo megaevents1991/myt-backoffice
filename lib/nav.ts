@@ -1,4 +1,5 @@
 import {
+  Bot,
   CalendarDays,
   CheckSquare,
   ClipboardCheck,
@@ -229,6 +230,20 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "AI",
+    defaultCollapsed: true,
+    roles: ADMIN_ROLES,
+    items: [
+      {
+        name: "AI Factory",
+        href: "/ai-factory",
+        icon: Bot,
+        keywords: "ai agent agents factory סוכן בינה",
+        roles: ADMIN_ROLES,
+      },
+    ],
+  },
+  {
     label: "Admin",
     defaultCollapsed: true,
     // Group visible to all staff so the Guide is reachable; the management
@@ -323,6 +338,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   "meta-feed": "Meta Product Feed",
   "price-changes": "Price Changes",
   "price-light": "Price Light",
+  "ai-factory": "AI Factory",
   factory: "Events Factory",
   guide: "Guide",
   "event-tags": "Tags & Rules",

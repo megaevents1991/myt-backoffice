@@ -95,6 +95,10 @@ export const PRICE_LIGHT_LEARNS_FROM: AgentDefinition["learnsFrom"] = [
     toLesson: decision("a human pulled the event off the site rather than match this price"),
   },
   {
+    action: "price_light.sold_out",
+    toLesson: decision("a human marked the event SOLD OUT on the site (taken off sale, not deleted)"),
+  },
+  {
     action: "price_light.silenced",
     toLesson: decision("a human looked and judged this gap ACCEPTABLE for now (we stay pricier on purpose)"),
   },
@@ -102,11 +106,47 @@ export const PRICE_LIGHT_LEARNS_FROM: AgentDefinition["learnsFrom"] = [
     action: "price_light.task_opened",
     toLesson: decision("a human opened a task to chase this gap"),
   },
+  {
+    action: "agent.feedback",
+    // Direct thumbs up/down on ONE verdict (AI Factory "יומן" tab), not an outcome on the screen
+    // like the sources above - so it needs its own summary of what was judged, or it teaches
+    // nothing (a bare "wrong" with no context is not a lesson, only a scorecard tick).
+    toLesson: (row) => {
+      const m = row.metadata as { agent?: string; match_id?: number; verdict_ok?: boolean; note?: string; summary?: string } | null;
+      const summary = typeof m?.summary === "string" ? m.summary.trim() : "";
+      if (!summary) return null;
+      const verdict = m?.verdict_ok ? "RIGHT" : "WRONG";
+      const note = typeof m?.note === "string" ? m.note.trim() : "";
+      return `staff marked the agent verdict ${verdict}: ${summary}${note ? ` - ${note}` : ""}`;
+    },
+  },
 ];
 
 export const PRICE_LIGHT_AGENT: AgentDefinition = {
   key: "price-light",
   title: "Price light judge",
+  role:
+    "סוכן הרמזור נכנס לתמונה רק כשההתאמה החוקית (lib/services/price-light.ts) לא הצליחה להכריע " +
+    "בעצמה: הוא מקבל את האירוע שלנו וכמה מודעות מתחרים שדומות לו, ועונה על שתי שאלות - האם זו " +
+    "אותה מודעה בדיוק (אמן/קבוצה, תאריך, עיר), ומה כתוב במודעה שההתאמה החוקית לא ידעה לחלץ " +
+    "(לילות, כוכבי מלון, מזוודה, ארוחת בוקר, טיסה ישירה או עם קונקשן, העברות). התשובה שלו הופכת " +
+    "לקלט טוב יותר לחישוב הרמזור - היא לא הרמזור עצמו.",
+  decides: [
+    "האם מודעת מתחרה מתארת את אותו אירוע שלנו (same_event)",
+    "חילוץ פרטי מודעה שההתאמה החוקית לא הצליחה לחלץ: לילות, כוכבי מלון, מזוודה, ארוחת בוקר, טיסה ישירה/עם קונקשן, העברות",
+  ],
+  neverDoes: [
+    "לא קובע את הרמזור (ירוק/כתום/אדום/לבד בשוק) - זה חישוב אריתמטי, לא שלו",
+    "לא כותב מחיר בסיס, מחיר אתר או כל מספר שמשפיע על מה שהלקוח משלם",
+    "לא מסיר אירוע מהאתר ולא משנה את הסטטוס שלו",
+  ],
+  humanDecides: [
+    "הוזל - המחיר שלנו יקר באמת, ללכת לתקן אותו",
+    "הסר מהאתר - למשוך את האירוע מהמכירה",
+    "אירוע נמכר (Sold Out) - האירוע לא מוצע יותר, לא נמחק",
+    "דריסה (override) של הרמזור עם הערה מנומקת",
+    "השאר בפיד - הפער מקובל כרגע, להשתיק זמנית",
+  ],
   switchEnv: "PRICE_LIGHT_AI",
   modelEnv: "PRICE_LIGHT_AI_MODEL",
   defaultModel: "claude-opus-5",

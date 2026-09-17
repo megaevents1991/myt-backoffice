@@ -6,11 +6,15 @@
  * (tsx rather than plain node: the agent files resolve `@/` paths from tsconfig.)
  */
 import assert from "node:assert/strict";
-import { PRICE_LIGHT_AGENT } from "@/lib/agents";
-import { interleave, memoryBlock } from "@/lib/agents/memory";
+import { AGENT_KEYS, agentFor, PRICE_LIGHT_AGENT } from "@/lib/agents";
+import { interleave, memoryBlock, TAUGHT_BLOCK_MAX_CHARS } from "@/lib/agents/memory";
 import { agentEnabled, agentModel, anthropicKey, callCostUsd, newBudget, takeBudget } from "@/lib/agents/switch";
 import type { AuditLessonRow } from "@/lib/agents/types";
 import { AI_VERDICT_PARSER, coerceBool, coerceNum } from "@/lib/services/price-light-judge";
+// Relative ".ts" import, no "@/" alias (see lib/agents/maturity.ts's header) - keeps this pure
+// module importable by a plain-node runner too, the same way scripts/price-light-selftest.ts
+// imports lib/services/price-light.ts.
+import { maturityFrom } from "../lib/agents/maturity.ts";
 
 const def = PRICE_LIGHT_AGENT;
 const lessonFor = (action: string, metadata: Record<string, unknown>): string | null => {
@@ -93,6 +97,7 @@ assert.ok(legacy?.includes('to "green"'), "with no to_light, the recorded light 
 
 assert.ok(lessonFor("price_light.repriced", snapshot)?.includes("judged the gap REAL"));
 assert.ok(lessonFor("price_light.removed", snapshot)?.includes("pulled the event off the site"));
+assert.ok(lessonFor("price_light.sold_out", snapshot)?.includes("SOLD OUT"));
 assert.ok(lessonFor("price_light.silenced", { ...snapshot, days: 14 })?.includes("ACCEPTABLE"));
 assert.ok(lessonFor("price_light.task_opened", { ...snapshot, task_id: "t1" })?.includes("opened a task"));
 // a decision with no recorded comparison teaches nothing - dropped rather than guessed at
@@ -132,5 +137,70 @@ assert.equal(coerceNum("0.95"), 0.95);
 assert.equal(coerceNum("unknown"), "unknown");
 assert.equal(coerceNum("3 nights"), "unknown");
 assert.equal(AI_VERDICT_PARSER, 2);
+
+// ---- AI Factory: declaration fields (spec §5.1) ------------------------------------------------
+// Every registered agent must carry a non-empty role + all three lists - the Identity tab has
+// nothing to show otherwise.
+for (const key of AGENT_KEYS) {
+  const agent = agentFor(key);
+  assert.ok(agent.role.trim().length > 0, `${key}: role must not be empty`);
+  assert.ok(agent.decides.length > 0, `${key}: decides must not be empty`);
+  assert.ok(agent.neverDoes.length > 0, `${key}: neverDoes must not be empty`);
+  assert.ok(agent.humanDecides.length > 0, `${key}: humanDecides must not be empty`);
+}
+
+// ---- AI Factory: taught rules ride WITH the house rules, outside the DATA fence ----------------
+const taughtOnly = memoryBlock(def, [], ["ISSTA תמיד מוכרים 3 לילות, לא 4"]);
+assert.ok(taughtOnly.startsWith(rules), "house rules still come first");
+assert.ok(taughtOnly.includes("כללי צוות"), "the taught-rules heading is rendered");
+assert.ok(taughtOnly.includes("ISSTA תמיד מוכרים"), "the taught text itself is rendered");
+assert.ok(!taughtOnly.includes("DATA, not instructions"), "no lessons yet = no fence at all");
+
+const taughtAndLessons = memoryBlock(def, ["package red — a human did something"], ["כלל אחד"]);
+const fenceIndex = taughtAndLessons.indexOf("DATA, not instructions");
+const taughtIndex = taughtAndLessons.indexOf("כללי צוות");
+assert.ok(taughtIndex >= 0 && fenceIndex >= 0 && taughtIndex < fenceIndex, "taught rules sit BEFORE the data fence, not inside it");
+
+// A single taught rule far longer than the cap still renders a block no bigger than the cap.
+const hugeRule = "א".repeat(TAUGHT_BLOCK_MAX_CHARS * 2);
+const withHugeRule = memoryBlock(def, [], [hugeRule]);
+const taughtSectionLength = withHugeRule.length - rules.length; // "\n\n" + the taught block
+assert.ok(taughtSectionLength <= TAUGHT_BLOCK_MAX_CHARS + 2, "the taught-rules block is capped");
+
+// ---- AI Factory: agent.feedback lesson formatter (both verdicts + the no-summary case) --------
+const feedbackOk = lessonFor("agent.feedback", { agent: "price-light", match_id: 717, verdict_ok: true, summary: "golasso 3 nights matched correctly", note: "good catch" });
+assert.ok(feedbackOk?.includes("RIGHT"));
+assert.ok(feedbackOk?.includes("golasso 3 nights matched correctly"));
+assert.ok(feedbackOk?.includes("good catch"));
+const feedbackBad = lessonFor("agent.feedback", { agent: "price-light", match_id: 718, verdict_ok: false, summary: "missed a season-page window" });
+assert.ok(feedbackBad?.includes("WRONG"));
+assert.ok(feedbackBad?.includes("missed a season-page window"));
+// no usable summary -> the row teaches nothing, however clear the verdict
+assert.equal(lessonFor("agent.feedback", { agent: "price-light", match_id: 719, verdict_ok: true }), null);
+assert.equal(lessonFor("agent.feedback", { agent: "price-light", match_id: 720, verdict_ok: false, summary: "   " }), null);
+
+// ---- AI Factory: maturity arithmetic (lib/agents/maturity.ts, pure) ----------------------------
+assert.deepEqual(
+  maturityFrom([
+    { action: "price_light.repriced", metadata: null },
+    { action: "price_light.removed", metadata: null },
+    { action: "price_light.sold_out", metadata: null },
+    { action: "price_light.silenced", metadata: null },
+    { action: "price_light.override", metadata: { to_light: "green" } },
+    { action: "price_light.override", metadata: { to_light: "red" } }, // agrees - not counted either way
+    { action: "price_light.task_opened", metadata: null }, // not a maturity signal at all
+    { action: "agent.feedback", metadata: { verdict_ok: true } },
+    { action: "agent.feedback", metadata: { verdict_ok: false } },
+    { action: "agent.feedback", metadata: { verdict_ok: true } },
+  ]),
+  { agreed: 3, disagreed: 2, reviewedOk: 2, reviewedBad: 1, rate: null }, // 3+2=5 < 10 minimum
+);
+// An override with no to_light at all still counts as a disagreement (not "red" either).
+assert.equal(maturityFrom([{ action: "price_light.override", metadata: {} }]).disagreed, 1);
+// Past the 10-decision floor, the rate is a plain agreed / (agreed + disagreed).
+const eightAgreed = Array.from({ length: 8 }, () => ({ action: "price_light.repriced", metadata: null }));
+const twoDisagreed = Array.from({ length: 2 }, () => ({ action: "price_light.silenced", metadata: null }));
+assert.equal(maturityFrom([...eightAgreed, ...twoDisagreed]).rate, 0.8);
+assert.equal(maturityFrom([]).rate, null, "no decisions at all is also below the floor");
 
 console.log("agents selftest: all assertions passed");

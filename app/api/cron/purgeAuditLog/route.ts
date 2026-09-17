@@ -26,13 +26,19 @@ export async function GET(request: NextRequest) {
     // back as evidence (lib/agents/memory.ts looks 120 days back), so dropping them at 30 days
     // silently capped the agent's memory at a month. They expire on the price-light retention
     // pass instead - /api/cron/price-light-retention, 180 days.
+    // `agent.*` rows (AI Factory, 2026-09-17) are exempt for the same reason: `agent.feedback` is
+    // what an agent's own maturity score and lessons are computed from (lib/agents/maturity.ts,
+    // lib/agents/price-light.agent.ts) - losing it at 30 days would cap every agent's memory the
+    // same way price_light.* almost did. No separate retention pass reclaims these yet; they are
+    // low-volume (one row per manual approve/reject on an AI Factory log) so that is fine for now.
     // `audit_log` predates the generated DB types - one boundary cast (repo pattern).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { count, error } = await (supabase as any)
       .from("audit_log")
       .delete({ count: "exact" })
       .lt("created_at", cutoff)
-      .not("action", "like", "price_light.%");
+      .not("action", "like", "price_light.%")
+      .not("action", "like", "agent.%");
 
     if (error) {
       console.error("purgeAuditLog delete failed:", JSON.stringify(error));

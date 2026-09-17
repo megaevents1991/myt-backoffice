@@ -40,6 +40,14 @@ export interface AgentDefinition {
   key: AgentKey;
   /** Staff-facing name, for screens and emails. */
   title: string;
+  /** One Hebrew paragraph - what this agent is for, shown on its "זהות" tab. */
+  role: string;
+  /** What it decides on its own (Hebrew, short phrases) - the "מחליט לבד" list. */
+  decides: string[];
+  /** What it never does, however confident (Hebrew) - the "אף פעם לא" list. */
+  neverDoes: string[];
+  /** What stays a human call, whatever the agent answers (Hebrew) - the "נשאר אצל הצוות" list. */
+  humanDecides: string[];
   /** Env var that must equal "on" for this agent to run. Fails closed on anything else. */
   switchEnv: string;
   /** Optional env var overriding `defaultModel`. */
@@ -62,4 +70,20 @@ export interface AgentDefinition {
   learnsFrom: AgentLearningSource[];
   /** Generated from the live constants of whatever this agent's answers feed. */
   houseRules: () => string;
+}
+
+/**
+ * How well an agent's answers have held up, from the human decisions it learns from.
+ *
+ * `agreed`/`disagreed` come from outcome actions (a human repriced/removed/marked sold out vs.
+ * silenced or overrode away from red); `reviewedOk`/`reviewedBad` come from direct feedback on a
+ * specific verdict (`agent.feedback`). `rate` is `agreed / (agreed + disagreed)`, and stays `null`
+ * below 10 such decisions - too little evidence to call it a rate rather than noise.
+ */
+export interface AgentMaturity {
+  agreed: number;
+  disagreed: number;
+  reviewedOk: number;
+  reviewedBad: number;
+  rate: number | null;
 }

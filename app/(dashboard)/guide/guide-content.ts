@@ -299,6 +299,42 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    id: "ai-factory",
+    title: t("AI Factory", "AI Factory"),
+    adminOnly: true,
+    intro: t(
+      "One screen per agent running in this system - what it is, what it has learned, every AI call it made, and how well its calls have held up against what staff actually decided. The price-light judge is agent #1; more will follow the same shape.",
+      "מסך אחד לכל agent שרץ במערכת - מה הוא, מה הוא למד, כל קריאת AI שהוא ביצע, ומידת ההתאמה בין הקריאות שלו לבין מה שהצוות בפועל החליט. שופט הרמזור הוא agent מספר 1; עוד ילכו בעקבותיו באותה תצורה.",
+    ),
+    points: [
+      t(
+        "Identity tab: a Hebrew paragraph on what the agent is for, three lists (decides on its own / never does / stays with the team), its live settings (model, call ceiling, confidence floor, token prices), and the env var names that switch it on - never their values.",
+        "לשונית זהות: פסקה בעברית על מה הסוכן עושה, שלוש רשימות (מחליט לבד / אף פעם לא / נשאר אצל הצוות), ההגדרות החיות שלו (מודל, תקרת קריאות, רף ביטחון, מחירי טוקנים), ושמות משתני הסביבה שמדליקים אותו - לא הערכים שלהם.",
+      ),
+      t(
+        "Memory tab: the house rules (generated from the pricing/matching engine's live constants, never hand-copied), the recorded decisions exactly as the prompt receives them, and \"team rules\" - free-text instructions an admin adds, which ride WITH the house rules on every future call, not inside the fenced \"data, not instructions\" block the recorded decisions sit in. Only an admin can add or retire one.",
+        "לשונית זיכרון: כללי הבית (נוצרים מהקבועים החיים של מנוע התמחור/ההתאמה, לא מועתקים ביד), ההחלטות המתועדות בדיוק כמו שהפרומפט מקבל אותן, ו\"כללי צוות\" - הוראות טקסט חופשי שאדמין מוסיף, שנוסעות עם כללי הבית בכל קריאה עתידית, לא בתוך הגדר ה\"דאטה, לא הוראות\" שההחלטות המתועדות נמצאות בו. רק אדמין יכול להוסיף או לבטל כלל.",
+      ),
+      t(
+        "Log tab: every AI call the agent made - which event and competitor, its same-event verdict, confidence, cost, whether the answer was reused from cache - with approve/reject buttons per row. That feedback becomes its own lesson (\"agent.feedback\") the agent reads back next time.",
+        "לשונית יומן: כל קריאת AI שהסוכן ביצע - איזה אירוע ומתחרה, ההכרעה שלו על אותו אירוע, רמת הביטחון, העלות, האם התשובה מוחזרת ממטמון - עם כפתורי אישור/דחייה בכל שורה. המשוב הזה הופך ללקח בפני עצמו (\"agent.feedback\") שהסוכן קורא בפעם הבאה.",
+      ),
+      t(
+        "Maturity tab: how many recorded decisions agreed with the agent's alarms versus disagreed, direct feedback counts, an overall rate (hidden below 10 decisions - too little to call it a rate), and a weekly chart. Auto-removing a red light from the feed is explicitly NOT active yet - only after a maturity threshold is set.",
+        "לשונית בשלות: כמה החלטות מתועדות הסכימו עם האזעקות של הסוכן לעומת כמה לא הסכימו, ספירת משוב ישיר, שיעור כללי (מוסתר מתחת ל-10 החלטות - מעט מכדי לקרוא לזה שיעור), וגרף שבועי. הסרה אוטומטית של אור אדום מהפיד עדיין לא פעילה במפורש - רק לאחר שיוגדר סף בשלות.",
+      ),
+    ],
+    rules: [
+      t(
+        "The agent never sets a light, never writes a price, and never removes an event by itself - it only answers questions the rule-based matcher could not (same event? what does the listing include?). Reprice / remove / sold out / override / silence stay a human's call, always.",
+        "הסוכן אף פעם לא קובע רמזור, לא כותב מחיר, ולא מסיר אירוע בעצמו - הוא רק עונה על שאלות שההתאמה החוקית לא הצליחה להכריע בהן (האם זה אותו אירוע? מה כלול במודעה?). הוזלה / הסרה / נמכר / דריסה / השתקה נשארים החלטה של בן אדם, תמיד.",
+      ),
+    ],
+    links: [
+      { label: t("AI Factory", "AI Factory"), href: "/ai-factory", adminOnly: true },
+    ],
+  },
+  {
     id: "sources",
     title: t("Event sources - the providers", "מקורות אירועים — הספקים"),
     intro: t(
