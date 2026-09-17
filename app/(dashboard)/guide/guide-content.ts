@@ -540,8 +540,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "פותחים משימה כדי לראות את הפתיל שלה למטה — כל תגובה, צילום מסך ושינוי סטטוס בגלילה כרונולוגית אחת. מדביקים צילום מסך ישר מהלוח (מוקטן אוטומטית); מקלידים @ ושם כדי לתייג עמית — הוא מקבל מייל עם קטע מהתגובה. המערכת כותבת שורות משלה לאותו פתיל בכל פעם שסטטוס, שיוך, עדיפות, תאריך יעד, התקדמות או לוח של המשימה משתנים, כך שכל ההיסטוריה של משימה חיה במקום אחד ולא מפוזרת בין עריכות.",
       ),
       t(
-        "Recurring rules (admins, /tasks/rules) create tasks automatically every week without anyone remembering to look - one rule can either drop a single weekly summary task, or open one task per item it finds (say, one per event whose price light has been red too long). Each rule has a day of the week it runs on, always read in UTC, not Israel time - the check itself runs every morning at 06:00 UTC and each rule fires only on its own day. A per-item rule opens at most 25 tasks per run (the rest follow on its next run) and its assignee gets one summary email listing them, not one email per task.",
-        "כללים חוזרים (מנהלים, /tasks/rules) יוצרים משימות אוטומטית כל שבוע בלי שמישהו צריך לזכור לבדוק — כלל אחד יכול להטיל משימת סיכום שבועית אחת, או לפתוח משימה לכל פריט שהוא מוצא (למשל, אחת לכל אירוע שהרמזור שלו אדום יותר מדי זמן). לכל כלל יום בשבוע שבו הוא רץ, נקרא תמיד לפי UTC ולא לפי שעון ישראל — הבדיקה עצמה רצה כל בוקר ב־06:00 UTC וכל כלל פועל רק ביום שלו. כלל ״משימה לכל פריט״ פותח לכל היותר 25 משימות בריצה (השאר בריצה הבאה שלו), והמשובץ מקבל מייל סיכום אחד עם הרשימה ולא מייל לכל משימה.",
+        "Recurring rules (admins, the Task rules tab on /tasks) create tasks automatically every week without anyone remembering to look - one rule can either drop a single weekly summary task, or open one task per item it finds (say, one per event whose price light has been red too long). Each rule has a day of the week it runs on, always read in UTC, not Israel time - the check itself runs every morning at 06:00 UTC and each rule fires only on its own day. A per-item rule opens at most 25 tasks per run (the rest follow on its next run) and its assignee gets one summary email listing them, not one email per task.",
+        "כללים חוזרים (מנהלים, לשונית Task rules ב־/tasks) יוצרים משימות אוטומטית כל שבוע בלי שמישהו צריך לזכור לבדוק — כלל אחד יכול להטיל משימת סיכום שבועית אחת, או לפתוח משימה לכל פריט שהוא מוצא (למשל, אחת לכל אירוע שהרמזור שלו אדום יותר מדי זמן). לכל כלל יום בשבוע שבו הוא רץ, נקרא תמיד לפי UTC ולא לפי שעון ישראל — הבדיקה עצמה רצה כל בוקר ב־06:00 UTC וכל כלל פועל רק ביום שלו. כלל ״משימה לכל פריט״ פותח לכל היותר 25 משימות בריצה (השאר בריצה הבאה שלו), והמשובץ מקבל מייל סיכום אחד עם הרשימה ולא מייל לכל משימה.",
       ),
       t(
         "The board also has a Kanban view (the Kanban tab) alongside the table - drag a card to change its status. The board lens above both (All / Dev / Marketing / Ops) narrows the table, its counts and the Kanban together to one board at a time.",
@@ -562,7 +562,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       { label: t("Kanban view", "תצוגת קאנבן"), href: "/tasks?tab=kanban" },
       { label: t("Roadmap", "מפת דרכים"), href: "/tasks?tab=roadmap" },
       { label: t("Marketing board", "לוח שיווק"), href: "/tasks?tab=marketing" },
-      { label: t("Recurring rules", "כללים חוזרים"), href: "/tasks/rules", adminOnly: true },
+      { label: t("Recurring rules", "כללים חוזרים"), href: "/tasks?tab=rules", adminOnly: true },
     ],
   },
   {

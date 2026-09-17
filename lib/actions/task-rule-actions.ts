@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * `/tasks/rules` (Task 10, spec docs/superpowers/sdd/2026-09-16-tasks-hub). Every
+ * the Task rules tab on /tasks (Task 10, spec docs/superpowers/sdd/2026-09-16-tasks-hub). Every
  * export starts with `requireAdmin()` - a recurring rule reaches into price-light,
  * price-changes and creative-gaps and can spam the whole team, so only an admin
  * creates or runs one. `runRuleNow`/`previewRule` delegate to `runWeeklyTaskGen`

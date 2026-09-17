@@ -150,7 +150,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >     stops a rule at the time budget, still recording what it created. Its
 >     assignee gets ONE summary mail per run (`notifyRuleTasksCreated`), not a
 >     mail per task; a digest keeps its single assignment mail.
->     `/tasks/rules` (admin only) is where a rule's domain, match filter,
+>     The **Task rules** tab (`/tasks?tab=rules`, admin only; `/tasks/rules` redirects there) is where a rule's domain, match filter,
 >     assignee, board and `dow` are set - kept out of the migration on purpose
 >     so assignment stays something you change on the screen, not in SQL.
 >   - **Visibility:** the whole board is visible to every staff member (Dor,

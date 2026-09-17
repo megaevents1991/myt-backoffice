@@ -46,6 +46,7 @@ import { BOARD_META } from "@/lib/task-boards";
 import { KanbanBoard } from "./kanban-board";
 import { PricingGapsTab } from "./pricing-gaps-tab";
 import { TaskMapView } from "./task-map-view";
+import { RulesTab } from "./rules-tab";
 import {
   filterByBoard,
   parseBoardParam,
@@ -71,7 +72,7 @@ import {
 } from "@/types/task.types";
 
 /** Every tab `?tab=` may deep-link to. */
-const TAB_IDS = ["tasks", "kanban", "roadmap", "marketing", "gaps", "pricing"] as const;
+const TAB_IDS = ["tasks", "kanban", "roadmap", "marketing", "gaps", "pricing", "rules"] as const;
 
 /** Small badge on sourced tasks - where the work came from. */
 const SOURCE_BADGE: Partial<Record<TaskSource, string>> = {
@@ -122,6 +123,7 @@ export function TasksClient() {
   const didInitFilter = useRef(false);
   const [editor, setEditor] = useState<TaskEditorState>({ open: false, task: null });
   const handledTaskRef = useRef<string | null>(null);
+  const activeTabRef = useRef<string>(initialTab);
 
   useEffect(() => {
     if (!user || didInitFilter.current) return;
@@ -427,7 +429,14 @@ export function TasksClient() {
   );
 
   return (
-    <Tabs defaultValue={initialTab}>
+    <Tabs
+      defaultValue={initialTab}
+      onValueChange={(next) => {
+        // "Run now" on the rules tab creates tasks - refresh the board when leaving it.
+        if (activeTabRef.current === "rules" && next !== "rules") reload();
+        activeTabRef.current = next;
+      }}
+    >
       {/* Board lens - filters the table AND the kanban below it together. */}
       <div className="mb-3 flex flex-wrap gap-1.5">
         <FilterPill
@@ -454,6 +463,7 @@ export function TasksClient() {
         <TabsTrigger value="marketing">Marketing</TabsTrigger>
         <TabsTrigger value="gaps">Creative gaps</TabsTrigger>
         <TabsTrigger value="pricing">Pricing</TabsTrigger>
+        {isManager && <TabsTrigger value="rules">Task rules</TabsTrigger>}
       </TabsList>
 
       <TabsContent value="tasks" className="mt-4">
@@ -558,6 +568,12 @@ export function TasksClient() {
           onTasksChanged={reload}
         />
       </TabsContent>
+
+      {isManager && (
+        <TabsContent value="rules" className="mt-4">
+          <RulesTab />
+        </TabsContent>
+      )}
 
       <TaskEditor
         key={`${editor.task?.id ?? "new"}-${editor.prefill?.source_ref.row_id ?? ""}-${editor.defaults?.board ?? ""}${editor.defaults?.phase ?? ""}${editor.defaults?.channel ?? ""}-${editor.open}`}
