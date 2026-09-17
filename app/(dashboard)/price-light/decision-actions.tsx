@@ -101,17 +101,23 @@ function RepricePopover({
   const [markDrop, setMarkDrop] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const value = text.trim() === "" ? null : Number(text);
-  const valid = value != null && Number.isFinite(value) && value >= 0 && value <= 5000;
-  const preview = valid ? previewMarkupChange(row.pricing, cell.scope, value, cell.normalized_usd, cell.uncertainty_usd) : null;
+  // An empty field on the ticket scope CLEARS the ticket-only price (the server's null path);
+  // on a package it is simply not a number yet.
+  const cleared = text.trim() === "";
+  const value = cleared ? null : Number(text);
+  const valid = cleared ? cell.scope === "ticket" : value != null && Number.isFinite(value) && value >= 0 && value <= 5000;
+  // A manual override on this scope is re-applied by every recompute, whatever our price does -
+  // promising a new light here would send the reader cutting again and again.
+  const overridden = row.override?.scope === cell.scope;
+  const preview = valid && value != null ? previewMarkupChange(row.pricing, cell.scope, value, cell.normalized_usd, cell.uncertainty_usd) : null;
   // The site card price moves by the same delta - that is what a "ירידת מחיר" tag is measured on.
   const siteBefore = cell.scope === "package" ? ourPackageUsd(row.pricing) : null;
-  const siteAfter = cell.scope === "package" && valid ? ourPackageUsd({ ...row.pricing, event_additional_markup: value }) : null;
+  const siteAfter = cell.scope === "package" && valid && value != null ? ourPackageUsd({ ...row.pricing, event_additional_markup: value }) : null;
   const siteDrop = siteBefore != null && siteAfter != null ? siteBefore - siteAfter : 0;
   const canMarkDrop = siteDrop >= PRICE_DROP_MIN_USD;
 
   const save = async () => {
-    if (!valid || value == null) return;
+    if (!valid) return;
     setSaving(true);
     try {
       const res = await setEventMarkupFromLight(row.event_id, cell.scope, value, { markPriceDrop: markDrop && canMarkDrop });
@@ -154,14 +160,19 @@ function RepricePopover({
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span>מחיר ← <span className="font-medium">${preview.ourUsd}</span></span>
               {preview.diffUsd != null && <span>פער ← <span className="font-medium">{signedUsd(preview.diffUsd)}</span></span>}
-              {preview.light && (
+              {preview.light && !overridden && (
                 <span className={cn("inline-flex rounded-full px-1.5 py-0.5 font-medium", PILL[preview.light])}>
                   {heLabel(preview.light, preview.diffUsd)}
                 </span>
               )}
             </div>
           ) : (
-            <span className="text-muted-foreground">{valid ? "אין מחיר להשוואה" : "הזן מספר בין 0 ל-5000"}</span>
+            <span className="text-muted-foreground">
+              {cleared && valid ? "שדה ריק = ביטול מחיר כרטיס בלבד לאירוע" : valid ? "אין מחיר להשוואה" : "הזן מספר בין 0 ל-5000"}
+            </span>
+          )}
+          {overridden && (
+            <div className="mt-1 text-warning">יש דריסה ידנית על האור הזה. האור לא ישתנה עד שתבוטל הדריסה.</div>
           )}
           {siteAfter != null && <div className="mt-1 text-muted-foreground">באתר ← ${siteAfter}</div>}
         </div>

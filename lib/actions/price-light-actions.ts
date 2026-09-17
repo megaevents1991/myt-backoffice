@@ -115,7 +115,9 @@ export async function recheckEvent(
     invalidatePriceLight("rows", "cost");
     return {
       ok: true, lights: result.lights.after, detail: result.lights.detail, checked_at: new Date().toISOString(),
-      row: opts.withRow === true ? await buildPriceLightRow(eventId) : null,
+      // The row is the admin screen's payload (competitor prices, our margin-free price): an
+      // editor reaches this action through the events-table icon and must not be handed it.
+      row: canSpend && opts.withRow === true ? await buildPriceLightRow(eventId) : null,
       described_ours: describedOurs,
     };
   } catch (e) {
@@ -362,8 +364,15 @@ export async function setEventMarkupFromLight(
     if (opts.markPriceDrop === true && scope === "package") {
       const siteBefore = ourPackageUsd(event);
       const siteAfter = ourPackageUsd({ ...event, event_additional_markup: after ?? 0 });
-      if (siteBefore != null && siteAfter != null && siteBefore - siteAfter >= PRICE_DROP_MIN_USD) {
-        priceDrop = { usd: siteBefore - siteAfter, from: siteBefore, until: addDays(new Date().toISOString().slice(0, 10), PRICE_DROP_SHOW_DAYS) };
+      const today = new Date().toISOString().slice(0, 10);
+      // A tag already live keeps its reference price: trimming another $60 off an event the nightly
+      // tagged "$200 down from $1,500" must read "$260 down from $1,500", not "$60 down from $1,300".
+      const liveFrom = event.price_drop_from != null && event.price_drop_until != null && event.price_drop_until >= today
+        ? event.price_drop_from
+        : null;
+      const from = liveFrom != null && siteBefore != null ? Math.max(liveFrom, siteBefore) : siteBefore;
+      if (from != null && siteBefore != null && siteAfter != null && siteBefore > siteAfter && from - siteAfter >= PRICE_DROP_MIN_USD) {
+        priceDrop = { usd: from - siteAfter, from, until: addDays(today, PRICE_DROP_SHOW_DAYS) };
         update.price_drop_usd = priceDrop.usd;
         update.price_drop_from = priceDrop.from;
         update.price_drop_until = priceDrop.until;
@@ -372,13 +381,20 @@ export async function setEventMarkupFromLight(
     const { error } = await db.from("events").update(update).eq("id", eventId);
     if (error) { console.error("setEventMarkupFromLight: update failed", JSON.stringify(error)); return { ok: false, kind: "db" }; }
 
-    await recomputeEventLights(eventId, "manual");
-    invalidatePriceLight("rows");
-    await revalidateMain();
+    // The price is already live from here on, so the record comes FIRST: a recompute that throws
+    // (a transient match read) must not lose the audit row - the agent's strongest signal - nor
+    // tell the admin "failed" about a markup that was in fact saved.
     await logAudit({
       action: "price_light.repriced", entityType: "event", entityId: eventId,
       metadata: { ...(snapshot ?? { scope }), column, before, after, ...(priceDrop ? { price_drop: priceDrop } : {}) },
     });
+    try {
+      await recomputeEventLights(eventId, "manual");
+    } catch (e) {
+      console.error("setEventMarkupFromLight: recompute failed after the write (the nightly will catch up)", e);
+    }
+    invalidatePriceLight("rows");
+    await revalidateMain();
     return { ok: true, row: await buildPriceLightRow(eventId) };
   } catch (e) {
     console.error("setEventMarkupFromLight failed", e);
@@ -400,10 +416,16 @@ export async function setEventSoldOut(eventId: number, on: boolean): Promise<Row
     let next: string | null = "Sold";
     if (!on) {
       if (current !== "Sold") return { ok: true, row: await buildPriceLightRow(eventId) };
-      const { data, error } = await db.from("audit_log").select("metadata").eq("action", "price_light.sold_out")
+      // The tag to restore is the one OUR mark replaced - and only while that mark still stands.
+      // "Sold" is also written, unaudited, by the 2-hourly ticket sync: if the newest thing we
+      // recorded is a CLEAR, today's "Sold" is the sync's, and an old previous tag ("Hot") must
+      // not be resurrected onto a genuinely sold-out event. Then the answer is simply no tag.
+      const { data, error } = await db.from("audit_log").select("action,metadata")
+        .in("action", ["price_light.sold_out", "price_light.sold_out_cleared"])
         .eq("entity_type", "event").eq("entity_id", String(eventId)).order("created_at", { ascending: false }).limit(1);
       if (error) console.error("setEventSoldOut: previous tag read failed", JSON.stringify(error));
-      const previous = ((data ?? []) as { metadata: { previous_tags?: string | null } | null }[])[0]?.metadata?.previous_tags ?? null;
+      const newest = ((data ?? []) as { action: string; metadata: { previous_tags?: string | null } | null }[])[0] ?? null;
+      const previous = newest?.action === "price_light.sold_out" ? newest.metadata?.previous_tags ?? null : null;
       next = previous === "Sold" ? null : previous;
     } else if (current === "Sold") {
       return { ok: true, row: await buildPriceLightRow(eventId) };

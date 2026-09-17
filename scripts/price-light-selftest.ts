@@ -473,7 +473,14 @@ const night = nightsFact(base, 4, 3)[0];
 assert.equal(night.kind, "nights");
 assert.equal(night.saves_usd, Math.round(ourNightRateUsd(base)));
 const facts = priceAdviceFacts({ event: base, scope: "package", detail: { diff_usd: 300, uncertainty_usd: 0, nights: { ours: 4, theirs: 3 } }, liveTicketsUsd: 169 });
-assert.deepEqual(facts.map((x) => x.kind).sort(), ["cheaper_ticket", "markup_cut", "nights"]);
+// base carries no per-event extra markup: nothing editable to cut, and the advice must say so
+assert.deepEqual(facts.map((x) => x.kind).sort(), ["cheaper_ticket", "nights", "no_room"]);
+const withExtra = priceAdviceFacts({ event: { ...base, event_additional_markup: 200 }, scope: "package", detail: { diff_usd: 300, uncertainty_usd: 0, nights: null }, liveTicketsUsd: null });
+assert.equal(withExtra[0].kind, "markup_cut");
+assert.equal(withExtra[0].saves_usd, 150);
+const ticketAdvice = priceAdviceFacts({ event: base, scope: "ticket", detail: { diff_usd: 170, uncertainty_usd: 0, nights: null }, liveTicketsUsd: null });
+assert.equal(ticketAdvice[0].kind, "markup_cut"); // ticket_only_markup 60 covers the $20 cut
+assert.equal(ticketAdvice[0].saves_usd, 20);
 assert.ok((facts[0].saves_usd ?? 0) >= (facts[1].saves_usd ?? 0)); // biggest saving first
 assert.deepEqual(priceAdviceFacts({ event: base, scope: "package", detail: { diff_usd: null, uncertainty_usd: 0, nights: null }, liveTicketsUsd: null }), []);
 assert.equal(adviceBlock([]), "");

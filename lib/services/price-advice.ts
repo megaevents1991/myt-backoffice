@@ -9,7 +9,7 @@
 // It never writes anything. The one price write in this feature is a human's
 // (`setEventMarkupFromLight`), and it is a markup - never a base price.
 import {
-  LIGHT_GREEN_USD, LIGHT_RED_USD, minAvailableTicketUsd, ourNightRateUsd, totalMarkupUsd,
+  LIGHT_GREEN_USD, LIGHT_RED_USD, minAvailableTicketUsd, ourNightRateUsd,
   type PricedEvent,
 } from "./price-light.ts";
 import type { LightScopeDetail, Scope } from "../../types/price-light.types";
@@ -32,17 +32,20 @@ function ceil5(n: number): number {
 /**
  * The markup cut that would move a red scope to orange, and to green, given the band the light
  * itself used (`lightFor`: red above LIGHT_RED_USD + doubt, green below LIGHT_GREEN_USD - doubt).
- * `markupUsd` is what there is to cut: the whole package markup, or the ticket-only markup.
+ * `markupUsd` is what there is to cut FROM THE LIGHT: the per-event extra markup
+ * (`event_additional_markup`) for a package, the ticket-only markup for a ticket. Main's global
+ * $175 and the composed markups are not editable there, so counting them promised a cut nobody
+ * could make ("נשאר מארקאפ $25" on an event whose editable markup was $0).
  */
 export function markupCutFacts(scope: Scope, diffUsd: number, uncertaintyUsd: number, markupUsd: number): PriceAdviceFact[] {
   const toOrange = ceil5(diffUsd - (LIGHT_RED_USD + uncertaintyUsd));
   if (toOrange <= 0) return [];
   const toGreen = ceil5(diffUsd - (LIGHT_GREEN_USD - uncertaintyUsd) + 1);
-  const what = scope === "package" ? "מארקאפ החבילה" : "מארקאפ הכרטיס";
+  const what = scope === "package" ? "המארקאפ הנוסף של החבילה" : "מארקאפ הכרטיס";
   if (toOrange > markupUsd) {
     return [{
       kind: "no_room",
-      text: `${what} כולו $${markupUsd}, וכדי לרדת לכתום צריך להוריד $${toOrange}. מארקאפ לבדו לא יסגור את הפער.`,
+      text: `${what} הוא $${markupUsd}, וכדי לרדת לכתום צריך להוריד $${toOrange}. המארקאפ שנערך מהרמזור לא יסגור את הפער לבדו.`,
       saves_usd: null,
     }];
   }
@@ -98,7 +101,8 @@ export function priceAdviceFacts(input: {
   const { event, scope, detail } = input;
   if (detail.diff_usd == null) return [];
   const uncertainty = Math.max(0, Math.round(detail.uncertainty_usd ?? 0));
-  const markup = scope === "package" ? totalMarkupUsd(event) : Math.max(0, Number(event.ticket_only_markup ?? 0) || 0);
+  const editable = scope === "package" ? event.event_additional_markup : event.ticket_only_markup;
+  const markup = Math.max(0, Number(editable ?? 0) || 0);
   const theirs = typeof detail.nights?.theirs === "number" ? detail.nights.theirs : null;
   const facts = [
     ...markupCutFacts(scope, detail.diff_usd, uncertainty, markup),
