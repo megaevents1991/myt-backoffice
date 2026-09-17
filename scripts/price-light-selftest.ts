@@ -15,6 +15,7 @@ import {
 } from "../lib/services/price-light.ts";
 import { UNKNOWN_ATTRS, type LightScopeDetail } from "../types/price-light.types.ts";
 import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "../lib/services/price-margins.ts";
+import { adviceBlock, cheaperTicketFact, markupCutFacts, nightsFact, priceAdviceFacts } from "../lib/services/price-advice.ts";
 import { airlineFromCode, bagFrom, formatOfferLines, isMultiMatchText, parseOfferDetail } from "../lib/services/offer-detail.ts";
 
 const NOW = "2026-09-10T12:00:00.000Z";
@@ -447,5 +448,35 @@ assert.deepEqual(formatOfferLines(parseOfferDetail("issta", "קלאסיקו עם
 assert.equal(signedUsd(-180), "−$180");
 assert.equal(signedUsd(35), "+$35");
 assert.equal(signedUsd(0), "$0");
+
+// ---- price advice (agent #2, deterministic half) ----
+// red by $300 with no doubt: $150 cut reaches orange, $451 -> ceil5 455 reaches green
+const cut = markupCutFacts("package", 300, 0, 175);
+assert.equal(cut.length, 1);
+assert.equal(cut[0].kind, "markup_cut");
+assert.equal(cut[0].saves_usd, 150);
+assert.ok(cut[0].text.includes("$150") && cut[0].text.includes("$25")); // 175 - 150 left
+assert.ok(cut[0].text.includes("$455"));
+// doubt widens the band: the same gap needs a smaller cut
+assert.equal(markupCutFacts("package", 300, 40, 175)[0].saves_usd, 110);
+// more than the whole markup -> say so, suggest nothing
+assert.equal(markupCutFacts("ticket", 400, 0, 200)[0].kind, "no_room");
+assert.equal(markupCutFacts("ticket", 400, 0, 200)[0].saves_usd, null);
+// not red -> nothing to cut
+assert.deepEqual(markupCutFacts("package", 150, 0, 175), []);
+assert.deepEqual(cheaperTicketFact(300, 290), []); // under the $20 floor
+assert.equal(cheaperTicketFact(300, 169)[0].saves_usd, 131);
+assert.deepEqual(cheaperTicketFact(null, 169), []);
+assert.deepEqual(nightsFact(base, 3, 3), []);
+assert.deepEqual(nightsFact(base, 3, null), []);
+const night = nightsFact(base, 4, 3)[0];
+assert.equal(night.kind, "nights");
+assert.equal(night.saves_usd, Math.round(ourNightRateUsd(base)));
+const facts = priceAdviceFacts({ event: base, scope: "package", detail: { diff_usd: 300, uncertainty_usd: 0, nights: { ours: 4, theirs: 3 } }, liveTicketsUsd: 169 });
+assert.deepEqual(facts.map((x) => x.kind).sort(), ["cheaper_ticket", "markup_cut", "nights"]);
+assert.ok((facts[0].saves_usd ?? 0) >= (facts[1].saves_usd ?? 0)); // biggest saving first
+assert.deepEqual(priceAdviceFacts({ event: base, scope: "package", detail: { diff_usd: null, uncertainty_usd: 0, nights: null }, liveTicketsUsd: null }), []);
+assert.equal(adviceBlock([]), "");
+assert.equal(adviceBlock(facts).split(String.fromCharCode(10)).length, 4);
 
 console.log("price-light selftest: all assertions passed");

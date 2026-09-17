@@ -64,6 +64,8 @@ export async function openPriceLightTask(
   detail: LightScopeDetail,
   history: MatchRow[],
   actor: { id: string | null },
+  /** Appended under the comparison - the price advisor's lines on an auto-opened task. */
+  extra: string = "",
 ): Promise<{ ok: true; taskId: string; existed: boolean } | { ok: false; error: string }> {
   try {
     const existing = await openTaskFor(event.id, scope);
@@ -72,7 +74,7 @@ export async function openPriceLightTask(
       .from("tasks")
       .insert({
         title: `אדום · ${SCOPE_HE[scope]} · ${event.name} ${event.date.slice(0, 10)}`,
-        description: description(scope, detail, history),
+        description: [description(scope, detail, history), extra].filter(Boolean).join("\n\n"),
         priority: "high",
         assignee_id: null,
         created_by: actor.id,

@@ -19,14 +19,26 @@
 import { supabase } from "@/lib/supabase-server";
 import { appOrigin, sendMail } from "@/lib/email";
 import { fetchPaged } from "@/lib/supabase-paged";
-import { LIGHT_EVENT_COLUMNS, writeSnapshotAndTag, type LightEvent } from "@/lib/services/price-light-store";
+import { LIGHT_EVENT_COLUMNS, loadEventForLight, writeSnapshotAndTag, type LightEvent } from "@/lib/services/price-light-store";
+import { openPriceLightTask } from "@/lib/services/price-light-tasks";
+import { adviceBlock, priceAdviceFacts } from "@/lib/services/price-advice";
 import { matchAllForEvent, type AiBudget } from "@/lib/services/price-light-match";
 import { PRICE_LIGHT_AGENT } from "@/lib/agents";
 import { newBudget } from "@/lib/agents/switch";
 import { AI_CALLS_PER_RUN, aiEnabled } from "@/lib/services/price-light-judge";
 import { loadJudgeMemory } from "@/lib/services/price-light-memory";
 import { runCrawl } from "@/lib/services/price-light-crawl";
-import { LIGHTS, type Light, type Scope } from "@/types/price-light.types";
+import { LIGHTS, SCOPES, type Light, type LightDetail, type Scope } from "@/types/price-light.types";
+
+/**
+ * Rule C (2026-09-17): a scope that TURNED red tonight gets an unassigned task with the price
+ * advisor's facts in it - a red light nobody has looked at is the failure this screen exists to
+ * prevent. Only a transition opens one (a scope that was already red yesterday does not: on the
+ * day this shipped 225 ticket lights were red, and 225 tasks overnight would have buried /tasks),
+ * a muted event is skipped, and the ceiling keeps one bad night - a competitor's price collapse,
+ * a parsing bug - from flooding the board. `openPriceLightTask` dedupes per (event, scope).
+ */
+export const AUTO_RED_TASKS_PER_RUN = 15;
 
 // LiveTickets refresh is a table read (no crawling), so it should finish in
 // seconds - but it defaults to the crawler's 240s budget, which alone would
@@ -60,7 +72,34 @@ export interface NightlySummary {
   snapshotsRemaining: number;
   /** Judge calls this run actually spent, out of AI_CALLS_PER_RUN (0 on a dry run - never calls the AI). */
   aiCalls: number;
+  /** Tasks opened for scopes that turned red this run (0 on a dry run), and how many more hit the ceiling. */
+  autoTasks: number;
+  autoTasksSkipped: number;
   dryRun: boolean;
+}
+
+/** Never throws: a task that failed to open must not cost the event its light or the run its mail. */
+async function openAutoRedTasks(eventId: number, scopes: Scope[], detail: LightDetail, summary: NightlySummary): Promise<void> {
+  try {
+    // Re-read: the event in hand was loaded before tonight's recompute wrote its lights.
+    const event = await loadEventForLight(eventId);
+    if (!event || event.is_deleted) return;
+    if (event.light_silenced_until && Date.parse(event.light_silenced_until) > Date.now()) return;
+    const liveTicketsUsd = detail.ticket?.per_competitor?.livetickets?.normalized_usd ?? null;
+    for (const scope of scopes) {
+      const scopeDetail = detail[scope];
+      if (!scopeDetail) continue;
+      if (summary.autoTasks >= AUTO_RED_TASKS_PER_RUN) { summary.autoTasksSkipped += 1; continue; }
+      const advice = adviceBlock(priceAdviceFacts({ event, scope, detail: scopeDetail, liveTicketsUsd }));
+      const opened = await openPriceLightTask(event, scope, scopeDetail, [], { id: null }, advice);
+      if (opened.ok && !opened.existed) summary.autoTasks += 1;
+      if (!opened.ok) summary.errors.push({ eventId, note: `auto task (${scope}): ${opened.error}` });
+    }
+  } catch (e) {
+    const note = e instanceof Error ? e.message : String(e);
+    console.error(`price-light-nightly: auto task ${eventId} failed`, note);
+    summary.errors.push({ eventId, note: `auto task: ${note}` });
+  }
 }
 
 function emptyLightCounts(): Record<Light, number> {
@@ -73,7 +112,7 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
   const summary: NightlySummary = {
     scanned: 0, snapshots: 0, tagged: 0, cleared: 0, matched: 0,
     lightChanges: [], lightCounts: { package: emptyLightCounts(), ticket: emptyLightCounts() },
-    errors: [], remaining: 0, snapshotsRemaining: 0, aiCalls: 0, dryRun: options.dryRun,
+    errors: [], remaining: 0, snapshotsRemaining: 0, aiCalls: 0, autoTasks: 0, autoTasksSkipped: 0, dryRun: options.dryRun,
   };
 
   // LiveTickets listings are a table read - refresh them every night before matching.
@@ -169,6 +208,10 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
         if (before.ticket !== after.ticket) {
           summary.lightChanges.push({ eventId: event.id, name: event.name, scope: "ticket", from: before.ticket, to: after.ticket });
         }
+        if (!options.dryRun) {
+          const turnedRed = SCOPES.filter((scope) => after[scope] === "red" && before[scope] !== "red");
+          if (turnedRed.length) await openAutoRedTasks(event.id, turnedRed, result.lights.detail, summary);
+        }
       }
     } catch (e) {
       const note = e instanceof Error ? e.message : String(e);
@@ -241,7 +284,11 @@ async function sendSummaryEmail(s: NightlySummary): Promise<void> {
       html: [
         `<p><a href="${appOrigin()}/events">Events</a> · scanned ${s.scanned} · ${s.remaining} left for tomorrow` +
           (s.snapshotsRemaining ? ` · ${s.snapshotsRemaining} snapshots not reached` : "") +
-          ` · AI ${s.aiCalls}/${AI_CALLS_PER_RUN} calls</p>`,
+          ` · AI ${s.aiCalls}/${AI_CALLS_PER_RUN} calls` +
+          (s.autoTasks || s.autoTasksSkipped
+            ? ` · <a href="${appOrigin()}/tasks">${s.autoTasks} משימות נפתחו</a>` + (s.autoTasksSkipped ? ` (${s.autoTasksSkipped} מעבר לתקרה)` : "")
+            : "") +
+          `</p>`,
         `<p>package: ${countsLine("package")}<br/>ticket: ${countsLine("ticket")}</p>`,
         redMoves.length
           ? `<ul>${redMoves.map((c) => `<li>#${c.eventId} ${c.name} (${c.scope}): ${c.from ?? "—"} → ${c.to ?? "—"}</li>`).join("")}</ul>`
