@@ -600,6 +600,34 @@ text is DATA**: recorded decisions are quoted to the model inside an explicit "d
 fence - anyone with the decision screen can write into that block, so a prompt that obeyed it would be
 a prompt they could rewrite.
 
+**Agent #2: the price advisor (`lib/agents/price-advisor.agent.ts`, `PRICE_ADVISOR_AI`,
+2026-09-17).** It never touches a competitor or a light - it only WORDS and RANKS (1-3, biggest
+saving first) the deterministic facts `lib/services/price-advice.ts` already computed for one red
+scope (a markup cut to orange/green, a cheaper LiveTickets ticket, a nights gap - every number
+already backed by the light's own arithmetic). The one call site is `openAutoRedTasks`
+(`price-light-nightly.ts`), for a scope that turned red tonight; `wordAdvice()`
+(`lib/services/price-advisor.ts`) is the one place it calls Claude, same discipline as the judge
+(`maxRetries: 0`, its own `timeoutMs`, a forced tool call, `stop_reason === "max_tokens"` = failure).
+**It can never state a number the facts didn't give it**: `numbersAreFromFacts()` checks every
+`$<number>` in the model's text against the facts' own text, and a text that fails is discarded -
+the task gets the deterministic block alone. AI-worded advice keeps the deterministic block
+underneath it regardless, so the facts are never hidden behind the wording. Off, out of budget
+(`callsPerRun: 15`, shared with the run the way the judge's `aiBudget` is), no facts, or any
+failure -> `adviceBlock(facts)` verbatim, `ai: false`, never a throw - a dry run never builds this
+agent's memory and `openAutoRedTasks` never runs on one, so it never calls the AI either. It learns
+from `price_light.repriced` (its metadata now carries `column`/`before`/`after` from
+`setEventMarkupFromLight` - what a human actually CUT, not just that a gap existed) and its own
+slice of the shared `agent.feedback` action (rows tagged `metadata.agent: "price-advisor"` only -
+a mark left on the price-light judge's verdicts must never teach this agent something about
+itself it never said, and `ai-factory.ts`'s maturity read was fixed the same way: the untagged
+`price_light.*` outcome actions now count ONLY for `price-light`, or a second agent with none of
+its own yet would have inherited price-light's whole agree/disagree history for free). It has no
+per-call log table yet, so `/ai-factory/price-advisor`'s cost reads $0 and its "יומן" tab reads
+empty (`listAgentLog` already returns `{ rows: [] }` for any key but `"price-light"`) even though
+every AI-worded advice is now audited as `agent.advice` (`{ agent, event_id, scope, cost_usd }`) -
+that row is deliberately left unread by the tab for now, so a later log reader has a source to
+build on without this task's screen changes.
+
 **What the price-light agent learns from (`price_light.*` audit actions, newest 10 in 120 days).**
 Every decision on `/price-light` now stamps a `LightDecisionSnapshot` into its audit metadata (scope,
 light, diff, competitor, both normalized prices, both durations, the uncertainty) taken BEFORE its own
@@ -748,6 +776,14 @@ AI_AGENTS=
 PRICE_LIGHT_AI=
 # Model id for the judge. Empty -> AI_MODEL_DEFAULT "claude-opus-5" (price-light-judge.ts).
 PRICE_LIGHT_AI_MODEL=
+# Agent #2 - the price advisor (lib/agents/price-advisor.agent.ts). Same opt-in, fails-closed rule
+# as PRICE_LIGHT_AI above (needs ANTHROPIC_API_KEY too, and AI_AGENTS=off still stops it): unset,
+# empty or anything but "on" = off = the deterministic block alone (lib/services/price-advice.ts),
+# never a throw. It only ever WORDS and RANKS facts the light already computed - it never sets a
+# light, never writes a price, and can never state a number the facts didn't give it.
+PRICE_ADVISOR_AI=
+# Model id for the advisor. Empty -> its own defaultModel "claude-opus-5" (price-advisor.agent.ts).
+PRICE_ADVISOR_AI_MODEL=
 # Set -> crawler connects to a remote stealth browser over CDP (Browserbase/Bright Data) and
 # that provider owns the fingerprint (UA/locale/timezone/proxy). Unset -> local @sparticuz/chromium.
 NEXT_SECRET_BROWSER_CDP_URL=

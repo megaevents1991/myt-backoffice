@@ -303,8 +303,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     title: t("AI Factory", "AI Factory"),
     adminOnly: true,
     intro: t(
-      "One screen per agent running in this system - what it is, what it has learned, every AI call it made, and how well its calls have held up against what staff actually decided. The price-light judge is agent #1; more will follow the same shape.",
-      "מסך אחד לכל agent שרץ במערכת - מה הוא, מה הוא למד, כל קריאת AI שהוא ביצע, ומידת ההתאמה בין הקריאות שלו לבין מה שהצוות בפועל החליט. שופט הרמזור הוא agent מספר 1; עוד ילכו בעקבותיו באותה תצורה.",
+      "One screen per agent running in this system - what it is, what it has learned, every AI call it made, and how well its calls have held up against what staff actually decided. The price-light judge is agent #1; the price advisor (agent #2, 2026-09-17) words and ranks price suggestions from facts the light already computed. More will follow the same shape.",
+      "מסך אחד לכל agent שרץ במערכת - מה הוא, מה הוא למד, כל קריאת AI שהוא ביצע, ומידת ההתאמה בין הקריאות שלו לבין מה שהצוות בפועל החליט. שופט הרמזור הוא agent מספר 1; יועץ המחיר (agent מספר 2, 17.09.2026) מנסח ומדרג הצעות מחיר מתוך עובדות שהרמזור עצמו חישב. עוד ילכו בעקבותיהם באותה תצורה.",
     ),
     points: [
       t(
@@ -323,11 +323,19 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "Maturity tab: how many recorded decisions agreed with the agent's alarms versus disagreed, direct feedback counts, an overall rate (hidden below 10 decisions - too little to call it a rate), and a weekly chart. Auto-removing a red light from the feed is explicitly NOT active yet - only after a maturity threshold is set.",
         "לשונית בשלות: כמה החלטות מתועדות הסכימו עם האזעקות של הסוכן לעומת כמה לא הסכימו, ספירת משוב ישיר, שיעור כללי (מוסתר מתחת ל-10 החלטות - מעט מכדי לקרוא לזה שיעור), וגרף שבועי. הסרה אוטומטית של אור אדום מהפיד עדיין לא פעילה במפורש - רק לאחר שיוגדר סף בשלות.",
       ),
+      t(
+        "Agent #2, the price advisor: when a scope turns red tonight and gets an unassigned task, this agent words and ranks up to 3 of price-advice.ts's deterministic facts (a markup cut, a cheaper LiveTickets ticket, a nights gap) as short Hebrew sentences, ranked biggest saving first - the facts themselves stay printed underneath, always. It has no per-call log table yet, so its Log tab reads empty and its cost this month reads $0 even though every AI-worded advice is already audited (\"agent.advice\") for a later screen to read.",
+        "agent מספר 2, יועץ המחיר: כשהיקף מתחלף לאדום הלילה ונפתחת עליו משימה לא משובצת, הסוכן הזה מנסח ומדרג עד 3 מהעובדות הדטרמיניסטיות של price-advice.ts (קיצוץ מארקאפ, כרטיס זול יותר ב-LiveTickets, פער לילות) כמשפטים קצרים בעברית, מהחיסכון הגדול ביותר - העובדות עצמן נשארות מודפסות מתחתיו, תמיד. אין לו עדיין טבלת יומן לכל קריאה, אז לשונית היומן שלו מוצגת ריקה והעלות החודשית שלו מוצגת כ-$0, אף שכל הצעה שנוסחה ב-AI מתועדת כבר (\"agent.advice\") למסך עתידי שיקרא אותה.",
+      ),
     ],
     rules: [
       t(
         "The agent never sets a light, never writes a price, and never removes an event by itself - it only answers questions the rule-based matcher could not (same event? what does the listing include?). Reprice / remove / sold out / override / silence stay a human's call, always.",
         "הסוכן אף פעם לא קובע רמזור, לא כותב מחיר, ולא מסיר אירוע בעצמו - הוא רק עונה על שאלות שההתאמה החוקית לא הצליחה להכריע בהן (האם זה אותו אירוע? מה כלול במודעה?). הוזלה / הסרה / נמכר / דריסה / השתקה נשארים החלטה של בן אדם, תמיד.",
+      ),
+      t(
+        "The price advisor never states a dollar figure that isn't already in the facts it was given (a suggestion that invents one is discarded, wholesale, before a human sees it), never suggests touching a base price or the site's +$100/+$120 margins, and never opens or closes a task itself - only wording and ranking what the light already computed.",
+        "יועץ המחיר אף פעם לא כותב סכום דולר שלא מופיע כבר בעובדות שקיבל (הצעה שממציאה מספר נפסלת כולה, לפני שבן אדם רואה אותה), אף פעם לא מציע לגעת במחיר בסיס או במרווחי ה+$100/+$120 של האתר, ואף פעם לא פותח או סוגר משימה בעצמו - רק מנסח ומדרג את מה שהרמזור עצמו כבר חישב.",
       ),
     ],
     links: [

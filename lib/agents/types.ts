@@ -12,7 +12,7 @@
 //   - learnsFrom declares which recorded human decisions the agent reads back as evidence.
 
 /** Registered agents. One key per agent, used by the registry and in logs. */
-export const AGENT_KEYS = ["price-light"] as const;
+export const AGENT_KEYS = ["price-light", "price-advisor"] as const;
 export type AgentKey = (typeof AGENT_KEYS)[number];
 
 /** One `audit_log` row, reduced to what a lesson can be built from. */

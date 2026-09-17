@@ -3,11 +3,13 @@
 // Adding an agent is: write `<name>.agent.ts` declaring what it is and what it learns from,
 // register it here, give it an env switch. The plumbing (enable/disable, key handling, run
 // budget, cost, memory) is already written and is shared.
+import { PRICE_ADVISOR_AGENT } from "./price-advisor.agent";
 import { PRICE_LIGHT_AGENT } from "./price-light.agent";
 import type { AgentDefinition, AgentKey } from "./types";
 
 export const AGENTS: Record<AgentKey, AgentDefinition> = {
   "price-light": PRICE_LIGHT_AGENT,
+  "price-advisor": PRICE_ADVISOR_AGENT,
 };
 
 export function agentFor(key: AgentKey): AgentDefinition {
@@ -16,7 +18,7 @@ export function agentFor(key: AgentKey): AgentDefinition {
   return def;
 }
 
-export { PRICE_LIGHT_AGENT };
+export { PRICE_ADVISOR_AGENT, PRICE_LIGHT_AGENT };
 export { loadActiveTaughtRules, loadAgentLessons, loadAgentMemory, memoryBlock, TAUGHT_BLOCK_MAX_CHARS, TAUGHT_RULES_MAX } from "./memory";
 export { maturityFrom, MATURITY_MIN_DECISIONS, type MaturityRow } from "./maturity";
 export {

@@ -6,11 +6,13 @@
  * (tsx rather than plain node: the agent files resolve `@/` paths from tsconfig.)
  */
 import assert from "node:assert/strict";
-import { AGENT_KEYS, agentFor, PRICE_LIGHT_AGENT } from "@/lib/agents";
+import { AGENT_KEYS, agentFor, PRICE_ADVISOR_AGENT, PRICE_LIGHT_AGENT } from "@/lib/agents";
 import { interleave, memoryBlock, TAUGHT_BLOCK_MAX_CHARS } from "@/lib/agents/memory";
 import { agentEnabled, agentModel, anthropicKey, callCostUsd, newBudget, takeBudget } from "@/lib/agents/switch";
 import type { AuditLessonRow } from "@/lib/agents/types";
 import { AI_VERDICT_PARSER, coerceBool, coerceNum } from "@/lib/services/price-light-judge";
+import { adviceBlock, type PriceAdviceFact } from "@/lib/services/price-advice";
+import { numbersAreFromFacts, wordAdvice } from "@/lib/services/price-advisor";
 // Relative ".ts" import, no "@/" alias (see lib/agents/maturity.ts's header) - keeps this pure
 // module importable by a plain-node runner too, the same way scripts/price-light-selftest.ts
 // imports lib/services/price-light.ts.
@@ -203,4 +205,103 @@ const twoDisagreed = Array.from({ length: 2 }, () => ({ action: "price_light.sil
 assert.equal(maturityFrom([...eightAgreed, ...twoDisagreed]).rate, 0.8);
 assert.equal(maturityFrom([]).rate, null, "no decisions at all is also below the floor");
 
-console.log("agents selftest: all assertions passed");
+// ---- AGENT #2 (price advisor): registered, declares itself, learns from its own sources -------
+assert.deepEqual(AGENT_KEYS, ["price-light", "price-advisor"]);
+const advisorDef = agentFor("price-advisor");
+assert.equal(advisorDef.key, "price-advisor");
+assert.equal(advisorDef.switchEnv, "PRICE_ADVISOR_AI");
+assert.equal(advisorDef.modelEnv, "PRICE_ADVISOR_AI_MODEL");
+assert.equal(advisorDef.defaultModel, "claude-opus-5");
+assert.equal(advisorDef.callsPerRun, 15);
+assert.equal(advisorDef.timeoutMs, 12_000);
+assert.equal(advisorDef.confidenceMin, 0);
+assert.equal(advisorDef.usdPerMInput, PRICE_LIGHT_AGENT.usdPerMInput, "same token prices as the price-light agent");
+assert.equal(advisorDef.usdPerMOutput, PRICE_LIGHT_AGENT.usdPerMOutput);
+assert.equal(advisorDef.memoryMaxChars, PRICE_LIGHT_AGENT.memoryMaxChars, "same memory caps as the price-light agent");
+assert.equal(advisorDef.lessonMax, PRICE_LIGHT_AGENT.lessonMax);
+assert.equal(advisorDef.lessonLookbackDays, PRICE_LIGHT_AGENT.lessonLookbackDays);
+assert.equal(advisorDef, PRICE_ADVISOR_AGENT, "the registry and the direct export are the same object");
+
+const advisorRules = advisorDef.houseRules();
+assert.ok(advisorRules.includes("MARKUP"), "house rules state the only price it may point at");
+assert.ok(advisorRules.includes("$150"), "the red/green thresholds reach the prompt");
+assert.ok(advisorRules.toLowerCase().includes("never"), "house rules say what it may never suggest");
+
+const advisorLessonFor = (action: string, metadata: Record<string, unknown>): string | null => {
+  const source = advisorDef.learnsFrom.find((s) => s.action === action);
+  assert.ok(source, `price-advisor: no learning source declared for ${action}`);
+  const row: AuditLessonRow = { action, entityId: 717, at: "2026-09-17T10:00:00.000Z", metadata };
+  return source.toLesson(row);
+};
+
+// price_light.repriced now carries column/before/after (setEventMarkupFromLight) - this agent
+// learns the actual CUT a human made, not just that a gap existed.
+const repricedWithCut = advisorLessonFor("price_light.repriced", { ...snapshot, column: "event_additional_markup", before: 80, after: 40 });
+assert.ok(repricedWithCut?.includes("package red"));
+assert.ok(repricedWithCut?.includes("cut event_additional_markup from $80 to $40"));
+// a row from before column/before/after existed teaches nothing about the cut itself - dropped.
+assert.equal(advisorLessonFor("price_light.repriced", snapshot), null);
+assert.equal(advisorLessonFor("price_light.repriced", { scope: "nonsense", light: "red" }), null);
+
+// agent.feedback is shared across agents - only feedback tagged for THIS agent is a lesson here.
+const advisorFeedbackOk = advisorLessonFor("agent.feedback", { agent: "price-advisor", summary: "הצעה טובה, קלענו את ההערכה", verdict_ok: true });
+assert.ok(advisorFeedbackOk?.includes("RIGHT"));
+assert.ok(advisorFeedbackOk?.includes("הצעה טובה"));
+// feedback left on the OTHER agent's verdicts must never leak into this agent's lessons
+assert.equal(advisorLessonFor("agent.feedback", { agent: "price-light", summary: "משהו אחר", verdict_ok: true }), null);
+assert.equal(advisorLessonFor("agent.feedback", { agent: "price-advisor", verdict_ok: true }), null); // no summary = no lesson
+
+// ---- AI Factory: a second agent's maturity must not inherit price-light's outcome actions ------
+// price_light.* rows carry no `agent` field at all (they predate agent #2) - only "price-light"
+// may count them; a second agent counts only `agent.feedback` tagged for itself. This mirrors the
+// filter in lib/services/ai-factory.ts's loadMaturity (not itself pure/DB-free, hence the mirror).
+{
+  const relevantFor = (agentKey: string, rows: { action: string; metadata: Record<string, unknown> | null }[]) =>
+    rows.filter((r) => (r.action === "agent.feedback" ? (r.metadata as { agent?: string } | null)?.agent === agentKey : agentKey === "price-light"));
+  const rows = [
+    { action: "price_light.repriced", metadata: null },
+    { action: "agent.feedback", metadata: { agent: "price-advisor", verdict_ok: true } },
+  ];
+  assert.equal(relevantFor("price-light", rows).length, 1, "price-light keeps its own repriced row, loses the advisor's feedback");
+  assert.equal(relevantFor("price-advisor", rows).length, 1, "price-advisor keeps its own feedback row, never the repriced outcome");
+  assert.equal(relevantFor("price-advisor", rows)[0].action, "agent.feedback");
+}
+
+// ---- agent #2's own call: numbersAreFromFacts guard (pure, no network) -------------------------
+const advisorFacts: PriceAdviceFact[] = [
+  { kind: "markup_cut", text: "הורדת מארקאפ החבילה ב-$40 מביאה לכתום (נשאר מארקאפ $60). לירוק צריך $70, יותר מכל המארקאפ.", saves_usd: 40 },
+];
+assert.equal(numbersAreFromFacts("קיצוץ של $40 יביא לכתום, ואפשר גם $60 שנשאר.", advisorFacts), true, "numbers that reuse the facts are accepted");
+assert.equal(numbersAreFromFacts("קיצוץ של $999 יביא לכתום.", advisorFacts), false, "an invented number is rejected");
+assert.equal(numbersAreFromFacts("אין כאן שום מספר.", advisorFacts), true, "no dollar figure at all is vacuously fine");
+
+// ---- agent #2's own call: OFF (no switch, no key) never touches the network --------------------
+// A named async function + a call at the bottom (not top-level `await`) - this file runs under
+// plain `npx tsx`, and esbuild's cjs output (this repo's tsconfig target) rejects top-level await.
+async function testWordAdviceOff(): Promise<void> {
+  const savedEnv = { ...process.env };
+  delete process.env.AI_AGENTS;
+  delete process.env.PRICE_ADVISOR_AI;
+  delete process.env.ANTHROPIC_API_KEY;
+  try {
+    const budget = newBudget(PRICE_ADVISOR_AGENT);
+    const off = await wordAdvice({ eventName: "אירוע בדיקה", scope: "package", facts: advisorFacts, budget, memory: null });
+    assert.equal(off.ai, false, "agent off -> the deterministic block, never an AI answer");
+    assert.equal(off.text, adviceBlock(advisorFacts));
+    assert.equal(off.cost_usd, 0);
+    assert.equal(budget.remaining, PRICE_ADVISOR_AGENT.callsPerRun, "an agent that never ran never spent its budget");
+
+    const noFacts = await wordAdvice({ eventName: "אירוע בדיקה", scope: "ticket", facts: [], budget, memory: null });
+    assert.equal(noFacts.ai, false);
+    assert.equal(noFacts.text, "", "no facts at all -> the empty block, still no network call");
+  } finally {
+    process.env = savedEnv;
+  }
+}
+
+testWordAdviceOff()
+  .then(() => console.log("agents selftest: all assertions passed"))
+  .catch((e) => {
+    console.error(e);
+    process.exitCode = 1;
+  });

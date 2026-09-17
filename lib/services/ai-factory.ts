@@ -302,8 +302,16 @@ export async function loadMaturity(agentKey: AgentKey, days = 30): Promise<Agent
   if (error) console.error("loadMaturity failed", JSON.stringify(error));
   if (truncated) console.error(`loadMaturity: truncated at ${AUDIT_FETCH_MAX}`);
 
-  // agent.feedback rows are shared across every agent - only this agent's own count here.
-  const relevant = rows.filter((r) => r.action !== "agent.feedback" || (r.metadata as { agent?: string } | null)?.agent === agentKey);
+  // `agent.feedback` is shared across every agent - only this agent's own count here. The
+  // `price_light.*` outcome actions carry no `agent` field at all (they predate agent #2): every
+  // one of them is recorded by the /price-light screen and is evidence about the price-light
+  // JUDGE's verdicts specifically, so only that agent's maturity may include them - otherwise a
+  // second agent with none of its own outcome actions yet (price-advisor) would inherit price
+  // light's agree/disagree counts wholesale.
+  const relevant = rows.filter((r) => {
+    if (r.action === "agent.feedback") return (r.metadata as { agent?: string } | null)?.agent === agentKey;
+    return agentKey === "price-light";
+  });
   const createdAtOf = new Map(relevant.map((r) => [r as MaturityRow, r.created_at]));
 
   const cutoff = Date.now() - days * 86_400_000;

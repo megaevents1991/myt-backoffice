@@ -21,10 +21,12 @@ import { appOrigin, sendMail } from "@/lib/email";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { LIGHT_EVENT_COLUMNS, loadEventForLight, writeSnapshotAndTag, type LightEvent } from "@/lib/services/price-light-store";
 import { openPriceLightTask } from "@/lib/services/price-light-tasks";
-import { adviceBlock, priceAdviceFacts } from "@/lib/services/price-advice";
+import { logAudit } from "@/lib/audit";
+import { priceAdviceFacts } from "@/lib/services/price-advice";
+import { wordAdvice } from "@/lib/services/price-advisor";
 import { matchAllForEvent, type AiBudget } from "@/lib/services/price-light-match";
-import { PRICE_LIGHT_AGENT } from "@/lib/agents";
-import { newBudget } from "@/lib/agents/switch";
+import { PRICE_ADVISOR_AGENT, PRICE_LIGHT_AGENT, agentEnabled, loadAgentMemory } from "@/lib/agents";
+import { newBudget, type AgentBudget } from "@/lib/agents/switch";
 import { AI_CALLS_PER_RUN, aiEnabled } from "@/lib/services/price-light-judge";
 import { loadJudgeMemory } from "@/lib/services/price-light-memory";
 import { runCrawl } from "@/lib/services/price-light-crawl";
@@ -72,6 +74,9 @@ export interface NightlySummary {
   snapshotsRemaining: number;
   /** Judge calls this run actually spent, out of AI_CALLS_PER_RUN (0 on a dry run - never calls the AI). */
   aiCalls: number;
+  /** Price-advisor calls this run actually spent, out of PRICE_ADVISOR_AGENT.callsPerRun (0 on a
+   *  dry run and 0 while the agent is off - openAutoRedTasks itself never runs on a dry run). */
+  advisorCalls: number;
   /** Tasks opened for scopes that turned red this run (0 on a dry run), and how many more hit the ceiling. */
   autoTasks: number;
   autoTasksSkipped: number;
@@ -79,7 +84,14 @@ export interface NightlySummary {
 }
 
 /** Never throws: a task that failed to open must not cost the event its light or the run its mail. */
-async function openAutoRedTasks(eventId: number, scopes: Scope[], detail: LightDetail, summary: NightlySummary): Promise<void> {
+async function openAutoRedTasks(
+  eventId: number,
+  scopes: Scope[],
+  detail: LightDetail,
+  summary: NightlySummary,
+  advisorBudget: AgentBudget,
+  advisorMemory: string | null,
+): Promise<void> {
   try {
     // Re-read: the event in hand was loaded before tonight's recompute wrote its lights.
     const event = await loadEventForLight(eventId);
@@ -90,8 +102,17 @@ async function openAutoRedTasks(eventId: number, scopes: Scope[], detail: LightD
       const scopeDetail = detail[scope];
       if (!scopeDetail) continue;
       if (summary.autoTasks >= AUTO_RED_TASKS_PER_RUN) { summary.autoTasksSkipped += 1; continue; }
-      const advice = adviceBlock(priceAdviceFacts({ event, scope, detail: scopeDetail, liveTicketsUsd }));
-      const opened = await openPriceLightTask(event, scope, scopeDetail, [], { id: null }, advice);
+      const facts = priceAdviceFacts({ event, scope, detail: scopeDetail, liveTicketsUsd });
+      const worded = await wordAdvice({ eventName: event.name, scope, facts, budget: advisorBudget, memory: advisorMemory });
+      if (worded.ai) {
+        // A source for the AI Factory log (spec: item 4) - the advisor has no per-call storage of
+        // its own yet, so this audit row is the only trail one AI-worded suggestion leaves.
+        await logAudit({
+          action: "agent.advice", entityType: "event", entityId: eventId,
+          metadata: { agent: "price-advisor", event_id: eventId, scope, cost_usd: worded.cost_usd },
+        });
+      }
+      const opened = await openPriceLightTask(event, scope, scopeDetail, [], { id: null }, worded.text);
       if (opened.ok && !opened.existed) summary.autoTasks += 1;
       if (!opened.ok) summary.errors.push({ eventId, note: `auto task (${scope}): ${opened.error}` });
     }
@@ -112,7 +133,7 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
   const summary: NightlySummary = {
     scanned: 0, snapshots: 0, tagged: 0, cleared: 0, matched: 0,
     lightChanges: [], lightCounts: { package: emptyLightCounts(), ticket: emptyLightCounts() },
-    errors: [], remaining: 0, snapshotsRemaining: 0, aiCalls: 0, autoTasks: 0, autoTasksSkipped: 0, dryRun: options.dryRun,
+    errors: [], remaining: 0, snapshotsRemaining: 0, aiCalls: 0, advisorCalls: 0, autoTasks: 0, autoTasksSkipped: 0, dryRun: options.dryRun,
   };
 
   // LiveTickets listings are a table read - refresh them every night before matching.
@@ -181,6 +202,11 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
   // wrote when they overrode a light. Loaded ONCE for the whole pass (one audit-log read, not
   // one per event) and skipped entirely when nothing will call the AI anyway.
   const aiMemory = options.dryRun || !aiEnabled() ? null : await loadJudgeMemory();
+  // Agent #2 (the price advisor) shares the same shape: one run-wide budget, one memory load,
+  // skipped whenever nothing will call it - openAutoRedTasks itself never runs on a dry run
+  // (see below), so building this unconditionally here just mirrors aiBudget/aiMemory above.
+  const advisorBudget: AgentBudget = newBudget(PRICE_ADVISOR_AGENT);
+  const advisorMemory = options.dryRun || !agentEnabled(PRICE_ADVISOR_AGENT) ? null : await loadAgentMemory(PRICE_ADVISOR_AGENT);
   for (const [index, event] of events.entries()) {
     if (Date.now() - start > options.budgetMs) {
       summary.remaining = events.length - index;
@@ -210,7 +236,7 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
         }
         if (!options.dryRun) {
           const turnedRed = SCOPES.filter((scope) => after[scope] === "red" && before[scope] !== "red");
-          if (turnedRed.length) await openAutoRedTasks(event.id, turnedRed, result.lights.detail, summary);
+          if (turnedRed.length) await openAutoRedTasks(event.id, turnedRed, result.lights.detail, summary, advisorBudget, advisorMemory);
         }
       }
     } catch (e) {
@@ -220,6 +246,7 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
     }
   }
   summary.aiCalls = AI_CALLS_PER_RUN - aiBudget.remaining;
+  summary.advisorCalls = PRICE_ADVISOR_AGENT.callsPerRun - advisorBudget.remaining;
 
   if (!options.dryRun) {
     if (summary.lightChanges.length || summary.tagged || summary.cleared) await revalidateMain();
@@ -285,6 +312,7 @@ async function sendSummaryEmail(s: NightlySummary): Promise<void> {
         `<p><a href="${appOrigin()}/events">Events</a> · scanned ${s.scanned} · ${s.remaining} left for tomorrow` +
           (s.snapshotsRemaining ? ` · ${s.snapshotsRemaining} snapshots not reached` : "") +
           ` · AI ${s.aiCalls}/${AI_CALLS_PER_RUN} calls` +
+          ` · advisor ${s.advisorCalls}/${PRICE_ADVISOR_AGENT.callsPerRun} calls` +
           (s.autoTasks || s.autoTasksSkipped
             ? ` · <a href="${appOrigin()}/tasks">${s.autoTasks} משימות נפתחו</a>` + (s.autoTasksSkipped ? ` (${s.autoTasksSkipped} מעבר לתקרה)` : "")
             : "") +
