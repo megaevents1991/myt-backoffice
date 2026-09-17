@@ -18,11 +18,13 @@
 // Coverage: the 270s budget fits ~40-60 events a night, not the ~440 live
 // ones, so the run is a ROTATION. Every event's last visit is the newest log
 // row it has (skips count), and each night takes the least-recently-visited
-// first - events within 45 days ahead of the farther ones. Nothing is ever
-// stranded behind the same first N. dry_run computes everything and writes
+// first, ALTERNATING between the next-45-days queue and the farther one
+// (base-price-rotation.ts). Until 2026-09-17 the near queue simply went first: 110 near
+// events at ~24 visits a night never emptied, so 328 farther events were never visited. dry_run computes everything and writes
 // NOTHING - not even log rows - so it is safe to run against prod from a
 // preview deploy (it also does not advance the rotation).
 import { supabase } from "@/lib/supabase-server";
+import { orderForRotation } from "@/lib/services/base-price-rotation";
 import { appOrigin, sendMail } from "@/lib/email";
 import {
   describeQuote,
@@ -123,19 +125,8 @@ async function lastVisitByEvent(): Promise<Map<number, string>> {
   return seen;
 }
 
-/** Pure: least-recently-visited first, near events ahead of far ones. */
-export function orderForRotation<T extends { id: number; date: string }>(
-  events: T[],
-  lastVisit: Map<number, string>,
-  nearWindowEnd: string,
-): T[] {
-  const key = (event: T) => lastVisit.get(event.id) ?? "";
-  const near = events.filter((event) => event.date <= nearWindowEnd);
-  const far = events.filter((event) => event.date > nearWindowEnd);
-  const byVisit = (a: T, b: T) =>
-    key(a).localeCompare(key(b)) || a.date.localeCompare(b.date);
-  return [...near.sort(byVisit), ...far.sort(byVisit)];
-}
+// The visiting order is a pure rule of its own - lib/services/base-price-rotation.ts.
+export { orderForRotation };
 
 function hasFlightComponent(event: CandidateEvent, offlineFlightIds: Set<number>): boolean {
   return (
