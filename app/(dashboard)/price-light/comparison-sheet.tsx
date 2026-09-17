@@ -1,10 +1,11 @@
 "use client";
 
-// Side-by-side for ONE event: our package against every competitor's, component by component, in the
+// One table per scope for ONE event (2026-09-17): suppliers down (us first), flight / hotel / ticket
+// across, so our flight sits right above theirs. Contents are worded in the
 // partner's format (2026-09-14): "טיסות: אל על עם מזוודה ישיר 16-20 | מלון: שם מלון כולל ארוחת בוקר או
 // ללא | סוג כרטיס". Loaded on demand - detail pages are long, the list never carries them.
 import { useCallback, useEffect, useState } from "react";
-import { BedDouble, ExternalLink, Loader2, Percent, Plane, RefreshCw, Ticket } from "lucide-react";
+import { BedDouble, ExternalLink, Loader2, Plane, RefreshCw, Ticket } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -45,83 +46,104 @@ function statusText(o: ComparisonOffer): string | null {
   }
 }
 
-function Line({ icon: Icon, label, text }: { icon: typeof Plane; label: string; text: string | null }) {
+/** One component of one offer. Ours sits in the row above theirs, so the eye compares down a column. */
+function Part({ text }: { text: string | null }) {
   return (
-    <div className="flex items-start gap-2">
-      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      <span className="w-10 shrink-0 text-muted-foreground">{label}</span>
-      <span className={cn("min-w-0", !text && "text-muted-foreground")}>{text ?? "לא פורסם"}</span>
-    </div>
+    <td className={cn("border-s px-3 py-2 align-top leading-relaxed", !text && "text-muted-foreground")}>
+      {text ?? "לא פורסם"}
+    </td>
   );
 }
 
-function OfferCard({ offer, scope }: { offer: ComparisonOffer; scope: Scope }) {
+function OfferRow({ offer, scope }: { offer: ComparisonOffer; scope: Scope }) {
   const ours = offer.who === "ours";
+  const pkg = scope === "package";
   const name = offer.who === "ours" ? "אנחנו" : COMPETITOR_LABEL[offer.who] ?? offer.who;
   const published = !ours ? money(offer.raw, offer.raw_currency) : null;
   const status = statusText(offer);
   const travel = [dayMonth(offer.depart), dayMonth(offer.return)].filter(Boolean).join("–");
-  // A competitor with no answer at all has nothing to lay side by side - one muted line is enough.
+  // A competitor with no answer at all has nothing to lay side by side - one muted cell is enough.
   const empty = !ours && !offer.title && offer.normalized_usd == null && !offer.quote_only;
 
   return (
-    <div className={cn("rounded-lg border p-3 text-xs", ours && "border-primary/60 bg-primary/5", empty && "py-2")}>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <div className="flex min-w-0 items-baseline gap-1.5">
+    <tr className={cn("border-t", ours && "bg-primary/5")}>
+      <td className="w-40 px-3 py-2 align-top">
+        <div className="flex items-center gap-1.5">
           {offer.decided && <span className="text-muted-foreground" title="קבע את האור">●</span>}
           <span className="text-sm font-semibold">{name}</span>
           {offer.url && (
-            <a href={offer.url} target="_blank" rel="noreferrer" title="לצפייה בדף המתחרה" className="self-center">
-              <ExternalLink className="h-3 w-3 text-muted-foreground" />
+            <a href={offer.url} target="_blank" rel="noreferrer" title={ours ? "לצפייה באירוע באתר שלנו" : "לצפייה בדף המתחרה"}>
+              <ExternalLink className="h-3 w-3 text-muted-foreground hover:text-foreground" />
             </a>
           )}
-          {offer.multi_match && (
-            <span className="rounded bg-amber-100 px-1 py-0.5 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
-              חבילה מרובת משחקים
-            </span>
-          )}
         </div>
-        <div className="flex items-baseline gap-2 tabular-nums">
-          {offer.normalized_usd != null && <span className="text-sm font-semibold">${offer.normalized_usd.toLocaleString("en-US")}</span>}
-          {published && offer.raw_currency !== "USD" && <span className="text-muted-foreground">({published})</span>}
-          {offer.light && offer.diff_usd != null && (
-            <span className={cn("rounded-full px-1.5 py-0.5 font-medium", PILL[offer.light])} title="המחיר שלנו פחות שלהם, מנורמל">
-              {signedUsd(offer.diff_usd)}
-            </span>
-          )}
-        </div>
-      </div>
+        {offer.title && !ours && <div className="mt-0.5 line-clamp-2 text-muted-foreground" title={offer.title}>{offer.title}</div>}
+        {offer.multi_match && (
+          <span className="mt-1 inline-block rounded bg-amber-100 px-1 py-0.5 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+            חבילה מרובת משחקים
+          </span>
+        )}
+        {pkg && (travel || offer.nights != null) && (
+          <div className="mt-1 text-muted-foreground">
+            {offer.nights != null ? `${offer.nights} לילות` : ""}
+            {travel ? `${offer.nights != null ? " · " : ""}${travel}` : ""}
+          </div>
+        )}
+      </td>
 
-      {/* Our headline is the margin-free "from" price the light compares; the site price is not. */}
-      {ours && offer.site_usd != null && (
-        <div className="mt-0.5 text-end text-muted-foreground tabular-nums">
-          באתר ${offer.site_usd.toLocaleString("en-US")} (כולל +${FLIGHT_MARGIN_USD}/+${HOTEL_MARGIN_USD})
-        </div>
+      {empty ? (
+        <td colSpan={pkg ? 3 : 1} className="border-s px-3 py-2 align-top text-muted-foreground">{status}</td>
+      ) : (
+        <>
+          {pkg && <Part text={offer.lines.flight} />}
+          {pkg && <Part text={offer.lines.hotel} />}
+          <Part text={offer.lines.ticket} />
+        </>
       )}
 
-      {status && <div className="mt-1 text-muted-foreground">{status}</div>}
+      <td className="w-36 border-s px-3 py-2 align-top tabular-nums">
+        {offer.normalized_usd != null && <div className="text-sm font-semibold">${offer.normalized_usd.toLocaleString("en-US")}</div>}
+        {published && offer.raw_currency !== "USD" && <div className="text-muted-foreground">({published})</div>}
+        {offer.light && offer.diff_usd != null && (
+          <span className={cn("mt-1 inline-block rounded-full px-1.5 py-0.5 font-medium", PILL[offer.light])} title="המחיר שלנו פחות שלהם, מנורמל">
+            {signedUsd(offer.diff_usd)}
+          </span>
+        )}
+        {!empty && status && <div className="text-muted-foreground">{status}</div>}
+        {/* Our headline is the margin-free "from" price the light compares; the site price is not. */}
+        {ours && offer.site_usd != null && (
+          <div className="mt-1 text-muted-foreground">
+            באתר ${offer.site_usd.toLocaleString("en-US")} (כולל +${FLIGHT_MARGIN_USD}/+${HOTEL_MARGIN_USD})
+          </div>
+        )}
+        {ours && pkg && offer.markup_usd != null && (
+          <div className="text-muted-foreground">מתוכו מארקאפ ${offer.markup_usd.toLocaleString("en-US")}</div>
+        )}
+      </td>
+    </tr>
+  );
+}
 
-      {!empty && (
-        <div className="mt-2 space-y-1">
-          {offer.title && !ours && <div className="truncate text-muted-foreground" title={offer.title}>{offer.title}</div>}
-          {scope === "package" && (
-            <>
-              <Line icon={Plane} label="טיסה" text={offer.lines.flight} />
-              <Line icon={BedDouble} label="מלון" text={offer.lines.hotel} />
-            </>
-          )}
-          <Line icon={Ticket} label="כרטיס" text={offer.lines.ticket} />
-          {ours && scope === "package" && offer.markup_usd != null && (
-            <Line icon={Percent} label="עמלות" text={`מארקאפ האתר · $${offer.markup_usd.toLocaleString("en-US")}`} />
-          )}
-          {scope === "package" && (travel || offer.nights != null) && (
-            <div className="text-muted-foreground">
-              {travel}
-              {offer.nights != null ? `${travel ? " · " : ""}${offer.nights} לילות` : ""}
-            </div>
-          )}
-        </div>
-      )}
+/** Suppliers down, components across: our flight above their flight, our hotel above their hotel. */
+function OfferTable({ offers, scope }: { offers: ComparisonOffer[]; scope: Scope }) {
+  const pkg = scope === "package";
+  const head = "border-s px-3 py-2 text-start font-medium";
+  return (
+    <div className="overflow-x-auto rounded-lg border">
+      <table className={cn("w-full border-collapse text-xs", pkg && "min-w-[760px]")}>
+        <thead className="bg-muted/50 text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2 text-start font-medium">ספק</th>
+            {pkg && <th className={head}><Plane className="me-1 inline h-3.5 w-3.5" aria-hidden />טיסה</th>}
+            {pkg && <th className={head}><BedDouble className="me-1 inline h-3.5 w-3.5" aria-hidden />מלון</th>}
+            <th className={head}><Ticket className="me-1 inline h-3.5 w-3.5" aria-hidden />כרטיס</th>
+            <th className={head}>מחיר מנורמל</th>
+          </tr>
+        </thead>
+        <tbody>
+          {offers.map((offer) => <OfferRow key={`${scope}:${offer.who}`} offer={offer} scope={scope} />)}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -178,7 +200,7 @@ export function ComparisonSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
+      <SheetContent className="w-full overflow-y-auto sm:max-w-5xl">
         <SheetHeader className="space-y-1 text-start">
           <SheetTitle>השוואה · {eventName}</SheetTitle>
           <SheetDescription className="text-xs">
@@ -211,9 +233,7 @@ export function ComparisonSheet({
         {data && scopes.map((scope) => (
           <section key={scope} className="mt-5 space-y-2">
             <h3 className="text-sm font-semibold">{SCOPE_HE[scope]}</h3>
-            {data[scope].map((offer) => (
-              <OfferCard key={`${scope}:${offer.who}`} offer={offer} scope={scope} />
-            ))}
+            <OfferTable offers={data[scope]} scope={scope} />
           </section>
         ))}
       </SheetContent>

@@ -209,7 +209,8 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
       : { flight: null, hotel: null, ticket: ticketName };
     const us: ComparisonOffer = {
       who: "ours", status: "ours", quote_only: false, raw: ourUsd, raw_currency: "USD", usd: ourUsd,
-      normalized_usd: ourUsd, diff_usd: null, light: null, decided: false, title: event.name, url: null,
+      normalized_usd: ourUsd, diff_usd: null, light: null, decided: false, title: event.name,
+      url: `${PUBLIC_SITE_URL}/order/${event.id}`, // our own page on the site, the way each competitor links to theirs
       depart: scope === "package" ? event.def_date_depart ?? null : null,
       return: scope === "package" ? event.def_date_return ?? null : null,
       nights: scope === "package" ? ourNights(event) : null,

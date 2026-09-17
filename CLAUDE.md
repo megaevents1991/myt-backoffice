@@ -572,7 +572,7 @@ package/ticket lens above the tiles (a LENS: tiles, views and pending all count 
 scope; `?scope=` preselects it), and **"השוואה מפורטת"** on each row opens `comparison-sheet.tsx`
 (`getPriceLightComparison`, loaded per row - detail pages never ride the list payload): us first,
 then every competitor with its published price, normalized price, own gap pill, status, and the
-three contents lines.
+three contents lines. **Table layout (2026-09-17):** one table per scope - suppliers down (us first), flight / hotel / ticket across with column dividers, so our flight sits right above theirs; our row links to the event on the site (`/order/{id}`) the way each competitor row links to its page.
 
 **`events.light_red_since` (Tasks Hub, 2026-09-16):** timestamp of when the EVENT last turned red -
 per event (either scope red), not per scope - written by `recomputeEventLights` through the pure
