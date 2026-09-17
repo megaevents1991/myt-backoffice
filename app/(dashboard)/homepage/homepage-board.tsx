@@ -11,10 +11,12 @@ import {
   GripVertical,
   Info,
   Lock,
+  Pin,
   Plus,
   RotateCcw,
   Save,
   Star,
+  StarOff,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -32,7 +34,10 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { saveHomepageLayout } from "@/lib/actions/homepage-actions";
+import {
+  saveHomepageLayout,
+  setEventPrioritized,
+} from "@/lib/actions/homepage-actions";
 import {
   SECTION_ITEM_KINDS,
   SECTION_META,
@@ -51,6 +56,14 @@ const KIND_LABEL: Record<HomepageItemKind, string> = {
 };
 
 const candidateKey = (kind: HomepageItemKind, ref: string) => `${kind}:${ref}`;
+
+/** One scroll row on the site - mirrors ROW_MAX in myt-main ClientSideHomepage. */
+const ROW_MAX = 12;
+/** "ADD" on החדשים ביותר offers only the most recently uploaded events. */
+const NEWEST_PICK_MAX = 100;
+
+const createdAtMs = (c: HomepageCandidate) =>
+  c.created_at ? Date.parse(c.created_at) || 0 : 0;
 
 type ItemsBySection = Record<HomepageSectionKey, HomepageItemRow[]>;
 
@@ -123,6 +136,51 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
     });
     setDirty(true);
   };
+
+  // Events un-prioritized from the board this visit. The write is immediate
+  // (setEventPrioritized), so this only keeps the screen in step with it.
+  const [unprioritized, setUnprioritized] = useState<Set<string>>(new Set());
+  const unprioritize = (c: HomepageCandidate) => {
+    startTransition(async () => {
+      const res = await setEventPrioritized(Number(c.ref_id), false);
+      if (res.ok) {
+        setUnprioritized((prev) => new Set(prev).add(c.ref_id));
+        toast({
+          title: "Prioritize removed",
+          description: `${c.name} no longer fills "המבוקשים ביותר" on its own.`,
+        });
+      } else {
+        toast({ variant: "destructive", title: "Could not update", description: res.error });
+      }
+    });
+  };
+
+  // What the site shows AFTER the pinned items, so a strip is never an empty
+  // box: "המבוקשים ביותר" = the Prioritized events, "החדשים ביותר" = the latest
+  // uploads that the row above does not already show. An approximation of
+  // myt-main's rule (it also collapses several dates of one artist into a
+  // card) - good enough to see what is live and act on it.
+  const autoBySection = useMemo(() => {
+    const events = initial.candidates.filter((c) => c.kind === "event");
+    const pinnedIn = (key: HomepageSectionKey) =>
+      new Set((items[key] ?? []).map((it) => it.ref_id));
+    const wantedPinned = pinnedIn("most_wanted");
+    const prioritized = events.filter(
+      (c) => c.prioritized && !unprioritized.has(c.ref_id) && !wantedPinned.has(c.ref_id),
+    );
+    const wantedShown = new Set([
+      ...wantedPinned,
+      ...prioritized.slice(0, Math.max(0, ROW_MAX - wantedPinned.size)).map((c) => c.ref_id),
+    ]);
+    const newestPinned = pinnedIn("newest");
+    const newest = events
+      .filter((c) => !newestPinned.has(c.ref_id) && !wantedShown.has(c.ref_id))
+      .sort((a, b) => createdAtMs(b) - createdAtMs(a))
+      .slice(0, Math.max(0, ROW_MAX - newestPinned.size));
+    return { most_wanted: prioritized, newest } as Partial<
+      Record<HomepageSectionKey, HomepageCandidate[]>
+    >;
+  }, [initial.candidates, items, unprioritized]);
 
   const reset = () => {
     setSections(initial.sections);
@@ -283,9 +341,13 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                       list={list}
                       candidates={candidates}
                       allCandidates={initial.candidates}
+                      autoItems={autoBySection[s.key] ?? []}
+                      unprioritized={unprioritized}
+                      busy={isPending}
                       onMove={(from, to) => moveItem(s.key, from, to)}
                       onRemove={(idx) => removeItem(s.key, idx)}
                       onAdd={(c) => addItem(s.key, c)}
+                      onUnprioritize={s.key === "most_wanted" ? unprioritize : undefined}
                     />
                   ) : (
                     <div className="px-3 py-3 text-xs text-muted-foreground" dir="rtl">
@@ -332,18 +394,28 @@ function ItemStrip({
   list,
   candidates,
   allCandidates,
+  autoItems,
+  unprioritized,
+  busy,
   onMove,
   onRemove,
   onAdd,
+  onUnprioritize,
 }: {
   sectionKey: HomepageSectionKey;
   kinds: HomepageItemKind[];
   list: HomepageItemRow[];
   candidates: Map<string, HomepageCandidate>;
   allCandidates: HomepageCandidate[];
+  /** What the site shows after the pinned items - drawn as dashed "auto" cards. */
+  autoItems: HomepageCandidate[];
+  unprioritized: Set<string>;
+  busy: boolean;
   onMove: (from: number, to: number) => void;
   onRemove: (idx: number) => void;
   onAdd: (c: HomepageCandidate) => void;
+  /** Only the section whose auto rule IS the Prioritized flag passes this. */
+  onUnprioritize?: (c: HomepageCandidate) => void;
 }) {
   const drag = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
@@ -352,13 +424,19 @@ function ItemStrip({
     () => new Set(list.map((it) => candidateKey(it.kind, it.ref_id))),
     [list],
   );
-  const pickable = useMemo(
-    () =>
-      allCandidates.filter(
-        (c) => kinds.includes(c.kind) && !listed.has(candidateKey(c.kind, c.ref_id)),
-      ),
-    [allCandidates, kinds, listed],
-  );
+  const pickable = useMemo(() => {
+    const rows = allCandidates.filter(
+      (c) => kinds.includes(c.kind) && !listed.has(candidateKey(c.kind, c.ref_id)),
+    );
+    // "החדשים ביותר": the picker is the last NEWEST_PICK_MAX packages uploaded
+    // to the site, in upload order - not every future event by date.
+    if (sectionKey !== "newest") return rows;
+    return [...rows]
+      .sort((a, b) => createdAtMs(b) - createdAtMs(a))
+      .slice(0, NEWEST_PICK_MAX);
+  }, [allCandidates, kinds, listed, sectionKey]);
+  // Auto cards past this index do not fit the site's single row.
+  const autoRoom = Math.max(0, ROW_MAX - list.length);
 
   return (
     <div className="px-3 py-3">
@@ -451,6 +529,81 @@ function ItemStrip({
           );
         })}
 
+        {/* What the site adds on its own after the pinned items. Dashed and
+            not draggable: pin one to place it, or drop its Prioritized flag. */}
+        {autoItems.map((c, i) => {
+          const fits = i < autoRoom;
+          return (
+            <div
+              key={`auto:${candidateKey(c.kind, c.ref_id)}`}
+              className={cn(
+                "group relative w-36 shrink-0 overflow-hidden rounded-lg border border-dashed bg-background",
+                !fits && "opacity-50",
+              )}
+              title={
+                fits
+                  ? "Shown on the site by the automatic rule"
+                  : `Does not fit the row (first ${ROW_MAX} are shown)`
+              }
+            >
+              <div className="relative aspect-[4/3] w-full bg-muted">
+                {c.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={c.image_url}
+                    alt=""
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                  />
+                ) : null}
+                <span className="absolute right-1 top-1 rounded bg-background/90 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  {fits ? list.length + i + 1 : "-"}
+                </span>
+                <span className="absolute left-1 top-1 flex items-center gap-0.5 rounded bg-background/90 px-1 py-0.5 text-[10px] text-muted-foreground">
+                  {c.prioritized && !unprioritized.has(c.ref_id) && (
+                    <Star className="h-3 w-3 fill-current text-amber-500" />
+                  )}
+                  auto
+                </span>
+              </div>
+              <div className="p-2 text-right">
+                <div className="truncate text-xs font-semibold" title={c.name}>
+                  {c.name}
+                </div>
+                <div className="truncate text-[10px] text-muted-foreground" dir="ltr">
+                  {c.subtitle ?? KIND_LABEL[c.kind]}
+                </div>
+              </div>
+              <div className="flex items-center justify-between border-t px-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 gap-1 px-1.5 text-[10px]"
+                  onClick={() => onAdd(c)}
+                  aria-label={`Pin ${c.name}`}
+                >
+                  <Pin className="h-3 w-3" />
+                  Pin
+                </Button>
+                {onUnprioritize && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 gap-1 px-1.5 text-[10px] text-muted-foreground hover:text-destructive"
+                    onClick={() => onUnprioritize(c)}
+                    disabled={busy}
+                    aria-label={`Remove prioritize from ${c.name}`}
+                    title="Removes the Prioritized flag now (not part of Save)"
+                  >
+                    <StarOff className="h-3 w-3" />
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <button
@@ -471,7 +624,14 @@ function ItemStrip({
                   const rows = pickable.filter((c) => c.kind === kind);
                   if (!rows.length) return null;
                   return (
-                    <CommandGroup key={kind} heading={`${KIND_LABEL[kind]}s`}>
+                    <CommandGroup
+                      key={kind}
+                      heading={
+                        sectionKey === "newest"
+                          ? `Last ${NEWEST_PICK_MAX} uploaded - newest first`
+                          : `${KIND_LABEL[kind]}s`
+                      }
+                    >
                       {rows.map((c) => (
                         <CommandItem
                           key={candidateKey(c.kind, c.ref_id)}
@@ -515,7 +675,9 @@ function ItemStrip({
       </div>
       {list.length === 0 && (
         <p className="mt-1 text-xs text-muted-foreground" dir="rtl">
-          אין פריטים מוצמדים - הסקשן מתמלא לפי החוקיות האוטומטית בלבד.
+          {autoItems.length > 0
+            ? "אין פריטים מוצמדים - הכרטיסים המקווקווים הם מה שהאתר מציג עכשיו לפי החוקיות האוטומטית. Pin מצמיד למקום."
+            : "אין פריטים מוצמדים - הסקשן מתמלא לפי החוקיות האוטומטית בלבד."}
         </p>
       )}
     </div>

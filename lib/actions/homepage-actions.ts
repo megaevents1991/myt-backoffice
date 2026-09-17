@@ -167,6 +167,43 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
 }
 
 /**
+ * Flip an event's Prioritized flag from the board. "המבוקשים ביותר" fills
+ * itself with Prioritized events after the pinned ones, so the board lists
+ * them and staff need a way to drop one without hunting for it in /events.
+ *
+ * Immediate, not part of Save: it writes `events`, not the layout, and the
+ * board's Discard must not pretend to undo it.
+ */
+export async function setEventPrioritized(
+  eventId: number,
+  prioritized: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireStaff();
+  if (!Number.isInteger(eventId) || eventId <= 0) {
+    return { ok: false, error: "Invalid event" };
+  }
+  const { error } = await db
+    .from("events")
+    .update({ is_prioritized: prioritized })
+    .eq("id", eventId)
+    .is("is_deleted", null);
+  if (error) {
+    console.error("setEventPrioritized:", JSON.stringify(error));
+    return { ok: false, error: error.message };
+  }
+  await logAudit({
+    action: "update",
+    entityType: "event",
+    entityId: eventId,
+    changes: { is_prioritized: prioritized },
+    metadata: { source: "homepage_board" },
+  });
+  revalidatePath("/homepage");
+  await revalidateMain();
+  return { ok: true };
+}
+
+/**
  * Replace the whole layout. Validates keys/kinds against the declared
  * sections (an item of a kind its section does not accept is dropped), keeps
  * `hero` first whatever the client sent, renumbers positions 0..n, and swaps

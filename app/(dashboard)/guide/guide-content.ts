@@ -545,6 +545,14 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "החדשים ביותר — שורה אחת, עד 12. מוצמדים ראשונים, אחריהם האירועים שנוצרו לאחרונה, בלי כאלה שכבר במבוקשים.",
       ),
       t(
+        "Dashed 'auto' cards - what the site shows right now after your pinned items, so a strip is never an empty box: the Prioritized events in Most wanted, the latest uploads in Newest. Pin places one; in Most wanted, Remove drops its Prioritized flag on the spot (it is not part of Save). Faded auto cards do not fit the 12-card row.",
+        "כרטיסי 'auto' מקווקווים — מה שהאתר מציג עכשיו אחרי המוצמדים, כך ששורה אף פעם לא ריקה: אירועי Prioritized במבוקשים, ההעלאות האחרונות בחדשים. Pin מצמיד למקום; במבוקשים, Remove מוריד את סימון ה-Prioritized מיד (לא חלק מ-Save). כרטיסי auto דהויים לא נכנסים לשורת ה-12.",
+      ),
+      t(
+        "Add in Newest lists only the last 100 packages uploaded to the site, newest first - not every future event.",
+        "Add בחדשים ביותר מציג רק את 100 החבילות האחרונות שעלו לאתר, מהחדשה לישנה — לא את כל האירועים העתידיים.",
+      ),
+      t(
         "Football / Artists rows - every active team/artist. Those with an available event always jump ahead; inside each group your pinned order first, the rest by name.",
         "שורות כדורגל / אמנים — כל קבוצה/אמן פעילים. מי שיש לו אירוע זמין תמיד קופץ קדימה; בתוך כל קבוצה קודם הסדר המוצמד, השאר לפי שם.",
       ),
