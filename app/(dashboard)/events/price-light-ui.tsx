@@ -76,6 +76,7 @@ export const HE_REASON: Record<UncheckedReason, string> = {
   crawl_failed: "סריקה נכשלה",
   unsure: "לא ודאי",
   partial_coverage: "כיסוי חלקי",
+  quote_only: "מתחרה מוכר בהצעת מחיר בלבד",
 };
 
 /**
@@ -97,7 +98,7 @@ function nightsLine(detail: LightScopeDetail): string | null {
 
 // Hebrew throughout: this tooltip sits on the events table, where every other string is
 // Hebrew, and it is the whole explanation behind a coloured pill.
-function tipFor(detail: LightScopeDetail | undefined): string {
+function tipFor(detail: LightScopeDetail | undefined, pkg: boolean): string {
   if (!detail) return "טרם נבדק";
   if (detail.light === "green" || detail.light === "orange" || detail.light === "red") {
     return [
@@ -106,10 +107,13 @@ function tipFor(detail: LightScopeDetail | undefined): string {
       // is NOT available here - LightScopeDetail carries no window fields - so the trip dates
       // live in the history sheet (price-light-cell.tsx), which has the listing row itself.
       `${(detail.competitor ? COMPETITOR_LABEL[detail.competitor] : null) ?? "מתחרה"}: ${detail.raw ?? "?"} ${detail.raw_currency ?? ""} → מנורמל $${detail.normalized_usd}`,
-      detail.our_usd != null ? `שלנו: $${detail.our_usd}` : null,
+      // Package: the margin-free "from" price the light compares (2026-09-17), not the site price.
+      detail.our_usd != null ? `${pkg ? "החל מ- (שלנו)" : "שלנו"}: $${detail.our_usd}` : null,
       nightsLine(detail),
       ...detail.adjustments.map((a) => a.label),
-      detail.partial ? "כיסוי חלקי בנרמול" : null,
+      // The NORMALIZATION gap (the competitor's page never said what its package contains), not
+      // the coverage one - renamed 2026-09-17 in step with /price-light's own tooltip.
+      detail.partial ? "נרמול חלקי (חסרים פרטי חבילה)" : null,
       detail.crawled_at ? `נסרק ${detail.crawled_at.slice(0, 10)}` : null,
     ].filter(Boolean).join("\n");
   }
@@ -125,8 +129,8 @@ export function Pill({ scope, detail, light, override }: {
   scope: "חב׳" | "כר׳"; detail: LightScopeDetail | undefined; light: Light; override?: LightOverride | null;
 }) {
   const tip = override && override.light === light
-    ? [`דריסה ידנית: ${override.note}`, override.by ? `ע״י ${override.by}` : null, `חישוב אוטומטי: ${tipFor(detail)}`].filter(Boolean).join("\n")
-    : tipFor(detail);
+    ? [`דריסה ידנית: ${override.note}`, override.by ? `ע״י ${override.by}` : null, `חישוב אוטומטי: ${tipFor(detail, scope === "חב׳")}`].filter(Boolean).join("\n")
+    : tipFor(detail, scope === "חב׳");
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>

@@ -15,9 +15,10 @@
 // - Base prices round to whole tens. Tickets keep their own "tens minus 1"
 //   rule elsewhere - not here.
 import { searchCheapestOffer } from "@/lib/services/flight-search";
+import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "@/lib/services/price-margins";
 
-export const FLIGHT_MARGIN_USD = 100;
-export const HOTEL_MARGIN_USD = 120;
+// The margins live in a pure module the price light shares; re-exported so importers keep working.
+export { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD };
 /** Adults main's /api/hotels prices a room for - the per-person divisor. */
 export const QUOTE_HOTEL_ADULTS = 2;
 /** Direct costlier than this over the connection -> take the connection. */

@@ -208,6 +208,68 @@ function hasDetailPage(url: string): boolean {
   return /\/(package|show)\//.test(url);
 }
 
+const AJAX_URL = `${BASE}/wp-admin/admin-ajax.php`;
+/** Month containers fetched side by side. The real page fires ALL of them at once on load, so
+ *  four at a time with a pauseShort() between batches is gentler than one human visit. */
+const MUSIC_MONTH_BATCH = 4;
+
+/** `<div class="accord-rap ... lateload" data-string="10.2026" data-count="10">` -> month + count. */
+export function parseLateloadMonths(shellHtml: string): { month: string; count: string }[] {
+  // The month shape is checked because `data-string` is also used for image URLs elsewhere on
+  // the page; a Map keeps one request per month should the shell ever repeat a container.
+  const out = new Map<string, string>();
+  for (const el of Array.from(doc(shellHtml).querySelectorAll(".lateload"))) {
+    const month = el.getAttribute("data-string") ?? "";
+    if (!/^\d{2}\.\d{4}$/.test(month) || out.has(month)) continue;
+    out.set(month, el.getAttribute("data-count") ?? "10");
+  }
+  return Array.from(out, ([month, count]) => ({ month, count }));
+}
+
+/**
+ * The /events/ shell carries one empty container per month; the site's own script fills each by
+ * POSTing `action=events_table_action&month=MM.YYYY&count=N` to admin-ajax and pasting the
+ * `div.line` rows it gets back. Doing the same needs no browser. Returns null when the shell
+ * has no month containers or no month answered with rows - the caller then tries the browser.
+ */
+async function fetchMusicCatalogViaAjax(url: string, ctx: CrawlContext): Promise<string | null> {
+  const shell = await ctx.fetch(url, { headers: stealthHeaders() });
+  if (!shell.ok) throw new Error(`HTTP ${shell.status}`);
+  const months = parseLateloadMonths(await shell.text());
+  if (months.length === 0) return null;
+  const parts: string[] = [];
+  let failed = 0;
+  for (let i = 0; i < months.length; i += MUSIC_MONTH_BATCH) {
+    if (i > 0) await ctx.pauseShort();
+    const batch = months.slice(i, i + MUSIC_MONTH_BATCH);
+    const answers = await Promise.all(batch.map(async ({ month, count }) => {
+      try {
+        const res = await ctx.fetch(AJAX_URL, {
+          method: "POST",
+          headers: {
+            ...stealthHeaders(),
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+            Referer: url,
+          },
+          body: `action=events_table_action&month=${encodeURIComponent(month)}&count=${encodeURIComponent(count)}`,
+        });
+        if (!res.ok) { failed += 1; ctx.log(`liveevents: month ${month} -> HTTP ${res.status}`); return ""; }
+        return await res.text();
+      } catch (err) {
+        failed += 1;
+        ctx.log(`liveevents: month ${month} -> ${(err as Error).message}`);
+        return "";
+      }
+    }));
+    parts.push(...answers);
+  }
+  const html = parts.join("");
+  if (!html.includes("td artist")) return null;
+  ctx.log(`liveevents: music catalog via ajax - ${months.length} months, ${failed} failed`);
+  return `<div class="accord-crap">${html}</div>`;
+}
+
 /**
  * The `/matches/` (sports) board is fully server-rendered (confirmed against the fixture),
  * but `/events/` (music) renders its `div.line` rows via a client-side WP AJAX call into
@@ -223,6 +285,15 @@ async function fetchCatalogHtml(kind: "sports" | "music", url: string, ctx: Craw
     const res = await ctx.fetch(url, { headers: stealthHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.text();
+  }
+  // First choice: the same WP AJAX call the page itself makes, as plain POSTs (2026-09-17). The
+  // Playwright path came back with ZERO music rows from Vercel on 2026-09-15 (607 -> 239
+  // listings, every music listing left to go stale) while this endpoint answers a plain request.
+  try {
+    const viaAjax = await fetchMusicCatalogViaAjax(url, ctx);
+    if (viaAjax) return viaAjax;
+  } catch (err) {
+    ctx.log(`liveevents: music ajax path failed (${(err as Error).message}) - trying the browser`);
   }
   const page = ctx.page;
   if (!page) throw new Error("liveevents: music catalog needs a browser page");

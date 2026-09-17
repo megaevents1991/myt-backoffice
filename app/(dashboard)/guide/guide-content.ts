@@ -194,8 +194,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     id: "price-light",
     title: t("Price light (רמזור)", "רמזור מחירים"),
     intro: t(
-      "A traffic-light column on the events table (right after the usual price) shows how our price compares to competitors, per event. It never changes a price by itself - it's a read, not a rule.",
-      "עמודת רמזור בטבלת האירועים (מיד אחרי המחיר הרגיל) מראה איך המחיר שלנו עומד מול המתחרים, לכל אירוע. הרמזור לא משנה מחיר בעצמו — הוא קריאה, לא כלל.",
+      "A traffic-light column on the events table (right after the usual price) shows how our price compares to competitors, per event. It never changes a price by itself - it's a read, not a rule. It compares our real \"from\" price: the site price minus the +$100 flight / +$120 hotel margins (taken from the latest search), plus ticket and site markup.",
+      "עמודת רמזור בטבלת האירועים (מיד אחרי המחיר הרגיל) מראה איך המחיר שלנו עומד מול המתחרים, לכל אירוע. הרמזור לא משנה מחיר בעצמו — הוא קריאה, לא כלל. ההשוואה היא מול מחיר ה\"החל מ-\" האמיתי שלנו: טיסה ומלון בלי תוספות ה-100$/120$ (מהחיפוש האחרון), ועוד כרטיס ועמלות האתר. המחיר באתר עצמו לא משתנה.",
     ),
     points: [
       t(

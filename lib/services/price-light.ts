@@ -1,11 +1,13 @@
 // Price light (רמזור) rules engine - the ONLY place thresholds, normalization
-// constants and the light decision live. Pure: no DB, no fetch, no runtime
-// imports (scripts/price-light-selftest.ts runs it under plain node).
+// constants and the light decision live. Pure: no DB, no fetch, and runtime
+// imports only from other pure modules by relative `.ts` path
+// (scripts/price-light-selftest.ts runs it under plain node).
 // Spec: docs/superpowers/specs/2026-09-09-price-light-design.md §2.
 import type {
   Adjustment, CompetitorKey, Currency, EventKind, ExtractedAttrs, Light,
   LightScopeDetail, MatchStatus, PerCompetitor, Scope, UncheckedReason,
 } from "../../types/price-light.types";
+import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "./price-margins.ts";
 
 // ---- thresholds -----------------------------------------------------------
 export const LIGHT_GREEN_USD = -150;
@@ -79,6 +81,14 @@ export interface PricedEvent {
   markup_flight?: number | null;
   markup_hotel?: number | null;
   event_additional_markup?: number | null;
+  /** Only the searched NET per-person prices are read (`ourNetFlightUsd` / `ourNetHotelUsd`) -
+   *  a structural slice of `LightDetail`, so this module stays free of the full type. */
+  light_detail?: {
+    ours?: {
+      flight?: { usd?: number | null } | null;
+      hotel?: { usd?: number | null } | null;
+    } | null;
+  } | null;
 }
 
 const amount = (v: number | null | undefined): number => {
@@ -99,7 +109,7 @@ export function minAvailableTicketUsd(e: PricedEvent): number | null {
 }
 
 /** One component of OUR package, as the pricing rule defines it. */
-export interface OurOfferLine { key: "flight" | "hotel" | "ticket"; label: string; detail: string; usd: number | null }
+export interface OurOfferLine { key: "flight" | "hotel" | "ticket" | "markup"; label: string; detail: string; usd: number | null }
 
 /**
  * What our own package IS, component by component (Dor, 2026-09-14: "תשלוף את הדברים שלנו לפי
@@ -111,13 +121,22 @@ export interface OurOfferLine { key: "flight" | "hotel" | "ticket"; label: strin
  * produced it. So this describes the rule honestly rather than inventing a name we never kept.
  * The ticket is different: we DO store what it is, so it is named exactly.
  *
+ * Flight and hotel are the NET prices (`ourNetFlightUsd` / `ourNetHotelUsd`, the rule's margins
+ * stripped) and a 4th line carries the site markup, so the four lines add up to `ourFromUsd` - the
+ * number the light compares - not to the site card price.
+ *
  * Mirrors `lib/services/price-quote.ts`; this module stays pure and must not import it (it drags
  * Amadeus and the hotel service in), so if that rule changes, change the wording here too.
  */
 export function ourOfferLines(e: PricedEvent): OurOfferLine[] {
   const nights = ourNights(e);
-  const flight = amount(e.base_flight_price);
-  const hotel = amount(e.base_hotel_price);
+  const flight = ourNetFlightUsd(e);
+  const hotel = ourNetHotelUsd(e);
+  // Where each net came from: the last search, a rule base with its margin stripped, or a base
+  // typed by hand at/below the margin (never carried one, so kept whole).
+  const source = (searched: number | null | undefined, base: number | null, margin: number) =>
+    searchedUsd(searched) != null ? " (מהחיפוש האחרון)" : amount(base) > margin ? " (בסיס פחות תוספת)" : " (בסיס ידני)";
+  const markup = totalMarkupUsd(e);
   const ticket = cheapestAvailableTicket(e);
   const ticketName = [ticket?.category, ticket?.description]
     .map((s) => (s ?? "").trim())
@@ -127,7 +146,9 @@ export function ourOfferLines(e: PricedEvent): OurOfferLine[] {
     {
       key: "flight",
       label: "טיסה",
-      detail: flight === 0 ? "אין מחיר טיסה" : "ישירה, הזולה ביותר (קונקשן רק אם הישירה יקרה ב-$300+)",
+      detail: flight === 0
+        ? "אין מחיר טיסה"
+        : `ישירה, הזולה ביותר (קונקשן רק אם הישירה יקרה ב-$300+) · ללא תוספת $${FLIGHT_MARGIN_USD}${source(e.light_detail?.ours?.flight?.usd, e.base_flight_price, FLIGHT_MARGIN_USD)}`,
       usd: flight || null,
     },
     {
@@ -135,7 +156,7 @@ export function ourOfferLines(e: PricedEvent): OurOfferLine[] {
       label: "מלון",
       detail: hotel === 0
         ? "אין מחיר מלון"
-        : `3★ הזול ביותר · ${nights == null ? "מספר לילות לא ידוע" : `${nights} לילות`} · לאדם בחדר זוגי`,
+        : `3★ הזול ביותר · ${nights == null ? "מספר לילות לא ידוע" : `${nights} לילות`} · לאדם בחדר זוגי · ללא תוספת $${HOTEL_MARGIN_USD}${source(e.light_detail?.ours?.hotel?.usd, e.base_hotel_price, HOTEL_MARGIN_USD)}`,
       usd: hotel || null,
     },
     {
@@ -144,7 +165,57 @@ export function ourOfferLines(e: PricedEvent): OurOfferLine[] {
       detail: ticket ? (ticketName || "הקטגוריה הזמינה הזולה") : "אין כרטיס זמין",
       usd: ticket ? Math.round(Number(ticket.price)) : null,
     },
+    { key: "markup", label: "עמלות לקוח", detail: "מארקאפ האתר", usd: markup || null },
   ];
+}
+
+/** A searched net price we can use: positive and finite, else null. */
+function searchedUsd(v: number | null | undefined): number | null {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * OUR flight per person WITHOUT the rule's +$100: the last search (`light_detail.ours.flight.usd`,
+ * already the raw offer) when there is one, else the stored base minus the margin. A base at or below
+ * the margin was typed by hand and never carried one, so it is kept whole. 0 = nothing to go on.
+ */
+export function ourNetFlightUsd(e: PricedEvent): number {
+  const searched = searchedUsd(e.light_detail?.ours?.flight?.usd);
+  if (searched != null) return searched;
+  const base = amount(e.base_flight_price);
+  return base > FLIGHT_MARGIN_USD ? base - FLIGHT_MARGIN_USD : base;
+}
+
+/**
+ * OUR hotel per person WITHOUT the rule's +$120: the last search (`light_detail.ours.hotel.usd`,
+ * already per person) when there is one, else the stored base minus the margin (kept whole at or
+ * below it - a hand-typed base). 0 = nothing to go on.
+ */
+export function ourNetHotelUsd(e: PricedEvent): number {
+  const searched = searchedUsd(e.light_detail?.ours?.hotel?.usd);
+  if (searched != null) return searched;
+  const base = amount(e.base_hotel_price);
+  return base > HOTEL_MARGIN_USD ? base - HOTEL_MARGIN_USD : base;
+}
+
+/**
+ * OUR real "from" package price - what the price light compares against competitors (Dor,
+ * 2026-09-17): net flight + net hotel + cheapest ticket + markup, i.e. without the pricing rule's
+ * +$100/+$120 margins (they exist so a customer who picks a different flight or hotel sees a minus;
+ * a competitor's headline carries no such cushion). null = na on the same terms as `ourPackageUsd`:
+ * no available ticket, or no stored flight/hotel base.
+ *
+ * `ourPackageUsd` stays the SITE card price, and it is what the daily price snapshots and the
+ * "ירידת מחיר" tag use - switching those to this would record a fake ~$220 drop the day it shipped.
+ */
+export function ourFromUsd(e: PricedEvent): number | null {
+  const ticket = minAvailableTicketUsd(e);
+  if (ticket == null) return null;
+  if (amount(e.base_flight_price) === 0 || amount(e.base_hotel_price) === 0) return null;
+  // With both bases > 0, neither net can be 0 (a base at/below the margin is kept whole).
+  return Math.round(ourNetFlightUsd(e) + ourNetHotelUsd(e) + ticket + totalMarkupUsd(e));
 }
 
 /** Composed markups when any is set, else main's global 175; plus the per-event extra. */
@@ -158,7 +229,9 @@ export function totalMarkupUsd(e: PricedEvent): number {
 }
 
 /**
- * The catalog-card price: flight + hotel + cheapest ticket + markup. null = na.
+ * The SITE catalog-card price: flight + hotel + cheapest ticket + markup, where the flight and
+ * hotel bases INCLUDE the pricing rule's +$100/+$120 margins. null = na. The light compares
+ * `ourFromUsd` instead; this one feeds the daily price snapshots and the "ירידת מחיר" tag.
  *
  * `skip_flight` does NOT make this null (Dor, 2026-09-11): an event we happen to sell without
  * flights still has stored base prices, and the competitors we compare against sell the full
@@ -207,10 +280,11 @@ export function ourNights(e: PricedEvent): number | null {
   return Math.round((b - a) / 86_400_000);
 }
 
-/** What one night of OUR stay costs, per person - the price of a nights gap. See NIGHT_RATE_MIN_USD. */
+/** What one night of OUR stay costs, per person - the price of a nights gap. See NIGHT_RATE_MIN_USD.
+ *  Priced off the NET hotel (`ourNetHotelUsd`): the rule's +$120 is not what a night costs. */
 export function ourNightRateUsd(e: PricedEvent): number {
   const nights = ourNights(e);
-  const hotel = amount(e.base_hotel_price);
+  const hotel = ourNetHotelUsd(e);
   if (nights == null || nights <= 0 || hotel === 0) return NIGHT_USD;
   const rate = hotel / nights;
   if (!Number.isFinite(rate) || rate <= 0) return NIGHT_USD;
@@ -264,8 +338,29 @@ export function nightsUncertaintyUsd(
 }
 
 // ---- competitors per kind ---------------------------------------------------
-export function kindOf(e: Pick<PricedEvent, "type">): EventKind {
-  return e.type === "music_event" || e.type === "music_live_event_dynamic" ? "music" : "sports";
+/** The feed tag that makes an event music whatever its `type` column says. */
+export const MUSIC_TAG_SLUG = "music";
+
+/**
+ * Which competitors an event is compared against - sports sites or music sites.
+ *
+ * The `type` column alone is not enough: 136 live MUSIC events are `tx_event` (TixStock sells
+ * concerts as well as fixtures) and were therefore classified "sports", so their package light
+ * was compared against ISSTA + Golasso - two football-only sites - and never against OnTour.
+ * ISSTA's `covers()` then recorded `skipped`, the scope fell to `partial_coverage`, and all 136
+ * sat on "לא נבדק" for good (measured 2026-09-17).
+ *
+ * So the vertical is read the way the rest of the platform reads it - off the feed tags - with
+ * the type kept as the fast path: a music TYPE or the `music` TAG makes it music, anything else
+ * is sports. Deliberately one-directional: a sports type carrying a music tag is music (the tag
+ * is the editorial truth), and no tag can turn a music type into sports.
+ *
+ * `tagSlugs` omitted = type-only, exactly the old behaviour: every caller that cannot load tags
+ * (or whose load failed) degrades to the previous classification rather than to a wrong one.
+ */
+export function kindOf(e: Pick<PricedEvent, "type">, tagSlugs?: readonly string[]): EventKind {
+  if (e.type === "music_event" || e.type === "music_live_event_dynamic") return "music";
+  return tagSlugs?.includes(MUSIC_TAG_SLUG) ? "music" : "sports";
 }
 
 const COMPETITORS_BY_KIND: Record<EventKind, Record<Scope, CompetitorKey[]>> = {
@@ -414,9 +509,14 @@ export function computeScopeLight(input: {
   const per: Partial<Record<CompetitorKey, PerCompetitor>> = {};
   const valid: LatestMatch[] = [];
   let newestReason: UncheckedReason = "never";
+  // Competitors that SELL the event but publish no number ("לקבלת הצעת מחיר" - every LiveEvents
+  // sports row, 2026-09-17: 164 live listings) vs. every other reason a competitor gave no usable
+  // answer. Only the first kind is a fact about the market; the second is a hole in our data.
+  let quoteOnly = 0;
+  let holes = 0;
   for (const c of input.competitors) {
     const match = input.matches.find((x) => x.competitor === c) ?? null;
-    if (!match) { per[c] = { status: "skipped", normalized_usd: null, crawled_at: null }; continue; }
+    if (!match) { holes += 1; per[c] = { status: "skipped", normalized_usd: null, crawled_at: null }; continue; }
     // Each competitor gets its OWN verdict, by the same rule and its own doubt - so a reader can
     // see whether we are dear against everyone or only against one aggressive site. The scope's
     // light below still answers to the cheapest of them: that is the decision.
@@ -433,13 +533,22 @@ export function computeScopeLight(input: {
     };
     const fresh = !!match.crawled_at && daysBetween(match.crawled_at, input.now) <= staleDays;
     if ((match.status === "found" || match.status === "not_selling") && fresh) valid.push(match);
-    else newestReason = !fresh && match.crawled_at ? "stale" : match.status === "unsure" ? "unsure" : (match.reason ?? "crawl_failed");
+    else if (fresh && match.quote_only) quoteOnly += 1;
+    else {
+      holes += 1;
+      newestReason = !fresh && match.crawled_at ? "stale" : match.status === "unsure" ? "unsure" : (match.reason ?? "crawl_failed");
+    }
   }
 
-  if (valid.length === 0) return { ...empty, reason: newestReason, per_competitor: per };
+  // Someone sells it by quote and nobody else left a hole: there is nothing to compare and
+  // nothing more to check - "alone" would be false and "partial coverage" sends staff hunting
+  // for a crawl problem that does not exist (175 of 248 "לא נבדק" package lights, 2026-09-17).
+  const onlyQuotes = quoteOnly > 0 && holes === 0;
+  if (valid.length === 0) return { ...empty, reason: onlyQuotes ? "quote_only" : newestReason, per_competitor: per };
   const found = valid.filter((x) => x.status === "found" && x.normalized_usd != null);
   if (found.length === 0) {
     if (valid.length === input.competitors.length) return { ...empty, light: "alone", per_competitor: per };
+    if (onlyQuotes) return { ...empty, reason: "quote_only", per_competitor: per };
     return { ...empty, reason: "partial_coverage", per_competitor: per };
   }
   // The cheapest normalized competitor is still the one we answer to, uncertainty or not - a
@@ -455,6 +564,36 @@ export function computeScopeLight(input: {
     partial: !!best.partial, uncertainty_usd: uncertainty, nights: best.nights ?? null,
     reason: null, crawled_at: best.crawled_at, match_id: best.match_id, per_competitor: per,
   };
+}
+
+/**
+ * When THIS SCOPE'S light value last changed - what "השתנה השבוע" on /price-light means.
+ *
+ * It used to mean "the newest competitor_matches row is younger than 7 days", which was true for
+ * essentially every event (match rows are rewritten whenever a listing's price, attrs or even its
+ * freshness moves), so the view listed all 436 of them and said nothing. The stamp is therefore
+ * carried on the light itself: renewed only when the light the reader sees actually moved.
+ *
+ * `previous` is taken from the COLUMN first (`light_package`/`light_ticket`) and only then from
+ * `light_detail[scope].light`, because the column is the EFFECTIVE light - the one an override
+ * forced - while the detail keeps the computed one underneath it. Reading the detail first would
+ * see "computed orange vs shown red" on every overridden event and re-stamp it nightly.
+ *
+ * No previous stamp and an unchanged light = the stamp stays absent: rows written before this
+ * existed do not know when their light last moved, and "we do not know" is not "changed".
+ */
+export function stampLightChange(
+  detail: LightScopeDetail,
+  effective: Light | null,
+  previousColumn: Light | null,
+  previousDetail: LightScopeDetail | undefined,
+  now: string,
+): LightScopeDetail {
+  const previous = previousColumn ?? previousDetail?.light ?? null;
+  const changedAt = previous !== null && previous === effective
+    ? previousDetail?.light_changed_at ?? null
+    : now;
+  return changedAt == null ? detail : { ...detail, light_changed_at: changedAt };
 }
 
 // ---- price-drop tag --------------------------------------------------------------

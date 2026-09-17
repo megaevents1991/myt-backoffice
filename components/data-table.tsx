@@ -242,7 +242,10 @@ export function DataTable<TData, TValue>({
                 onClick={() => onViewChange?.(view.id)}
                 aria-pressed={isActive}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                  // `inline-flex` + `gap-1.5`, not a margin on the count: the dashboard is RTL,
+                  // so a physical `ml-` put the space on the far side of the count and the chip
+                  // read "אדום245". A flex gap is direction-agnostic.
+                  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   isActive
                     ? "bg-background text-foreground shadow-sm"
@@ -251,7 +254,9 @@ export function DataTable<TData, TValue>({
               >
                 {view.label}
                 {view.count !== undefined && (
-                  <span className="ml-1.5 text-xs tabular text-muted-foreground">
+                  // `tabular-nums` - "tabular" alone is not a Tailwind class and did nothing,
+                  // so counts jittered as they changed width.
+                  <span className="text-xs tabular-nums text-muted-foreground">
                     {view.count}
                   </span>
                 )}

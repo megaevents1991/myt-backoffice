@@ -195,7 +195,9 @@ function LightBadge({ cell }: { cell: PriceLightScopeCell }) {
       : null,
     nightsLine(cell),
     ...cell.adjustments,
-    cell.partial ? "כיסוי חלקי בנרמול" : null,
+    // Renamed 2026-09-17: this is the NORMALIZATION gap (the competitor's page never said what
+    // its package contains), not the coverage one the "כיסוי חלקי" view is about.
+    cell.partial ? "נרמול חלקי (חסרים פרטי חבילה)" : null,
     cell.crawled_at ? `נסרק ${cell.crawled_at.slice(0, 10)}` : null,
     cell.reason ? HE_REASON[cell.reason] : null,
   ].filter(Boolean).join("\n");
@@ -310,7 +312,7 @@ export function PriceLightClient() {
     const soonCutoff = addDaysStr(new Date(now).toISOString().slice(0, 10), 45);
     const c = {
       alone: 0, green: 0, orange: 0, red: 0, unchecked: 0, pending: 0,
-      orangePlus: 0, soon: 0, partial: 0, changed: 0, aiSample: 0,
+      orangePlus: 0, soon: 0, partial: 0, quote: 0, changed: 0, aiSample: 0,
     };
     // Counted per EVENT, not per conclusion: a row with a red package and a red ticket is one
     // event to deal with, and the tiles are a to-do list, not a tally of verdicts.
@@ -325,7 +327,8 @@ export function PriceLightClient() {
       if (has((x) => x.light === "unchecked")) c.unchecked++;
       if (isPending(row, now, scope)) c.pending++;
       if (row.date <= soonCutoff) c.soon++;
-      if (has((x) => x.partial)) c.partial++;
+      if (has((x) => x.partial_coverage)) c.partial++;
+      if (has((x) => x.quote_only)) c.quote++;
       if (has((x) => x.changed_this_week)) c.changed++;
       if (has((x) => x.method === "ai")) c.aiSample++;
     }
@@ -344,7 +347,11 @@ export function PriceLightClient() {
       case "red": return scoped.filter(some((c) => c.light === "red"));
       case "orange_plus": return scoped.filter(some((c) => c.light === "orange" || c.light === "red"));
       case "soon": return scoped.filter((r) => r.date <= soonCutoff);
-      case "partial": return scoped.filter(some((c) => c.partial));
+      // "כיסוי חלקי" is about COVERAGE - a competitor that never answered for this event - which
+      // is what the view's name promises. It used to filter `c.partial` (incomplete
+      // normalization) and showed 6 rows while ~248 scopes were uncovered.
+      case "partial": return scoped.filter(some((c) => c.partial_coverage));
+      case "quote": return scoped.filter(some((c) => c.quote_only));
       case "changed": return scoped.filter(some((c) => c.changed_this_week));
       case "unchecked": return scoped.filter(some((c) => c.light === "unchecked"));
       case "ai_sample": return scoped.filter(some((c) => c.method === "ai"));
@@ -374,6 +381,7 @@ export function PriceLightClient() {
     { id: "orange_plus", label: "כתום ומעלה", count: known(counts.orangePlus) ?? undefined },
     { id: "soon", label: "בקרוב (45 יום)", count: known(counts.soon) ?? undefined },
     { id: "partial", label: "כיסוי חלקי", count: known(counts.partial) ?? undefined },
+    { id: "quote", label: "הצעת מחיר בלבד", count: known(counts.quote) ?? undefined },
     { id: "changed", label: "השתנה השבוע", count: known(counts.changed) ?? undefined },
     { id: "unchecked", label: "לא נבדק", count: known(counts.unchecked) ?? undefined },
     { id: "ai_sample", label: "מדגם AI", count: known(counts.aiSample) ?? undefined },
@@ -385,7 +393,12 @@ export function PriceLightClient() {
   const columns = useMemo<ColumnDef<PriceLightRow>[]>(
     () => [
       {
-        accessorKey: "name",
+        id: "name",
+        // Both names in one searchable value: the Hebrew `name` is what the row prints, but staff
+        // type "barcelona"/"barca" as often as "ברצלונה" and the English name was not in the
+        // haystack at all. `matchesSearch` tokenizes, so one space-joined string is enough.
+        // (Sorting by this column is unaffected in practice - the Hebrew name is still the prefix.)
+        accessorFn: (row) => [row.name, row.name_english].filter(Boolean).join(" "),
         header: "אירוע",
         cell: ({ row }) => (
           <Link href={`/events/${row.original.event_id}`} className="block font-medium hover:underline">
@@ -410,7 +423,9 @@ export function PriceLightClient() {
       },
       {
         id: "ours",
-        header: "המחיר שלנו",
+        // The light compares our margin-free "from" price (2026-09-17); the site card price, which
+        // carries the rule's +$100/+$120, sits muted beneath so the two are never confused.
+        header: "החל מ- (שלנו)",
         cell: ({ row }) => (
           <div className="space-y-1 text-xs tabular-nums">
             {cellsIn(row.original, scope).map((cell) => {
@@ -418,12 +433,17 @@ export function PriceLightClient() {
               // the recorded one stays visible, struck through, so the drift is legible.
               const moved = cell.our_usd != null && cell.our_usd_now != null && cell.our_usd_now !== cell.our_usd;
               return (
-                <div key={cell.scope} className="flex items-baseline gap-1">
-                  <span className="text-muted-foreground">{SCOPE_HE[cell.scope]}</span>
-                  <span className="font-medium">
-                    {cell.our_usd_now != null ? `$${cell.our_usd_now}` : cell.our_usd != null ? `$${cell.our_usd}` : "—"}
-                  </span>
-                  {moved && <span className="text-muted-foreground line-through">${cell.our_usd}</span>}
+                <div key={cell.scope}>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-muted-foreground">{SCOPE_HE[cell.scope]}</span>
+                    <span className="font-medium">
+                      {cell.our_usd_now != null ? `$${cell.our_usd_now}` : cell.our_usd != null ? `$${cell.our_usd}` : "—"}
+                    </span>
+                    {moved && <span className="text-muted-foreground line-through">${cell.our_usd}</span>}
+                  </div>
+                  {cell.site_usd != null && (
+                    <div className="text-[11px] text-muted-foreground">באתר ${cell.site_usd}</div>
+                  )}
                 </div>
               );
             })}
