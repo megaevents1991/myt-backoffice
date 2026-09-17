@@ -483,10 +483,34 @@ export function lightSettled(light: Light | null | undefined): boolean {
   return light != null && light !== "red" && light !== "unchecked";
 }
 
-function lightFor(diffUsd: number, uncertaintyUsd: number): Light {
+export function lightFor(diffUsd: number, uncertaintyUsd: number): Light {
   if (diffUsd < LIGHT_GREEN_USD - uncertaintyUsd) return "green";
   if (diffUsd > LIGHT_RED_USD + uncertaintyUsd) return "red";
   return "orange";
+}
+
+/**
+ * What a markup edit on /price-light WOULD do, before anything is saved - the "הוזל" popover's
+ * live line ("מחיר ← X · פער ← Y · אור ← Z"). Same price functions and the same `lightFor`
+ * band as the engine, so the preview can never promise a light the recompute will not give.
+ *
+ * package: the per-event extra (`event_additional_markup`) - null reads as 0.
+ * ticket: `ticket_only_markup` - null CLEARS the ticket-only price (ourUsd null, no light).
+ */
+export function previewMarkupChange(
+  e: PricedEvent,
+  scope: Scope,
+  value: number | null,
+  competitorUsd: number | null,
+  uncertaintyUsd = 0,
+): { ourUsd: number | null; diffUsd: number | null; light: Light | null } {
+  const clone: PricedEvent = scope === "package"
+    ? { ...e, event_additional_markup: value ?? 0 }
+    : { ...e, ticket_only_markup: value };
+  const ourUsd = scope === "package" ? ourFromUsd(clone) : ourTicketUsd(clone);
+  if (ourUsd == null || competitorUsd == null) return { ourUsd, diffUsd: null, light: null };
+  const diffUsd = Math.round(ourUsd - competitorUsd);
+  return { ourUsd, diffUsd, light: lightFor(diffUsd, Math.max(0, Math.round(uncertaintyUsd))) };
 }
 
 export function computeScopeLight(input: {
@@ -599,7 +623,7 @@ export function stampLightChange(
 // ---- price-drop tag --------------------------------------------------------------
 export interface PriceDropDecision { usd: number; from: number; until: string }
 
-function addDays(day: string, days: number): string {
+export function addDays(day: string, days: number): string {
   const d = new Date(`${day}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);

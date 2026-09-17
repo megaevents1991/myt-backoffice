@@ -5,6 +5,8 @@ import { requireAdmin, requireStaff } from "@/lib/auth/guards";
 import { invalidatePriceLight, PRICE_LIGHT_TAG, PRICE_LIGHT_TTL_S } from "@/lib/services/price-light-cache";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
+import { PUBLIC_SITE_URL } from "@/lib/site";
+import { revalidateMain } from "@/lib/revalidate-main";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { matchAllForEvent } from "@/lib/services/price-light-match";
 import { musicTaggedEventIds, musicTagSlugs, tagSlugsForEvent } from "@/lib/services/price-light-tags";
@@ -21,12 +23,12 @@ import { openPriceLightTask as insertPriceLightTask } from "@/lib/services/price
 import { lightSnapshot, recordRepriced, snapshotFor } from "@/lib/services/price-light-decisions";
 import { OPEN_TASK_STATUSES } from "@/types/task.types";
 import {
-  cheapestAvailableTicket, competitorsFor, kindOf, ourFromUsd, ourNights, ourOfferLines, ourPackageUsd, ourTicketUsd,
-  totalMarkupUsd,
+  addDays, cheapestAvailableTicket, competitorsFor, kindOf, minAvailableTicketUsd, ourFromUsd, ourNights, ourOfferLines,
+  ourPackageUsd, ourTicketUsd, PRICE_DROP_MIN_USD, PRICE_DROP_SHOW_DAYS, totalMarkupUsd,
 } from "@/lib/services/price-light";
 import { formatOfferLines, parseOfferDetail } from "@/lib/services/offer-detail";
 import {
-  describeOurOffer, OUR_OFFER_EVENT_COLUMNS, storeOurOffer, type OurOfferEvent,
+  describeOurOffer, OUR_OFFER_EVENT_COLUMNS, OUR_OFFER_REFRESH_DAYS, storeOurOffer, type OurOfferEvent,
 } from "@/lib/services/our-offer-detail";
 import {
   ACTIVE_COMPETITORS,
@@ -82,8 +84,12 @@ export type Ok = { ok: true } | { ok: false; error: string };
  */
 export async function recheckEvent(
   eventId: number,
+  // /price-light asks for both: the fresh row (so the client patches ONE row instead of reloading
+  // the list - a reload re-sorted the table and the row the reader was on jumped away) and a
+  // re-description of our own package when it has gone stale. The events-table icon asks for neither.
+  opts: { withRow?: boolean; describeOurs?: boolean } = {},
 ): Promise<
-  | { ok: true; lights: Lights; detail: LightDetail; checked_at: string }
+  | { ok: true; lights: Lights; detail: LightDetail; checked_at: string; row: PriceLightRow | null; described_ours: boolean }
   | { ok: false; error: string }
 > {
   const session = await requireStaff();
@@ -95,6 +101,8 @@ export async function recheckEvent(
     // included - otherwise "בדוק עכשיו" could answer differently from last night's pass on
     // identical inputs. One small audit-log read, and only when the AI is actually on.
     const aiMemory = canSpend && aiEnabled() ? await loadJudgeMemory() : null;
+    // Paid searches (Amadeus + hotels) - an admin decision, like the AI calls below.
+    const describedOurs = canSpend && opts.describeOurs === true ? await describeOursIfStale(eventId) : false;
     // A ceiling on ONE click. Every other AI call site runs under a run-wide budget; a manual
     // recheck has no run to belong to, so without this a click could fan out to one call per
     // competitor per scope, and a staff member working down a list of reds would spend at the
@@ -105,7 +113,11 @@ export async function recheckEvent(
       : { judge: null });
     if (!result) return { ok: false, error: "event not found or deleted" };
     invalidatePriceLight("rows", "cost");
-    return { ok: true, lights: result.lights.after, detail: result.lights.detail, checked_at: new Date().toISOString() };
+    return {
+      ok: true, lights: result.lights.after, detail: result.lights.detail, checked_at: new Date().toISOString(),
+      row: opts.withRow === true ? await buildPriceLightRow(eventId) : null,
+      described_ours: describedOurs,
+    };
   } catch (e) {
     console.error("recheckEvent failed", e);
     return { ok: false, error: e instanceof Error ? e.message : "failed" };
@@ -292,6 +304,125 @@ export async function refreshOurOffer(
 // lightSnapshot / snapshotFor moved to lib/services/price-light-decisions.ts (2026-09-16) so a
 // price_light task-closing rule and the all-staff Pricing tab can stamp the exact same evidence
 // without going through this admin-gated file. Imported above.
+
+/**
+ * Re-describe OUR package when `light_detail.ours` is missing or older than OUR_OFFER_REFRESH_DAYS -
+ * the comparison the reader is about to judge should not rest on a week-old flight. Never throws:
+ * a failed description must not fail the recheck it rides on. Returns whether it described.
+ */
+async function describeOursIfStale(eventId: number): Promise<boolean> {
+  try {
+    const { data, error } = await db.from("events").select(`${OUR_OFFER_EVENT_COLUMNS},light_detail`).eq("id", eventId).maybeSingle();
+    if (error || !data) return false;
+    const at = (data as { light_detail?: LightDetail | null }).light_detail?.ours?.at ?? null;
+    if (at && Date.now() - Date.parse(at) < OUR_OFFER_REFRESH_DAYS * 86_400_000) return false;
+    await storeOurOffer(eventId, await describeOurOffer(data as OurOfferEvent));
+    return true;
+  } catch (e) {
+    console.error("describeOursIfStale failed (recheck continues)", e);
+    return false;
+  }
+}
+
+/** A decision that changed the row: the fresh row comes back so the client patches it in place. */
+type RowResult = { ok: true; row: PriceLightRow | null } | { ok: false; kind: "invalid" | "not_found" | "db" | "failed" };
+
+const LIGHT_MARKUP_MAX_USD = 5_000;
+
+/**
+ * "הוזל" with a number: the ONE price write this feature makes, and it is a markup - never a base
+ * price, never the pricing rule. package -> `event_additional_markup`, ticket -> `ticket_only_markup`
+ * (null clears the ticket-only price). Written as a single explicit column, NOT through `updateEvent`
+ * (which takes a whole client object). `markPriceDrop` additionally stamps the site's "ירידת מחיר"
+ * tag from the SITE card price before/after (`ourPackageUsd` - what the customer sees), in the same
+ * columns and for the same PRICE_DROP_SHOW_DAYS the nightly tag uses; below PRICE_DROP_MIN_USD the
+ * nightly would clear it the same night, so it is not written at all.
+ */
+export async function setEventMarkupFromLight(
+  eventId: number,
+  scope: Scope,
+  value: number | null,
+  opts: { markPriceDrop?: boolean } = {},
+): Promise<RowResult> {
+  await requireAdmin();
+  if (!SCOPES.includes(scope)) return { ok: false, kind: "invalid" };
+  if (value === null ? scope !== "ticket" : !(Number.isFinite(value) && value >= 0 && value <= LIGHT_MARKUP_MAX_USD)) {
+    return { ok: false, kind: "invalid" };
+  }
+  try {
+    const event = await loadEventForLight(eventId);
+    if (!event || event.is_deleted) return { ok: false, kind: "not_found" };
+    const column = scope === "package" ? "event_additional_markup" : "ticket_only_markup";
+    const before = scope === "package" ? event.event_additional_markup ?? null : event.ticket_only_markup ?? null;
+    const after = value === null ? null : Math.round(value);
+    const snapshot = lightSnapshot(event, scope); // BEFORE the write - the comparison the human judged
+
+    const update: Record<string, number | string | null> = { [column]: after };
+    let priceDrop: { usd: number; from: number; until: string } | null = null;
+    if (opts.markPriceDrop === true && scope === "package") {
+      const siteBefore = ourPackageUsd(event);
+      const siteAfter = ourPackageUsd({ ...event, event_additional_markup: after ?? 0 });
+      if (siteBefore != null && siteAfter != null && siteBefore - siteAfter >= PRICE_DROP_MIN_USD) {
+        priceDrop = { usd: siteBefore - siteAfter, from: siteBefore, until: addDays(new Date().toISOString().slice(0, 10), PRICE_DROP_SHOW_DAYS) };
+        update.price_drop_usd = priceDrop.usd;
+        update.price_drop_from = priceDrop.from;
+        update.price_drop_until = priceDrop.until;
+      }
+    }
+    const { error } = await db.from("events").update(update).eq("id", eventId);
+    if (error) { console.error("setEventMarkupFromLight: update failed", JSON.stringify(error)); return { ok: false, kind: "db" }; }
+
+    await recomputeEventLights(eventId, "manual");
+    invalidatePriceLight("rows");
+    await revalidateMain();
+    await logAudit({
+      action: "price_light.repriced", entityType: "event", entityId: eventId,
+      metadata: { ...(snapshot ?? { scope }), column, before, after, ...(priceDrop ? { price_drop: priceDrop } : {}) },
+    });
+    return { ok: true, row: await buildPriceLightRow(eventId) };
+  } catch (e) {
+    console.error("setEventMarkupFromLight failed", e);
+    return { ok: false, kind: "failed" };
+  }
+}
+
+/**
+ * "סולד אאוט": takes the event off sale on the site without deleting it - main reads
+ * `tags === "Sold"` (its `isEventSoldOut`): sold-out card, not bookable, out of search, "out of
+ * stock" in the feed. The tag it replaces is kept in the audit row, and turning it off restores it.
+ */
+export async function setEventSoldOut(eventId: number, on: boolean): Promise<RowResult> {
+  await requireAdmin();
+  try {
+    const event = await loadEventForLight(eventId);
+    if (!event || event.is_deleted) return { ok: false, kind: "not_found" };
+    const current = event.tags ?? null;
+    let next: string | null = "Sold";
+    if (!on) {
+      if (current !== "Sold") return { ok: true, row: await buildPriceLightRow(eventId) };
+      const { data, error } = await db.from("audit_log").select("metadata").eq("action", "price_light.sold_out")
+        .eq("entity_type", "event").eq("entity_id", String(eventId)).order("created_at", { ascending: false }).limit(1);
+      if (error) console.error("setEventSoldOut: previous tag read failed", JSON.stringify(error));
+      const previous = ((data ?? []) as { metadata: { previous_tags?: string | null } | null }[])[0]?.metadata?.previous_tags ?? null;
+      next = previous === "Sold" ? null : previous;
+    } else if (current === "Sold") {
+      return { ok: true, row: await buildPriceLightRow(eventId) };
+    }
+    const snapshot = await snapshotFor(eventId);
+    const { error } = await db.from("events").update({ tags: next }).eq("id", eventId);
+    if (error) { console.error("setEventSoldOut: update failed", JSON.stringify(error)); return { ok: false, kind: "db" }; }
+    invalidatePriceLight("rows");
+    await revalidateMain();
+    await logAudit({
+      action: on ? "price_light.sold_out" : "price_light.sold_out_cleared", entityType: "event", entityId: eventId,
+      metadata: { ...(snapshot ?? {}), previous_tags: current },
+    });
+    return { ok: true, row: await buildPriceLightRow(eventId) };
+  } catch (e) {
+    console.error("setEventSoldOut failed", e);
+    return { ok: false, kind: "failed" };
+  }
+}
 
 /**
  * "הוזל": records that a human looked at a red light, judged the gap REAL, and went to fix our
@@ -718,7 +849,18 @@ const cachedPriceLightRows = unstable_cache(buildPriceLightRows, ["price-light-r
 });
 
 async function buildPriceLightRows(onlyRed: boolean): Promise<PriceLightRow[]> {
-  const events = await loadListedEvents(onlyRed);
+  return rowsForEvents(await loadListedEvents(onlyRed));
+}
+
+/** ONE event's fresh row, uncached - what a decision hands back so the client patches in place.
+ *  null when the event is gone/deleted or has nothing to say on either scope. */
+async function buildPriceLightRow(eventId: number): Promise<PriceLightRow | null> {
+  const event = await loadEventForLight(eventId);
+  if (!event || event.is_deleted || event.is_test) return null;
+  return (await rowsForEvents([event]))[0] ?? null;
+}
+
+async function rowsForEvents(events: ListedEvent[]): Promise<PriceLightRow[]> {
   if (events.length === 0) return [];
 
   const eventIds = events.map((e) => e.id);
@@ -761,9 +903,36 @@ async function buildPriceLightRows(onlyRed: boolean): Promise<PriceLightRow[]> {
       checked_at: event.light_checked_at,
       silenced_until: event.light_silenced_until,
       override: event.light_detail?.override ?? null,
+      sold_out: event.tags === "Sold",
+      site_url: `${PUBLIC_SITE_URL}/order/${event.id}`,
+      pricing: rowPricing(event),
     });
   }
   return rows;
+}
+
+/** The priced columns the "הוזל" preview needs - see `PriceLightRowPricing`. */
+function rowPricing(event: ListedEvent): PriceLightRow["pricing"] {
+  const ticket = minAvailableTicketUsd(event);
+  const ours = event.light_detail?.ours ?? null;
+  return {
+    type: event.type,
+    name: event.name,
+    date: event.date,
+    def_date_depart: event.def_date_depart ?? null,
+    def_date_return: event.def_date_return ?? null,
+    base_flight_price: event.base_flight_price,
+    base_hotel_price: event.base_hotel_price,
+    tickets_and_rates: ticket == null ? [] : [{ price: ticket, available: true }],
+    ticket_only_markup: event.ticket_only_markup ?? null,
+    markup_ticket: event.markup_ticket ?? null,
+    markup_flight: event.markup_flight ?? null,
+    markup_hotel: event.markup_hotel ?? null,
+    event_additional_markup: event.event_additional_markup ?? null,
+    light_detail: ours
+      ? { ours: { flight: ours.flight ? { usd: ours.flight.usd ?? null } : null, hotel: ours.hotel ? { usd: ours.hotel.usd ?? null } : null } }
+      : null,
+  };
 }
 
 /** One competitor's panel row - four small reads, issued together. */

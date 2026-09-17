@@ -374,6 +374,35 @@ export interface PriceLightRow {
   checked_at: string | null;
   silenced_until: string | null;
   override: LightOverride | null;
+  /** `events.tags === "Sold"` - main shows it sold out and takes it off sale. */
+  sold_out: boolean;
+  /** The event's page on the customer site. */
+  site_url: string;
+  /** What the "הוזל" popover edits and previews with (pure `previewMarkupChange`): the priced
+   *  columns of the event, nothing else. */
+  pricing: PriceLightRowPricing;
+}
+
+/**
+ * A `PricedEvent` (lib/services/price-light.ts) cut down to what the price functions read, so the
+ * client can hand it straight to `previewMarkupChange`. `tickets_and_rates` carries ONLY the
+ * cheapest available ticket - the one number the price functions use - to keep the list payload small.
+ */
+export interface PriceLightRowPricing {
+  type: string;
+  name: string;
+  date: string;
+  def_date_depart: string | null;
+  def_date_return: string | null;
+  base_flight_price: number | null;
+  base_hotel_price: number | null;
+  tickets_and_rates: { price: number; available: boolean }[];
+  ticket_only_markup: number | null;
+  markup_ticket: number | null;
+  markup_flight: number | null;
+  markup_hotel: number | null;
+  event_additional_markup: number | null;
+  light_detail: { ours: { flight: { usd: number | null } | null; hotel: { usd: number | null } | null } | null } | null;
 }
 
 /** The scopes this row has something to say about, package first. */

@@ -9,7 +9,7 @@ import {
   ourPackageUsd, ourTicketUsd, ourNights, ourNightRateUsd, listingNights, nightsUncertaintyUsd,
   cheapestAvailableTicket, ourOfferLines, ourFromUsd, ourNetFlightUsd, ourNetHotelUsd,
   kindOf, competitorsFor, normalize,
-  computeScopeLight, decidePriceDrop, pickRuleMatch, candidateCoversDate, signedUsd, stampLightChange,
+  computeScopeLight, previewMarkupChange, LIGHT_RED_USD, decidePriceDrop, pickRuleMatch, candidateCoversDate, signedUsd, stampLightChange,
   nameTokens, ruleMatchScore, ruleSaysAbsent, isMultiMatchTitle, RULE_MATCH_MIN_SCORE, RULE_ABSENT_BELOW,
   type PricedEvent, type LatestMatch,
 } from "../lib/services/price-light.ts";
@@ -227,6 +227,18 @@ assert.ok(ourOfferLines({ ...base, tickets_and_rates: [] })[2].detail.includes("
 assert.equal(FLIGHT_MARGIN_USD, 100);
 assert.equal(HOTEL_MARGIN_USD, 120);
 assert.equal(ourFromUsd(base), 400 + 280 + 300 + 175);
+
+// "הוזל" popover preview: same price functions, same band as the engine
+const from0 = ourFromUsd(base) as number; // base carries no event_additional_markup
+assert.equal(previewMarkupChange(base, "package", 100, null).ourUsd, from0 + 100);
+assert.equal(previewMarkupChange(base, "package", null, null).ourUsd, from0);
+assert.deepEqual(previewMarkupChange(base, "ticket", null, 200), { ourUsd: null, diffUsd: null, light: null });
+assert.equal(previewMarkupChange(base, "ticket", 40, 200).ourUsd, 340);
+const justRed = previewMarkupChange(base, "package", 100, from0 + 100 - (LIGHT_RED_USD + 1));
+assert.equal(justRed.diffUsd, LIGHT_RED_USD + 1);
+assert.equal(justRed.light, "red");
+assert.equal(previewMarkupChange(base, "package", 90, from0 + 100 - (LIGHT_RED_USD + 1)).light, "orange");
+assert.equal(previewMarkupChange(base, "package", 100, from0 + 100 - (LIGHT_RED_USD + 1), 5).light, "orange"); // doubt widens the band
 assert.equal(ourPackageUsd(base), 500 + 400 + 300 + 175);                        // site price unchanged
 const searched: PricedEvent = { ...base, light_detail: { ours: { flight: { usd: 380 }, hotel: { usd: 260 } } } };
 assert.equal(ourFromUsd(searched), 380 + 260 + 300 + 175);                        // the last search wins

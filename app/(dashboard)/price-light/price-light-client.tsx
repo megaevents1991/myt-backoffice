@@ -22,6 +22,8 @@ import { signedUsd } from "@/lib/services/price-light";
 import { COMPETITOR_LABEL, HE_REASON, heLabel, PILL } from "@/app/(dashboard)/events/price-light-ui";
 import {
   rowScopes,
+  type CompetitorAnswer,
+  type CompetitorKey,
   type Light,
   type PriceLightRow,
   type PriceLightScopeCell,
@@ -124,58 +126,100 @@ function noPriceText(answer: PriceLightScopeCell["competitors"][number]): string
   }
 }
 
+/** Column order for the competitor columns - the registry order staff already know from the panel. */
+const COMPETITOR_ORDER: CompetitorKey[] = ["liveevents", "issta", "golasso", "ontour", "livetickets"];
+
+/** One competitor's answer for one scope of a row, or null when that competitor is not in play there. */
+function answerFor(cell: PriceLightScopeCell, competitor: CompetitorKey): CompetitorAnswer | null {
+  return cell.competitors.find((a) => a.competitor === competitor) ?? null;
+}
+
+/** "Sells it" for the header filter: a priced listing or a quote-only one. */
+function sellsIt(a: CompetitorAnswer | null): boolean {
+  return a != null && (a.normalized_usd != null || a.quote_only);
+}
+
 /**
- * The per-event summary against EVERY competitor (Dor, 2026-09-14): one line per competitor, its
- * own normalized price, its own gap and its own light colour - so "are we dear against everyone,
- * or only against Golasso" is one glance rather than an inference. The competitor that set the
- * scope's light is marked; the others are the context that makes it readable.
+ * One competitor, one row (notes 1 + 3): a fixed column per competitor instead of a list inside one
+ * cell, so the eye runs DOWN a competitor and "where is Golasso cheaper than us" is a scan, not a read.
+ * One line per scope in the lens; the dot marks the competitor that set that scope's light.
  */
-function CompetitorMatrix({ cell }: { cell: PriceLightScopeCell }) {
+function CompetitorCell({ row, scope, competitor }: { row: PriceLightRow; scope: ScopeFilter; competitor: CompetitorKey }) {
+  const lines = cellsIn(row, scope)
+    .map((cell) => ({ cell, answer: answerFor(cell, competitor) }))
+    .filter((x): x is { cell: PriceLightScopeCell; answer: CompetitorAnswer } => x.answer != null);
+  if (lines.length === 0) return <span className="text-xs text-muted-foreground/60">—</span>;
   return (
-    <table className="w-full text-xs">
-      <tbody>
-        {cell.competitors.map((a) => (
-          <tr key={a.competitor} className="align-baseline">
-            <td className="py-0.5 pe-2 whitespace-nowrap">
-              {a.decided && <span className="me-1 text-muted-foreground" title="קבע את האור">●</span>}
-              <span className={a.decided ? "font-medium" : "text-muted-foreground"}>
-                {COMPETITOR_LABEL[a.competitor] ?? a.competitor}
-              </span>
-            </td>
-            <td className="py-0.5 pe-2 tabular-nums whitespace-nowrap">
-              {a.normalized_usd != null
-                ? `$${a.normalized_usd}`
-                : <span className="text-muted-foreground">{noPriceText(a)}</span>}
-            </td>
-            <td className="py-0.5 tabular-nums whitespace-nowrap">
-              {a.light && a.diff_usd != null && (
-                <span className={cn("inline-flex rounded-full px-1.5 py-0.5 font-medium", PILL[a.light])}>
-                  {signedUsd(a.diff_usd)}
+    <div className="space-y-1 text-xs tabular-nums">
+      {lines.map(({ cell, answer }) => (
+        <div key={cell.scope} className="flex items-center gap-1 whitespace-nowrap">
+          {lines.length > 1 && <span className="text-muted-foreground">{SCOPE_HE[cell.scope]}</span>}
+          {answer.decided && <span className="text-muted-foreground" title="קבע את האור">●</span>}
+          {answer.normalized_usd != null ? (
+            <>
+              <span className="font-medium">${answer.normalized_usd}</span>
+              {answer.light && answer.diff_usd != null && (
+                <span className={cn("inline-flex rounded-full px-1.5 py-0.5 font-medium", PILL[answer.light])}>
+                  {signedUsd(answer.diff_usd)}
                 </span>
               )}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+            </>
+          ) : (
+            <span className={answer.status === "not_selling" ? "text-muted-foreground/60" : "text-muted-foreground"}>
+              {answer.status === "skipped" ? "לא מכוסה" : noPriceText(answer)}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
-/** Our own side of a package comparison, as the pricing rule defines it. */
+/**
+ * Competitor column header (note 3). First click filters to the events this competitor sells,
+ * second sorts by the gap against it (dearest first), third clears both. The filter is the
+ * caller's state (it also lives in the URL); the sort is the table's own.
+ */
+function CompetitorHeader({
+  competitor, active, sorted, onFilter, onSort, onClear,
+}: {
+  competitor: CompetitorKey; active: boolean; sorted: boolean;
+  onFilter: () => void; onSort: () => void; onClear: () => void;
+}) {
+  const next = !active ? onFilter : !sorted ? onSort : onClear;
+  const hint = !active ? "סנן לאירועים שהמתחרה מוכר" : !sorted ? "מיין לפי הפער מולו" : "נקה סינון ומיון";
+  return (
+    <button
+      type="button"
+      onClick={next}
+      title={hint}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 normal-case tracking-normal transition-colors hover:bg-accent",
+        active && "bg-primary text-primary-foreground hover:bg-primary/90",
+      )}
+    >
+      {COMPETITOR_LABEL[competitor] ?? competitor}
+      {active && <span aria-hidden>{sorted ? "↓" : "•"}</span>}
+    </button>
+  );
+}
+
+/**
+ * Our own side of a package comparison, as the pricing rule defines it - four numbers that sum to
+ * the price above them (flight / hotel / ticket / customer fees). Compact on purpose: the full
+ * wording of each line is in its tooltip and in the comparison sheet.
+ */
 function OurBreakdown({ cell }: { cell: PriceLightScopeCell }) {
   if (cell.ours.length === 0) return null;
   return (
-    <table className="w-full text-xs">
-      <tbody>
-        {cell.ours.map((line) => (
-          <tr key={line.label} className="align-baseline">
-            <td className="py-0.5 pe-2 whitespace-nowrap text-muted-foreground">{line.label}</td>
-            <td className="py-0.5 pe-2">{line.detail}</td>
-            <td className="py-0.5 tabular-nums whitespace-nowrap">{line.usd != null ? `$${line.usd}` : "—"}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="flex max-w-56 flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+      {cell.ours.map((line) => (
+        <span key={line.label} title={line.detail} className="whitespace-nowrap">
+          {line.label} <span className="tabular-nums text-foreground/80">{line.usd != null ? `$${line.usd}` : "—"}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -230,6 +274,20 @@ export function PriceLightClient() {
   const [view, setView] = useState("pending");
   const [scope, setScope] = useState<ScopeFilter>("all");
   const [compare, setCompare] = useState<PriceLightRow | null>(null);
+  // The competitor picked from a column header (note 3) - kept in the URL (`?comp=`) next to
+  // `?scope=`, so a filtered table can be linked to and survives a refresh.
+  const [comp, setComp] = useState<CompetitorKey | null>(null);
+  const pickCompetitor = useCallback((next: CompetitorKey | null) => {
+    setComp(next);
+    const url = new URL(window.location.href);
+    if (next) url.searchParams.set("comp", next); else url.searchParams.delete("comp");
+    window.history.replaceState(null, "", url);
+  }, []);
+  /** A decision hands back the ONE fresh row (note 14): patch it in place - a full reload re-sorted
+   *  the table and the row the reader was on jumped away. null = the row no longer belongs here. */
+  const patchRow = useCallback((eventId: number, fresh: PriceLightRow | null) => {
+    setRows((prev) => (fresh ? prev.map((r) => (r.event_id === eventId ? fresh : r)) : prev.filter((r) => r.event_id !== eventId)));
+  }, []);
   // Two answers can be in flight for the rows (red-first, then everything); a stale one must
   // never land on top of a newer load, e.g. a decision's refresh racing the opening full list.
   const rowsSeq = useRef(0);
@@ -300,6 +358,8 @@ export function PriceLightClient() {
     if (f) setView(f === "package" || f === "ticket" ? "all" : f);
     const s = searchParams.get("scope") ?? (f === "package" || f === "ticket" ? f : null);
     if (s === "package" || s === "ticket") setScope(s);
+    const c = searchParams.get("comp");
+    if (c && (COMPETITOR_ORDER as string[]).includes(c)) setComp(c as CompetitorKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -335,7 +395,7 @@ export function PriceLightClient() {
     return c;
   }, [scoped, scope]);
 
-  const filtered = useMemo(() => {
+  const inView = useMemo(() => {
     const now = Date.now();
     const soonCutoff = addDaysStr(new Date(now).toISOString().slice(0, 10), 45);
     // Every view asks "does EITHER conclusion in scope qualify" - the row is the event, and an
@@ -362,6 +422,19 @@ export function PriceLightClient() {
       default: return scoped;
     }
   }, [scoped, scope, view]);
+
+  // The header filter narrows whatever view is open to the events this competitor sells.
+  const filtered = useMemo(
+    () => (comp ? inView.filter((r) => cellsIn(r, scope).some((c) => sellsIt(answerFor(c, comp)))) : inView),
+    [inView, scope, comp],
+  );
+
+  // Only the competitors that are in play for the rows on screen get a column - a music view has
+  // no ISSTA to show, and five mostly-empty columns push the decision buttons off the screen.
+  const shownCompetitors = useMemo(
+    () => COMPETITOR_ORDER.filter((k) => k === comp || filtered.some((r) => cellsIn(r, scope).some((c) => answerFor(c, k) != null))),
+    [filtered, scope, comp],
+  );
 
   // While only the red rows are in, every count that is not about red is unknown - `null`
   // renders "…". Red and pending are exact from the first paint (every red event is there).
@@ -444,6 +517,7 @@ export function PriceLightClient() {
                   {cell.site_usd != null && (
                     <div className="text-[11px] text-muted-foreground">באתר ${cell.site_usd}</div>
                   )}
+                  <OurBreakdown cell={cell} />
                 </div>
               );
             })}
@@ -451,8 +525,8 @@ export function PriceLightClient() {
         ),
       },
       {
-        id: "competitors",
-        header: "מתחרים",
+        id: "detail",
+        header: "פירוט",
         cell: ({ row }) => {
           const cells = cellsIn(row.original, scope).filter((c) => c.competitors.length > 0);
           if (cells.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
@@ -471,16 +545,12 @@ export function PriceLightClient() {
                 const nights = nightsLine(cell);
                 return (
                   <div key={cell.scope} className="space-y-1">
-                    <div className="flex items-center gap-1 font-medium">
-                      <span className="text-muted-foreground">{SCOPE_HE[cell.scope]}</span>
-                      {cell.listing_url && (
-                        <a href={cell.listing_url} target="_blank" rel="noreferrer" title="לצפייה במודעה">
-                          <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                        </a>
-                      )}
-                    </div>
-                    <OurBreakdown cell={cell} />
-                    <CompetitorMatrix cell={cell} />
+                    {cell.listing_url && (
+                      <a href={cell.listing_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:underline">
+                        <ExternalLink className="h-3 w-3" aria-hidden />
+                        המודעה · {SCOPE_HE[cell.scope]}
+                      </a>
+                    )}
                     {nights && <div className="text-muted-foreground">{nights}</div>}
                     {cell.adjustments.length > 0 && (
                       <div className="flex flex-wrap gap-1">
@@ -498,6 +568,23 @@ export function PriceLightClient() {
           );
         },
       },
+      ...shownCompetitors.map((competitor): ColumnDef<PriceLightRow> => ({
+        id: `comp_${competitor}`,
+        // Sorts by the WORST gap against this competitor; rows it does not price sink to the bottom.
+        accessorFn: (row) => Math.max(...cellsIn(row, scope).map((c) => answerFor(c, competitor)?.diff_usd ?? -Infinity), -Infinity),
+        sortUndefined: "last",
+        header: ({ column }) => (
+          <CompetitorHeader
+            competitor={competitor}
+            active={comp === competitor}
+            sorted={column.getIsSorted() !== false}
+            onFilter={() => pickCompetitor(competitor)}
+            onSort={() => column.toggleSorting(true)}
+            onClear={() => { column.clearSorting(); pickCompetitor(null); }}
+          />
+        ),
+        cell: ({ row }) => <CompetitorCell row={row.original} scope={scope} competitor={competitor} />,
+      })),
       {
         id: "diff",
         header: "פער",
@@ -536,16 +623,21 @@ export function PriceLightClient() {
             .filter((x): x is string => !!x)
             .sort()
             .at(-1) ?? null;
-          return <span className="text-xs text-muted-foreground">{relativeTime(newest)}</span>;
+          return (
+            <div className="whitespace-nowrap text-xs text-muted-foreground">
+              <div>נסרק {relativeTime(newest)}</div>
+              <div>נבדק {relativeTime(row.original.checked_at)}</div>
+            </div>
+          );
         },
       },
       {
         id: "decision",
         header: "",
-        cell: ({ row }) => <DecisionActions row={row.original} onDone={reload} />,
+        cell: ({ row }) => <DecisionActions row={row.original} onDone={reload} onRowPatched={patchRow} />,
       },
     ],
-    [reload, scope],
+    [reload, patchRow, scope, shownCompetitors, comp, pickCompetitor],
   );
 
   const emptyState = useMemo(() => {

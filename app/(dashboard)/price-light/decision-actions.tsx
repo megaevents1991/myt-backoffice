@@ -5,7 +5,7 @@
 // overflow menu; every other row only needs the menu (בדוק עכשיו + דריסה).
 import { useState } from "react";
 import Link from "next/link";
-import { Loader2, MoreHorizontal } from "lucide-react";
+import { ExternalLink, Loader2, MoreHorizontal } from "lucide-react";
 
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -41,19 +41,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { ourPackageUsd, previewMarkupChange, PRICE_DROP_MIN_USD, signedUsd } from "@/lib/services/price-light";
+import { heLabel, PILL } from "@/app/(dashboard)/events/price-light-ui";
 import {
   clearLightOverride,
   markRepriced,
   openPriceLightTask,
   recheckEvent,
   removeEventFromSite,
+  setEventMarkupFromLight,
+  setEventSoldOut,
   setLightOverride,
   silenceRedLight,
 } from "@/lib/actions/price-light-actions";
 // "use server" files may only export async functions, so this plain constant
 // lives in a sibling module instead of price-light-actions.ts.
 import { SILENCE_DAYS } from "@/lib/actions/price-light-constants";
-import { rowScopes, type Light, type PriceLightRow, type Scope } from "@/types/price-light.types";
+import { rowScopes, type Light, type PriceLightRow, type PriceLightScopeCell, type Scope } from "@/types/price-light.types";
 
 // "na" is not a settable override - a scope is only ever overridden to one of
 // these five states (matches the /price-light table's LIGHTS minus "na").
@@ -69,10 +77,132 @@ const OVERRIDE_LABEL: Record<Light, string> = {
 
 const SCOPE_HE: Record<Scope, string> = { package: "חבילה", ticket: "כרטיס" };
 
-export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: () => void }) {
+const REPRICE_FAIL: Record<string, string> = {
+  invalid: "ערך לא תקין (0 עד 5000)",
+  not_found: "האירוע לא נמצא",
+  db: "השמירה נכשלה",
+  failed: "שגיאה",
+};
+
+/**
+ * "הוזל" (note 10): edit ONLY the markup of the red scope, see what it would do before saving.
+ * package -> the per-event extra markup, ticket -> the ticket-only markup. The preview runs the
+ * same pure price functions and light band as the engine, against the competitor that set the light.
+ */
+function RepricePopover({
+  row, cell, label, onSaved,
+}: {
+  row: PriceLightRow; cell: PriceLightScopeCell; label: string; onSaved: (fresh: PriceLightRow | null) => void;
+}) {
+  const { toast } = useToast();
+  const current = cell.scope === "package" ? row.pricing.event_additional_markup ?? 0 : row.pricing.ticket_only_markup ?? 0;
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(String(current));
+  const [markDrop, setMarkDrop] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const value = text.trim() === "" ? null : Number(text);
+  const valid = value != null && Number.isFinite(value) && value >= 0 && value <= 5000;
+  const preview = valid ? previewMarkupChange(row.pricing, cell.scope, value, cell.normalized_usd, cell.uncertainty_usd) : null;
+  // The site card price moves by the same delta - that is what a "ירידת מחיר" tag is measured on.
+  const siteBefore = cell.scope === "package" ? ourPackageUsd(row.pricing) : null;
+  const siteAfter = cell.scope === "package" && valid ? ourPackageUsd({ ...row.pricing, event_additional_markup: value }) : null;
+  const siteDrop = siteBefore != null && siteAfter != null ? siteBefore - siteAfter : 0;
+  const canMarkDrop = siteDrop >= PRICE_DROP_MIN_USD;
+
+  const save = async () => {
+    if (!valid || value == null) return;
+    setSaving(true);
+    try {
+      const res = await setEventMarkupFromLight(row.event_id, cell.scope, value, { markPriceDrop: markDrop && canMarkDrop });
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "העדכון נכשל", description: REPRICE_FAIL[res.kind] ?? res.kind });
+        return;
+      }
+      toast({ title: "המארקאפ עודכן", description: markDrop && canMarkDrop ? "סומן גם כירידת מחיר באתר" : undefined });
+      setOpen(false);
+      onSaved(res.row);
+    } catch (e) {
+      console.error("setEventMarkupFromLight failed", e);
+      toast({ variant: "destructive", title: "העדכון נכשל", description: e instanceof Error ? e.message : "שגיאה" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) { setText(String(current)); setMarkDrop(false); } }}>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="outline">{label}</Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 space-y-3 text-sm" dir="rtl">
+        <div className="space-y-1">
+          <div className="font-medium">{cell.scope === "package" ? "מארקאפ נוסף לחבילה ($)" : "מארקאפ כרטיס בלבד ($)"}</div>
+          <div className="text-xs text-muted-foreground">
+            עורך רק את המארקאפ. מחירי הבסיס והכלל לא משתנים. כעת: ${current}
+          </div>
+        </div>
+        <Input
+          type="number" inputMode="numeric" min={0} max={5000} step={5} value={text} dir="ltr"
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void save(); }}
+          className="h-9 tabular-nums"
+          aria-label="מארקאפ בדולרים"
+        />
+        <div className="rounded-md border bg-muted/40 p-2 text-xs tabular-nums">
+          {preview && preview.ourUsd != null ? (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>מחיר ← <span className="font-medium">${preview.ourUsd}</span></span>
+              {preview.diffUsd != null && <span>פער ← <span className="font-medium">{signedUsd(preview.diffUsd)}</span></span>}
+              {preview.light && (
+                <span className={cn("inline-flex rounded-full px-1.5 py-0.5 font-medium", PILL[preview.light])}>
+                  {heLabel(preview.light, preview.diffUsd)}
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-muted-foreground">{valid ? "אין מחיר להשוואה" : "הזן מספר בין 0 ל-5000"}</span>
+          )}
+          {siteAfter != null && <div className="mt-1 text-muted-foreground">באתר ← ${siteAfter}</div>}
+        </div>
+        {cell.scope === "package" && (
+          <label className={cn("flex items-start gap-2 text-xs", !canMarkDrop && "text-muted-foreground")}>
+            <Checkbox checked={markDrop && canMarkDrop} disabled={!canMarkDrop} onCheckedChange={(v) => setMarkDrop(v === true)} className="mt-0.5" />
+            <span>
+              סמן &quot;המחיר ירד&quot; באתר ל-14 יום
+              {!canMarkDrop && <span className="block">זמין מירידה של ${PRICE_DROP_MIN_USD} ומעלה במחיר באתר</span>}
+            </span>
+          </label>
+        )}
+        <div className="flex items-center justify-between gap-2">
+          <Link href={`/events/${row.event_id}#fix-price`} className="text-xs text-muted-foreground underline"
+            // Going to the event to fix the price by hand is still "a human judged this gap real" -
+            // recorded, and never allowed to block the navigation.
+            onClick={() => { void markRepriced(row.event_id, cell.scope).catch((e) => console.error("markRepriced failed", e)); }}
+          >
+            לעריכה מלאה באירוע
+          </Link>
+          <Button size="sm" disabled={!valid || saving || value === current} onClick={save}>
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "שמור"}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function DecisionActions({
+  row, onDone, onRowPatched,
+}: {
+  row: PriceLightRow;
+  onDone: () => void;
+  /** A decision that returns the fresh row patches it in place instead of reloading the list. */
+  onRowPatched: (eventId: number, fresh: PriceLightRow | null) => void;
+}) {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [soldOpen, setSoldOpen] = useState(false);
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideNote, setOverrideNote] = useState("");
 
@@ -148,9 +278,46 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
     }
   };
 
+  // Row-only refresh (note 14): the fresh row comes back and is patched in place. A stale
+  // description of OUR package is redone first, which takes a few seconds - say so.
   const recheck = async () => {
-    const ok = await run("בדיקה", () => recheckEvent(row.event_id));
-    if (ok) onDone();
+    setBusy(true);
+    const waiting = toast({ title: "בודק עכשיו…", description: "אם הפירוט שלנו ישן הוא מתעדכן קודם (כמה שניות)" });
+    try {
+      const res = await recheckEvent(row.event_id, { withRow: true, describeOurs: true });
+      waiting.dismiss();
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "בדיקה נכשלה", description: res.error });
+        return;
+      }
+      toast({ title: "נבדק עכשיו", description: res.described_ours ? "כולל פירוט מחדש של החבילה שלנו" : undefined });
+      onRowPatched(row.event_id, res.row);
+    } catch (e) {
+      waiting.dismiss();
+      console.error("recheckEvent failed", e);
+      toast({ variant: "destructive", title: "בדיקה נכשלה", description: e instanceof Error ? e.message : "שגיאה" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleSoldOut = async () => {
+    setBusy(true);
+    try {
+      const res = await setEventSoldOut(row.event_id, !row.sold_out);
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "העדכון נכשל", description: REPRICE_FAIL[res.kind] ?? res.kind });
+        return;
+      }
+      setSoldOpen(false);
+      toast({ title: row.sold_out ? "הסולד אאוט בוטל" : "האירוע סומן סולד אאוט באתר" });
+      onRowPatched(row.event_id, res.row);
+    } catch (e) {
+      console.error("setEventSoldOut failed", e);
+      toast({ variant: "destructive", title: "העדכון נכשל", description: e instanceof Error ? e.message : "שגיאה" });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const submitOverride = async () => {
@@ -175,24 +342,23 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
     <div className="flex items-center justify-end gap-1">
       {/* One button per red conclusion. With both red the scope is in the label, so "which one
           did I just judge real" is answered by the click itself rather than by a second dialog. */}
+      {row.sold_out && (
+        <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">סולד אאוט</span>
+      )}
       {reds.map((cell) => (
-        <Button asChild key={cell.scope} size="sm" variant="outline">
-          {/* Still a plain link to the price section - the light never writes a price. The click
-              is recorded first (markRepriced) because "a human judged this gap real" is the
-              single strongest signal we have, and until now it left no trace at all. Recording
-              must never block the navigation: on failure we log and go anyway. */}
-          <Link
-            href={`/events/${row.event_id}#fix-price`}
-            onClick={() => {
-              void markRepriced(row.event_id, cell.scope).catch((e) =>
-                console.error("markRepriced failed", e),
-              );
-            }}
-          >
-            {reds.length > 1 ? `הוזל · ${SCOPE_HE[cell.scope]}` : "הוזל"}
-          </Link>
-        </Button>
+        <RepricePopover
+          key={cell.scope}
+          row={row}
+          cell={cell}
+          label={reds.length > 1 ? `הוזל · ${SCOPE_HE[cell.scope]}` : "הוזל"}
+          onSaved={(fresh) => onRowPatched(row.event_id, fresh)}
+        />
       ))}
+      <Button asChild size="icon" variant="ghost" className="h-7 w-7" title="לעמוד האירוע באתר">
+        <a href={row.site_url} target="_blank" rel="noreferrer" aria-label={`${row.name} באתר`}>
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      </Button>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -224,6 +390,16 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
 
           <DropdownMenuItem disabled={busy} onClick={recheck}>
             בדוק עכשיו
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            disabled={busy}
+            onSelect={(e) => {
+              e.preventDefault();
+              if (row.sold_out) void toggleSoldOut(); else setSoldOpen(true);
+            }}
+          >
+            {row.sold_out ? "בטל סולד אאוט" : "סולד אאוט"}
           </DropdownMenuItem>
 
           {row.override ? (
@@ -283,6 +459,31 @@ export function DecisionActions({ row, onDone }: { row: PriceLightRow; onDone: (
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "הסר"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={soldOpen} onOpenChange={setSoldOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>לסמן את האירוע סולד אאוט?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {row.name} · {row.date}
+              <br />
+              האירוע נשאר באתר אבל מוצג כאזל ולא ניתן להזמנה, ויוצא מהחיפוש ומהפיד. אפשר לבטל מכאן בכל רגע.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>ביטול</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={(e) => {
+                e.preventDefault();
+                void toggleSoldOut();
+              }}
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "סמן סולד אאוט"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

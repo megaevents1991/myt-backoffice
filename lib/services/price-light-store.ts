@@ -21,7 +21,7 @@ const db = supabase as any;
 export const LIGHT_EVENT_COLUMNS =
   "id,name,name_english,type,date,def_date_depart,def_date_return,location," +
   "base_flight_price,base_hotel_price,tickets_and_rates,skip_flight,ticket_only_markup," +
-  "markup_ticket,markup_flight,markup_hotel,event_additional_markup,is_deleted,is_test," +
+  "markup_ticket,markup_flight,markup_hotel,event_additional_markup,is_deleted,is_test,tags," +
   "light_package,light_ticket,light_detail,light_checked_at,light_silenced_until," +
   "light_red_since,price_drop_usd,price_drop_from,price_drop_until";
 
@@ -30,6 +30,8 @@ export interface LightEvent extends PricedEvent {
   location: { name?: string; city_iata?: string } | null;
   is_deleted: string | null;
   is_test?: boolean | null;
+  /** Main reads `tags === "Sold"` as sold out (its `isEventSoldOut`). */
+  tags?: string | null;
   light_package: Light | null;
   light_ticket: Light | null;
   light_detail: LightDetail | null;
