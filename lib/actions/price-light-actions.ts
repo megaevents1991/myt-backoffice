@@ -706,6 +706,7 @@ function buildScopeCell(
     // normalization one (missing package contents) - the two shared a name and the view was
     // reading the wrong one (6 rows shown while ~248 scopes were unchecked for coverage).
     partial_coverage: detail?.reason === "partial_coverage",
+    quote_only: detail?.reason === "quote_only",
     // `nights.theirs` is "unknown" when no competitor page ever said - null on the wire, so the
     // client renders "?" instead of inventing a number. Rows written before 2026-09-13 carry
     // neither field at all, hence the ?? fallbacks.

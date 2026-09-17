@@ -128,3 +128,7 @@ to the sports board. Only ~25 rows on that page carry a priced `/package/` or `/
 presence of `a.button[href]` vs `button.open-tablelead`), but it means "music catalog" is
 not synonymous with "priced catalog" - `price_from`/`currency` must be checked per listing
 regardless of which page it came from.
+
+## Addendum 2026-09-17 - music catalog over AJAX
+
+`/events/` ships one empty `.accord-rap.lateload` container per month (`data-string="MM.YYYY"`, `data-count`; 24 months). The theme script (`liveevents.js`) fills each by POSTing `action=events_table_action&month=<data-string>&count=<data-count>` to `/wp-admin/admin-ajax.php` and pasting the returned `div.line` rows - same row markup `parseCatalog` already reads. A plain POST with `X-Requested-With: XMLHttpRequest` + `Referer` answers 200 (October 2026: 59 rows, 67 listings, 9 priced). The crawler uses this first and keeps the Playwright page as the fallback. Rows with a `button.open-tablelead` ("לקבלת הצעת מחיר") have no href and no price - quote only, on the music board too.

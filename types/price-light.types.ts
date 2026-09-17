@@ -85,7 +85,10 @@ export type UncheckedReason =
   | "stale"
   | "crawl_failed"
   | "unsure"
-  | "partial_coverage";
+  | "partial_coverage"
+  /** A competitor sells the event but publishes no price (quote on request), and no other
+   *  competitor left a hole: nothing to compare, nothing more to check. */
+  | "quote_only";
 
 export interface LightScopeDetail {
   light: Light;
@@ -329,6 +332,8 @@ export interface PriceLightScopeCell {
    *  the scope has no verdict to give ("כיסוי חלקי"). The coverage question, as opposed to
    *  `partial` above, which is the normalization one. */
   partial_coverage: boolean;
+  /** No verdict because a competitor sells this by quote only (`reason === "quote_only"`). */
+  quote_only: boolean;
   /** Nights on each side + the USD doubt that widened the light's band (price-light.ts). */
   nights_ours: number | null;
   nights_theirs: number | null;

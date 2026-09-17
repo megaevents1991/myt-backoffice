@@ -312,7 +312,7 @@ export function PriceLightClient() {
     const soonCutoff = addDaysStr(new Date(now).toISOString().slice(0, 10), 45);
     const c = {
       alone: 0, green: 0, orange: 0, red: 0, unchecked: 0, pending: 0,
-      orangePlus: 0, soon: 0, partial: 0, changed: 0, aiSample: 0,
+      orangePlus: 0, soon: 0, partial: 0, quote: 0, changed: 0, aiSample: 0,
     };
     // Counted per EVENT, not per conclusion: a row with a red package and a red ticket is one
     // event to deal with, and the tiles are a to-do list, not a tally of verdicts.
@@ -328,6 +328,7 @@ export function PriceLightClient() {
       if (isPending(row, now, scope)) c.pending++;
       if (row.date <= soonCutoff) c.soon++;
       if (has((x) => x.partial_coverage)) c.partial++;
+      if (has((x) => x.quote_only)) c.quote++;
       if (has((x) => x.changed_this_week)) c.changed++;
       if (has((x) => x.method === "ai")) c.aiSample++;
     }
@@ -350,6 +351,7 @@ export function PriceLightClient() {
       // is what the view's name promises. It used to filter `c.partial` (incomplete
       // normalization) and showed 6 rows while ~248 scopes were uncovered.
       case "partial": return scoped.filter(some((c) => c.partial_coverage));
+      case "quote": return scoped.filter(some((c) => c.quote_only));
       case "changed": return scoped.filter(some((c) => c.changed_this_week));
       case "unchecked": return scoped.filter(some((c) => c.light === "unchecked"));
       case "ai_sample": return scoped.filter(some((c) => c.method === "ai"));
@@ -379,6 +381,7 @@ export function PriceLightClient() {
     { id: "orange_plus", label: "כתום ומעלה", count: known(counts.orangePlus) ?? undefined },
     { id: "soon", label: "בקרוב (45 יום)", count: known(counts.soon) ?? undefined },
     { id: "partial", label: "כיסוי חלקי", count: known(counts.partial) ?? undefined },
+    { id: "quote", label: "הצעת מחיר בלבד", count: known(counts.quote) ?? undefined },
     { id: "changed", label: "השתנה השבוע", count: known(counts.changed) ?? undefined },
     { id: "unchecked", label: "לא נבדק", count: known(counts.unchecked) ?? undefined },
     { id: "ai_sample", label: "מדגם AI", count: known(counts.aiSample) ?? undefined },

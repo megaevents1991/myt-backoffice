@@ -381,6 +381,30 @@ const quoted = computeScopeLight({
 assert.equal(quoted.per_competitor.liveevents?.quote_only, true);
 assert.equal(quoted.per_competitor.golasso?.quote_only, undefined);
 
+// "sells it, publishes no price" is its own reason - not "partial coverage", not "unsure"
+const q = (c: "liveevents" | "golasso" | "issta", over: Record<string, unknown>) =>
+  ({ competitor: c, status: "not_selling" as const, normalized_usd: null, raw: null, raw_currency: null, crawled_at: "2026-09-13T00:00:00Z", match_id: 9, ...over });
+const QNOW = "2026-09-14T00:00:00Z";
+const quoteRest = computeScopeLight({ ourUsd: 1500, competitors: ["liveevents", "golasso"], now: QNOW,
+  matches: [q("liveevents", { status: "unsure", quote_only: true }), q("golasso", {})] });
+assert.equal(quoteRest.light, "unchecked");
+assert.equal(quoteRest.reason, "quote_only");
+const quoteOnlyAll = computeScopeLight({ ourUsd: 1500, competitors: ["liveevents"], now: QNOW,
+  matches: [q("liveevents", { status: "unsure", quote_only: true })] });
+assert.equal(quoteOnlyAll.reason, "quote_only");
+// a competitor that never answered next to the quote = still a coverage hole
+const quoteAndHole = computeScopeLight({ ourUsd: 1500, competitors: ["liveevents", "golasso", "issta"], now: QNOW,
+  matches: [q("liveevents", { status: "unsure", quote_only: true }), q("golasso", {})] });
+assert.equal(quoteAndHole.reason, "partial_coverage");
+// a plain unsure (not a quote) keeps its old answer
+const plainUnsure = computeScopeLight({ ourUsd: 1500, competitors: ["liveevents", "golasso"], now: QNOW,
+  matches: [q("liveevents", { status: "unsure" }), q("golasso", {})] });
+assert.equal(plainUnsure.reason, "partial_coverage");
+// a stale quote is stale, not a quote
+const staleQuote = computeScopeLight({ ourUsd: 1500, competitors: ["liveevents"], now: "2026-10-30T00:00:00Z",
+  matches: [q("liveevents", { status: "unsure", quote_only: true })] });
+assert.equal(staleQuote.reason, "stale");
+
 // ---- offer contents (partner format) - shapes copied from stored prod detail pages ----
 assert.equal(bagFrom("טיסות אלעל כוללות טרולי עד 8 קילו"), "טרולי בלבד");
 assert.equal(bagFrom("טיסה שכר ישירה עם חברת התעופה ארקיע ,כוללת טרולי וכבודה לכל נוסע"), "כולל מזוודה");

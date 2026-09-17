@@ -76,6 +76,7 @@ export const HE_REASON: Record<UncheckedReason, string> = {
   crawl_failed: "סריקה נכשלה",
   unsure: "לא ודאי",
   partial_coverage: "כיסוי חלקי",
+  quote_only: "מתחרה מוכר בהצעת מחיר בלבד",
 };
 
 /**

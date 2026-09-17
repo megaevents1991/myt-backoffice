@@ -509,9 +509,14 @@ export function computeScopeLight(input: {
   const per: Partial<Record<CompetitorKey, PerCompetitor>> = {};
   const valid: LatestMatch[] = [];
   let newestReason: UncheckedReason = "never";
+  // Competitors that SELL the event but publish no number ("לקבלת הצעת מחיר" - every LiveEvents
+  // sports row, 2026-09-17: 164 live listings) vs. every other reason a competitor gave no usable
+  // answer. Only the first kind is a fact about the market; the second is a hole in our data.
+  let quoteOnly = 0;
+  let holes = 0;
   for (const c of input.competitors) {
     const match = input.matches.find((x) => x.competitor === c) ?? null;
-    if (!match) { per[c] = { status: "skipped", normalized_usd: null, crawled_at: null }; continue; }
+    if (!match) { holes += 1; per[c] = { status: "skipped", normalized_usd: null, crawled_at: null }; continue; }
     // Each competitor gets its OWN verdict, by the same rule and its own doubt - so a reader can
     // see whether we are dear against everyone or only against one aggressive site. The scope's
     // light below still answers to the cheapest of them: that is the decision.
@@ -528,13 +533,22 @@ export function computeScopeLight(input: {
     };
     const fresh = !!match.crawled_at && daysBetween(match.crawled_at, input.now) <= staleDays;
     if ((match.status === "found" || match.status === "not_selling") && fresh) valid.push(match);
-    else newestReason = !fresh && match.crawled_at ? "stale" : match.status === "unsure" ? "unsure" : (match.reason ?? "crawl_failed");
+    else if (fresh && match.quote_only) quoteOnly += 1;
+    else {
+      holes += 1;
+      newestReason = !fresh && match.crawled_at ? "stale" : match.status === "unsure" ? "unsure" : (match.reason ?? "crawl_failed");
+    }
   }
 
-  if (valid.length === 0) return { ...empty, reason: newestReason, per_competitor: per };
+  // Someone sells it by quote and nobody else left a hole: there is nothing to compare and
+  // nothing more to check - "alone" would be false and "partial coverage" sends staff hunting
+  // for a crawl problem that does not exist (175 of 248 "לא נבדק" package lights, 2026-09-17).
+  const onlyQuotes = quoteOnly > 0 && holes === 0;
+  if (valid.length === 0) return { ...empty, reason: onlyQuotes ? "quote_only" : newestReason, per_competitor: per };
   const found = valid.filter((x) => x.status === "found" && x.normalized_usd != null);
   if (found.length === 0) {
     if (valid.length === input.competitors.length) return { ...empty, light: "alone", per_competitor: per };
+    if (onlyQuotes) return { ...empty, reason: "quote_only", per_competitor: per };
     return { ...empty, reason: "partial_coverage", per_competitor: per };
   }
   // The cheapest normalized competitor is still the one we answer to, uncertainty or not - a
