@@ -59,6 +59,8 @@ const hasFreeCancellation = (freeUntil: string | null | undefined) => !!freeUnti
  * appear here, full stop, so `minStars` can never go below this.
  */
 const STAR_FLOOR = 3;
+/** Mirrors MIN_DEFAULT_MATCHES_BEFORE_RELAX in myt-main HotelSelection.tsx. */
+const SITE_MIN_MATCHES_BEFORE_RELAX = 5;
 
 /**
  * Group live Ratehawk rate options by hotel so the list shows one card per
@@ -246,17 +248,55 @@ export function HotelStep() {
     return [...capped].sort((a, b) => a.perPerson - b.perPerson);
   }, [filteredMerged, priceCeiling, maxPricePct, sort]);
 
-  // Register the first-shown LIVE room so the wizard's "בחר והמשך" can choose
-  // it when the agent taps nothing (2026-08-31 - same trap as the flight
-  // step: the silent "live" default saved a "full" package with no hotel).
+  // The hotel myt-main AUTO-SELECTS for a customer who touches nothing
+  // (HotelSelection.tsx + lib/hotelFilter.ts): 3-5 stars, kind "Hotel", the
+  // hotel has at least one free-cancellation rate - cheapest first, that
+  // hotel's cheapest rate. Fewer than 5 matches relaxes stars + kind; still
+  // nothing relaxes free cancellation. Computed over the WHOLE search, never
+  // the agent's filters, so it answers "what would the site have picked".
+  const siteDefaultHotelKey = useMemo<string | null>(() => {
+    const cheapestFirst = (pool: typeof liveHotelGroups) =>
+      [...pool].sort((a, b) => (a[1][0]?.price ?? Infinity) - (b[1][0]?.price ?? Infinity));
+    const withRooms = liveHotelGroups.filter(([, options]) => options.length > 0);
+    const freeCancel = (pool: typeof liveHotelGroups) =>
+      pool.filter(([, options]) => options[0].hotel_has_free_cancellation);
+    const strict = withRooms.filter(([, options]) => {
+      const stars = Math.round(options[0].stars);
+      return stars >= 3 && stars <= 5 && options[0].kind === "Hotel";
+    });
+    let pool = freeCancel(strict);
+    if (pool.length < SITE_MIN_MATCHES_BEFORE_RELAX) pool = freeCancel(withRooms);
+    if (pool.length === 0) pool = withRooms;
+    return cheapestFirst(pool)[0]?.[0] ?? null;
+  }, [liveHotelGroups]);
+
+  const filtersAtDefault =
+    sort === "price" &&
+    !breakfastOnly &&
+    !freeCancelOnly &&
+    minStars === STAR_FLOOR &&
+    nameQuery.trim() === "" &&
+    maxPricePct >= 100;
+
+  // Register the LIVE room the wizard's "בחר והמשך" chooses when the agent
+  // taps nothing (2026-08-31 - same trap as the flight step: the silent "live"
+  // default saved a "full" package with no hotel). With the filters untouched
+  // that is the SITE's default hotel, so an agent who accepts the default
+  // quotes exactly what a customer building the same package sees
+  // (2026-09-17 - the builder used to default to the cheapest rate of any
+  // kind, refundable or not, and the two drifted apart). Once the agent
+  // filters or re-sorts, the first card they are looking at wins instead.
   // Offline inventory is skipped on purpose - it needs a per-room unit
   // allocation, so it stays an explicit tap. Cleared on unmount.
   useEffect(() => {
-    const firstLive = list.find((h) => h.kind === "live");
-    w.setTopHotelCandidate(firstLive ? (firstLive.group[0] ?? null) : null);
+    const siteDefault = filtersAtDefault
+      ? list.find((h) => h.kind === "live" && h.key === siteDefaultHotelKey)
+      : undefined;
+    const pick = siteDefault ?? list.find((h) => h.kind === "live");
+    w.setTopHotelCandidate(pick && pick.kind === "live" ? (pick.group[0] ?? null) : null);
     return () => w.setTopHotelCandidate(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [list]);
+  }, [list, siteDefaultHotelKey, filtersAtDefault]);
 
   if (!event) return null;
 
@@ -499,7 +539,12 @@ export function HotelStep() {
                 h.kind === "offline" ? (
                   <OfflineHotelCard key={h.key} groupKey={h.key} group={h.group} />
                 ) : (
-                  <LiveHotelCard key={h.key} group={h.group} perPerson={h.perPerson} />
+                  <LiveHotelCard
+                    key={h.key}
+                    group={h.group}
+                    perPerson={h.perPerson}
+                    isSiteDefault={h.key === siteDefaultHotelKey}
+                  />
                 ),
               )}
 
@@ -663,7 +708,16 @@ function OfflineHotelCard({ groupKey, group }: { groupKey: string; group: Builde
  * (image/stars/distance/cancellation, same as before), the rest sit behind an
  * expander, each selectable and priced as a delta vs the headline.
  */
-function LiveHotelCard({ group, perPerson }: { group: LiveHotelOption[]; perPerson: number }) {
+function LiveHotelCard({
+  group,
+  perPerson,
+  isSiteDefault,
+}: {
+  group: LiveHotelOption[];
+  perPerson: number;
+  /** The hotel myt-main auto-selects for a customer who touches nothing. */
+  isSiteDefault: boolean;
+}) {
   const w = useWizard();
   const cheapest = group[0];
   const others = group.slice(1);
@@ -704,6 +758,11 @@ function LiveHotelCard({ group, perPerson }: { group: LiveHotelOption[]; perPers
               <div className="flex w-full flex-row flex-wrap items-center gap-2">
                 <span className="text-lg font-bold lg:text-2xl">{cheapest.name}</span>
                 <StarsRow rating={cheapest.stars} />
+                {isSiteDefault && (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                    ★ ברירת המחדל באתר
+                  </span>
+                )}
               </div>
               <p className="mt-0.5 flex items-center gap-1 text-[14px]">
                 <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />

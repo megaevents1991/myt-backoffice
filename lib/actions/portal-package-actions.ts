@@ -1072,6 +1072,15 @@ export interface LiveHotelOption {
   meal: string;
   /** ISO datetime the rate cancels free until; null = non-refundable. */
   free_cancellation_before: string | null;
+  /**
+   * HOTEL-level, judged over ALL of the hotel's rates (not just the few listed
+   * here): the two facts myt-main's default hotel filter reads - property kind
+   * ("Hotel", "Apartment", ...) and "has at least one free-cancellation rate".
+   * The builder's no-tap default uses them to land on the same hotel the site
+   * auto-selects (hotel-step.tsx `siteDefaultHotelKey`).
+   */
+  kind: string | null;
+  hotel_has_free_cancellation: boolean;
   /** Total stay price, USD (rate show_amount). */
   price: number;
   /** The stay window this option was priced for (what the snapshot carries). */
@@ -1107,6 +1116,7 @@ type HotelsInfoEntry = {
     address?: string;
     rating?: number;
     distanceFromCenter?: number;
+    kind?: string;
   };
 };
 
@@ -1252,6 +1262,13 @@ export async function searchLiveHotels(input: {
             Number(b.payment_options!.payment_types![0].show_amount),
         );
       const rates = priced.slice(0, 3);
+      // Same test as main's hotelFilter.ts `matchFreeCancellation`: ANY rate,
+      // ANY payment type - over every priced rate, not the few kept below.
+      const hotelHasFreeCancellation = priced.some((r) =>
+        r.payment_options?.payment_types?.some(
+          (pt) => !!pt.cancellation_penalties?.free_cancellation_before,
+        ),
+      );
       // "Add breakfast" = offering the breakfast rate: when the three cheapest
       // are all room-only, pull in the cheapest rate that includes a meal so
       // the agent can pick it side by side.
@@ -1303,6 +1320,8 @@ export async function searchLiveHotels(input: {
           free_cancellation_before:
             rate.payment_options?.payment_types?.[0]?.cancellation_penalties
               ?.free_cancellation_before ?? null,
+          kind: entry.metadata.kind ?? null,
+          hotel_has_free_cancellation: hotelHasFreeCancellation,
           price: amount,
           checkin,
           checkout,

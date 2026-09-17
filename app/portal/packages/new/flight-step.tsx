@@ -162,6 +162,15 @@ function fromLive(offer: LiveFlightOffer): DisplayFlight {
   };
 }
 
+/**
+ * Mirrors myt-main `lib/flightVariants.ts`. For every El Al fare without a
+ * checked bag, main's flight search adds a twin offer - same flight, same
+ * times - this much dearer PER TRAVELER with the bag included
+ * (`virtualOfferType`). Unlabelled, an agent picked the bag twin while the site
+ * auto-selected the bare one: the same package $300 apart for two (2026-09-17).
+ */
+const ELAL_CHECKED_BAG_VARIANT_USD = 150;
+
 const ISRAELI_AIRLINE =
   /אל[\s-]?על|el[\s-]?al|ארקיע|arkia|ישראייר|israir|blue[\s-]?bird|בלו[\s-]?בירד/i;
 
@@ -561,6 +570,12 @@ export function FlightStep() {
               <div className="my-2 w-full border-t border-border" />
               {/* Inbound */}
               <LegRow flight={f} leg={f.ret} label="חזור" />
+              {f.offer?.virtualOfferType && (
+                <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-brand-forest/30 bg-brand-mint/20 px-2.5 py-0.5 text-xs font-semibold text-brand-forest dark:border-brand-mint/40 dark:bg-transparent dark:text-brand-mint">
+                  <Luggage className="h-3.5 w-3.5" />
+                  כולל מזוודה נרשמת · +${ELAL_CHECKED_BAG_VARIANT_USD} לנוסע - אותה טיסה כמו הכרטיס ללא מזוודה
+                </p>
+              )}
             </div>
             <div className="mx-4 hidden h-32 border-l border-border lg:block" />
             <div className="hidden flex-col items-center gap-1.5 pt-2 text-center font-bold lg:flex lg:w-1/6">
