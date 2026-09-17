@@ -833,11 +833,12 @@ function buildScopeCell(
       now - Date.parse(detail.light_changed_at) < 7 * 86_400_000,
     method: newest?.method ?? null,
     competitors,
-    // Our own side, per the pricing rule. Package only: a ticket comparison IS the ticket, and
-    // repeating its category under itself would be noise.
+    // Our own side. Package: the pricing rule's four lines. Ticket: the ticket and the ticket-only
+    // markup on top of it (Dor, 2026-09-17: 197 of 225 red tickets carry a $200 markup - the number
+    // that makes them red has to be on the row, next to the button that edits only it).
     ours: scope === "package"
       ? ourOfferLines(event).map((l) => ({ label: l.label, detail: l.detail, usd: l.usd }))
-      : [],
+      : ticketLines(event),
   };
 }
 
@@ -931,6 +932,17 @@ async function rowsForEvents(events: ListedEvent[]): Promise<PriceLightRow[]> {
     });
   }
   return rows;
+}
+
+/** The ticket-only price, taken apart: cheapest available ticket + `ticket_only_markup`. */
+function ticketLines(event: ListedEvent): PriceLightScopeCell["ours"] {
+  const ticket = minAvailableTicketUsd(event);
+  const markup = event.ticket_only_markup;
+  if (ticket == null || markup == null) return [];
+  return [
+    { label: "כרטיס", detail: "הכרטיס הזול הזמין", usd: Math.round(ticket) },
+    { label: "מארקאפ כרטיס", detail: "ticket_only_markup - נערך מכפתור הוזל", usd: Math.round(Number(markup)) },
+  ];
 }
 
 /** The priced columns the "הוזל" preview needs - see `PriceLightRowPricing`. */

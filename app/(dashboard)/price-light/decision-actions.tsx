@@ -45,7 +45,9 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { ourPackageUsd, previewMarkupChange, PRICE_DROP_MIN_USD, signedUsd } from "@/lib/services/price-light";
+import {
+  LIGHT_GREEN_USD, LIGHT_RED_USD, ourPackageUsd, previewMarkupChange, PRICE_DROP_MIN_USD, signedUsd,
+} from "@/lib/services/price-light";
 import { heLabel, PILL } from "@/app/(dashboard)/events/price-light-ui";
 import {
   clearLightOverride,
@@ -116,6 +118,15 @@ function RepricePopover({
   const siteDrop = siteBefore != null && siteAfter != null ? siteBefore - siteAfter : 0;
   const canMarkDrop = siteDrop >= PRICE_DROP_MIN_USD;
 
+  // One-click targets: the markup that lands this scope just inside orange / green, by the same
+  // band the light uses. Offered only when the markup alone can get there (never below 0).
+  const now = previewMarkupChange(row.pricing, cell.scope, current, cell.normalized_usd, cell.uncertainty_usd);
+  const ceil5 = (n: number) => Math.ceil(n / 5) * 5;
+  const targets = now.diffUsd == null ? [] : [
+    { label: "לכתום", value: current - ceil5(now.diffUsd - (LIGHT_RED_USD + cell.uncertainty_usd)) },
+    { label: "לירוק", value: current - ceil5(now.diffUsd - (LIGHT_GREEN_USD - cell.uncertainty_usd) + 1) },
+  ].filter((t) => t.value >= 0 && t.value < current);
+
   const save = async () => {
     if (!valid) return;
     setSaving(true);
@@ -155,6 +166,15 @@ function RepricePopover({
           className="h-9 tabular-nums"
           aria-label="מארקאפ בדולרים"
         />
+        {targets.length > 0 && !overridden && (
+          <div className="flex flex-wrap gap-1.5">
+            {targets.map((t) => (
+              <Button key={t.label} type="button" size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => setText(String(t.value))}>
+                {t.label} · ${t.value}
+              </Button>
+            ))}
+          </div>
+        )}
         <div className="rounded-md border bg-muted/40 p-2 text-xs tabular-nums">
           {preview && preview.ourUsd != null ? (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
