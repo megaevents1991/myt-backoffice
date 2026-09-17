@@ -13,6 +13,13 @@ export type ReservationEventOrderInfoItem = {
   total_tickets_price: number;
   vendor?: string;
   id?: string;
+  // Multi-supplier events (main writes these at checkout): who ops buy this
+  // ticket from, the event id and category name AT that supplier, and the
+  // zone name the customer saw.
+  supplier?: string;
+  supplier_event_id?: string;
+  supplier_category?: string;
+  zone_label?: string;
 };
 
 export type ReservationEventOrderInfo =

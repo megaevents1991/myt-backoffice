@@ -945,6 +945,18 @@ export class TicketPriceSyncService {
       // Sync Live/Doctor events
       console.log("\n🎯 === SYNCING LIVE/DOCTOR EVENTS ===");
       const liveSummary = await this.syncLiveTicketPrices();
+
+      // LiveTickets tickets an operator attached to another supplier's event
+      // (multi-supplier events). Imported lazily: that module reads the
+      // exchange rates from this one.
+      console.log("\n🎯 === SYNCING ATTACHED LIVETICKETS TICKETS ===");
+      const { syncAttachedLiveTickets } = await import(
+        "@/lib/services/attached-suppliers-sync"
+      );
+      const attached = await syncAttachedLiveTickets();
+      console.log(
+        `📊 Attached Summary: ${attached.eventsProcessed} events, ${attached.ticketsUpdated} tickets updated, ${attached.errors.length} errors`,
+      );
       console.log("🎯 === SYNC COMPLETE ===\n");
       console.log(
         `📊 XS2 Summary: ${xs2Summary.eventsProcessed} events, ${xs2Summary.totalTickets} tickets, ${xs2Summary.successfulUpdates} successful, ${xs2Summary.failedUpdates} failed`,
@@ -960,8 +972,15 @@ export class TicketPriceSyncService {
       summary.failedUpdates =
         xs2Summary.failedUpdates + liveSummary.failedUpdates;
       summary.eventsProcessed =
-        xs2Summary.eventsProcessed + liveSummary.eventsProcessed;
-      summary.errors = [...xs2Summary.errors, ...liveSummary.errors];
+        xs2Summary.eventsProcessed +
+        liveSummary.eventsProcessed +
+        attached.eventsProcessed;
+      summary.successfulUpdates += attached.ticketsUpdated;
+      summary.errors = [
+        ...xs2Summary.errors,
+        ...liveSummary.errors,
+        ...attached.errors,
+      ];
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";

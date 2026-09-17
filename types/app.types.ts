@@ -427,9 +427,22 @@ export type EventTicket = {
   eid?: string;
   available?: boolean;
   vip?: VipConfig;
+  // Multi-supplier events (2026-09): one event page can sell tickets from
+  // several suppliers, so the supplier lives on the ticket. Absent = implied by
+  // event.type, exactly as before (see lib/suppliers.ts). `eid` above is the
+  // event id AT THAT SUPPLIER. Synced with main lib/app.types.ts.
+  supplier?: string;
+  // The category name exactly as the supplier calls it - what ops buy by.
+  // `category` stays the live-matching key for TixStock.
+  supplierCategory?: string;
+  // Our own stadium zone (venue_maps.zones). Suppliers slice a stadium
+  // differently, so offers are only comparable inside one zone. `zoneId` is
+  // also what lights up the map: our SVG copy carries `data-zones` per section.
+  zoneId?: string;
+  zoneLabel?: string;
 };
 
-export type OrderTicket = Omit<EventTicket, "description" | "colorOnTheMap"> & {
+export type OrderTicket =Omit<EventTicket, "description" | "colorOnTheMap"> & {
   quantity: number;
 };
 

@@ -80,6 +80,8 @@ import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import { EditorRail } from "@/components/editor-rail";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EventSuppliersPanel } from "@/components/event-suppliers-panel";
+import { supplierEventId, ticketSupplier } from "@/lib/suppliers";
 import { EventTaxonomySelect, type TaxonomyOption } from "@/components/taxonomy/event-taxonomy-select";
 import {
   listCategories,
@@ -450,7 +452,8 @@ export default function EventPage({
         (isBatchCreate && batchProvider === "tixstock"
           ? (batchEvents[batchIndex] as TixStockEventDB | undefined)?.event_id ?? null
           : null) ??
-        event.tickets_and_rates.find((t) => !!t.eid)?.eid ??
+        // A multi-supplier event also holds other suppliers' eids.
+        supplierEventId(event.tickets_and_rates, "tixstock", event.type) ??
         null
       : null;
 
@@ -1037,7 +1040,11 @@ export default function EventPage({
   }, [tixStockTickets, selectedSection, selectedCategory, mapCategoryIds]);
 
   const isSourceTicketAdded = (category: string) =>
-    !!event?.tickets_and_rates.some((t) => t.category.toLowerCase() === category.toLowerCase());
+    !!event?.tickets_and_rates.some(
+      (t) =>
+        ticketSupplier(t, event.type) === "tixstock" &&
+        t.category.toLowerCase() === category.toLowerCase(),
+    );
 
   const handleAddSourceTicket = async (sourceTicket: TixStockListing) => {
     if (!event || !tixStockEventId) return;
@@ -3513,6 +3520,15 @@ export default function EventPage({
             )}
           </CardContent>
         </Card>
+
+        {event.type === "tx_event" && (
+          <EventSuppliersPanel
+            event={event}
+            onEventChange={(update) =>
+              setEvent((prev) => (prev ? update(prev) : prev))
+            }
+          />
+        )}
 
         <div className="flex justify-end gap-4">
           <Button variant="outline" type="button" onClick={() => router.back()}>

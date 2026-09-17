@@ -29,6 +29,8 @@ export async function GET(req: NextRequest) {
     "www.doctorticket.com",
     "doctorticket.com",
     "tixstock.s3.eu-west-2.amazonaws.com",
+    // Venue maps we own (public_resources/venue-maps) - see venue-map-actions.
+    "fandqafngybfdyslofmr.supabase.co",
   ]);
 
   if (!allowedHosts.has(parsed.hostname)) {

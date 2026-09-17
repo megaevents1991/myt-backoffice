@@ -1,6 +1,11 @@
 import { supabase } from "@/lib/supabase-server";
 import type { Event, EventTicket } from "@/types/app.types";
 import { multiCurrencyExchangeRateService } from "@/lib/services/ticket-price-sync";
+import {
+  normalizeSupplierCategory,
+  supplierEventId,
+  ticketSupplier,
+} from "@/lib/suppliers";
 
 const TIXSTOCK_API_URL = process.env.NEXT_SECRET_TIXSTOCK_API_URL;
 const TIXSTOCK_TOKEN = process.env.NEXT_SECRET_TIXSTOCK_TOKEN;
@@ -123,11 +128,17 @@ export async function syncTixStockPrices(
           return;
         }
 
-        const tixstockEventId = event.tickets_and_rates[0].eid;
+        // From a TixStock ticket - a multi-supplier event also holds other
+        // suppliers' tickets (and eids), in any order.
+        const tixstockEventId = supplierEventId(
+          event.tickets_and_rates,
+          "tixstock",
+          "tx_event",
+        );
 
         if (!tixstockEventId) {
           console.log(
-            `Event ${event.id} has no TixStock event ID (eid) on first ticket, skipping.`,
+            `Event ${event.id} has no TixStock event ID (eid) on its tickets, skipping.`,
           );
           return;
         }
@@ -149,14 +160,25 @@ export async function syncTixStockPrices(
         let eventUpdated = false;
         const updatedTicketsAndRates = event.tickets_and_rates.map(
           (ticket: EventTicket) => {
-            // Find all TixStock listings matching this category with at least 2 available
+            // Another supplier's ticket can share a category name with a
+            // TixStock listing ("Category 1") - never price it from here.
+            if (ticketSupplier(ticket, "tx_event") !== "tixstock") {
+              return ticket;
+            }
+
+            // Find all TixStock listings matching this category with at least 2
+            // available. Normalized compare: TixStock restyles venue category
+            // names over time (Bernabeu 2026-09), an exact match silently
+            // stopped updating every Real Madrid home game.
+            const ourCategory = normalizeSupplierCategory(ticket.category);
             const matching = sourceTickets.filter((t) => {
-              const sourceCategory = (t.seat_details?.category || "")
-                .toLowerCase()
-                .trim();
-              const ourCategory = ticket.category.toLowerCase().trim();
+              const sourceCategory = normalizeSupplierCategory(
+                t.seat_details?.category,
+              );
               const qty = t.number_of_tickets_for_sale?.quantity_available ?? 0;
-              return sourceCategory === ourCategory && qty >= 2;
+              return (
+                !!ourCategory && sourceCategory === ourCategory && qty >= 2
+              );
             });
 
             if (matching.length === 0) {

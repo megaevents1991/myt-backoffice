@@ -71,9 +71,16 @@ export default function EditReservationPage({
 
             // Find the vendor for the ticket category in this reservation
             if (eventData.tickets_and_rates && singleEvent?.category) {
-              const matchingTicket = eventData.tickets_and_rates.find(
-                (ticket: EventTicket) => ticket.category === singleEvent.category
-              );
+              // Ticket id first - on a multi-supplier event two suppliers can
+              // share a category name.
+              const matchingTicket =
+                eventData.tickets_and_rates.find(
+                  (ticket: EventTicket) =>
+                    !!singleEvent.id && ticket.id === singleEvent.id
+                ) ??
+                eventData.tickets_and_rates.find(
+                  (ticket: EventTicket) => ticket.category === singleEvent.category
+                );
               setTicketVendor(matchingTicket?.vendor || null);
             } else {
               setTicketVendor(null);
@@ -447,7 +454,29 @@ export default function EditReservationPage({
                             </p>
                           </div>
                         )}
+                        {evt.zone_label && (
+                          <div>
+                            <Label>Zone shown to the customer</Label>
+                            <p className="text-sm text-muted-foreground" dir="rtl">
+                              {evt.zone_label}
+                            </p>
+                          </div>
+                        )}
                       </div>
+                      {evt.supplier && evt.supplier !== "static" && (
+                        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                          <p className="font-semibold">
+                            Buy from: {evt.supplier.toUpperCase()}
+                          </p>
+                          <p>
+                            Their category: <b>{evt.supplier_category || evt.category}</b>
+                            {evt.id ? ` · ticket id ${evt.id}` : ""}
+                            {evt.supplier_event_id
+                              ? ` · their event id ${evt.supplier_event_id}`
+                              : ""}
+                          </p>
+                        </div>
+                      )}
                       {index < reservationEvents.length - 1 && (
                         <Separator className="mt-6" />
                       )}
