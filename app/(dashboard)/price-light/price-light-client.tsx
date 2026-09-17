@@ -6,12 +6,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Columns2, ExternalLink } from "lucide-react";
+import { Columns2, ExternalLink, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { DataTable, type DataTableView } from "@/components/data-table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   aiCostThisMonth,
   listCrawlRuns,
@@ -436,6 +437,35 @@ export function PriceLightClient() {
     [filtered, scope, comp],
   );
 
+  // The same filter the column headers set, but where it can be SEEN: clicking a header changed
+  // nothing visible when the top rows already belonged to that competitor, and no count moved.
+  const competitorFilter = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Select value={comp ?? "all"} onValueChange={(v) => pickCompetitor(v === "all" ? null : (v as CompetitorKey))}>
+        <SelectTrigger className="h-8 w-44 text-xs" aria-label="סינון לפי מתחרה">
+          <SelectValue placeholder="כל המתחרים" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">כל המתחרים</SelectItem>
+          {COMPETITOR_ORDER.map((k) => (
+            <SelectItem key={k} value={k}>{COMPETITOR_LABEL[k] ?? k}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {comp && (
+        <button
+          type="button"
+          onClick={() => pickCompetitor(null)}
+          title="נקה סינון מתחרה"
+          className="inline-flex items-center gap-1 rounded-full bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          מוכר ע״י {COMPETITOR_LABEL[comp] ?? comp} · {filtered.length} מתוך {inView.length}
+          <X className="h-3 w-3" aria-hidden />
+        </button>
+      )}
+    </div>
+  );
+
   // While only the red rows are in, every count that is not about red is unknown - `null`
   // renders "…". Red and pending are exact from the first paint (every red event is there).
   const known = (n: number, redOnly = false): number | null => (partial && !redOnly ? null : n);
@@ -722,6 +752,7 @@ export function PriceLightClient() {
         data={filtered}
         searchColumns={["name"]}
         searchPlaceholder="חיפוש אירוע..."
+        filters={competitorFilter}
         views={views}
         activeView={view}
         onViewChange={setView}
