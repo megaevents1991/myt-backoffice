@@ -220,7 +220,14 @@ stays quote-only (no detail page exists). Coverage metric added to the competito
 the AI Factory: % of `found` listings with a flight / hotel / ticket line. The UI prints
 "לא מפורסם אצלם" where the source has none. Decision after the spikes.
 
-## 7. P4 - myt-main (after P0)
+## 7. P4 - myt-main (DEFERRED by Dor, 2026-09-17)
+
+> Dor: "זה שלב אחרי שרמזור יעבוד טוב - אנחנו נממש את זה באתר הרישמי". Do NOT build until the
+> backoffice light has run well in production for a while and Dor reopens it. Proposal on file for
+> that day: the category browser already has a user sort, so add a default sort "מומלצים"
+> (green / alone first, then date) rather than a silent reorder, plus a "ירידת מחיר" badge on
+> `EventCard` from `price_drop_*`.
+
 
 Order green/alone first on artist, team and category pages (`light_package` only - no ticket
 light on the site), and a "ירידת מחיר" badge from `price_drop_*`. Separate spec in main.
