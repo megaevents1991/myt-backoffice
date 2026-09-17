@@ -9,11 +9,11 @@ import {
   ourPackageUsd, ourTicketUsd, ourNights, ourNightRateUsd, listingNights, nightsUncertaintyUsd,
   cheapestAvailableTicket, ourOfferLines, ourFromUsd, ourNetFlightUsd, ourNetHotelUsd,
   kindOf, competitorsFor, normalize,
-  computeScopeLight, decidePriceDrop, pickRuleMatch, candidateCoversDate, signedUsd,
+  computeScopeLight, decidePriceDrop, pickRuleMatch, candidateCoversDate, signedUsd, stampLightChange,
   nameTokens, ruleMatchScore, ruleSaysAbsent, isMultiMatchTitle, RULE_MATCH_MIN_SCORE, RULE_ABSENT_BELOW,
   type PricedEvent, type LatestMatch,
 } from "../lib/services/price-light.ts";
-import { UNKNOWN_ATTRS } from "../types/price-light.types.ts";
+import { UNKNOWN_ATTRS, type LightScopeDetail } from "../types/price-light.types.ts";
 import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "../lib/services/price-margins.ts";
 import { airlineFromCode, bagFrom, formatOfferLines, isMultiMatchText, parseOfferDetail } from "../lib/services/offer-detail.ts";
 
@@ -57,7 +57,12 @@ assert.equal(ourPackageUsd({ ...base, markup_ticket: 50, markup_flight: 30, mark
 // kinds and competitors
 assert.equal(kindOf(base), "sports");
 assert.equal(kindOf({ ...base, type: "music_live_event_dynamic" }), "music");
+// A TixStock event with no tags loaded is still sports - the type alone says nothing (136 live
+// MUSIC events are `tx_event`, which is why the tags below have to decide).
 assert.equal(kindOf({ ...base, type: "tx_event" }), "sports");
+assert.equal(kindOf({ ...base, type: "tx_event" }, ["music", "pop"]), "music");
+assert.equal(kindOf({ ...base, type: "sports_event" }, ["football"]), "sports");
+assert.equal(kindOf({ ...base, type: "music_event" }, []), "music");
 assert.deepEqual(competitorsFor("sports", "package", ["liveevents", "livetickets"]), ["liveevents"]);
 assert.deepEqual(competitorsFor("music", "package", ["liveevents", "ontour", "issta"]), ["liveevents", "ontour"]);
 assert.deepEqual(competitorsFor("sports", "ticket", ["liveevents", "livetickets"]), ["livetickets"]);
@@ -292,6 +297,33 @@ const seasonCand = { id: 13, title: "Real Madrid vs Barcelona", event_date: null
 assert.equal(candidateCoversDate(seasonCand, "2026-10-26"), false);
 assert.equal(candidateCoversDate({ ...seasonCand, travel_return: "2026-11-03" }, "2026-10-26"), true); // exactly 14 days still counts
 assert.equal(pickRuleMatch({ names: ["Real Madrid vs Barcelona"], date: "2026-10-26" }, [seasonCand]), null);
+
+// light_changed_at: the stamp behind "השתנה השבוע" - renewed only when the light MOVED
+{
+  const sd = (over: Partial<LightScopeDetail> = {}): LightScopeDetail => ({
+    light: "green", diff_usd: -200, our_usd: 800, competitor: "liveevents", raw: 1000,
+    raw_currency: "USD", normalized_usd: 1000, adjustments: [], partial: false,
+    uncertainty_usd: 0, nights: null, reason: null, crawled_at: NOW, match_id: 1,
+    per_competitor: {}, ...over,
+  });
+  const STAMP = "2026-09-01T00:00:00.000Z";
+  // never had a light -> this IS its first one, so it changed now
+  assert.equal(stampLightChange(sd(), "green", null, undefined, NOW).light_changed_at, NOW);
+  // unchanged light, previous stamp -> carried, never renewed
+  assert.equal(stampLightChange(sd(), "green", "green", sd({ light_changed_at: STAMP }), NOW).light_changed_at, STAMP);
+  // unchanged light, no stamp (a row written before this existed) -> stays ABSENT, not "now"
+  assert.equal(stampLightChange(sd(), "green", "green", sd(), NOW).light_changed_at, undefined);
+  // the light moved -> stamped now, whatever the old stamp said
+  assert.equal(stampLightChange(sd(), "red", "green", sd({ light_changed_at: STAMP }), NOW).light_changed_at, NOW);
+  // the previous EFFECTIVE light is the COLUMN, not the detail underneath it: an override forces
+  // the column, so a detail-first comparison would re-stamp every overridden event nightly.
+  assert.equal(
+    stampLightChange(sd({ light: "orange" }), "red", "red", sd({ light: "orange", light_changed_at: STAMP }), NOW).light_changed_at,
+    STAMP,
+  );
+  // the detail is only the FALLBACK, for a scope whose column was never written
+  assert.equal(stampLightChange(sd(), "green", null, sd({ light_changed_at: STAMP }), NOW).light_changed_at, STAMP);
+}
 
 // ---- matching coverage (2026-09-14): real misses from prod, each one a regression guard ----
 // geresh is part of the word, competition names and years are noise

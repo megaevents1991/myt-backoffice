@@ -4,11 +4,13 @@ import { supabase } from "@/lib/supabase-server";
 import { ACTIVE_COMPETITORS } from "@/lib/services/competitor-scrapers";
 import {
   competitorsFor, computeScopeLight, decidePriceDrop, kindOf, lightSettled, minAvailableTicketUsd,
-  nightsUncertaintyUsd, ourFromUsd, ourNightRateUsd, ourNights, ourPackageUsd, ourTicketUsd, totalMarkupUsd,
+  nightsUncertaintyUsd, ourFromUsd, ourNightRateUsd, ourNights, ourPackageUsd, ourTicketUsd,
+  stampLightChange, totalMarkupUsd,
   OVERRIDE_DRIFT_USD, PRICE_DROP_LOOKBACK_DAYS, type LatestMatch, type PricedEvent,
 } from "@/lib/services/price-light";
+import { tagSlugsForEvent } from "@/lib/services/price-light-tags";
 import type {
-  ExtractedAttrs, Light, LightDetail, LightOverride, LightScopeDetail, MatchRow, MatchTrigger, Scope,
+  EventKind, ExtractedAttrs, Light, LightDetail, LightOverride, LightScopeDetail, MatchRow, MatchTrigger, Scope,
 } from "@/types/price-light.types";
 
 // New tables predate the generated DB types - one boundary cast (repo pattern).
@@ -96,8 +98,11 @@ function scopeDetail(
   scope: Scope,
   matches: (LatestMatch & { scope: Scope; attrs: Partial<ExtractedAttrs> | null })[],
   now: string,
+  kind: EventKind,
 ): LightScopeDetail {
-  const competitors = competitorsFor(kindOf(event), scope, ACTIVE_COMPETITORS);
+  // `kind` is passed in, never recomputed here: it is read off the event's feed tags
+  // (kindOf, 2026-09-17), which are loaded once per event by the caller.
+  const competitors = competitorsFor(kind, scope, ACTIVE_COMPETITORS);
   // The light compares our margin-free "from" price, not the site card price (2026-09-17).
   const ourUsd = scope === "package" ? ourFromUsd(event) : ourTicketUsd(event);
   const nightsOurs = ourNights(event);
@@ -130,14 +135,17 @@ function overrideStillHolds(override: LightOverride, detail: LightScopeDetail): 
 export async function recomputeEventLights(
   eventId: number,
   trigger: MatchTrigger,
-  opts: { dryRun?: boolean } = {},
+  opts: { dryRun?: boolean; tagSlugs?: readonly string[] } = {},
 ): Promise<{ before: Lights; after: Lights; changed: boolean; detail: LightDetail }> {
   const event = await loadEventForLight(eventId);
   if (!event) throw new Error(`price-light: event ${eventId} not found`);
   const now = new Date().toISOString();
   const matches = await loadLatestMatches(eventId);
-  const pkg = scopeDetail(event, "package", matches, now);
-  const tkt = scopeDetail(event, "ticket", matches, now);
+  // The vertical comes off the feed tags, not `type` alone (kindOf, 2026-09-17): 136 live music
+  // events are `tx_event`. Loaded ONCE per event here; matchAllForEvent hands its copy down.
+  const kind = kindOf(event, opts.tagSlugs ?? (await tagSlugsForEvent(eventId)));
+  const pkg = scopeDetail(event, "package", matches, now, kind);
+  const tkt = scopeDetail(event, "ticket", matches, now, kind);
 
   // `light_detail.override` is a single scope-tagged field (setLightOverride replaces
   // it wholesale), so at most one scope is ever overridden. Keep it while it still
@@ -147,18 +155,23 @@ export async function recomputeEventLights(
   const overrideDetail = override ? (override.scope === "package" ? pkg : tkt) : null;
   const keepOverride = override != null && overrideDetail != null && overrideStillHolds(override, overrideDetail);
 
-  // `ours` (our package's described contents, lib/services/our-offer-detail.ts) is not this pass's
-  // to compute - it is carried over as read, or every nightly recompute would erase it.
-  const detail: LightDetail = {
-    package: pkg, ticket: tkt, override: keepOverride ? override : null,
-    ours: event.light_detail?.ours ?? null,
-  };
   const before: Lights = { package: event.light_package, ticket: event.light_ticket };
   const after: Lights = {
     package: keepOverride && override?.scope === "package" ? override.light : pkg.light,
     ticket: keepOverride && override?.scope === "ticket" ? override.light : tkt.light,
   };
   const changed = before.package !== after.package || before.ticket !== after.ticket;
+
+  // `ours` (our package's described contents, lib/services/our-offer-detail.ts) is not this pass's
+  // to compute - it is carried over as read, or every nightly recompute would erase it.
+  // The two scope details are stamped with WHEN their light last moved (see stampLightChange):
+  // the effective light, so a forced one counts as the light the reader saw.
+  const detail: LightDetail = {
+    package: stampLightChange(pkg, after.package, before.package, event.light_detail?.package, now),
+    ticket: stampLightChange(tkt, after.ticket, before.ticket, event.light_detail?.ticket, now),
+    override: keepOverride ? override : null,
+    ours: event.light_detail?.ours ?? null,
+  };
   // "השאר בפיד" mutes a RED light. Once no scope is red any more the mute has nothing
   // left to hide, so it is cleared in the same write that records the new lights -
   // otherwise a stale `light_silenced_until` would keep a future red out of

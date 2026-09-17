@@ -104,6 +104,14 @@ export interface LightScopeDetail {
   /** Both package durations, so a reader can see WHY a light was widened or moved. */
   nights?: { ours: number | null; theirs: number | "unknown" } | null;
   reason: UncheckedReason | null;
+  /**
+   * When THIS scope's light value last changed - stamped by `recomputeEventLights`
+   * (lib/services/price-light-store.ts `stampLightChange`) and read by the "השתנה השבוע" view.
+   *
+   * Optional: rows written before 2026-09-17 carry no stamp, and "we do not know when it last
+   * moved" must read as "not changed" rather than as "changed just now".
+   */
+  light_changed_at?: string | null;
   crawled_at: string | null;
   match_id: number | null;
   per_competitor: Partial<Record<CompetitorKey, PerCompetitor>>;
@@ -313,7 +321,14 @@ export interface PriceLightScopeCell {
   raw_currency: Currency | null;
   listing_url: string | null;
   adjustments: string[];
+  /** Normalization was incomplete: the competitor's page never said what the package contains,
+   *  so some adjustments could not be applied. NOT about which competitors were checked -
+   *  that is `partial_coverage` below. */
   partial: boolean;
+  /** A competitor that should have answered did not - its crawl did not cover this event, so
+   *  the scope has no verdict to give ("כיסוי חלקי"). The coverage question, as opposed to
+   *  `partial` above, which is the normalization one. */
+  partial_coverage: boolean;
   /** Nights on each side + the USD doubt that widened the light's band (price-light.ts). */
   nights_ours: number | null;
   nights_theirs: number | null;
@@ -343,6 +358,9 @@ export interface PriceLightRow {
   id: string;            // String(event_id) - the table's row id
   event_id: number;
   name: string;
+  /** The English name, so the table's search finds "barcelona"/"barca" and not only "ברצלונה"
+   *  (`name` is Hebrew on most rows). null when the event has none. */
+  name_english: string | null;
   date: string;
   city: string | null;
   kind: EventKind;

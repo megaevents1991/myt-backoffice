@@ -338,8 +338,29 @@ export function nightsUncertaintyUsd(
 }
 
 // ---- competitors per kind ---------------------------------------------------
-export function kindOf(e: Pick<PricedEvent, "type">): EventKind {
-  return e.type === "music_event" || e.type === "music_live_event_dynamic" ? "music" : "sports";
+/** The feed tag that makes an event music whatever its `type` column says. */
+export const MUSIC_TAG_SLUG = "music";
+
+/**
+ * Which competitors an event is compared against - sports sites or music sites.
+ *
+ * The `type` column alone is not enough: 136 live MUSIC events are `tx_event` (TixStock sells
+ * concerts as well as fixtures) and were therefore classified "sports", so their package light
+ * was compared against ISSTA + Golasso - two football-only sites - and never against OnTour.
+ * ISSTA's `covers()` then recorded `skipped`, the scope fell to `partial_coverage`, and all 136
+ * sat on "לא נבדק" for good (measured 2026-09-17).
+ *
+ * So the vertical is read the way the rest of the platform reads it - off the feed tags - with
+ * the type kept as the fast path: a music TYPE or the `music` TAG makes it music, anything else
+ * is sports. Deliberately one-directional: a sports type carrying a music tag is music (the tag
+ * is the editorial truth), and no tag can turn a music type into sports.
+ *
+ * `tagSlugs` omitted = type-only, exactly the old behaviour: every caller that cannot load tags
+ * (or whose load failed) degrades to the previous classification rather than to a wrong one.
+ */
+export function kindOf(e: Pick<PricedEvent, "type">, tagSlugs?: readonly string[]): EventKind {
+  if (e.type === "music_event" || e.type === "music_live_event_dynamic") return "music";
+  return tagSlugs?.includes(MUSIC_TAG_SLUG) ? "music" : "sports";
 }
 
 const COMPETITORS_BY_KIND: Record<EventKind, Record<Scope, CompetitorKey[]>> = {
@@ -529,6 +550,36 @@ export function computeScopeLight(input: {
     partial: !!best.partial, uncertainty_usd: uncertainty, nights: best.nights ?? null,
     reason: null, crawled_at: best.crawled_at, match_id: best.match_id, per_competitor: per,
   };
+}
+
+/**
+ * When THIS SCOPE'S light value last changed - what "השתנה השבוע" on /price-light means.
+ *
+ * It used to mean "the newest competitor_matches row is younger than 7 days", which was true for
+ * essentially every event (match rows are rewritten whenever a listing's price, attrs or even its
+ * freshness moves), so the view listed all 436 of them and said nothing. The stamp is therefore
+ * carried on the light itself: renewed only when the light the reader sees actually moved.
+ *
+ * `previous` is taken from the COLUMN first (`light_package`/`light_ticket`) and only then from
+ * `light_detail[scope].light`, because the column is the EFFECTIVE light - the one an override
+ * forced - while the detail keeps the computed one underneath it. Reading the detail first would
+ * see "computed orange vs shown red" on every overridden event and re-stamp it nightly.
+ *
+ * No previous stamp and an unchanged light = the stamp stays absent: rows written before this
+ * existed do not know when their light last moved, and "we do not know" is not "changed".
+ */
+export function stampLightChange(
+  detail: LightScopeDetail,
+  effective: Light | null,
+  previousColumn: Light | null,
+  previousDetail: LightScopeDetail | undefined,
+  now: string,
+): LightScopeDetail {
+  const previous = previousColumn ?? previousDetail?.light ?? null;
+  const changedAt = previous !== null && previous === effective
+    ? previousDetail?.light_changed_at ?? null
+    : now;
+  return changedAt == null ? detail : { ...detail, light_changed_at: changedAt };
 }
 
 // ---- price-drop tag --------------------------------------------------------------

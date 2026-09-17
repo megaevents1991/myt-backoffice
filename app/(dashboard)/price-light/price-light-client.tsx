@@ -195,7 +195,9 @@ function LightBadge({ cell }: { cell: PriceLightScopeCell }) {
       : null,
     nightsLine(cell),
     ...cell.adjustments,
-    cell.partial ? "כיסוי חלקי בנרמול" : null,
+    // Renamed 2026-09-17: this is the NORMALIZATION gap (the competitor's page never said what
+    // its package contains), not the coverage one the "כיסוי חלקי" view is about.
+    cell.partial ? "נרמול חלקי (חסרים פרטי חבילה)" : null,
     cell.crawled_at ? `נסרק ${cell.crawled_at.slice(0, 10)}` : null,
     cell.reason ? HE_REASON[cell.reason] : null,
   ].filter(Boolean).join("\n");
@@ -325,7 +327,7 @@ export function PriceLightClient() {
       if (has((x) => x.light === "unchecked")) c.unchecked++;
       if (isPending(row, now, scope)) c.pending++;
       if (row.date <= soonCutoff) c.soon++;
-      if (has((x) => x.partial)) c.partial++;
+      if (has((x) => x.partial_coverage)) c.partial++;
       if (has((x) => x.changed_this_week)) c.changed++;
       if (has((x) => x.method === "ai")) c.aiSample++;
     }
@@ -344,7 +346,10 @@ export function PriceLightClient() {
       case "red": return scoped.filter(some((c) => c.light === "red"));
       case "orange_plus": return scoped.filter(some((c) => c.light === "orange" || c.light === "red"));
       case "soon": return scoped.filter((r) => r.date <= soonCutoff);
-      case "partial": return scoped.filter(some((c) => c.partial));
+      // "כיסוי חלקי" is about COVERAGE - a competitor that never answered for this event - which
+      // is what the view's name promises. It used to filter `c.partial` (incomplete
+      // normalization) and showed 6 rows while ~248 scopes were uncovered.
+      case "partial": return scoped.filter(some((c) => c.partial_coverage));
       case "changed": return scoped.filter(some((c) => c.changed_this_week));
       case "unchecked": return scoped.filter(some((c) => c.light === "unchecked"));
       case "ai_sample": return scoped.filter(some((c) => c.method === "ai"));
@@ -385,7 +390,12 @@ export function PriceLightClient() {
   const columns = useMemo<ColumnDef<PriceLightRow>[]>(
     () => [
       {
-        accessorKey: "name",
+        id: "name",
+        // Both names in one searchable value: the Hebrew `name` is what the row prints, but staff
+        // type "barcelona"/"barca" as often as "ברצלונה" and the English name was not in the
+        // haystack at all. `matchesSearch` tokenizes, so one space-joined string is enough.
+        // (Sorting by this column is unaffected in practice - the Hebrew name is still the prefix.)
+        accessorFn: (row) => [row.name, row.name_english].filter(Boolean).join(" "),
         header: "אירוע",
         cell: ({ row }) => (
           <Link href={`/events/${row.original.event_id}`} className="block font-medium hover:underline">

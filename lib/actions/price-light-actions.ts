@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { matchAllForEvent } from "@/lib/services/price-light-match";
+import { musicTaggedEventIds, musicTagSlugs, tagSlugsForEvent } from "@/lib/services/price-light-tags";
 import { aiEnabled } from "@/lib/services/price-light-judge";
 import { loadJudgeMemory } from "@/lib/services/price-light-memory";
 import {
@@ -43,6 +44,7 @@ import {
   type OfferLines,
   type PriceLightComparison,
   type CrawlStatus,
+  type EventKind,
   type Light,
   type LightDecisionSnapshot,
   type LightDetail,
@@ -147,6 +149,9 @@ const nightsBetweenDays = (a: string | null, b: string | null): number | null =>
 async function buildComparison(eventId: number): Promise<PriceLightComparison | null> {
   const event = await loadEventForLight(eventId);
   if (!event) return null;
+  // The vertical is read off the feed tags, not `type` alone (kindOf, 2026-09-17) - one query
+  // for this one event, so the comparison lists the same competitors the light was set against.
+  const kind = kindOf(event, await tagSlugsForEvent(eventId));
 
   const { data: matchData, error: matchError } = await db.from("competitor_matches")
     .select("id,competitor,scope,status,listing_id,raw_price,raw_currency,price_usd,normalized_usd,diff_usd,light,attrs,note,created_at")
@@ -198,7 +203,7 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
       markup_usd: scope === "package" ? totalMarkupUsd(event) || null : null,
     };
 
-    const theirs = competitorsFor(kindOf(event), scope, ACTIVE_COMPETITORS).map<ComparisonOffer>((competitor) => {
+    const theirs = competitorsFor(kind, scope, ACTIVE_COMPETITORS).map<ComparisonOffer>((competitor) => {
       const m = newest.get(`${scope}:${competitor}`) ?? null;
       const per = detail?.per_competitor?.[competitor];
       const listing = m?.listing_id != null ? listings.get(m.listing_id) ?? null : null;
@@ -390,16 +395,31 @@ export async function setLightOverride(eventId: number, scope: Scope, light: Lig
     const event = await loadEventForLight(eventId);
     if (!event) return { ok: false, error: "event not found" };
     const currentDetail: LightDetail = event.light_detail ?? {};
+    const now = new Date().toISOString();
     const override: LightOverride = {
       scope,
       light,
       note: trimmed,
       by: session.email,
-      at: new Date().toISOString(),
+      at: now,
       competitor_normalized_usd: currentDetail[scope]?.normalized_usd ?? null,
     };
-    const nextDetail: LightDetail = { ...currentDetail, override };
     const column = scope === "package" ? "light_package" : "light_ticket";
+    // A forced light IS the light the reader sees, so forcing it is a change - and this write
+    // does not go through `recomputeEventLights`, which is where every other light change gets
+    // its `light_changed_at`. Without this, an override never showed in "השתנה השבוע": the next
+    // recompute compares the effective light against the column this write already forced, sees
+    // them equal, and carries the old stamp forward. Only when the forced light actually differs
+    // from what the column says today, and only if this scope has a detail to stamp.
+    const currentScopeDetail = currentDetail[scope];
+    const forcedIsNew = light !== (scope === "package" ? event.light_package : event.light_ticket);
+    const nextDetail: LightDetail = {
+      ...currentDetail,
+      override,
+      ...(currentScopeDetail && forcedIsNew
+        ? { [scope]: { ...currentScopeDetail, light_changed_at: now } }
+        : {}),
+    };
     const { error } = await db.from("events").update({ light_detail: nextDetail, [column]: light }).eq("id", eventId);
     if (error) {
       console.error("setLightOverride failed", JSON.stringify(error));
@@ -641,6 +661,7 @@ function buildScopeCell(
   newest: NewestMatch | null,
   hasOpenTask: boolean,
   now: number,
+  kind: EventKind,
 ): PriceLightScopeCell | null {
   const light: Light = (scope === "package" ? event.light_package : event.light_ticket) ?? "unchecked";
   if (light === "na") return null;
@@ -649,7 +670,7 @@ function buildScopeCell(
   // Every active competitor for this scope, not only the one that set the light - the deciding
   // one first, then the rest in registry order, so the eye lands on the number that mattered.
   const perCompetitor = detail?.per_competitor ?? {};
-  const competitors: CompetitorAnswer[] = competitorsFor(kindOf(event), scope, ACTIVE_COMPETITORS)
+  const competitors: CompetitorAnswer[] = competitorsFor(kind, scope, ACTIVE_COMPETITORS)
     .map((competitor) => {
       const answer = perCompetitor[competitor];
       return {
@@ -680,6 +701,11 @@ function buildScopeCell(
     listing_url: newest?.url ?? null,
     adjustments: detail?.adjustments.map((a) => a.label) ?? [],
     partial: detail?.partial ?? false,
+    // The COVERAGE question, which "כיסוי חלקי" is named after: a competitor that should have
+    // answered did not, so this scope has no verdict. `partial` above is the unrelated
+    // normalization one (missing package contents) - the two shared a name and the view was
+    // reading the wrong one (6 rows shown while ~248 scopes were unchecked for coverage).
+    partial_coverage: detail?.reason === "partial_coverage",
     // `nights.theirs` is "unknown" when no competitor page ever said - null on the wire, so the
     // client renders "?" instead of inventing a number. Rows written before 2026-09-13 carry
     // neither field at all, hence the ?? fallbacks.
@@ -689,7 +715,12 @@ function buildScopeCell(
     reason: detail?.reason ?? null,
     crawled_at: detail?.crawled_at ?? null,
     has_open_task: hasOpenTask,
-    changed_this_week: !!newest && now - Date.parse(newest.created_at) < 7 * 86_400_000,
+    // The LIGHT changed, not "a match row was rewritten": match rows are rewritten whenever a
+    // listing's price, attrs or freshness moves, so the old test (newest match younger than a
+    // week) was true for all 436 events. `light_changed_at` is stamped only when the light the
+    // reader sees actually moved; absent (rows written before 2026-09-17) = we do not know = no.
+    changed_this_week: !!detail?.light_changed_at &&
+      now - Date.parse(detail.light_changed_at) < 7 * 86_400_000,
     method: newest?.method ?? null,
     competitors,
     // Our own side, per the pricing rule. Package only: a ticket comparison IS the ticket, and
@@ -733,20 +764,26 @@ async function buildPriceLightRows(onlyRed: boolean): Promise<PriceLightRow[]> {
   if (events.length === 0) return [];
 
   const eventIds = events.map((e) => e.id);
-  const [openTaskKeys, newestMatches] = await Promise.all([
+  const [openTaskKeys, newestMatches, musicIds] = await Promise.all([
     loadOpenPriceLightTaskKeys(),
     loadNewestMatches(eventIds),
+    // Which of these events are music by TAG (kindOf, 2026-09-17) - one chunked read for the
+    // whole list, never one per event. A failed read comes back empty and logs, so the list
+    // still renders with type-only kinds rather than not at all.
+    musicTaggedEventIds(eventIds),
   ]);
 
   const now = Date.now();
   const rows: PriceLightRow[] = [];
   for (const event of events) {
+    const kind = kindOf(event, musicTagSlugs(musicIds.has(event.id)));
     const cellFor = (scope: Scope) => buildScopeCell(
       event,
       scope,
       newestMatches.get(`${event.id}:${scope}`) ?? null,
       openTaskKeys.has(`${event.id}:${scope}`),
       now,
+      kind,
     );
     const pkg = cellFor("package");
     const tkt = cellFor("ticket");
@@ -757,9 +794,10 @@ async function buildPriceLightRows(onlyRed: boolean): Promise<PriceLightRow[]> {
       id: String(event.id),
       event_id: event.id,
       name: event.name,
+      name_english: event.name_english ?? null,
       date: event.date,
       city: event.location?.name ?? null,
-      kind: kindOf(event),
+      kind,
       package: pkg,
       ticket: tkt,
       checked_at: event.light_checked_at,

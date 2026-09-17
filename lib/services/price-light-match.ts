@@ -10,8 +10,12 @@ import {
 import { ACTIVE_COMPETITORS, scraperFor } from "@/lib/services/competitor-scrapers";
 import { isMultiMatchText } from "@/lib/services/offer-detail";
 import { loadEventForLight, recomputeEventLights, type LightEvent } from "@/lib/services/price-light-store";
+// Lives in its own module (not here) so price-light-store.ts can read tags too without
+// closing an import cycle with this file.
+import { tagSlugsForEvent } from "@/lib/services/price-light-tags";
 import { AI_VERDICT_PARSER, aiEnabled, extractAndJudge, makeJudge } from "@/lib/services/price-light-judge";
 import type { CompetitorKey, ExtractedAttrs, ListingRow, MatchMethod, MatchStatus, MatchTrigger, Scope } from "@/types/price-light.types";
+
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
@@ -82,18 +86,6 @@ function coversEvent(competitor: CompetitorKey, event: LightEvent, tagSlugs: str
   const covers = scraperFor(competitor).covers;
   if (!covers) return true;
   return covers({ type: event.type, name: event.name, name_english: event.name_english ?? null, tagSlugs });
-}
-
-/** The event's feed-tag slugs - the vertical ("football"/"music") a scraper's `covers()` reads.
- *  Loaded ONCE per event in matchAllForEvent, never per (competitor, scope). A query failure
- *  returns [] on purpose: that makes ISSTA `skipped`, the safe direction (never a false `alone`). */
-export async function tagSlugsForEvent(eventId: number): Promise<string[]> {
-  const { data, error } = await db.from("event_tag_links").select("event_tags!inner(slug)").eq("event_id", eventId);
-  if (error) { console.error("price-light-match: tag slugs failed", JSON.stringify(error)); return []; }
-  return (data ?? [])
-    .map((r: { event_tags: { slug: string } | { slug: string }[] | null }) =>
-      (Array.isArray(r.event_tags) ? r.event_tags[0]?.slug : r.event_tags?.slug) ?? null)
-    .filter((s: string | null): s is string => !!s);
 }
 
 async function hadGoodCrawl(competitor: CompetitorKey): Promise<boolean> {
@@ -436,9 +428,11 @@ export async function matchAllForEvent(
   const judge = opts.judge === undefined ? makeJudge(opts.aiMemory) : opts.judge;
   // One query per EVENT, not per (competitor, scope) - the slugs are the same for all of them.
   const tagSlugs = opts.tagSlugs ?? (await tagSlugsForEvent(eventId));
+  // AFTER the tags: the vertical is read off them, not off `type` alone (kindOf, 2026-09-17).
+  const kind = kindOf(event, tagSlugs);
   const outcomes: MatchOutcome[] = [];
   for (const scope of ["package", "ticket"] as const) {
-    const competitors = competitorsFor(kindOf(event), scope, ACTIVE_COMPETITORS)
+    const competitors = competitorsFor(kind, scope, ACTIVE_COMPETITORS)
       .filter((c) => scraperFor(c).scopes.includes(scope));
     // Competitors within one scope run concurrently: their rows are disjoint per
     // (event, competitor, scope), and the shared `aiBudget` decrement in `takeAiBudget` is
@@ -448,6 +442,8 @@ export async function matchAllForEvent(
       competitors.map((competitor) => matchEvent(event, competitor, scope, trigger, { ...opts, judge, tagSlugs })),
     ));
   }
-  const lights = await recomputeEventLights(eventId, trigger, { dryRun: opts.dryRun });
+  // Hand the tags on: the recompute needs the same kind, and re-reading them would be a
+  // second query per event on every nightly pass.
+  const lights = await recomputeEventLights(eventId, trigger, { dryRun: opts.dryRun, tagSlugs });
   return { outcomes, lights };
 }

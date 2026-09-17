@@ -110,7 +110,9 @@ function tipFor(detail: LightScopeDetail | undefined, pkg: boolean): string {
       detail.our_usd != null ? `${pkg ? "החל מ- (שלנו)" : "שלנו"}: $${detail.our_usd}` : null,
       nightsLine(detail),
       ...detail.adjustments.map((a) => a.label),
-      detail.partial ? "כיסוי חלקי בנרמול" : null,
+      // The NORMALIZATION gap (the competitor's page never said what its package contains), not
+      // the coverage one - renamed 2026-09-17 in step with /price-light's own tooltip.
+      detail.partial ? "נרמול חלקי (חסרים פרטי חבילה)" : null,
       detail.crawled_at ? `נסרק ${detail.crawled_at.slice(0, 10)}` : null,
     ].filter(Boolean).join("\n");
   }
