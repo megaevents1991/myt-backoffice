@@ -1,0 +1,209 @@
+<title>Homepage Blocks Brief</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Rubik:wght@500;700&display=swap">
+<style>
+  :root {
+    --ground: #F2F6F1;
+    --surface: #FFFFFF;
+    --ink: #10211A;
+    --muted: #5A6B62;
+    --line: #D3DDD5;
+    --forest: #0A1A14;
+    --mint: #5BFF95;
+    --mint-ink: #0B6B36;
+    --warn: #8A5A00;
+    --warn-bg: #FFF4DA;
+    --code-bg: #E7EEE8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0A1A14; --surface: #11261D; --ink: #E6EFE8; --muted: #9BB0A4;
+      --line: #24402F; --mint-ink: #5BFF95; --warn: #FFD27A; --warn-bg: #2E2710; --code-bg: #173024;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0A1A14; --surface: #11261D; --ink: #E6EFE8; --muted: #9BB0A4;
+    --line: #24402F; --mint-ink: #5BFF95; --warn: #FFD27A; --warn-bg: #2E2710; --code-bg: #173024;
+  }
+  body {
+    background: var(--ground); color: var(--ink);
+    font-family: "Assistant", "Segoe UI", Arial, sans-serif; font-size: 17px; line-height: 1.65;
+    padding-inline: 20px; padding-block: 32px 64px;
+  }
+  .page { max-width: 46rem; margin-inline: auto; display: flex; flex-direction: column; gap: 40px; }
+  h1, h2, h3 { font-family: "Rubik", "Segoe UI", Arial, sans-serif; text-wrap: balance; margin: 0; line-height: 1.2; }
+  h1 { font-size: 2.1rem; font-weight: 700; }
+  h2 { font-size: 1.3rem; font-weight: 700; padding-bottom: 8px; border-bottom: 2px solid var(--mint); display: inline-block; }
+  h3 { font-size: 1.02rem; font-weight: 500; color: var(--mint-ink); }
+  p { margin: 0; }
+  section { display: flex; flex-direction: column; gap: 14px; }
+  .eyebrow { font-size: .8rem; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+  .lede { font-size: 1.1rem; color: var(--muted); max-width: 40rem; }
+  ul, ol { margin: 0; padding-inline-start: 1.2rem; display: flex; flex-direction: column; gap: 8px; }
+  code, .path { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: .84em; background: var(--code-bg); padding: 1px 6px; border-radius: 4px; direction: ltr; unicode-bidi: isolate; }
+  .prompt {
+    background: var(--forest); color: #E6EFE8; border-radius: 14px; padding: 20px;
+    display: flex; flex-direction: column; gap: 14px; border: 1px solid #24402F;
+  }
+  .prompt-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .prompt-head strong { font-family: "Rubik", sans-serif; color: var(--mint); }
+  .prompt pre {
+    margin: 0; white-space: pre-wrap; word-break: break-word; direction: ltr; text-align: left;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: .84rem; line-height: 1.6; color: #D6E5DA;
+  }
+  button.copy {
+    font: 600 .9rem "Assistant", sans-serif; background: var(--mint); color: #0A1A14; border: 0;
+    border-radius: 999px; padding: 8px 18px; cursor: pointer;
+  }
+  button.copy:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; }
+  th, td { text-align: start; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-family: "Rubik", sans-serif; font-weight: 500; color: var(--muted); font-size: .82rem; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  .quote { border-inline-start: 3px solid var(--mint); padding: 6px 16px; background: var(--surface); border-radius: 0 8px 8px 0; }
+  .warn { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 14px 16px; }
+  .warn strong { font-family: "Rubik", sans-serif; }
+  .q { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+  .q span { color: var(--muted); font-size: .94rem; }
+  footer { color: var(--muted); font-size: .88rem; border-top: 1px solid var(--line); padding-top: 16px; }
+</style>
+
+<div class="page" dir="rtl" lang="he">
+
+  <header style="display:flex;flex-direction:column;gap:12px">
+    <span class="eyebrow">MYT · בריף לסשן אפיון · 17.09.2026</span>
+    <h1>בלוקים חופשיים בדף הבית</h1>
+    <p class="lede">הלוח <code>/homepage</code> יודע היום לסדר ולהסתיר 7 סקשנים קבועים. הבקשה: לתת לצוות לערוך כותרות ולהוסיף בלוקים משלו - סליידר, טקסט, סליידר יעדים, גלריה, באנרים. הסשן שפותח את הקובץ הזה <strong>מאפיין בלבד</strong>, לא כותב קוד.</p>
+  </header>
+
+  <section>
+    <h2>להדביק בסשן חדש</h2>
+    <p>לפתוח סשן Claude Code בתיקיית <code>myt-backoffice</code> ולהדביק:</p>
+    <div class="prompt">
+      <div class="prompt-head">
+        <strong>Prompt</strong>
+        <button class="copy" id="copy-btn" type="button">העתק</button>
+      </div>
+<pre id="prompt-text">Read docs/superpowers/briefs/2026-09-17-homepage-blocks-brief.html in full - it is your brief.
+
+Task: SPEC ONLY for "free blocks on the homepage" (editable section titles + staff-added blocks: slider / text / destinations slider / image gallery / banners). Do NOT write or change any application code in this session.
+
+How to work:
+1. Invoke the superpowers:brainstorming skill first and follow it.
+2. Verify every "to verify" item in the brief against the code in BOTH repos (myt-backoffice and ../myt-main) before relying on it.
+3. Ask Dor the open questions from the brief ONE BATCH at a time (he answers in Hebrew, short). Offer options with a recommendation - he likes to choose, not be told.
+4. Write the spec to docs/superpowers/specs/2026-09-XX-homepage-blocks-design.md (same style as docs/superpowers/specs/2026-09-02-events-factory-design.md): data model + migration, board UX, main-app rendering, cross-project impact, rollout order, what is explicitly OUT of scope.
+5. Stop after the spec and ask for approval. Only after approval: superpowers:writing-plans for the implementation plan.
+
+Hard rules: schema lives in this repo only (supabase/migrations, master only, merge master first, idempotent SQL); main app never runs migrations; section keys are mirrored in both repos; update app/(dashboard)/guide/guide-content.ts in the same PR as any flow change; never commit or push unless Dor asks.</pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>מה ביקשו, במילים שלהם</h2>
+    <p>מתוך המסמך "באגים / תיקונים - אלון תום ודור", טאב <em>סליידרים הום פייג</em>:</p>
+    <div class="quote">
+      <p>4. אפשרות לערוך כותרת</p>
+      <p>5. אפשרות להוסיף סליידר / טקסט / סליידר יעדים / גלריית תמונות / באנרים ( + )</p>
+      <p>זה בגדול מאפשר גמישות בהמשך למגה שתצטרף שתוכל לסדר את העמודים שלה איך שהיא רוצה עם ובלי אוטמציות ( CMS ).</p>
+    </div>
+    <p>המשפט האחרון הוא הכיוון האסטרטגי: לא עוד פיצ'ר בדף הבית אלא תשתית שגוף נוסף ("מגה") יוכל לבנות בה עמודים משלו. האפיון צריך להחליט כמה מזה נכנס עכשיו.</p>
+  </section>
+
+  <section>
+    <h2>מה קיים היום</h2>
+    <h3>טבלאות (מיגרציה <code>20260916173000_homepage_layout.sql</code>)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>טבלה</th><th>עמודות</th><th>תפקיד</th></tr></thead>
+        <tbody>
+          <tr><td><code>homepage_sections</code></td><td><code>key, position, is_visible, updated_at</code></td><td>סדר + הסתרה של סקשן. <code>key</code> הוא המזהה.</td></tr>
+          <tr><td><code>homepage_items</code></td><td><code>section, kind, ref_id, position, updated_at</code></td><td>פריטים מוצמדים בתחילת קרוסלה. <code>kind</code> = event / artist / team.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>שבעת המפתחות הקבועים</h3>
+    <p><code>hero</code> (תמיד ראשון, נעול) · <code>most_wanted</code> · <code>newest</code> · <code>football</code> · <code>artists</code> · <code>reviews</code> · <code>more_events</code>. הרשימה היא <code>as const</code> בקוד ומשוכפלת בשני הריפואים - זו המגבלה המרכזית: <strong>אין היום סקשן שלא קיים בקוד.</strong></p>
+    <h3>קבצים</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ריפו</th><th>קובץ</th><th>מה יש בו</th></tr></thead>
+        <tbody>
+          <tr><td>backoffice</td><td><code>types/homepage.types.ts</code></td><td>המפתחות, <code>SECTION_ITEM_KINDS</code>, <code>SECTION_META</code> (כותרת + חוקיות, hardcoded)</td></tr>
+          <tr><td>backoffice</td><td><code>lib/actions/homepage-actions.ts</code></td><td><code>getHomepageLayout</code>, <code>saveHomepageLayout</code> (מחליף את כל הלייאאוט בשמירה אחת), <code>setEventPrioritized</code></td></tr>
+          <tr><td>backoffice</td><td><code>app/(dashboard)/homepage/homepage-board.tsx</code></td><td>הלוח: גרירת סקשנים, רצועת פריטים, כרטיסי auto, Add</td></tr>
+          <tr><td>main</td><td><code>lib/homepageLayout.ts</code></td><td>קריאת הטבלאות, fallback לברירת מחדל בכל כשל, <code>pinnedFirst</code></td></tr>
+          <tr><td>main</td><td><code>components/ClientSideHomepage.tsx</code></td><td><code>switch (key)</code> שמרנדר כל סקשן; הכותרות כתובות בקוד (<code>SectionHeading title="המבוקשים ביותר"</code>)</td></tr>
+          <tr><td>main</td><td><code>app/page.tsx</code></td><td>דף הבית, ISR. שמירה בלוח קוראת ל-<code>revalidateMain()</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>המדריך לצוות מתאר את הלוח ב-<code>app/(dashboard)/guide/guide-content.ts</code> (סעיף <code>homepage</code>).</p>
+  </section>
+
+  <section>
+    <h2>לאמת בקוד לפני שסומכים על זה</h2>
+    <ul>
+      <li>האם יש כבר מנגנון העלאת תמונות שאפשר למחזר לגלריה/באנרים - לבדוק את Templates (<code>lib/actions/template-crud.ts</code>) ואת בדיקות נתיב ה-Storage ב-<code>lib/auth/</code>.</li>
+      <li>"סליידר יעדים": מה מקור היעדים - <code>categories</code> (עץ + תגיות), <code>locations</code>, או משהו אחר. יש טאב "יעדים" במסמך של הצוות.</li>
+      <li>האם יש כבר קומפוננטת באנר/גלריה ב-main שאפשר להשתמש בה (לחפש ב-<code>components/</code> ו-<code>components/vertical-hub/</code>).</li>
+      <li>ה-RLS על <code>homepage_*</code> ואיך main קורא אותן (service client) - בלוק עם טקסט חופשי נכנס ל-HTML של האתר.</li>
+      <li>עמודי <code>/c/</code> והאבים אנכיים (<code>VerticalHubPage</code>) - האם הם מועמדים לאותה תשתית.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>שאלות פתוחות לדור</h2>
+    <div class="q"><strong>1. היקף: דף הבית בלבד, או "עמודים" כמושג?</strong><span>המשפט על "מגה שתצטרף" מרמז על עמודים מרובים / מותג נוסף. זה משנה את מודל הנתונים מהיסוד (<code>page_id</code> בכל שורה) - זול להוסיף עכשיו, יקר אחר כך.</span></div>
+    <div class="q"><strong>2. עריכת כותרת: רק לבלוקים חדשים, או גם ל-7 הקיימים?</strong><span>לקיימים - הכותרת עוברת מהקוד ל-DB עם fallback לקוד. האם צריך גם כותרת משנה / קישור "לכל ה..."?</span></div>
+    <div class="q"><strong>3. "סליידר" - של מה?</strong><span>אירועים לפי תגית/קטגוריה (אוטומטי), אירועים שנבחרו ידנית, אמנים, קבוצות? "עם ובלי אוטומציות" = שני מצבים לאותו בלוק?</span></div>
+    <div class="q"><strong>4. טקסט: כמה חופשי?</strong><span>כותרת + פסקה, או rich text מלא. ככל שחופשי יותר - יותר סיכון עיצובי ואבטחתי (sanitize).</span></div>
+    <div class="q"><strong>5. באנרים: לאן מקשרים ומי מעצב?</strong><span>תמונה אחת עם קישור, או גם טקסט על התמונה; מובייל ודסקטופ כתמונות נפרדות?</span></div>
+    <div class="q"><strong>6. כמה בלוקים מאותו סוג, ואיפה מותר למקם?</strong><span>hero נשאר נעול ראשון. האם מותר בלוק בין כל שני סקשנים, והאם יש תקרה (ביצועים, LCP)?</span></div>
+    <div class="q"><strong>7. מי רשאי?</strong><span>היום כל staff שומר את הלוח. תוכן חופשי באתר - אולי admin בלבד?</span></div>
+    <div class="q"><strong>8. טיוטה / תצוגה מקדימה?</strong><span>היום Save = מיידי בפרודקשן. בלוק חדש עם תמונות שווה preview לפני פרסום?</span></div>
+  </section>
+
+  <section>
+    <h2>אילוצים שהאפיון חייב לכבד</h2>
+    <ul>
+      <li><strong>הסכמה בבעלות ה-backoffice.</strong> מיגרציות רק ב-<code>supabase/migrations/</code>, מוחלות אוטומטית במיזוג ל-master, אף פעם לא מ-branch. <code>git fetch && merge origin/master</code> לפני <code>npm run db:new</code>. SQL אידמפוטנטי.</li>
+      <li><strong>main לא נשבר בגלל הלוח.</strong> כל כשל בקריאה = לייאאוט ברירת מחדל. בלוק מסוג שהקוד של main עוד לא מכיר חייב להתעלם ממנו בשקט (סדר פריסה: main קודם, אחר כך backoffice - או להפך, האפיון מחליט ומנמק).</li>
+      <li><strong>מפתחות משוכפלים בשני הריפואים.</strong> מעבר לסקשנים דינמיים מבטל את ה-<code>as const</code> - צריך תוכנית מעבר שלא שוברת את 7 הקיימים ואת ה-pins שכבר נשמרו.</li>
+      <li><strong>כתיבות מפורשות.</strong> אין spread של אובייקט מהקליינט ל-insert/update; ולידציה בצד שרת לכל שדה של בלוק.</li>
+      <li><strong>shadcn/ui בלבד</strong> בלוח, בלי ספריות UI חדשות; גרירה היא HTML5 מקורי היום.</li>
+      <li><strong>ביצועים בדף הבית.</strong> כרטיסי הקרוסלה נטענים lazy בכוונה (לחץ זיכרון תמונות ב-iOS). גלריה/באנרים לא יכולים להחזיר את הבעיה.</li>
+      <li><strong>המדריך.</strong> כל שינוי זרימה מעדכן את <code>guide-content.ts</code> באותו PR, אנגלית + עברית.</li>
+    </ul>
+    <div class="warn"><strong>לא לגעת:</strong> שרשרת המחיר, <code>events</code>, וחוקיות המילוי האוטומטי של <code>most_wanted</code> / <code>newest</code> - הן מחוץ להיקף. הבלוקים החדשים הם תוספת לצדם.</div>
+  </section>
+
+  <section>
+    <h2>התוצר המצופה</h2>
+    <ol>
+      <li>מסמך אפיון ב-<code>docs/superpowers/specs/</code> - מודל נתונים + מיגרציה, UX של הלוח (איך נראה ה-"+", עורך לכל סוג בלוק), רינדור ב-main, השפעה בין הריפואים, סדר פריסה, ומה במפורש <em>לא</em> נכנס.</li>
+      <li>המלצה על חלוקה לשלבים - סביר ש"עריכת כותרת" + בלוק אחד (באנר או טקסט) הם שלב 1, והשאר אחריו.</li>
+      <li>עצירה לאישור של דור. רק אחר כך תוכנית מימוש.</li>
+    </ol>
+  </section>
+
+  <footer>נכתב מתוך סשן ה-backoffice של 17.09.2026, אחרי העבודה על הלוח (auto cards, remove-prioritize, newest = 100 אחרונים). מצב הקוד המתואר כאן נכון ל-commit <code>01bb8a0</code> ב-backoffice ו-<code>d1d0ceb</code> ב-main - שניהם עדיין לא נדחפו בזמן הכתיבה.</footer>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById("copy-btn");
+    var text = document.getElementById("prompt-text");
+    btn.addEventListener("click", function () {
+      var done = function () { btn.textContent = "הועתק"; setTimeout(function () { btn.textContent = "העתק"; }, 1800); };
+      var fallback = function () {
+        var range = document.createRange(); range.selectNodeContents(text);
+        var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+        btn.textContent = "סומן - Ctrl+C";
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text.textContent).then(done, fallback);
+      } else { fallback(); }
+    });
+  })();
+</script>
