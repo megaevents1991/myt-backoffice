@@ -279,7 +279,7 @@ function weeklySeriesFrom(rows: MaturityRow[], createdAtOf: Map<MaturityRow, str
 
 const MATURITY_ACTIONS = [
   "price_light.repriced", "price_light.removed", "price_light.sold_out",
-  "price_light.silenced", "price_light.override", "agent.feedback",
+  "price_light.silenced", "price_light.override", "price_light.corrected", "agent.feedback",
 ];
 const WEEKLY_WEEKS = 8;
 

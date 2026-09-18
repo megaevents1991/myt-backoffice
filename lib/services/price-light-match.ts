@@ -9,6 +9,8 @@ import {
 } from "@/lib/services/price-light";
 import { ACTIVE_COMPETITORS, scraperFor } from "@/lib/services/competitor-scrapers";
 import { isMultiMatchText } from "@/lib/services/offer-detail";
+import { correctAttrs, correctCandidates } from "@/lib/services/price-light-corrections";
+import { listingUsd, loadCorrections } from "@/lib/services/price-light-corrections-store";
 import { loadEventForLight, recomputeEventLights, type LightEvent } from "@/lib/services/price-light-store";
 // Lives in its own module (not here) so price-light-store.ts can read tags too without
 // closing an import cycle with this file.
@@ -169,6 +171,17 @@ function verdictReusable(verdict: Record<string, unknown> | null): boolean {
   return verdict != null && verdict.error == null && verdict.parser === AI_VERDICT_PARSER;
 }
 
+/**
+ * What the AI itself extracted, for a cache hit. The verdict's own `attrs`, not the row's: the
+ * row stores the MERGED attrs (page, derived nights and staff corrections on top), and reusing
+ * those as "the AI's answer" would keep a staff correction alive after it was revoked whenever
+ * the page has no value of its own to win the merge back. Older verdicts carry no attrs.
+ */
+function verdictAttrs(prev: PrevRow): Partial<ExtractedAttrs> | null {
+  const fromVerdict = prev.ai_verdict?.attrs;
+  return fromVerdict && typeof fromVerdict === "object" ? (fromVerdict as Partial<ExtractedAttrs>) : prev.attrs;
+}
+
 function cachedCandidateFor(prev: PrevRow | null, candidates: ListingRow[]): ListingRow | null {
   if (!prev || prev.listing_id == null || !verdictReusable(prev.ai_verdict)) return null;
   const listing = candidates.find((c) => c.id === prev.listing_id) ?? null;
@@ -239,7 +252,15 @@ export async function matchEvent(
     return out;
   }
 
-  const candidates = await candidatesFor(event, competitor, scope);
+  // Staff corrections are laid over the crawl BEFORE anything is decided (2026-09-18): a listing
+  // a human said is not this event is no candidate at all, and a corrected price is the price the
+  // rule, the judge and the normalization all see. The attribute fixes are applied after the
+  // page/AI merge below - staff > page > AI, per field.
+  const crawled = await candidatesFor(event, competitor, scope);
+  const { candidates, attrFixes } = correctCandidates(
+    crawled, await loadCorrections(crawled.map((c) => c.id)), event.id,
+    (amount, currency) => listingUsd(competitor, amount, currency),
+  );
   let picked: ListingRow | null = null;
   let attrs: Partial<ExtractedAttrs> | null = null;
   let verdict: Record<string, unknown> | null = null;
@@ -277,7 +298,7 @@ export async function matchEvent(
       if (picked && prev && cached && cached.id === picked.id) {
         // Cache hit, no call. `cached: true` marks the copy so the AI cost gauge
         // (aiCostThisMonth) doesn't count this re-written verdict as a second call.
-        attrs = prev.attrs; verdict = { ...prev.ai_verdict, cached: true }; method = "ai";
+        attrs = verdictAttrs(prev); verdict = { ...prev.ai_verdict, cached: true }; method = "ai";
       } else if (picked && judge !== null && aiEnabled() && picked.detail_text && attrsAllUnknown(picked.attrs)
         && takeAiBudget(opts.aiBudget)) {
         // Fix round 2 finding 1: gate on `judge !== null` too, not just `aiEnabled()` -
@@ -307,7 +328,7 @@ export async function matchEvent(
       quoteOnly = true; picked = cached; status = "unsure";
     } else {
       // Same `cached: true` marker as the branch above - a reused verdict is not a new call.
-      picked = cached; status = "found"; attrs = prev.attrs; verdict = { ...prev.ai_verdict, cached: true }; method = "ai";
+      picked = cached; status = "found"; attrs = verdictAttrs(prev); verdict = { ...prev.ai_verdict, cached: true }; method = "ai";
     }
   } else if (candidates.length > 0 && !absent && judge && !aiAlreadyDeclined(prev, candidates) && takeAiBudget(opts.aiBudget)) {
     let j: Awaited<ReturnType<Judge>> = null;
@@ -349,7 +370,8 @@ export async function matchEvent(
     // Page attrs win over AI attrs, per field; the derived duration is a PACKAGE concern only -
     // a ticket has no nights, and stamping one on a ticket row would be data that means nothing.
     const base = mergeAttrs(attrs, picked.attrs);
-    const merged = scope === "package" ? withListingNights(base, picked) : base;
+    const derived = scope === "package" ? withListingNights(base, picked) : base;
+    const merged = correctAttrs(derived, attrFixes.get(picked.id) ?? []);
     const norm = scope === "package"
       ? normalize(priceUsd, merged, { nights: ourNights(event), nightRateUsd: ourNightRateUsd(event) })
       : { normalizedUsd: Math.round(priceUsd), adjustments: [], partial: false };

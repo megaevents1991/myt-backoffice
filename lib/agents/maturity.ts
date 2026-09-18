@@ -42,6 +42,12 @@ export function maturityFrom(rows: MaturityRow[]): AgentMaturity {
       if (row.metadata?.to_light !== "red") disagreed += 1;
       continue;
     }
+    if (row.action === "price_light.corrected") {
+      // A field fixed in the detailed comparison. Only a value the AGENT produced (or a match it
+      // made) is a review of the agent - a crawler's misread says nothing about it either way.
+      if (row.metadata?.source === "ai") reviewedBad += 1;
+      continue;
+    }
     if (row.action === "agent.feedback") {
       if (row.metadata?.verdict_ok === true) reviewedOk += 1;
       else if (row.metadata?.verdict_ok === false) reviewedBad += 1;

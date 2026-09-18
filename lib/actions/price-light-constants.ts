@@ -16,3 +16,6 @@ export const OVERRIDE_NOTE_MAX = 500;
  *  recheck has no run to belong to, so it carries its own. Four covers the competitors of both
  *  scopes for one event, which is all a single click can legitimately need. */
 export const RECHECK_AI_CALLS = 4;
+
+/** Window of the per-competitor staff-corrections count on the competitors strip (the parser report). */
+export const CORRECTION_REPORT_DAYS = 30;

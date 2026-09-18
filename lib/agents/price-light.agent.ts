@@ -9,6 +9,7 @@ import {
   BAG_USD, BREAKFAST_USD, CONNECTION_USD, MAX_WINDOW_DAYS, NIGHT_RATE_MAX_USD,
   NIGHT_RATE_MIN_USD, STAR_STEP_USD, TRANSFER_USD,
 } from "@/lib/services/price-light";
+import { correctionLessonText } from "@/lib/services/price-light-corrections";
 import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "@/lib/services/price-margins";
 import type { LightDecisionSnapshot } from "@/types/price-light.types";
 import type { AgentDefinition, AuditLessonRow } from "./types";
@@ -87,6 +88,20 @@ export const PRICE_LIGHT_LEARNS_FROM: AgentDefinition["learnsFrom"] = [
     },
   },
   {
+    // A field fixed in the detailed comparison (2026-09-18). Second only to an override: it names
+    // the exact value that was wrong and what it should have been. Only what this agent itself can
+    // get wrong is a lesson for it - a value IT extracted, or a same-event call (its other job).
+    // A price or a parser-read field staff corrected is the crawler's mistake: it still fixes the
+    // light and still counts in the per-competitor parser report, but quoting it here would spend
+    // the agent's ten lesson slots teaching it about regexes it never runs.
+    action: "price_light.corrected",
+    toLesson: (row) => {
+      const m = row.metadata;
+      if (m?.source !== "ai" && m?.field !== "not_same_event") return null;
+      return correctionLessonText(m ?? {});
+    },
+  },
+  {
     action: "price_light.repriced",
     toLesson: decision("a human judged the gap REAL and went to cut our price"),
   },
@@ -145,6 +160,7 @@ export const PRICE_LIGHT_AGENT: AgentDefinition = {
     "הסר מהאתר - למשוך את האירוע מהמכירה",
     "אירוע נמכר (Sold Out) - האירוע לא מוצע יותר, לא נמחק",
     "דריסה (override) של הרמזור עם הערה מנומקת",
+    "תיקון בהשוואה המפורטת - מחיר, תכולת חבילה או 'לא אותו אירוע', עם סיבה והערה (גובר על מה שהסוכן חילץ)",
     "השאר בפיד - הפער מקובל כרגע, להשתיק זמנית",
   ],
   switchEnv: "PRICE_LIGHT_AI",

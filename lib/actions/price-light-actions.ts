@@ -28,6 +28,14 @@ import {
 } from "@/lib/services/price-light";
 import { formatOfferLines, parseOfferDetail } from "@/lib/services/offer-detail";
 import {
+  CORRECTION_FIELDS, CORRECTION_NOTE_MAX, CORRECTION_NOTE_MIN, CORRECTION_REASONS, correctAttrs, correctOffer,
+  crawledValue, isAttrField, isTextField, liveCorrections, sameValue, validateCorrection,
+  type CorrectionField, type CorrectionReason, type CorrectionSource, type CorrectionValue, type ListingCorrection,
+} from "@/lib/services/price-light-corrections";
+import {
+  correctionCounts, eventsMatchedTo, loadCorrections, loadPairCorrections, revokeCorrection, saveCorrection,
+} from "@/lib/services/price-light-corrections-store";
+import {
   describeOurOffer, OUR_OFFER_EVENT_COLUMNS, OUR_OFFER_REFRESH_DAYS, storeOurOffer, type OurOfferEvent,
 } from "@/lib/services/our-offer-detail";
 import {
@@ -37,7 +45,7 @@ import {
 } from "@/lib/services/competitor-scrapers";
 import { circuitOpen, runCrawl, type CrawlSummary } from "@/lib/services/price-light-crawl";
 import { softDeleteEvent } from "@/lib/actions/event-actions";
-import { OVERRIDE_NOTE_MAX, RECHECK_AI_CALLS, SILENCE_DAYS, SILENCE_DAYS_MAX } from "@/lib/actions/price-light-constants";
+import { CORRECTION_REPORT_DAYS, OVERRIDE_NOTE_MAX, RECHECK_AI_CALLS, SILENCE_DAYS, SILENCE_DAYS_MAX } from "@/lib/actions/price-light-constants";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   LIGHTS,
@@ -45,6 +53,7 @@ import {
   type ComparisonOffer,
   type CompetitorAnswer,
   type CompetitorKey,
+  type OfferCorrection,
   type OfferLines,
   type PriceLightComparison,
   type CrawlStatus,
@@ -157,6 +166,18 @@ const nightsBetweenDays = (a: string | null, b: string | null): number | null =>
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
+/** The seat LiveTickets' shelf price buys: the cheapest `brt` category of that live event. */
+async function liveTicketsSeatFor(externalKey: string): Promise<string | null> {
+  const liveEventId = Number(externalKey);
+  if (!Number.isInteger(liveEventId)) return null;
+  const { data, error } = await db.from("live_events").select("ticket_categories").eq("event_id", liveEventId).maybeSingle();
+  if (error) console.error("liveTicketsSeatFor: live_events failed", JSON.stringify(error));
+  const categories = ((data?.ticket_categories ?? []) as { brt: number; title: string | null }[])
+    .filter((c) => Number.isFinite(Number(c.brt)) && Number(c.brt) > 0)
+    .sort((a, b) => Number(a.brt) - Number(b.brt));
+  return categories[0]?.title?.trim() || null;
+}
+
 /**
  * One event, every competitor, both scopes - with what each package CONTAINS (flight, hotel, seat).
  * Loaded on demand for one row, never with the list: detail pages run to 6,000 characters each.
@@ -188,21 +209,22 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
     for (const l of (data ?? []) as ComparisonListing[]) listings.set(l.id, l);
   }
 
+  // Staff corrections (2026-09-18). A failed read must not blank the whole sheet - it shows the
+  // crawled values with no corrections, and the dialog still opens.
+  const [corrections, pairMarks] = await Promise.all([
+    loadCorrections(listingIds).catch((e) => { console.error("buildComparison: corrections failed", e); return [] as ListingCorrection[]; }),
+    loadPairCorrections(eventId),
+  ]);
+  const shown = (c: ListingCorrection): OfferCorrection => ({
+    id: c.id, field: c.field, original: c.original, value: c.value, reason: c.reason, note: c.note, by: c.created_by, at: c.created_at,
+  });
+
   // LiveTickets is a table, not a page: the seat its shelf price buys is the cheapest `brt`
   // category of the matched live event, read here rather than stored as a detail text (a stored
   // text on an attrs-less listing would send every LiveTickets match to the AI for "extraction").
-  let liveTicketsSeat: string | null = null;
   const liveTicketsMatch = newest.get("ticket:livetickets");
   const liveTicketsListing = liveTicketsMatch?.listing_id != null ? listings.get(liveTicketsMatch.listing_id) ?? null : null;
-  const liveEventId = Number(liveTicketsListing?.external_key);
-  if (liveTicketsListing && Number.isInteger(liveEventId)) {
-    const { data, error } = await db.from("live_events").select("ticket_categories").eq("event_id", liveEventId).maybeSingle();
-    if (error) console.error("buildComparison: live_events failed", JSON.stringify(error));
-    const categories = ((data?.ticket_categories ?? []) as { brt: number; title: string | null }[])
-      .filter((c) => Number.isFinite(Number(c.brt)) && Number(c.brt) > 0)
-      .sort((a, b) => Number(a.brt) - Number(b.brt));
-    liveTicketsSeat = categories[0]?.title?.trim() || null;
-  }
+  const liveTicketsSeat = liveTicketsListing ? await liveTicketsSeatFor(liveTicketsListing.external_key) : null;
 
   const ours = event.light_detail?.ours ?? null;
   const ticket = cheapestAvailableTicket(event);
@@ -233,22 +255,32 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
       lines: oursLines, multi_match: false, seen_at: ours?.at ?? null,
       site_usd: scope === "package" ? ourPackageUsd(event) : null,
       markup_usd: scope === "package" ? totalMarkupUsd(event) || null : null,
+      // Our side is the pricing rule's own answer - never hand-edited ("פרט את שלנו עכשיו" refreshes it).
+      edit: null, corrections: [],
     };
 
     const theirs = competitorsFor(kind, scope, ACTIVE_COMPETITORS).map<ComparisonOffer>((competitor) => {
       const m = newest.get(`${scope}:${competitor}`) ?? null;
       const per = detail?.per_competitor?.[competitor];
       const listing = m?.listing_id != null ? listings.get(m.listing_id) ?? null : null;
-      const attrs = m?.attrs ?? listing?.attrs ?? null;
-      const parsed = listing ? parseOfferDetail(competitor, listing.detail_text, attrs) : null;
+      // What the crawl said, then what staff said on top of it (staff > page > AI). The text the
+      // parser read is the `original` a text correction is compared with, so it is parsed first.
+      const crawledOffer = listing ? parseOfferDetail(competitor, listing.detail_text, m?.attrs ?? listing.attrs ?? null) : null;
+      if (crawledOffer && competitor === "livetickets" && !crawledOffer.ticket) crawledOffer.ticket = liveTicketsSeat;
+      const live = listing ? liveCorrections(corrections, listing, crawledOffer, eventId) : [];
+      const attrs = correctAttrs(m?.attrs ?? listing?.attrs ?? {}, live.filter((c) => isAttrField(c.field)));
+      const parsed = crawledOffer ? correctOffer(crawledOffer, live) : null;
       const lines: OfferLines = parsed ? formatOfferLines(parsed) : { flight: null, hotel: null, ticket: null };
-      if (competitor === "livetickets" && !lines.ticket) lines.ticket = liveTicketsSeat;
+      const priceFix = live.find((c) => c.field === "price")?.value;
+      const fixedPrice = priceFix && typeof priceFix === "object" ? priceFix : null;
+      const rawPrice = fixedPrice?.amount ?? m?.raw_price ?? listing?.price_from ?? null;
+      const rawCurrency = fixedPrice?.currency ?? m?.raw_currency ?? listing?.currency ?? null;
       return {
         who: competitor,
         status: per?.status ?? m?.status ?? "skipped",
         quote_only: per?.quote_only ?? m?.note === "quote_only",
-        raw: m?.raw_price ?? listing?.price_from ?? null,
-        raw_currency: m?.raw_currency ?? listing?.currency ?? null,
+        raw: rawPrice,
+        raw_currency: rawCurrency,
         usd: m?.price_usd ?? listing?.price_usd ?? null,
         normalized_usd: per?.normalized_usd ?? m?.normalized_usd ?? null,
         diff_usd: per?.diff_usd ?? m?.diff_usd ?? null,
@@ -258,13 +290,26 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
         url: listing?.url ?? null,
         depart: listing?.travel_depart ?? null,
         return: listing?.travel_return ?? null,
-        nights: typeof attrs?.nights === "number" ? attrs.nights : nightsBetweenDays(listing?.travel_depart ?? null, listing?.travel_return ?? null),
+        nights: typeof attrs.nights === "number" ? attrs.nights : nightsBetweenDays(listing?.travel_depart ?? null, listing?.travel_return ?? null),
         // A ticket listing is the ticket - flight/hotel lines there would be noise.
         lines: scope === "ticket" ? { flight: null, hotel: null, ticket: lines.ticket } : lines,
         multi_match: parsed?.multiMatch ?? false,
         seen_at: listing?.last_seen_at ?? m?.created_at ?? null,
         site_usd: null,
         markup_usd: null,
+        edit: listing
+          ? {
+              listing_id: listing.id,
+              price: rawPrice != null && rawCurrency != null ? { amount: Number(rawPrice), currency: rawCurrency } : null,
+              attrs,
+              airline: parsed?.flight?.airline ?? null,
+              hotel_name: parsed?.hotel?.name ?? null,
+              ticket: lines.ticket,
+            }
+          : null,
+        // A "not this event" mark took its listing out of the match, so it is found by event, not
+        // by listing - each competitor sits in exactly one scope, so it lands on the right row.
+        corrections: [...live, ...pairMarks.filter((c) => c.competitor === competitor)].map(shown),
       };
     });
     // The one that set the light first, then the priced ones cheapest-first, then everyone else.
@@ -317,6 +362,173 @@ export async function refreshOurOffer(
     return comparison ? { ok: true, comparison } : { ok: false, error: "event not found" };
   } catch (e) {
     console.error("refreshOurOffer failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "failed" };
+  }
+}
+
+// ---- staff corrections in the detailed comparison (2026-09-18) ---------------------------------
+/** Other events resting on the same listing that one save re-matches on the spot; the rest follow
+ *  at the next nightly pass, which matches every event anyway. */
+const CORRECTION_REMATCH_OTHERS = 5;
+const CORRECTION_CHANGES_MAX = 12;
+
+type CorrectionResult =
+  | { ok: true; saved: number; comparison: PriceLightComparison | null; row: PriceLightRow | null }
+  | { ok: false; error: string };
+
+type CorrectedListing = Pick<ListingRow, "id" | "competitor" | "scope" | "external_key" | "title" | "price_from" | "currency" |
+  "attrs" | "detail_text" | "travel_depart" | "travel_return">;
+
+const known = (v: unknown): boolean => v !== undefined && v !== null && v !== "unknown" && v !== "";
+
+/**
+ * Re-match after a correction, rule-only: staff just supplied the answer, so nothing here is worth
+ * an AI call (a cached verdict is still reused - that path needs no judge). The event on screen
+ * first; a listing-wide fix also moves the other events matched to that listing, a handful now
+ * and the rest tonight.
+ */
+async function rematchAfterCorrection(eventId: number, listingId: number, listingWide: boolean): Promise<void> {
+  await matchAllForEvent(eventId, "manual", { judge: null });
+  if (!listingWide) return;
+  const others = (await eventsMatchedTo(listingId, CORRECTION_REMATCH_OTHERS + 1)).filter((id) => id !== eventId);
+  for (const other of others.slice(0, CORRECTION_REMATCH_OTHERS)) {
+    try {
+      await matchAllForEvent(other, "manual", { judge: null });
+    } catch (e) {
+      console.error(`rematchAfterCorrection: event ${other} failed`, e);
+    }
+  }
+}
+
+/**
+ * "עריכה" on a competitor row of the detailed comparison. Staff fix what the crawl (or the AI) got
+ * wrong - a price, what the package contains, or "this listing is not our event" - with a reason
+ * and a note. Each changed field becomes one overlay row (never a write to the listing); the
+ * lights are recomputed on the spot, and every correction is audited as `price_light.corrected`,
+ * which is what the agent learns from and what the per-competitor parser report counts.
+ * The client sends only the NEW values - what the crawl said, and who said it, is worked out here.
+ * Never writes one of OUR prices.
+ */
+export async function saveListingCorrections(input: {
+  eventId: number; listingId: number; changes: { field: string; value: unknown }[]; reason: string; note: string;
+}): Promise<CorrectionResult> {
+  const session = await requireAdmin();
+  try {
+    const note = (input.note ?? "").replace(/\s+/g, " ").trim();
+    if (note.length < CORRECTION_NOTE_MIN || note.length > CORRECTION_NOTE_MAX) {
+      return { ok: false, error: `הערה של ${CORRECTION_NOTE_MIN}-${CORRECTION_NOTE_MAX} תווים היא חובה` };
+    }
+    const reason = CORRECTION_REASONS.find((r) => r.id === input.reason)?.id as CorrectionReason | undefined;
+    if (!reason) return { ok: false, error: "יש לבחור סיבה" };
+    const changes = Array.isArray(input.changes) ? input.changes : [];
+    if (changes.length === 0 || changes.length > CORRECTION_CHANGES_MAX) return { ok: false, error: "אין שינוי לשמור" };
+    if (!Number.isInteger(input.eventId) || !Number.isInteger(input.listingId)) return { ok: false, error: "bad id" };
+
+    const event = await loadEventForLight(input.eventId);
+    if (!event || event.is_deleted) return { ok: false, error: "event not found" };
+    const { data: listingData, error: listingError } = await db.from("competitor_listings")
+      .select("id,competitor,scope,external_key,title,price_from,currency,attrs,detail_text,travel_depart,travel_return")
+      .eq("id", input.listingId).maybeSingle();
+    if (listingError) { console.error("saveListingCorrections: listing failed", JSON.stringify(listingError)); return { ok: false, error: listingError.message }; }
+    const listing = listingData as CorrectedListing | null;
+    if (!listing) return { ok: false, error: "listing not found" };
+
+    const { data: matchData, error: matchError } = await db.from("competitor_matches")
+      .select("listing_id,method,attrs,ai_verdict")
+      .eq("event_id", input.eventId).eq("competitor", listing.competitor).eq("scope", listing.scope)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (matchError) console.error("saveListingCorrections: match failed", JSON.stringify(matchError));
+    const match = matchData as Pick<MatchRow, "listing_id" | "method" | "attrs" | "ai_verdict"> | null;
+    const aiAttrs = (match?.method === "ai" ? (match.ai_verdict as { attrs?: Record<string, unknown> } | null)?.attrs : null) ?? null;
+
+    const parsed = parseOfferDetail(listing.competitor, listing.detail_text, listing.attrs);
+    if (listing.competitor === "livetickets" && !parsed.ticket) parsed.ticket = await liveTicketsSeatFor(listing.external_key);
+    const existing = [...(await loadCorrections([listing.id])), ...(await loadPairCorrections(input.eventId))]
+      .filter((c) => c.listing_id === listing.id);
+
+    let saved = 0;
+    let listingWide = false;
+    for (const change of changes) {
+      if (!(CORRECTION_FIELDS as readonly string[]).includes(change.field)) return { ok: false, error: `unknown field ${change.field}` };
+      const field = change.field as CorrectionField;
+      const checked = validateCorrection(field, change.value);
+      if (!checked.ok) return { ok: false, error: checked.error };
+      const value: CorrectionValue = checked.value;
+      const pairScoped = field === "not_same_event";
+      const original = crawledValue(field, listing, parsed);
+      const current = existing.find((c) => c.field === field && (pairScoped ? c.event_id === input.eventId : c.event_id == null)) ?? null;
+
+      // Set back to what the crawl says = the correction is no longer needed.
+      if (!pairScoped && sameValue(value, original)) {
+        if (current) {
+          await revokeCorrection(current.id, session.email ?? null);
+          await logAudit({
+            action: "price_light.correction_revoked", entityType: "event", entityId: input.eventId,
+            metadata: { competitor: listing.competitor, listing_id: listing.id, field, correction_id: current.id },
+          });
+          saved += 1; listingWide = true;
+        }
+        continue;
+      }
+      if (current && sameValue(current.value, value) && sameValue(current.original, original)) continue;
+
+      const pageKnows = isAttrField(field) && known(listing.attrs?.[field]);
+      const source: CorrectionSource = pairScoped
+        ? (match?.listing_id === listing.id ? (match.method === "ai" ? "ai" : "rule") : "none")
+        : field === "price" ? "page"
+        : isTextField(field) ? "parser"
+        : pageKnows ? "page"
+        : known(aiAttrs?.[field]) ? "ai"
+        : field === "nights" && listing.travel_depart && listing.travel_return ? "page"
+        : "none";
+      // What the machine showed staff: the AI's value when it was the AI's, else the crawl's.
+      const from: unknown = source === "ai" && !pairScoped ? aiAttrs?.[field] ?? original
+        : isAttrField(field) && !pageKnows ? match?.attrs?.[field] ?? original
+        : original;
+
+      const row = await saveCorrection({
+        listing_id: listing.id, event_id: pairScoped ? input.eventId : null, competitor: listing.competitor,
+        field, original, value, reason, note, source, created_by: session.email ?? null,
+      });
+      await logAudit({
+        action: "price_light.corrected", entityType: "event", entityId: input.eventId,
+        metadata: {
+          competitor: listing.competitor, listing_id: listing.id, listing_title: listing.title, event_name: event.name, scope: listing.scope,
+          field, from, to: value, source, reason, note, correction_id: row.id,
+        },
+      });
+      saved += 1;
+      if (!pairScoped) listingWide = true;
+    }
+
+    if (saved > 0) {
+      await rematchAfterCorrection(input.eventId, listing.id, listingWide);
+      invalidatePriceLight("rows", "runs"); // "runs" carries the per-competitor corrections count
+    }
+    return { ok: true, saved, comparison: await buildComparison(input.eventId), row: await buildPriceLightRow(input.eventId) };
+  } catch (e) {
+    console.error("saveListingCorrections failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "failed" };
+  }
+}
+
+/** "בטל תיקון": the crawled value stands again, and the lights are recomputed with it. */
+export async function revokeListingCorrection(eventId: number, correctionId: number): Promise<CorrectionResult> {
+  const session = await requireAdmin();
+  try {
+    if (!Number.isInteger(eventId) || !Number.isInteger(correctionId)) return { ok: false, error: "bad id" };
+    const revoked = await revokeCorrection(correctionId, session.email ?? null);
+    if (revoked) {
+      await logAudit({
+        action: "price_light.correction_revoked", entityType: "event", entityId: eventId,
+        metadata: { competitor: revoked.competitor, listing_id: revoked.listing_id, field: revoked.field, correction_id: revoked.id },
+      });
+      await rematchAfterCorrection(eventId, revoked.listing_id, revoked.event_id == null);
+      invalidatePriceLight("rows", "runs");
+    }
+    return { ok: true, saved: revoked ? 1 : 0, comparison: await buildComparison(eventId), row: await buildPriceLightRow(eventId) };
+  } catch (e) {
+    console.error("revokeListingCorrection failed", e);
     return { ok: false, error: e instanceof Error ? e.message : "failed" };
   }
 }
@@ -650,6 +862,9 @@ export interface CrawlPanelRow {
   nextDueAt: string | null;
   circuitOpen: boolean;
   totalListings: number;
+  /** Staff corrections on this competitor's listings in the last CORRECTION_REPORT_DAYS - the
+   *  parser report: many fixes of one field on one site is a crawler bug, not a lesson for the AI. */
+  corrections: { total: number; byField: Record<string, number> } | null;
 }
 
 // The list reads exactly the light projection - `light_silenced_until` moved into
@@ -988,7 +1203,7 @@ function rowPricing(event: ListedEvent): PriceLightRow["pricing"] {
 }
 
 /** One competitor's panel row - four small reads, issued together. */
-async function crawlPanelRow(competitor: CompetitorKey): Promise<CrawlPanelRow> {
+async function crawlPanelRow(competitor: CompetitorKey): Promise<Omit<CrawlPanelRow, "corrections">> {
   const scraper = scraperFor(competitor);
   const [lastRes, dueRes, countRes, circuit] = await Promise.all([
     db
@@ -1047,7 +1262,13 @@ export async function listCrawlRuns(): Promise<CrawlPanelRow[]> {
 // Invalidated by every crawl-run write (price-light-crawl.ts insertRun/finishRun); the TTL
 // covers a run written from outside Next (scripts/crawl-local.ts).
 const cachedCrawlPanel = unstable_cache(
-  () => Promise.all(ACTIVE_COMPETITORS.map(crawlPanelRow)),
+  async (): Promise<CrawlPanelRow[]> => {
+    const [rows, counts] = await Promise.all([
+      Promise.all(ACTIVE_COMPETITORS.map(crawlPanelRow)),
+      correctionCounts(CORRECTION_REPORT_DAYS),
+    ]);
+    return rows.map((row) => ({ ...row, corrections: counts[row.competitor] ?? null }));
+  },
   ["price-light-runs"],
   { tags: [PRICE_LIGHT_TAG.runs], revalidate: PRICE_LIGHT_TTL_S.runs },
 );

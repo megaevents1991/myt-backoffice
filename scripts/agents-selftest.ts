@@ -97,6 +97,14 @@ const legacy = lessonFor("price_light.override", { scope: "package", light: "gre
 assert.ok(legacy?.includes("old row"));
 assert.ok(legacy?.includes('to "green"'), "with no to_light, the recorded light is the forced one");
 
+// A field corrected in the detailed comparison teaches the judge only what the judge can get
+// wrong: a value IT extracted, or a same-event pairing. A crawler's misread is not its lesson.
+const aiFix = { competitor: "golasso", field: "hotel_stars", from: 3, to: 4, reason: "ai_wrong", note: "בדף כתוב 4 כוכבים" };
+assert.ok(lessonFor("price_light.corrected", { ...aiFix, source: "ai" })?.includes("the AGENT's hotel stars from 3 to 4"));
+assert.equal(lessonFor("price_light.corrected", { ...aiFix, source: "page" }), null);
+assert.ok(lessonFor("price_light.corrected", { competitor: "issta", field: "not_same_event", source: "rule", note: "משחק אחר" })?.includes("NOT the same event"));
+assert.equal(lessonFor("price_light.corrected", { ...aiFix, source: "ai", note: " " }), null, "no note, no lesson");
+
 assert.ok(lessonFor("price_light.repriced", snapshot)?.includes("judged the gap REAL"));
 assert.ok(lessonFor("price_light.removed", snapshot)?.includes("pulled the event off the site"));
 assert.ok(lessonFor("price_light.sold_out", snapshot)?.includes("SOLD OUT"));
@@ -199,6 +207,9 @@ assert.deepEqual(
 );
 // An override with no to_light at all still counts as a disagreement (not "red" either).
 assert.equal(maturityFrom([{ action: "price_light.override", metadata: {} }]).disagreed, 1);
+// A corrected field is a bad review of the agent only when the value was the agent's own.
+assert.equal(maturityFrom([{ action: "price_light.corrected", metadata: { source: "ai" } }]).reviewedBad, 1);
+assert.equal(maturityFrom([{ action: "price_light.corrected", metadata: { source: "page" } }]).reviewedBad, 0);
 // Past the 10-decision floor, the rate is a plain agreed / (agreed + disagreed).
 const eightAgreed = Array.from({ length: 8 }, () => ({ action: "price_light.repriced", metadata: null }));
 const twoDisagreed = Array.from({ length: 2 }, () => ({ action: "price_light.silenced", metadata: null }));

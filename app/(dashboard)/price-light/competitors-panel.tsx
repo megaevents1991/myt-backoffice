@@ -15,7 +15,10 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { triggerCrawl, type CrawlPanelRow } from "@/lib/actions/price-light-actions";
+import { CORRECTION_REPORT_DAYS } from "@/lib/actions/price-light-constants";
+import type { CorrectionField } from "@/lib/services/price-light-corrections";
 import { COMPETITOR_LABEL } from "@/app/(dashboard)/events/price-light-ui";
+import { FIELD_HE } from "./correction-dialog";
 import type { CompetitorKey, CrawlStatus } from "@/types/price-light.types";
 
 const STATUS_LABEL: Record<CrawlStatus, string> = {
@@ -95,6 +98,12 @@ function CompetitorCard({
     }
   };
 
+  const fixes = row.corrections;
+  const fixesByField = Object.entries(fixes?.byField ?? {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([field, n]) => `${FIELD_HE[field as CorrectionField] ?? field} ${n}`)
+    .join(", ");
+
   // Everything that does not earn a line of its own lives here: the schedule, the open circuit
   // breaker and the reason a table-mode or local-only competitor has no button.
   const tip = [
@@ -104,6 +113,8 @@ function CompetitorCard({
     row.nextDueAt && !isTable ? `הבא: ${new Date(row.nextDueAt).toLocaleString("he-IL")}` : null,
     row.circuitOpen ? "בלם פתוח: שלוש ריצות כושלות ברצף, ממתין 24 שעות" : null,
     row.last?.note ?? null,
+    // The parser report: many fixes of one field on one site is a crawler bug, not an AI lesson.
+    fixes ? `תיקוני צוות ב-${CORRECTION_REPORT_DAYS} הימים האחרונים: ${fixes.total} (${fixesByField})` : null,
   ].filter(Boolean).join("\n");
 
   return (
@@ -138,7 +149,10 @@ function CompetitorCard({
                 <span className="tabular-nums">{row.totalListings}</span>
                 <span className="truncate">מודעות</span>
               </div>
-              <div className="text-[11px] text-muted-foreground">{relativeTime(lastAt)}</div>
+              <div className="text-[11px] text-muted-foreground">
+                {relativeTime(lastAt)}
+                {fixes && <span className="ms-1 text-sky-700 dark:text-sky-300">· ✎ {fixes.total}</span>}
+              </div>
             </button>
             {canTrigger && (
               <Button

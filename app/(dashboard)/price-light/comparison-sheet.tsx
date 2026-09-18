@@ -5,7 +5,7 @@
 // partner's format (2026-09-14): "טיסות: אל על עם מזוודה ישיר 16-20 | מלון: שם מלון כולל ארוחת בוקר או
 // ללא | סוג כרטיס". Loaded on demand - detail pages are long, the list never carries them.
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { BedDouble, ExternalLink, Loader2, Plane, RefreshCw, Ticket } from "lucide-react";
+import { BedDouble, ExternalLink, Loader2, Pencil, Plane, RefreshCw, Ticket } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -15,7 +15,9 @@ import { getPriceLightComparison, refreshOurOffer } from "@/lib/actions/price-li
 import { signedUsd } from "@/lib/services/price-light";
 import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "@/lib/services/price-margins";
 import { COMPETITOR_LABEL, PILL } from "@/app/(dashboard)/events/price-light-ui";
-import type { ComparisonOffer, PriceLightComparison, Scope } from "@/types/price-light.types";
+import type { CorrectionField } from "@/lib/services/price-light-corrections";
+import type { ComparisonOffer, PriceLightComparison, PriceLightRow, Scope } from "@/types/price-light.types";
+import { CorrectionDialog, correctionValueText, FIELD_HE } from "./correction-dialog";
 
 const SCOPE_HE: Record<Scope, string> = { package: "חבילה", ticket: "כרטיס בלבד" };
 
@@ -90,7 +92,7 @@ function Part({ text }: { text: string | null }) {
   );
 }
 
-function OfferRow({ offer, scope }: { offer: ComparisonOffer; scope: Scope }) {
+function OfferRow({ offer, scope, onEdit }: { offer: ComparisonOffer; scope: Scope; onEdit: () => void }) {
   const ours = offer.who === "ours";
   const pkg = scope === "package";
   const name = offer.who === "ours" ? "אנחנו" : COMPETITOR_LABEL[offer.who] ?? offer.who;
@@ -111,7 +113,24 @@ function OfferRow({ offer, scope }: { offer: ComparisonOffer; scope: Scope }) {
               <ExternalLink className="h-3 w-3 text-muted-foreground hover:text-foreground" />
             </a>
           )}
+          {/* Staff fix what the crawl got wrong - never our own side, that is the pricing rule's. */}
+          {!ours && (offer.edit || offer.corrections.length > 0) && (
+            <button type="button" onClick={onEdit} title="תיקון הערכים של המודעה (עם הערה ל-AI)" className="ms-auto rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground">
+              <Pencil className="h-3 w-3" aria-hidden />
+              <span className="sr-only">תיקון</span>
+            </button>
+          )}
         </div>
+        {offer.corrections.length > 0 && (
+          <button
+            type="button"
+            onClick={onEdit}
+            title={offer.corrections.map((c) => `${FIELD_HE[c.field as CorrectionField] ?? c.field}: ${correctionValueText(c.original)} ← ${correctionValueText(c.value)} · ${c.note}`).join("\n")}
+            className="mt-1 inline-block rounded bg-sky-100 px-1 py-0.5 text-sky-900 hover:bg-sky-200 dark:bg-sky-900/40 dark:text-sky-200"
+          >
+            ✎ תוקן ידנית · {offer.corrections.map((c) => FIELD_HE[c.field as CorrectionField] ?? c.field).join(", ")}
+          </button>
+        )}
         {offer.title && !ours && <div dir="auto" className="mt-0.5 line-clamp-2 text-start text-muted-foreground" title={offer.title}>{offer.title}</div>}
         {offer.multi_match && (
           <span className="mt-1 inline-block rounded bg-amber-100 px-1 py-0.5 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
@@ -159,7 +178,7 @@ function OfferRow({ offer, scope }: { offer: ComparisonOffer; scope: Scope }) {
 }
 
 /** Suppliers down, components across: our flight above their flight, our hotel above their hotel. */
-function OfferTable({ offers, scope }: { offers: ComparisonOffer[]; scope: Scope }) {
+function OfferTable({ offers, scope, onEdit }: { offers: ComparisonOffer[]; scope: Scope; onEdit: (offer: ComparisonOffer) => void }) {
   const pkg = scope === "package";
   const head = "border-s px-3 py-2 text-start font-medium";
   return (
@@ -175,7 +194,7 @@ function OfferTable({ offers, scope }: { offers: ComparisonOffer[]; scope: Scope
           </tr>
         </thead>
         <tbody>
-          {offers.map((offer) => <OfferRow key={`${scope}:${offer.who}`} offer={offer} scope={scope} />)}
+          {offers.map((offer) => <OfferRow key={`${scope}:${offer.who}`} offer={offer} scope={scope} onEdit={() => onEdit(offer)} />)}
         </tbody>
       </table>
     </div>
@@ -187,13 +206,17 @@ export function ComparisonSheet({
   eventName,
   open,
   onOpenChange,
+  onRowPatched,
 }: {
   eventId: number;
   eventName: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** A correction moved the lights - the table behind the sheet patches that one row in place. */
+  onRowPatched?: (eventId: number, row: PriceLightRow | null) => void;
 }) {
   const { toast } = useToast();
+  const [editing, setEditing] = useState<{ scope: Scope; offer: ComparisonOffer } | null>(null);
   const [data, setData] = useState<PriceLightComparison | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -268,9 +291,25 @@ export function ComparisonSheet({
         {data && scopes.map((scope) => (
           <section key={scope} className="mt-5 space-y-2">
             <h3 className="text-sm font-semibold">{SCOPE_HE[scope]}</h3>
-            <OfferTable offers={data[scope]} scope={scope} />
+            <OfferTable offers={data[scope]} scope={scope} onEdit={(offer) => setEditing({ scope, offer })} />
           </section>
         ))}
+
+        {editing && (
+          <CorrectionDialog
+            // Remounted per listing, so the form always opens on that listing's own values.
+            key={`${editing.scope}:${editing.offer.who}:${editing.offer.edit?.listing_id ?? "none"}`}
+            eventId={eventId}
+            scope={editing.scope}
+            offer={editing.offer}
+            open
+            onOpenChange={(next) => { if (!next) setEditing(null); }}
+            onChanged={(comparison, row) => {
+              if (comparison) setData(comparison);
+              if (row) onRowPatched?.(eventId, row);
+            }}
+          />
+        )}
       </SheetContent>
     </Sheet>
   );

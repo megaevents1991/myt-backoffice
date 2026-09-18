@@ -779,6 +779,7 @@ export function PriceLightClient() {
           eventName={compare.name}
           open={compare != null}
           onOpenChange={(open) => { if (!open) setCompare(null); }}
+          onRowPatched={patchRow}
         />
       )}
     </div>

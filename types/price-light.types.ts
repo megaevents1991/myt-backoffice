@@ -436,6 +436,33 @@ export interface ComparisonOffer {
   site_usd: number | null;
   /** Ours, package only: the site markup inside the "from" price. null for competitors. */
   markup_usd: number | null;
+  /** What the correction dialog opens with; null for us and for a competitor with no listing. */
+  edit: OfferEdit | null;
+  /** Live staff corrections behind the values on this row (incl. a pair-scoped "not this event"). */
+  corrections: OfferCorrection[];
+}
+
+/** A live staff correction, shown beside the value it replaced (lib/services/price-light-corrections.ts). */
+export interface OfferCorrection {
+  id: number;
+  field: string;
+  original: unknown;
+  value: unknown;
+  reason: string | null;
+  note: string;
+  by: string | null;
+  at: string;
+}
+
+/** The EFFECTIVE values of one competitor listing (corrections applied) - the dialog's defaults.
+ *  The server works out what the crawl said and who said it; the client never sends an `original`. */
+export interface OfferEdit {
+  listing_id: number;
+  price: { amount: number; currency: Currency } | null;
+  attrs: Partial<ExtractedAttrs>;
+  airline: string | null;
+  hotel_name: string | null;
+  ticket: string | null;
 }
 
 export interface PriceLightComparison {
