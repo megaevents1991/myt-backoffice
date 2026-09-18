@@ -59,6 +59,7 @@ import {
   adoptVenueMap,
   getVenueMapByUrl,
   getVenueMapDrawing,
+  listVenueMaps,
   rememberSupplierCategories,
   saveVenueZones,
 } from "@/lib/actions/venue-map-actions";
@@ -70,6 +71,7 @@ import {
 } from "@/lib/actions/supplier-attach-actions";
 
 const NO_ZONE = "__none__";
+const NEW_VENUE = "__new__";
 
 const ZONE_FILL = "#C2FFD8";
 const ACTIVE_ZONE_FILL = "#0E6F57";
@@ -110,6 +112,59 @@ const formatDate = (iso: string) =>
     year: "numeric",
   });
 
+/**
+ * Tickets with no zone yet take it from the venue template (supplier +
+ * category → zone). Tickets the operator already zoned are never touched.
+ */
+function zoneFromTemplate(
+  tickets: EventTicket[],
+  eventType: Event["type"],
+  map: VenueMap,
+): EventTicket[] {
+  return tickets.map((ticket) => {
+    if (ticket.zoneId) return ticket;
+    const category = ticket.supplierCategory || ticket.category;
+    const zoneId =
+      map.supplier_categories?.[ticketSupplier(ticket, eventType)]?.[
+        normalizeSupplierCategory(category)
+      ];
+    const zone = map.zones.find((z) => z.id === zoneId);
+    if (!zone) return ticket;
+    return {
+      ...ticket,
+      supplierCategory: category,
+      zoneId: zone.id,
+      zoneLabel: zone.label,
+    };
+  });
+}
+
+/** The name a fresh zone gets from a ticket: its Hebrew description when it is short enough to be a title. */
+const zoneNameFromTicket = (ticket: EventTicket): string => {
+  const description = (ticket.description || "").trim();
+  return description && description.length <= 60
+    ? description
+    : ticket.category;
+};
+
+/** The supplier's OWN picture of the venue - how they slice the stands. */
+function SupplierMap({ url, label }: { url: string; label: string }) {
+  return (
+    <div className="space-y-1">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <a href={url} target="_blank" rel="noopener noreferrer">
+        {/* A supplier's PNG behind our proxy - next/image has no loader for it. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={`/api/proxy-image?url=${encodeURIComponent(url)}`}
+          alt={label}
+          className="max-h-[420px] w-auto max-w-full rounded-md border bg-white"
+        />
+      </a>
+    </div>
+  );
+}
+
 export function EventSuppliersPanel({ event, onEventChange }: Props) {
   const { toast } = useToast();
   const mapUrl = event.map_image_url || "";
@@ -117,6 +172,11 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
   const [venueMap, setVenueMap] = useState<VenueMap | null>(null);
   const [loadingMap, setLoadingMap] = useState(false);
   const [adopting, setAdopting] = useState(false);
+  // "Same stadium, new season": venues we already zoned, to start from.
+  const [otherMaps, setOtherMaps] = useState<{ id: string; name: string }[]>(
+    [],
+  );
+  const [copyFromId, setCopyFromId] = useState(NEW_VENUE);
 
   /* ── 1. The venue map behind this event ─────────────────────────── */
 
@@ -142,18 +202,83 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
 
   const isOurMap = !!venueMap?.svg_url && mapUrl === venueMap.svg_url;
 
+  // A drawing nobody adopted yet may still be a stadium we know (TixStock
+  // publishes a new file every season) - offer our venues to start from.
+  useEffect(() => {
+    if (loadingMap || !mapUrl || venueMap) return;
+    let cancelled = false;
+    listVenueMaps()
+      .then((maps) => {
+        if (!cancelled) setOtherMaps(maps);
+      })
+      .catch((error) => console.error("venue maps list failed", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [loadingMap, mapUrl, venueMap]);
+
+  /** Point the event at our copy and zone its tickets from the venue template. */
   const switchToOurMap = (map: VenueMap) => {
     const svgUrl = map.svg_url;
     if (!svgUrl) return;
-    onEventChange((prev) => ({ ...prev, map_image_url: svgUrl }));
+    onEventChange((prev) => ({
+      ...prev,
+      map_image_url: svgUrl,
+      tickets_and_rates: zoneFromTemplate(
+        prev.tickets_and_rates,
+        prev.type,
+        map,
+      ),
+    }));
   };
+
+  // A venue we already own is recognised on its own: the event moves to our
+  // copy and its tickets take their zones from the venue template. Runs once
+  // per event + venue - after that the operator's choices stand.
+  const recognisedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!venueMap?.svg_url) return;
+    const key = `${event.id}:${venueMap.id}`;
+    if (recognisedRef.current === key) return;
+    recognisedRef.current = key;
+
+    const needsSwitch = mapUrl === venueMap.source_url;
+    const zoned = zoneFromTemplate(
+      event.tickets_and_rates,
+      event.type,
+      venueMap,
+    ).filter((ticket, i) => ticket !== event.tickets_and_rates[i]).length;
+    if (!needsSwitch && zoned === 0) return;
+
+    switchToOurMap(venueMap);
+    toast({
+      title: needsSwitch
+        ? "We already own this venue's map"
+        : "Tickets zoned from the venue template",
+      description: `${needsSwitch ? "Switched to our copy. " : ""}${zoned} ticket(s) linked to our zones. Save the event to keep it.`,
+    });
+    // Once per event + venue map; the rest is read at that moment on purpose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.id, venueMap?.id, venueMap?.svg_url]);
 
   const handleAdopt = async () => {
     setAdopting(true);
     try {
+      const categoryLabels = Object.fromEntries(
+        event.tickets_and_rates
+          .filter((t) => ticketSupplier(t, event.type) === "tixstock")
+          .map((t) => [
+            normalizeSupplierCategory(t.supplierCategory || t.category),
+            zoneNameFromTicket(t),
+          ]),
+      );
       const result = await adoptVenueMap(
         mapUrl,
         event.location?.name || event.name_english || event.name,
+        {
+          categoryLabels,
+          copyFromId: copyFromId === NEW_VENUE ? undefined : copyFromId,
+        },
       );
       if (!result.ok) {
         toast({
@@ -163,12 +288,14 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
         });
         return;
       }
+      // Recognition must not fire a second time for the map we just made.
+      recognisedRef.current = `${event.id}:${result.data.id}`;
       setVenueMap(result.data);
       switchToOurMap(result.data);
+      setZoneEditorOpen(true);
       toast({
         title: "The map is ours",
-        description:
-          "Copied into our storage. Save the event to switch it to our copy.",
+        description: `${result.data.zones.length} zone(s) created and the TixStock tickets are linked. Rename the zones if needed, then save the event.`,
       });
     } finally {
       setAdopting(false);
@@ -184,6 +311,13 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
   const [newZoneLabel, setNewZoneLabel] = useState("");
   const [drawing, setDrawing] = useState<string | null>(null);
   const drawingRef = useRef<HTMLDivElement>(null);
+  // Folded by default: once a venue is zoned the editor is rarely needed, and
+  // the event page is long enough without a second stadium drawing on it.
+  const [zoneEditorOpen, setZoneEditorOpen] = useState(false);
+  // Draft ticket id → zone the operator just created for it (not saved yet).
+  const [pendingDraftZones, setPendingDraftZones] = useState<
+    Record<string, string>
+  >({});
 
   const venueMapId = venueMap?.id ?? null;
 
@@ -195,10 +329,12 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
   }, [venueMapId]);
 
   useEffect(() => {
-    if (!venueMapId) {
-      setDrawing(null);
-      return;
-    }
+    setDrawing(null);
+  }, [venueMapId]);
+
+  // The drawing is only fetched while the editor is open.
+  useEffect(() => {
+    if (!venueMapId || !zoneEditorOpen) return;
     let cancelled = false;
     getVenueMapDrawing(venueMapId)
       .then((result) => {
@@ -209,7 +345,7 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [venueMapId]);
+  }, [venueMapId, zoneEditorOpen]);
 
   // Paint: the active zone dark, sections of any other zone light, rest idle.
   useEffect(() => {
@@ -237,7 +373,7 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
           : "default";
       });
     });
-  }, [drawing, zones, activeZoneId]);
+  }, [drawing, zones, activeZoneId, zoneEditorOpen]);
 
   // Click a section = toggle it in the active zone.
   useEffect(() => {
@@ -263,7 +399,7 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     };
     root.addEventListener("click", onClick);
     return () => root.removeEventListener("click", onClick);
-  }, [drawing, activeZoneId]);
+  }, [drawing, activeZoneId, zoneEditorOpen]);
 
   const handleAddZone = () => {
     const label = newZoneLabel.trim();
@@ -301,6 +437,20 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
       setVenueMap(result.data);
       setZones(result.data.zones);
       setZonesDirty(false);
+      // Zones created for a supplier's category are now real - select them
+      // on the drafts they were made for.
+      const savedIds = new Set(result.data.zones.map((z) => z.id));
+      const ready = Object.entries(pendingDraftZones).filter(([, zoneId]) =>
+        savedIds.has(zoneId),
+      );
+      if (ready.length > 0) {
+        setDraftZones((prev) => ({ ...prev, ...Object.fromEntries(ready) }));
+        setChosen((prev) => ({
+          ...prev,
+          ...Object.fromEntries(ready.map(([ticketId]) => [ticketId, true])),
+        }));
+      }
+      setPendingDraftZones({});
       // A renamed or removed zone must not leave a stale label on a ticket.
       const byId = new Map(result.data.zones.map((z) => [z.id, z]));
       onEventChange((prev) => ({
@@ -486,6 +636,32 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     }
   };
 
+  /**
+   * The supplier slices the stand differently from every zone we have: open a
+   * zone of its own for this category. The operator marks its sections on our
+   * drawing (their map is shown next to it) and saves the zones; the draft
+   * then picks the new zone up by itself.
+   */
+  const handleZoneForDraft = (draft: LiveTicketsDraft) => {
+    const label =
+      draft.category.description ||
+      draft.category.hebTitle ||
+      draft.category.title;
+    const zone: VenueZone = {
+      id: newZoneId(draft.category.title || label, zones),
+      label: label.slice(0, 80),
+      sections: [],
+    };
+    setZones((prev) => [...prev, zone]);
+    setActiveZoneId(zone.id);
+    setZonesDirty(true);
+    setZoneEditorOpen(true);
+    setPendingDraftZones((prev) => ({ ...prev, [draft.ticket.id]: zone.id }));
+    document
+      .getElementById("venue-zone-editor")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const selectedDrafts = drafts.filter(
     (d) =>
       chosen[d.ticket.id] &&
@@ -591,10 +767,28 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
           ) : (
             <div className="flex flex-wrap items-center gap-3 text-sm">
               <span>
-                The map is loaded from the supplier. Copy it into our storage to
-                define our own zones on it — required before adding a second
+                The map is loaded from the supplier. Copy it into our storage: a
+                zone is opened for every TixStock category on it and the tickets
+                are linked — you only rename. Required before adding a second
                 supplier.
               </span>
+              {otherMaps.length > 0 && (
+                <Select value={copyFromId} onValueChange={setCopyFromId}>
+                  <SelectTrigger className="w-72">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NEW_VENUE}>
+                      New venue — zones from TixStock categories
+                    </SelectItem>
+                    {otherMaps.map((map) => (
+                      <SelectItem key={map.id} value={map.id}>
+                        Same stadium as: {map.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Button
                 type="button"
                 size="sm"
@@ -610,21 +804,40 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
 
         {/* ── Zone editor ── */}
         {venueMap && (
-          <section className="space-y-3">
+          <section id="venue-zone-editor" className="scroll-mt-20 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-medium">Our zones at this venue</h3>
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleSaveZones}
-                disabled={!zonesDirty || savingZones}
-              >
-                {savingZones && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <h3 className="font-medium">
+                Our zones at this venue{" "}
+                <span className="text-sm font-normal text-muted-foreground">
+                  · {zones.length} zone(s), shared by every event here
+                </span>
+              </h3>
+              <div className="flex gap-2">
+                {zoneEditorOpen && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleSaveZones}
+                    disabled={!zonesDirty || savingZones}
+                  >
+                    {savingZones && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Save zones
+                  </Button>
                 )}
-                Save zones
-              </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setZoneEditorOpen((open) => !open)}
+                >
+                  {zoneEditorOpen ? "Close" : "Edit zones"}
+                </Button>
+              </div>
             </div>
+            {zoneEditorOpen && (
+            <>
             <p className="text-sm text-muted-foreground">
               Zones belong to the venue and are shared by every event here. Pick
               a zone (the dot), then click sections on the map to add or remove
@@ -704,6 +917,12 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                     <Plus className="mr-1 h-4 w-4" /> Zone
                   </Button>
                 </div>
+                {attachOpen && picked?.venueMapUrl && (
+                  <SupplierMap
+                    url={picked.venueMapUrl}
+                    label="LiveTickets' map of this event, for reference while marking sections."
+                  />
+                )}
               </div>
               <div className="rounded-md border bg-[#f5f6f7] p-2">
                 {drawing ? (
@@ -720,6 +939,8 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                 )}
               </div>
             </div>
+            </>
+            )}
             {zonesDirty && (
               <p className="text-sm text-amber-700">
                 Unsaved zone changes — tickets can only use saved zones.
@@ -925,13 +1146,20 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                       sure it is the same match.
                     </p>
                   )}
+                  {picked.venueMapUrl && (
+                    <SupplierMap
+                      url={picked.venueMapUrl}
+                      label="LiveTickets' own map of this event - match each category to one of our zones, or open a zone of its own when they slice the stand differently."
+                    />
+                  )}
                   {loadingDrafts ? (
                     <p className="text-sm text-muted-foreground">
                       Reading their categories…
                     </p>
                   ) : (
                     <div className="divide-y rounded-md border">
-                      {drafts.map(({ ticket, category }) => {
+                      {drafts.map((draft) => {
+                        const { ticket, category } = draft;
                         const already = attachedIds.has(ticket.id);
                         const disabled = !category.sellable || already;
                         return (
@@ -1001,6 +1229,22 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                                     {zoneSelectItems}
                                   </SelectContent>
                                 </Select>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={!!pendingDraftZones[ticket.id]}
+                                  onClick={() => handleZoneForDraft(draft)}
+                                >
+                                  <Plus className="mr-1 h-4 w-4" /> Own zone
+                                </Button>
+                                {pendingDraftZones[ticket.id] && (
+                                  <span className="w-full text-xs text-amber-700">
+                                    Zone opened above - mark its sections on
+                                    our map and press “Save zones”. It is
+                                    selected here once saved.
+                                  </span>
+                                )}
                               </>
                             )}
                           </div>

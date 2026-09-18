@@ -34,6 +34,8 @@ export type LiveTicketsCandidate = {
   nameHeb: string;
   showDate: string;
   venue: string;
+  /** THEIR picture of the venue (Hebrew when they have one) - how they slice the stands. */
+  venueMapUrl: string;
   /** Whole days between their date and ours - 0 is what we expect. */
   dateGapDays: number;
   /** Words of our event name found in theirs, 0..1. Sorts the list. */
@@ -59,6 +61,8 @@ interface LiveEventRow {
   event_name_heb: string | null;
   show_date: string;
   venues: { name?: string }[] | null;
+  venue_map_url: string | null;
+  venue_map_heb_url: string | null;
   ticket_categories: RawLiveTicketsCategory[] | null;
 }
 
@@ -83,7 +87,7 @@ export async function findLiveTicketsCandidates(
   let query = db
     .from("live_events")
     .select(
-      "event_id,event_name,event_name_heb,show_date,venues,ticket_categories",
+      "event_id,event_name,event_name_heb,show_date,venues,venue_map_url,venue_map_heb_url,ticket_categories",
     )
     .eq("is_active", true)
     .order("show_date", { ascending: true })
@@ -122,6 +126,7 @@ export async function findLiveTicketsCandidates(
         nameHeb: row.event_name_heb ?? "",
         showDate: row.show_date,
         venue: row.venues?.[0]?.name ?? "",
+        venueMapUrl: row.venue_map_heb_url || row.venue_map_url || "",
         dateGapDays: gap,
         nameScore: ourWords.length ? shared / ourWords.length : 0,
         sellableCategories: (row.ticket_categories ?? [])

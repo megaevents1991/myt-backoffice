@@ -8,6 +8,8 @@
  * may sit in several zones: suppliers overlap ("Premium" = level 2 centre,
  * "Premium Plus" = levels 1-2 centre).
  */
+import { normalizeSupplierCategory } from "@/lib/suppliers";
+
 export type VenueZone = {
   /** Stable slug, stamped into the SVG and onto tickets. Never reused. */
   id: string;
@@ -79,6 +81,67 @@ export function stampZones(svg: string, zones: VenueZone[]): string {
     const cleaned = attrs.replace(EXISTING_ZONES, "").replace(/\s+$/, "");
     return `<${name}${cleaned} ${ZONES_ATTR}="${zoneIds}"${close ? " /" : ""}>`;
   });
+}
+
+/**
+ * TixStock names every section `<category slug>_<section>`, so the drawing
+ * itself says which of the supplier's categories a section belongs to.
+ */
+export const sectionCategory = (sectionId: string): string => {
+  const cut = sectionId.lastIndexOf("_");
+  return cut > 0 ? sectionId.slice(0, cut) : sectionId;
+};
+
+/**
+ * Parts of a drawing nobody sells: the pitch, blocked stands, and TixStock's
+ * "gray-fields" filler for stands it has no listings category for.
+ */
+const isUnsellableCategory = (normalized: string): boolean =>
+  !normalized ||
+  normalized === "field" ||
+  normalized === "pitch" ||
+  /^gr[ae]y fields?$/.test(normalized) ||
+  /\bdisabled\b/.test(normalized);
+
+/**
+ * Starting zones for a freshly adopted drawing: one zone per supplier category
+ * the drawing is already sliced into, holding all of that category's sections.
+ * The operator only renames them; finer zones are added later, when a second
+ * supplier slices the stand differently.
+ *
+ * `labelFor` gets the normalized category and may return the name to show the
+ * customer (the ticket's Hebrew description); otherwise the category's own
+ * name is used. `categoryToZone` is the venue template for that supplier.
+ */
+export function zonesFromCategories(
+  svg: string,
+  labelFor: (normalizedCategory: string) => string | undefined,
+): { zones: VenueZone[]; categoryToZone: Record<string, string> } {
+  const zones: VenueZone[] = [];
+  const categoryToZone: Record<string, string> = {};
+
+  for (const section of listSectionIds(svg)) {
+    const category = sectionCategory(section);
+    const key = normalizeSupplierCategory(category);
+    if (isUnsellableCategory(key)) continue;
+
+    const existing = zones.find((z) => z.id === categoryToZone[key]);
+    if (existing) {
+      existing.sections.push(section);
+      continue;
+    }
+    const label =
+      labelFor(key)?.trim().slice(0, 80) ||
+      category.replace(/-+/g, " ").replace(/\s+/g, " ").trim();
+    const zone: VenueZone = {
+      id: newZoneId(key, zones),
+      label,
+      sections: [section],
+    };
+    zones.push(zone);
+    categoryToZone[key] = zone.id;
+  }
+  return { zones, categoryToZone };
 }
 
 /** Id for a new zone: latin slug of the label when it has one, else `zone-N`. */

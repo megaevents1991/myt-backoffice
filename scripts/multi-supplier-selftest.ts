@@ -7,7 +7,13 @@ import {
   supplierPriceUsd,
   ticketSupplier,
 } from "../lib/suppliers";
-import { listSectionIds, newZoneId, stampZones } from "../lib/venue-maps/svg-zones";
+import {
+  listSectionIds,
+  newZoneId,
+  sectionCategory,
+  stampZones,
+  zonesFromCategories,
+} from "../lib/venue-maps/svg-zones";
 import { toLiveTicketsCategory } from "../lib/services/livetickets-offers";
 import { applyLiveTicketsStock } from "../lib/services/attached-suppliers-sync";
 import type { EventTicket } from "../types/app.types";
@@ -57,6 +63,30 @@ assert.ok(stamped.includes('<g id="pitch"><rect/></g>'));
 assert.equal(stampZones(stamped, []).match(/data-zones=""/g)?.length, 2);
 assert.equal(newZoneId("Long Side L3", []), "long-side-l3");
 assert.equal(newZoneId("אורך", [{ id: "zone", label: "", sections: [] }]), "zone-2");
+
+/* a freshly adopted drawing: one zone per TixStock category, tickets linked */
+const tixSvg =
+  '<svg><g data-category="categoría-1-(cat1)"><g data-section="categoría-1-(cat1)_101"/>' +
+  '<g data-section="categoría-1-(cat1)_102"/></g>' +
+  '<g data-category="field-disabled"><g data-section="field-disabled_1"/></g>' +
+  '<g data-section="categoria-2-fondo_201"/></svg>';
+const auto = zonesFromCategories(tixSvg, (key) =>
+  key === "categoria 1" ? "לאורך המגרש" : undefined,
+);
+assert.deepEqual(
+  auto.zones.map((z) => [z.id, z.label, z.sections.length]),
+  [
+    ["categoria-1", "לאורך המגרש", 2],
+    ["categoria-2-fondo", "categoria 2 fondo", 1],
+  ],
+);
+// the venue template a TixStock ticket is linked through - no disabled stand
+assert.deepEqual(auto.categoryToZone, {
+  "categoria 1": "categoria-1",
+  "categoria 2 fondo": "categoria-2-fondo",
+});
+assert.equal(sectionCategory("upper-tier_a_12"), "upper-tier_a");
+assert.equal(sectionCategory("standing"), "standing");
 
 /* which LiveTickets categories we sell */
 const raw = { id: 1, title: "Category 2", cost: 331.2, maxTicketAmount: 6, seatingMethodId: 4, apiImmediatePurchase: true };

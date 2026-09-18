@@ -144,6 +144,9 @@ export default function EventPage({
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [excludeSectionsMode, setExcludeSectionsMode] = useState(false);
+  // Once the seat map is OUR copy it is edited under "Suppliers & zones"; the
+  // TixStock preview map stays folded unless asked for (exclude / filter).
+  const [sourceMapOpen, setSourceMapOpen] = useState(false);
 
   // Batch-create mode: a stepwise wizard over the selected TixStock events.
   // Configure/review each on the real form; Save & Next creates it and loads the next.
@@ -457,6 +460,9 @@ export default function EventPage({
         null
       : null;
 
+  // Our own copy of a venue drawing lives under `venue-maps/` in our storage.
+  const usesOurMap = !!event?.map_image_url?.includes("/venue-maps/");
+
   const mapSourceUrl =
     event?.type === "tx_event" && event.map_image_url
       ? `/api/proxy-image?url=${encodeURIComponent(event.map_image_url)}`
@@ -663,7 +669,7 @@ export default function EventPage({
     // isTicketMatchingSectionOrCategory is recreated each render - depending
     // on it would re-run the observer every render for nothing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [svgContent, hoveredTixTicket, selectedSection, selectedCategory, event?.tx_excluded_sections]);
+  }, [svgContent, hoveredTixTicket, selectedSection, selectedCategory, event?.tx_excluded_sections, sourceMapOpen]);
 
   // Function to search for flight prices
   const searchFlightPricesForEvent = async (
@@ -2499,7 +2505,11 @@ export default function EventPage({
                       type="button"
                       size="sm"
                       variant={excludeSectionsMode ? "destructive" : "outline"}
-                      onClick={() => setExcludeSectionsMode((v) => !v)}
+                      onClick={() => {
+                        // Excluding happens ON the map - unfold it.
+                        setSourceMapOpen(true);
+                        setExcludeSectionsMode((v) => !v);
+                      }}
                     >
                       {excludeSectionsMode ? "✕ Exit Exclude Mode" : "Exclude Sections"}
                     </Button>
@@ -2548,7 +2558,22 @@ export default function EventPage({
                     </div>
                   )}
 
-                  {mapSourceUrl ? (
+                  {usesOurMap && !sourceMapOpen ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm text-muted-foreground">
+                      <span>
+                        The seat map is ours - it is edited under &quot;Suppliers
+                        &amp; zones&quot; below. The TixStock preview map is folded.
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setSourceMapOpen(true)}
+                      >
+                        Show TixStock map
+                      </Button>
+                    </div>
+                  ) : mapSourceUrl ? (
                     <div className="venue-map-container flex items-center justify-center min-h-[380px] p-4 rounded-md border bg-[hsl(var(--background))]">
                       <style jsx global>{`
                         .venue-map-container text,

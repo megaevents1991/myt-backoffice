@@ -8,6 +8,7 @@ import {
   isValidZoneId,
   listSectionIds,
   stampZones,
+  zonesFromCategories,
   type SupplierCategoryMap,
   type VenueMap,
   type VenueZone,
@@ -133,14 +134,80 @@ export async function getVenueMapDrawing(
   return { ok: true, data: { svg, sections: listSectionIds(svg) } };
 }
 
+/** Venue maps we own - for "this is the same stadium, new season". */
+export async function listVenueMaps(): Promise<
+  { id: string; name: string; zones: number }[]
+> {
+  await requireStaff();
+  const { data, error } = await db
+    .from("venue_maps")
+    .select("id,name,zones")
+    .not("svg_url", "is", null)
+    .order("name", { ascending: true });
+  if (error) {
+    console.error("venue-map: list failed", JSON.stringify(error));
+    return [];
+  }
+  return ((data ?? []) as Pick<VenueMap, "id" | "name" | "zones">[]).map(
+    (map) => ({ id: map.id, name: map.name, zones: map.zones.length }),
+  );
+}
+
+export type AdoptVenueMapOptions = {
+  /**
+   * normalized TixStock category → the name its zone should get (the ticket's
+   * Hebrew description). Categories without one keep the supplier's name.
+   */
+  categoryLabels?: Record<string, string>;
+  /**
+   * Same stadium, new season: TixStock published a new file for a venue we
+   * already zoned. Start from that venue's zones and template - sections that
+   * no longer exist in the new drawing are dropped.
+   */
+  copyFromId?: string;
+};
+
+/** Zones + template of an existing venue, cut down to the sections of a new drawing. */
+async function zonesCopiedFrom(
+  venueMapId: string,
+  knownSections: Set<string>,
+): Promise<{ zones: VenueZone[]; template: SupplierCategoryMap } | null> {
+  const { data, error } = await db
+    .from("venue_maps")
+    .select("zones,supplier_categories")
+    .eq("id", venueMapId)
+    .maybeSingle();
+  if (error || !data) return null;
+
+  const kept = sanitizeZones(data.zones as VenueZone[], knownSections);
+  if (!kept.ok) return null;
+  const zones = kept.data.filter((zone) => zone.sections.length > 0);
+  if (zones.length === 0) return null;
+
+  const alive = new Set(zones.map((zone) => zone.id));
+  const template: SupplierCategoryMap = {};
+  for (const [supplier, categories] of Object.entries(
+    (data.supplier_categories ?? {}) as SupplierCategoryMap,
+  )) {
+    template[supplier] = Object.fromEntries(
+      Object.entries(categories).filter(([, zoneId]) => alive.has(zoneId)),
+    );
+  }
+  return { zones, template };
+}
+
 /**
  * Take ownership of a supplier's drawing: copy it into our storage, create
- * its venue map and publish it (no zones yet). Adopting the same drawing
- * twice returns the existing map - one venue map per drawing.
+ * its venue map and publish it WITH starting zones - one per TixStock category
+ * the drawing is already sliced into (or the zones of the same stadium's
+ * previous season). TixStock tickets are linked through the template right
+ * away; the operator only renames. Adopting the same drawing twice returns
+ * the existing map - one venue map per drawing.
  */
 export async function adoptVenueMap(
   sourceUrl: string,
   name: string,
+  options: AdoptVenueMapOptions = {},
 ): Promise<Result<VenueMap>> {
   await requireStaff();
 
@@ -199,7 +266,19 @@ export async function adoptVenueMap(
     return fail("Could not store the map drawing");
   }
 
-  const svgUrl = await publish(map.id, []);
+  const copied = options.copyFromId
+    ? await zonesCopiedFrom(options.copyFromId, new Set(listSectionIds(svg)))
+    : null;
+  const labels = options.categoryLabels ?? {};
+  const fromCategories = copied
+    ? null
+    : zonesFromCategories(svg, (category) => labels[category]);
+  const zones = copied?.zones ?? fromCategories?.zones ?? [];
+  const supplierCategories: SupplierCategoryMap =
+    copied?.template ??
+    (fromCategories ? { tixstock: fromCategories.categoryToZone } : {});
+
+  const svgUrl = await publish(map.id, zones);
   if (!svgUrl) {
     await db.from("venue_maps").delete().eq("id", map.id);
     return fail("Could not publish the map");
@@ -207,7 +286,12 @@ export async function adoptVenueMap(
 
   const { error: updateError } = await db
     .from("venue_maps")
-    .update({ svg_url: svgUrl, updated_at: new Date().toISOString() })
+    .update({
+      svg_url: svgUrl,
+      zones,
+      supplier_categories: supplierCategories,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", map.id);
   if (updateError) {
     console.error("venue-map: url update failed", JSON.stringify(updateError));
@@ -218,9 +302,22 @@ export async function adoptVenueMap(
     action: "create",
     entityType: "venue_map",
     entityId: map.id,
-    metadata: { name: map.name, source_url: sourceUrl },
+    metadata: {
+      name: map.name,
+      source_url: sourceUrl,
+      zones: zones.length,
+      copied_from: copied ? options.copyFromId : null,
+    },
   });
-  return { ok: true, data: { ...map, svg_url: svgUrl } };
+  return {
+    ok: true,
+    data: {
+      ...map,
+      svg_url: svgUrl,
+      zones,
+      supplier_categories: supplierCategories,
+    },
+  };
 }
 
 /** Save the zones of a venue map and republish the drawing with them. */
