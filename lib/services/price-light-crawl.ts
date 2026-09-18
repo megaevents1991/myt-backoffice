@@ -263,6 +263,14 @@ interface DetailPick {
   title: string; title_he: string | null; last_changed_at: string | null;
 }
 
+/** Does the travel window a detail page printed hold this listing's own date? No window, or a
+ *  listing with no date of its own (ISSTA publishes only the window), has nothing to contradict. */
+function windowFits(read: Partial<Listing>, eventDate: string | null): boolean {
+  if (!eventDate || !read.travel_depart || !read.travel_return) return true;
+  const day = eventDate.slice(0, 10);
+  return read.travel_depart <= day && day <= read.travel_return;
+}
+
 function dayWindow(day: string): string[] {
   const d = new Date(`${day}T00:00:00.000Z`);
   return [-1, 0, 1].map((delta) => {
@@ -557,6 +565,12 @@ export async function runCrawl(
     // so the honest pacing is the same-site GET pause (8-20s), not the 30-90s page-load one.
     const detailPause = (scraper.detailMode ?? scraper.mode) === "fetch" ? c.pauseShort : c.pause;
     const total = rows.length;
+    // One page, many listings: LiveEvents stores a listing per SHOW DATE and they all link to the
+    // same /package/ page (six Shakira nights, one URL). Fetched per listing, the 10-page cap was
+    // spent re-reading one page while 36 of 42 matched listings stayed blank (2026-09-18). A URL
+    // already read this run is reused - no request, no pause, no slot off the cap.
+    const readThisRun = new Map<string, Partial<Listing>>();
+    let capped = false;
     for (const row of rows) {
       if (Date.now() - start > budget) {
         // A details cutoff is NOT `partial`: the catalog itself completed cleanly, and marking
@@ -565,15 +579,27 @@ export async function runCrawl(
         summary.note = summary.note ? `${summary.note} | ${cutNote}` : cutNote;
         break;
       }
-      if (summary.detailPages >= DETAIL_PAGES_PER_RUN) {
-        const capNote = `details capped at ${DETAIL_PAGES_PER_RUN} per run (${total} queued)`;
-        summary.note = summary.note ? `${summary.note} | ${capNote}` : capNote;
-        break;
+      let read = readThisRun.get(row.url);
+      if (!read && summary.detailPages >= DETAIL_PAGES_PER_RUN) {
+        // `continue`, not `break`: a later row may sit on a URL this run already read.
+        if (!capped) {
+          const capNote = `details capped at ${DETAIL_PAGES_PER_RUN} per run (${total} queued)`;
+          summary.note = summary.note ? `${summary.note} | ${capNote}` : capNote;
+          capped = true;
+        }
+        continue;
       }
-      await detailPause();
       try {
-        const extra = await scraper.detail(row, c);
-        summary.detailPages += 1;
+        if (!read) {
+          await detailPause();
+          read = await scraper.detail(row, c);
+          summary.detailPages += 1;
+          readThisRun.set(row.url, read);
+        }
+        // The page prints ONE travel window; it belongs only to the listing whose date it holds.
+        const extra: Partial<Listing> = windowFits(read, row.event_date)
+          ? read
+          : { ...read, travel_depart: undefined, travel_return: undefined };
         const nextCurrency = extra.currency ?? row.currency;
         // A currency-only move is a real price move: 789 GBP -> 789 EUR is a different price.
         const priceMoved = extra.price_from != null &&

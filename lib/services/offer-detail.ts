@@ -255,6 +255,42 @@ function parseOnTour(t: string): OfferDetail {
   return { flight, hotel, ticket: clean(tk?.[1]), multiMatch: false };
 }
 
+/**
+ * ISSTA: not the page's text but the summary `competitor-scrapers/issta.ts` `parseDetail` writes
+ * from its markup (the page is site navigation around three blocks, and its stars are icons):
+ * "טיסה: הלוך ARKIA AIRLINES 17:00-20:40 · חזור ARKIA AIRLINES 02:30-07:50 · ישירה · מזוודה: לא כלולה |
+ *  מלון: Hotel Suizo · 3 כוכבים · ארוחת בוקר | כרטיס: קטגוריה 2 · מאחורי השער קומה ראשונה ושניה".
+ * A row still holding the old catalog tagline has none of the three labels and parses to nothing.
+ */
+function parseIssta(t: string): OfferDetail {
+  const section = (label: string) => t.match(new RegExp(`(?:^|\\| )${label}: ([^|]+)`))?.[1]?.trim() ?? null;
+  const flightText = section("טיסה");
+  const leg = (label: string) => {
+    const m = flightText?.match(new RegExp(`${label}\\s+(.*?)\\s*${TIME}-${TIME}`));
+    return m ? { airlineText: m[1], leg: { depart: m[2], arrive: m[3] } } : null;
+  };
+  const out = leg("הלוך");
+  const back = leg("חזור");
+  const airlineText = `${out?.airlineText ?? ""} ${back?.airlineText ?? ""}`.trim();
+  const flight: OfferFlight | null = flightText
+    ? {
+        airline: airlineFromText(airlineText) ?? clean(out?.airlineText ?? back?.airlineText),
+        direct: /ישירה/.test(flightText) ? true : /עם עצירה/.test(flightText) ? false : null,
+        bag: /מזוודה: כלולה/.test(flightText) ? "כולל מזוודה" : /מזוודה: לא כלולה/.test(flightText) ? "טרולי בלבד" : null,
+        out: out?.leg ?? null,
+        back: back?.leg ?? null,
+      }
+    : null;
+
+  const hotelText = section("מלון");
+  const hotelParts = hotelText?.split(" · ") ?? [];
+  const stars = hotelText?.match(/(\d) כוכבים/)?.[1];
+  const hotel: OfferHotel | null = hotelText
+    ? { name: clean(hotelParts[0]), stars: stars ? Number(stars) : null, board: /ארוחת בוקר/.test(hotelText) ? "breakfast" : null }
+    : null;
+  return { flight, hotel, ticket: clean(section("כרטיס")), multiMatch: false };
+}
+
 /** Whatever the page's boolean markers already said - the floor every parser falls back to. */
 function fromAttrs(attrs: Partial<ExtractedAttrs> | null | undefined): OfferDetail {
   const a = attrs ?? {};
@@ -295,13 +331,14 @@ const PARSERS: Partial<Record<CompetitorKey, (text: string) => OfferDetail>> = {
   liveevents: parseLiveEvents,
   golasso: parseGolasso,
   ontour: parseOnTour,
+  issta: parseIssta,
 };
 
 export const EMPTY_OFFER: OfferDetail = { flight: null, hotel: null, ticket: null, multiMatch: false };
 
 /**
- * A competitor listing's contents. ISSTA's detail page is a JS loader (its stored text is a tagline)
- * and LiveTickets is a ticket-only table, so those two describe only what `attrs` already knew.
+ * A competitor listing's contents. LiveTickets is a ticket-only table with no detail text - its
+ * seat category is read from `live_events` by the comparison itself (price-light-actions.ts).
  */
 export function parseOfferDetail(
   competitor: CompetitorKey,

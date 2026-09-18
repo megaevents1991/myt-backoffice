@@ -2,12 +2,12 @@
 // Server-rendered league pages with schema.org/Product microdata - plain fetch, no browser.
 // The card publishes the TRAVEL WINDOW only (no match date): event_date is null and the
 // matcher pairs it by `travel_depart <= event.date <= travel_return` (price-light.ts
-// candidateCoversDate). Detail pages are a JS loader -> skipped in v1 (attrs unknown except
-// nights, which the window gives us).
+// candidateCoversDate). The card links to a `/loader?url=` page; the page it opens
+// (`/sport/details?...`) is server-rendered and is what detail() reads (2026-09-18).
 import { UNKNOWN_ATTRS } from "../../../types/price-light.types.ts";
 import type { Currency } from "../../../types/price-light.types.ts";
 import { currencyFromSymbol, doc, isoOrNull, nightsBetween, parsePrice, stealthHeaders } from "./shared.ts";
-import type { CompetitorScraper, CrawlContext, Listing } from "./types";
+import type { CompetitorScraper, CrawlContext, DetailInput, Listing } from "./types";
 
 const BASE = "https://www.issta.co.il";
 // `uefa-europa-league` was dropped 2026-09-15: the URL answers 404 and only ever counted as a failed page.
@@ -57,7 +57,6 @@ export function parseCatalog(html: string): Listing[] {
     const nameEl = card.querySelector('[itemprop="name"]');
     const title = (nameEl?.textContent?.trim() || attr(nameEl, "content")).replace(/\s+/g, " ");
     if (!title) continue;
-    const description = (card.querySelector('[itemprop="description"]')?.textContent ?? "").replace(/\s+/g, " ").trim();
 
     const priceEl = card.querySelector('[itemprop="price"]');
     const price_from = parsePrice(attr(priceEl, "content") || (priceEl?.textContent ?? ""));
@@ -77,12 +76,100 @@ export function parseCatalog(html: string): Listing[] {
       price_usd: null, // crawl() fills via toUsd (dynamic import - see the file banner)
       travel_depart: depart,
       travel_return: ret,
-      attrs: { ...UNKNOWN_ATTRS, nights: nightsBetween(depart, ret) },
-      detail_text: description ? `${title}. ${description}` : title,
+      // Both null on purpose (2026-09-18). The card used to store its marketing tagline as
+      // `detail_text` and window-only `attrs`: the tagline made every listing read as "detail
+      // page already opened" (so none was ever queued), and the card's attrs overwrote whatever a
+      // detail page had taught on every crawl. Nights still reach the light - `listingNights()`
+      // derives them from the stored travel window when attrs are absent.
+      attrs: null,
+      detail_text: null,
       url: href.startsWith("http") ? href : `${BASE}${href.startsWith("/") ? "" : "/"}${href}`,
     });
   }
   return out;
+}
+
+const flat = (el: Element | null | undefined): string => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
+
+/** "כלול" / "לא כלול" / "לא ידוע" after the suitcase label - null when the page never says. */
+function bagIncluded(text: string): boolean | null {
+  const m = text.match(/מזוודה\s*:?\s*(לא\s*כלול[הא]?|ללא|כלול[הא]?|כולל)/);
+  if (!m) return null;
+  return !/^(לא|ללא)/.test(m[1]);
+}
+
+/**
+ * The real package page behind the `/loader?url=` link (2026-09-18: it is server-rendered and
+ * answers a plain GET from an Israeli address - v1 skipped it as "a JS loader"). What the price
+ * buys is the PRE-SELECTED choice in each block: the flight strip, the `selected` hotel and the
+ * seat category at "תוספת €0". The stored `detail_text` is a compact summary written here, not the
+ * page's text - the page is ~14k characters of site navigation around these three blocks, and the
+ * star rating is icons, not words. `offer-detail.ts` `parseIssta` reads this exact wording back.
+ */
+export function parseDetail(html: string, window: { depart: string | null; ret: string | null }): Partial<Listing> {
+  const d = doc(html);
+  const legs = Array.from(d.querySelectorAll(".flight-direction")).map((dir) => ({
+    label: flat(dir.querySelector(".flight-direction-title")),
+    airline: flat(dir.querySelector(".airline-name")),
+    depart: flat(dir.querySelector(".flight-from .time")),
+    arrive: flat(dir.querySelector(".flight-to .time")),
+    // Empty on a direct leg; a connection prints its stop here.
+    stops: flat(dir.querySelector(".flight-timeline .second-row")),
+  })).filter((l) => /^\d{1,2}:\d{2}$/.test(l.depart) && /^\d{1,2}:\d{2}$/.test(l.arrive));
+  const hotelEl = d.querySelector(".hotel-data-container.selected") ?? d.querySelector(".hotel-data-container");
+  const hotelName = hotelEl?.getAttribute("hotel-name")?.trim() || flat(hotelEl?.querySelector(".hotel-card-name"));
+  if (legs.length === 0 && !hotelName) return {};
+
+  const stars = hotelEl?.querySelectorAll(".hotel-card-stars i").length ?? 0;
+  const facilities = Array.from(hotelEl?.querySelectorAll(".hotel-card-facility-name") ?? []).map((f) => flat(f));
+  // A facility list that names breakfast says it is included; one that does not says nothing.
+  const breakfast = facilities.some((f) => /ארוחת\s*בוקר/.test(f));
+  const bagText = flat(d.querySelector(".flight-baggage-food-terms-info-container"));
+  const bag = bagIncluded(bagText);
+  const direct = legs.length > 0 ? legs.every((l) => l.stops === "") : null;
+
+  const categories = Array.from(d.querySelectorAll(".category-option")).map((c) => ({
+    title: flat(c.querySelector(".category-title")),
+    description: flat(c.querySelector(".category-description")),
+    extra: parsePrice(flat(c.querySelector(".price-value")).replace(/[^\d,]/g, "") || "0") ?? 0,
+  })).filter((c) => c.title);
+  const seat = categories.find((c) => c.extra === 0) ?? categories[0] ?? null;
+
+  const flightLine = legs.length > 0
+    ? [
+        ...legs.map((l) => `${l.label} ${l.airline} ${l.depart}-${l.arrive}`),
+        direct ? "ישירה" : "עם עצירה",
+        bag == null ? null : bag ? "מזוודה: כלולה" : "מזוודה: לא כלולה",
+      ].filter(Boolean).join(" · ")
+    : null;
+  const hotelLine = hotelName
+    ? [hotelName, stars >= 1 && stars <= 5 ? `${stars} כוכבים` : null, breakfast ? "ארוחת בוקר" : null].filter(Boolean).join(" · ")
+    : null;
+  const seatLine = seat ? [seat.title, seat.description].filter(Boolean).join(" · ") : null;
+
+  return {
+    attrs: {
+      ...UNKNOWN_ATTRS,
+      nights: nightsBetween(window.depart, window.ret),
+      hotel_stars: stars >= 1 && stars <= 5 ? stars : "unknown",
+      direct_flight: direct ?? "unknown",
+      bag_included: bag ?? "unknown",
+      breakfast: breakfast ? true : "unknown",
+    },
+    detail_text: [
+      flightLine ? `טיסה: ${flightLine}` : null,
+      hotelLine ? `מלון: ${hotelLine}` : null,
+      seatLine ? `כרטיס: ${seatLine}` : null,
+    ].filter(Boolean).join(" | "),
+  };
+}
+
+/** `/loader?url=/sport/details?...` -> the page the loader opens. */
+export function detailUrl(listingUrl: string): string | null {
+  const at = listingUrl.indexOf("/loader?url=");
+  if (at < 0) return /\/sport\/details\?/.test(listingUrl) ? listingUrl : null;
+  const path = listingUrl.slice(at + "/loader?url=".length);
+  return path.startsWith("/sport/details?") ? `${BASE}${path}` : null;
 }
 
 /**
@@ -160,6 +247,22 @@ export const issta: CompetitorScraper = {
     // records it with this note and the circuit counts it.
     if (seen.size === 0 && emptyPages > 0) {
       throw new Error(`issta: all ${emptyPages} answering league pages carried no cards - the site likely served this IP a card-less page`);
+    }
+  },
+  // Runs wherever crawl() runs - the local machine (`crawlFrom`), so the same Israeli address.
+  async detail(listing: DetailInput, ctx: CrawlContext): Promise<Partial<Listing>> {
+    const url = listing.scope === "package" ? detailUrl(listing.url) : null;
+    if (!url) return {};
+    try {
+      const res = await ctx.fetch(url, { headers: stealthHeaders() });
+      if (!res.ok) {
+        ctx.log(`issta: detail ${url} -> HTTP ${res.status}`);
+        return {};
+      }
+      return parseDetail(await res.text(), { depart: listing.travel_depart, ret: listing.travel_return });
+    } catch (err) {
+      ctx.log(`issta: detail ${url} -> ${(err as Error).message}`);
+      return {};
     }
   },
 };

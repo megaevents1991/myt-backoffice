@@ -74,7 +74,6 @@ export function parseCatalog(html: string, baseUrl: string): Listing[] {
     if (dates.length === 0) continue;
 
     const city = row.querySelector(".td.place")?.textContent?.trim() || null;
-    const statusText = row.querySelector(".td.status")?.textContent?.trim() || "";
     const linkA = row.querySelector(".td.link-rap a.button[href]");
 
     let priceFrom: number | null = null;
@@ -112,7 +111,9 @@ export function parseCatalog(html: string, baseUrl: string): Listing[] {
         travel_depart: null,
         travel_return: null,
         attrs: null,
-        detail_text: statusText || null,
+        // Null, never the board's status cell (2026-09-18): a word like "פסח" stored here made the
+        // listing read as "detail page already opened", so its real package page was never queued.
+        detail_text: null,
         url,
       });
     }
@@ -202,8 +203,25 @@ export function parseDetail(html: string): Partial<Listing> {
   return partial;
 }
 
-/** Only music listings whose url is a priced `/package/` (never `/show/` - no href on the
- * board leads there directly, but detail() is defensive) point at real detail content. */
+/**
+ * A `/show/<slug>/` page is only a list of tiers, each a link to its own `/package/` page
+ * ("גולד טיסות ישירות 19-22.11 | וויז אייר | מלון | כרטיסים להופעה החל מ- 929 €"). The cheapest tier
+ * is the one the board's "from" price quotes, so that is the page worth reading. 12 of the 42
+ * matched listings pointed at a /show/ page on 2026-09-18 and could never show their contents.
+ */
+export function cheapestPackageUrl(html: string, origin = BASE): string | null {
+  let best: { url: string; price: number } | null = null;
+  for (const a of Array.from(doc(html).querySelectorAll('a[href*="/package/"]'))) {
+    const href = a.getAttribute("href") ?? "";
+    if (!href) continue;
+    const url = href.startsWith("http") ? href : `${origin}${href.startsWith("/") ? "" : "/"}${href}`;
+    const price = parsePrice((a.textContent ?? "").replace(/\s+/g, " ").match(PRICE_LINE_RE)?.[1] ?? "") ?? Infinity;
+    if (!best || price < best.price) best = { url, price };
+  }
+  return best?.url ?? null;
+}
+
+/** Listings whose url is a priced `/package/`, or a `/show/` tier list that leads to one. */
 function hasDetailPage(url: string): boolean {
   return /\/(package|show)\//.test(url);
 }
@@ -353,7 +371,17 @@ export const liveevents: CompetitorScraper = {
         return {};
       }
       const html = await res.text();
-      const partial = parseDetail(html);
+      let partial = parseDetail(html);
+      // A tier list, not a package: one more same-site GET to the cheapest tier it links to.
+      if (partial.detail_text == null && /\/show\//.test(listing.url)) {
+        const tierUrl = cheapestPackageUrl(html);
+        if (tierUrl) {
+          await ctx.pauseShort();
+          const tier = await ctx.fetch(tierUrl, { headers: stealthHeaders() });
+          if (tier.ok) partial = parseDetail(await tier.text());
+          else ctx.log(`liveevents: detail ${tierUrl} -> HTTP ${tier.status}`);
+        }
+      }
       if (partial.price_from != null && partial.currency != null) {
         const { toUsd } = await import("./livetickets-api.ts");
         partial.price_usd = Math.round(toUsd(partial.price_from, partial.currency));

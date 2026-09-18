@@ -148,7 +148,7 @@ export async function listEventMatches(eventId: number): Promise<{ matches: Matc
 // ---- side-by-side comparison (partner, 2026-09-14) ---------------------------------------------
 type NewestMatchRow = Pick<MatchRow, "id" | "competitor" | "scope" | "status" | "listing_id" | "raw_price" | "raw_currency" |
   "price_usd" | "normalized_usd" | "diff_usd" | "light" | "attrs" | "note" | "created_at">;
-type ComparisonListing = Pick<ListingRow, "id" | "title" | "url" | "event_date" | "travel_depart" | "travel_return" |
+type ComparisonListing = Pick<ListingRow, "id" | "external_key" | "title" | "url" | "event_date" | "travel_depart" | "travel_return" |
   "attrs" | "detail_text" | "last_seen_at" | "price_from" | "currency" | "price_usd">;
 
 const nightsBetweenDays = (a: string | null, b: string | null): number | null => {
@@ -182,10 +182,26 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
   const listings = new Map<number, ComparisonListing>();
   if (listingIds.length > 0) {
     const { data, error } = await db.from("competitor_listings")
-      .select("id,title,url,event_date,travel_depart,travel_return,attrs,detail_text,last_seen_at,price_from,currency,price_usd")
+      .select("id,external_key,title,url,event_date,travel_depart,travel_return,attrs,detail_text,last_seen_at,price_from,currency,price_usd")
       .in("id", listingIds);
     if (error) console.error("buildComparison: listings failed", JSON.stringify(error));
     for (const l of (data ?? []) as ComparisonListing[]) listings.set(l.id, l);
+  }
+
+  // LiveTickets is a table, not a page: the seat its shelf price buys is the cheapest `brt`
+  // category of the matched live event, read here rather than stored as a detail text (a stored
+  // text on an attrs-less listing would send every LiveTickets match to the AI for "extraction").
+  let liveTicketsSeat: string | null = null;
+  const liveTicketsMatch = newest.get("ticket:livetickets");
+  const liveTicketsListing = liveTicketsMatch?.listing_id != null ? listings.get(liveTicketsMatch.listing_id) ?? null : null;
+  const liveEventId = Number(liveTicketsListing?.external_key);
+  if (liveTicketsListing && Number.isInteger(liveEventId)) {
+    const { data, error } = await db.from("live_events").select("ticket_categories").eq("event_id", liveEventId).maybeSingle();
+    if (error) console.error("buildComparison: live_events failed", JSON.stringify(error));
+    const categories = ((data?.ticket_categories ?? []) as { brt: number; title: string | null }[])
+      .filter((c) => Number.isFinite(Number(c.brt)) && Number(c.brt) > 0)
+      .sort((a, b) => Number(a.brt) - Number(b.brt));
+    liveTicketsSeat = categories[0]?.title?.trim() || null;
   }
 
   const ours = event.light_detail?.ours ?? null;
@@ -225,7 +241,8 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
       const listing = m?.listing_id != null ? listings.get(m.listing_id) ?? null : null;
       const attrs = m?.attrs ?? listing?.attrs ?? null;
       const parsed = listing ? parseOfferDetail(competitor, listing.detail_text, attrs) : null;
-      const lines = parsed ? formatOfferLines(parsed) : { flight: null, hotel: null, ticket: null };
+      const lines: OfferLines = parsed ? formatOfferLines(parsed) : { flight: null, hotel: null, ticket: null };
+      if (competitor === "livetickets" && !lines.ticket) lines.ticket = liveTicketsSeat;
       return {
         who: competitor,
         status: per?.status ?? m?.status ?? "skipped",
