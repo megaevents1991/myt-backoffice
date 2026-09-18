@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { triggerCrawl, type CrawlPanelRow } from "@/lib/actions/price-light-actions";
 import { COMPETITOR_LABEL } from "@/app/(dashboard)/events/price-light-ui";
-import type { CrawlStatus } from "@/types/price-light.types";
+import type { CompetitorKey, CrawlStatus } from "@/types/price-light.types";
 
 const STATUS_LABEL: Record<CrawlStatus, string> = {
   running: "פועל",
@@ -58,7 +58,11 @@ function relativeTime(iso: string | null): string {
   return `לפני ${days} ימים`;
 }
 
-function CompetitorCard({ row, onDone }: { row: CrawlPanelRow; onDone: () => void }) {
+function CompetitorCard({
+  row, onDone, picked, onPick,
+}: {
+  row: CrawlPanelRow; onDone: () => void; picked: boolean; onPick?: (competitor: CompetitorKey | null) => void;
+}) {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const isTable = row.mode === "table";
@@ -110,9 +114,17 @@ function CompetitorCard({ row, onDone }: { row: CrawlPanelRow; onDone: () => voi
             className={cn(
               "flex min-w-0 items-center gap-2 rounded-lg border bg-card px-2.5 py-2",
               row.circuitOpen && "border-destructive/40",
+              picked && "border-ring ring-2 ring-ring",
             )}
           >
-            <div className="min-w-0 flex-1">
+            {/* The card is the competitor filter too (staff note 17.09): click = the table shows
+                only this competitor, click again = everyone. */}
+            <button
+              type="button"
+              onClick={() => onPick?.(picked ? null : row.competitor)}
+              aria-pressed={picked}
+              className="min-w-0 flex-1 text-start"
+            >
               <div className="flex items-center gap-1.5">
                 <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", status ? STATUS_DOT[status] : "bg-border")} />
                 <span className="truncate text-xs font-semibold">{label}</span>
@@ -127,7 +139,7 @@ function CompetitorCard({ row, onDone }: { row: CrawlPanelRow; onDone: () => voi
                 <span className="truncate">מודעות</span>
               </div>
               <div className="text-[11px] text-muted-foreground">{relativeTime(lastAt)}</div>
-            </div>
+            </button>
             {canTrigger && (
               <Button
                 size="icon"
@@ -148,7 +160,12 @@ function CompetitorCard({ row, onDone }: { row: CrawlPanelRow; onDone: () => voi
   );
 }
 
-export function CompetitorsPanel({ runs, loading = false, onDone }: { runs: CrawlPanelRow[]; loading?: boolean; onDone: () => void }) {
+export function CompetitorsPanel({
+  runs, loading = false, onDone, picked = null, onPick,
+}: {
+  runs: CrawlPanelRow[]; loading?: boolean; onDone: () => void;
+  picked?: CompetitorKey | null; onPick?: (competitor: CompetitorKey | null) => void;
+}) {
   if (runs.length === 0) {
     // First load: the strip's shape appears at once so the tiles and table below it do not
     // jump down when the five cards land a moment later.
@@ -164,7 +181,7 @@ export function CompetitorsPanel({ runs, loading = false, onDone }: { runs: Craw
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
       {runs.map((row) => (
-        <CompetitorCard key={row.competitor} row={row} onDone={onDone} />
+        <CompetitorCard key={row.competitor} row={row} onDone={onDone} picked={picked === row.competitor} onPick={onPick} />
       ))}
     </div>
   );

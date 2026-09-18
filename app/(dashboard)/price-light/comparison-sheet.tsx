@@ -4,7 +4,7 @@
 // across, so our flight sits right above theirs. Contents are worded in the
 // partner's format (2026-09-14): "טיסות: אל על עם מזוודה ישיר 16-20 | מלון: שם מלון כולל ארוחת בוקר או
 // ללא | סוג כרטיס". Loaded on demand - detail pages are long, the list never carries them.
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { BedDouble, ExternalLink, Loader2, Plane, RefreshCw, Ticket } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -46,11 +46,46 @@ function statusText(o: ComparisonOffer): string | null {
   }
 }
 
+/** "15:10–17:55" / "12.10–15.10" - a range of times or dates inside a Hebrew line. */
+const RANGE = /(\d{1,2}[:.]\d{2})\s*[–-]\s*(\d{1,2}[:.]\d{2})/;
+
+/**
+ * One " · " piece of a line, isolated (staff note 17.09, "לסדר את האנגלית עברית"): the lines mix
+ * Hebrew with airline codes, Latin hotel names and times, and in one bidi run the pieces traded
+ * places ("U8 · 18:25- · חזור 17:55-15:10"). A range is pinned left-to-right with an arrow, so
+ * "15:10 → 17:55" can only be read one way.
+ */
+function Segment({ text }: { text: string }) {
+  const m = text.match(RANGE);
+  if (!m || m.index == null) return <bdi>{text}</bdi>;
+  return (
+    <bdi>
+      {text.slice(0, m.index)}
+      <span dir="ltr" className="inline-block tabular-nums">{m[1]} → {m[2]}</span>
+      {text.slice(m.index + m[0].length)}
+    </bdi>
+  );
+}
+
+function Mixed({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(" · ").map((piece, i) => (
+        // Pieces of one fixed string - the index is their identity.
+        <Fragment key={i}>
+          {i > 0 && " · "}
+          <Segment text={piece} />
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
 /** One component of one offer. Ours sits in the row above theirs, so the eye compares down a column. */
 function Part({ text }: { text: string | null }) {
   return (
     <td className={cn("border-s px-3 py-2 align-top leading-relaxed", !text && "text-muted-foreground")}>
-      {text ?? "לא פורסם"}
+      {text ? <Mixed text={text} /> : "לא פורסם"}
     </td>
   );
 }
@@ -77,7 +112,7 @@ function OfferRow({ offer, scope }: { offer: ComparisonOffer; scope: Scope }) {
             </a>
           )}
         </div>
-        {offer.title && !ours && <div className="mt-0.5 line-clamp-2 text-muted-foreground" title={offer.title}>{offer.title}</div>}
+        {offer.title && !ours && <div dir="auto" className="mt-0.5 line-clamp-2 text-start text-muted-foreground" title={offer.title}>{offer.title}</div>}
         {offer.multi_match && (
           <span className="mt-1 inline-block rounded bg-amber-100 px-1 py-0.5 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
             חבילה מרובת משחקים
@@ -85,8 +120,7 @@ function OfferRow({ offer, scope }: { offer: ComparisonOffer; scope: Scope }) {
         )}
         {pkg && (travel || offer.nights != null) && (
           <div className="mt-1 text-muted-foreground">
-            {offer.nights != null ? `${offer.nights} לילות` : ""}
-            {travel ? `${offer.nights != null ? " · " : ""}${travel}` : ""}
+            <Mixed text={[offer.nights != null ? `${offer.nights} לילות` : null, travel || null].filter(Boolean).join(" · ")} />
           </div>
         )}
       </td>
@@ -105,7 +139,7 @@ function OfferRow({ offer, scope }: { offer: ComparisonOffer; scope: Scope }) {
         {offer.normalized_usd != null && <div className="text-sm font-semibold">${offer.normalized_usd.toLocaleString("en-US")}</div>}
         {published && offer.raw_currency !== "USD" && <div className="text-muted-foreground">({published})</div>}
         {offer.light && offer.diff_usd != null && (
-          <span className={cn("mt-1 inline-block rounded-full px-1.5 py-0.5 font-medium", PILL[offer.light])} title="המחיר שלנו פחות שלהם, מנורמל">
+          <span dir="ltr" className={cn("mt-1 inline-block rounded-full px-1.5 py-0.5 font-medium", PILL[offer.light])} title="המחיר שלנו פחות שלהם, מנורמל">
             {signedUsd(offer.diff_usd)}
           </span>
         )}
@@ -113,7 +147,7 @@ function OfferRow({ offer, scope }: { offer: ComparisonOffer; scope: Scope }) {
         {/* Our headline is the margin-free "from" price the light compares; the site price is not. */}
         {ours && offer.site_usd != null && (
           <div className="mt-1 text-muted-foreground">
-            באתר ${offer.site_usd.toLocaleString("en-US")} (כולל +${FLIGHT_MARGIN_USD}/+${HOTEL_MARGIN_USD})
+            באתר ${offer.site_usd.toLocaleString("en-US")} (כולל <span dir="ltr">+${FLIGHT_MARGIN_USD}/+${HOTEL_MARGIN_USD}</span>)
           </div>
         )}
         {ours && pkg && offer.markup_usd != null && (
@@ -200,7 +234,8 @@ export function ComparisonSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-5xl">
+      {/* The sheet is Hebrew throughout, the dashboard around it is LTR - it sets its own direction. */}
+      <SheetContent dir="rtl" className="w-full overflow-y-auto sm:max-w-5xl">
         <SheetHeader className="space-y-1 text-start">
           <SheetTitle>השוואה · {eventName}</SheetTitle>
           <SheetDescription className="text-xs">

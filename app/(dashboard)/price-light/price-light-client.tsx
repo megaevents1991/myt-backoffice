@@ -135,6 +135,11 @@ function answerFor(cell: PriceLightScopeCell, competitor: CompetitorKey): Compet
   return cell.competitors.find((a) => a.competitor === competitor) ?? null;
 }
 
+/** A scope's gap: against the picked competitor when there is one, else the gap that set the light. */
+function gapOf(cell: PriceLightScopeCell, competitor: CompetitorKey | null): number | null {
+  return competitor ? answerFor(cell, competitor)?.diff_usd ?? null : cell.diff_usd;
+}
+
 /** "Sells it" for the header filter: a priced listing or a quote-only one. */
 function sellsIt(a: CompetitorAnswer | null): boolean {
   return a != null && (a.normalized_usd != null || a.quote_only);
@@ -432,8 +437,12 @@ export function PriceLightClient() {
 
   // Only the competitors that are in play for the rows on screen get a column - a music view has
   // no ISSTA to show, and five mostly-empty columns push the decision buttons off the screen.
+  // A picked competitor stands alone (staff note 17.09: "שיציג רק את המתחרה הזה אם לחצתי") - the
+  // other competitors' columns go, so the table reads as us against that one site.
   const shownCompetitors = useMemo(
-    () => COMPETITOR_ORDER.filter((k) => k === comp || filtered.some((r) => cellsIn(r, scope).some((c) => answerFor(c, k) != null))),
+    () => (comp
+      ? [comp]
+      : COMPETITOR_ORDER.filter((k) => filtered.some((r) => cellsIn(r, scope).some((c) => answerFor(c, k) != null)))),
     [filtered, scope, comp],
   );
 
@@ -544,10 +553,12 @@ export function PriceLightClient() {
                     </span>
                     {moved && <span className="text-muted-foreground line-through">${cell.our_usd}</span>}
                   </div>
-                  {cell.site_usd != null && (
+                  {/* Staff note 17.09: with both scopes on the row the site price and the four-line
+                      breakdown crowd it - they show under a single-scope lens and in the sheet. */}
+                  {scope !== "all" && cell.site_usd != null && (
                     <div className="text-[11px] text-muted-foreground">באתר ${cell.site_usd}</div>
                   )}
-                  <OurBreakdown cell={cell} />
+                  {scope !== "all" && <OurBreakdown cell={cell} />}
                 </div>
               );
             })}
@@ -571,7 +582,9 @@ export function PriceLightClient() {
                 <Columns2 className="h-3 w-3" aria-hidden />
                 השוואה מפורטת
               </button>
-              {cells.map((cell) => {
+              {/* Same note: the listing link, nights line and adjustment chips belong to a
+                  single-scope lens; the combined row keeps only the way into the sheet. */}
+              {scope !== "all" && cells.map((cell) => {
                 const nights = nightsLine(cell);
                 return (
                   <div key={cell.scope} className="space-y-1">
@@ -617,25 +630,23 @@ export function PriceLightClient() {
       })),
       {
         id: "diff",
-        header: "פער",
+        // With a competitor picked the gap is the one against IT, not against whoever set the light.
+        header: comp ? `פער מול ${COMPETITOR_LABEL[comp] ?? comp}` : "פער",
         // Sort by the WORST gap on the row (most over-priced first) - that is the one that will
         // make someone act, whichever half of the package it came from.
-        accessorFn: (row) => Math.max(...cellsIn(row, scope).map((c) => c.diff_usd ?? -Infinity), -Infinity),
+        accessorFn: (row) => Math.max(...cellsIn(row, scope).map((c) => gapOf(c, comp) ?? -Infinity), -Infinity),
         cell: ({ row }) => {
-          const cells = cellsIn(row.original, scope).filter((c) => c.diff_usd != null);
-          if (cells.length === 0) return <span className="text-muted-foreground">—</span>;
+          const gaps = cellsIn(row.original, scope)
+            .map((cell) => ({ scope: cell.scope, diff: gapOf(cell, comp) }))
+            .filter((g): g is { scope: Scope; diff: number } => g.diff != null);
+          if (gaps.length === 0) return <span className="text-muted-foreground">—</span>;
           return (
             <div className="space-y-1 text-xs tabular-nums">
-              {cells.map((cell) => (
-                <div key={cell.scope} className="flex items-baseline gap-1">
-                  <span className="text-muted-foreground">{SCOPE_HE[cell.scope]}</span>
-                  <span
-                    className={cn(
-                      "font-medium",
-                      (cell.diff_usd ?? 0) < 0 ? "text-success" : (cell.diff_usd ?? 0) > 0 ? "text-destructive" : "",
-                    )}
-                  >
-                    {signedUsd(cell.diff_usd ?? 0)}
+              {gaps.map((g) => (
+                <div key={g.scope} className="flex items-baseline gap-1">
+                  <span className="text-muted-foreground">{SCOPE_HE[g.scope]}</span>
+                  <span className={cn("font-medium", g.diff < 0 ? "text-success" : g.diff > 0 ? "text-destructive" : "")}>
+                    {signedUsd(g.diff)}
                   </span>
                 </div>
               ))}
@@ -745,7 +756,7 @@ export function PriceLightClient() {
         ))}
       </div>
 
-      <CompetitorsPanel runs={runs} loading={runsLoading} onDone={reload} />
+      <CompetitorsPanel runs={runs} loading={runsLoading} onDone={reload} picked={comp} onPick={pickCompetitor} />
 
       <DataTable
         columns={columns}
