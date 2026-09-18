@@ -47,6 +47,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > menu has "הלינקים שלי" -> `/portal/packages` again (the V2 menu had dropped the only
 > way to reach the picker).
 >
+> **"לאתר" in the portal menu (2026-09-18) - the portal stays the agent's ONE login.**
+> Alon asked for an agent login on main; Dor ruled against a second door. Instead the
+> menu button calls `getSiteHandoffLink()` (`portal-package-actions.ts`, sharing
+> `handoffUrl` with "הזמנה עבור הלקוח"): a seller lands on main's homepage through
+> `/api/partner-handoff` with agent mode live (main's header shows `AgentConnectedBadge`,
+> checkout offers agent card / voucher); an influencer has no agent mode and simply
+> opens the site through their own tracking link. Do NOT build a partner login on main.
+>
 > **Portal history cut-off (2026-09-16):** `partners.portal_history_from`
 > (date, null = all) - set in the partner editor ("Portal History From") for a
 > partner starting fresh on a code that already has bookings (Aviran: code

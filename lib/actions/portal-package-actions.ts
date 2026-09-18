@@ -2252,6 +2252,39 @@ export async function getAgentOrderHandoffLink(
     return { ok: false, error: "החבילה לא נמצאה" };
   }
 
+  const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
+  const next = `/order/${data.event_id}?utm_source=${encodeURIComponent(
+    session.partner_code,
+  )}&utm_medium=influencer${
+    agentUtm ? `&utm_content=${encodeURIComponent(agentUtm)}` : ""
+  }&pkg=${encodeURIComponent(data.share_token)}`;
+  return handoffUrl(session, next);
+}
+
+/**
+ * "לאתר" in the portal menu (Dor, 2026-09-18): the agent's ONE login stays the
+ * portal; this opens the customer site with agent mode already live, so whoever
+ * prefers to browse and order on the site itself gets the agent settlement at
+ * checkout without a second login on main. An influencer has no agent mode -
+ * they land on the site through their own tracking link.
+ */
+export async function getSiteHandoffLink(): Promise<AgentOrderLinkResult> {
+  const session = await requirePartner();
+  const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
+  if (!SELLER_ROLES.includes(session.role)) {
+    return { ok: true, url: partnerLink(session.partner_code, undefined, undefined, agentUtm) };
+  }
+  const next = `/?utm_source=${encodeURIComponent(session.partner_code)}&utm_medium=influencer${
+    agentUtm ? `&utm_content=${encodeURIComponent(agentUtm)}` : ""
+  }`;
+  return handoffUrl(session, next);
+}
+
+/** Mints the short-lived handoff token and wraps `next` (a same-site path on main) with it. */
+async function handoffUrl(
+  session: Awaited<ReturnType<typeof requirePartner>>,
+  next: string,
+): Promise<AgentOrderLinkResult> {
   // Main re-verifies the token's sub against user_profiles - a partner with no
   // portal user (possible under impersonation, where the session may carry the
   // admin's own sub) would sail through minting and then die silently on
@@ -2292,12 +2325,6 @@ export async function getAgentOrderHandoffLink(
     return { ok: false, error: "החתימה לא מוגדרת - פנו לתמיכה" };
   }
 
-  const agentUtm = agentUtmContent(await getAgentSlugForUser(session.sub));
-  const next = `/order/${data.event_id}?utm_source=${encodeURIComponent(
-    session.partner_code,
-  )}&utm_medium=influencer${
-    agentUtm ? `&utm_content=${encodeURIComponent(agentUtm)}` : ""
-  }&pkg=${encodeURIComponent(data.share_token)}`;
   const url = `${PUBLIC_SITE_URL}/api/partner-handoff?token=${encodeURIComponent(
     token,
   )}&next=${encodeURIComponent(next)}`;

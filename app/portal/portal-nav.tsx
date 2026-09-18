@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { useTransition } from "react";
+import { ExternalLink, Loader2, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { getSiteHandoffLink } from "@/lib/actions/portal-package-actions";
 
 type NavItem = {
   name: string;
@@ -54,6 +57,26 @@ export function PortalNav({
   // session may be signed in beside it), so the context would report the
   // wrong identity here.
 
+  const { toast } = useToast();
+  const [openingSite, startOpeningSite] = useTransition();
+
+  // "לאתר": the customer site with agent mode already live (partner-handoff).
+  // The window opens synchronously (popup-blocker safe) and gets its URL once
+  // the short-lived token is minted - same pattern as "הזמנה עבור הלקוח".
+  const handleOpenSite = () => {
+    const win = window.open("about:blank", "_blank");
+    startOpeningSite(async () => {
+      const result = await getSiteHandoffLink();
+      if (!result.ok) {
+        win?.close();
+        toast({ title: result.error, variant: "destructive" });
+        return;
+      }
+      if (win) win.location.href = result.url;
+      else window.open(result.url, "_blank");
+    });
+  };
+
   const handleLogout = async () => {
     try {
       // scope: "portal" ends ONLY the portal session - a staff `session`
@@ -98,6 +121,20 @@ export function PortalNav({
           </Link>
         );
       })}
+      <button
+        type="button"
+        onClick={handleOpenSite}
+        disabled={openingSite}
+        title="פותח את האתר כשאתם כבר מחוברים כסוכן"
+        className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-primary-foreground/70 transition-colors hover:bg-white/10 hover:text-primary-foreground disabled:opacity-60"
+      >
+        {openingSite ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <ExternalLink className="h-4 w-4" />
+        )}
+        לאתר
+      </button>
       <button
         type="button"
         onClick={handleLogout}
