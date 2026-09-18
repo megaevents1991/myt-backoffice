@@ -9,6 +9,11 @@ export const PUBLIC_SITE_URL = (
   process.env.NEXT_PUBLIC_MAIN_SITE_URL || "https://www.mega-events.co.il"
 ).replace(/\/$/, "")
 
+/** An event's page on the customer site - what staff open to see it as a customer does. */
+export function eventSiteUrl(eventId: string | number): string {
+  return `${PUBLIC_SITE_URL}/order/${eventId}`
+}
+
 /**
  * A tracking link for a partner.
  *

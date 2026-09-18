@@ -4,7 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Check, Eye, MessageSquare, Pencil, Plus, RotateCcw, Trash2, Wrench } from "lucide-react";
+import {
+  Check,
+  ExternalLink,
+  Eye,
+  MessageSquare,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Trash2,
+  Wrench,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -28,6 +38,7 @@ import {
   type TaskEditorState,
   type TaskPrefill,
 } from "@/components/task-editor";
+import { TaskThread } from "@/components/task-thread";
 import {
   deleteTask,
   listTasks,
@@ -275,6 +286,14 @@ export function TasksClient() {
     [reload, toast],
   );
 
+  // The conversation opens UNDER the row (Alon, 18.09) - talking about a task
+  // should not need the edit dialog. One open at a time.
+  const [threadTaskId, setThreadTaskId] = useState<string | null>(null);
+  const toggleThread = useCallback(
+    (taskId: string) => setThreadTaskId((current) => (current === taskId ? null : taskId)),
+    [],
+  );
+
   const columns = useMemo<ColumnDef<TaskWithNames>[]>(
     () => [
       {
@@ -303,6 +322,17 @@ export function TasksClient() {
                 <Wrench className="h-3 w-3" />
                 Do: {row.original.source_ref.label}
               </Link>
+            )}
+            {row.original.site_url && (
+              <a
+                href={row.original.site_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ms-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                באתר
+              </a>
             )}
           </div>
         ),
@@ -370,16 +400,25 @@ export function TasksClient() {
       {
         id: "comments",
         header: "",
-        cell: ({ row }) =>
-          row.original.comment_count > 0 ? (
-            <span
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground"
-              title={`${row.original.comment_count} comments`}
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              {row.original.comment_count}
-            </span>
-          ) : null,
+        // Always there, not only when someone already wrote: it is the visible
+        // handle for "open the conversation" (a click anywhere on the row does the same).
+        cell: ({ row }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "h-8 gap-1 px-2 text-xs",
+              row.original.comment_count > 0 ? "text-foreground" : "text-muted-foreground",
+              threadTaskId === row.original.id && "bg-muted",
+            )}
+            onClick={() => toggleThread(row.original.id)}
+            aria-expanded={threadTaskId === row.original.id}
+            title="שיחה על המשימה"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            {row.original.comment_count > 0 ? row.original.comment_count : null}
+          </Button>
+        ),
       },
       {
         id: "actions",
@@ -425,7 +464,7 @@ export function TasksClient() {
           ),
       },
     ],
-    [isManager, user, onStatus, onDelete],
+    [isManager, user, onStatus, onDelete, threadTaskId, toggleThread],
   );
 
   return (
@@ -470,6 +509,17 @@ export function TasksClient() {
         <DataTable
           columns={columns}
           data={sorted}
+          getRowId={(task) => task.id}
+          onRowClick={(task) => toggleThread(task.id)}
+          expandedRowId={threadTaskId}
+          renderExpandedRow={(task) => (
+            <div className="max-w-3xl space-y-3" dir="auto">
+              {task.description && (
+                <p className="whitespace-pre-line text-sm text-muted-foreground">{task.description}</p>
+              )}
+              <TaskThread taskId={task.id} />
+            </div>
+          )}
           searchColumn="title"
           searchPlaceholder="Search tasks..."
           views={[

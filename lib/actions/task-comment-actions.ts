@@ -6,6 +6,7 @@ import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { sniffImageMime } from "@/lib/images/sniff";
 import { notifyTaskMention } from "@/lib/services/task-mention-notify";
+import { notifyTaskComment } from "@/lib/services/task-watch-notify";
 import { ADMIN_ROLES, STAFF_ROLES } from "@/types/auth.types";
 import type {
   Ok,
@@ -213,15 +214,34 @@ export async function addTaskComment(input: {
 
   await logAudit({ action: "task.comment", entityType: "task", entityId: input.taskId, changes: { comment_id: data.id, mentions } });
 
+  // Mentioned people get the mention mail; the task's creator and assignee get the
+  // "new comment" mail - never both for one comment, never the author.
+  const { data: task, error: taskError } = await db
+    .from("tasks")
+    .select("id,title,created_by,assignee_id")
+    .eq("id", input.taskId)
+    .maybeSingle();
+  if (taskError) console.error("task-comments: task lookup failed", JSON.stringify(taskError));
   if (mentions.length) {
-    const { data: task, error: taskError } = await db.from("tasks").select("title").eq("id", input.taskId).maybeSingle();
-    if (taskError) console.error("task-comments: title lookup failed", JSON.stringify(taskError));
     await notifyTaskMention({
       taskId: input.taskId,
       taskTitle: task?.title ?? "משימה",
       body,
       authorId: session.sub,
       mentionIds: mentions,
+    });
+  }
+  if (task) {
+    await notifyTaskComment({
+      task: {
+        id: task.id,
+        title: task.title,
+        created_by: task.created_by,
+        assignee_id: task.assignee_id,
+      },
+      authorId: session.sub,
+      body,
+      mentionedIds: mentions,
     });
   }
 

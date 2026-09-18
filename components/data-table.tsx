@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import {
   type ColumnDef,
   type ColumnFiltersState,
@@ -90,7 +90,17 @@ interface DataTableProps<TData, TValue> {
     description?: string;
     action?: React.ReactNode;
   };
+  /** Clicking a row (not a control inside it) calls this - /tasks opens the thread. */
+  onRowClick?: (row: TData) => void;
+  /** Row id (getRowId, or the index) whose detail panel is open under it. */
+  expandedRowId?: string | null;
+  /** The detail panel - rendered full-width under the expanded row. */
+  renderExpandedRow?: (row: TData) => React.ReactNode;
 }
+
+/** A click that landed on a control inside the row belongs to that control. */
+const ROW_CLICK_IGNORE =
+  "a,button,input,textarea,select,label,[role=combobox],[role=checkbox],[role=switch],[role=menuitem]";
 
 /** Compact pager: 1 … 4 [5] 6 … 13 - never more than 7 buttons wide. */
 function pageWindow(current: number, total: number): (number | "gap")[] {
@@ -127,6 +137,9 @@ export function DataTable<TData, TValue>({
   onViewChange,
   filters,
   emptyState,
+  onRowClick,
+  expandedRowId,
+  renderExpandedRow,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>(defaultSorting ?? []);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -332,25 +345,45 @@ export function DataTable<TData, TValue>({
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row, index) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                  className={getRowClassName?.(row, index, sorting)}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                    key={cell.id}
+                <Fragment key={row.id}>
+                  <TableRow
+                    data-state={row.getIsSelected() && "selected"}
                     className={cn(
-                      dense && "p-2",
-                      // Coarse pointers get taller rows - 32px icon buttons in
-                      // a dense row are under the comfortable touch target.
-                      "[@media(pointer:coarse)]:py-3",
+                      getRowClassName?.(row, index, sorting),
+                      onRowClick && "cursor-pointer",
+                      expandedRowId === row.id && "bg-muted/40",
                     )}
+                    onClick={
+                      onRowClick
+                        ? (event) => {
+                            if ((event.target as HTMLElement).closest(ROW_CLICK_IGNORE)) return;
+                            onRowClick(row.original);
+                          }
+                        : undefined
+                    }
                   >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell
+                        key={cell.id}
+                        className={cn(
+                          dense && "p-2",
+                          // Coarse pointers get taller rows - 32px icon buttons in
+                          // a dense row are under the comfortable touch target.
+                          "[@media(pointer:coarse)]:py-3",
+                        )}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  {renderExpandedRow && expandedRowId === row.id && (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={allColumns.length} className="bg-muted/20 p-4">
+                        {renderExpandedRow(row.original)}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
               ))
             ) : (
               <TableRow className="hover:bg-transparent">

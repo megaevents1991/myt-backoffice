@@ -102,6 +102,8 @@ export interface Task {
 export interface TaskWithNames extends Task {
   assignee_name: string | null;
   created_by_name: string | null;
+  /** The subject's page on the customer site (event / team / artist / category), when it has one. */
+  site_url: string | null;
   /** Comments on this task (activity rows excluded). Filled by listTasks. */
   comment_count: number;
 }

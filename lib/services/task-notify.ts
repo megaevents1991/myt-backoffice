@@ -38,7 +38,11 @@ export interface TaskAssignedInput {
   assignerId: string | null;
 }
 
-export async function notifyTaskAssigned(input: TaskAssignedInput): Promise<void> {
+/** What became of the mail - the dialog's toast says so instead of promising one
+ *  ("sent" = handed to the mail server, not proof it reached the inbox). */
+export type TaskMailOutcome = "sent" | "skipped" | "failed";
+
+export async function notifyTaskAssigned(input: TaskAssignedInput): Promise<TaskMailOutcome> {
   try {
     const ids = [input.assigneeId, input.assignerId].filter(
       (value): value is string => !!value,
@@ -50,12 +54,15 @@ export async function notifyTaskAssigned(input: TaskAssignedInput): Promise<void
     if (error) throw error;
     const profiles = (data ?? []) as Profile[];
     const assignee = profiles.find((p) => p.id === input.assigneeId);
-    if (!assignee?.email) return;
+    if (!assignee?.email) {
+      console.error(`tasks: assignment mail skipped for task ${input.taskId} - assignee has no email`);
+      return "skipped";
+    }
     const assigner = profiles.find((p) => p.id === input.assignerId);
     const assignerName = assigner?.display_name || assigner?.email || "המערכת";
 
     const origin = appOrigin();
-    const boardUrl = `${origin}/tasks`;
+    const boardUrl = `${origin}/tasks?task=${input.taskId}`;
     // source_ref comes from the client side of a server action - only a
     // same-site relative path may become a link in the mail.
     const path = safeRelativePath(input.sourceRef?.url);
@@ -71,16 +78,19 @@ export async function notifyTaskAssigned(input: TaskAssignedInput): Promise<void
         `עדיפות: ${PRIORITY_HE[input.priority]}`,
         input.dueDate ? `יעד: ${input.dueDate}` : "",
         fixUrl ? `לתיקון: ${fixUrl}` : "",
-        `לוח המשימות: ${boardUrl}`,
+        `למשימה: ${boardUrl}`,
       ]
         .filter(Boolean)
         .join("\n"),
     });
+    console.log(`tasks: assignment mail sent for task ${input.taskId} -> ${assignee.email}`);
+    return "sent";
   } catch (error) {
     console.error(
       `tasks: assignment mail failed for task ${input.taskId}`,
       error instanceof Error ? error.message : JSON.stringify(error),
     );
+    return "failed";
   }
 }
 
@@ -195,9 +205,9 @@ function taskAssignedHtml(params: {
             ${params.sourceRef?.label ? row("נושא", escapeHtml(params.sourceRef.label)) : ""}
           </table></td></tr>
           <tr><td style="text-align:right;padding-bottom:12px;">
-            <a href="${escapeHtml(params.fixUrl ?? params.boardUrl)}" style="display:inline-block;background:#0A1A14;color:#5BFF95;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:bold;">${params.fixUrl ? "לתיקון" : "ללוח המשימות"}</a>
+            <a href="${escapeHtml(params.fixUrl ?? params.boardUrl)}" style="display:inline-block;background:#0A1A14;color:#5BFF95;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:bold;">${params.fixUrl ? "לתיקון" : "למשימה"}</a>
           </td></tr>
-          <tr><td style="text-align:right;font-size:13px;color:#6b7280;line-height:1.6;"><a href="${escapeHtml(params.boardUrl)}" style="color:#6b7280;">כל המשימות שלי</a></td></tr>
+          <tr><td style="text-align:right;font-size:13px;color:#6b7280;line-height:1.6;"><a href="${escapeHtml(params.boardUrl)}" style="color:#6b7280;">למשימה ולשיחה עליה</a></td></tr>
         </table>
       </td></tr>
     </table>

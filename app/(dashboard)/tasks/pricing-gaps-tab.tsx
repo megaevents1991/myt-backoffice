@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { AlertTriangle, Check, ListTodo, Wrench } from "lucide-react";
+import { AlertTriangle, Check, ExternalLink, ListTodo, Wrench } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -25,6 +25,7 @@ import {
   markPricingGapHandled,
   openPricingGapTask,
 } from "@/lib/actions/pricing-gap-actions";
+import { eventSiteUrl } from "@/lib/site";
 import type { PricingGapRow, PricingGapSource } from "@/types/pricing-gap.types";
 
 const SOURCE_LABEL: Record<PricingGapSource, string> = {
@@ -65,7 +66,9 @@ export function PricingGapsTab({
 
   const [sourceFilter, setSourceFilter] = useState<PricingGapSource | "all">("all");
   const [scopeFilter, setScopeFilter] = useState<string>("all");
-  const [minGap, setMinGap] = useState("");
+  // Gap range, both ends (Alon, 18.09: "עד הפרש מסויים ולא מהפרש מסויים, או סרגל
+  // טווח כמו במלון"). null = untouched = every row, unknown gaps included.
+  const [gapRange, setGapRange] = useState<[number, number] | null>(null);
   // On by default (brief): the point of this tab is what still needs a human,
   // and a row someone already picked up is not that.
   const [hideWithTask, setHideWithTask] = useState(true);
@@ -101,16 +104,26 @@ export function PricingGapsTab({
     return [...scopes];
   }, [rows]);
 
+  // The slider's ceiling: the biggest gap on the list, rounded up to a whole $10.
+  const gapCeiling = useMemo(() => {
+    const max = Math.max(0, ...(rows ?? []).map((row) => row.gapUsd ?? 0));
+    return Math.max(10, Math.ceil(max / 10) * 10);
+  }, [rows]);
+  const gapFiltered = gapRange !== null && (gapRange[0] > 0 || gapRange[1] < gapCeiling);
+
   const visible = useMemo(() => {
     return (rows ?? []).filter((row) => {
       if (sourceFilter !== "all" && row.source !== sourceFilter) return false;
       if (scopeFilter !== "all" && row.scope !== scopeFilter) return false;
       if (hideWithTask && row.openTaskId) return false;
-      const min = Number(minGap);
-      if (minGap.trim() !== "" && Number.isFinite(min) && (row.gapUsd ?? 0) < min) return false;
+      if (gapFiltered && gapRange) {
+        // A narrowed range is a statement about a number - a row with no number is out.
+        if (row.gapUsd == null) return false;
+        if (row.gapUsd < gapRange[0] || row.gapUsd > gapRange[1]) return false;
+      }
       return true;
     });
-  }, [rows, sourceFilter, scopeFilter, hideWithTask, minGap]);
+  }, [rows, sourceFilter, scopeFilter, hideWithTask, gapRange, gapFiltered]);
 
   const createTask = useCallback(
     async (row: PricingGapRow) => {
@@ -239,6 +252,12 @@ export function PricingGapsTab({
                   לתקן
                 </Link>
               </Button>
+              <Button size="sm" variant="ghost" asChild>
+                <a href={eventSiteUrl(row.original.eventId)} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                  באתר
+                </a>
+              </Button>
               <Button size="sm" variant="outline" disabled={busy} onClick={() => markHandled(row.original)}>
                 <Check className="mr-1.5 h-3.5 w-3.5" />
                 טופל
@@ -310,14 +329,34 @@ export function PricingGapsTab({
                 ))}
               </SelectContent>
             </Select>
-            <Input
-              type="number"
-              inputMode="numeric"
-              placeholder="סף פער $"
-              value={minGap}
-              onChange={(e) => setMinGap(e.target.value)}
-              className="h-8 w-[110px]"
-            />
+            <div className="flex items-center gap-2" dir="ltr">
+              <span className="tabular w-10 text-right text-xs text-muted-foreground">
+                ${gapRange?.[0] ?? 0}
+              </span>
+              <Slider
+                value={gapRange ?? [0, gapCeiling]}
+                onValueChange={([from, to]) => setGapRange([from ?? 0, to ?? gapCeiling])}
+                min={0}
+                max={gapCeiling}
+                step={10}
+                minStepsBetweenThumbs={1}
+                className="w-[180px]"
+                aria-label="טווח פער בדולרים"
+              />
+              <span className="tabular w-12 text-xs text-muted-foreground">
+                ${Math.min(gapRange?.[1] ?? gapCeiling, gapCeiling)}
+              </span>
+              {gapFiltered && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setGapRange(null)}
+                >
+                  נקה
+                </Button>
+              )}
+            </div>
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <Switch checked={hideWithTask} onCheckedChange={setHideWithTask} />
               רק בלי משימה

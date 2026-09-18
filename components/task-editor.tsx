@@ -194,10 +194,19 @@ export function TaskEditor({
         });
         return;
       }
+      // Say what actually happened to the assignment mail, not what should have.
+      const mailFailed = result.mail === "failed" || result.mail === "skipped";
       toast({
+        variant: mailFailed ? "destructive" : undefined,
         title: task ? "Task updated" : "Task created",
         description:
-          !task && assigneeId ? "The assignee gets an email." : undefined,
+          result.mail === "sent"
+            ? "An email went out to the assignee."
+            : result.mail === "failed"
+              ? "Saved, but the email to the assignee FAILED - tell them directly."
+              : result.mail === "skipped"
+                ? "Saved, but the assignee has no email address on file."
+                : undefined,
       });
       onSaved();
     } finally {

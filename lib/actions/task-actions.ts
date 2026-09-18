@@ -5,7 +5,9 @@ import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
-import { notifyTaskAssigned } from "@/lib/services/task-notify";
+import { notifyTaskAssigned, type TaskMailOutcome } from "@/lib/services/task-notify";
+import { notifyTaskDone } from "@/lib/services/task-watch-notify";
+import { siteUrlOf, siteUrlsForRefs } from "@/lib/services/task-site-url";
 import { resolveGapForTask } from "@/lib/services/gap-resolution";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import {
@@ -29,8 +31,11 @@ import { editableFields, type EditableTaskField } from "@/lib/tasks/permissions"
 // Typed against types/database.types.ts (npm run db:types).
 const db = supabaseTyped;
 
-type Result = { ok: true } | { ok: false; error: string };
-type CreateResult = { ok: true; id: string } | { ok: false; error: string };
+/** `mail` is set only when an assignment mail was attempted - see TaskMailOutcome. */
+type Result = { ok: true; mail?: TaskMailOutcome } | { ok: false; error: string };
+type CreateResult =
+  | { ok: true; id: string; mail?: TaskMailOutcome }
+  | { ok: false; error: string };
 
 /**
  * Permissions (decided 01.09):
@@ -122,13 +127,17 @@ async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
         .filter((value): value is string => !!value),
     ),
   ];
-  const countOf = await commentCounts(rows.map((row) => row.id));
+  const [countOf, siteUrls] = await Promise.all([
+    commentCounts(rows.map((row) => row.id)),
+    siteUrlsForRefs(rows.map((row) => row.source_ref)),
+  ]);
 
   if (ids.length === 0) {
     return rows.map((row) => ({
       ...row,
       assignee_name: null,
       created_by_name: null,
+      site_url: siteUrlOf(row.source_ref, siteUrls),
       comment_count: countOf.get(row.id) ?? 0,
     }));
   }
@@ -147,6 +156,7 @@ async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
     ...row,
     assignee_name: row.assignee_id ? (nameOf.get(row.assignee_id) ?? null) : null,
     created_by_name: row.created_by ? (nameOf.get(row.created_by) ?? null) : null,
+    site_url: siteUrlOf(row.source_ref, siteUrls),
     comment_count: countOf.get(row.id) ?? 0,
   }));
 }
@@ -286,8 +296,9 @@ export async function createTask(input: {
   if (input.source === "price_light") invalidatePriceLight("rows");
 
   // Assigning someone else = they get a mail. Self-assignment stays quiet.
+  let mail: TaskMailOutcome | undefined;
   if (assigneeId && assigneeId !== session.sub) {
-    await notifyTaskAssigned({
+    mail = await notifyTaskAssigned({
       taskId: data.id,
       title,
       description: input.description?.trim() || null,
@@ -298,7 +309,7 @@ export async function createTask(input: {
       assignerId: session.sub,
     });
   }
-  return { ok: true, id: data.id };
+  return { ok: true, id: data.id, mail };
 }
 
 export async function updateTask(
@@ -405,13 +416,14 @@ export async function updateTask(
 
   // Handed to a new person (not the editor themself) → mail them.
   const newAssignee = (after?.assignee_id as string | null) ?? null;
+  let mail: TaskMailOutcome | undefined;
   if (
     after &&
     newAssignee &&
     newAssignee !== (before?.assignee_id ?? null) &&
     newAssignee !== session.sub
   ) {
-    await notifyTaskAssigned({
+    mail = await notifyTaskAssigned({
       taskId: id,
       title: after.title,
       description: after.description ?? null,
@@ -422,7 +434,7 @@ export async function updateTask(
       assignerId: session.sub,
     });
   }
-  return { ok: true };
+  return { ok: true, mail };
 }
 
 /** Status is the one field an editor may change - on his own tasks only. */
@@ -454,7 +466,7 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
     query = query.eq("assignee_id", session.sub);
   }
 
-  const { data, error } = await query.select("id,source,source_ref");
+  const { data, error } = await query.select("id,title,created_by,assignee_id,source,source_ref");
   if (error) {
     console.error("tasks: status failed", JSON.stringify(error));
     return { ok: false, error: "Update failed" };
@@ -482,8 +494,22 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
   // creative (Dor, 16.09: "אחרי שמשימה נעשתה - צריך להוריד אותה מה-gaps של כל
   // אחד באשר הוא"). resolveGapForTask swallows its own errors, so a failed gap
   // write never blocks this status change.
-  const row = data[0] as { source: TaskSource; source_ref: TaskSourceRef | null };
+  const row = data[0] as {
+    title: string;
+    created_by: string | null;
+    assignee_id: string | null;
+    source: TaskSource;
+    source_ref: TaskSourceRef | null;
+  };
   await resolveGapForTask({ id, source: row.source, source_ref: row.source_ref }, status);
+
+  // Done (and it was not already) → the person who opened the task hears about it.
+  if (status === "done" && previousStatus !== "done") {
+    await notifyTaskDone({
+      task: { id, title: row.title, created_by: row.created_by, assignee_id: row.assignee_id },
+      actorId: session.sub,
+    });
+  }
   return { ok: true };
 }
 
