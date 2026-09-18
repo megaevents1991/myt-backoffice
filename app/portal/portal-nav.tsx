@@ -19,11 +19,13 @@ type NavItem = {
 /**
  * V2 menu (2026-08-27 spec): דשבורד | הצעות מחיר | ההזמנות שלי |
  * מידע ועדכונים | הפרופיל שלי (+ הצוות שלי for office managers).
- * חבילות/צבירה/קופונים left the bar - the dashboard's search engine covers
- * links/packages, and credit/coupons became tabs of the מידע ועדכונים hub.
+ * צבירה/קופונים left the bar - credit/coupons became tabs of the
+ * מידע ועדכונים hub. "הלינקים שלי" came back (2026-09-18): the link builder
+ * with the site-page picker lives on /portal/packages and nothing led there.
  */
 const navItems: NavItem[] = [
-  { name: "דשבורד", href: "/portal", alsoActiveOn: ["/portal/packages"] },
+  { name: "דשבורד", href: "/portal" },
+  { name: "הלינקים שלי", href: "/portal/packages" },
   // Sellers only - an influencer promotes a link and never prices a package
   // for a named customer. The server action enforces it too.
   { name: "הצעות מחיר", href: "/portal/quotes", roles: ["agent", "office_manager"] },

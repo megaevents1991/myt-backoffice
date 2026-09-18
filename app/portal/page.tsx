@@ -8,6 +8,7 @@ import {
 } from "@/lib/actions/partner-credit-actions";
 import { getPackageBuilderEvents } from "@/lib/actions/portal-package-actions";
 import { getMyInfluencerCoupon } from "@/lib/actions/influencer-coupon-actions";
+import { listSitePages } from "@/lib/actions/portal-site-pages-actions";
 import { getAgentSlugForUser, agentUtmContent } from "@/lib/portal-attribution";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
 import { PARTNER_ROLES, SELLER_ROLES } from "@/types/auth.types";
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { DashboardSearch } from "./dashboard-search";
+import { SitePagePicker } from "./links/site-page-picker";
 import { NewPackagesRail } from "./new-packages-rail";
 import { PendingCommissionList } from "./pending-commission-list";
 import { ReservationsTable } from "./reservations/reservations-table";
@@ -96,7 +98,7 @@ export default async function PortalDashboardPage({
   const profile = await getPortalProfile();
   const creditAllowed = (profile?.credit_per_ticket ?? 0) > 0;
 
-  const [events, reservationsPage, agentSlug, dashboard, credit, influencerCoupon] =
+  const [events, reservationsPage, agentSlug, dashboard, credit, influencerCoupon, sitePages] =
     await Promise.all([
       getPackageBuilderEvents().catch((error: unknown) => {
         console.error("PortalDashboardPage events:", error);
@@ -117,6 +119,10 @@ export default async function PortalDashboardPage({
         : Promise.resolve<PartnerCredit | null>(null),
       // Influencers only (null for everyone else) - their one coupon.
       getMyInfluencerCoupon().catch(() => null),
+      listSitePages().catch((error: unknown) => {
+        console.error("PortalDashboardPage site pages:", error);
+        return [];
+      }),
     ]);
   const agentUtm = agentUtmContent(agentSlug);
 
@@ -217,6 +223,23 @@ export default async function PortalDashboardPage({
           <DashboardSearch
             trackingCode={session.partner_code}
             events={events}
+            agentUtm={agentUtm}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>לינק לעמוד באתר</CardTitle>
+          <CardDescription>
+            עמוד אמן, קבוצה או קטגוריה - הלינק נושא את קוד המעקב שלכם, וכל הזמנה
+            שתגיע דרכו נספרת לכם.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SitePagePicker
+            trackingCode={session.partner_code}
+            pages={sitePages}
             agentUtm={agentUtm}
           />
         </CardContent>

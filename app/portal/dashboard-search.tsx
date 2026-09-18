@@ -25,6 +25,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { partnerLink } from "@/lib/site";
+import { matchesSearch } from "@/lib/search";
 import { computePerPersonPackagePrice } from "@/lib/package-price";
 import type { BuilderEvent } from "@/lib/actions/portal-package-actions";
 
@@ -187,11 +188,16 @@ export function DashboardSearch({
     const pool = events
       .filter((e) => genre === "all" || genreOf(e) === genre)
       .filter(inMonth)
-      .filter(
-        (e) =>
-          !term ||
-          e.name.toLowerCase().includes(term) ||
-          e.location_name.toLowerCase().includes(term),
+      // Token search (lib/search.ts): words in any order, across the Hebrew
+      // and English names, the venue and the artist/team/league tag names.
+      .filter((e) =>
+        matchesSearch(
+          term,
+          e.name,
+          e.name_english,
+          e.location_name,
+          ...(e.tag_list ?? []).map((t) => t.name),
+        ),
       )
       .filter((e) => fromMs == null || +new Date(e.date) >= fromMs)
       .filter((e) => toMs == null || +new Date(e.date) < toMs)

@@ -24,6 +24,8 @@ export interface SitePageOption {
   kind: "category" | "artist" | "team";
   /** "כדורגל › ליגה אנגלית › ליברפול" */
   label: string;
+  /** Search only - "Liverpool" must find "ליברפול". */
+  label_english: string | null;
   path: string;
 }
 
@@ -101,16 +103,23 @@ export async function listSitePages(): Promise<SitePageOption[]> {
         // The category row lists this page too - keep one entry, labelled
         // as the person so it reads naturally in the search.
         twinned.add(twin.id);
-        return [{ kind, label: person.name, path: pathOf(twin) }];
+        return [{ kind, label: person.name, label_english: person.name_english, path: pathOf(twin) }];
       }
       if (!person.slug) return [];
-      return [{ kind, label: person.name, path: `${legacyPrefix}${person.slug}` }];
+      return [
+        { kind, label: person.name, label_english: person.name_english, path: `${legacyPrefix}${person.slug}` },
+      ];
     }),
   );
 
   const categoryPages: SitePageOption[] = categories
     .filter((c) => !!c.slug && !twinned.has(c.id))
-    .map((c) => ({ kind: "category", label: labelOf.get(c.id) ?? c.name, path: pathOf(c) }));
+    .map((c) => ({
+      kind: "category",
+      label: labelOf.get(c.id) ?? c.name,
+      label_english: c.name_english ?? null,
+      path: pathOf(c),
+    }));
 
   return [...personPages, ...categoryPages].sort((a, b) =>
     a.label.localeCompare(b.label, "he"),

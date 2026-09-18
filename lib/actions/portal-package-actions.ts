@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requirePartner } from "@/lib/auth/guards";
 import { mintPartnerHandoffToken } from "@/lib/auth/partner-handoff";
 import { supabase } from "@/lib/supabase-server";
+import { fetchPaged } from "@/lib/supabase-paged";
 import { MEGA_EVENTS_CREATOR } from "@/lib/portal-labels";
 import { partnerLink, PUBLIC_SITE_URL } from "@/lib/site";
 import {
@@ -96,6 +97,8 @@ function intervalToHours(value: string | null | undefined): number | null {
 export interface BuilderEvent {
   id: number;
   name: string;
+  /** Search only - a partner typing "Harry Styles" must hit "הארי סטיילס". */
+  name_english: string | null;
   date: string;
   location_name: string;
   type: EventType;
@@ -146,6 +149,7 @@ export interface BuilderEvent {
 type EventListRow = {
   id: number;
   name: string;
+  name_english?: string | null;
   date: string;
   location: { name?: string } | null;
   type: string;
@@ -173,7 +177,7 @@ type EventListRow = {
 };
 
 const EVENT_COLUMNS =
-  "id, name, date, location, type, tickets_and_rates, map_image_url, card_image_url, art_image_url, tx_excluded_sections, is_deleted, base_flight_price, base_hotel_price, " +
+  "id, name, name_english, date, location, type, tickets_and_rates, map_image_url, card_image_url, art_image_url, tx_excluded_sections, is_deleted, base_flight_price, base_hotel_price, " +
   "event_additional_markup, markup_ticket, markup_flight, markup_hotel, skip_flight, skip_flight_markup, skip_hotel_markup, ticket_only_markup, tags, locked_flight_id, " +
   "def_date_depart, def_date_return, is_prioritized";
 
@@ -215,6 +219,11 @@ async function lockedFlightSoldOutSet(
   return soldOut;
 }
 
+/** Ceiling on the portal's event list - far above the live catalog, logged when hit. */
+const BUILDER_EVENTS_MAX = 3000;
+/** event ids per tag-links read: ~6 tags an event keeps each chunk under PostgREST's 1000-row cap. */
+const TAG_LINK_CHUNK = 100;
+
 export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
   await requirePartner();
 
@@ -223,21 +232,32 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
   // of the build-package and send-link lists.
   const minStart = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("events")
-    .select(EVENT_COLUMNS)
-    .is("is_deleted", null)
-    .gte("date", minStart)
-    .order("date", { ascending: true })
-    .limit(300);
+  // Paged, not `.limit(300)`: the catalog passed 300 live future events in
+  // 09/2026 and everything dated after the 300th (the 2027 tours the "מה חדש"
+  // carousel was advertising) silently fell out of the search.
+  const { rows, truncated, error } = await fetchPaged<EventListRow>(
+    () =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from("events")
+        .select(EVENT_COLUMNS)
+        .is("is_deleted", null)
+        .gte("date", minStart)
+        .order("date", { ascending: true })
+        .order("id", { ascending: true }),
+    BUILDER_EVENTS_MAX,
+  );
 
   if (error) {
     console.error("getPackageBuilderEvents:", JSON.stringify(error));
     return [];
   }
+  if (truncated) {
+    console.error(
+      `getPackageBuilderEvents: more than ${BUILDER_EVENTS_MAX} live future events - the list is cut`,
+    );
+  }
 
-  const rows = (data ?? []) as EventListRow[];
   const lockedIds = [
     ...new Set(
       rows
@@ -269,20 +289,31 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
     }[];
     const eventIds = rows.map((r) => r.id);
     if (tags.length > 0 && eventIds.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: links } = await (supabase as any)
-        .from("event_tag_links")
-        .select("event_id,tag_id")
-        .in(
-          "tag_id",
-          tags.map((t) => t.id),
-        )
-        .in("event_id", eventIds);
+      const tagIds = tags.map((t) => t.id);
+      const chunks: number[][] = [];
+      for (let i = 0; i < eventIds.length; i += TAG_LINK_CHUNK) {
+        chunks.push(eventIds.slice(i, i + TAG_LINK_CHUNK));
+      }
+      const pages = await Promise.all(
+        chunks.map((chunk) =>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (supabase as any)
+            .from("event_tag_links")
+            .select("event_id,tag_id")
+            .in("tag_id", tagIds)
+            .in("event_id", chunk),
+        ),
+      );
+      const links: { event_id: number; tag_id: number }[] = [];
+      for (const page of pages) {
+        if (page.error) {
+          console.error("getPackageBuilderEvents tag links:", JSON.stringify(page.error));
+          continue;
+        }
+        links.push(...((page.data ?? []) as { event_id: number; tag_id: number }[]));
+      }
       const tagById = new Map(tags.map((t) => [t.id, t]));
-      for (const link of (links ?? []) as {
-        event_id: number;
-        tag_id: number;
-      }[]) {
+      for (const link of links) {
         const tag = tagById.get(link.tag_id);
         if (!tag) continue;
         if (tag.type === "vertical") {
@@ -320,6 +351,7 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
     return {
       id: row.id,
       name: row.name,
+      name_english: row.name_english ?? null,
       date: row.date,
       location_name: location.name ?? "",
       type: row.type as EventType,

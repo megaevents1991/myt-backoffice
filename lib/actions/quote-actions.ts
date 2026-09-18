@@ -2,6 +2,7 @@
 
 import { requirePartner } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
+import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { resolvePortalScope } from "@/lib/portal-attribution";
 import {
@@ -99,23 +100,36 @@ type QuoteEventRow = PackagePriceEvent & {
   location: { name: string } | null;
 };
 
+/** Ceiling on the quote form's event list - far above the live catalog, logged when hit. */
+const QUOTE_EVENTS_MAX = 3000;
+
 export async function getQuoteEvents(): Promise<QuoteEventOption[]> {
   await requirePartner();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("events")
-    .select(
-      "id,name,date,location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel",
-    )
-    .is("is_deleted", null)
-    .gte("date", new Date().toISOString().slice(0, 10))
-    .order("date", { ascending: true })
-    .limit(300);
+  const today = new Date().toISOString().slice(0, 10);
+  // Paged, not `.limit(300)` - the live catalog passed 300 future events (09/2026)
+  // and the later ones could not be quoted.
+  const { rows, truncated, error } = await fetchPaged<QuoteEventRow>(
+    () =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from("events")
+        .select(
+          "id,name,date,location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel",
+        )
+        .is("is_deleted", null)
+        .gte("date", today)
+        .order("date", { ascending: true })
+        .order("id", { ascending: true }),
+    QUOTE_EVENTS_MAX,
+  );
   if (error) {
     console.error("getQuoteEvents:", JSON.stringify(error));
     return [];
   }
-  return ((data ?? []) as QuoteEventRow[]).map((event) => ({
+  if (truncated) {
+    console.error(`getQuoteEvents: more than ${QUOTE_EVENTS_MAX} live future events - the list is cut`);
+  }
+  return rows.map((event) => ({
     id: event.id,
     name: event.name,
     date: event.date ?? null,
