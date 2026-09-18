@@ -105,11 +105,15 @@ function sanitizeSvg(raw: string): string | null {
   return svg.outerHTML;
 }
 
+// UTC on purpose: the day printed here must be the day the date gap was counted from
+// (supplier-attach-actions.ts `dayIndex`). In the operator's own timezone a late kick-off
+// rolls over midnight and the list shows a different day than the gap beside it.
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    timeZone: "UTC",
   });
 
 /**
@@ -530,8 +534,14 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
         t.id === ticket.id ? withZone(t, zoneId) : t,
       ),
     }));
+    // Clearing ONE ticket on ONE event is not the venue forgetting the category (QA 2026-09-18).
+    // Sent as "" it deleted the mapping from `venue_maps.supplier_categories`: the "Apply venue
+    // template" button, which is counted from that same mapping, appeared and vanished a moment
+    // later with nothing left to restore - here and at the next event in that stadium. Only a
+    // zone that was CHOSEN is remembered.
+    if (!zoneId) return;
     rememberInTemplate(ticketSupplier(ticket, event.type), {
-      [ticket.supplierCategory || ticket.category]: zoneId ?? "",
+      [ticket.supplierCategory || ticket.category]: zoneId,
     });
   };
 
@@ -557,6 +567,9 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<LiveTicketsCandidate | null>(null);
+  // A REAL date gap is the operator's call, made on the spot (football fixtures move a day with
+  // no final date) - but it has to be made, not scrolled past: the Add button waits for this.
+  const [gapAcknowledged, setGapAcknowledged] = useState(false);
   const [drafts, setDrafts] = useState<LiveTicketsDraft[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
@@ -604,6 +617,7 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
 
   const handlePick = async (candidate: LiveTicketsCandidate) => {
     setPicked(candidate);
+    setGapAcknowledged(false);
     setLoadingDrafts(true);
     try {
       const result = await buildLiveTicketsDrafts(candidate.eventId);
@@ -672,8 +686,10 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     (d) => !draftZones[d.ticket.id],
   );
 
+  const gapNeedsDecision = !!picked && picked.dateGapDays !== 0 && !gapAcknowledged;
+
   const handleAttach = () => {
-    if (selectedDrafts.length === 0 || selectedWithoutZone.length > 0) return;
+    if (selectedDrafts.length === 0 || selectedWithoutZone.length > 0 || gapNeedsDecision) return;
     const tickets = selectedDrafts.map((d) =>
       withZone(d.ticket, draftZones[d.ticket.id]),
     );
@@ -1139,12 +1155,22 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                     </Button>
                   </div>
                   {picked.dateGapDays !== 0 && (
-                    <p className="flex items-center gap-2 text-sm text-destructive">
-                      <AlertTriangle className="h-4 w-4" />
-                      Their date is {Math.abs(picked.dateGapDays)} day(s){" "}
-                      {picked.dateGapDays > 0 ? "after" : "before"} ours. Make
-                      sure it is the same match.
-                    </p>
+                    <div className="space-y-1.5 rounded-md border border-destructive/40 p-2">
+                      <p className="flex items-center gap-2 text-sm text-destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        Their date ({formatDate(picked.showDate)}) is{" "}
+                        {Math.abs(picked.dateGapDays)} day(s){" "}
+                        {picked.dateGapDays > 0 ? "after" : "before"} ours (
+                        {formatDate(event.date)}).
+                      </p>
+                      <label className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={gapAcknowledged}
+                          onCheckedChange={(v) => setGapAcknowledged(v === true)}
+                        />
+                        Same fixture - the date is not final. Attach anyway.
+                      </label>
+                    </div>
                   )}
                   {picked.venueMapUrl && (
                     <SupplierMap
@@ -1273,7 +1299,8 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                       onClick={handleAttach}
                       disabled={
                         selectedDrafts.length === 0 ||
-                        selectedWithoutZone.length > 0
+                        selectedWithoutZone.length > 0 ||
+                        gapNeedsDecision
                       }
                     >
                       Add {selectedDrafts.length} ticket(s)

@@ -50,6 +50,12 @@ export type LiveTicketsDraft = {
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
+/** The calendar day an ISO date or timestamp PRINTS ("2026-11-29T21:00:00+00:00" -> the 29th), as a day number. */
+const dayIndex = (iso: string | null | undefined): number | null => {
+  const ms = Date.parse(`${(iso ?? "").slice(0, 10)}T00:00:00Z`);
+  return Number.isFinite(ms) ? Math.round(ms / DAY_MS) : null;
+};
+
 const words = (text: string): string[] =>
   normalizeForSearch(text)
     .split(/\s+/)
@@ -79,8 +85,12 @@ export async function findLiveTicketsCandidates(
 ): Promise<Result<LiveTicketsCandidate[]>> {
   await requireStaff();
 
-  const ourDate = new Date(eventDateIso).getTime();
-  if (!Number.isFinite(ourDate)) {
+  // CALENDAR days, not elapsed time (QA 2026-09-18). Our `events.date` is a date-only string
+  // (midnight), theirs is a timestamp carrying the kick-off: measured as a rounded time
+  // difference, a 21:00 match on the SAME day came out "+1 day" and a perfect candidate wore a
+  // red tag. Both sides are reduced to the day they print before anything is compared.
+  const ourDay = dayIndex(eventDateIso);
+  if (ourDay == null) {
     return { ok: false, error: "Event has no date" };
   }
 
@@ -100,10 +110,10 @@ export async function findLiveTicketsCandidates(
       .ilike("event_name", `%${term.replace(/[%_]/g, "")}%`)
       .gte("show_date", new Date().toISOString());
   } else {
-    const windowMs = CANDIDATE_WINDOW_DAYS * DAY_MS;
+    // Whole days on both sides: from the first minute of day -3 to the last of day +3.
     query = query
-      .gte("show_date", new Date(ourDate - windowMs).toISOString())
-      .lte("show_date", new Date(ourDate + windowMs).toISOString());
+      .gte("show_date", new Date((ourDay - CANDIDATE_WINDOW_DAYS) * DAY_MS).toISOString())
+      .lt("show_date", new Date((ourDay + CANDIDATE_WINDOW_DAYS + 1) * DAY_MS).toISOString());
   }
 
   const { data, error } = await query;
@@ -117,9 +127,7 @@ export async function findLiveTicketsCandidates(
     .map((row): LiveTicketsCandidate => {
       const theirWords = new Set(words(row.event_name ?? ""));
       const shared = ourWords.filter((w) => theirWords.has(w)).length;
-      const gap = Math.round(
-        (new Date(row.show_date).getTime() - ourDate) / DAY_MS,
-      );
+      const gap = (dayIndex(row.show_date) ?? ourDay) - ourDay;
       return {
         eventId: String(row.event_id),
         name: row.event_name ?? "",
