@@ -4,10 +4,13 @@
  * Homepage layout (עמוד הבית) - the /homepage board's read + save.
  *
  * Reads the two layout tables plus everything the board can place on them
- * (future live events, active artists, active teams) and writes the whole
- * layout back in one go: sections upserted, every section's item list replaced.
- * myt-main reads the same tables in app/page.tsx (lib/homepageLayout.ts); the
- * rules for what happens AFTER the listed items live there, not here.
+ * (future live events, active artists, active teams, the categories a slider
+ * can fill itself from) and writes the whole layout back in one go: sections
+ * upserted (staff titles and block configs included), removed blocks deleted,
+ * every section's item list replaced. myt-main reads the same tables in
+ * app/page.tsx (lib/homepageLayout.ts); the rules for what happens AFTER the
+ * listed items live there, not here. What a saved row may contain is decided by
+ * the pure lib/homepage/blocks.ts.
  */
 
 import { requireStaff } from "@/lib/auth/guards";
@@ -15,13 +18,16 @@ import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { revalidateMain } from "@/lib/revalidate-main";
 import { revalidatePath } from "next/cache";
+import { isBlockType, isBuiltinKey, itemKindsFor, normalizeSections } from "@/lib/homepage/blocks";
+import { flattenWithPath } from "@/lib/taxonomy-tree";
 import {
+  HOMEPAGE_PAGE,
   HOMEPAGE_SECTION_KEYS,
-  SECTION_ITEM_KINDS,
   type HomepageCandidate,
+  type HomepageCategoryOption,
   type HomepageItemRow,
   type HomepageLayout,
-  type HomepageSectionKey,
+  type HomepageSectionConfig,
   type HomepageSectionRow,
   type SaveHomepageLayoutInput,
 } from "@/types/homepage.types";
@@ -29,9 +35,6 @@ import {
 // homepage_* tables + the people tables predate the generated DB types.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
-
-const isKey = (k: string): k is HomepageSectionKey =>
-  (HOMEPAGE_SECTION_KEYS as readonly string[]).includes(k);
 
 type EventPick = {
   id: number;
@@ -52,20 +55,48 @@ type PersonPick = {
   art_image_url: string | null;
 };
 
+type CategoryPick = { id: number; name: string; parent_id: number | null };
+
+/** A homepage_sections row as stored; the last four columns arrive with the blocks migration. */
+type StoredSection = {
+  key: string;
+  position: number;
+  is_visible: boolean;
+  page?: string | null;
+  type?: string | null;
+  title?: string | null;
+  config?: unknown;
+};
+
+type DbError = { code?: string; message?: string };
+
+const SECTION_COLUMNS = "key,position,is_visible,page,type,title,config";
+const SECTION_COLUMNS_LEGACY = "key,position,is_visible";
+
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 // PostgREST "relation does not exist" (PGRST205 via the schema cache, 42P01 raw).
-const isMissingTable = (e: { code?: string; message?: string }) =>
+const isMissingTable = (e: DbError) =>
   e.code === "PGRST205" ||
   e.code === "42P01" ||
-  /does not exist|schema cache/i.test(e.message ?? "");
+  /relation .* does not exist|schema cache/i.test(e.message ?? "");
+
+// "column does not exist" (42703 raw, PGRST204 when the schema cache lacks it).
+const isMissingColumn = (e: DbError) =>
+  e.code === "42703" || e.code === "PGRST204" || /column .* does not exist/i.test(e.message ?? "");
+
+/** Images a banner may point at: our own public Storage, nothing else. */
+const storagePrefix = () => {
+  const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/+$/, "");
+  return base ? `${base}/storage/v1/object/public/` : "";
+};
 
 export async function getHomepageLayout(): Promise<HomepageLayout> {
   await requireStaff();
 
-  const [sectionsRes, itemsRes, eventsRes, artistsRes, teamsRes] =
+  const [sectionsFull, itemsRes, eventsRes, artistsRes, teamsRes, categoriesRes] =
     await Promise.all([
-      db.from("homepage_sections").select("key,position,is_visible"),
+      db.from("homepage_sections").select(SECTION_COLUMNS),
       db.from("homepage_items").select("section,kind,ref_id,position"),
       supabase
         .from("events")
@@ -88,6 +119,11 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
         .eq("is_deleted", false)
         .eq("is_active", true)
         .order("name"),
+      db
+        .from("categories")
+        .select("id,name,parent_id")
+        .eq("is_deleted", false)
+        .eq("is_active", true),
     ]);
 
   for (const r of [eventsRes, artistsRes, teamsRes]) {
@@ -96,6 +132,19 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
       throw r.error;
     }
   }
+
+  // The title / block columns arrive with their own migration. Between the
+  // Vercel deploy and the migration workflow they do not exist yet - read the
+  // columns that do, show the board as it was, and switch titles + blocks off
+  // (blocksReady) rather than offer a Save that cannot work.
+  let sectionsRes = sectionsFull;
+  let blocksReady = true;
+  if (sectionsRes.error && isMissingColumn(sectionsRes.error)) {
+    console.warn("getHomepageLayout: blocks migration not applied yet -", sectionsRes.error.message);
+    blocksReady = false;
+    sectionsRes = await db.from("homepage_sections").select(SECTION_COLUMNS_LEGACY);
+  }
+
   // The two layout tables arrive with the migration that ships alongside this
   // screen. Between the Vercel deploy and the migration workflow (or on a
   // preview pointed at prod before the merge) they do not exist yet - show the
@@ -113,25 +162,54 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
     }
   }
 
-  // Sections: stored order, then any key the table lacks appended in the
-  // default order (same rule main applies, so the board shows what main shows).
-  const stored = new Map<string, HomepageSectionRow>(
-    ((sectionsRes.data ?? []) as HomepageSectionRow[])
-      .filter((s) => isKey(s.key))
-      .map((s) => [s.key, s]),
-  );
-  const sections: HomepageSectionRow[] = [...stored.values()].sort(
-    (a, b) => a.position - b.position,
-  );
+  // Sections: this page's rows in stored order - builtins by known key, blocks
+  // by known type. A row of a type this build does not know is not shown (and
+  // saveHomepageLayout never deletes it). Builtins the table lacks are appended
+  // in the default order - the same rule main applies, so the board shows what
+  // main shows.
+  const stored = ((sectionsRes.data ?? []) as StoredSection[])
+    .filter((s) => (s.page ?? HOMEPAGE_PAGE) === HOMEPAGE_PAGE)
+    .sort((a, b) => a.position - b.position);
+  const sections: HomepageSectionRow[] = [];
+  const seen = new Set<string>();
+  for (const s of stored) {
+    const type = s.type ?? "builtin";
+    if (seen.has(s.key)) continue;
+    if (type === "builtin") {
+      if (!isBuiltinKey(s.key)) continue;
+      sections.push({
+        key: s.key,
+        type: "builtin",
+        title: s.title ?? null,
+        config: {},
+        position: 0,
+        is_visible: s.is_visible !== false,
+      });
+    } else if (isBlockType(type)) {
+      sections.push({
+        key: s.key,
+        type,
+        title: s.title ?? null,
+        // Written by normalizeSections, and validated again on the next save.
+        config: (s.config ?? {}) as HomepageSectionConfig,
+        position: 0,
+        is_visible: s.is_visible !== false,
+      });
+    } else {
+      continue;
+    }
+    seen.add(s.key);
+  }
   for (const key of HOMEPAGE_SECTION_KEYS) {
-    if (!stored.has(key)) {
-      sections.push({ key, position: sections.length, is_visible: true });
+    if (!seen.has(key)) {
+      sections.push({ key, type: "builtin", title: null, config: {}, position: 0, is_visible: true });
+      seen.add(key);
     }
   }
   sections.forEach((s, i) => (s.position = i));
 
   const items = ((itemsRes.data ?? []) as HomepageItemRow[])
-    .filter((it) => isKey(it.section))
+    .filter((it) => seen.has(it.section))
     .sort((a, b) => a.position - b.position);
 
   const events = (eventsRes.data ?? []) as EventPick[];
@@ -163,7 +241,20 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
     })),
   ];
 
-  return { sections, items, candidates };
+  // The categories a slider can fill itself from. A failed read only empties
+  // the picker - the rest of the board is unaffected.
+  let categories: HomepageCategoryOption[] = [];
+  if (categoriesRes.error) {
+    console.error("getHomepageLayout categories:", JSON.stringify(categoriesRes.error));
+  } else {
+    const rows = (categoriesRes.data ?? []) as CategoryPick[];
+    const nameOf = new Map(rows.map((c) => [c.id, c.name]));
+    categories = flattenWithPath(rows)
+      .map((c) => ({ id: c.id, name: nameOf.get(c.id) ?? c.path, path: c.path }))
+      .sort((a, b) => a.path.localeCompare(b.path, "he"));
+  }
+
+  return { sections, items, candidates, categories, blocksReady };
 }
 
 /**
@@ -204,48 +295,39 @@ export async function setEventPrioritized(
 }
 
 /**
- * Replace the whole layout. Validates keys/kinds against the declared
- * sections (an item of a kind its section does not accept is dropped), keeps
- * `hero` first whatever the client sent, renumbers positions 0..n, and swaps
- * every section's item list in one pass. One audit row carries the payload.
+ * Replace the whole layout of the homepage. The sections go through
+ * `normalizeSections` first (keys, block types, titles, configs - one bad block
+ * fails the save before anything is written); an item whose section is not
+ * saved, or of a kind that section does not accept, is dropped. Then: upsert
+ * every row, delete the blocks the board no longer has, swap every item list.
+ * Builtin rows are never deleted. One audit row carries the payload.
  */
 export async function saveHomepageLayout(
   input: SaveHomepageLayoutInput,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireStaff();
 
-  const seen = new Set<string>();
-  const sections: HomepageSectionRow[] = [];
-  for (const s of input.sections ?? []) {
-    if (!isKey(s.key) || seen.has(s.key)) continue;
-    seen.add(s.key);
-    sections.push({ key: s.key, position: 0, is_visible: s.is_visible !== false });
-  }
-  for (const key of HOMEPAGE_SECTION_KEYS) {
-    if (!seen.has(key)) sections.push({ key, position: 0, is_visible: true });
-  }
-  // Hero to the front, everything else keeps the order the board sent.
-  const ordered = [
-    ...sections.filter((s) => s.key === "hero"),
-    ...sections.filter((s) => s.key !== "hero"),
-  ];
-  ordered.forEach((s, i) => (s.position = i));
+  const normalized = normalizeSections(input.sections ?? [], { storagePrefix: storagePrefix() });
+  if (!normalized.ok) return { ok: false, error: normalized.error };
+  const sections = normalized.sections;
+  const sectionByKey = new Map(sections.map((s) => [s.key, s]));
 
   const itemKey = (it: HomepageItemRow) => `${it.section}|${it.kind}|${it.ref_id}`;
   const seenItems = new Set<string>();
-  const perSection = new Map<HomepageSectionKey, HomepageItemRow[]>();
+  const perSection = new Map<string, HomepageItemRow[]>();
   for (const it of input.items ?? []) {
-    if (!isKey(it.section)) continue;
-    if (!SECTION_ITEM_KINDS[it.section].includes(it.kind)) continue;
+    const section = sectionByKey.get(it.section);
+    if (!section) continue;
+    if (!itemKindsFor(section).includes(it.kind)) continue;
     const ref = String(it.ref_id ?? "").trim();
     if (!ref) continue;
-    const row: HomepageItemRow = { section: it.section, kind: it.kind, ref_id: ref, position: 0 };
+    const row: HomepageItemRow = { section: section.key, kind: it.kind, ref_id: ref, position: 0 };
     const k = itemKey(row);
     if (seenItems.has(k)) continue;
     seenItems.add(k);
-    const list = perSection.get(it.section) ?? [];
+    const list = perSection.get(section.key) ?? [];
     list.push(row);
-    perSection.set(it.section, list);
+    perSection.set(section.key, list);
   }
   const items: HomepageItemRow[] = [];
   for (const [, list] of perSection) {
@@ -255,32 +337,80 @@ export async function saveHomepageLayout(
     });
   }
 
-  const stamp = new Date().toISOString();
-  const up = await db
+  // The blocks this page has NOW - the ones missing from the payload are the
+  // ones staff deleted. Only known block types are ever loaded by the board, so
+  // only those may be deleted: a row of a type a newer build wrote stays put.
+  const before = await db
     .from("homepage_sections")
-    .upsert(
-      ordered.map((s) => ({ ...s, updated_at: stamp })),
-      { onConflict: "key" },
-    );
+    .select("key,type")
+    .eq("page", HOMEPAGE_PAGE)
+    .neq("type", "builtin");
+  if (before.error) {
+    console.error("saveHomepageLayout read:", JSON.stringify(before.error));
+    return {
+      ok: false,
+      error: isMissingColumn(before.error)
+        ? "The homepage blocks migration has not been applied yet - titles and blocks cannot be saved."
+        : before.error.message,
+    };
+  }
+  const removedKeys = ((before.data ?? []) as { key: string; type: string }[])
+    .filter((r) => isBlockType(r.type) && !sectionByKey.has(r.key))
+    .map((r) => r.key);
+
+  const stamp = new Date().toISOString();
+  const up = await db.from("homepage_sections").upsert(
+    sections.map((s) => ({
+      key: s.key,
+      page: HOMEPAGE_PAGE,
+      type: s.type,
+      title: s.title,
+      config: s.config,
+      position: s.position,
+      is_visible: s.is_visible,
+      updated_at: stamp,
+    })),
+    { onConflict: "key" },
+  );
   if (up.error) {
     console.error("saveHomepageLayout sections:", JSON.stringify(up.error));
     return { ok: false, error: up.error.message };
   }
 
+  if (removedKeys.length) {
+    const gone = await db
+      .from("homepage_sections")
+      .delete()
+      .eq("page", HOMEPAGE_PAGE)
+      .neq("type", "builtin")
+      .in("key", removedKeys);
+    if (gone.error) {
+      console.error("saveHomepageLayout remove blocks:", JSON.stringify(gone.error));
+      return { ok: false, error: gone.error.message };
+    }
+  }
+
   // Replace every section's list (sections with no items get emptied too -
-  // that is how "remove the last item" reaches the DB).
+  // that is how "remove the last item" reaches the DB), and drop the pins of
+  // the blocks that were just deleted.
   const del = await db
     .from("homepage_items")
     .delete()
-    .in("section", [...HOMEPAGE_SECTION_KEYS]);
+    .in("section", [...sectionByKey.keys(), ...removedKeys]);
   if (del.error) {
     console.error("saveHomepageLayout delete:", JSON.stringify(del.error));
     return { ok: false, error: del.error.message };
   }
   if (items.length) {
-    const ins = await db
-      .from("homepage_items")
-      .insert(items.map((it) => ({ ...it, updated_at: stamp })));
+    const ins = await db.from("homepage_items").insert(
+      items.map((it) => ({
+        section: it.section,
+        kind: it.kind,
+        ref_id: it.ref_id,
+        position: it.position,
+        updated_at: stamp,
+      })),
+    );
     if (ins.error) {
       console.error("saveHomepageLayout insert:", JSON.stringify(ins.error));
       return { ok: false, error: ins.error.message };
@@ -292,10 +422,16 @@ export async function saveHomepageLayout(
     action: "update",
     entityType: "homepage_layout",
     changes: {
-      sections: ordered.map((s) => `${s.key}${s.is_visible ? "" : " (hidden)"}`),
+      sections: sections.map(
+        (s) =>
+          `${s.key}${s.type === "builtin" ? "" : ` [${s.type}]`}${s.title ? ` "${s.title}"` : ""}${
+            s.is_visible ? "" : " (hidden)"
+          }`,
+      ),
       items: Object.fromEntries(
         [...perSection].map(([k, list]) => [k, list.map((it) => `${it.kind}:${it.ref_id}`)]),
       ),
+      ...(removedKeys.length ? { removed_blocks: removedKeys } : {}),
     },
   });
   await revalidateMain();

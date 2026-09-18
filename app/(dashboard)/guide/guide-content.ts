@@ -565,6 +565,14 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "שורות כדורגל / אמנים — כל קבוצה/אמן פעילים. מי שיש לו אירוע זמין תמיד קופץ קדימה; בתוך כל קבוצה קודם הסדר המוצמד, השאר לפי שם.",
       ),
       t(
+        "Rename a section - the pencil next to its title. What you type is the heading on the site; clear the field and the default title comes back. The hero has no heading, so no pencil.",
+        "שינוי כותרת — העיפרון ליד הכותרת. מה שמקלידים הוא הכותרת באתר; מרוקנים את השדה והכותרת הרגילה חוזרת. להירו אין כותרת באתר ולכן אין עיפרון.",
+      ),
+      t(
+        "Add block - the small '+ Add block' line between any two sections (up to 12 blocks). Event slider: one row of up to 12 cards - the events you pin come first, and if you choose a category its events follow, soonest first; with no pins and no category the block is not shown. Banners: 1-3 images uploaded here, each with an optional link (/c/... or https://...) and an optional title printed on the image. A block is dragged, hidden and titled like any section; the trash deletes it on Save.",
+        "הוספת בלוק — השורה הקטנה '+ Add block' בין כל שני סקשנים (עד 12 בלוקים). סליידר אירועים: שורה אחת של עד 12 כרטיסים — האירועים שמצמידים ראשונים, ואם בוחרים קטגוריה האירועים שלה ממשיכים אחריהם, הקרוב ביותר קודם; בלי פריטים ובלי קטגוריה הבלוק לא מוצג. באנרים: 1-3 תמונות שמעלים כאן, לכל אחת קישור לא חובה (/c/... או https://...) וכותרת לא חובה שמודפסת על התמונה. בלוק נגרר, מוסתר ומקבל כותרת כמו כל סקשן; הפח מוחק אותו ב-Save.",
+      ),
+      t(
         "Saving refreshes the live site by itself (allow a minute). The old Templates → Homepage Order screens and the person 'Featured order' field are gone - this board replaces them.",
         "שמירה מרעננת את האתר לבד (עד דקה). מסכי Templates → Homepage Order הישנים ושדה 'Featured order' של אמן/קבוצה הוסרו — הלוח הזה מחליף אותם.",
       ),

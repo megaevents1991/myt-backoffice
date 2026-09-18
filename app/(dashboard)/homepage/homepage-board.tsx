@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { Fragment, useMemo, useRef, useState, useTransition } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -11,18 +11,21 @@ import {
   GripVertical,
   Info,
   Lock,
+  Pencil,
   Pin,
   Plus,
   RotateCcw,
   Save,
   Star,
   StarOff,
+  Trash2,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -38,16 +41,21 @@ import {
   saveHomepageLayout,
   setEventPrioritized,
 } from "@/lib/actions/homepage-actions";
+import { MAX_BLOCKS, TITLE_MAX, isBuiltinKey, itemKindsFor, newBlockKey } from "@/lib/homepage/blocks";
 import {
-  SECTION_ITEM_KINDS,
+  BLOCK_META,
   SECTION_META,
+  type BannerConfig,
+  type EventSliderConfig,
+  type HomepageBlockType,
   type HomepageCandidate,
   type HomepageItemKind,
   type HomepageItemRow,
   type HomepageLayout,
-  type HomepageSectionKey,
+  type HomepageSectionConfig,
   type HomepageSectionRow,
 } from "@/types/homepage.types";
+import { AddBlockButton, BannerEditor, SliderSettings } from "./homepage-blocks";
 
 const KIND_LABEL: Record<HomepageItemKind, string> = {
   event: "Event",
@@ -65,10 +73,10 @@ const NEWEST_PICK_MAX = 100;
 const createdAtMs = (c: HomepageCandidate) =>
   c.created_at ? Date.parse(c.created_at) || 0 : 0;
 
-type ItemsBySection = Record<HomepageSectionKey, HomepageItemRow[]>;
+type ItemsBySection = Record<string, HomepageItemRow[]>;
 
 const groupItems = (items: HomepageItemRow[], sections: HomepageSectionRow[]) => {
-  const out = {} as ItemsBySection;
+  const out: ItemsBySection = {};
   for (const s of sections) out[s.key] = [];
   for (const it of items) (out[it.section] ??= []).push(it);
   return out;
@@ -82,11 +90,31 @@ const moveIn = <T,>(list: T[], from: number, to: number): T[] => {
   return next;
 };
 
+/** What the board calls a section, how it is filled, and the title the site shows by default. */
+const describe = (s: HomepageSectionRow) => {
+  if (s.type !== "builtin") {
+    const meta = BLOCK_META[s.type];
+    return { label: meta.label, labelEn: meta.labelEn, rule: meta.rule, siteTitle: null };
+  }
+  // Rows reach the board through getHomepageLayout, which keeps only known keys.
+  const meta = isBuiltinKey(s.key) ? SECTION_META[s.key] : null;
+  return {
+    label: meta?.title ?? s.key,
+    labelEn: meta?.titleEn ?? s.key,
+    rule: meta?.rule ?? "",
+    siteTitle: meta?.siteTitle ?? null,
+  };
+};
+
+const emptyConfig = (type: HomepageBlockType): HomepageSectionConfig =>
+  type === "event_slider" ? { category_id: null } : { banners: [] };
+
 /**
  * The dummy homepage: every section as a block in site order, each carousel
  * section with its items as a horizontal strip. Drag (or arrows) reorders both
  * levels; one Save writes the whole layout. Native HTML5 drag, same as the old
- * PeopleOrderList this replaces - no library.
+ * PeopleOrderList this replaces - no library. Staff can also rename a section
+ * (pencil) and add their own blocks between sections (homepage-blocks.tsx).
  */
 export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
   const { toast } = useToast();
@@ -112,20 +140,59 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
     setDirty(true);
   };
 
-  const setVisible = (key: HomepageSectionKey, v: boolean) => {
+  const setVisible = (key: string, v: boolean) => {
     setSections((prev) => prev.map((s) => (s.key === key ? { ...s, is_visible: v } : s)));
     setDirty(true);
   };
 
-  const moveItem = (key: HomepageSectionKey, from: number, to: number) => {
+  const setTitle = (key: string, title: string) => {
+    setSections((prev) => prev.map((s) => (s.key === key ? { ...s, title: title || null } : s)));
+    setDirty(true);
+  };
+  const setConfig = (key: string, config: HomepageSectionConfig) => {
+    setSections((prev) => prev.map((s) => (s.key === key ? { ...s, config } : s)));
+    setDirty(true);
+  };
+  const blockCount = sections.filter((s) => s.type !== "builtin").length;
+  /** A new block lands right after section `afterIndex` (never above the hero). */
+  const addBlock = (afterIndex: number, type: HomepageBlockType) => {
+    const block: HomepageSectionRow = {
+      key: newBlockKey(),
+      type,
+      title: null,
+      config: emptyConfig(type),
+      position: 0,
+      is_visible: true,
+    };
+    setSections((prev) => {
+      const next = [...prev];
+      next.splice(afterIndex + 1, 0, block);
+      return next;
+    });
+    setEditingTitle(block.key);
+    setDirty(true);
+  };
+  /** Blocks only - a builtin section can be hidden, never removed. Takes effect on Save. */
+  const removeBlock = (key: string) => {
+    setSections((prev) => prev.filter((s) => s.key !== key || s.type === "builtin"));
+    setItems((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    setDirty(true);
+  };
+  const [editingTitle, setEditingTitle] = useState<string | null>(null);
+
+  const moveItem = (key: string, from: number, to: number) => {
     setItems((prev) => ({ ...prev, [key]: moveIn(prev[key] ?? [], from, to) }));
     setDirty(true);
   };
-  const removeItem = (key: HomepageSectionKey, idx: number) => {
+  const removeItem = (key: string, idx: number) => {
     setItems((prev) => ({ ...prev, [key]: (prev[key] ?? []).filter((_, i) => i !== idx) }));
     setDirty(true);
   };
-  const addItem = (key: HomepageSectionKey, c: HomepageCandidate) => {
+  const addItem = (key: string, c: HomepageCandidate) => {
     setItems((prev) => {
       const list = prev[key] ?? [];
       if (list.some((it) => it.kind === c.kind && it.ref_id === c.ref_id)) return prev;
@@ -162,7 +229,7 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
   // card) - good enough to see what is live and act on it.
   const autoBySection = useMemo(() => {
     const events = initial.candidates.filter((c) => c.kind === "event");
-    const pinnedIn = (key: HomepageSectionKey) =>
+    const pinnedIn = (key: string) =>
       new Set((items[key] ?? []).map((it) => it.ref_id));
     const wantedPinned = pinnedIn("most_wanted");
     const prioritized = events.filter(
@@ -177,9 +244,8 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
       .filter((c) => !newestPinned.has(c.ref_id) && !wantedShown.has(c.ref_id))
       .sort((a, b) => createdAtMs(b) - createdAtMs(a))
       .slice(0, Math.max(0, ROW_MAX - newestPinned.size));
-    return { most_wanted: prioritized, newest } as Partial<
-      Record<HomepageSectionKey, HomepageCandidate[]>
-    >;
+    const auto: Record<string, HomepageCandidate[]> = { most_wanted: prioritized, newest };
+    return auto;
   }, [initial.candidates, items, unprioritized]);
 
   const reset = () => {
@@ -218,13 +284,18 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
           <ol className="space-y-3">
             {sections.map((s, i) => {
               const pinned = s.key === "hero";
-              const meta = SECTION_META[s.key];
-              const kinds = SECTION_ITEM_KINDS[s.key];
+              const isBlock = s.type !== "builtin";
+              const meta = describe(s);
+              const kinds = itemKindsFor(s);
               const list = items[s.key] ?? [];
+              // What the site prints above the section: the staff title, else the coded one.
+              const shownTitle = s.title ?? meta.siteTitle;
+              const canRename = initial.blocksReady && !pinned;
+              const renaming = editingTitle === s.key;
               return (
+                <Fragment key={s.key}>
                 <li
-                  key={s.key}
-                  draggable={!pinned}
+                  draggable={!pinned && !renaming}
                   onDragStart={(e) => {
                     if (pinned) return;
                     sectionDrag.current = i;
@@ -258,15 +329,53 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="truncate font-display text-base font-bold" dir="rtl">
-                          {meta.title}
-                        </span>
+                        {renaming ? (
+                          <Input
+                            autoFocus
+                            dir="rtl"
+                            className="h-7 max-w-xs text-sm font-bold"
+                            maxLength={TITLE_MAX}
+                            value={s.title ?? ""}
+                            placeholder={meta.siteTitle ?? "כותרת (לא חובה)"}
+                            onChange={(e) => setTitle(s.key, e.target.value)}
+                            onBlur={() => setEditingTitle(null)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === "Escape") setEditingTitle(null);
+                            }}
+                            aria-label={`Title of "${meta.labelEn}" on the site`}
+                          />
+                        ) : (
+                          <span
+                            className={cn(
+                              "truncate font-display text-base font-bold",
+                              isBlock && !shownTitle && "font-normal text-muted-foreground",
+                            )}
+                            dir="rtl"
+                          >
+                            {pinned ? meta.label : (shownTitle ?? "בלי כותרת")}
+                          </span>
+                        )}
+                        {canRename && !renaming && (
+                          <button
+                            type="button"
+                            onClick={() => setEditingTitle(s.key)}
+                            className="text-muted-foreground hover:text-foreground"
+                            aria-label={`Rename "${meta.labelEn}"`}
+                            title={
+                              meta.siteTitle
+                                ? `Rename - leave empty for the default "${meta.siteTitle}"`
+                                : "Set a title - leave empty for none"
+                            }
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button
                               type="button"
                               className="text-muted-foreground hover:text-foreground"
-                              aria-label={`How "${meta.titleEn}" is filled`}
+                              aria-label={`How "${meta.labelEn}" is filled`}
                             >
                               <Info className="h-3.5 w-3.5" />
                             </button>
@@ -280,6 +389,20 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                             always first
                           </Badge>
                         )}
+                        {isBlock && (
+                          <Badge variant="outline" className="text-[10px]">
+                            block
+                          </Badge>
+                        )}
+                        {!isBlock && s.title && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px]"
+                            title={`Default: ${meta.siteTitle ?? "-"}`}
+                          >
+                            renamed
+                          </Badge>
+                        )}
                         {!s.is_visible && (
                           <Badge variant="secondary" className="text-[10px]">
                             hidden
@@ -287,7 +410,7 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                         )}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {meta.titleEn}
+                        {meta.labelEn}
                         {kinds.length > 0 && (
                           <>
                             {" · "}
@@ -305,7 +428,7 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                       <Switch
                         checked={s.is_visible}
                         onCheckedChange={(v) => setVisible(s.key, v)}
-                        aria-label={`Show "${meta.titleEn}" on the homepage`}
+                        aria-label={`Show "${meta.labelEn}" on the homepage`}
                       />
                     </label>
                     {!pinned && (
@@ -330,13 +453,38 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                         >
                           <ArrowDown className="h-4 w-4" />
                         </Button>
+                        {isBlock && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => removeBlock(s.key)}
+                            aria-label={`Delete block "${shownTitle ?? meta.labelEn}"`}
+                            title="Delete this block (takes effect on Save)"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     )}
                   </div>
 
-                  {kinds.length > 0 ? (
+                  {s.type === "banner" ? (
+                    <BannerEditor
+                      config={s.config as BannerConfig}
+                      onChange={(config) => setConfig(s.key, config)}
+                    />
+                  ) : kinds.length > 0 ? (
                     <ItemStrip
                       sectionKey={s.key}
+                      label={meta.labelEn}
+                      emptyHint={
+                        s.type === "event_slider"
+                          ? (s.config as EventSliderConfig).category_id
+                            ? "אין פריטים מוצמדים - השורה מתמלאת מהקטגוריה שנבחרה למטה."
+                            : "אין פריטים מוצמדים ואין קטגוריה - הבלוק לא יוצג באתר עד שיהיה אחד מהם."
+                          : undefined
+                      }
                       kinds={kinds}
                       list={list}
                       candidates={candidates}
@@ -354,7 +502,25 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                       {meta.rule}
                     </div>
                   )}
+                  {s.type === "event_slider" && (
+                    <SliderSettings
+                      config={s.config as EventSliderConfig}
+                      categories={initial.categories}
+                      onChange={(config) => setConfig(s.key, config)}
+                    />
+                  )}
                 </li>
+                {/* Blocks go between sections - so after every one of them, the hero included. */}
+                {initial.blocksReady && (
+                  <li>
+                    <AddBlockButton
+                      onAdd={(type) => addBlock(i, type)}
+                      disabled={blockCount >= MAX_BLOCKS}
+                      disabledReason={`Up to ${MAX_BLOCKS} blocks on the page`}
+                    />
+                  </li>
+                )}
+                </Fragment>
               );
             })}
           </ol>
@@ -390,6 +556,8 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
 
 function ItemStrip({
   sectionKey,
+  label,
+  emptyHint,
   kinds,
   list,
   candidates,
@@ -402,7 +570,11 @@ function ItemStrip({
   onAdd,
   onUnprioritize,
 }: {
-  sectionKey: HomepageSectionKey;
+  sectionKey: string;
+  /** English name of the section, for the Add button's accessible label. */
+  label: string;
+  /** Replaces the builtin "fills by its automatic rule" line under an empty strip. */
+  emptyHint?: string;
   kinds: HomepageItemKind[];
   list: HomepageItemRow[];
   candidates: Map<string, HomepageCandidate>;
@@ -609,7 +781,7 @@ function ItemStrip({
             <button
               type="button"
               className="flex h-[168px] w-36 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-sm text-muted-foreground hover:border-primary hover:text-foreground"
-              aria-label={`Add to ${SECTION_META[sectionKey].titleEn}`}
+              aria-label={`Add to ${label}`}
             >
               <Plus className="h-5 w-5" />
               Add
@@ -675,7 +847,9 @@ function ItemStrip({
       </div>
       {list.length === 0 && (
         <p className="mt-1 text-xs text-muted-foreground" dir="rtl">
-          {autoItems.length > 0
+          {emptyHint
+            ? emptyHint
+            : autoItems.length > 0
             ? "אין פריטים מוצמדים - הכרטיסים המקווקווים הם מה שהאתר מציג עכשיו לפי החוקיות האוטומטית. Pin מצמיד למקום."
             : "אין פריטים מוצמדים - הסקשן מתמלא לפי החוקיות האוטומטית בלבד."}
         </p>

@@ -21,9 +21,11 @@ export function buildTree(cats: EventCategory[]): EventCategoryNode[] {
 }
 
 // "כדורגל › ליגה אנגלית" path label per category, for the multi-select.
-export function flattenWithPath(cats: EventCategory[]): { id: number; path: string }[] {
-  const byId = new Map<number, EventCategory>(cats.map((c) => [c.id, c]));
-  const pathOf = (c: EventCategory): string => {
+// Takes only the three columns it reads, so a caller can select just those.
+type PathRow = Pick<EventCategory, "id" | "name" | "parent_id">;
+export function flattenWithPath(cats: PathRow[]): { id: number; path: string }[] {
+  const byId = new Map<number, PathRow>(cats.map((c) => [c.id, c]));
+  const pathOf = (c: PathRow): string => {
     const parts: string[] = [c.name];
     let cur = c.parent_id;
     const seen = new Set<number>();

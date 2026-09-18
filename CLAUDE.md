@@ -85,6 +85,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > the deploy changed nothing visually). Main's vertical hubs also take their
 > cover-strip order from the `hero` pins. The board tolerates the migration not
 > being applied yet (default layout, nothing pinned).
+>
+> **Titles + free blocks (2026-09-18).** Spec
+> `docs/superpowers/specs/2026-09-18-homepage-blocks-design.md`. `homepage_sections`
+> gained `page` (only `'home'` today - the column is there so another page or brand
+> never needs a rewrite), `type` (`builtin` = the seven coded sections, else a block
+> type; NO check constraint - new types arrive without a migration), `title` (staff
+> heading; null = the coded default for a builtin, no heading for a block) and
+> `config` jsonb. A block's key is `blk_` + 8 hex chars, minted by the board; its
+> pinned events are ordinary `homepage_items` rows with `section = <block key>`.
+> Phase 1 block types: `event_slider` (`{ category_id }` - pins first, then that
+> category's events soonest-first, 12 max, same `EventCard size="row"` as "המבוקשים
+> ביותר") and `banner` (`{ banners: [{ image_url, link_url, title }] }`, 1-3, rendered
+> by main's `ArtistBanners`). Text / destinations / gallery are phase 2 on the same
+> columns. **Every rule lives in the pure `lib/homepage/blocks.ts`**
+> (`normalizeSections`, `itemKindsFor`, `newBlockKey`; `scripts/homepage-blocks-selftest.ts`):
+> a banner image must sit in OUR public Storage, a link is `/path` or `https://`,
+> 12 blocks per page, one bad block fails the whole save before any write, builtins
+> are never deleted, and only block types this build knows are ever deleted. The
+> board's block editors are `app/(dashboard)/homepage/homepage-blocks.tsx`. Before
+> the migration runs `getHomepageLayout` falls back to the old columns and returns
+> `blocksReady: false` (no pencil, no "+ Add block"). Block types + config shapes
+> are mirrored in main's `lib/homepageLayout.ts`; main skips a type it does not know.
 
 > **✅ Redesign + Events Factory + Guide (branch `feat/backoffice-redesign`, 2026-09-02).**
 > Everything below is on that branch, migrations already applied to prod.
