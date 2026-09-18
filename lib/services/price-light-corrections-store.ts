@@ -11,7 +11,6 @@ import type { CorrectionField, CorrectionReason, CorrectionSource, CorrectionVal
 const db = supabase as any;
 
 const COLUMNS = "id,listing_id,event_id,competitor,field,original,value,reason,note,source,created_by,created_at,revoked_at";
-const IN_CHUNK = 200;
 
 /** PostgREST / Postgres "no such table" - the migration has not been applied here yet. */
 function tableMissing(error: { code?: string; message?: string } | null): boolean {
@@ -29,22 +28,46 @@ let missingWarned = false;
  * value and rewrite the match row with it.
  */
 export async function loadCorrections(listingIds: number[]): Promise<ListingCorrection[]> {
-  const ids = [...new Set(listingIds)];
-  const out: ListingCorrection[] = [];
-  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+  if (listingIds.length === 0) return [];
+  const ids = new Set(listingIds);
+  return (await allLiveRows()).filter((c) => ids.has(c.listing_id));
+}
+
+/**
+ * The whole un-revoked table, read once and kept for CACHE_MS. `matchEvent` asks per (event,
+ * competitor, scope) - about two thousand times in one nightly pass - and the table holds a
+ * handful of hand-made rows, so one paged read beats two thousand filtered ones against a time
+ * budget the matcher already fills. A write in THIS process drops the cache (the save action
+ * re-matches straight after); another instance sees it within CACHE_MS, and a nightly run
+ * starts long after that.
+ */
+// Short on purpose: a recheck landing on ANOTHER instance inside this window matches without a
+// correction saved seconds ago and would flip the light it just fixed. A nightly pass still
+// makes ~15 reads instead of ~2,000.
+const CACHE_MS = 20_000;
+const PAGE = 1000;
+let cache: { at: number; rows: ListingCorrection[] } | null = null;
+
+async function allLiveRows(): Promise<ListingCorrection[]> {
+  if (cache && Date.now() - cache.at < CACHE_MS) return cache.rows;
+  const rows: ListingCorrection[] = [];
+  for (let from = 0; ; from += PAGE) {
     const { data, error } = await db.from("competitor_listing_corrections").select(COLUMNS)
-      .in("listing_id", ids.slice(i, i + IN_CHUNK)).is("revoked_at", null);
+      .is("revoked_at", null).order("id", { ascending: true }).range(from, from + PAGE - 1);
     if (error) {
       if (tableMissing(error)) {
         if (!missingWarned) { missingWarned = true; console.error("price-light corrections: table not migrated yet - continuing with none"); }
+        cache = { at: Date.now(), rows: [] };
         return [];
       }
       console.error("price-light corrections: read failed", JSON.stringify(error));
       throw new Error(`corrections read: ${error.message}`);
     }
-    out.push(...((data ?? []) as ListingCorrection[]));
+    rows.push(...((data ?? []) as ListingCorrection[]));
+    if ((data ?? []).length < PAGE) break;
   }
-  return out;
+  cache = { at: Date.now(), rows };
+  return rows;
 }
 
 /**
@@ -86,6 +109,7 @@ export async function saveCorrection(row: NewCorrection): Promise<ListingCorrect
     .eq("listing_id", row.listing_id).eq("field", row.field).is("revoked_at", null);
   revoke = row.event_id == null ? revoke.is("event_id", null) : revoke.eq("event_id", row.event_id);
   const { error: revokeError } = await revoke;
+  cache = null; // whatever happens next, the cached rows are no longer the table
   if (revokeError) { console.error("price-light corrections: replace failed", JSON.stringify(revokeError)); throw new Error(revokeError.message); }
 
   const { data, error } = await db.from("competitor_listing_corrections").insert({
@@ -94,6 +118,7 @@ export async function saveCorrection(row: NewCorrection): Promise<ListingCorrect
     created_by: row.created_by,
   }).select(COLUMNS).single();
   if (error) { console.error("price-light corrections: insert failed", JSON.stringify(error)); throw new Error(error.message); }
+  cache = null;
   return data as ListingCorrection;
 }
 
@@ -102,6 +127,7 @@ export async function revokeCorrection(id: number, by: string | null): Promise<L
     .update({ revoked_at: new Date().toISOString(), revoked_by: by })
     .eq("id", id).is("revoked_at", null).select(COLUMNS).maybeSingle();
   if (error) { console.error("price-light corrections: revoke failed", JSON.stringify(error)); throw new Error(error.message); }
+  cache = null;
   return (data as ListingCorrection | null) ?? null;
 }
 
