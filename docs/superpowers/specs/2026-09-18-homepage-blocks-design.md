@@ -113,8 +113,10 @@ section title, when set, is a `SectionHeading` above it.
 
 ## Main app
 
-- `lib/homepageLayout.ts`: sections become
-  `{ key, type, title, visible, config }`, pins `Record<string, HomepagePin[]>`.
+- `lib/homepageLayout.ts`: a section is a union on `type` - `builtin`
+  (`key` is a builtin key), `event_slider` (`categoryId`), `banner` (`banners`) -
+  each with `key`, `title`, `visible`. The stored `config` is parsed there, once;
+  a config that does not parse drops the row. Pins are `Record<string, HomepagePin[]>`.
   Reads the new columns and falls back to the old select on an undefined-column
   error, so main deployed before the migration keeps the saved order. Rows kept:
   `page = 'home'` and (`builtin` with a known key, or a known block type).

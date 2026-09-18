@@ -180,6 +180,7 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
       delete next[key];
       return next;
     });
+    setEditingTitle((prev) => (prev === key ? null : prev));
     setDirty(true);
   };
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
