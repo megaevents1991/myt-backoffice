@@ -7,7 +7,8 @@
 --   zones               [{ "id": "long-l3", "label": "לאורך המגרש - קומה 3", "sections": ["<data-section id>", ...] }]
 --   supplier_categories { "tixstock": { "<normalized category>": "<zone id>" }, "livetickets": { ... } }
 --
--- `svg_url` is the published copy in the public `map_images` bucket: the source drawing with a
+-- `svg_url` is the published copy in the public `public_resources` bucket (`venue-maps/<id>/map.svg`;
+-- `map_images` only takes png/jpeg up to 512KB): the source drawing with a
 -- `data-zones="<zone ids>"` attribute stamped on every section. Events point `map_image_url` at
 -- it, and the main app lights sections by ticket.zoneId - no supplier names involved.
 -- `supplier_categories` is the venue template: the next event at this stadium gets its zone

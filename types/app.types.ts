@@ -442,7 +442,7 @@ export type EventTicket = {
   zoneLabel?: string;
 };
 
-export type OrderTicket =Omit<EventTicket, "description" | "colorOnTheMap"> & {
+export type OrderTicket = Omit<EventTicket, "description" | "colorOnTheMap"> & {
   quantity: number;
 };
 
