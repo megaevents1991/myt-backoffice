@@ -49,8 +49,10 @@ import {
   LIGHT_GREEN_USD, LIGHT_RED_USD, ourPackageUsd, previewMarkupChange, PRICE_DROP_MIN_USD, signedUsd,
 } from "@/lib/services/price-light";
 import { heLabel, PILL } from "@/app/(dashboard)/events/price-light-ui";
+import { AdviceBlock } from "./comparison-sheet";
 import {
   clearLightOverride,
+  getPriceAdvice,
   markRepriced,
   openPriceLightTask,
   recheckEvent,
@@ -102,6 +104,15 @@ function RepricePopover({
   const [text, setText] = useState(String(current));
   const [markDrop, setMarkDrop] = useState(false);
   const [saving, setSaving] = useState(false);
+  // The price advisor's facts for this scope (a cheaper supplier, other travel days, ...), fetched
+  // when the popover opens - cutting the markup is one way to close a gap, and the person about to
+  // do it should see the others. A failed load simply shows nothing.
+  const [advice, setAdvice] = useState<{ lines: string[]; altAt: string | null } | null>(null);
+  const loadAdvice = () => {
+    void getPriceAdvice(row.event_id)
+      .then((res) => setAdvice(res ? { lines: res.advice[cell.scope] ?? [], altAt: res.alt_at } : null))
+      .catch((e) => console.error("getPriceAdvice failed", e));
+  };
 
   // An empty field on the ticket scope CLEARS the ticket-only price (the server's null path);
   // on a package it is simply not a number yet.
@@ -148,7 +159,7 @@ function RepricePopover({
   };
 
   return (
-    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) { setText(String(current)); setMarkDrop(false); } }}>
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) { setText(String(current)); setMarkDrop(false); loadAdvice(); } }}>
       <PopoverTrigger asChild>
         <Button size="sm" variant="outline">{label}</Button>
       </PopoverTrigger>
@@ -205,6 +216,7 @@ function RepricePopover({
             </span>
           </label>
         )}
+        {advice && <AdviceBlock lines={advice.lines} altAt={advice.altAt} />}
         <div className="flex items-center justify-between gap-2">
           <Link href={`/events/${row.event_id}#fix-price`} className="text-xs text-muted-foreground underline"
             // Going to the event to fix the price by hand is still "a human judged this gap real" -

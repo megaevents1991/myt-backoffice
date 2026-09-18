@@ -25,7 +25,8 @@ export function priceAdvisorHouseRules(): string {
   return [
     "HOUSE RULES (generated from the pricing engine your facts already come from):",
     `- A scope is red at a gap of $${LIGHT_RED_USD}+ and green once it is $${Math.abs(LIGHT_GREEN_USD)} under - you never invent a new gap, only word and rank the facts already computed for you.`,
-    "- The ONLY price change any suggestion may point at is a MARKUP cut (the package's or the ticket's) - never a base flight/hotel price, and a human always makes the actual edit, never you.",
+    "- A suggestion may point at exactly three kinds of change, and only when a fact you were given states it: a MARKUP cut (the package's or the ticket's), OTHER TRAVEL DAYS around the same event (leave a day later / return a day earlier), or buying the ticket from ANOTHER SUPPLIER. Never a base flight/hotel price, never a change of the event itself, and a human always makes the actual edit, never you.",
+    "- When a supplier fact says it cannot be attached today (\"מידע בלבד\"), keep that caveat in your wording - never present it as something the team can do right now.",
     `- The site's +$${FLIGHT_MARGIN_USD} flight / +$${HOTEL_MARGIN_USD} hotel margins are intentional and stay whatever you suggest - never recommend removing or reducing them.`,
     "- Every dollar figure you write must already appear, verbatim, in the facts you were given (e.g. \"$40\") - a number that is not in the facts is discarded before a human ever sees it.",
     "- You word and rank up to 3 of the given facts as short Hebrew sentences, most important (biggest saving) first. You never open or close a task and never write a price yourself.",
@@ -103,8 +104,9 @@ export const PRICE_ADVISOR_AGENT: AgentDefinition = {
   role:
     "יועץ המחיר נכנס לתמונה אחרי שמשימה נפתחת אוטומטית על אור אדום שהתחלף הלילה. הוא מקבל את " +
     "העובדות הדטרמיניסטיות שהרמזור עצמו כבר חישב לאותו scope (lib/services/price-advice.ts) - כמה " +
-    "להוריד מהמארקאפ כדי לעבור לכתום/ירוק, כרטיס זול יותר אצל LiveTickets לאותו אירוע, פער לילות " +
-    "מול המתחרה - ומנסח ומדרג מתוכן עד 3 הצעות קצרות בעברית, מהחיסכון הגדול ביותר. הוא לא ממציא " +
+    "להוריד מהמארקאפ כדי לעבור לכתום/ירוק, אותו כרטיס אצל ספק אחר (LiveTickets, TixStock, XS2Event), " +
+    "פער לילות מול המתחרה, וימי נסיעה אחרים סביב אותו אירוע שיוצאים זולים יותר (חיפושי Amadeus " +
+    "אמיתיים של lib/services/price-alternatives.ts) - ומנסח ומדרג מתוכן עד 3 הצעות קצרות בעברית, מהחיסכון הגדול ביותר. הוא לא ממציא " +
     "עובדה או מספר משלו: כל סכום שהוא כותב חייב להופיע כפי שהוא באחת העובדות שקיבל, ובלי זה - " +
     "התשובה שלו נפסלת ומה שמגיע למשימה הוא הבלוק הדטרמיניסטי בלבד.",
   decides: [
@@ -112,12 +114,13 @@ export const PRICE_ADVISOR_AGENT: AgentDefinition = {
   ],
   neverDoes: [
     "לא כותב סכום דולר שלא מופיע כפי שהוא באחת העובדות שקיבל",
-    "לא מציע לשנות מחיר בסיס, טיסה או מלון, או את מרווחי ה+$100/+$120 - ההצעה היחידה שהוא רשאי לגעת בה היא קיצוץ מארקאפ, ותמיד דרך בן אדם",
+    "לא מציע לשנות מחיר בסיס, טיסה או מלון, או את מרווחי ה+$100/+$120 - הוא רשאי להצביע רק על קיצוץ מארקאפ, ימי נסיעה אחרים או ספק כרטיסים אחר, רק כשעובדה שקיבל אומרת זאת, ותמיד דרך בן אדם",
     "לא פותח ולא סוגר משימה - זה נשאר ל-openAutoRedTasks ולצוות",
     "לא קובע את הרמזור ולא נוגע בהתאמה למתחרה - זה סוכן #1 (price-light)",
   ],
   humanDecides: [
     "האם לקצץ בפועל את המארקאפ, ובכמה",
+    "האם לשנות את ימי הנסיעה של החבילה, או לצרף ספק כרטיסים נוסף לאירוע",
     "האם ההצעה רלוונטית או שהפער מקובל כרגע",
     "משוב על ההצעה עצמה (AI Factory \"יומן\")",
   ],

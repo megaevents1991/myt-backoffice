@@ -102,7 +102,10 @@ async function openAutoRedTasks(
       const scopeDetail = detail[scope];
       if (!scopeDetail) continue;
       if (summary.autoTasks >= AUTO_RED_TASKS_PER_RUN) { summary.autoTasksSkipped += 1; continue; }
-      const facts = priceAdviceFacts({ event, scope, detail: scopeDetail, liveTicketsUsd });
+      // `alt` = other travel days / suppliers quoted by the 02:40 pass (price-alternatives.ts). A
+      // scope that turned red only tonight has none yet - its task gets the three older facts, and
+      // the /price-light comparison shows the rest once they are quoted.
+      const facts = priceAdviceFacts({ event, scope, detail: scopeDetail, liveTicketsUsd, alt: event.light_detail?.ours?.alt ?? null });
       const worded = await wordAdvice({ eventName: event.name, scope, facts, budget: advisorBudget, memory: advisorMemory });
       if (worded.ai) {
         // A source for the AI Factory log (spec: item 4) - the advisor has no per-call storage of

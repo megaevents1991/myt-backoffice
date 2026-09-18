@@ -5,7 +5,7 @@
 // partner's format (2026-09-14): "טיסות: אל על עם מזוודה ישיר 16-20 | מלון: שם מלון כולל ארוחת בוקר או
 // ללא | סוג כרטיס". Loaded on demand - detail pages are long, the list never carries them.
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { BedDouble, ExternalLink, Loader2, Pencil, Plane, RefreshCw, Ticket } from "lucide-react";
+import { BedDouble, ExternalLink, Lightbulb, Loader2, Pencil, Plane, RefreshCw, Ticket } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -177,6 +177,32 @@ function OfferRow({ offer, scope, onEdit }: { offer: ComparisonOffer; scope: Sco
   );
 }
 
+/**
+ * The price advisor's facts for a RED scope (price-advice.ts): a markup cut, a cheaper supplier,
+ * a nights gap, other travel days. Facts with their numbers, never a decision - the same lines an
+ * auto-opened task carries. Other days / suppliers appear once the 02:40 pass (or "פרט את שלנו
+ * עכשיו") has quoted them; until then the block says so rather than look complete.
+ */
+export function AdviceBlock({ lines, altAt }: { lines: string[]; altAt: string | null }) {
+  if (lines.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-2.5 text-xs dark:border-amber-500/30 dark:bg-amber-950/30">
+      <div className="mb-1 flex items-center gap-1.5 font-medium">
+        <Lightbulb className="h-3.5 w-3.5" aria-hidden />
+        הצעות לשיפור המחיר (עובדות, לא החלטה)
+      </div>
+      <ul className="list-disc space-y-1 ps-4 leading-relaxed">
+        {lines.map((line) => <li key={line}><bdi>{line}</bdi></li>)}
+      </ul>
+      <div className="mt-1.5 text-muted-foreground">
+        {altAt
+          ? `תאריכים וספקים חלופיים נבדקו ב-${altAt.slice(0, 10)}.`
+          : "תאריכים וספקים חלופיים עוד לא נבדקו לאירוע הזה - \"פרט את שלנו עכשיו\" בודק אותם מיד."}
+      </div>
+    </div>
+  );
+}
+
 /** Suppliers down, components across: our flight above their flight, our hotel above their hotel. */
 function OfferTable({ offers, scope, onEdit }: { offers: ComparisonOffer[]; scope: Scope; onEdit: (offer: ComparisonOffer) => void }) {
   const pkg = scope === "package";
@@ -291,6 +317,7 @@ export function ComparisonSheet({
         {data && scopes.map((scope) => (
           <section key={scope} className="mt-5 space-y-2">
             <h3 className="text-sm font-semibold">{SCOPE_HE[scope]}</h3>
+            <AdviceBlock lines={data.advice?.[scope] ?? []} altAt={data.alt_at ?? null} />
             <OfferTable offers={data[scope]} scope={scope} onEdit={(offer) => setEditing({ scope, offer })} />
           </section>
         ))}

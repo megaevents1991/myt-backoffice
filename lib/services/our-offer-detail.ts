@@ -91,7 +91,7 @@ function describeAmadeusOffer(offer: DetailedOffer): OfferFlight {
  * direct beats it by more than $300 - with `searchCheapestOffer`'s own stop filter (1 connection,
  * 2 to the USA). Same two searches, so the chosen offer is the one behind the base price.
  */
-async function describeRuleFlight(iata: string, depart: string, ret: string): Promise<OurOfferSnapshot["flight"]> {
+export async function describeRuleFlight(iata: string, depart: string, ret: string): Promise<OurOfferSnapshot["flight"]> {
   // Settled, not all: `searchCheapestOffer` (what the base price came from) catches each search on its
   // own and prices off whichever answered, so one failed search must not blank the whole description.
   const [directRes, anyRes] = await Promise.allSettled([
@@ -270,7 +270,10 @@ export async function describeOurOffer(event: OurOfferEvent): Promise<OurOfferSn
 export async function storeOurOffer(eventId: number, ours: OurOfferSnapshot): Promise<void> {
   const { data, error } = await db.from("events").select("light_detail").eq("id", eventId).maybeSingle();
   if (error) throw new Error(`our-offer: read light_detail ${eventId} failed: ${error.message}`);
-  const detail: LightDetail = { ...((data?.light_detail as LightDetail | null) ?? {}), ours };
+  const previous = (data?.light_detail as LightDetail | null) ?? {};
+  // `alt` (other travel days / suppliers, price-alternatives.ts) has its own refresh cycle and
+  // rides inside `ours` - a fresh description must not throw it away.
+  const detail: LightDetail = { ...previous, ours: { ...ours, alt: ours.alt ?? previous.ours?.alt ?? null } };
   const { error: writeError } = await db.from("events").update({ light_detail: detail }).eq("id", eventId);
   if (writeError) throw new Error(`our-offer: write light_detail ${eventId} failed: ${writeError.message}`);
 }

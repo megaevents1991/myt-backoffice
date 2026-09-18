@@ -27,6 +27,8 @@ import {
   ourPackageUsd, ourTicketUsd, PRICE_DROP_MIN_USD, PRICE_DROP_SHOW_DAYS, totalMarkupUsd,
 } from "@/lib/services/price-light";
 import { formatOfferLines, parseOfferDetail } from "@/lib/services/offer-detail";
+import { priceAdviceFacts } from "@/lib/services/price-advice";
+import { refreshAlternatives } from "@/lib/services/price-alternatives";
 import {
   CORRECTION_FIELDS, CORRECTION_NOTE_MAX, CORRECTION_NOTE_MIN, CORRECTION_REASONS, correctAttrs, correctOffer,
   crawledValue, isAttrField, isTextField, liveCorrections, sameValue, validateCorrection,
@@ -327,7 +329,39 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
     ours_errors: ours?.errors ?? [],
     package: offersFor("package"),
     ticket: offersFor("ticket"),
+    advice: adviceFor(event),
+    alt_at: ours?.alt?.at ?? null,
   };
+}
+
+/**
+ * The price advisor's facts for each RED scope of one event - the deterministic lines only
+ * (price-advice.ts). The AI wording stays where it is paid for once, on the auto-opened task:
+ * opening a sheet must never cost a model call.
+ */
+function adviceFor(event: LightEvent): Record<Scope, string[]> {
+  const detail = event.light_detail;
+  const liveTicketsUsd = detail?.ticket?.per_competitor?.livetickets?.normalized_usd ?? null;
+  const lines = (scope: Scope): string[] => {
+    const scopeDetail = detail?.[scope];
+    const light = scope === "package" ? event.light_package : event.light_ticket;
+    if (light !== "red" || !scopeDetail) return [];
+    return priceAdviceFacts({ event, scope, detail: scopeDetail, liveTicketsUsd, alt: detail?.ours?.alt ?? null }).map((f) => f.text);
+  };
+  return { package: lines("package"), ticket: lines("ticket") };
+}
+
+/** The same facts for the "הוזל" popover, loaded when it opens - they never ride the list payload. */
+export async function getPriceAdvice(eventId: number): Promise<{ advice: Record<Scope, string[]>; alt_at: string | null } | null> {
+  await requireAdmin();
+  try {
+    const event = await loadEventForLight(eventId);
+    if (!event || event.is_deleted) return null;
+    return { advice: adviceFor(event), alt_at: event.light_detail?.ours?.alt?.at ?? null };
+  } catch (e) {
+    console.error("getPriceAdvice failed", e);
+    return null;
+  }
 }
 
 /** The side-by-side comparison for one event row on /price-light. */
@@ -357,6 +391,16 @@ export async function refreshOurOffer(
     if (!data) return { ok: false, error: "event not found" };
     const ours = await describeOurOffer(data as OurOfferEvent);
     await storeOurOffer(eventId, ours);
+    // A red event also gets its alternatives re-quoted (other travel days, other suppliers) - the
+    // same button, because "what are we selling" and "what else could we sell" are one question
+    // to the person pressing it. After the store: the quote reads the description just written.
+    // Never fails the refresh it rides on.
+    try {
+      const lights = await loadEventForLight(eventId);
+      if (lights && (lights.light_package === "red" || lights.light_ticket === "red")) await refreshAlternatives(eventId);
+    } catch (e) {
+      console.error("refreshOurOffer: alternatives failed", e);
+    }
     invalidatePriceLight("rows");
     const comparison = await buildComparison(eventId);
     return comparison ? { ok: true, comparison } : { ok: false, error: "event not found" };

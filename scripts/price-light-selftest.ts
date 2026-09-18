@@ -15,7 +15,9 @@ import {
 } from "../lib/services/price-light.ts";
 import { UNKNOWN_ATTRS, type LightScopeDetail } from "../types/price-light.types.ts";
 import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "../lib/services/price-margins.ts";
-import { adviceBlock, cheaperTicketFact, markupCutFacts, nightsFact, priceAdviceFacts } from "../lib/services/price-advice.ts";
+import {
+  adviceBlock, altDateCandidates, altDatesFacts, cheaperTicketFact, markupCutFacts, nightsFact, priceAdviceFacts, supplierSwapFacts,
+} from "../lib/services/price-advice.ts";
 import { airlineFromCode, bagFrom, formatOfferLines, isMultiMatchText, parseOfferDetail } from "../lib/services/offer-detail.ts";
 
 const NOW = "2026-09-10T12:00:00.000Z";
@@ -485,5 +487,46 @@ assert.ok((facts[0].saves_usd ?? 0) >= (facts[1].saves_usd ?? 0)); // biggest sa
 assert.deepEqual(priceAdviceFacts({ event: base, scope: "package", detail: { diff_usd: null, uncertainty_usd: 0, nights: null }, liveTicketsUsd: null }), []);
 assert.equal(adviceBlock([]), "");
 assert.equal(adviceBlock(facts).split(String.fromCharCode(10)).length, 4);
+
+// ---- other travel days / other suppliers (staff doc note 6) ----
+// Event on the 21st, package 19..22: leaving a day later still lands the day before; coming back
+// earlier would be the event day itself -> not offered. Shifting later keeps the length.
+assert.deepEqual(altDateCandidates("2026-11-21", "2026-11-19", "2026-11-22", "2026-09-18"), [
+  { depart: "2026-11-20", return: "2026-11-22" },
+  { depart: "2026-11-20", return: "2026-11-23" },
+]);
+// 17..23 around the 20th: every neighbour is legal, the current window never is.
+const wide = altDateCandidates("2026-11-20", "2026-11-17", "2026-11-23", "2026-09-18");
+assert.equal(wide.length, 5);
+assert.ok(!wide.some((w) => w.depart === "2026-11-17" && w.return === "2026-11-23"));
+// nothing leaves before tomorrow
+assert.ok(altDateCandidates("2026-09-21", "2026-09-18", "2026-09-23", "2026-09-18").every((w) => w.depart >= "2026-09-19"));
+
+const baseQuote = { depart: "2026-11-19", return: "2026-11-22", nights: 3, flight_usd: 420, airline: "אל על", direct: true };
+const rate = Math.round(ourNightRateUsd(base));
+const altFacts = altDatesFacts(base, { base: baseQuote, dates: [
+  { ...baseQuote, depart: "2026-11-20", nights: 2, flight_usd: 380 },            // $40 flight + one night
+  { ...baseQuote, depart: "2026-11-20", return: "2026-11-23", flight_usd: 410 }, // $10 only -> under the floor
+  { ...baseQuote, depart: "2026-11-18", return: "2026-11-21", flight_usd: 500 }, // dearer -> never advice
+] });
+assert.equal(altFacts.length, 1);
+assert.equal(altFacts[0].kind, "alt_dates");
+assert.equal(altFacts[0].saves_usd, 40 + rate);
+assert.ok(altFacts[0].text.includes("$380") && altFacts[0].text.includes("$420") && altFacts[0].text.includes(`$${40 + rate}`));
+assert.deepEqual(altDatesFacts(base, { base: null, dates: [] }), []);
+assert.deepEqual(altDatesFacts(base, null), []);
+
+const xs2 = { supplier: "xs2event" as const, category: null, cost: 45, currency: "EUR" as const, sell_usd: 103, attachable: false, ref: "x" };
+const lt = { supplier: "livetickets" as const, category: "קטגוריה 3", cost: 120, currency: "EUR" as const, sell_usd: 190, attachable: true, ref: "9" };
+const swaps = supplierSwapFacts(250, [lt, xs2]);
+assert.deepEqual(swaps.map((s) => s.saves_usd), [147, 60]); // biggest saving first
+assert.ok(swaps[0].text.includes("XS2Event") && swaps[0].text.includes("מידע בלבד"), "a supplier we cannot attach is said as information");
+assert.ok(swaps[1].text.includes("Suppliers & zones") && swaps[1].text.includes("קטגוריה 3"));
+assert.deepEqual(supplierSwapFacts(200, [lt]), []); // $10 - under the floor
+assert.deepEqual(supplierSwapFacts(null, [lt]), []);
+// a quoted LiveTickets alternative replaces the older shelf-price line - one of the two, never both
+const both = priceAdviceFacts({ event: base, scope: "ticket", detail: { diff_usd: 170, uncertainty_usd: 0, nights: null }, liveTicketsUsd: 100,
+  alt: { at: "2026-09-18T00:00:00Z", base: null, dates: [], suppliers: [{ ...lt, sell_usd: 100 }], errors: [] } });
+assert.ok(both.some((x) => x.kind === "supplier_swap") && !both.some((x) => x.kind === "cheaper_ticket"));
 
 console.log("price-light selftest: all assertions passed");

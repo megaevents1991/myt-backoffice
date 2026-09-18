@@ -37,12 +37,16 @@ export interface TixStockPriceSyncOptions {
 }
 
 /** The slice of a TixStock /tickets/feed listing this sync reads. */
-interface TixStockFeedTicket {
+export interface TixStockFeedTicket {
   seat_details?: { category?: string };
   number_of_tickets_for_sale?: { quantity_available?: number };
   proceed_price?: { amount?: string; currency?: string };
   face_value?: { currency?: string };
 }
+
+/** Also read by the price advisor's supplier quote (price-alternatives.ts) - one feed reader, not two. */
+export const fetchTixStockFeed = (tixstockEventId: string): Promise<TixStockFeedTicket[]> =>
+  fetchAllTicketsForEvent(tixstockEventId);
 
 async function fetchAllTicketsForEvent(
   tixstockEventId: string,

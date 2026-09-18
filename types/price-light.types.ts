@@ -197,6 +197,43 @@ export interface OurOfferSnapshot {
   hotel: (OfferHotel & { usd: number | null; room: string | null; source: "hotel_api" | "offline" }) | null;
   /** Why a half is missing ("no direct or connecting offer", "hotel search failed: ..."). */
   errors: string[];
+  /** What ELSE we could sell, for the price advisor (lib/services/price-alternatives.ts). Rides
+   *  inside `ours` on purpose: every writer of `light_detail` already carries `ours` over whole. */
+  alt?: OurAlternatives | null;
+}
+
+/** The rule's flight on OTHER travel days around the same event date. Raw Amadeus price, no margin. */
+export interface AltDateQuote {
+  depart: string;
+  return: string;
+  nights: number;
+  flight_usd: number;
+  airline: string | null;
+  direct: boolean | null;
+}
+
+/** The same event's cheapest ticket at a supplier we do not source it from today. */
+export interface AltSupplierQuote {
+  supplier: "livetickets" | "tixstock" | "xs2event";
+  /** The supplier's own category name for that ticket, when it has one. */
+  category: string | null;
+  cost: number;
+  currency: Currency;
+  /** What we would sell it at: the supplier's cost through our own per-currency markup. */
+  sell_usd: number;
+  /** Can be attached to the event as a second supplier today ("Suppliers & zones"). */
+  attachable: boolean;
+  /** The supplier's event id / name - what ops would look it up by. */
+  ref: string | null;
+}
+
+export interface OurAlternatives {
+  at: string;
+  /** The rule's flight on OUR current dates, quoted in the same minute as `dates` - what a saving is measured from. */
+  base: AltDateQuote | null;
+  dates: AltDateQuote[];
+  suppliers: AltSupplierQuote[];
+  errors: string[];
 }
 
 export interface LightDetail {
@@ -474,6 +511,11 @@ export interface PriceLightComparison {
   ours_errors: string[];
   package: ComparisonOffer[];
   ticket: ComparisonOffer[];
+  /** The price advisor's FACTS for each red scope (price-advice.ts), biggest saving first; [] when
+   *  the scope is not red. Facts, never a decision - the same lines an auto-opened task carries. */
+  advice: Record<Scope, string[]>;
+  /** When other travel days / suppliers were last quoted; null = never (only the older facts show). */
+  alt_at: string | null;
 }
 
 export interface PriceSnapshotRow {
