@@ -9,6 +9,7 @@
  */
 
 import {
+  BLOCK_META,
   HOMEPAGE_BLOCK_TYPES,
   HOMEPAGE_SECTION_KEYS,
   SECTION_ITEM_KINDS,
@@ -160,7 +161,11 @@ export function normalizeSections(
     if (!isBlockType(type)) return { ok: false, error: `Unknown block type "${String(type)}"` };
     if (!isBlockKey(key)) return { ok: false, error: `Invalid block key "${key}"` };
     const config = parseConfig(type, row.config, opts.storagePrefix);
-    if (!config.ok) return { ok: false, error: `${title ?? key}: ${config.error}` };
+    // Named the way staff see it on the board - its title, else its type -
+    // never by the internal blk_ key.
+    if (!config.ok) {
+      return { ok: false, error: `${title ?? BLOCK_META[type].label}: ${config.error}` };
+    }
     blocks++;
     if (blocks > MAX_BLOCKS) return { ok: false, error: `עד ${MAX_BLOCKS} בלוקים בעמוד` };
     seen.add(key);

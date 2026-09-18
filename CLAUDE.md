@@ -107,6 +107,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > the migration runs `getHomepageLayout` falls back to the old columns and returns
 > `blocksReady: false` (no pencil, no "+ Add block"). Block types + config shapes
 > are mirrored in main's `lib/homepageLayout.ts`; main skips a type it does not know.
+> **Event thumbnails on the board** (`lib/homepage/event-art.ts`, pure, same selftest):
+> most events carry no image of their own, so a card borrows its artist's / HOME team's
+> picture the way the site does (main `lib/events/fallbackImage.ts`; names matched by
+> main's rule, mirrored in `lib/on-tour.ts`). An approximation - the site also rotates
+> gallery cut-outs and draws "crest VS crest"; the board only needs to be recognisable.
 
 > **✅ Redesign + Events Factory + Guide (branch `feat/backoffice-redesign`, 2026-09-02).**
 > Everything below is on that branch, migrations already applied to prod.

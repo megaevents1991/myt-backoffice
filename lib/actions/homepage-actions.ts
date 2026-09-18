@@ -19,6 +19,7 @@ import { logAudit } from "@/lib/audit";
 import { revalidateMain } from "@/lib/revalidate-main";
 import { revalidatePath } from "next/cache";
 import { isBlockType, isBuiltinKey, itemKindsFor, normalizeSections } from "@/lib/homepage/blocks";
+import { buildArtIndex, personArtFor } from "@/lib/homepage/event-art";
 import { flattenWithPath } from "@/lib/taxonomy-tree";
 import {
   HOMEPAGE_PAGE,
@@ -213,6 +214,15 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
     .sort((a, b) => a.position - b.position);
 
   const events = (eventsRes.data ?? []) as EventPick[];
+  const artists = (artistsRes.data ?? []) as PersonPick[];
+  const teams = (teamsRes.data ?? []) as PersonPick[];
+  // Most events have no image of their own - the site shows their artist's /
+  // team's, so the board does too (lib/homepage/event-art.ts).
+  const personImage = (p: PersonPick) => p.art_image_url || p.image_url || null;
+  const artIndex = buildArtIndex([
+    ...artists.map((p) => ({ kind: "artist" as const, name_english: p.name_english, image_url: personImage(p) })),
+    ...teams.map((p) => ({ kind: "team" as const, name_english: p.name_english, image_url: personImage(p) })),
+  ]);
   const candidates: HomepageCandidate[] = [
     ...events.map<HomepageCandidate>((e) => ({
       kind: "event",
@@ -221,23 +231,24 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
       subtitle: `${e.date.slice(8, 10)}/${e.date.slice(5, 7)}/${e.date.slice(2, 4)}${
         e.name_english ? ` · ${e.name_english}` : ""
       }`,
-      image_url: e.art_image_url || e.card_image_url || null,
+      image_url:
+        e.art_image_url || e.card_image_url || personArtFor(e.name_english, artIndex),
       prioritized: e.is_prioritized === true,
       created_at: e.created_at,
     })),
-    ...((artistsRes.data ?? []) as PersonPick[]).map<HomepageCandidate>((p) => ({
+    ...artists.map<HomepageCandidate>((p) => ({
       kind: "artist",
       ref_id: p.slug,
       name: p.name,
       subtitle: p.name_english,
-      image_url: p.art_image_url || p.image_url || null,
+      image_url: personImage(p),
     })),
-    ...((teamsRes.data ?? []) as PersonPick[]).map<HomepageCandidate>((p) => ({
+    ...teams.map<HomepageCandidate>((p) => ({
       kind: "team",
       ref_id: p.slug,
       name: p.name,
       subtitle: p.name_english,
-      image_url: p.art_image_url || p.image_url || null,
+      image_url: personImage(p),
     })),
   ];
 

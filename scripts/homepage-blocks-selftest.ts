@@ -10,6 +10,7 @@ import {
   normalizeSections,
   normalizeTitle,
 } from "../lib/homepage/blocks";
+import { buildArtIndex, personArtFor } from "../lib/homepage/event-art";
 
 let failed = 0;
 function check(name: string, got: unknown, want: unknown) {
@@ -237,6 +238,63 @@ check("banner: banners must be a list", typeof bannerConfig("x"), "string");
   );
   check("no storage prefix configured rejects every banner image", b.ok, false);
 }
+
+{
+  const r = normalizeSections([builtin("hero"), banner("blk_0000000b", [])], opts);
+  check("an untitled block is named by its type, not its key", errorOf(r)?.startsWith("באנרים:"), true);
+  check("the internal key never reaches the message", errorOf(r)?.includes("blk_"), false);
+}
+
+// --- event art: an event with no image borrows its artist's / team's ---
+
+const artIndex = buildArtIndex([
+  { kind: "artist", name_english: "Sia", image_url: "sia.png" },
+  { kind: "artist", name_english: "Celine Dion", image_url: "celine.png" },
+  { kind: "artist", name_english: "No Picture", image_url: null },
+  { kind: "artist", name_english: null, image_url: "nameless.png" },
+  { kind: "team", name_english: "AC Milan", image_url: "milan.png" },
+  { kind: "team", name_english: "Inter Milan", image_url: "inter.png" },
+  { kind: "team", name_english: "Atletico Madrid", image_url: "atleti.png" },
+  { kind: "team", name_english: "FC Barcelona", image_url: "barca.png" },
+  { kind: "team", name_english: "Real Madrid CF", image_url: "real.png" },
+]);
+
+check("people without a name or a picture are left out", artIndex.length, 7);
+check("an artist's event takes the artist's picture", personArtFor("Celine Dion Paris", artIndex), "celine.png");
+check("matching ignores case and accents", personArtFor("CÉLINE DION - Paris", artIndex), "celine.png");
+// The site's rule is a plain substring, longest name first - so "Sia" loses an
+// "Asia" event only to a longer name that also matches. Same here, on purpose.
+check(
+  "the longest matching name wins",
+  personArtFor(
+    "Asia World Tour",
+    buildArtIndex([
+      { kind: "artist", name_english: "Sia", image_url: "sia.png" },
+      { kind: "artist", name_english: "Asia", image_url: "asia.png" },
+    ]),
+  ),
+  "asia.png",
+);
+check("nobody matches", personArtFor("Some Unknown Act", artIndex), null);
+check("no name, no picture", personArtFor(null, artIndex), null);
+check("a fixture takes the HOME team's picture", personArtFor("FC Barcelona vs Real Madrid CF", artIndex), "barca.png");
+check("... whichever club has the longer name", personArtFor("Real Madrid CF vs FC Barcelona", artIndex), "real.png");
+check("Inter Milan's game is not AC Milan's", personArtFor("Inter Milan vs Juventus", artIndex), "inter.png");
+check(
+  "a side spelled differently still finds its team",
+  personArtFor("Atlético de Madrid vs Getafe", artIndex),
+  "atleti.png",
+);
+check(
+  "a competition prefix does not hide the home side",
+  personArtFor("Champions League: AC Milan vs Liverpool", artIndex),
+  "milan.png",
+);
+check(
+  "an away team the index knows still yields the home team first",
+  personArtFor("Getafe vs FC Barcelona", artIndex),
+  "barca.png",
+);
 
 if (failed) {
   console.error(`\n${failed} failed`);
