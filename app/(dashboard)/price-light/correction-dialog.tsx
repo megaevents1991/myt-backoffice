@@ -70,6 +70,10 @@ function initialState(offer: ComparisonOffer): FormState {
   };
 }
 
+/** The server's own bound (validateCorrection) - the button stays off rather than the save bouncing. */
+const NIGHTS_MAX = 21;
+const nightsValid = (s: string): boolean => !s.trim() || (Number(s) >= 1 && Number(s) <= NIGHTS_MAX);
+
 /** Only what differs from what the dialog opened with - each entry becomes one correction. */
 function changesOf(now: FormState, was: FormState, pkg: boolean): { field: CorrectionField; value: unknown }[] {
   if (now.notSameEvent) return [{ field: "not_same_event", value: true }];
@@ -119,7 +123,10 @@ export function CorrectionDialog({
     try {
       const res = await saveListingCorrections({ eventId, listingId: offer.edit.listing_id, changes, reason, note });
       if (!res.ok) { toast({ variant: "destructive", title: "התיקון לא נשמר", description: res.error }); return; }
-      toast({ title: res.saved > 0 ? "התיקון נשמר והרמזור חושב מחדש" : "לא היה מה לשנות" });
+      toast({
+        title: res.saved === 0 ? "לא היה מה לשנות" : res.recomputed ? "התיקון נשמר והרמזור חושב מחדש" : "התיקון נשמר",
+        description: res.saved > 0 && !res.recomputed ? "חישוב הרמזור נכשל כרגע - לחצו \"בדוק עכשיו\" בשורה, או שיתעדכן בלילה." : undefined,
+      });
       onChanged(res.comparison, res.row);
       onOpenChange(false);
     } catch (e) {
@@ -135,7 +142,10 @@ export function CorrectionDialog({
     try {
       const res = await revokeListingCorrection(eventId, c.id);
       if (!res.ok) { toast({ variant: "destructive", title: "הביטול נכשל", description: res.error }); return; }
-      toast({ title: "התיקון בוטל - הערך מהסריקה חזר" });
+      toast({
+        title: "התיקון בוטל - הערך מהסריקה חזר",
+        description: res.recomputed ? undefined : "חישוב הרמזור נכשל כרגע - לחצו \"בדוק עכשיו\" בשורה, או שיתעדכן בלילה.",
+      });
       onChanged(res.comparison, res.row);
       onOpenChange(false);
     } catch (e) {
@@ -268,7 +278,7 @@ export function CorrectionDialog({
 
         <DialogFooter className="gap-2 sm:justify-start">
           {offer.edit && (
-            <Button onClick={save} disabled={busy || changes.length === 0 || !reason || !noteOk}>
+            <Button onClick={save} disabled={busy || changes.length === 0 || !reason || !noteOk || !nightsValid(form.nights) || (form.amount.trim() !== "" && Number(form.amount) < 1)}>
               {busy && <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" />}
               שמור {changes.length > 0 ? `(${changes.length})` : ""}
             </Button>

@@ -570,8 +570,13 @@ export async function runCrawl(
     // spent re-reading one page while 36 of 42 matched listings stayed blank (2026-09-18). A URL
     // already read this run is reused - no request, no pause, no slot off the cap.
     const readThisRun = new Map<string, Partial<Listing>>();
+    // A URL whose fetch FAILED this run: its other listings are left alone (no second request, and
+    // above all no write - a shared `{}` would stamp every one of them "opened, nothing there"
+    // and none would ever be queued again). They stay null and come back next run.
+    const failedThisRun = new Set<string>();
     let capped = false;
     for (const row of rows) {
+      if (failedThisRun.has(row.url)) continue;
       if (Date.now() - start > budget) {
         // A details cutoff is NOT `partial`: the catalog itself completed cleanly, and marking
         // it partial would drown the "partial-coverage crawls" view in healthy runs (I2d).
@@ -618,6 +623,7 @@ export async function runCrawl(
         }).eq("id", row.id);
         if (error) console.error("price-light-crawl: detail write failed", JSON.stringify(error));
       } catch (e) {
+        failedThisRun.add(row.url);
         console.error(`price-light-crawl: detail ${row.url} failed`, e instanceof Error ? e.message : e);
       }
     }

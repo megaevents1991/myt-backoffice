@@ -91,6 +91,12 @@ export function parseCatalog(html: string): Listing[] {
 
 const flat = (el: Element | null | undefined): string => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
 
+/** "תוספת €0 לאדם" -> 0, "€1,099" -> 1099; null when the option prints no number at all. */
+function surchargeOf(text: string): number | null {
+  const digits = text.replace(/[^\d]/g, "");
+  return digits ? Number(digits) : null;
+}
+
 /** "כלול" / "לא כלול" / "לא ידוע" after the suitcase label - null when the page never says. */
 function bagIncluded(text: string): boolean | null {
   const m = text.match(/מזוודה\s*:?\s*(לא\s*כלול[הא]?|ללא|כלול[הא]?|כולל)/);
@@ -131,7 +137,9 @@ export function parseDetail(html: string, window: { depart: string | null; ret: 
   const categories = Array.from(d.querySelectorAll(".category-option")).map((c) => ({
     title: flat(c.querySelector(".category-title")),
     description: flat(c.querySelector(".category-description")),
-    extra: parsePrice(flat(c.querySelector(".price-value")).replace(/[^\d,]/g, "") || "0") ?? 0,
+    // Digits only, not `parsePrice` - that wants 3+ digits and would read "תוספת €50" as 0,
+    // making a paid upgrade look like the seat the base price buys. No surcharge text = unknown.
+    extra: surchargeOf(flat(c.querySelector(".price-value"))),
   })).filter((c) => c.title);
   const seat = categories.find((c) => c.extra === 0) ?? categories[0] ?? null;
 
@@ -253,16 +261,9 @@ export const issta: CompetitorScraper = {
   async detail(listing: DetailInput, ctx: CrawlContext): Promise<Partial<Listing>> {
     const url = listing.scope === "package" ? detailUrl(listing.url) : null;
     if (!url) return {};
-    try {
-      const res = await ctx.fetch(url, { headers: stealthHeaders() });
-      if (!res.ok) {
-        ctx.log(`issta: detail ${url} -> HTTP ${res.status}`);
-        return {};
-      }
-      return parseDetail(await res.text(), { depart: listing.travel_depart, ret: listing.travel_return });
-    } catch (err) {
-      ctx.log(`issta: detail ${url} -> ${(err as Error).message}`);
-      return {};
-    }
+    // A failed fetch throws - `{}` is "read, nothing there", which runCrawl records for good.
+    const res = await ctx.fetch(url, { headers: stealthHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
+    return parseDetail(await res.text(), { depart: listing.travel_depart, ret: listing.travel_return });
   },
 };

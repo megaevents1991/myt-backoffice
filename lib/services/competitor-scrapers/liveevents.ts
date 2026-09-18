@@ -364,32 +364,29 @@ export const liveevents: CompetitorScraper = {
   },
   async detail(listing: DetailInput, ctx: CrawlContext): Promise<Partial<Listing>> {
     if (listing.scope !== "package" || !hasDetailPage(listing.url)) return {};
-    try {
-      const res = await ctx.fetch(listing.url, { headers: stealthHeaders() });
-      if (!res.ok) {
-        ctx.log(`liveevents: detail ${listing.url} -> HTTP ${res.status}`);
-        return {};
+    // A failed fetch THROWS (2026-09-18) - `{}` means "the page was read and carries no package",
+    // which the crawl loop records as opened for good. A timeout or a 5xx answered that way was
+    // never retried, and since one page now fills every listing on its URL, neither were they.
+    // runCrawl catches the throw, leaves the listing untouched and queues it again next run.
+    const get = async (url: string): Promise<string> => {
+      const res = await ctx.fetch(url, { headers: stealthHeaders() });
+      if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
+      return res.text();
+    };
+    const html = await get(listing.url);
+    let partial = parseDetail(html);
+    // A tier list, not a package: one more same-site GET to the cheapest tier it links to.
+    if (partial.detail_text == null && /\/show\//.test(listing.url)) {
+      const tierUrl = cheapestPackageUrl(html);
+      if (tierUrl) {
+        await ctx.pauseShort();
+        partial = parseDetail(await get(tierUrl));
       }
-      const html = await res.text();
-      let partial = parseDetail(html);
-      // A tier list, not a package: one more same-site GET to the cheapest tier it links to.
-      if (partial.detail_text == null && /\/show\//.test(listing.url)) {
-        const tierUrl = cheapestPackageUrl(html);
-        if (tierUrl) {
-          await ctx.pauseShort();
-          const tier = await ctx.fetch(tierUrl, { headers: stealthHeaders() });
-          if (tier.ok) partial = parseDetail(await tier.text());
-          else ctx.log(`liveevents: detail ${tierUrl} -> HTTP ${tier.status}`);
-        }
-      }
-      if (partial.price_from != null && partial.currency != null) {
-        const { toUsd } = await import("./livetickets-api.ts");
-        partial.price_usd = Math.round(toUsd(partial.price_from, partial.currency));
-      }
-      return partial;
-    } catch (err) {
-      ctx.log(`liveevents: detail ${listing.url} -> ${(err as Error).message}`);
-      return {};
     }
+    if (partial.price_from != null && partial.currency != null) {
+      const { toUsd } = await import("./livetickets-api.ts");
+      partial.price_usd = Math.round(toUsd(partial.price_from, partial.currency));
+    }
+    return partial;
   },
 };

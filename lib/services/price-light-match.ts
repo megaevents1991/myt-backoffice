@@ -384,9 +384,13 @@ export async function matchEvent(
     // adjusts nothing - while still being the difference between a light that carries a night
     // of doubt and one that does not. Without this the row would never be rewritten and the
     // store would keep pricing that doubt off stale "unknown" attrs.
-    const nightsUnchanged = (prev?.attrs?.nights ?? "unknown") === (merged.nights ?? "unknown");
+    // EVERY attribute, not nights alone (review 2026-09-18): a staff correction that lands on a
+    // value worth $0 - stars 3, no bag, a direct flight - leaves `normalized_usd` where it was while
+    // turning an "unknown" into a known. Compared by price only, the row was never rewritten and
+    // the screen kept its "נרמול חלקי" flag and old attrs until something else moved.
+    const attrsUnchanged = ATTR_KEYS.every((k) => (prev?.attrs?.[k] ?? "unknown") === (merged[k] ?? "unknown"));
     const unchanged = prev?.status === "found" && prev.listing_id === picked.id &&
-      !hasListingChanged(prev, picked) && nightsUnchanged &&
+      !hasListingChanged(prev, picked) && attrsUnchanged &&
       Number(prev.normalized_usd) === norm.normalizedUsd && Number(prev.our_usd) === ourUsd &&
       !(verdict != null && !verdictReusable(prev.ai_verdict));
     if (!unchanged) {

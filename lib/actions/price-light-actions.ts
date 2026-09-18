@@ -373,7 +373,8 @@ const CORRECTION_REMATCH_OTHERS = 5;
 const CORRECTION_CHANGES_MAX = 12;
 
 type CorrectionResult =
-  | { ok: true; saved: number; comparison: PriceLightComparison | null; row: PriceLightRow | null }
+  /** `recomputed: false` = the correction is saved but the lights were not recalculated just now. */
+  | { ok: true; saved: number; recomputed: boolean; comparison: PriceLightComparison | null; row: PriceLightRow | null }
   | { ok: false; error: string };
 
 type CorrectedListing = Pick<ListingRow, "id" | "competitor" | "scope" | "external_key" | "title" | "price_from" | "currency" |
@@ -382,22 +383,36 @@ type CorrectedListing = Pick<ListingRow, "id" | "competitor" | "scope" | "extern
 const known = (v: unknown): boolean => v !== undefined && v !== null && v !== "unknown" && v !== "";
 
 /**
- * Re-match after a correction, rule-only: staff just supplied the answer, so nothing here is worth
- * an AI call (a cached verdict is still reused - that path needs no judge). The event on screen
- * first; a listing-wide fix also moves the other events matched to that listing, a handful now
- * and the rest tonight.
+ * Re-match after a correction, by the same rules "בדוק עכשיו" uses - NOT rule-only. A match the
+ * AI made (the rule could not decide) is normally reused from its cached verdict for free, but
+ * where that verdict cannot be reused a rule-only pass would answer "unsure" and a correction
+ * would turn a working light grey. So the judge stays available, under ONE click-sized budget
+ * shared by every event re-matched here. The event on screen first; a listing-wide fix also
+ * moves the other events matched to that listing, a handful now and the rest tonight.
  */
-async function rematchAfterCorrection(eventId: number, listingId: number, listingWide: boolean): Promise<void> {
-  await matchAllForEvent(eventId, "manual", { judge: null });
-  if (!listingWide) return;
+async function rematchAfterCorrection(eventId: number, listingId: number, listingWide: boolean): Promise<boolean> {
+  // Never throws: the correction is already written. A failed recompute must not come back to
+  // staff as "not saved" - the row is live and the nightly pass (or "בדוק עכשיו") applies it.
+  let opts: Parameters<typeof matchAllForEvent>[2];
+  try {
+    opts = aiEnabled()
+      ? { aiMemory: await loadJudgeMemory(), aiBudget: { remaining: RECHECK_AI_CALLS } }
+      : { judge: null };
+    await matchAllForEvent(eventId, "manual", opts);
+  } catch (e) {
+    console.error(`rematchAfterCorrection: event ${eventId} failed`, e);
+    return false;
+  }
+  if (!listingWide) return true;
   const others = (await eventsMatchedTo(listingId, CORRECTION_REMATCH_OTHERS + 1)).filter((id) => id !== eventId);
   for (const other of others.slice(0, CORRECTION_REMATCH_OTHERS)) {
     try {
-      await matchAllForEvent(other, "manual", { judge: null });
+      await matchAllForEvent(other, "manual", opts);
     } catch (e) {
       console.error(`rematchAfterCorrection: event ${other} failed`, e);
     }
   }
+  return true;
 }
 
 /**
@@ -446,66 +461,88 @@ export async function saveListingCorrections(input: {
     const existing = [...(await loadCorrections([listing.id])), ...(await loadPairCorrections(input.eventId))]
       .filter((c) => c.listing_id === listing.id);
 
-    let saved = 0;
-    let listingWide = false;
+    // Validate EVERYTHING before the first write: a bad third field must not leave two saved
+    // corrections behind with no re-match.
+    const planned: { field: CorrectionField; value: CorrectionValue }[] = [];
     for (const change of changes) {
       if (!(CORRECTION_FIELDS as readonly string[]).includes(change.field)) return { ok: false, error: `unknown field ${change.field}` };
       const field = change.field as CorrectionField;
+      if (planned.some((p) => p.field === field)) return { ok: false, error: `field ${field} sent twice` };
       const checked = validateCorrection(field, change.value);
       if (!checked.ok) return { ok: false, error: checked.error };
-      const value: CorrectionValue = checked.value;
-      const pairScoped = field === "not_same_event";
-      const original = crawledValue(field, listing, parsed);
-      const current = existing.find((c) => c.field === field && (pairScoped ? c.event_id === input.eventId : c.event_id == null)) ?? null;
+      planned.push({ field, value: checked.value });
+    }
 
-      // Set back to what the crawl says = the correction is no longer needed.
-      if (!pairScoped && sameValue(value, original)) {
-        if (current) {
-          await revokeCorrection(current.id, session.email ?? null);
-          await logAudit({
-            action: "price_light.correction_revoked", entityType: "event", entityId: input.eventId,
-            metadata: { competitor: listing.competitor, listing_id: listing.id, field, correction_id: current.id },
-          });
-          saved += 1; listingWide = true;
+    let saved = 0;
+    let listingWide = false;
+    let failure: string | null = null;
+    try {
+      for (const { field, value } of planned) {
+        const pairScoped = field === "not_same_event";
+        const original = crawledValue(field, listing, parsed);
+        const current = existing.find((c) => c.field === field && (pairScoped ? c.event_id === input.eventId : c.event_id == null)) ?? null;
+
+        // What the MACHINE shows with no correction on it: the page's value, else the AI's, else
+        // (nights only) the travel window's. Not simply `original`: when the page is silent and the
+        // AI said 3 stars, "unknown" equals the page's value yet is a real correction of the AI.
+        const pageKnows = isAttrField(field) && known(listing.attrs?.[field]);
+        const aiKnows = isAttrField(field) && !pageKnows && known(aiAttrs?.[field]);
+        const windowNights = field === "nights" && !pageKnows && !aiKnows
+          ? nightsBetweenDays(listing.travel_depart, listing.travel_return) : null;
+        const machine: unknown = !isAttrField(field) || pageKnows ? original
+          : aiKnows ? aiAttrs?.[field]
+          : windowNights;
+
+        // Set back to what the machine says on its own = the correction is no longer needed.
+        if (!pairScoped && sameValue(value, machine as CorrectionValue)) {
+          if (current) {
+            await revokeCorrection(current.id, session.email ?? null);
+            await logAudit({
+              action: "price_light.correction_revoked", entityType: "event", entityId: input.eventId,
+              metadata: { competitor: listing.competitor, listing_id: listing.id, field, correction_id: current.id },
+            });
+            saved += 1; listingWide = true;
+          }
+          continue;
         }
-        continue;
+        if (current && sameValue(current.value, value) && sameValue(current.original, original)) continue;
+
+        const source: CorrectionSource = pairScoped
+          ? (match?.listing_id === listing.id ? (match.method === "ai" ? "ai" : "rule") : "none")
+          : field === "price" ? "page"
+          : isTextField(field) ? "parser"
+          : pageKnows ? "page"
+          : aiKnows ? "ai"
+          : windowNights != null ? "page"
+          : "none";
+
+        const row = await saveCorrection({
+          listing_id: listing.id, event_id: pairScoped ? input.eventId : null, competitor: listing.competitor,
+          field, original, value, reason, note, source, created_by: session.email ?? null,
+        });
+        await logAudit({
+          action: "price_light.corrected", entityType: "event", entityId: input.eventId,
+          metadata: {
+            competitor: listing.competitor, listing_id: listing.id, listing_title: listing.title, event_name: event.name, scope: listing.scope,
+            field, from: machine, to: value, source, reason, note, correction_id: row.id,
+          },
+        });
+        saved += 1;
+        if (!pairScoped) listingWide = true;
       }
-      if (current && sameValue(current.value, value) && sameValue(current.original, original)) continue;
-
-      const pageKnows = isAttrField(field) && known(listing.attrs?.[field]);
-      const source: CorrectionSource = pairScoped
-        ? (match?.listing_id === listing.id ? (match.method === "ai" ? "ai" : "rule") : "none")
-        : field === "price" ? "page"
-        : isTextField(field) ? "parser"
-        : pageKnows ? "page"
-        : known(aiAttrs?.[field]) ? "ai"
-        : field === "nights" && listing.travel_depart && listing.travel_return ? "page"
-        : "none";
-      // What the machine showed staff: the AI's value when it was the AI's, else the crawl's.
-      const from: unknown = source === "ai" && !pairScoped ? aiAttrs?.[field] ?? original
-        : isAttrField(field) && !pageKnows ? match?.attrs?.[field] ?? original
-        : original;
-
-      const row = await saveCorrection({
-        listing_id: listing.id, event_id: pairScoped ? input.eventId : null, competitor: listing.competitor,
-        field, original, value, reason, note, source, created_by: session.email ?? null,
-      });
-      await logAudit({
-        action: "price_light.corrected", entityType: "event", entityId: input.eventId,
-        metadata: {
-          competitor: listing.competitor, listing_id: listing.id, listing_title: listing.title, event_name: event.name, scope: listing.scope,
-          field, from, to: value, source, reason, note, correction_id: row.id,
-        },
-      });
-      saved += 1;
-      if (!pairScoped) listingWide = true;
+    } catch (e) {
+      // Whatever was written before the failure is live - it still has to reach the lights.
+      console.error("saveListingCorrections: write failed part-way", e);
+      failure = e instanceof Error ? e.message : "failed";
     }
 
+    let recomputed = true;
     if (saved > 0) {
-      await rematchAfterCorrection(input.eventId, listing.id, listingWide);
-      invalidatePriceLight("rows", "runs"); // "runs" carries the per-competitor corrections count
+      recomputed = await rematchAfterCorrection(input.eventId, listing.id, listingWide);
+      invalidatePriceLight("rows", "runs", "cost"); // "runs" carries the per-competitor corrections count
     }
-    return { ok: true, saved, comparison: await buildComparison(input.eventId), row: await buildPriceLightRow(input.eventId) };
+    if (failure) return { ok: false, error: saved > 0 ? `נשמרו ${saved} תיקונים, ואז: ${failure}` : failure };
+    return { ok: true, saved, recomputed, comparison: await buildComparison(input.eventId), row: await buildPriceLightRow(input.eventId) };
   } catch (e) {
     console.error("saveListingCorrections failed", e);
     return { ok: false, error: e instanceof Error ? e.message : "failed" };
@@ -518,15 +555,16 @@ export async function revokeListingCorrection(eventId: number, correctionId: num
   try {
     if (!Number.isInteger(eventId) || !Number.isInteger(correctionId)) return { ok: false, error: "bad id" };
     const revoked = await revokeCorrection(correctionId, session.email ?? null);
+    let recomputed = true;
     if (revoked) {
       await logAudit({
         action: "price_light.correction_revoked", entityType: "event", entityId: eventId,
         metadata: { competitor: revoked.competitor, listing_id: revoked.listing_id, field: revoked.field, correction_id: revoked.id },
       });
-      await rematchAfterCorrection(eventId, revoked.listing_id, revoked.event_id == null);
-      invalidatePriceLight("rows", "runs");
+      recomputed = await rematchAfterCorrection(eventId, revoked.listing_id, revoked.event_id == null);
+      invalidatePriceLight("rows", "runs", "cost");
     }
-    return { ok: true, saved: revoked ? 1 : 0, comparison: await buildComparison(eventId), row: await buildPriceLightRow(eventId) };
+    return { ok: true, saved: revoked ? 1 : 0, recomputed, comparison: await buildComparison(eventId), row: await buildPriceLightRow(eventId) };
   } catch (e) {
     console.error("revokeListingCorrection failed", e);
     return { ok: false, error: e instanceof Error ? e.message : "failed" };
