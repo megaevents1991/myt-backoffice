@@ -134,6 +134,8 @@ export interface GapItem {
    * Powers the "Do" button; the anchors live in the forms as id="fix-*".
    */
   fixUrl: string;
+  /** The subject's page on the customer site, when it has one (set by listAllCreativeGaps). */
+  siteUrl?: string | null;
   /** Extra context (event date, skip reason). */
   detail?: string;
   /**

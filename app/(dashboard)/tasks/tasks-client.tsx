@@ -517,7 +517,7 @@ export function TasksClient() {
               {task.description && (
                 <p className="whitespace-pre-line text-sm text-muted-foreground">{task.description}</p>
               )}
-              <TaskThread taskId={task.id} />
+              <TaskThread taskId={task.id} onCommentAdded={reload} />
             </div>
           )}
           searchColumn="title"
@@ -817,7 +817,7 @@ function GapsTab({ onCreateTask }: { onCreateTask: (gap: GapItem) => void }) {
               <th className="px-3 py-2 text-left font-semibold">Missing</th>
               <th className="px-3 py-2 text-left font-semibold">Item</th>
               <th className="px-3 py-2 text-left font-semibold">Detail</th>
-              <th className="w-52 px-3 py-2" />
+              <th className="w-72 px-3 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -858,6 +858,14 @@ function GapsTab({ onCreateTask }: { onCreateTask: (gap: GapItem) => void }) {
                   <td className="px-3 py-2 text-muted-foreground">{item.detail ?? ""}</td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end gap-2">
+                      {item.siteUrl && (
+                        <Button size="sm" variant="ghost" asChild>
+                          <a href={item.siteUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                            באתר
+                          </a>
+                        </Button>
+                      )}
                       <Button size="sm" asChild>
                         <Link href={item.fixUrl}>
                           <Wrench className="mr-1.5 h-3.5 w-3.5" />

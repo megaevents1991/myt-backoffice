@@ -1,5 +1,6 @@
 "use server";
 
+import { siteUrlOf, siteUrlsForRefs } from "@/lib/services/task-site-url";
 import { requireStaff } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import { supabaseTyped } from "@/lib/supabase-server";
@@ -172,7 +173,10 @@ export async function listCreativeGaps(kind: GapKind): Promise<GapItem[]> {
  */
 export async function listAllCreativeGaps(): Promise<GapItem[]> {
   await requireStaff();
-  return computeOpenCreativeGaps();
+  const gaps = await computeOpenCreativeGaps();
+  // "באתר" beside each row - the page a customer sees (best-effort, never fails the list).
+  const siteUrls = await siteUrlsForRefs(gaps);
+  return gaps.map((gap) => ({ ...gap, siteUrl: siteUrlOf(gap, siteUrls) }));
 }
 
 export interface DismissedGap {

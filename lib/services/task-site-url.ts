@@ -9,7 +9,9 @@ import { supabase } from "@/lib/supabase-server";
 import { eventSiteUrl, PUBLIC_SITE_URL } from "@/lib/site";
 import { slugPathOf } from "@/lib/taxonomy-tree";
 import type { EventCategory } from "@/types/taxonomy.types";
-import type { TaskSourceRef } from "@/types/task.types";
+
+/** All the resolver needs - a task's source_ref and a creative gap both have it. */
+type SiteRef = { table: string; row_id: string | number };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
@@ -19,11 +21,11 @@ const PERSON_PREFIX: Record<string, string> = {
   artists: "/artists/",
 };
 
-const refKey = (ref: TaskSourceRef) => `${ref.table}:${ref.row_id}`;
+const refKey = (ref: SiteRef) => `${ref.table}:${ref.row_id}`;
 
 /** `${table}:${row_id}` -> absolute site URL, for every ref that has a page. */
 export async function siteUrlsForRefs(
-  refs: (TaskSourceRef | null)[],
+  refs: (SiteRef | null)[],
 ): Promise<Map<string, string>> {
   const urls = new Map<string, string>();
   // Ids as strings: source_ref.row_id is a number on some rows and a string on others.
@@ -81,7 +83,7 @@ export async function siteUrlsForRefs(
   return urls;
 }
 
-export function siteUrlOf(ref: TaskSourceRef | null, urls: Map<string, string>): string | null {
+export function siteUrlOf(ref: SiteRef | null, urls: Map<string, string>): string | null {
   if (!ref?.table || ref.row_id == null) return null;
   return urls.get(refKey(ref)) ?? null;
 }

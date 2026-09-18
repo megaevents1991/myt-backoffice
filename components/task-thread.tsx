@@ -132,7 +132,14 @@ function activityText(activity: NonNullable<TaskCommentWithAuthor["activity"]>, 
   return from == null ? `${label}: ${to ?? "-"}` : `${label}: ${from} → ${to ?? "-"}`;
 }
 
-export function TaskThread({ taskId }: { taskId: string }) {
+export function TaskThread({
+  taskId,
+  onCommentAdded,
+}: {
+  taskId: string;
+  /** The inline thread on /tasks refreshes the row's comment count with it. */
+  onCommentAdded?: () => void;
+}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const isAdmin = !!user && (ADMIN_ROLES as readonly string[]).includes(user.role);
@@ -351,6 +358,7 @@ export function TaskThread({ taskId }: { taskId: string }) {
       setMentions([]);
       setPickedMentions([]);
       await load();
+      onCommentAdded?.();
     } finally {
       setSending(false);
     }
