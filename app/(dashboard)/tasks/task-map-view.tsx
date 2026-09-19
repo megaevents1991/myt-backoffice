@@ -239,9 +239,16 @@ function MapCard({
             aria-label={STATUS_LABEL[task.status]}
           />
           {task.comment_count > 0 && (
-            <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground">
+            <span
+              className={cn(
+                "inline-flex items-center gap-0.5 text-[11px] text-muted-foreground",
+                task.unread_count > 0 && "font-semibold text-primary",
+              )}
+              title={task.unread_count > 0 ? `${task.unread_count} תגובות חדשות שלא קראת` : undefined}
+            >
               <MessageSquare className="h-3 w-3" />
               {task.comment_count}
+              {task.unread_count > 0 && <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />}
             </span>
           )}
         </div>

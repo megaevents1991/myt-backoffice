@@ -106,4 +106,7 @@ export interface TaskWithNames extends Task {
   site_url: string | null;
   /** Comments on this task (activity rows excluded). Filled by listTasks. */
   comment_count: number;
+  /** Of those, the ones the VIEWER has not read - written by someone else since they last
+   *  opened the thread, on a task whose conversation they are part of (lib/tasks/thread-watch.ts). */
+  unread_count: number;
 }

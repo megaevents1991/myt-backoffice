@@ -27,6 +27,7 @@ import {
 import { validBoard, validChannel, validPhase, validProgress } from "@/lib/task-boards";
 import { diffActivities, recordActivity } from "@/lib/services/task-activity";
 import { editableFields, type EditableTaskField } from "@/lib/tasks/permissions";
+import { unreadCounts, type ThreadCommentRow } from "@/lib/tasks/thread-watch";
 
 // Typed against types/database.types.ts (npm run db:types).
 const db = supabaseTyped;
@@ -89,17 +90,18 @@ const TASKS_LIST_MAX = 5000;
 const COMMENT_COUNT_CHUNK = 200;
 const COMMENT_ROWS_MAX = 50_000;
 
-/** Comment counts in chunks of task ids (never one query per task). Each chunk pages its
- *  comment rows; a failed chunk is logged and leaves only ITS tasks at 0. */
-async function commentCounts(taskIds: string[]): Promise<Map<string, number>> {
-  const counts = new Map<string, number>();
+/** Every live comment of these tasks, in chunks of task ids (never one query per task) -
+ *  the rows behind both the comment count and the unread marker. Each chunk pages its
+ *  rows; a failed chunk is logged and leaves only ITS tasks without comments. */
+async function commentRows(taskIds: string[]): Promise<ThreadCommentRow[]> {
+  const out: ThreadCommentRow[] = [];
   for (let i = 0; i < taskIds.length; i += COMMENT_COUNT_CHUNK) {
     const chunk = taskIds.slice(i, i + COMMENT_COUNT_CHUNK);
-    const { rows, error, truncated } = await fetchPaged<{ id: string; task_id: string }>(
+    const { rows, error, truncated } = await fetchPaged<ThreadCommentRow & { id: string }>(
       () =>
         db
           .from("task_comments")
-          .select("id,task_id")
+          .select("id,task_id,author_id,created_at,mentions")
           .eq("kind", "comment")
           .is("deleted_at", null)
           .in("task_id", chunk)
@@ -107,19 +109,39 @@ async function commentCounts(taskIds: string[]): Promise<Map<string, number>> {
       COMMENT_ROWS_MAX,
     );
     if (error) {
-      console.error("tasks: comment counts failed for a chunk", JSON.stringify(error));
+      console.error("tasks: comment rows failed for a chunk", JSON.stringify(error));
       continue;
     }
-    if (truncated) console.error(`tasks: comment counts truncated at ${COMMENT_ROWS_MAX} rows for a chunk`);
-    for (const row of rows) {
-      counts.set(row.task_id, (counts.get(row.task_id) ?? 0) + 1);
-    }
+    if (truncated) console.error(`tasks: comment rows truncated at ${COMMENT_ROWS_MAX} rows for a chunk`);
+    out.push(...rows);
   }
-  return counts;
+  return out;
+}
+
+/** When this person last opened each thread. A failed read (the table not migrated yet
+ *  included) returns null = "unknown", which the caller shows as nothing unread - an empty
+ *  map would read as "never opened anything" and light the whole board up. */
+async function lastReadByTask(userId: string): Promise<Map<string, string> | null> {
+  // `id` is the task id: fetchPaged dedupes pages by `id`, and one person has one row per task.
+  const { rows, error, truncated } = await fetchPaged<{ id: string; last_read_at: string }>(
+    () =>
+      db
+        .from("task_reads")
+        .select("id:task_id,last_read_at")
+        .eq("user_id", userId)
+        .order("task_id", { ascending: true }),
+    TASKS_LIST_MAX,
+  );
+  if (error) {
+    console.error("tasks: last-read load failed", JSON.stringify(error));
+    return null;
+  }
+  if (truncated) console.error(`tasks: last-read rows truncated at ${TASKS_LIST_MAX}`);
+  return new Map(rows.map((row) => [row.id, row.last_read_at] as const));
 }
 
 /** Attach display names without a DB relation (no FK join over PostgREST needed). */
-async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
+async function withNames(rows: Task[], userId: string): Promise<TaskWithNames[]> {
   const ids = [
     ...new Set(
       rows
@@ -127,10 +149,16 @@ async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
         .filter((value): value is string => !!value),
     ),
   ];
-  const [countOf, siteUrls] = await Promise.all([
-    commentCounts(rows.map((row) => row.id)),
+  const [comments, lastReadAt, siteUrls] = await Promise.all([
+    commentRows(rows.map((row) => row.id)),
+    lastReadByTask(userId),
     siteUrlsForRefs(rows.map((row) => row.source_ref)),
   ]);
+  const countOf = new Map<string, number>();
+  for (const comment of comments) countOf.set(comment.task_id, (countOf.get(comment.task_id) ?? 0) + 1);
+  const unreadOf = lastReadAt
+    ? unreadCounts({ userId, tasks: rows, comments, lastReadAt })
+    : new Map<string, number>();
 
   if (ids.length === 0) {
     return rows.map((row) => ({
@@ -139,6 +167,7 @@ async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
       created_by_name: null,
       site_url: siteUrlOf(row.source_ref, siteUrls),
       comment_count: countOf.get(row.id) ?? 0,
+      unread_count: unreadOf.get(row.id) ?? 0,
     }));
   }
 
@@ -158,12 +187,13 @@ async function withNames(rows: Task[]): Promise<TaskWithNames[]> {
     created_by_name: row.created_by ? (nameOf.get(row.created_by) ?? null) : null,
     site_url: siteUrlOf(row.source_ref, siteUrls),
     comment_count: countOf.get(row.id) ?? 0,
+    unread_count: unreadOf.get(row.id) ?? 0,
   }));
 }
 
 /** Every staff member sees the whole board; editing stays scoped (see updateTask/setTaskStatus). */
 export async function listTasks(): Promise<TaskWithNames[]> {
-  await requireStaff();
+  const session = await requireStaff();
 
   // Everyone on staff sees the whole board (Dor, 16.09): the roadmap lives here
   // now, and a board people cannot see is not a board. Editing stays narrow -
@@ -183,7 +213,7 @@ export async function listTasks(): Promise<TaskWithNames[]> {
     return [];
   }
   if (truncated) console.error(`tasks: list truncated at ${TASKS_LIST_MAX} rows`);
-  return withNames(rows);
+  return withNames(rows, session.sub);
 }
 
 /** The dashboard widget: my open tasks, most urgent first. */

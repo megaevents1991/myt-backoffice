@@ -4,7 +4,7 @@
 // the system's own activity rows, in one chronological list (spec §3).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Paperclip } from "lucide-react";
+import { Paperclip, Pencil, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { mentionsStillInBody } from "@/lib/tasks/mentions";
@@ -22,6 +22,7 @@ import {
   editTaskComment,
   listStaffForMentions,
   listTaskComments,
+  markTaskRead,
   uploadTaskAttachment,
 } from "@/lib/actions/task-comment-actions";
 import { ADMIN_ROLES } from "@/types/auth.types";
@@ -135,10 +136,13 @@ function activityText(activity: NonNullable<TaskCommentWithAuthor["activity"]>, 
 export function TaskThread({
   taskId,
   onCommentAdded,
+  onRead,
 }: {
   taskId: string;
   /** The inline thread on /tasks refreshes the row's comment count with it. */
   onCommentAdded?: () => void;
+  /** The thread was shown, so the server stamped it read - the board drops its unread marker. */
+  onRead?: () => void;
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -158,6 +162,13 @@ export function TaskThread({
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // What was unread when the thread OPENED. Set once: every later load re-stamps the
+  // thread as read, and a "new" badge that vanished on the first refresh would be useless.
+  const [newSince, setNewSince] = useState<{ previous: string | null } | null>(null);
+  const openedRef = useRef(false);
+  const onReadRef = useRef(onRead);
+  onReadRef.current = onRead;
   const [lightbox, setLightbox] = useState<{ url: string; alt: string } | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -178,7 +189,13 @@ export function TaskThread({
   }
 
   const load = useCallback(async () => {
-    setComments(await listTaskComments(taskId));
+    const [rows, read] = await Promise.all([listTaskComments(taskId), markTaskRead(taskId)]);
+    setComments(rows);
+    if (!openedRef.current) {
+      openedRef.current = true;
+      if (read.ok) setNewSince({ previous: read.previous });
+    }
+    if (read.ok) onReadRef.current?.();
   }, [taskId]);
 
   useEffect(() => {
@@ -377,6 +394,7 @@ export function TaskThread({
   }
 
   async function removeComment(id: string) {
+    setConfirmDeleteId(null);
     const result = await deleteTaskComment(id);
     if (!result.ok) {
       toast({ title: result.error, variant: "destructive" });
@@ -417,9 +435,17 @@ export function TaskThread({
           const canEdit = isOwn && !row.deleted_at;
           const canDelete = !row.deleted_at && (isOwn || isAdmin);
           const isEditing = editingId === row.id;
+          const isNew =
+            !!newSince &&
+            !isOwn &&
+            !row.deleted_at &&
+            (newSince.previous === null || Date.parse(row.created_at) > Date.parse(newSince.previous));
 
           return (
-            <div key={row.id} className="flex gap-3 rounded-md border bg-card p-3">
+            <div
+              key={row.id}
+              className={cn("flex gap-3 rounded-md border bg-card p-3", isNew && "border-primary/60")}
+            >
               <Avatar className="h-8 w-8 shrink-0">
                 <AvatarFallback className="text-xs">{initials(row.author_name)}</AvatarFallback>
               </Avatar>
@@ -430,6 +456,68 @@ export function TaskThread({
                     {new Date(row.created_at).toLocaleString()}
                     {row.edited_at && " (נערך)"}
                   </time>
+                  {isNew && (
+                    <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground">
+                      חדש
+                    </span>
+                  )}
+                  {/* Icon buttons in the header, always visible - they used to be two grey
+                      words under the comment, easy to miss. */}
+                  {!isEditing && (canEdit || canDelete) && (
+                    <div className="ms-auto flex items-center gap-0.5 self-center">
+                      {confirmDeleteId === row.id ? (
+                        <>
+                          <span className="text-xs text-muted-foreground">למחוק?</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                            onClick={() => removeComment(row.id)}
+                          >
+                            מחק
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => setConfirmDeleteId(null)}
+                          >
+                            ביטול
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          {canEdit && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              title="עריכת התגובה"
+                              aria-label="עריכת התגובה"
+                              onClick={() => {
+                                setEditingId(row.id);
+                                setEditText(row.body ?? "");
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              title="מחיקת התגובה"
+                              aria-label="מחיקת התגובה"
+                              onClick={() => setConfirmDeleteId(row.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {row.deleted_at ? (
@@ -479,31 +567,6 @@ export function TaskThread({
                             />
                           </button>
                         ))}
-                      </div>
-                    )}
-                    {(canEdit || canDelete) && (
-                      <div className="flex gap-3 pt-0.5">
-                        {canEdit && (
-                          <button
-                            type="button"
-                            className="text-xs text-muted-foreground hover:text-foreground hover:underline"
-                            onClick={() => {
-                              setEditingId(row.id);
-                              setEditText(row.body ?? "");
-                            }}
-                          >
-                            עריכה
-                          </button>
-                        )}
-                        {canDelete && (
-                          <button
-                            type="button"
-                            className="text-xs text-muted-foreground hover:text-destructive hover:underline"
-                            onClick={() => removeComment(row.id)}
-                          >
-                            מחיקה
-                          </button>
-                        )}
                       </div>
                     )}
                   </>

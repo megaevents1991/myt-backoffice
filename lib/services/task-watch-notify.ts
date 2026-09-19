@@ -4,17 +4,19 @@
  *  fails the status change or the comment write.
  *
  *  Who hears what: a task marked DONE mails the person who created it; a new
- *  COMMENT mails the creator and the assignee. The person acting is never mailed
- *  about their own action, and someone the comment @mentions already gets the
- *  mention mail, so they are left out here. A rule-made task has no human creator -
- *  only its assignee can be reached. */
+ *  COMMENT mails everyone the conversation belongs to - creator, assignee, and whoever
+ *  wrote or was @mentioned in it before, so a REPLY reaches the person it answers
+ *  (Dor, 19.09; the rule is `commentMailTargets`, lib/tasks/thread-watch.ts). The mail
+ *  carries the comment itself. The person acting is never mailed about their own
+ *  action, and someone the comment @mentions already gets the mention mail, so they
+ *  are left out here. A rule-made task has no human creator - until someone writes on
+ *  it only its assignee can be reached. */
 import { appOrigin, sendMail } from "@/lib/email";
 import { supabaseTyped } from "@/lib/supabase-server";
-import { escapeHtml } from "@/lib/services/task-mention-notify";
+import { commentForMail, escapeHtml } from "@/lib/services/task-mention-notify";
+import { commentMailTargets, type ThreadCommentRow } from "@/lib/tasks/thread-watch";
 
 const db = supabaseTyped;
-
-const EXCERPT_MAX = 300;
 
 interface WatchedTask {
   id: string;
@@ -100,19 +102,21 @@ export async function notifyTaskDone(input: {
   }
 }
 
-/** A new comment - tell the creator and the assignee (not the author, not the mentioned). */
+/** A new comment - tell everyone in the conversation (not the author, not the mentioned). */
 export async function notifyTaskComment(input: {
   task: WatchedTask;
   authorId: string | null;
   body: string;
+  /** How many screenshots ride on the comment - the mail cannot show them, so it says so. */
+  attachmentCount: number;
   /** Already mailed by notifyTaskMention - one mail per comment per person. */
   mentionedIds: string[];
+  /** The task's comments BEFORE this one: whoever wrote or was mentioned there hears the reply. */
+  earlier: ThreadCommentRow[];
 }): Promise<void> {
   try {
     const { task, authorId, mentionedIds } = input;
-    const targetIds = [task.created_by, task.assignee_id].filter(
-      (id): id is string => !!id && id !== authorId && !mentionedIds.includes(id),
-    );
+    const targetIds = commentMailTargets({ task, earlier: input.earlier, authorId, mentionedIds });
     if (!targetIds.length) return;
 
     const profiles = await loadProfiles([...targetIds, ...(authorId ? [authorId] : [])]);
@@ -125,17 +129,22 @@ export async function notifyTaskComment(input: {
     }
     const authorName = nameOf(profiles.find((p) => p.id === authorId), "מישהו");
     const url = `${appOrigin()}/tasks?task=${task.id}`;
-    const text = input.body || "(צילום מסך)";
-    const excerpt = text.length > EXCERPT_MAX ? `${text.slice(0, EXCERPT_MAX)}…` : text;
+    const excerpt = commentForMail(input.body);
+    const shots =
+      input.attachmentCount > 0 && input.body.trim()
+        ? input.attachmentCount === 1
+          ? "צורף צילום מסך אחד - הוא מחכה במשימה."
+          : `צורפו ${input.attachmentCount} צילומי מסך - הם מחכים במשימה.`
+        : "";
 
     await mailEach("comment", task.id, targets, () => ({
       subject: `תגובה חדשה במשימה: ${task.title}`,
       html: `<div dir="rtl" style="font-family:Arial,sans-serif">
   <p>${escapeHtml(authorName)} הגיב/ה במשימה <strong>${escapeHtml(task.title)}</strong>:</p>
-  <blockquote style="border-right:3px solid #5BFF95;margin:0;padding:0 12px;color:#333;white-space:pre-line">${escapeHtml(excerpt)}</blockquote>
-  <p><a href="${url}">למשימה</a></p>
+  <blockquote style="border-right:3px solid #5BFF95;margin:0;padding:0 12px;color:#333;white-space:pre-line">${escapeHtml(excerpt)}</blockquote>${shots ? `\n  <p style="color:#666;font-size:13px">${shots}</p>` : ""}
+  <p><a href="${url}">למשימה ולתשובה</a></p>
 </div>`,
-      text: [`${authorName} הגיב/ה במשימה: ${task.title}`, excerpt, url].join("\n"),
+      text: [`${authorName} הגיב/ה במשימה: ${task.title}`, excerpt, shots, url].filter(Boolean).join("\n"),
     }));
   } catch (error) {
     console.error(

@@ -6,7 +6,15 @@ import { supabaseTyped } from "@/lib/supabase-server";
 
 const db = supabaseTyped;
 
-const EXCERPT_MAX = 300;
+/** The mail carries the comment itself, not a teaser (Dor, 19.09) - long enough for any
+ *  real comment, short enough that a pasted log does not become the mail. */
+const COMMENT_MAIL_MAX = 2000;
+
+/** The comment as the mails quote it. A comment with no words is a screenshot. */
+export function commentForMail(body: string): string {
+  const text = body.trim() || "(צילום מסך)";
+  return text.length > COMMENT_MAIL_MAX ? `${text.slice(0, COMMENT_MAIL_MAX)}…` : text;
+}
 
 export interface TaskMentionInput {
   taskId: string;
@@ -29,7 +37,7 @@ export async function notifyTaskMention(input: TaskMentionInput): Promise<void> 
     const authorName = author?.display_name || author?.email || "מישהו";
 
     const url = `${appOrigin()}/tasks?task=${input.taskId}`;
-    const excerpt = input.body.length > EXCERPT_MAX ? `${input.body.slice(0, EXCERPT_MAX)}…` : input.body;
+    const excerpt = commentForMail(input.body);
 
     const mailPromises = profiles
       .filter((p) => targets.includes(p.id))
@@ -40,7 +48,7 @@ export async function notifyTaskMention(input: TaskMentionInput): Promise<void> 
           subject: `אוזכרת במשימה: ${input.taskTitle}`,
           html: `<div dir="rtl" style="font-family:Arial,sans-serif">
   <p>${escapeHtml(authorName)} אזכר/ה אותך במשימה <strong>${escapeHtml(input.taskTitle)}</strong>:</p>
-  <blockquote style="border-right:3px solid #5BFF95;margin:0;padding:0 12px;color:#333">${escapeHtml(excerpt)}</blockquote>
+  <blockquote style="border-right:3px solid #5BFF95;margin:0;padding:0 12px;color:#333;white-space:pre-line">${escapeHtml(excerpt)}</blockquote>
   <p><a href="${url}">למשימה</a></p>
 </div>`,
           text: [`${authorName} אזכר/ה אותך במשימה: ${input.taskTitle}`, excerpt, url].join("\n"),

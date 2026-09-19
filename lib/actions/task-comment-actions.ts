@@ -16,6 +16,7 @@ import type {
   TaskCommentWithAuthor,
 } from "@/types/task-comment.types";
 import { isValidTaskAttachmentPath } from "@/lib/tasks/attachment-path";
+import type { ThreadCommentRow } from "@/lib/tasks/thread-watch";
 
 const db = supabaseTyped;
 
@@ -72,6 +73,41 @@ export async function listTaskComments(taskId: string): Promise<TaskCommentWithA
     mention_names: row.mentions.map((id) => nameOf.get(id) ?? "משתמש"),
     attachment_urls: row.deleted_at ? [] : row.attachments.map((a) => urlOf.get(a.path) ?? ""),
   }));
+}
+
+/** The thread was just shown to this person: stamp it read, and hand back the PREVIOUS
+ *  stamp so the thread can point at what is new since then (null = first time here).
+ *  `ok: false` = nothing was stamped (a failed read or write, the table not migrated yet),
+ *  so the caller keeps its marker and shows no "new" badges. Best-effort - a failure only
+ *  costs the marker, never the thread. An impersonating admin reads without stamping: the
+ *  unread state is the real person's, not the visitor's. */
+export async function markTaskRead(taskId: string): Promise<{ ok: boolean; previous: string | null }> {
+  const session = await requireStaff();
+
+  const { data: before, error: readError } = await db
+    .from("task_reads")
+    .select("last_read_at")
+    .eq("task_id", taskId)
+    .eq("user_id", session.sub)
+    .maybeSingle();
+  if (readError) {
+    console.error("task-comments: last-read lookup failed", JSON.stringify(readError));
+    return { ok: false, previous: null };
+  }
+  const previous = before?.last_read_at ?? null;
+  if (session.impersonator) return { ok: false, previous };
+
+  const { error } = await db
+    .from("task_reads")
+    .upsert(
+      { task_id: taskId, user_id: session.sub, last_read_at: new Date().toISOString() },
+      { onConflict: "task_id,user_id" },
+    );
+  if (error) {
+    console.error("task-comments: mark read failed", JSON.stringify(error));
+    return { ok: false, previous };
+  }
+  return { ok: true, previous };
 }
 
 /** One signed URL per path, valid an hour. Private bucket - never a public URL. */
@@ -214,8 +250,10 @@ export async function addTaskComment(input: {
 
   await logAudit({ action: "task.comment", entityType: "task", entityId: input.taskId, changes: { comment_id: data.id, mentions } });
 
-  // Mentioned people get the mention mail; the task's creator and assignee get the
-  // "new comment" mail - never both for one comment, never the author.
+  // Mentioned people get the mention mail; everyone else the conversation belongs to
+  // (creator, assignee, whoever wrote or was mentioned in it before - so a reply reaches
+  // the person it answers) gets the "new comment" mail - never both for one comment,
+  // never the author.
   const { data: task, error: taskError } = await db
     .from("tasks")
     .select("id,title,created_by,assignee_id")
@@ -232,6 +270,15 @@ export async function addTaskComment(input: {
     });
   }
   if (task) {
+    const { data: earlier, error: earlierError } = await db
+      .from("task_comments")
+      .select("task_id,author_id,created_at,mentions")
+      .eq("task_id", input.taskId)
+      .eq("kind", "comment")
+      .is("deleted_at", null)
+      .neq("id", data.id);
+    // Without the earlier comments the mail still reaches the creator and the assignee.
+    if (earlierError) console.error("task-comments: thread lookup failed", JSON.stringify(earlierError));
     await notifyTaskComment({
       task: {
         id: task.id,
@@ -241,7 +288,9 @@ export async function addTaskComment(input: {
       },
       authorId: session.sub,
       body,
+      attachmentCount: attachments.length,
       mentionedIds: mentions,
+      earlier: (earlier ?? []) as ThreadCommentRow[],
     });
   }
 

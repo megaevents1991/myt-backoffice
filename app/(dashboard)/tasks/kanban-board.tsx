@@ -251,9 +251,13 @@ function KanbanCard({
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{task.due_date ?? "—"}</span>
         {task.comment_count > 0 && (
-          <span className="inline-flex items-center gap-1">
+          <span
+            className={cn("inline-flex items-center gap-1", task.unread_count > 0 && "font-semibold text-primary")}
+            title={task.unread_count > 0 ? `${task.unread_count} תגובות חדשות שלא קראת` : undefined}
+          >
             <MessageSquare className="h-3 w-3" />
             {task.comment_count}
+            {task.unread_count > 0 && <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />}
           </span>
         )}
       </div>

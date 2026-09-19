@@ -4,6 +4,13 @@ import { randomUUID } from "crypto";
 import { diffActivities } from "../lib/services/task-activity";
 import { isValidTaskAttachmentPath } from "../lib/tasks/attachment-path";
 import { mentionsStillInBody } from "../lib/tasks/mentions";
+import {
+  commentMailTargets,
+  threadParticipants,
+  unreadCounts,
+  type ThreadCommentRow,
+  type ThreadTask,
+} from "../lib/tasks/thread-watch";
 
 let failed = 0;
 function check(name: string, got: unknown, want: unknown) {
@@ -68,6 +75,57 @@ check("Hebrew prefix collision",
 check("mixed English and Hebrew",
   mentionsStillInBody("@Tom (Ops) ו-@תומס", [{ id: "id1", label: "Tom (Ops)" }, { id: "id2", label: "תומס" }]),
   ["id1", "id2"]);
+
+// --- thread-watch: who a conversation belongs to, and what one person has not read ---
+const watched: ThreadTask = { id: "t1", created_by: "dor", assignee_id: "alon" };
+const at = (day: number) => `2026-09-${String(day).padStart(2, "0")}T10:00:00Z`;
+function comment(author: string | null, day: number, mentions: string[] = [], taskId = "t1"): ThreadCommentRow {
+  return { task_id: taskId, author_id: author, created_at: at(day), mentions };
+}
+
+check("participants: creator + assignee with no comments", [...threadParticipants(watched, [])].sort(), ["alon", "dor"]);
+check("participants: writers and the mentioned join",
+  [...threadParticipants(watched, [comment("tom", 1, ["rina"]), comment(null, 2)])].sort(),
+  ["alon", "dor", "rina", "tom"]);
+
+check("mail: first comment by the creator reaches the assignee only",
+  commentMailTargets({ task: watched, earlier: [], authorId: "dor", mentionedIds: [] }), ["alon"]);
+check("mail: a reply reaches an earlier writer who is neither creator nor assignee",
+  commentMailTargets({ task: watched, earlier: [comment("tom", 1)], authorId: "alon", mentionedIds: [] }).sort(),
+  ["dor", "tom"]);
+check("mail: someone this comment mentions is left to the mention mail",
+  commentMailTargets({ task: watched, earlier: [comment("tom", 1)], authorId: "alon", mentionedIds: ["tom"] }),
+  ["dor"]);
+check("mail: someone mentioned earlier is part of the thread",
+  commentMailTargets({ task: watched, earlier: [comment("dor", 1, ["rina"])], authorId: "dor", mentionedIds: [] }).sort(),
+  ["alon", "rina"]);
+check("mail: a rule-made task with no people reaches nobody on its first comment",
+  commentMailTargets({ task: { id: "t9", created_by: null, assignee_id: null }, earlier: [], authorId: "dor", mentionedIds: [] }),
+  []);
+
+const talk = [comment("alon", 1), comment("dor", 2), comment("alon", 3)];
+check("unread: never opened = every comment by someone else",
+  [...unreadCounts({ userId: "dor", tasks: [watched], comments: talk, lastReadAt: new Map() })], [["t1", 2]]);
+check("unread: only what came after the last read",
+  [...unreadCounts({ userId: "dor", tasks: [watched], comments: talk, lastReadAt: new Map([["t1", at(2)]]) })],
+  [["t1", 1]]);
+check("unread: all read = the task is left out",
+  [...unreadCounts({ userId: "dor", tasks: [watched], comments: talk, lastReadAt: new Map([["t1", at(4)]]) })], []);
+check("unread: my own comments never count",
+  [...unreadCounts({ userId: "alon", tasks: [watched], comments: [comment("alon", 1)], lastReadAt: new Map() })], []);
+check("unread: a task I am not part of stays quiet",
+  [...unreadCounts({ userId: "tom", tasks: [watched], comments: talk, lastReadAt: new Map() })], []);
+check("unread: a mention makes me part of it",
+  [...unreadCounts({ userId: "tom", tasks: [watched], comments: [comment("dor", 1, ["tom"])], lastReadAt: new Map() })],
+  [["t1", 1]]);
+check("unread: comments stay with their own task",
+  [...unreadCounts({
+    userId: "dor",
+    tasks: [watched, { id: "t2", created_by: "dor", assignee_id: null }],
+    comments: [comment("alon", 1), comment("alon", 1, [], "t2"), comment("alon", 2, [], "t2")],
+    lastReadAt: new Map([["t1", at(5)]]),
+  })],
+  [["t2", 2]]);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

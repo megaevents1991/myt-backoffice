@@ -83,6 +83,7 @@ export function TaskEditor({
   editable,
   onClose,
   onSaved,
+  onThreadRead,
 }: {
   state: TaskEditorState;
   isManager: boolean;
@@ -95,6 +96,8 @@ export function TaskEditor({
   editable?: Set<EditableTaskField>;
   onClose: () => void;
   onSaved: () => void;
+  /** The dialog's thread was shown (= stamped read) - /tasks drops that row's unread marker. */
+  onThreadRead?: (taskId: string) => void;
 }) {
   const { toast } = useToast();
   const { task, prefill } = state;
@@ -380,7 +383,7 @@ export function TaskEditor({
         {/* No thread on a brand-new task - there is no task id to hang comments off yet. */}
         {task && (
           <div className="mt-2 border-t pt-4">
-            <TaskThread taskId={task.id} />
+            <TaskThread taskId={task.id} onRead={() => onThreadRead?.(task.id)} />
           </div>
         )}
 

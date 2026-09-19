@@ -293,6 +293,17 @@ export function TasksClient() {
     (taskId: string) => setThreadTaskId((current) => (current === taskId ? null : taskId)),
     [],
   );
+  // A thread that was shown is read (the server stamped it) - drop the row's marker now
+  // instead of reloading the whole board for it.
+  const markThreadRead = useCallback(
+    (taskId: string) =>
+      setTasks((prev) =>
+        prev.some((task) => task.id === taskId && task.unread_count > 0)
+          ? prev.map((task) => (task.id === taskId ? { ...task, unread_count: 0 } : task))
+          : prev,
+      ),
+    [],
+  );
 
   const columns = useMemo<ColumnDef<TaskWithNames>[]>(
     () => [
@@ -409,14 +420,24 @@ export function TasksClient() {
             className={cn(
               "h-8 gap-1 px-2 text-xs",
               row.original.comment_count > 0 ? "text-foreground" : "text-muted-foreground",
+              row.original.unread_count > 0 && "font-semibold text-primary hover:text-primary",
               threadTaskId === row.original.id && "bg-muted",
             )}
             onClick={() => toggleThread(row.original.id)}
             aria-expanded={threadTaskId === row.original.id}
-            title="שיחה על המשימה"
+            title={
+              row.original.unread_count > 0
+                ? `${row.original.unread_count} תגובות חדשות שלא קראת`
+                : "שיחה על המשימה"
+            }
           >
             <MessageSquare className="h-3.5 w-3.5" />
             {row.original.comment_count > 0 ? row.original.comment_count : null}
+            {row.original.unread_count > 0 && (
+              <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] leading-none text-primary-foreground">
+                {row.original.unread_count === 1 ? "חדשה" : `${row.original.unread_count} חדשות`}
+              </span>
+            )}
           </Button>
         ),
       },
@@ -517,7 +538,11 @@ export function TasksClient() {
               {task.description && (
                 <p className="whitespace-pre-line text-sm text-muted-foreground">{task.description}</p>
               )}
-              <TaskThread taskId={task.id} onCommentAdded={reload} />
+              <TaskThread
+                taskId={task.id}
+                onCommentAdded={reload}
+                onRead={() => markThreadRead(task.id)}
+              />
             </div>
           )}
           searchColumn="title"
@@ -634,6 +659,7 @@ export function TasksClient() {
           !!user && editor.task?.assignee_id === user.id,
         )}
         onClose={() => setEditor({ open: false, task: null })}
+        onThreadRead={markThreadRead}
         onSaved={() => {
           setEditor({ open: false, task: null });
           reload();
