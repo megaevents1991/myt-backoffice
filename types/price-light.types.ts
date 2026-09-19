@@ -23,7 +23,7 @@ export type MatchMethod = (typeof MATCH_METHODS)[number];
 export const CRAWL_STATUSES = ["running", "ok", "partial", "blocked", "error", "skipped"] as const;
 export type CrawlStatus = (typeof CRAWL_STATUSES)[number];
 
-export type CrawlTrigger = "schedule" | "manual" | "dry_run";
+export type CrawlTrigger = "schedule" | "manual" | "dry_run" | "details";
 /** `our_price_moved` is RESERVED, not wired: re-matching the moment our own price changes would
  *  mean hooking `ticket-price-sync`, and the standing rule is that the light never edits the
  *  pricing code. Our price therefore drifts from the recorded `our_usd` between nightly runs;
@@ -467,6 +467,11 @@ export interface ComparisonOffer {
   return: string | null;
   nights: number | null;
   lines: OfferLines;
+  /** Display-only words under the ticket line (LiveTickets: the seat's price, how many categories
+   *  they list, and whether their cheapest seat is the same tier as ours). Never correctable. */
+  ticket_note: string | null;
+  /** How `usd` became `normalized_usd` - each like-for-like step with its dollars. Empty for us. */
+  adjustments: { key: string; usd: number }[];
   multi_match: boolean;
   seen_at: string | null;
   /** Ours, package only: the SITE card price (with the rule's margins) - `usd` is the "from" price. */

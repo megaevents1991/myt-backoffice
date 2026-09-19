@@ -87,6 +87,14 @@ assert.equal(listingNights({ nights: 5 }, { travel_depart: "2026-10-24", travel_
 assert.equal(listingNights({ nights: "unknown" }, { travel_depart: null, travel_return: null }), "unknown");
 assert.equal(listingNights(null, { travel_depart: "2026-08-01", travel_return: "2027-05-30" }), "unknown");  // a season, not a trip
 assert.equal(listingNights(null, { travel_depart: "2026-10-27", travel_return: "2026-10-24" }), "unknown");  // inverted
+// A stated count past the window ceiling is their typo (OnTour: return year 2027 -> 368 nights).
+assert.equal(listingNights({ nights: 368 }, { travel_depart: "2026-11-04", travel_return: "2027-11-07" }), "unknown");
+assert.equal(listingNights({ nights: 368 }, { travel_depart: "2026-11-04", travel_return: "2026-11-07" }), 3); // the window still answers
+{
+  const typo = normalize(1900, { ...UNKNOWN_ATTRS, nights: 368 }, { nights: 3, nightRateUsd: 150 });
+  assert.equal(typo.normalizedUsd, 1900, "an impossible duration moves no money");
+  assert.equal(typo.partial, true);
+}
 
 // nights doubt: unknown on either side costs one whole night; a wide gap costs half a night each
 assert.equal(nightsUncertaintyUsd("unknown", 4, 138), 138);

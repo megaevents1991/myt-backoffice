@@ -113,6 +113,10 @@ function CompetitorCard({
     row.nextDueAt && !isTable ? `הבא: ${new Date(row.nextDueAt).toLocaleString("he-IL")}` : null,
     row.circuitOpen ? "בלם פתוח: שלוש ריצות כושלות ברצף, ממתין 24 שעות" : null,
     row.last?.note ?? null,
+    row.details
+      ? `תכולה (טיסה / מלון / כרטיס): נקראו ${row.details.opened} מתוך ${row.details.matched} מודעות מותאמות - עד 10 דפים ביום` +
+        (row.details.lastAt ? `, מעבר אחרון ${new Date(row.details.lastAt).toLocaleString("he-IL")}` : "")
+      : null,
     // The parser report: many fixes of one field on one site is a crawler bug, not an AI lesson.
     fixes ? `תיקוני צוות ב-${CORRECTION_REPORT_DAYS} הימים האחרונים: ${fixes.total} (${fixesByField})` : null,
   ].filter(Boolean).join("\n");
@@ -153,6 +157,11 @@ function CompetitorCard({
                 {relativeTime(lastAt)}
                 {fixes && <span className="ms-1 text-sky-700 dark:text-sky-300">· ✎ {fixes.total}</span>}
               </div>
+              {row.details && row.details.matched > 0 && (
+                <div className={cn("text-[11px] tabular-nums", row.details.opened < row.details.matched ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground")}>
+                  תכולה {row.details.opened}/{row.details.matched}
+                </div>
+              )}
             </button>
             {canTrigger && (
               <Button

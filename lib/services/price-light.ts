@@ -307,8 +307,11 @@ export function listingNights(
   attrs: Partial<ExtractedAttrs> | null | undefined,
   window: { travel_depart?: string | null; travel_return?: string | null } | null | undefined,
 ): number | "unknown" {
+  // A stated night count past MAX_WINDOW_DAYS is a typo on THEIR page, not a trip (OnTour printed
+  // "חזרה 07.11.2027" for a 2026 show: 368 nights, a normalized price of -$27,596 and a red light
+  // off it, 2026-09-19). Not believable -> fall through to the window, which has the same ceiling.
   const known = attrs?.nights;
-  if (typeof known === "number" && Number.isFinite(known) && known > 0) return known;
+  if (typeof known === "number" && Number.isFinite(known) && known > 0 && known <= MAX_WINDOW_DAYS) return known;
   const depart = window?.travel_depart, ret = window?.travel_return;
   if (!depart || !ret) return "unknown";
   const span = (Date.parse(`${ret}T00:00:00Z`) - Date.parse(`${depart}T00:00:00Z`)) / 86_400_000;
@@ -414,7 +417,8 @@ export function normalize(
     const usd = (3 - a.hotel_stars) * STAR_STEP_USD * scaleNights;
     if (usd !== 0) adjustments.push({ key: "stars", usd, label: `${a.hotel_stars}★ ${usd > 0 ? "+" : "−"}$${Math.abs(usd)}` });
   } else partial = true;
-  if (known(a.nights) && ours.nights != null) {
+  // Same ceiling as `listingNights`: an impossible duration is an unknown one, never an adjustment.
+  if (known(a.nights) && a.nights <= MAX_WINDOW_DAYS && ours.nights != null) {
     const usd = (ours.nights - a.nights) * nightRate;
     // English, like the other five labels: these are engine strings, and the Hebrew duration
     // line the staff actually read is built in the UI (`nightsLine`). One mixed-language label
@@ -433,7 +437,7 @@ export function normalize(
   else partial = true;
 
   const normalizedUsd = Math.round(priceUsd + adjustments.reduce((s, x) => s + x.usd, 0));
-  const theirNights = known(a.nights) ? a.nights : "unknown";
+  const theirNights = known(a.nights) && a.nights <= MAX_WINDOW_DAYS ? a.nights : "unknown";
   return {
     normalizedUsd,
     adjustments,

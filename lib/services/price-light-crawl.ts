@@ -369,6 +369,129 @@ async function listingIdsWorthDetail(competitor: CompetitorKey, ids: number[]): 
   return [...fresh, ...refresh];
 }
 
+/**
+ * Opens detail pages for the listings worth it and writes what they say - the second half of a
+ * catalog crawl, and the WHOLE of a details pass (`runDetailPass`). Never throws: a failure picking
+ * targets is recorded on the summary and the run carries on without enrichment.
+ */
+async function enrichDetails(
+  scraper: CompetitorScraper, c: CrawlContext, ids: number[], summary: CrawlSummary,
+  start: number, budget: number, nowIso: string,
+): Promise<void> {
+  const competitor = scraper.key;
+  const detail = scraper.detail;
+  if (!detail || ids.length === 0) return;
+  // The catalog is already written at this point, so a failure picking enrichment targets must
+  // not throw away a good run - record it on the summary and skip enrichment for tonight. The
+  // listings themselves are fine; only their attrs stay unknown until the next crawl.
+  let want: number[];
+  try {
+    want = await listingIdsWorthDetail(competitor, ids);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`price-light-crawl: ${competitor} detail targets failed`, msg);
+    const note = `detail targets unavailable (${msg.slice(0, 120)}) - catalog written, enrichment skipped`;
+    summary.note = summary.note ? `${summary.note} | ${note}` : note;
+    return;
+  }
+  // Explicit select, not "*" - only what scraper.detail() reads and what the write-back
+  // below merges into. `currency` and `event_date` are part of that set: the detail page
+  // may price in a different currency than the catalog card (Golasso prices in the
+  // DESTINATION's currency), and `event_date` is the anchor a scraper sanity-checks a
+  // parsed travel window against (review 2026-09-11, C1 + I3). The row type below is the
+  // same `DetailInput` the scraper contract takes, so the two can't drift apart.
+  // Chunked like every other `.in(...)` here - a whole queue of ids in one URL filter is the
+  // over-long query string IN_CHUNK exists to avoid.
+  const fetched: DetailRow[] = [];
+  for (const chunk of chunkIds(want)) {
+    const { data, error } = await db.from("competitor_listings")
+      .select("id,scope,url,attrs,detail_text,travel_depart,travel_return,price_from,price_usd,currency,event_date")
+      .in("id", chunk);
+    if (error) { console.error("price-light-crawl: detail rows read failed", JSON.stringify(error)); continue; }
+    fetched.push(...((data ?? []) as DetailRow[]));
+  }
+  // PostgREST answers in its own order, so re-impose the queue's: the priority computed in
+  // `listingIdsWorthDetail` is the whole point, and a budget cutoff must bite the tail.
+  const byId = new Map(fetched.map((r) => [r.id, r]));
+  const rows = want.map((id) => byId.get(id)).filter((r): r is DetailRow => r != null);
+  // Golasso/LiveEvents fetch their detail pages rather than navigating the browser to them,
+  // so the honest pacing is the same-site GET pause (8-20s), not the 30-90s page-load one.
+  const detailPause = (scraper.detailMode ?? scraper.mode) === "fetch" ? c.pauseShort : c.pause;
+  const total = rows.length;
+  // One page, many listings: LiveEvents stores a listing per SHOW DATE and they all link to the
+  // same /package/ page (six Shakira nights, one URL). Fetched per listing, the 10-page cap was
+  // spent re-reading one page while 36 of 42 matched listings stayed blank (2026-09-18). A URL
+  // already read this run is reused - no request, no pause, no slot off the cap.
+  const readThisRun = new Map<string, Partial<Listing>>();
+  // A URL whose fetch FAILED this run: its other listings are left alone (no second request, and
+  // above all no write - a shared `{}` would stamp every one of them "opened, nothing there"
+  // and none would ever be queued again). They stay null and come back next run.
+  const failedThisRun = new Set<string>();
+  let capped = false;
+  for (const row of rows) {
+    if (failedThisRun.has(row.url)) continue;
+    if (Date.now() - start > budget) {
+      // A details cutoff is NOT `partial`: the catalog itself completed cleanly, and marking
+      // it partial would drown the "partial-coverage crawls" view in healthy runs (I2d).
+      const cutNote = `details cut at budget (${summary.detailPages} of ${total} queued enriched)`;
+      summary.note = summary.note ? `${summary.note} | ${cutNote}` : cutNote;
+      break;
+    }
+    let read = readThisRun.get(row.url);
+    if (!read && summary.detailPages >= DETAIL_PAGES_PER_RUN) {
+      // `continue`, not `break`: a later row may sit on a URL this run already read.
+      if (!capped) {
+        const capNote = `details capped at ${DETAIL_PAGES_PER_RUN} per run (${total} queued)`;
+        summary.note = summary.note ? `${summary.note} | ${capNote}` : capNote;
+        capped = true;
+      }
+      continue;
+    }
+    try {
+      if (!read) {
+        await detailPause();
+        try {
+          read = await detail.call(scraper, row, c);
+        } catch (e) {
+          // A page that is GONE (404/410) is an answer, not a failure: LiveEvents keeps package URLs
+          // in its board after the package page is deleted (three of nine pages on 2026-09-19), and
+          // a throw left those listings null - queued first, every run, for ever, each costing a
+          // paced request. Read as "opened, nothing there" they get the "" stamp and drop out.
+          if (!/HTTP (404|410)/.test(e instanceof Error ? e.message : String(e))) throw e;
+          c.log(`detail page gone: ${row.url}`);
+          read = {};
+        }
+        summary.detailPages += 1;
+        readThisRun.set(row.url, read);
+      }
+      // The page prints ONE travel window; it belongs only to the listing whose date it holds.
+      const extra: Partial<Listing> = windowFits(read, row.event_date)
+        ? read
+        : { ...read, travel_depart: undefined, travel_return: undefined };
+      const nextCurrency = extra.currency ?? row.currency;
+      // A currency-only move is a real price move: 789 GBP -> 789 EUR is a different price.
+      const priceMoved = extra.price_from != null &&
+        (Number(extra.price_from) !== Number(row.price_from) || nextCurrency !== row.currency);
+      const { error } = await db.from("competitor_listings").update({
+        attrs: extra.attrs ?? row.attrs,
+        // `?? ""` marks the page as OPENED even when it carried nothing (LiveEvents' /show/
+        // tier pages parse to `{}`). Null means "never fetched" and re-queues the listing next
+        // run; an empty string means "fetched, nothing there" and lets the queue move on. Every
+        // reader of detail_text tests truthiness, so "" behaves exactly like no text.
+        detail_text: extra.detail_text ?? row.detail_text ?? "",
+        travel_depart: extra.travel_depart ?? row.travel_depart, travel_return: extra.travel_return ?? row.travel_return,
+        price_from: extra.price_from ?? row.price_from, price_usd: extra.price_usd ?? row.price_usd,
+        currency: nextCurrency,
+        ...(priceMoved ? { last_changed_at: nowIso } : {}),
+      }).eq("id", row.id);
+      if (error) console.error("price-light-crawl: detail write failed", JSON.stringify(error));
+    } catch (e) {
+      failedThisRun.add(row.url);
+      console.error(`price-light-crawl: detail ${row.url} failed`, e instanceof Error ? e.message : e);
+    }
+  }
+}
+
 export async function runCrawl(
   competitor: CompetitorKey,
   trigger: CrawlTrigger,
@@ -528,105 +651,7 @@ export async function runCrawl(
       }
     }
     if (dryRun || !scraper.detail || ids.length === 0) return;
-    // The catalog is already written at this point, so a failure picking enrichment targets must
-    // not throw away a good run - record it on the summary and skip enrichment for tonight. The
-    // listings themselves are fine; only their attrs stay unknown until the next crawl.
-    let want: number[];
-    try {
-      want = await listingIdsWorthDetail(competitor, ids);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error(`price-light-crawl: ${competitor} detail targets failed`, msg);
-      const note = `detail targets unavailable (${msg.slice(0, 120)}) - catalog written, enrichment skipped`;
-      summary.note = summary.note ? `${summary.note} | ${note}` : note;
-      return;
-    }
-    // Explicit select, not "*" - only what scraper.detail() reads and what the write-back
-    // below merges into. `currency` and `event_date` are part of that set: the detail page
-    // may price in a different currency than the catalog card (Golasso prices in the
-    // DESTINATION's currency), and `event_date` is the anchor a scraper sanity-checks a
-    // parsed travel window against (review 2026-09-11, C1 + I3). The row type below is the
-    // same `DetailInput` the scraper contract takes, so the two can't drift apart.
-    // Chunked like every other `.in(...)` here - a whole queue of ids in one URL filter is the
-    // over-long query string IN_CHUNK exists to avoid.
-    const fetched: DetailRow[] = [];
-    for (const chunk of chunkIds(want)) {
-      const { data, error } = await db.from("competitor_listings")
-        .select("id,scope,url,attrs,detail_text,travel_depart,travel_return,price_from,price_usd,currency,event_date")
-        .in("id", chunk);
-      if (error) { console.error("price-light-crawl: detail rows read failed", JSON.stringify(error)); continue; }
-      fetched.push(...((data ?? []) as DetailRow[]));
-    }
-    // PostgREST answers in its own order, so re-impose the queue's: the priority computed in
-    // `listingIdsWorthDetail` is the whole point, and a budget cutoff must bite the tail.
-    const byId = new Map(fetched.map((r) => [r.id, r]));
-    const rows = want.map((id) => byId.get(id)).filter((r): r is DetailRow => r != null);
-    // Golasso/LiveEvents fetch their detail pages rather than navigating the browser to them,
-    // so the honest pacing is the same-site GET pause (8-20s), not the 30-90s page-load one.
-    const detailPause = (scraper.detailMode ?? scraper.mode) === "fetch" ? c.pauseShort : c.pause;
-    const total = rows.length;
-    // One page, many listings: LiveEvents stores a listing per SHOW DATE and they all link to the
-    // same /package/ page (six Shakira nights, one URL). Fetched per listing, the 10-page cap was
-    // spent re-reading one page while 36 of 42 matched listings stayed blank (2026-09-18). A URL
-    // already read this run is reused - no request, no pause, no slot off the cap.
-    const readThisRun = new Map<string, Partial<Listing>>();
-    // A URL whose fetch FAILED this run: its other listings are left alone (no second request, and
-    // above all no write - a shared `{}` would stamp every one of them "opened, nothing there"
-    // and none would ever be queued again). They stay null and come back next run.
-    const failedThisRun = new Set<string>();
-    let capped = false;
-    for (const row of rows) {
-      if (failedThisRun.has(row.url)) continue;
-      if (Date.now() - start > budget) {
-        // A details cutoff is NOT `partial`: the catalog itself completed cleanly, and marking
-        // it partial would drown the "partial-coverage crawls" view in healthy runs (I2d).
-        const cutNote = `details cut at budget (${summary.detailPages} of ${total} queued enriched)`;
-        summary.note = summary.note ? `${summary.note} | ${cutNote}` : cutNote;
-        break;
-      }
-      let read = readThisRun.get(row.url);
-      if (!read && summary.detailPages >= DETAIL_PAGES_PER_RUN) {
-        // `continue`, not `break`: a later row may sit on a URL this run already read.
-        if (!capped) {
-          const capNote = `details capped at ${DETAIL_PAGES_PER_RUN} per run (${total} queued)`;
-          summary.note = summary.note ? `${summary.note} | ${capNote}` : capNote;
-          capped = true;
-        }
-        continue;
-      }
-      try {
-        if (!read) {
-          await detailPause();
-          read = await scraper.detail(row, c);
-          summary.detailPages += 1;
-          readThisRun.set(row.url, read);
-        }
-        // The page prints ONE travel window; it belongs only to the listing whose date it holds.
-        const extra: Partial<Listing> = windowFits(read, row.event_date)
-          ? read
-          : { ...read, travel_depart: undefined, travel_return: undefined };
-        const nextCurrency = extra.currency ?? row.currency;
-        // A currency-only move is a real price move: 789 GBP -> 789 EUR is a different price.
-        const priceMoved = extra.price_from != null &&
-          (Number(extra.price_from) !== Number(row.price_from) || nextCurrency !== row.currency);
-        const { error } = await db.from("competitor_listings").update({
-          attrs: extra.attrs ?? row.attrs,
-          // `?? ""` marks the page as OPENED even when it carried nothing (LiveEvents' /show/
-          // tier pages parse to `{}`). Null means "never fetched" and re-queues the listing next
-          // run; an empty string means "fetched, nothing there" and lets the queue move on. Every
-          // reader of detail_text tests truthiness, so "" behaves exactly like no text.
-          detail_text: extra.detail_text ?? row.detail_text ?? "",
-          travel_depart: extra.travel_depart ?? row.travel_depart, travel_return: extra.travel_return ?? row.travel_return,
-          price_from: extra.price_from ?? row.price_from, price_usd: extra.price_usd ?? row.price_usd,
-          currency: nextCurrency,
-          ...(priceMoved ? { last_changed_at: nowIso } : {}),
-        }).eq("id", row.id);
-        if (error) console.error("price-light-crawl: detail write failed", JSON.stringify(error));
-      } catch (e) {
-        failedThisRun.add(row.url);
-        console.error(`price-light-crawl: detail ${row.url} failed`, e instanceof Error ? e.message : e);
-      }
-    }
+    await enrichDetails(scraper, c, ids, summary, start, budget, nowIso);
   };
 
   try {
@@ -658,6 +683,100 @@ export async function runCrawl(
     if (!dryRun && (summary.status === "blocked" || (await circuitOpen(competitor)))) await alert(competitor, `${summary.status}: ${summary.note}`);
   }
   if (!dryRun && summary.runId) await finishRun(summary);
+  return finish(summary, start);
+}
+
+/** Hours between two details passes of one site. With DETAIL_PAGES_PER_RUN that is ten pages a
+ *  day - the same gentle rate as before, just not held back behind the weekly catalog crawl. */
+export const DETAIL_PASS_HOURS = 24;
+/** A listing counts as "still on their site" for a details pass when the catalog saw it this recently. */
+const DETAIL_PASS_SEEN_DAYS = 14;
+
+/** ISO start of this competitor's newest visit of ANY kind (catalog or details), or null. */
+async function lastTouchAt(competitor: CompetitorKey): Promise<string | null> {
+  const { data, error } = await db.from("competitor_crawl_runs").select("started_at")
+    .eq("competitor", competitor).or("status.in.(ok,partial,blocked,error),trigger.eq.details")
+    .order("started_at", { ascending: false }).limit(1).maybeSingle();
+  if (error) { console.error("price-light-crawl: last touch read failed", JSON.stringify(error)); throw new Error(`last touch ${competitor}: ${error.message}`); }
+  return (data as { started_at: string } | null)?.started_at ?? null;
+}
+
+/**
+ * The competitor whose details pass is due: nobody opened one of its pages for DETAIL_PASS_HOURS
+ * (a catalog crawl counts - it enriches too), longest-waiting first. `where` says which machine is
+ * asking: Vercel never touches a local-only site and the local script touches nothing else.
+ */
+export async function pickDueDetailPass(where: "vercel" | "local", now: Date = new Date()): Promise<CompetitorKey | null> {
+  let best: { key: CompetitorKey; ageMs: number } | null = null;
+  for (const key of ACTIVE_COMPETITORS) {
+    const scraper = scraperFor(key);
+    if (scraper.mode === "table" || !scraper.detail) continue;
+    if ((scraper.crawlFrom ?? "vercel") !== where) continue;
+    const last = await lastTouchAt(key);
+    const ageMs = last ? now.getTime() - Date.parse(last) : Number.POSITIVE_INFINITY;
+    if (ageMs < DETAIL_PASS_HOURS * 3_600_000) continue;
+    if (await circuitOpen(key)) continue;
+    if (!best || ageMs > best.ageMs) best = { key, ageMs };
+  }
+  return best?.key ?? null;
+}
+
+/**
+ * A details-only pass (2026-09-19): opens up to DETAIL_PAGES_PER_RUN detail pages of listings the
+ * catalog already holds, WITHOUT re-crawling the catalog. Measured the day it was written: the
+ * parsers read every page they were given (Golasso 16/16, LiveEvents 2/2), but only 2 of 42 matched
+ * LiveEvents listings and 0 of 25 ISSTA ones had ever had their page opened - enrichment rode on
+ * the weekly catalog crawl, ten pages a visit, so a backlog of forty took over a month and the
+ * comparison sheet read "לא פורסם" in the meantime. Same queue order, same pacing, same per-run cap.
+ *
+ * The run row is `trigger: "details"` and finishes as `skipped`: every reader of the table (the
+ * catalog interval, the circuit, `hadGoodCrawl`, "next due") already ignores `skipped`, which is
+ * exactly right - the CATALOG was not visited, so this must never postpone or vouch for one.
+ * While in flight the row is `running`, so it holds the one-site-at-a-time lock like any crawl.
+ */
+export async function runDetailPass(competitor: CompetitorKey, opts: { dryRun?: boolean; budgetMs?: number } = {}): Promise<CrawlSummary> {
+  const start = Date.now();
+  const dryRun = !!opts.dryRun;
+  const summary: CrawlSummary = { competitor, status: "running", pages: 0, listings: 0, prevListings: null, changed: 0, detailPages: 0, failed: 0, ms: 0, note: null, runId: null };
+  const skip = (note: string): CrawlSummary => { summary.status = "skipped"; summary.note = note; return finish(summary, start); };
+
+  let scraper: CompetitorScraper;
+  try { scraper = scraperFor(competitor); } catch { return skip(`no scraper registered for ${competitor}`); }
+  if (!scraper.detail || scraper.mode === "table") return skip("no detail pages on this competitor");
+  if (!scrapeEnabled()) return skip("PRICE_LIGHT_SCRAPE=off");
+  if (scraper.crawlFrom === "local" && process.env.VERCEL) return skip("detail pages open only from a local (Israeli) machine");
+  if (await isCrawlLocked()) return skip("locked: another crawl is running");
+
+  try {
+    const { rows, error } = await fetchPaged<{ id: number }>(
+      () => db.from("competitor_listings").select("id").eq("competitor", competitor)
+        .gte("last_seen_at", new Date(Date.now() - DETAIL_PASS_SEEN_DAYS * 86_400_000).toISOString()).order("id", { ascending: true }),
+      LISTINGS_LOAD_MAX_ROWS,
+    );
+    if (error) throw new Error(`listings read: ${error.message}`);
+    const ids = rows.map((r) => r.id);
+    if (ids.length === 0) return skip("no recently seen listings");
+    if (dryRun) return skip(`dry run: ${ids.length} listings in scope`);
+
+    const mode = (scraper.detailMode ?? scraper.mode) === "browser" ? browserMode() : "fetch";
+    summary.runId = await insertRun(summary, "details", mode);
+    const boundedFetch: typeof fetch = (input, init) =>
+      fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(PAGE_TIMEOUT_MS) });
+    const pass = (page: CrawlContext["page"]) => enrichDetails(scraper, {
+      page, fetch: boundedFetch, pause: randomPause, pauseShort: shortPause,
+      log: (m) => console.log(`[price-light-details:${competitor}] ${m}`), dryRun,
+    }, ids, summary, start, opts.budgetMs ?? CRAWL_BUDGET_MS, new Date().toISOString());
+    if (mode === "fetch") await pass(null); else await withBrowser(pass);
+    const done = `details pass: ${summary.detailPages} pages opened`;
+    summary.note = summary.note ? `${done} | ${summary.note}` : done;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`price-light-crawl: ${competitor} details pass failed`, msg);
+    summary.note = `details pass failed: ${msg.slice(0, 300)}`;
+  }
+  summary.status = "skipped";
+  if (summary.runId) await finishRun(summary);
+  if (summary.detailPages > 0) invalidatePriceLight("rows");
   return finish(summary, start);
 }
 

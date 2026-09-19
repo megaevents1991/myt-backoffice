@@ -27,6 +27,7 @@ import {
   ourPackageUsd, ourTicketUsd, PRICE_DROP_MIN_USD, PRICE_DROP_SHOW_DAYS, totalMarkupUsd,
 } from "@/lib/services/price-light";
 import { formatOfferLines, parseOfferDetail } from "@/lib/services/offer-detail";
+import { compareSeats, seatTierLabel, type PricedSeat } from "@/lib/services/seat-tier";
 import { priceAdviceFacts } from "@/lib/services/price-advice";
 import { refreshAlternatives } from "@/lib/services/price-alternatives";
 import {
@@ -158,7 +159,7 @@ export async function listEventMatches(eventId: number): Promise<{ matches: Matc
 
 // ---- side-by-side comparison (partner, 2026-09-14) ---------------------------------------------
 type NewestMatchRow = Pick<MatchRow, "id" | "competitor" | "scope" | "status" | "listing_id" | "raw_price" | "raw_currency" |
-  "price_usd" | "normalized_usd" | "diff_usd" | "light" | "attrs" | "note" | "created_at">;
+  "price_usd" | "normalized_usd" | "adjustments" | "diff_usd" | "light" | "attrs" | "note" | "created_at">;
 type ComparisonListing = Pick<ListingRow, "id" | "external_key" | "title" | "url" | "event_date" | "travel_depart" | "travel_return" |
   "attrs" | "detail_text" | "last_seen_at" | "price_from" | "currency" | "price_usd">;
 
@@ -168,16 +169,42 @@ const nightsBetweenDays = (a: string | null, b: string | null): number | null =>
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
+// live_events.currency: 1=USD, 2=EUR, 3=GBP, 4=ILS (types/live-events.types.ts)
+const LIVE_CURRENCY_SIGN: Record<number, string> = { 1: "$", 2: "€", 3: "£", 4: "₪" };
+
+/** Every priced seat LiveTickets lists for one live event, cheapest first, and the currency sign. */
+async function liveTicketsSeats(externalKey: string): Promise<{ seats: PricedSeat[]; sign: string }> {
+  const liveEventId = Number(externalKey);
+  if (!Number.isInteger(liveEventId)) return { seats: [], sign: "" };
+  const { data, error } = await db.from("live_events").select("ticket_categories,currency").eq("event_id", liveEventId).maybeSingle();
+  if (error) console.error("liveTicketsSeats: live_events failed", JSON.stringify(error));
+  const seats = ((data?.ticket_categories ?? []) as { brt: number; title: string | null; hebTitle?: string | null }[])
+    .map((c) => ({ title: (c.title ?? "").trim(), titleHe: (c.hebTitle ?? "").trim() || null, price: Number(c.brt) }))
+    .filter((s) => Number.isFinite(s.price) && s.price > 0)
+    .sort((a, b) => a.price - b.price);
+  return { seats, sign: LIVE_CURRENCY_SIGN[Number(data?.currency)] ?? "" };
+}
+
 /** The seat LiveTickets' shelf price buys: the cheapest `brt` category of that live event. */
 async function liveTicketsSeatFor(externalKey: string): Promise<string | null> {
-  const liveEventId = Number(externalKey);
-  if (!Number.isInteger(liveEventId)) return null;
-  const { data, error } = await db.from("live_events").select("ticket_categories").eq("event_id", liveEventId).maybeSingle();
-  if (error) console.error("liveTicketsSeatFor: live_events failed", JSON.stringify(error));
-  const categories = ((data?.ticket_categories ?? []) as { brt: number; title: string | null }[])
-    .filter((c) => Number.isFinite(Number(c.brt)) && Number(c.brt) > 0)
-    .sort((a, b) => Number(a.brt) - Number(b.brt));
-  return categories[0]?.title?.trim() || null;
+  return (await liveTicketsSeats(externalKey)).seats[0]?.title || null;
+}
+
+/**
+ * What stands behind LiveTickets' one price, in words (2026-09-19): which seat it is, out of how
+ * many, and - the part a bare "cheapest vs cheapest" hides - whether that seat is the same TIER as
+ * our cheapest ticket, with their cheapest seat in our tier beside it when it is not. Display
+ * only: the light still compares cheapest with cheapest.
+ */
+function liveTicketsSeatNote(seats: PricedSeat[], sign: string, ourCategory: string | null): string | null {
+  const c = compareSeats(ourCategory, seats);
+  if (!c) return null;
+  const price = (s: PricedSeat) => `${sign}${s.price.toLocaleString("en-US")}`;
+  const parts = [`${price(c.cheapest)} · הזול מתוך ${c.count} ${c.count === 1 ? "קטגוריה" : "קטגוריות"}`];
+  if (c.cheapest.titleHe && c.cheapest.titleHe !== c.cheapest.title) parts.push(c.cheapest.titleHe);
+  if (c.mismatch && c.ourTier && c.theirTier) parts.push(`מושב שונה משלנו: שלנו ${seatTierLabel(c.ourTier)}, שלהם ${seatTierLabel(c.theirTier)}`);
+  if (c.sameTier) parts.push(`באותה רמה כמו שלנו: ${c.sameTier.title} ${price(c.sameTier)}`);
+  return parts.join(" · ");
 }
 
 /**
@@ -192,7 +219,7 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
   const kind = kindOf(event, await tagSlugsForEvent(eventId));
 
   const { data: matchData, error: matchError } = await db.from("competitor_matches")
-    .select("id,competitor,scope,status,listing_id,raw_price,raw_currency,price_usd,normalized_usd,diff_usd,light,attrs,note,created_at")
+    .select("id,competitor,scope,status,listing_id,raw_price,raw_currency,price_usd,normalized_usd,adjustments,diff_usd,light,attrs,note,created_at")
     .eq("event_id", eventId).order("created_at", { ascending: false }).limit(60);
   if (matchError) console.error("buildComparison: matches failed", JSON.stringify(matchError));
   const newest = new Map<string, NewestMatchRow>();
@@ -226,10 +253,12 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
   // text on an attrs-less listing would send every LiveTickets match to the AI for "extraction").
   const liveTicketsMatch = newest.get("ticket:livetickets");
   const liveTicketsListing = liveTicketsMatch?.listing_id != null ? listings.get(liveTicketsMatch.listing_id) ?? null : null;
-  const liveTicketsSeat = liveTicketsListing ? await liveTicketsSeatFor(liveTicketsListing.external_key) : null;
+  const liveSeats = liveTicketsListing ? await liveTicketsSeats(liveTicketsListing.external_key) : null;
+  const liveTicketsSeat = liveSeats?.seats[0]?.title || null;
 
   const ours = event.light_detail?.ours ?? null;
   const ticket = cheapestAvailableTicket(event);
+  const liveTicketsNote = liveSeats ? liveTicketsSeatNote(liveSeats.seats, liveSeats.sign, ticket?.category ?? null) : null;
   const ticketName = [ticket?.category, ticket?.description].map((s) => (s ?? "").trim()).filter(Boolean).join(" · ") || null;
   // Never described yet -> the rule's own wording, so the column is never blank.
   const ruleLines = ourOfferLines(event);
@@ -254,7 +283,7 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
       depart: scope === "package" ? event.def_date_depart ?? null : null,
       return: scope === "package" ? event.def_date_return ?? null : null,
       nights: scope === "package" ? ourNights(event) : null,
-      lines: oursLines, multi_match: false, seen_at: ours?.at ?? null,
+      lines: oursLines, ticket_note: null, adjustments: [], multi_match: false, seen_at: ours?.at ?? null,
       site_usd: scope === "package" ? ourPackageUsd(event) : null,
       markup_usd: scope === "package" ? totalMarkupUsd(event) || null : null,
       // Our side is the pricing rule's own answer - never hand-edited ("פרט את שלנו עכשיו" refreshes it).
@@ -295,6 +324,10 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
         nights: typeof attrs.nights === "number" ? attrs.nights : nightsBetweenDays(listing?.travel_depart ?? null, listing?.travel_return ?? null),
         // A ticket listing is the ticket - flight/hotel lines there would be noise.
         lines: scope === "ticket" ? { flight: null, hotel: null, ticket: lines.ticket } : lines,
+        ticket_note: competitor === "livetickets" ? liveTicketsNote : null,
+        // The steps behind the normalized price, so nobody reads "$801" as a bad conversion of
+        // €899 (a staff note, 18.09): published $1,043, then each like-for-like step.
+        adjustments: (m?.adjustments ?? []).map((a) => ({ key: a.key, usd: a.usd })),
         multi_match: parsed?.multiMatch ?? false,
         seen_at: listing?.last_seen_at ?? m?.created_at ?? null,
         site_usd: null,
@@ -944,6 +977,10 @@ export interface CrawlPanelRow {
   nextDueAt: string | null;
   circuitOpen: boolean;
   totalListings: number;
+  /** How many of the listings an event is matched to have had their detail page opened - what the
+   *  comparison sheet can actually describe (flight / hotel / ticket). Null on a table competitor.
+   *  `lastAt` = the newest details pass (runDetailPass), which refills this between catalog crawls. */
+  details: { matched: number; opened: number; lastAt: string | null } | null;
   /** Staff corrections on this competitor's listings in the last CORRECTION_REPORT_DAYS - the
    *  parser report: many fixes of one field on one site is a crawler bug, not a lesson for the AI. */
   corrections: { total: number; byField: Record<string, number> } | null;
@@ -1285,13 +1322,38 @@ function rowPricing(event: ListedEvent): PriceLightRow["pricing"] {
 }
 
 /** One competitor's panel row - four small reads, issued together. */
+/** Matched listings of one competitor and how many of them carry a detail page's text. */
+async function detailCoverage(competitor: CompetitorKey): Promise<CrawlPanelRow["details"]> {
+  const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const { rows, error } = await fetchPaged<{ id: number; listing_id: number | null }>(
+    () => db.from("competitor_matches").select("id,listing_id").eq("competitor", competitor).eq("status", "found")
+      .gte("created_at", since).order("id", { ascending: true }),
+    20_000,
+  );
+  if (error) { console.error("listCrawlRuns: matched listings failed", JSON.stringify(error)); return null; }
+  const ids = [...new Set(rows.map((r) => r.listing_id).filter((id): id is number => id != null))];
+  let opened = 0;
+  for (let i = 0; i < ids.length; i += 200) {
+    const { count, error: countError } = await db.from("competitor_listings").select("id", { count: "exact", head: true })
+      .in("id", ids.slice(i, i + 200)).not("detail_text", "is", null).neq("detail_text", "");
+    if (countError) { console.error("listCrawlRuns: detail count failed", JSON.stringify(countError)); return null; }
+    opened += count ?? 0;
+  }
+  const { data: pass, error: passError } = await db.from("competitor_crawl_runs").select("started_at")
+    .eq("competitor", competitor).eq("trigger", "details").order("started_at", { ascending: false }).limit(1).maybeSingle();
+  if (passError) console.error("listCrawlRuns: details pass read failed", JSON.stringify(passError));
+  return { matched: ids.length, opened, lastAt: (pass as { started_at: string } | null)?.started_at ?? null };
+}
+
 async function crawlPanelRow(competitor: CompetitorKey): Promise<Omit<CrawlPanelRow, "corrections">> {
   const scraper = scraperFor(competitor);
-  const [lastRes, dueRes, countRes, circuit] = await Promise.all([
+  const [lastRes, dueRes, countRes, circuit, details] = await Promise.all([
+    // A details pass (trigger "details") is not a catalog crawl - it has its own line on the card.
     db
       .from("competitor_crawl_runs")
       .select("status,started_at,finished_at,listings,note")
       .eq("competitor", competitor)
+      .neq("trigger", "details")
       .order("started_at", { ascending: false })
       .limit(1),
     // "Next due" is based on the newest ok/partial/blocked run, ignoring skipped/running (and a
@@ -1309,6 +1371,7 @@ async function crawlPanelRow(competitor: CompetitorKey): Promise<Omit<CrawlPanel
       .select("id", { count: "exact", head: true })
       .eq("competitor", competitor),
     circuitOpen(competitor),
+    scraper.mode === "table" || !scraper.detail ? Promise.resolve(null) : detailCoverage(competitor),
   ]);
   if (lastRes.error) console.error("listCrawlRuns: last run failed", JSON.stringify(lastRes.error));
   if (dueRes.error) console.error("listCrawlRuns: due-basis run failed", JSON.stringify(dueRes.error));
@@ -1326,6 +1389,7 @@ async function crawlPanelRow(competitor: CompetitorKey): Promise<Omit<CrawlPanel
     nextDueAt,
     circuitOpen: circuit,
     totalListings: countRes.count ?? 0,
+    details,
   };
 }
 

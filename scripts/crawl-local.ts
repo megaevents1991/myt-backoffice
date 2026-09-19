@@ -6,7 +6,7 @@
  * upserts, the circuit and the panel on /price-light all read a local run exactly like a
  * Vercel one - Vercel's own tick never touches a local-only site.
  *
- *   npx tsx --env-file=.env.local scripts/crawl-local.ts issta [--force] [--dry-run]
+ *   npx tsx --env-file=.env.local scripts/crawl-local.ts issta [--force] [--details] [--dry-run]
  *
  * Meant to be run DAILY by Windows Task Scheduler (a machine that is off some days): the
  * script itself decides whether the site is due - it only crawls when the newest real run
@@ -14,12 +14,15 @@
  * (168h on ISSTA) - and exits 0 with "not due" otherwise. That is what turns "every day the
  * machine is on" into "once a week, catching up after off days" without a stateful trigger.
  * `--force` skips the due check (a manual refresh), `--dry-run` browses but writes nothing.
+ * `--details` opens detail pages only (runDetailPass - ten pages, no catalog crawl), now, for any
+ * competitor whose detail pages are plain GETs; the daily task does the same by itself on the
+ * days the catalog is not due.
  *
  * Exit code: 0 on ok/partial/not-due/skipped, 1 on blocked/error or a crash, so the task's
  * "last run result" column in Task Scheduler is meaningful. Set up by scripts/crawl-local-task.ps1.
  */
 import { ACTIVE_COMPETITORS, scraperFor } from "@/lib/services/competitor-scrapers";
-import { runCrawl } from "@/lib/services/price-light-crawl";
+import { DETAIL_PASS_HOURS, pickDueDetailPass, runCrawl, runDetailPass } from "@/lib/services/price-light-crawl";
 import { supabase } from "@/lib/supabase-server";
 import type { CompetitorKey } from "@/types/price-light.types";
 
@@ -64,11 +67,23 @@ async function main(): Promise<number> {
   }
   const scraper = scraperFor(competitor);
 
+  if (args.includes("--details")) {
+    log(`${competitor}: details pass, forced`);
+    const pass = await runDetailPass(competitor, { dryRun });
+    log(`${competitor}: details pass - ${pass.detailPages} pages, ${Math.round(pass.ms / 1000)}s${pass.note ? ` | ${pass.note}` : ""}`);
+    return 0;
+  }
+
   if (!force) {
     const last = await lastVisitAt(competitor);
     const ageH = last ? (Date.now() - Date.parse(last)) / 3_600_000 : Number.POSITIVE_INFINITY;
     if (ageH < scraper.intervalHours) {
       log(`${competitor}: not due - last visit ${ageH.toFixed(1)}h ago, interval ${scraper.intervalHours}h`);
+      // The catalog waits its week; the detail pages do not have to (2026-09-19). Ten pages, at
+      // most once per DETAIL_PASS_HOURS, so the daily task fills the comparison's contents in days.
+      if (dryRun || (await pickDueDetailPass("local")) !== competitor) return 0;
+      const pass = await runDetailPass(competitor);
+      log(`${competitor}: details pass (every ${DETAIL_PASS_HOURS}h) - ${pass.detailPages} pages, ${Math.round(pass.ms / 1000)}s${pass.note ? ` | ${pass.note}` : ""}`);
       return 0;
     }
     log(`${competitor}: due - last visit ${last ? `${ageH.toFixed(1)}h ago` : "never"}`);

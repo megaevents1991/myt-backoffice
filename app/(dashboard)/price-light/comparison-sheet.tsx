@@ -84,13 +84,19 @@ function Mixed({ text }: { text: string }) {
 }
 
 /** One component of one offer. Ours sits in the row above theirs, so the eye compares down a column. */
-function Part({ text }: { text: string | null }) {
+function Part({ text, note = null }: { text: string | null; note?: string | null }) {
   return (
     <td className={cn("border-s px-3 py-2 align-top leading-relaxed", !text && "text-muted-foreground")}>
       {text ? <Mixed text={text} /> : "לא פורסם"}
+      {note && <div className="mt-1 text-muted-foreground"><Mixed text={note} /></div>}
     </td>
   );
 }
+
+// The like-for-like steps between the published price and the normalized one, in the reader's words.
+const ADJUSTMENT_HE: Record<string, string> = {
+  bag: "כולל מזוודה", connection: "טיסת קונקשן", stars: "כוכבי מלון", nights: "הפרש לילות", breakfast: "כולל ארוחת בוקר", transfers: "כולל העברות",
+};
 
 function OfferRow({ offer, scope, onEdit }: { offer: ComparisonOffer; scope: Scope; onEdit: () => void }) {
   const ours = offer.who === "ours";
@@ -150,13 +156,23 @@ function OfferRow({ offer, scope, onEdit }: { offer: ComparisonOffer; scope: Sco
         <>
           {pkg && <Part text={offer.lines.flight} />}
           {pkg && <Part text={offer.lines.hotel} />}
-          <Part text={offer.lines.ticket} />
+          <Part text={offer.lines.ticket} note={offer.ticket_note} />
         </>
       )}
 
       <td className="w-36 border-s px-3 py-2 align-top tabular-nums">
         {offer.normalized_usd != null && <div className="text-sm font-semibold">${offer.normalized_usd.toLocaleString("en-US")}</div>}
         {published && offer.raw_currency !== "USD" && <div className="text-muted-foreground">({published})</div>}
+        {/* Why the big number is not the published one (staff read $801 as a bad conversion of
+            €899, 18.09): the published price in dollars, then every like-for-like step. */}
+        {offer.adjustments.length > 0 && offer.usd != null && (
+          <div className="mt-1 space-y-0.5 text-[11px] leading-snug text-muted-foreground">
+            <div>פורסם <span dir="ltr">${Math.round(offer.usd).toLocaleString("en-US")}</span>, מנורמל להשוואה:</div>
+            {offer.adjustments.map((a) => (
+              <div key={a.key}>{ADJUSTMENT_HE[a.key] ?? a.key} <span dir="ltr">{signedUsd(a.usd)}</span></div>
+            ))}
+          </div>
+        )}
         {offer.light && offer.diff_usd != null && (
           <span dir="ltr" className={cn("mt-1 inline-block rounded-full px-1.5 py-0.5 font-medium", PILL[offer.light])} title="המחיר שלנו פחות שלהם, מנורמל">
             {signedUsd(offer.diff_usd)}

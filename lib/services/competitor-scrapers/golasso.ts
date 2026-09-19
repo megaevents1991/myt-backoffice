@@ -339,9 +339,13 @@ export const golasso: CompetitorScraper = {
   },
   async detail(listing: DetailInput, ctx: CrawlContext): Promise<Partial<Listing>> {
     if (listing.scope !== "package" || !/\/pdetails\/\d+/.test(listing.url)) return {};
+    // A failed fetch THROWS (the `detail()` contract, same as LiveEvents and ISSTA): `{}` means
+    // "read, nothing on it" and `runCrawl` stamps the listing as opened for good - so answering
+    // `{}` to a timeout or a 5xx, as this did until 2026-09-19, would have closed a listing's
+    // contents for ever over one bad minute. A 404/410 is read as "gone" by the loop itself.
+    const res = await ctx.fetch(listing.url, { headers: stealthHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status} on ${listing.url}`);
     try {
-      const res = await ctx.fetch(listing.url, { headers: stealthHeaders() });
-      if (!res.ok) { ctx.log(`golasso: detail ${listing.url} -> HTTP ${res.status}`); return {}; }
       const partial = parseDetail(await res.text(), listing);
       if (partial.price_from != null && partial.currency != null) {
         const { toUsd } = await import("./livetickets-api.ts");
