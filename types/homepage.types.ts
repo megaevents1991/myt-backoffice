@@ -21,8 +21,8 @@ export const HOMEPAGE_SECTION_KEYS = [
 ] as const;
 export type HomepageSectionKey = (typeof HOMEPAGE_SECTION_KEYS)[number];
 
-/** Blocks staff add from the board. Text / destinations / gallery are phase 2. */
-export const HOMEPAGE_BLOCK_TYPES = ["event_slider", "banner"] as const;
+/** Blocks staff add from the board. Phase 1: slider + banner; phase 2 (2026-09-19): text, destinations, gallery. */
+export const HOMEPAGE_BLOCK_TYPES = ["event_slider", "banner", "text", "destinations", "gallery"] as const;
 export type HomepageBlockType = (typeof HOMEPAGE_BLOCK_TYPES)[number];
 export type HomepageSectionType = "builtin" | HomepageBlockType;
 
@@ -106,6 +106,21 @@ export const BLOCK_META: Record<HomepageBlockType, { label: string; labelEn: str
     labelEn: "Banners",
     rule: "עד 3 באנרים: תמונה, קישור וכותרת. הכותרת מוצגת על התמונה ומשמשת גם כטקסט חלופי.",
   },
+  text: {
+    label: "טקסט",
+    labelEn: "Text",
+    rule: "כותרת (לא חובה) ופסקאות טקסט. שורה ריקה מפרידה בין פסקאות. בלי טקסט הבלוק לא נשמר.",
+  },
+  destinations: {
+    label: "סליידר יעדים",
+    labelEn: "Destinations slider",
+    rule: "שורת אריחים של קטגוריות (יעדים, ליגות...). הקטגוריות שנבחרו ראשונות; אם נבחרה קטגוריית אב - אחריהן כל הילדים הפעילים שלה. כל אריח מוביל לעמוד הקטגוריה.",
+  },
+  gallery: {
+    label: "גלריית תמונות",
+    labelEn: "Image gallery",
+    rule: "עד 12 תמונות בשורה נגללת. לכל תמונה תיאור קצר (לא חובה) שמשמש גם כטקסט חלופי.",
+  },
 };
 
 /* ---------- block configs (jsonb - `type` aliases, assignable to Json) ---------- */
@@ -114,7 +129,25 @@ export const BLOCK_META: Record<HomepageBlockType, { label: string; labelEn: str
 export type EventSliderConfig = { category_id: number | null };
 export type BannerItem = { image_url: string; link_url: string | null; title: string | null };
 export type BannerConfig = { banners: BannerItem[] };
-export type HomepageSectionConfig = EventSliderConfig | BannerConfig | Record<string, never>;
+/** body = plain text; a blank line separates paragraphs. */
+export type TextConfig = { body: string };
+/** category_ids = the tiles staff placed (board order); parent_id = its active children follow them. */
+export type DestinationsConfig = { category_ids: number[]; parent_id: number | null };
+export type GalleryImage = { image_url: string; alt: string | null };
+export type GalleryConfig = { images: GalleryImage[] };
+/**
+ * The one builtin with a config: events staff removed from the AUTOMATIC part
+ * of "החדשים ביותר". A pinned event is never hidden - pinning un-hides it.
+ */
+export type NewestConfig = { hidden_event_ids: number[] };
+export type HomepageSectionConfig =
+  | EventSliderConfig
+  | BannerConfig
+  | TextConfig
+  | DestinationsConfig
+  | GalleryConfig
+  | NewestConfig
+  | Record<string, never>;
 
 export interface HomepageSectionRow {
   /** A builtin key, or `blk_` + 8 hex chars for a block. */

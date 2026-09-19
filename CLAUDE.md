@@ -107,6 +107,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > the migration runs `getHomepageLayout` falls back to the old columns and returns
 > `blocksReady: false` (no pencil, no "+ Add block"). Block types + config shapes
 > are mirrored in main's `lib/homepageLayout.ts`; main skips a type it does not know.
+> **Phase 2 + Remove in "החדשים" (2026-09-19, staff doc tab "סליידרים הום פייג").** Three
+> more block types on the same columns, no migration: `text` (`{ body }` - plain text,
+> `TEXT_MAX` 1200, a blank line = a new paragraph; main prints paragraphs, never HTML),
+> `destinations` (`{ category_ids, parent_id }` - the chosen category tiles first, then the
+> parent's active children; main resolves them in `resolveBlockTiles` and draws the
+> football hub's `HubTilesRow`, each tile linking to its `/c/` path; `MAX_DESTINATIONS` 20
+> chosen, 24 tiles shown) and `gallery` (`{ images: [{ image_url, alt }] }`, 1-`MAX_GALLERY`
+> 12, same our-Storage-only rule as a banner; one scrolling row on main). **`newest` is the
+> one BUILTIN with a config:** `{ hidden_event_ids }` = events staff removed from the
+> AUTOMATIC part of the row with the auto card's **Remove** (part of Save, unlike "המבוקשים"
+> where Remove drops the Prioritized flag at once). `parseBuiltinConfig` is lenient (a
+> builtin can never fail a save), caps at `MAX_HIDDEN_EVENTS` 100 keeping the newest
+> removals; pinning a hidden event un-hides it, and main never filters a PIN - only the
+> automatic fill (`layout.hiddenEventIds.newest`). Removed events show as restore chips
+> under the strip. The Pin button and a legend line under every strip with auto cards say
+> what Pin / Remove do (Alon asked "מה עושה ה-PIN?"). Deploy order does not matter: an
+> older main skips block types it does not know and ignores the builtin config.
+>
 > **Event thumbnails on the board** (`lib/homepage/event-art.ts`, pure, same selftest):
 > most events carry no image of their own, so a card borrows its artist's / HOME team's
 > picture the way the site does (main `lib/events/fallbackImage.ts`; names matched by

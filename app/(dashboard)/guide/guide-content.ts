@@ -557,6 +557,14 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "כרטיסי 'auto' מקווקווים — מה שהאתר מציג עכשיו אחרי המוצמדים, כך ששורה אף פעם לא ריקה: אירועי Prioritized במבוקשים, ההעלאות האחרונות בחדשים. Pin מצמיד למקום; במבוקשים, Remove מוריד את סימון ה-Prioritized מיד (לא חלק מ-Save). כרטיסי auto דהויים לא נכנסים לשורת ה-12.",
       ),
       t(
+        "What Pin does - it moves a dashed 'auto' card to the front of the row, into a fixed place you control (drag or arrows). An unpinned card is shown only while the automatic rule keeps choosing it; a pinned one stays until you remove it.",
+        "מה עושה Pin — מעביר כרטיס 'auto' מקווקו לתחילת השורה, למקום קבוע שאתם שולטים בו (גרירה או חצים). כרטיס לא מוצמד מוצג רק כל עוד החוקיות האוטומטית בוחרת בו; מוצמד נשאר עד שמסירים אותו.",
+      ),
+      t(
+        "Remove in Newest - drops that event from the automatic part of this row only (the event stays everywhere else on the site). It is part of Save. Removed events are listed under the row as chips - click one to bring it back. Pinning a removed event brings it back too.",
+        "Remove בחדשים ביותר — מוריד את האירוע מהחלק האוטומטי של השורה הזו בלבד (האירוע נשאר באתר בכל מקום אחר). חלק מ-Save. האירועים שהוסרו מופיעים מתחת לשורה כצ'יפים — לחיצה מחזירה. גם Pin לאירוע שהוסר מחזיר אותו.",
+      ),
+      t(
         "Add in Newest lists only the last 100 packages uploaded to the site, newest first - not every future event.",
         "Add בחדשים ביותר מציג רק את 100 החבילות האחרונות שעלו לאתר, מהחדשה לישנה — לא את כל האירועים העתידיים.",
       ),
@@ -569,8 +577,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "שינוי כותרת — העיפרון ליד הכותרת. מה שמקלידים הוא הכותרת באתר; מרוקנים את השדה והכותרת הרגילה חוזרת. להירו אין כותרת באתר ולכן אין עיפרון.",
       ),
       t(
-        "Add block - the small '+ Add block' line between any two sections (up to 12 blocks). Event slider: one row of up to 12 cards - the events you pin come first, and if you choose a category its events follow, soonest first; with no pins and no category the block is not shown. Banners: 1-3 images uploaded here, each with an optional link (/c/... or https://...) and an optional title printed on the image. A block is dragged, hidden and titled like any section; the trash deletes it on Save.",
-        "הוספת בלוק — השורה הקטנה '+ Add block' בין כל שני סקשנים (עד 12 בלוקים). סליידר אירועים: שורה אחת של עד 12 כרטיסים — האירועים שמצמידים ראשונים, ואם בוחרים קטגוריה האירועים שלה ממשיכים אחריהם, הקרוב ביותר קודם; בלי פריטים ובלי קטגוריה הבלוק לא מוצג. באנרים: 1-3 תמונות שמעלים כאן, לכל אחת קישור לא חובה (/c/... או https://...) וכותרת לא חובה שמודפסת על התמונה. בלוק נגרר, מוסתר ומקבל כותרת כמו כל סקשן; הפח מוחק אותו ב-Save.",
+        "Add block - the small '+ Add block' line between any two sections (up to 12 blocks). Event slider: one row of up to 12 cards - the events you pin come first, and if you choose a category its events follow, soonest first; with no pins and no category the block is not shown. Banners: 1-3 images uploaded here, each with an optional link (/c/... or https://...) and an optional title printed on the image. Text: plain paragraphs (a blank line starts a new one) under the block's title - no HTML, no links. Destinations slider: a row of category tiles, each leading to its /c/ page - the categories you choose come first, and if you pick a parent category all its active children follow. Image gallery: up to 12 images in one scrolling row, each with an optional caption. A block is dragged, hidden and titled like any section; the trash deletes it on Save.",
+        "הוספת בלוק — השורה הקטנה '+ Add block' בין כל שני סקשנים (עד 12 בלוקים). סליידר אירועים: שורה אחת של עד 12 כרטיסים — האירועים שמצמידים ראשונים, ואם בוחרים קטגוריה האירועים שלה ממשיכים אחריהם, הקרוב ביותר קודם; בלי פריטים ובלי קטגוריה הבלוק לא מוצג. באנרים: 1-3 תמונות שמעלים כאן, לכל אחת קישור לא חובה (/c/... או https://...) וכותרת לא חובה שמודפסת על התמונה. טקסט: פסקאות טקסט פשוט (שורה ריקה = פסקה חדשה) מתחת לכותרת הבלוק — בלי HTML ובלי קישורים. סליידר יעדים: שורת אריחים של קטגוריות, כל אריח מוביל לעמוד ה-/c/ שלו — הקטגוריות שבוחרים ראשונות, ואם בוחרים קטגוריית אב כל הילדים הפעילים שלה ממשיכים אחריהן. גלריית תמונות: עד 12 תמונות בשורה נגללת, לכל אחת תיאור לא חובה. בלוק נגרר, מוסתר ומקבל כותרת כמו כל סקשן; הפח מוחק אותו ב-Save.",
       ),
       t(
         "Saving refreshes the live site by itself (allow a minute). The old Templates → Homepage Order screens and the person 'Featured order' field are gone - this board replaces them.",

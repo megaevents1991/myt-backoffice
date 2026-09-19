@@ -41,12 +41,22 @@ import {
   saveHomepageLayout,
   setEventPrioritized,
 } from "@/lib/actions/homepage-actions";
-import { MAX_BLOCKS, TITLE_MAX, isBuiltinKey, itemKindsFor, newBlockKey } from "@/lib/homepage/blocks";
+import {
+  MAX_BLOCKS,
+  MAX_HIDDEN_EVENTS,
+  TITLE_MAX,
+  hiddenEventIds,
+  isBuiltinKey,
+  itemKindsFor,
+  newBlockKey,
+} from "@/lib/homepage/blocks";
 import {
   BLOCK_META,
   SECTION_META,
   type BannerConfig,
+  type DestinationsConfig,
   type EventSliderConfig,
+  type GalleryConfig,
   type HomepageBlockType,
   type HomepageCandidate,
   type HomepageItemKind,
@@ -54,8 +64,16 @@ import {
   type HomepageLayout,
   type HomepageSectionConfig,
   type HomepageSectionRow,
+  type TextConfig,
 } from "@/types/homepage.types";
-import { AddBlockButton, BannerEditor, SliderSettings } from "./homepage-blocks";
+import {
+  AddBlockButton,
+  BannerEditor,
+  DestinationsEditor,
+  GalleryEditor,
+  SliderSettings,
+  TextEditor,
+} from "./homepage-blocks";
 
 const KIND_LABEL: Record<HomepageItemKind, string> = {
   event: "Event",
@@ -106,8 +124,20 @@ const describe = (s: HomepageSectionRow) => {
   };
 };
 
-const emptyConfig = (type: HomepageBlockType): HomepageSectionConfig =>
-  type === "event_slider" ? { category_id: null } : { banners: [] };
+const emptyConfig = (type: HomepageBlockType): HomepageSectionConfig => {
+  switch (type) {
+    case "event_slider":
+      return { category_id: null };
+    case "banner":
+      return { banners: [] };
+    case "text":
+      return { body: "" };
+    case "destinations":
+      return { category_ids: [], parent_id: null };
+    case "gallery":
+      return { images: [] };
+  }
+};
 
 /**
  * The dummy homepage: every section as a block in site order, each carousel
@@ -193,7 +223,26 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
     setItems((prev) => ({ ...prev, [key]: (prev[key] ?? []).filter((_, i) => i !== idx) }));
     setDirty(true);
   };
+  // "החדשים ביותר" only: events staff removed from the AUTOMATIC part of the
+  // row. Lives in the section's config, so it is part of Save / Discard.
+  const newestHidden = useMemo(
+    () => hiddenEventIds(sections.find((s) => s.key === "newest")?.config),
+    [sections],
+  );
+  const setNewestHidden = (ids: number[]) =>
+    setConfig("newest", ids.length ? { hidden_event_ids: ids.slice(-MAX_HIDDEN_EVENTS) } : {});
+  const hideFromNewest = (c: HomepageCandidate) => {
+    const id = Number(c.ref_id);
+    if (!Number.isInteger(id) || newestHidden.includes(id)) return;
+    setNewestHidden([...newestHidden, id]);
+  };
+  const restoreToNewest = (id: number) => setNewestHidden(newestHidden.filter((x) => x !== id));
+
   const addItem = (key: string, c: HomepageCandidate) => {
+    // Pinning wins over hiding - a pinned event is shown whatever the hidden list says.
+    if (key === "newest" && newestHidden.includes(Number(c.ref_id))) {
+      restoreToNewest(Number(c.ref_id));
+    }
     setItems((prev) => {
       const list = prev[key] ?? [];
       if (list.some((it) => it.kind === c.kind && it.ref_id === c.ref_id)) return prev;
@@ -241,13 +290,16 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
       ...prioritized.slice(0, Math.max(0, ROW_MAX - wantedPinned.size)).map((c) => c.ref_id),
     ]);
     const newestPinned = pinnedIn("newest");
+    const hidden = new Set(newestHidden.map(String));
     const newest = events
-      .filter((c) => !newestPinned.has(c.ref_id) && !wantedShown.has(c.ref_id))
+      .filter(
+        (c) => !newestPinned.has(c.ref_id) && !wantedShown.has(c.ref_id) && !hidden.has(c.ref_id),
+      )
       .sort((a, b) => createdAtMs(b) - createdAtMs(a))
       .slice(0, Math.max(0, ROW_MAX - newestPinned.size));
     const auto: Record<string, HomepageCandidate[]> = { most_wanted: prioritized, newest };
     return auto;
-  }, [initial.candidates, items, unprioritized]);
+  }, [initial.candidates, items, unprioritized, newestHidden]);
 
   const reset = () => {
     setSections(initial.sections);
@@ -475,6 +527,22 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                       config={s.config as BannerConfig}
                       onChange={(config) => setConfig(s.key, config)}
                     />
+                  ) : s.type === "text" ? (
+                    <TextEditor
+                      config={s.config as TextConfig}
+                      onChange={(config) => setConfig(s.key, config)}
+                    />
+                  ) : s.type === "destinations" ? (
+                    <DestinationsEditor
+                      config={s.config as DestinationsConfig}
+                      categories={initial.categories}
+                      onChange={(config) => setConfig(s.key, config)}
+                    />
+                  ) : s.type === "gallery" ? (
+                    <GalleryEditor
+                      config={s.config as GalleryConfig}
+                      onChange={(config) => setConfig(s.key, config)}
+                    />
                   ) : kinds.length > 0 ? (
                     <ItemStrip
                       sectionKey={s.key}
@@ -497,6 +565,9 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                       onRemove={(idx) => removeItem(s.key, idx)}
                       onAdd={(c) => addItem(s.key, c)}
                       onUnprioritize={s.key === "most_wanted" ? unprioritize : undefined}
+                      onHide={s.key === "newest" ? hideFromNewest : undefined}
+                      hiddenIds={s.key === "newest" ? newestHidden : undefined}
+                      onRestore={s.key === "newest" ? restoreToNewest : undefined}
                     />
                   ) : (
                     <div className="px-3 py-3 text-xs text-muted-foreground" dir="rtl">
@@ -570,6 +641,9 @@ function ItemStrip({
   onRemove,
   onAdd,
   onUnprioritize,
+  onHide,
+  hiddenIds,
+  onRestore,
 }: {
   sectionKey: string;
   /** English name of the section, for the Add button's accessible label. */
@@ -589,6 +663,10 @@ function ItemStrip({
   onAdd: (c: HomepageCandidate) => void;
   /** Only the section whose auto rule IS the Prioritized flag passes this. */
   onUnprioritize?: (c: HomepageCandidate) => void;
+  /** Only "החדשים ביותר": drop an event from the automatic part of the row (part of Save). */
+  onHide?: (c: HomepageCandidate) => void;
+  hiddenIds?: number[];
+  onRestore?: (eventId: number) => void;
 }) {
   const drag = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
@@ -754,6 +832,7 @@ function ItemStrip({
                   className="h-6 gap-1 px-1.5 text-[10px]"
                   onClick={() => onAdd(c)}
                   aria-label={`Pin ${c.name}`}
+                  title="Pin = מצמיד את הכרטיס לתחילת השורה, במקום קבוע שאתם קובעים. בלי Pin הוא מוצג רק כל עוד החוקיות האוטומטית בוחרת בו."
                 >
                   <Pin className="h-3 w-3" />
                   Pin
@@ -769,6 +848,19 @@ function ItemStrip({
                     title="Removes the Prioritized flag now (not part of Save)"
                   >
                     <StarOff className="h-3 w-3" />
+                    Remove
+                  </Button>
+                )}
+                {onHide && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 gap-1 px-1.5 text-[10px] text-muted-foreground hover:text-destructive"
+                    onClick={() => onHide(c)}
+                    aria-label={`Remove ${c.name} from this row`}
+                    title="מוריד את האירוע מהשורה הזו בלבד (נכנס לתוקף ב-Save). האירוע נשאר באתר בכל מקום אחר."
+                  >
+                    <EyeOff className="h-3 w-3" />
                     Remove
                   </Button>
                 )}
@@ -846,6 +938,35 @@ function ItemStrip({
           </PopoverContent>
         </Popover>
       </div>
+      {autoItems.length > 0 && (
+        <p className="mt-1 text-[11px] text-muted-foreground" dir="rtl">
+          מקווקו = האתר מציג לבד לפי החוקיות האוטומטית ·{" "}
+          <Pin className="inline h-3 w-3" aria-hidden /> Pin = מצמיד לתחילת השורה במקום קבוע
+          {onUnprioritize && " · Remove = מוריד את הסימון Prioritized מהאירוע (מיידי, לא חלק מ-Save)"}
+          {onHide && " · Remove = מוריד מהשורה הזו בלבד (ב-Save)"}
+        </p>
+      )}
+      {onRestore && hiddenIds && hiddenIds.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5" dir="rtl">
+          <span className="text-[11px] text-muted-foreground">הוסרו מהשורה ({hiddenIds.length}):</span>
+          {hiddenIds.map((id) => {
+            const c = candidates.get(candidateKey("event", String(id)));
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onRestore(id)}
+                className="flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-foreground"
+                title="החזר לשורה האוטומטית"
+                aria-label={`Restore ${c?.name ?? id}`}
+              >
+                {c?.name ?? `#${id} (לא באוויר)`}
+                <RotateCcw className="h-3 w-3" aria-hidden />
+              </button>
+            );
+          })}
+        </div>
+      )}
       {list.length === 0 && (
         <p className="mt-1 text-xs text-muted-foreground" dir="rtl">
           {emptyHint

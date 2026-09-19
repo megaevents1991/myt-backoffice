@@ -18,7 +18,13 @@ import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { revalidateMain } from "@/lib/revalidate-main";
 import { revalidatePath } from "next/cache";
-import { isBlockType, isBuiltinKey, itemKindsFor, normalizeSections } from "@/lib/homepage/blocks";
+import {
+  isBlockType,
+  isBuiltinKey,
+  itemKindsFor,
+  normalizeSections,
+  parseBuiltinConfig,
+} from "@/lib/homepage/blocks";
 import { buildArtIndex, personArtFor } from "@/lib/homepage/event-art";
 import { flattenWithPath } from "@/lib/taxonomy-tree";
 import {
@@ -182,7 +188,7 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
         key: s.key,
         type: "builtin",
         title: s.title ?? null,
-        config: {},
+        config: parseBuiltinConfig(s.key, s.config),
         position: 0,
         is_visible: s.is_visible !== false,
       });

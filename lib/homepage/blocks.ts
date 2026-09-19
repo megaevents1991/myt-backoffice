@@ -15,19 +15,29 @@ import {
   SECTION_ITEM_KINDS,
   type BannerConfig,
   type BannerItem,
+  type DestinationsConfig,
   type EventSliderConfig,
+  type GalleryConfig,
+  type GalleryImage,
   type HomepageBlockType,
   type HomepageItemKind,
   type HomepageSectionConfig,
   type HomepageSectionKey,
   type HomepageSectionRow,
   type HomepageSectionType,
+  type TextConfig,
 } from "../../types/homepage.types";
 
 /** Staff-added blocks per page. The homepage is ISR'd and image-heavy - a ceiling, not a target. */
 export const MAX_BLOCKS = 12;
 export const MAX_BANNERS = 3;
 export const TITLE_MAX = 60;
+export const TEXT_MAX = 1200;
+export const MAX_GALLERY = 12;
+/** Tiles staff place by hand; a parent category's children follow without a cap here. */
+export const MAX_DESTINATIONS = 20;
+/** Events removed from the automatic part of "החדשים ביותר". */
+export const MAX_HIDDEN_EVENTS = 100;
 const LINK_MAX = 300;
 
 const BLOCK_KEY_RE = /^blk_[0-9a-f]{8}$/;
@@ -112,12 +122,115 @@ const parseBanners = (raw: unknown, storagePrefix: string): Parsed<BannerConfig>
   return { ok: true, value: { banners } };
 };
 
+/** Plain text only - main prints it as paragraphs, never as HTML. */
+const parseText = (raw: unknown): Parsed<TextConfig> => {
+  const v = isRecord(raw) ? raw.body : null;
+  if (typeof v !== "string") return { ok: false, error: "חסר טקסט" };
+  // Windows line ends, trailing spaces, and more than one blank line in a row.
+  const body = v
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!body) return { ok: false, error: "חסר טקסט" };
+  if (body.length > TEXT_MAX) return { ok: false, error: `טקסט ארוך מדי (עד ${TEXT_MAX} תווים)` };
+  return { ok: true, value: { body } };
+};
+
+const toId = (v: unknown): number =>
+  typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
+
+/** Positive integer ids, first occurrence wins, order kept. null = not a list of ids. */
+const idList = (raw: unknown): number[] | null => {
+  if (!Array.isArray(raw)) return null;
+  const out: number[] = [];
+  for (const v of raw) {
+    const n = toId(v);
+    if (!Number.isInteger(n) || n <= 0) return null;
+    if (!out.includes(n)) out.push(n);
+  }
+  return out;
+};
+
+const parseDestinations = (raw: unknown): Parsed<DestinationsConfig> => {
+  const rec = isRecord(raw) ? raw : {};
+  const ids = idList(rec.category_ids ?? []);
+  if (!ids) return { ok: false, error: "קטגוריה לא תקינה" };
+  if (ids.length > MAX_DESTINATIONS) {
+    return { ok: false, error: `עד ${MAX_DESTINATIONS} קטגוריות בבלוק` };
+  }
+  const parent = parseSlider({ category_id: rec.parent_id });
+  if (!parent.ok) return parent;
+  const parent_id = parent.value.category_id;
+  if (!ids.length && parent_id === null) {
+    return { ok: false, error: "צריך לבחור קטגוריה אחת לפחות, או קטגוריית אב" };
+  }
+  return { ok: true, value: { category_ids: ids, parent_id } };
+};
+
+const parseGallery = (raw: unknown, storagePrefix: string): Parsed<GalleryConfig> => {
+  const list = isRecord(raw) ? raw.images : null;
+  if (!Array.isArray(list)) return { ok: false, error: "חסרה רשימת תמונות" };
+  if (list.length === 0) return { ok: false, error: "צריך לפחות תמונה אחת" };
+  if (list.length > MAX_GALLERY) return { ok: false, error: `עד ${MAX_GALLERY} תמונות בגלריה` };
+  const images: GalleryImage[] = [];
+  for (const [i, g] of list.entries()) {
+    if (!isRecord(g)) return { ok: false, error: `תמונה ${i + 1} לא תקינה` };
+    const image = typeof g.image_url === "string" ? g.image_url.trim() : "";
+    if (!image) return { ok: false, error: `תמונה ${i + 1}: חסרה תמונה` };
+    // Same rule as a banner: our own public Storage, and an unset prefix rejects.
+    if (!storagePrefix || !image.startsWith(storagePrefix)) {
+      return { ok: false, error: `תמונה ${i + 1}: התמונה חייבת לעלות דרך המערכת` };
+    }
+    images.push({ image_url: image, alt: normalizeTitle(g.alt) });
+  }
+  return { ok: true, value: { images } };
+};
+
 const parseConfig = (
   type: HomepageBlockType,
   raw: unknown,
   storagePrefix: string,
-): Parsed<HomepageSectionConfig> =>
-  type === "event_slider" ? parseSlider(raw) : parseBanners(raw, storagePrefix);
+): Parsed<HomepageSectionConfig> => {
+  switch (type) {
+    case "event_slider":
+      return parseSlider(raw);
+    case "banner":
+      return parseBanners(raw, storagePrefix);
+    case "text":
+      return parseText(raw);
+    case "destinations":
+      return parseDestinations(raw);
+    case "gallery":
+      return parseGallery(raw, storagePrefix);
+  }
+};
+
+/**
+ * The config of a BUILTIN section. Only "החדשים ביותר" has one - the events
+ * staff removed from its automatic part. Lenient on purpose: a builtin can
+ * never fail a save, so junk is dropped instead of reported. Over the cap the
+ * OLDEST removals go first - the row has long moved past them.
+ */
+export const parseBuiltinConfig = (
+  key: HomepageSectionKey,
+  raw: unknown,
+): HomepageSectionConfig => {
+  if (key !== "newest") return {};
+  const list = isRecord(raw) && Array.isArray(raw.hidden_event_ids) ? raw.hidden_event_ids : [];
+  const ids: number[] = [];
+  for (const v of list) {
+    const n = toId(v);
+    if (Number.isInteger(n) && n > 0 && !ids.includes(n)) ids.push(n);
+  }
+  return ids.length ? { hidden_event_ids: ids.slice(-MAX_HIDDEN_EVENTS) } : {};
+};
+
+/** The ids a "החדשים ביותר" config hides; any other config hides none. */
+export const hiddenEventIds = (config: HomepageSectionConfig | null | undefined): number[] =>
+  config && "hidden_event_ids" in config && Array.isArray(config.hidden_event_ids)
+    ? config.hidden_event_ids
+    : [];
 
 export type NormalizedSections =
   | { ok: true; sections: HomepageSectionRow[] }
@@ -132,6 +245,7 @@ export type NormalizedSections =
  *  - builtins the payload lacks are appended visible (they can never be deleted)
  *  - `hero` first, the rest in the order sent, positions 0..n
  *  - a block whose config does not validate fails the WHOLE save, named by its title
+ *  - a builtin keeps a config only where it has one (`newest`: the hidden events)
  */
 export function normalizeSections(
   raw: unknown,
@@ -154,7 +268,14 @@ export function normalizeSections(
     if (type === "builtin") {
       if (!isBuiltinKey(key)) return { ok: false, error: `Unknown section "${key}"` };
       seen.add(key);
-      out.push({ key, type: "builtin", title, config: {}, position: 0, is_visible });
+      out.push({
+        key,
+        type: "builtin",
+        title,
+        config: parseBuiltinConfig(key, row.config),
+        position: 0,
+        is_visible,
+      });
       continue;
     }
 

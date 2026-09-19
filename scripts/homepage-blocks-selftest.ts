@@ -3,12 +3,18 @@
 // banner / slider config), fed synthetic rows. No DB, no network.
 import {
   MAX_BLOCKS,
+  MAX_DESTINATIONS,
+  MAX_GALLERY,
+  MAX_HIDDEN_EVENTS,
+  TEXT_MAX,
   TITLE_MAX,
+  hiddenEventIds,
   isBlockKey,
   itemKindsFor,
   newBlockKey,
   normalizeSections,
   normalizeTitle,
+  parseBuiltinConfig,
 } from "../lib/homepage/blocks";
 import { buildArtIndex, personArtFor } from "../lib/homepage/event-art";
 
@@ -152,7 +158,45 @@ check("a non-array payload is rejected", errorOf(normalizeSections("nope", opts)
   );
   const newest = r.ok ? r.sections.find((s) => s.key === "newest") : null;
   check("a builtin keeps its staff title", newest?.title, "טרי מהתנור");
-  check("a builtin config is forced empty", newest?.config, {});
+  check("a builtin drops a config that is not its own", newest?.config, {});
+}
+
+// --- "החדשים ביותר": the events removed from its automatic part ---
+
+check(
+  "newest: hidden ids survive - coerced, deduped, junk dropped",
+  parseBuiltinConfig("newest", { hidden_event_ids: [12, "7", 12, 0, -3, 1.5, "abc", null], evil: true }),
+  { hidden_event_ids: [12, 7] },
+);
+check("newest: no hidden ids is an empty config", parseBuiltinConfig("newest", { hidden_event_ids: [] }), {});
+check("newest: junk config is an empty config", parseBuiltinConfig("newest", "nope"), {});
+check(
+  "only newest has a builtin config",
+  parseBuiltinConfig("most_wanted", { hidden_event_ids: [5] }),
+  {},
+);
+{
+  const many = Array.from({ length: MAX_HIDDEN_EVENTS + 5 }, (_, i) => i + 1);
+  const kept = hiddenEventIds(parseBuiltinConfig("newest", { hidden_event_ids: many }));
+  check("newest: over the cap the oldest removals go first", [kept.length, kept[0], kept.at(-1)], [
+    MAX_HIDDEN_EVENTS,
+    6,
+    MAX_HIDDEN_EVENTS + 5,
+  ]);
+}
+{
+  const r = normalizeSections(
+    [builtin("hero"), builtin("newest", { config: { hidden_event_ids: [44, 45] } })],
+    opts,
+  );
+  const newest = r.ok ? r.sections.find((s) => s.key === "newest") : null;
+  check("newest: the hidden list rides a save", newest?.config, { hidden_event_ids: [44, 45] });
+  check("hiddenEventIds reads it back", hiddenEventIds(newest?.config), [44, 45]);
+  check("hiddenEventIds of another config is empty", hiddenEventIds({ category_id: 3 }), []);
+}
+{
+  const r = normalizeSections([builtin("hero"), builtin("newest", { config: { hidden_event_ids: "x" } })], opts);
+  check("newest: a junk hidden list never fails the save", r.ok, true);
 }
 
 // --- event slider ---
@@ -243,6 +287,103 @@ check("banner: banners must be a list", typeof bannerConfig("x"), "string");
   const r = normalizeSections([builtin("hero"), banner("blk_0000000b", [])], opts);
   check("an untitled block is named by its type, not its key", errorOf(r)?.startsWith("באנרים:"), true);
   check("the internal key never reaches the message", errorOf(r)?.includes("blk_"), false);
+}
+
+// --- phase 2 blocks: text, destinations, gallery ---
+
+const blockConfig = (type: string, config: unknown) => {
+  const r = normalizeSections(
+    [builtin("hero"), { key: "blk_0000000c", type, title: null, config, position: 0, is_visible: true }],
+    opts,
+  );
+  return r.ok ? r.sections.find((s) => s.key === "blk_0000000c")?.config : r.error;
+};
+
+check(
+  "text: line ends and blank runs are tidied",
+  blockConfig("text", { body: "  שלום \r\n\r\n\r\n\r\nעולם  ", evil: 1 }),
+  { body: "שלום\n\nעולם" },
+);
+check("text: empty is rejected", typeof blockConfig("text", { body: "   " }), "string");
+check("text: a non-string body is rejected", typeof blockConfig("text", { body: 5 }), "string");
+check("text: over the cap is rejected", typeof blockConfig("text", { body: "x".repeat(TEXT_MAX + 1) }), "string");
+check("text: exactly the cap is accepted", blockConfig("text", { body: "x".repeat(TEXT_MAX) }), {
+  body: "x".repeat(TEXT_MAX),
+});
+check("a text block takes no items", itemKindsFor({ key: "blk_0000000c", type: "text" }), []);
+
+check(
+  "destinations: ids are coerced and deduped, order kept",
+  blockConfig("destinations", { category_ids: [9, "4", 9], parent_id: "2" }),
+  { category_ids: [9, 4], parent_id: 2 },
+);
+check(
+  "destinations: a parent alone is enough",
+  blockConfig("destinations", { parent_id: 2 }),
+  { category_ids: [], parent_id: 2 },
+);
+check(
+  "destinations: chosen tiles alone are enough",
+  blockConfig("destinations", { category_ids: [3], parent_id: null }),
+  { category_ids: [3], parent_id: null },
+);
+check("destinations: nothing chosen is rejected", typeof blockConfig("destinations", {}), "string");
+check(
+  "destinations: a bad id is rejected",
+  typeof blockConfig("destinations", { category_ids: [3, "abc"] }),
+  "string",
+);
+check(
+  "destinations: ids must be a list",
+  typeof blockConfig("destinations", { category_ids: "3", parent_id: 2 }),
+  "string",
+);
+check(
+  "destinations: a bad parent is rejected",
+  typeof blockConfig("destinations", { category_ids: [3], parent_id: -1 }),
+  "string",
+);
+check(
+  "destinations: over the cap is rejected",
+  typeof blockConfig("destinations", {
+    category_ids: Array.from({ length: MAX_DESTINATIONS + 1 }, (_, i) => i + 1),
+  }),
+  "string",
+);
+
+check(
+  "gallery: a row survives, caption trimmed, extras dropped",
+  blockConfig("gallery", { images: [{ image_url: IMG, alt: " וומבלי ", evil: 1 }, { image_url: IMG, alt: "" }] }),
+  { images: [{ image_url: IMG, alt: "וומבלי" }, { image_url: IMG, alt: null }] },
+);
+check("gallery: no images is rejected", typeof blockConfig("gallery", { images: [] }), "string");
+check("gallery: images must be a list", typeof blockConfig("gallery", {}), "string");
+check(
+  "gallery: an image from another host is rejected",
+  typeof blockConfig("gallery", { images: [{ image_url: "https://evil.example/x.jpg", alt: null }] }),
+  "string",
+);
+check(
+  "gallery: an empty draft row is rejected",
+  typeof blockConfig("gallery", { images: [{ image_url: IMG, alt: null }, { image_url: "", alt: null }] }),
+  "string",
+);
+check(
+  "gallery: over the cap is rejected",
+  typeof blockConfig("gallery", {
+    images: Array.from({ length: MAX_GALLERY + 1 }, () => ({ image_url: IMG, alt: null })),
+  }),
+  "string",
+);
+{
+  const r = normalizeSections(
+    [
+      builtin("hero"),
+      { key: "blk_0000000c", type: "gallery", title: null, config: { images: [{ image_url: IMG, alt: null }] }, position: 0, is_visible: true },
+    ],
+    { storagePrefix: "" },
+  );
+  check("no storage prefix configured rejects every gallery image", r.ok, false);
 }
 
 // --- event art: an event with no image borrows its artist's / team's ---
