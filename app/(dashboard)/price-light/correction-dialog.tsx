@@ -115,7 +115,16 @@ export function CorrectionDialog({
   const name = offer.who === "ours" ? "" : COMPETITOR_LABEL[offer.who] ?? offer.who;
   const changes = changesOf(form, was, pkg);
   const noteOk = note.trim().length >= CORRECTION_NOTE_MIN;
-  const set = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
+  const amountOk = form.amount.trim() === "" || Number(form.amount) >= 1;
+  // Why "שמור" is off - a dead button with no reason read as a bug (QA 2026-09-19).
+  const missing = [
+    changes.length === 0 ? "לשנות לפחות שדה אחד (סיבה והערה לבדן אינן תיקון)" : null,
+    !nightsValid(form.nights) ? `לילות בין 1 ל-${NIGHTS_MAX}` : null,
+    !amountOk ? "מחיר של 1 ומעלה" : null,
+    !reason ? "לבחור סיבה" : null,
+    !noteOk ? `הערה של ${CORRECTION_NOTE_MIN} תווים לפחות` : null,
+  ].filter((m): m is string => m !== null);
+  const set =(patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
 
   const save = async () => {
     if (!offer.edit) return;
@@ -276,9 +285,13 @@ export function CorrectionDialog({
           </div>
         )}
 
+        {offer.edit && missing.length > 0 && (
+          <p className="text-xs text-muted-foreground" aria-live="polite">כדי לשמור חסר: {missing.join(" · ")}</p>
+        )}
+
         <DialogFooter className="gap-2 sm:justify-start">
           {offer.edit && (
-            <Button onClick={save} disabled={busy || changes.length === 0 || !reason || !noteOk || !nightsValid(form.nights) || (form.amount.trim() !== "" && Number(form.amount) < 1)}>
+            <Button onClick={save} disabled={busy || missing.length > 0}>
               {busy && <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" />}
               שמור {changes.length > 0 ? `(${changes.length})` : ""}
             </Button>
