@@ -21,6 +21,8 @@ export interface AuditLessonRow {
   entityId: number | null;
   at: string;
   metadata: Record<string, unknown> | null;
+  /** Who left the mark. `null` = the row has NO actor (a cron wrote it); undefined = not loaded. */
+  by?: string | null;
 }
 
 /**
@@ -34,6 +36,22 @@ export interface AuditLessonRow {
 export interface AgentLearningSource {
   action: string;
   toLesson: (row: AuditLessonRow) => string | null;
+  /** Why `toLesson` dropped this row, in Hebrew, for the AI Factory's "מאיפה הוא לומד" trace -
+   *  staff who left a mark deserve to see that it taught nothing, and why. Optional. */
+  whyDropped?: (row: AuditLessonRow) => string;
+}
+
+/** One recorded mark and what became of it on the way to the prompt (lib/agents/memory.ts). */
+export interface LessonTrace {
+  action: string;
+  at: string;
+  by: string | null;
+  /** The line as the model would read it; null when the source dropped the row. */
+  line: string | null;
+  /** quoted = in the prompt right now; over_quota = a usable lesson that lost its slot to newer
+   *  ones; dropped = the source found nothing in it to learn from (`why` says what). */
+  status: "quoted" | "over_quota" | "dropped";
+  why: string | null;
 }
 
 export interface AgentDefinition {

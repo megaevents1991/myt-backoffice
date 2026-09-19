@@ -97,11 +97,15 @@ const legacy = lessonFor("price_light.override", { scope: "package", light: "gre
 assert.ok(legacy?.includes("old row"));
 assert.ok(legacy?.includes('to "green"'), "with no to_light, the recorded light is the forced one");
 
-// A field corrected in the detailed comparison teaches the judge only what the judge can get
-// wrong: a value IT extracted, or a same-event pairing. A crawler's misread is not its lesson.
+// A field corrected in the detailed comparison teaches the judge what the judge READS: one of its
+// six attributes (whoever produced the wrong value - the human's note is about reading a listing),
+// or a same-event pairing. A price or a display text is the crawler's alone, never its lesson.
 const aiFix = { competitor: "golasso", field: "hotel_stars", from: 3, to: 4, reason: "ai_wrong", note: "בדף כתוב 4 כוכבים" };
 assert.ok(lessonFor("price_light.corrected", { ...aiFix, source: "ai" })?.includes("the AGENT's hotel stars from 3 to 4"));
-assert.equal(lessonFor("price_light.corrected", { ...aiFix, source: "page" }), null);
+assert.ok(lessonFor("price_light.corrected", { ...aiFix, source: "page" })?.includes("the crawler's hotel stars from 3 to 4"));
+assert.ok(lessonFor("price_light.corrected", { ...aiFix, field: "bag_included", from: null, to: false, source: "none", note: "רק תיק גב = בלי מזוודה" })?.includes("רק תיק גב"));
+assert.equal(lessonFor("price_light.corrected", { ...aiFix, field: "price", source: "page" }), null, "a price is the crawler's to read");
+assert.equal(lessonFor("price_light.corrected", { ...aiFix, field: "hotel_name", source: "parser" }), null, "a display text is the crawler's to read");
 assert.ok(lessonFor("price_light.corrected", { competitor: "issta", field: "not_same_event", source: "rule", note: "משחק אחר" })?.includes("NOT the same event"));
 assert.equal(lessonFor("price_light.corrected", { ...aiFix, source: "ai", note: " " }), null, "no note, no lesson");
 
@@ -110,6 +114,13 @@ assert.ok(lessonFor("price_light.removed", snapshot)?.includes("pulled the event
 assert.ok(lessonFor("price_light.sold_out", snapshot)?.includes("SOLD OUT"));
 assert.ok(lessonFor("price_light.silenced", { ...snapshot, days: 14 })?.includes("ACCEPTABLE"));
 assert.ok(lessonFor("price_light.task_opened", { ...snapshot, task_id: "t1" })?.includes("opened a task"));
+// A task the nightly opened by itself is not a human's decision - flagged, or (older rows) actor-less.
+assert.equal(lessonFor("price_light.task_opened", { ...snapshot, task_id: "t2", auto: true }), null);
+{
+  const source = PRICE_LIGHT_AGENT.learnsFrom.find((s) => s.action === "price_light.task_opened");
+  assert.equal(source?.toLesson({ action: "price_light.task_opened", entityId: 1, at: "2026-09-19T00:00:00Z", metadata: { ...snapshot }, by: null }), null);
+  assert.ok(source?.toLesson({ action: "price_light.task_opened", entityId: 1, at: "2026-09-19T00:00:00Z", metadata: { ...snapshot }, by: "dor@example.com" }));
+}
 // a decision with no recorded comparison teaches nothing - dropped rather than guessed at
 assert.equal(lessonFor("price_light.removed", { days: 14 }), null);
 assert.equal(lessonFor("price_light.removed", { scope: "nonsense", light: "red" }), null);

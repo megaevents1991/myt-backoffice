@@ -1,6 +1,7 @@
 // Types for the AI Factory admin area (spec docs/superpowers/specs/2026-09-16-price-light-gaps-ai-factory-design.md
 // §5, §8) - reads live in lib/services/ai-factory.ts, mutations in lib/actions/ai-factory-actions.ts.
 import type { AgentKey, AgentMaturity } from "@/lib/agents";
+import type { LessonTrace } from "@/lib/agents/types";
 
 /**
  * Why an agent is or isn't running right now, one level more specific than the plain boolean
@@ -62,6 +63,12 @@ export interface AgentDetail {
   houseRules: string;
   /** The recorded decisions, already formatted exactly as the real prompt receives them. */
   lessons: string[];
+  /** Every mark staff left in the lookback window and what became of it - quoted in the prompt,
+   *  waiting for a slot, or dropped (and why). The answer to "what does it learn, and from where". */
+  trace: LessonTrace[];
+  /** The whole memory block exactly as the model reads it on its next call (rules + taught rules
+   *  + quoted lessons, capped at `memoryMaxChars`). */
+  promptPreview: string;
   taughtRules: TaughtRule[];
 }
 

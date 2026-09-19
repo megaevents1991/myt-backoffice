@@ -5,7 +5,7 @@
 // can be called from a client component.
 import {
   AGENT_KEYS, AGENTS_MASTER_SWITCH_ENV, agentFor, agentModel, agentsMasterSwitchOff, anthropicKey,
-  loadAgentLessons, maturityFrom, MATURITY_MIN_DECISIONS, type AgentDefinition, type AgentKey,
+  maturityFrom, MATURITY_MIN_DECISIONS, memoryBlock, TAUGHT_RULES_MAX, traceAgentLessons, type AgentDefinition, type AgentKey,
   type MaturityRow,
 } from "@/lib/agents";
 import { aiCostThisMonth } from "@/lib/actions/price-light-actions";
@@ -127,7 +127,9 @@ async function listTaughtRules(agentKey: AgentKey): Promise<TaughtRule[]> {
 /** Everything the `/ai-factory/[key]` page renders across its four tabs. */
 export async function getAgentDetail(key: AgentKey): Promise<AgentDetail> {
   const def = agentFor(key);
-  const [lessons, taughtRules] = await Promise.all([loadAgentLessons(def), listTaughtRules(key)]);
+  const [trace, taughtRules] = await Promise.all([traceAgentLessons(def), listTaughtRules(key)]);
+  const lessons = trace.filter((t) => t.status === "quoted").map((t) => t.line ?? "");
+  const activeTaught = taughtRules.filter((r) => r.active).slice(0, TAUGHT_RULES_MAX).map((r) => r.text);
   return {
     key,
     title: def.title,
@@ -139,6 +141,8 @@ export async function getAgentDetail(key: AgentKey): Promise<AgentDetail> {
     settings: settingsFor(def),
     houseRules: def.houseRules(),
     lessons,
+    trace,
+    promptPreview: memoryBlock(def, lessons, activeTaught).slice(0, def.memoryMaxChars),
     taughtRules,
   };
 }

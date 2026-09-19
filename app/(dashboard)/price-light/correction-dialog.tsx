@@ -280,7 +280,12 @@ export function CorrectionDialog({
             <div className="space-y-1">
               <Label htmlFor="corr-note">הערה ל-AI (חובה)</Label>
               <Textarea id="corr-note" dir="auto" rows={2} maxLength={CORRECTION_NOTE_MAX} value={note} onChange={(e) => setNote(e.target.value)}
-                placeholder="מה ראית בדף המתחרה, ולמה המערכת טעתה" />
+                placeholder="כתבו ככלל קריאה: ״מוזכר רק תיק גב, לכן אין מזוודה״" />
+              {/* Which notes reach the agent: correctionTeachesJudge (lib/agents/price-light.agent.ts). */}
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                הסוכן קורא את ההערה כשמתקנים לילות, כוכבים, ארוחת בוקר, מזוודה, טיסה ישירה, העברות או ״לא האירוע שלנו״.
+                תיקון של מחיר, חברת תעופה, שם מלון או כרטיס נספר כתקלת סורק. מה נקרא בפועל: AI Factory ← זיכרון ולימוד.
+              </p>
             </div>
           </div>
         )}

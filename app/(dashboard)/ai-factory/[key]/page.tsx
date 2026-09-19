@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { requireAdmin } from "@/lib/auth/guards";
 import { AGENT_KEYS, type AgentKey } from "@/lib/agents";
 import { AGENT_LOG_PAGE_SIZE, getAgentDetail, listAgentLog, loadMaturity } from "@/lib/services/ai-factory";
@@ -14,6 +15,21 @@ import { TeachForm } from "./teach-form";
 import { TaughtRulesList } from "./taught-rules-list";
 import { FeedbackButtons } from "./feedback-buttons";
 import { MaturityChart } from "./maturity-chart";
+
+// Where a lesson came from, in the words of the screen the mark was left on.
+const LESSON_SOURCE_HE: Record<string, string> = {
+  "price_light.override": "דריסת אור (עם הערה)",
+  "price_light.corrected": "תיקון בהשוואה המפורטת",
+  "price_light.repriced": "הוזל",
+  "price_light.removed": "הסר מהאתר",
+  "price_light.sold_out": "סולד אאוט",
+  "price_light.silenced": "השאר בפיד",
+  "price_light.task_opened": "נפתחה משימה",
+  "agent.feedback": "נכון / לא נכון ביומן הסוכן",
+};
+const LESSON_STATUS_HE: Record<"quoted" | "over_quota" | "dropped", string> = {
+  quoted: "נקרא עכשיו", over_quota: "ממתין למקום", dropped: "לא נלמד",
+};
 
 function isAgentKey(v: string): v is AgentKey {
   return (AGENT_KEYS as readonly string[]).includes(v);
@@ -113,22 +129,84 @@ export default async function AgentDetailPage({
     </div>
   );
 
+  // "מה הוא לומד ומאיפה" (Dor, 2026-09-19): one row per source - how many marks staff left, how many
+  // the model reads right now, how many wait for a slot, how many taught nothing.
+  const sourceRows = [...new Set(detail.trace.map((t) => t.action))].map((action) => {
+    const rows = detail.trace.filter((t) => t.action === action);
+    return {
+      action,
+      total: rows.length,
+      quoted: rows.filter((t) => t.status === "quoted").length,
+      waiting: rows.filter((t) => t.status === "over_quota").length,
+      dropped: rows.filter((t) => t.status === "dropped").length,
+    };
+  });
+
   const memoryTab = (
     <div className="space-y-6">
+      <div className="rounded-md border bg-muted/30 p-3 text-sm leading-relaxed">
+        <p className="font-medium">איך מלמדים את הסוכן הזה</p>
+        <ul className="mt-1 list-disc space-y-0.5 pe-0 ps-5 text-muted-foreground">
+          <li><b>כלל צוות</b> (למטה) - משפט קבוע שנכנס לכל קריאה ולא מתחלף. לכלל שחוזר על עצמו.</li>
+          <li><b>הערה בזמן עבודה</b> - תיקון בהשוואה המפורטת, דריסת אור או סימון ביומן. נקראת כדוגמה, עד {detail.settings.lessonMax} אחרונות.</li>
+          <li>הסוכן פועל רק על: {detail.decides.join(" · ")}. כלל על נושא אחר (תמחור, איזו טיסה לקנות) ייכנס לפרומפט אבל לא ישנה שום תוצאה.</li>
+        </ul>
+      </div>
       <div>
         <h3 className="mb-2 text-xs font-semibold text-muted-foreground">כללי הבית (נוצר מהקבועים בקוד)</h3>
         <pre className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3 text-xs leading-relaxed">{detail.houseRules}</pre>
       </div>
       <div>
-        <h3 className="mb-2 text-xs font-semibold text-muted-foreground">לקחים (כמו שהפרומפט רואה אותם)</h3>
-        {detail.lessons.length === 0 ? (
-          <p className="text-sm text-muted-foreground">אין עדיין החלטות מתועדות ללמוד מהן.</p>
+        <h3 className="mb-2 text-xs font-semibold text-muted-foreground">מאיפה הוא לומד ({detail.settings.lessonLookbackDays} הימים האחרונים)</h3>
+        {detail.trace.length === 0 ? (
+          <p className="text-sm text-muted-foreground">אין עדיין סימונים של הצוות ללמוד מהם.</p>
         ) : (
-          <ul className="space-y-1 text-sm">
-            {detail.lessons.map((l, i) => <li key={i}>• {l}</li>)}
-          </ul>
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>מקור</TableHead>
+                  <TableHead className="text-end">סימונים</TableHead>
+                  <TableHead className="text-end">נקראים עכשיו</TableHead>
+                  <TableHead className="text-end">ממתינים למקום</TableHead>
+                  <TableHead className="text-end">לא נלמדו</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sourceRows.map((s) => (
+                  <TableRow key={s.action}>
+                    <TableCell>{LESSON_SOURCE_HE[s.action] ?? s.action}</TableCell>
+                    <TableCell className="text-end tabular-nums">{s.total}</TableCell>
+                    <TableCell className="text-end tabular-nums">{s.quoted}</TableCell>
+                    <TableCell className="text-end tabular-nums">{s.waiting}</TableCell>
+                    <TableCell className="text-end tabular-nums">{s.dropped}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <ul className="mt-3 space-y-2 text-sm">
+              {detail.trace.map((t, i) => (
+                <li key={`${t.action}-${t.at}-${i}`} className="rounded-md border p-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant={t.status === "quoted" ? "default" : "outline"}>{LESSON_STATUS_HE[t.status]}</Badge>
+                    <span>{LESSON_SOURCE_HE[t.action] ?? t.action}</span>
+                    <span>{new Date(t.at).toLocaleDateString("he-IL")}</span>
+                    {t.by && <span dir="ltr">{t.by}</span>}
+                  </div>
+                  {t.line && <p dir="auto" className="mt-1 leading-relaxed">{t.line}</p>}
+                  {t.why && <p className="mt-1 text-xs text-muted-foreground">{t.why}</p>}
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
+      <details className="rounded-md border p-3">
+        <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
+          הזיכרון המלא, בדיוק כמו שהמודל קורא אותו בקריאה הבאה ({detail.promptPreview.length.toLocaleString("en-US")} מתוך {detail.settings.memoryMaxChars.toLocaleString("en-US")} תווים)
+        </summary>
+        <pre dir="auto" className="mt-2 whitespace-pre-wrap text-xs leading-relaxed">{detail.promptPreview}</pre>
+      </details>
       <Separator />
       <div>
         <h3 className="mb-2 text-xs font-semibold text-muted-foreground">כללי צוות</h3>

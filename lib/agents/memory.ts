@@ -15,7 +15,7 @@
 // allowed to change how the agent answers. Anyone with access to the decision screen can write
 // into this block; a prompt that obeyed it would be a prompt they could rewrite.
 import { supabase } from "@/lib/supabase-server";
-import type { AgentDefinition, AuditLessonRow } from "./types";
+import type { AgentDefinition, AuditLessonRow, LessonTrace } from "./types";
 
 // New tables predate the generated DB types - one boundary cast (repo pattern).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,7 +25,7 @@ const db = supabase as any;
  *  rows that carry no usable context and we would rather fill the quota than run short. */
 const ROW_FETCH_FACTOR = 4;
 
-interface AuditRow { action: string; entity_id: number | null; metadata: Record<string, unknown> | null; created_at: string }
+interface AuditRow { action: string; entity_id: number | null; metadata: Record<string, unknown> | null; created_at: string; actor_email: string | null }
 
 /** How many active taught rules ride on every call, and the ceiling on their rendered block. */
 export const TAUGHT_RULES_MAX = 12;
@@ -86,12 +86,22 @@ function taughtBlock(taught: string[]): string | null {
  * never throw for the want of it.
  */
 export async function loadAgentLessons(def: AgentDefinition): Promise<string[]> {
+  return (await traceAgentLessons(def)).filter((t) => t.status === "quoted").map((t) => t.line ?? "");
+}
+
+/**
+ * Every mark the agent's sources recorded in its lookback window, and what became of each one:
+ * quoted in the prompt now, a good lesson that lost its slot, or dropped by its source (and why).
+ * `loadAgentLessons` IS the quoted slice of this, in the same order - so the AI Factory's trace
+ * can never disagree with what the model actually reads. Quoted lines come first, in prompt order.
+ */
+export async function traceAgentLessons(def: AgentDefinition): Promise<LessonTrace[]> {
   const actions = def.learnsFrom.map((s) => s.action);
   if (actions.length === 0) return [];
   const since = new Date(Date.now() - def.lessonLookbackDays * 86_400_000).toISOString();
   const { data, error } = await db
     .from("audit_log")
-    .select("action,entity_id,metadata,created_at")
+    .select("action,entity_id,metadata,created_at,actor_email")
     .in("action", actions)
     .gte("created_at", since)
     .order("created_at", { ascending: false })
@@ -103,7 +113,8 @@ export async function loadAgentLessons(def: AgentDefinition): Promise<string[]> 
   // Bucket by source, newest-first WITHIN each bucket, then interleave (see `interleave`).
   // Reading the rows in pure recency order instead would let a busy week of routine decisions
   // push out the one override where a human actually wrote down why the agent was wrong.
-  const buckets = def.learnsFrom.map(() => [] as string[]);
+  const buckets = def.learnsFrom.map(() => [] as LessonTrace[]);
+  const dropped: LessonTrace[] = [];
   const indexOf = new Map(def.learnsFrom.map((s, i) => [s.action, i]));
   for (const row of (data ?? []) as AuditRow[]) {
     const i = indexOf.get(row.action);
@@ -113,12 +124,23 @@ export async function loadAgentLessons(def: AgentDefinition): Promise<string[]> 
       entityId: row.entity_id,
       at: row.created_at,
       metadata: row.metadata,
+      by: row.actor_email,
     };
-    const line = def.learnsFrom[i].toLesson(lesson);
-    if (!line) continue;
-    buckets[i].push(line.replace(/\s+/g, " ").trim().slice(0, def.lessonChars));
+    const source = def.learnsFrom[i];
+    const line = source.toLesson(lesson);
+    const base = { action: row.action, at: row.created_at, by: row.actor_email };
+    if (!line) {
+      dropped.push({ ...base, line: null, status: "dropped", why: source.whyDropped?.(lesson) ?? "אין בסימון הזה הקשר שאפשר ללמוד ממנו" });
+      continue;
+    }
+    buckets[i].push({ ...base, line: line.replace(/\s+/g, " ").trim().slice(0, def.lessonChars), status: "over_quota", why: null });
   }
-  return interleave(buckets, def.lessonMax);
+  const quoted = interleave(buckets, def.lessonMax);
+  const inPrompt = new Set(quoted);
+  for (const t of quoted) t.status = "quoted";
+  const waiting = buckets.flat().filter((t) => !inPrompt.has(t));
+  for (const t of waiting) t.why = `יש ${def.lessonMax} לקחים חדשים ממנו - ייכנס כשיתפנה מקום`;
+  return [...quoted, ...waiting, ...dropped];
 }
 
 /**
@@ -130,8 +152,8 @@ export async function loadAgentLessons(def: AgentDefinition): Promise<string[]> 
  * source in turn keeps every signal represented, and when the quota runs out mid-lap the earlier
  * (sharper) sources are the ones that got there first.
  */
-export function interleave(buckets: string[][], max: number): string[] {
-  const out: string[] = [];
+export function interleave<T>(buckets: T[][], max: number): T[] {
+  const out: T[] = [];
   const depth = Math.max(0, ...buckets.map((b) => b.length));
   for (let i = 0; i < depth && out.length < max; i += 1) {
     for (const bucket of buckets) {

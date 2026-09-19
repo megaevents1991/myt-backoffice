@@ -9,7 +9,7 @@ import {
   BAG_USD, BREAKFAST_USD, CONNECTION_USD, MAX_WINDOW_DAYS, NIGHT_RATE_MAX_USD,
   NIGHT_RATE_MIN_USD, STAR_STEP_USD, TRANSFER_USD,
 } from "@/lib/services/price-light";
-import { correctionLessonText } from "@/lib/services/price-light-corrections";
+import { correctionLessonText, isAttrField } from "@/lib/services/price-light-corrections";
 import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "@/lib/services/price-margins";
 import type { LightDecisionSnapshot } from "@/types/price-light.types";
 import type { AgentDefinition, AuditLessonRow } from "./types";
@@ -62,6 +62,27 @@ function decision(verdict: string): (row: AuditLessonRow) => string | null {
   };
 }
 
+/** A task the nightly opened by itself: flagged so, or (older rows) written with no actor at all. */
+const openedByCron = (row: AuditLessonRow): boolean => row.metadata?.auto === true || row.by === null;
+
+/** Why an outcome row taught nothing - the only way `decision()` drops one. */
+const NO_SNAPSHOT = () => "נרשם בלי תמונת ההשוואה (אור, פער, מחירים) - אין מה ללמוד ממנו";
+
+/**
+ * Does a field fixed in the detailed comparison teach THIS agent? (Dor, 2026-09-19: "אמרנו שאתן לו
+ * הערות תוך כדי שאני רוצה לשנות שילמד".) Yes when the value was the agent's own, when it is a
+ * same-event call, and - new - when it is one of the six attributes the agent extracts, whoever
+ * produced the wrong value: a note such as "רק תיק גב במודעה = בלי מזוודה" is about how to READ a
+ * listing, which is exactly the agent's job the next time the parser leaves that field unknown.
+ * A price, an airline, a hotel name or a ticket text is never the agent's to read, so those stay
+ * the crawler's lesson (the per-competitor "✎ N" report), not its.
+ */
+export function correctionTeachesJudge(m: Record<string, unknown> | null): boolean {
+  if (!m) return false;
+  if (m.source === "ai" || m.field === "not_same_event") return true;
+  return typeof m.field === "string" && isAttrField(m.field);
+}
+
 /**
  * What this agent learns from: every mark staff leave on /price-light.
  *
@@ -77,7 +98,7 @@ export const PRICE_LIGHT_LEARNS_FROM: AgentDefinition["learnsFrom"] = [
     action: "price_light.override",
     toLesson: (row) => {
       const note = typeof row.metadata?.note === "string" ? row.metadata.note.trim() : "";
-      if (!note) return null;                       // an override with no reason teaches nothing
+      if (!note) return null;                       // an override with no reason teaches nothing (whyDropped below)
       const s = snapshot(row);
       // `light` in the row is the light that was OVERRULED; `to_light` is what the human forced
       // it to. Rows written before 2026-09-13 carry only the new light, hence the fallback.
@@ -86,40 +107,46 @@ export const PRICE_LIGHT_LEARNS_FROM: AgentDefinition["learnsFrom"] = [
       const head = s ? describe(s) : String(row.metadata?.scope ?? "package");
       return `${head} — a human OVERRULED the light to "${to}" and wrote: "${note}"`;
     },
+    whyDropped: () => "דריסה בלי הערה - אין משפט ללמוד ממנו",
   },
   {
     // A field fixed in the detailed comparison (2026-09-18). Second only to an override: it names
-    // the exact value that was wrong and what it should have been. Only what this agent itself can
-    // get wrong is a lesson for it - a value IT extracted, or a same-event call (its other job).
-    // A price or a parser-read field staff corrected is the crawler's mistake: it still fixes the
-    // light and still counts in the per-competitor parser report, but quoting it here would spend
-    // the agent's ten lesson slots teaching it about regexes it never runs.
+    // the exact value that was wrong, what it should have been, and the human's own sentence.
+    // What counts as the agent's lesson: `correctionTeachesJudge`.
     action: "price_light.corrected",
-    toLesson: (row) => {
-      const m = row.metadata;
-      if (m?.source !== "ai" && m?.field !== "not_same_event") return null;
-      return correctionLessonText(m ?? {});
-    },
+    toLesson: (row) => (correctionTeachesJudge(row.metadata) ? correctionLessonText(row.metadata ?? {}) : null),
+    whyDropped: (row) =>
+      correctionTeachesJudge(row.metadata)
+        ? "תיקון בלי הערה - אין משפט ללמוד ממנו"
+        : "תיקון של מחיר / חברת תעופה / שם מלון / כרטיס - את אלה קורא הסורק ולא הסוכן, ולכן זה נספר בדוח הסורק (✎) ולא נלמד כאן",
   },
   {
     action: "price_light.repriced",
     toLesson: decision("a human judged the gap REAL and went to cut our price"),
+    whyDropped: NO_SNAPSHOT,
   },
   {
     action: "price_light.removed",
     toLesson: decision("a human pulled the event off the site rather than match this price"),
+    whyDropped: NO_SNAPSHOT,
   },
   {
     action: "price_light.sold_out",
     toLesson: decision("a human marked the event SOLD OUT on the site (taken off sale, not deleted)"),
+    whyDropped: NO_SNAPSHOT,
   },
   {
     action: "price_light.silenced",
     toLesson: decision("a human looked and judged this gap ACCEPTABLE for now (we stay pricier on purpose)"),
+    whyDropped: NO_SNAPSHOT,
   },
   {
     action: "price_light.task_opened",
-    toLesson: decision("a human opened a task to chase this gap"),
+    // Only a task a PERSON opened is a decision. The nightly opens one by itself for every scope
+    // that turns red (rule C) - quoted as "a human opened a task" those took five of the ten
+    // lesson slots on 2026-09-19 and taught the agent that our team had judged gaps nobody had seen.
+    toLesson: (row) => (openedByCron(row) ? null : decision("a human opened a task to chase this gap")(row)),
+    whyDropped: (row) => (openedByCron(row) ? "נפתחה אוטומטית בריצה הלילית (אור שהפך לאדום) - לא החלטה של אדם" : NO_SNAPSHOT()),
   },
   {
     action: "agent.feedback",
@@ -134,6 +161,7 @@ export const PRICE_LIGHT_LEARNS_FROM: AgentDefinition["learnsFrom"] = [
       const note = typeof m?.note === "string" ? m.note.trim() : "";
       return `staff marked the agent verdict ${verdict}: ${summary}${note ? ` - ${note}` : ""}`;
     },
+    whyDropped: () => "סימון נכון/לא נכון בלי תיאור של מה נשפט",
   },
 ];
 
@@ -174,9 +202,11 @@ export const PRICE_LIGHT_AGENT: AgentDefinition = {
   confidenceMin: 0.8,
   usdPerMInput: 5,     // Opus 5 pricing
   usdPerMOutput: 25,
-  memoryMaxChars: 2_500,
+  // Room for a human's whole sentence (2026-09-19): at 200 a real staff note ("במודעה מופיע תיק גב,
+  // לא מצוין מזוודה, ולכן...") was cut before its point. ~250 more input tokens a call.
+  memoryMaxChars: 4_000,
   lessonMax: 10,
-  lessonChars: 200,
+  lessonChars: 340,
   lessonLookbackDays: 120,
   learnsFrom: PRICE_LIGHT_LEARNS_FROM,
   houseRules: priceLightHouseRules,

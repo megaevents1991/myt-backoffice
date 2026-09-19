@@ -109,7 +109,8 @@ export async function openPriceLightTask(
       action: "price_light.task_opened",
       entityType: "event",
       entityId: event.id,
-      metadata: { ...(snapshot ?? { scope }), task_id: data.id },
+      // `auto`: the nightly opened it (no actor) - the agent must not read that as a human's call.
+      metadata: { ...(snapshot ?? { scope }), task_id: data.id, auto: actor.id == null },
     });
     return { ok: true, taskId: data.id, existed: false };
   } catch (e) {

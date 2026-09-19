@@ -19,7 +19,7 @@ export function agentFor(key: AgentKey): AgentDefinition {
 }
 
 export { PRICE_ADVISOR_AGENT, PRICE_LIGHT_AGENT };
-export { loadActiveTaughtRules, loadAgentLessons, loadAgentMemory, memoryBlock, TAUGHT_BLOCK_MAX_CHARS, TAUGHT_RULES_MAX } from "./memory";
+export { loadActiveTaughtRules, loadAgentLessons, loadAgentMemory, traceAgentLessons, memoryBlock, TAUGHT_BLOCK_MAX_CHARS, TAUGHT_RULES_MAX } from "./memory";
 export { maturityFrom, MATURITY_MIN_DECISIONS, type MaturityRow } from "./maturity";
 export {
   AGENTS_MASTER_SWITCH_ENV, agentEnabled, agentModel, agentsMasterSwitchOff, anthropicKey,

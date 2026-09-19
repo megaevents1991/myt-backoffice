@@ -136,9 +136,9 @@ export const PRICE_ADVISOR_AGENT: AgentDefinition = {
   confidenceMin: 0,
   usdPerMInput: 5,     // Opus 5 pricing, same as the price-light agent
   usdPerMOutput: 25,
-  memoryMaxChars: 2_500,
+  memoryMaxChars: 4_000,
   lessonMax: 10,
-  lessonChars: 200,
+  lessonChars: 340,
   lessonLookbackDays: 120,
   learnsFrom: PRICE_ADVISOR_LEARNS_FROM,
   houseRules: priceAdvisorHouseRules,
