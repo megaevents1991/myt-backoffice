@@ -55,6 +55,9 @@ export type Reservation = {
   event_order_info: ReservationEventOrderInfo;
   flight_order_info: Flight | Record<string, never>;
   hotel_order_info: OrderHotel | Record<string, never>;
+  // Split stay: every hotel segment in night order (hotel_order_info = the first one).
+  // null/absent = single hotel.
+  hotel_segments?: OrderHotel[] | null;
   user_shown_price: number;
   aff_partner_tracking_code: string;
   event_id: number;

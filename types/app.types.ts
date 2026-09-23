@@ -96,6 +96,18 @@ export type Event = {
   // backoffice then requires ticket_only_markup and zeroes the travel bases).
   // Missing on rows older than the column = 'package'. See lib/package-mode.ts.
   package_mode?: PackageMode;
+  // Lodging cities (lib/lodging.ts, mirrored in main lib/events/lodging.ts). The flight city
+  // is `location`; `event_location` is the match/show city when it differs (null = same).
+  event_location?: {
+    name: string;
+    latitude: number;
+    longitude: number;
+    country_code?: string | null;
+  } | null;
+  lodging_mode?: "flight_city" | "event_city_only" | "choice" | "choice_split";
+  lodging_default?: "flight" | "event";
+  lodging_note?: string | null;
+  split_default_nights?: number | null;
   // Auto-generated campaign creative for the Meta product feed (nightly cron;
   // square = feed image_link, banner = additional_image_link). Synced to main.
   campaign_image_url?: string | null;
@@ -206,6 +218,10 @@ export type OrderHotel = {
     room_name?: string;
     [key: string]: unknown;
   };
+  // Split stay (lib/lodging.ts): which city this hotel serves and its display name.
+  // Absent on single-hotel orders written before the feature.
+  city?: "flight" | "event";
+  cityName?: string;
   address: string;
   name: string;
   id: string;
