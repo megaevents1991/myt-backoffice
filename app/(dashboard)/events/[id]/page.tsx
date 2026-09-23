@@ -91,6 +91,7 @@ import {
   setEventTags,
 } from "@/lib/actions/event-taxonomy-actions";
 import { flattenWithPath } from "@/lib/taxonomy-tree";
+import { isTicketOnlyEvent, ticketOnlyProblems } from "@/lib/package-mode";
 import {
   isSectionExcluded,
   isUnlabeledSectionId,
@@ -1232,6 +1233,18 @@ export default function EventPage({
       }
     }
 
+    // Ticket-only event: the site prices it as ticket + Ticket-Only Markup, so the
+    // markup must exist (0 allowed). Same rule for batch and single saves.
+    const ticketOnlyIssues = ticketOnlyProblems(event);
+    if (ticketOnlyIssues.length) {
+      toast({
+        variant: "destructive",
+        title: "Ticket-only event",
+        description: ticketOnlyIssues.join(" "),
+      });
+      return;
+    }
+
     // Batch wizard: no confirm dialog - the per-event review IS the confirmation.
     if (isBatchCreate) {
       await handleBatchStepSave();
@@ -1287,6 +1300,8 @@ export default function EventPage({
   // triggers the base-fill effect below - per-city prices on tours for free.
   useEffect(() => {
     if (!isNewEvent || !event) return;
+    // Ticket-only: no flight is sold, so no IATA to resolve.
+    if (isTicketOnlyEvent(event)) return;
     const lat = event.location?.latitude;
     const lon = event.location?.longitude;
     if (event.location?.city_iata || !lat || !lon) return;
@@ -1305,6 +1320,7 @@ export default function EventPage({
   }, [
     isNewEvent,
     batchIndex,
+    event?.package_mode,
     event?.location?.latitude,
     event?.location?.longitude,
     event?.location?.city_iata,
@@ -1316,6 +1332,8 @@ export default function EventPage({
   // empty with a small warning and never blocks save.
   useEffect(() => {
     if (!isNewEvent || !event) return;
+    // Ticket-only: the bases stay 0 on purpose - never quote them.
+    if (isTicketOnlyEvent(event)) return;
     const iata = event.location?.city_iata;
     const depart = event.def_date_depart;
     const ret = event.def_date_return;
@@ -1377,6 +1395,7 @@ export default function EventPage({
   }, [
     isNewEvent,
     batchIndex,
+    event?.package_mode,
     event?.location?.city_iata,
     event?.location?.latitude,
     event?.location?.longitude,
@@ -2072,6 +2091,41 @@ export default function EventPage({
               </div>
             </div>
 
+            <div className="space-y-2" id="fix-package-mode">
+              <Label htmlFor="package_mode">Ticket only (no flight, no hotel)</Label>
+              <div className="flex items-center space-x-2 pt-2">
+                <Switch
+                  id="package_mode"
+                  checked={isTicketOnlyEvent(event)}
+                  onCheckedChange={(on) =>
+                    setEvent((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            package_mode: on ? "ticket_only" : "package",
+                            // No travel is sold, so the bases are 0: every base>0 gate
+                            // (nightly sync, "our offer", alternatives, package light)
+                            // then skips this event on its own.
+                            ...(on ? { base_flight_price: 0, base_hotel_price: 0 } : {}),
+                          }
+                        : prev
+                    )
+                  }
+                />
+                <Label htmlFor="package_mode">
+                  {isTicketOnlyEvent(event)
+                    ? 'Yes - the site sells the ticket alone (badge "כרטיס בלבד")'
+                    : "No - regular package"}
+                </Label>
+              </div>
+              {isTicketOnlyEvent(event) && (
+                <p className="text-xs text-muted-foreground">
+                  Flight/hotel bases, IATA and travel dates are not needed. The site
+                  skips both steps. Ticket-Only Markup below is required.
+                </p>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="skip_flight">Allow Skip Flight</Label>
               <div className="flex items-center space-x-2 pt-2">
@@ -2114,10 +2168,14 @@ export default function EventPage({
                 <p className="text-xs text-muted-foreground">
                   Added per ticket when customer chooses to skip the flight.
                 </p>
+              </div>
+            )}
 
-                <div className="space-y-2 pt-2">
+            {(event.skip_flight || isTicketOnlyEvent(event)) && (
+                <div className="space-y-2 pt-2" id="fix-ticket-only-markup">
                   <Label htmlFor="ticket_only_markup">
                     Ticket-Only Markup (USD per ticket)
+                    {isTicketOnlyEvent(event) ? " *" : ""}
                   </Label>
                   <Input
                     id="ticket_only_markup"
@@ -2146,7 +2204,6 @@ export default function EventPage({
                     every other combination is unchanged. Can be 0.
                   </p>
                 </div>
-              </div>
             )}
 
             <div className="space-y-2">
