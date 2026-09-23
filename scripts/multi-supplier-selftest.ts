@@ -14,6 +14,11 @@ import {
   stampZones,
   zonesFromCategories,
 } from "../lib/venue-maps/svg-zones";
+import {
+  sectionNumber,
+  sectorRange,
+  suggestZone,
+} from "../lib/venue-maps/zone-suggest";
 import { toLiveTicketsCategory } from "../lib/services/livetickets-offers";
 import { applyLiveTicketsStock } from "../lib/services/attached-suppliers-sync";
 import type { EventTicket } from "../types/app.types";
@@ -93,7 +98,16 @@ const raw = { id: 1, title: "Category 2", cost: 331.2, maxTicketAmount: 6, seati
 assert.equal(toLiveTicketsCategory(raw).sellable, true);
 assert.equal(toLiveTicketsCategory({ ...raw, apiImmediatePurchase: false }).blockedReason, "Not instant-confirm");
 assert.equal(toLiveTicketsCategory({ ...raw, seatingMethodId: 2 }).sellable, false);
-assert.equal(toLiveTicketsCategory({ ...raw, maxTicketAmount: 1 }).sellable, false);
+// one per order is sellable (main shows it to a party of one only); none per order is not
+assert.equal(toLiveTicketsCategory({ ...raw, maxTicketAmount: 1 }).sellable, true);
+assert.equal(toLiveTicketsCategory({ ...raw, maxTicketAmount: 0 }).sellable, false);
+// blocked by instant confirm ALONE is recognisable; a hard blocker beside it is not
+assert.equal(toLiveTicketsCategory({ ...raw, apiImmediatePurchase: false }).nonInstantOnly, true);
+assert.equal(
+  toLiveTicketsCategory({ ...raw, apiImmediatePurchase: false, seatingMethodId: 2 }).nonInstantOnly,
+  false,
+);
+assert.equal(toLiveTicketsCategory(raw).nonInstantOnly, false);
 assert.equal(
   toLiveTicketsCategory({ ...raw, hebComments: "אדום במפה, לאורך המגרש קומה 3" }).description,
   "לאורך המגרש קומה 3",
@@ -124,9 +138,74 @@ const notInstant = applyLiveTicketsStock(
   () => 431,
 );
 assert.equal(notInstant.tickets[1].available, false);
+// ...unless the operator attached it AS non-instant: it stays on sale, flagged
+const flagged = { ...lt, nonInstant: true };
+const keptFlagged = applyLiveTicketsStock(
+  [tx, flagged],
+  "tx_event",
+  { currency: "EUR", categories: [category(171442, { apiImmediatePurchase: false })] },
+  () => 431,
+);
+assert.equal(keptFlagged.tickets[1].available, true);
+assert.equal(keptFlagged.tickets[1].nonInstant, true);
+assert.equal(keptFlagged.tickets[1].price, 431);
+// it turned instant-confirm: the warning goes
+const nowInstant = applyLiveTicketsStock(
+  [tx, flagged],
+  "tx_event",
+  { currency: "EUR", categories: [category(171442)] },
+  () => 431,
+);
+assert.equal(nowInstant.tickets[1].available, true);
+assert.equal(nowInstant.tickets[1].nonInstant, undefined);
+// a flagged ticket whose category hits a HARD blocker still goes off sale
+const hard = applyLiveTicketsStock(
+  [tx, flagged],
+  "tx_event",
+  { currency: "EUR", categories: [category(171442, { apiImmediatePurchase: false, seatingMethodId: 2 })] },
+  () => 431,
+);
+assert.equal(hard.tickets[1].available, false);
 const soldOut = applyLiveTicketsStock([tx, lt], "tx_event", "SOLD_OUT", () => 0);
 assert.deepEqual(soldOut.tickets[0], tx);
 assert.equal(soldOut.tickets[1].available, false);
+
+/* zone suggestion - zones of the pilot Bernabéu map (event 1130), sections trimmed */
+const bz = (id: string, label: string, numbers: number[]) => ({
+  id,
+  label,
+  sections: numbers.map((n) => `categoria_${n}`),
+});
+const bernabeu = [
+  bz("long-center", "לאורך המגרש - מרכז, קומות 1-2", [101, 106, 129, 134, 201, 206, 229, 234, 301, 306, 331, 336, 401, 406, 437, 444]),
+  bz("long-center-l2", "לאורך המגרש - מרכז, קומה 2", [301, 306, 331, 336, 401, 406, 437, 444]),
+  bz("long-l1", "לאורך המגרש - קומה 1", [107, 108, 127, 128, 207, 208, 227, 228]),
+  bz("long-l2", "לאורך המגרש - קומה 2", [307, 310, 325, 330, 407, 410, 433, 436]),
+  bz("long-l3", "לאורך המגרש - קומה 3", [501, 512, 535, 544]),
+  bz("long-upper", "לאורך המגרש - קומה 4 (עליונה)", [601, 610, 635, 646, 701, 710]),
+  bz("short-lower", "מאחורי השער - קומות 1-2", [109, 128, 207, 228, 309, 326, 409, 434]),
+  bz("short-upper", "מאחורי השער - קומות 3-4", [513, 534, 611, 634, 663]),
+];
+assert.deepEqual(sectorRange("קומה 3 (סקטורים 500-600)"), [500, 699]);
+assert.deepEqual(sectorRange("(סקטור 700)"), [700, 799]);
+assert.equal(sectorRange("מאחורי השער"), null);
+assert.equal(sectionNumber("categoría-1_511"), 511);
+assert.equal(sectionNumber("vip-box_vip-box-gol-norte"), null);
+const suggested = (text: string) => suggestZone(text, bernabeu)?.zoneId ?? null;
+// every LiveTickets category of the pilot lands where the operator put it by hand
+assert.equal(suggested("מאחורי השער קומות 3-4 (סקטורים 500-600)"), "short-upper");
+assert.equal(suggested("לאורך המגרש קומה 4 (סקטורים 600-700)"), "long-upper");
+assert.equal(suggested("מאחורי השער קומות 1-2 (סקטורים 100-400)"), "short-lower");
+assert.equal(suggested("לאורך המגרש קומה 3 (סקטורים 500-600)"), "long-l3");
+assert.equal(suggested("לאורך המגרש קומה 2 (סקטורים 300-400)"), "long-l2");
+assert.equal(suggested("לאורך המגרש קומה 1 (סקטורים 100-200)"), "long-l1");
+assert.equal(suggested("לאורך המגרש קומה 2 מרכזי (סקטורים 300-400)"), "long-center-l2");
+// a wide range must not hand the win to a small zone inside it
+assert.equal(suggested("לאורך המגרש קומות 1-2 מרכזי (סקטורים 100-300)"), "long-center");
+// two words and no range is a guess - say nothing
+assert.equal(suggested("מאחורי השער"), null);
+assert.equal(suggested("Category 1"), null);
+assert.equal(suggestZone("לאורך המגרש קומה 3", []), null);
 
 console.log("multi-supplier selftest: all assertions passed");
 process.exit(0);

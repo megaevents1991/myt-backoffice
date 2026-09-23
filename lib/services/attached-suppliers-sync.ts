@@ -51,17 +51,34 @@ export function applyLiveTicketsStock(
         ? undefined
         : stock.categories.find((c) => c.id === ticket.id);
 
-    // Gone, or no longer passes the rules (e.g. stopped being instant-confirm).
-    if (!category || !category.sellable) {
+    // A non-instant ticket stays on sale only because an operator attached it
+    // AS non-instant. A regular ticket whose category stops confirming
+    // instantly goes off sale - nobody agreed to sell it that way.
+    const keptNonInstant = !!ticket.nonInstant && !!category?.nonInstantOnly;
+
+    // Gone, or no longer passes the rules.
+    if (!category || (!category.sellable && !keptNonInstant)) {
       if (ticket.available === false) return ticket;
       updated++;
       return { ...ticket, available: false };
     }
 
     const price = priceUsd(category.cost);
-    if (ticket.price === price && ticket.available !== false) return ticket;
+    // Became instant-confirm: the warning no longer applies.
+    const nonInstant = keptNonInstant ? true : undefined;
+    if (
+      ticket.price === price &&
+      ticket.available !== false &&
+      ticket.nonInstant === nonInstant
+    ) {
+      return ticket;
+    }
     updated++;
-    return { ...ticket, price, available: true };
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { nonInstant: _previous, ...rest } = ticket;
+    return nonInstant
+      ? { ...rest, price, available: true, nonInstant }
+      : { ...rest, price, available: true };
   });
 
   const unattached =

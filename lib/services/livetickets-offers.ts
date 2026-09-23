@@ -51,11 +51,19 @@ export type LiveTicketsCategory = {
   cost: number;
   maxPerOrder: number;
   seatingGroupMax: number | null;
-  /** Passes every rule below - the only categories we attach or keep on sale. */
+  /** Passes every rule below - attached and kept on sale with no questions. */
   sellable: boolean;
+  /**
+   * Blocked ONLY because LiveTickets does not confirm it instantly. The operator
+   * may still attach it on purpose ("bring non-instant too", Alon 23.09); the
+   * ticket then carries `nonInstant` and every surface warns about it.
+   */
+  nonInstantOnly: boolean;
   /** Why not, for the operator. Empty when sellable. */
   blockedReason: string;
 };
+
+export const NOT_INSTANT_REASON = "Not instant-confirm";
 
 export type LiveTicketsStock = {
   currency: SupplierCurrency;
@@ -69,12 +77,18 @@ export type LiveTicketsStock = {
 const stripMapColour = (text: string): string =>
   text.replace(/^[^,]{0,20}במפה\s*,\s*/u, "").trim();
 
+/**
+ * Hard blockers first - nothing opens them. Instant confirm last, so a
+ * category blocked by it alone is recognisable (`nonInstantOnly`).
+ * A category sold one per order is NOT blocked: main shows it only to a party
+ * of one (Alon 23.09) - it drops any ticket whose `maxPerOrder` is below the
+ * chosen quantity.
+ */
 function blockedReason(raw: RawLiveTicketsCategory): string {
-  // Hard rule: only what LiveTickets confirms instantly is ever sold.
-  if (raw.apiImmediatePurchase !== true) return "Not instant-confirm";
   if (raw.seatingMethodId === SINGLES_SEATING_METHOD) return "Single seats";
-  if ((raw.maxTicketAmount ?? 0) < 2) return "Fewer than 2 per order";
+  if ((raw.maxTicketAmount ?? 0) < 1) return "None per order";
   if (!Number.isFinite(raw.cost)) return "No cost";
+  if (raw.apiImmediatePurchase !== true) return NOT_INSTANT_REASON;
   return "";
 }
 
@@ -93,6 +107,7 @@ export function toLiveTicketsCategory(
     maxPerOrder: raw.maxTicketAmount ?? 0,
     seatingGroupMax: raw.seatingGroupMAXSize ?? null,
     sellable: reason === "",
+    nonInstantOnly: reason === NOT_INSTANT_REASON,
     blockedReason: reason,
   };
 }

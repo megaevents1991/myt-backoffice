@@ -3,7 +3,7 @@
 import type React from "react";
 import { use, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -476,6 +476,27 @@ export default function EditReservationPage({
                               : ""}
                           </p>
                         </div>
+                      )}
+                      {evt.non_instant && (
+                        <div className="mt-4 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                          <p>
+                            <b>Not instant-confirm.</b> Confirm this ticket with{" "}
+                            {(evt.supplier || "the supplier").toUpperCase()} by
+                            hand before confirming the order - the customer was
+                            not told.
+                          </p>
+                        </div>
+                      )}
+                      {evt.seating_choice && (
+                        <p className="mt-2 text-sm">
+                          Seating chosen by the customer:{" "}
+                          <b>
+                            {evt.seating_choice === "split"
+                              ? "pairs + a triple (split)"
+                              : "all together"}
+                          </b>
+                        </p>
                       )}
                       {index < reservationEvents.length - 1 && (
                         <Separator className="mt-6" />

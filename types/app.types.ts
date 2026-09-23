@@ -440,6 +440,10 @@ export type EventTicket = {
   // also what lights up the map: our SVG copy carries `data-zones` per section.
   zoneId?: string;
   zoneLabel?: string;
+  // Attached on purpose although the supplier does not confirm it instantly
+  // (LiveTickets `apiImmediatePurchase` false). INTERNAL ONLY - the customer
+  // sees an ordinary ticket; the backoffice warns on the event and the order.
+  nonInstant?: boolean;
 };
 
 export type OrderTicket = Omit<EventTicket, "description" | "colorOnTheMap"> & {

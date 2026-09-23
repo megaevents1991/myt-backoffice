@@ -158,7 +158,8 @@ export async function findLiveTicketsCandidates(
  * Draft tickets for every category of a LiveTickets event, priced now. Read
  * live from their API, falling back to our `live_events` snapshot when the
  * API is unreachable. Non-sellable categories come back too (flagged) so the
- * operator sees WHY something is missing; the editor only lets sellable ones in.
+ * operator sees WHY something is missing; the editor lets sellable ones in, and
+ * non-instant ones only behind its explicit "bring non-instant too" switch.
  */
 export async function buildLiveTicketsDrafts(
   liveEventId: string,

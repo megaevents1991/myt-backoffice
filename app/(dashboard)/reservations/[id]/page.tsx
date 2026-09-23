@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -554,6 +554,41 @@ export default function ReservationDetailsPage({
                       </p>
                     </div>
                   </div>
+                  {evt.supplier && evt.supplier !== "static" && (
+                    <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                      <p className="font-semibold">
+                        Buy from: {evt.supplier.toUpperCase()}
+                      </p>
+                      <p>
+                        Their category: <b>{evt.supplier_category || evt.category}</b>
+                        {evt.id ? ` · ticket id ${evt.id}` : ""}
+                        {evt.supplier_event_id
+                          ? ` · their event id ${evt.supplier_event_id}`
+                          : ""}
+                        {evt.zone_label ? ` · zone shown: ${evt.zone_label}` : ""}
+                      </p>
+                    </div>
+                  )}
+                  {evt.non_instant && (
+                    <div className="mt-4 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <p>
+                        <b>Not instant-confirm.</b> Confirm this ticket with{" "}
+                        {(evt.supplier || "the supplier").toUpperCase()} by hand
+                        before confirming the order - the customer was not told.
+                      </p>
+                    </div>
+                  )}
+                  {evt.seating_choice && (
+                    <p className="mt-2 text-sm">
+                      Seating chosen by the customer:{" "}
+                      <b>
+                        {evt.seating_choice === "split"
+                          ? "pairs + a triple (split)"
+                          : "all together"}
+                      </b>
+                    </p>
+                  )}
                   {index < reservationEvents.length - 1 && (
                     <Separator className="mt-6" />
                   )}

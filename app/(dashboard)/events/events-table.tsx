@@ -678,6 +678,11 @@ export function EventsTable() {
       },
       cell: ({ row }) => {
         const isDeleted = row.original.is_deleted;
+        // Tickets attached although the supplier does not confirm them instantly
+        // (Alon 23.09) - internal warning, the customer never sees it.
+        const nonInstant = (row.original.tickets_and_rates ?? []).some(
+          (t) => t.nonInstant && t.available !== false,
+        );
         return (
           <div className="flex items-center gap-2">
             {isDeleted && (
@@ -686,6 +691,15 @@ export function EventsTable() {
                 className="text-destructive border-destructive"
               >
                 Deleted
+              </Badge>
+            )}
+            {nonInstant && (
+              <Badge
+                variant="outline"
+                className="border-amber-400 text-amber-800"
+                title="Some tickets are not instant-confirm - confirm every order with the supplier by hand"
+              >
+                Not instant
               </Badge>
             )}
             <span>{row.getValue("name")}</span>

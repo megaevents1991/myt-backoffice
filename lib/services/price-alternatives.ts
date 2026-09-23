@@ -111,7 +111,7 @@ async function liveTicketsQuote(event: LightEvent): Promise<AltSupplierQuote | n
   // Only what the attach flow would accept (instant confirm, pairs, 2+ per order) - advising a
   // category we refuse to sell is advising nothing.
   const sellable = ((live.ticket_categories ?? []) as RawLiveTicketsCategory[])
-    .map(toLiveTicketsCategory).filter((c) => c.sellable && c.cost > 0).sort((a, b) => a.cost - b.cost);
+    .map(toLiveTicketsCategory).filter((c) => c.sellable && c.maxPerOrder >= 2 && c.cost > 0).sort((a, b) => a.cost - b.cost);
   const cheapest = sellable[0];
   if (!cheapest) return null;
   return {

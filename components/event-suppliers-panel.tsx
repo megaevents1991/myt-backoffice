@@ -15,7 +15,14 @@
  * the event. Zones and the venue template save on their own (they belong to
  * the venue, not to this event).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   AlertTriangle,
   Loader2,
@@ -46,7 +53,6 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type { Event, EventTicket } from "@/types/app.types";
 import {
-  SUPPLIER_LABELS,
   normalizeSupplierCategory,
   ticketSupplier,
 } from "@/lib/suppliers";
@@ -55,6 +61,7 @@ import {
   type VenueMap,
   type VenueZone,
 } from "@/lib/venue-maps/svg-zones";
+import { suggestZone } from "@/lib/venue-maps/zone-suggest";
 import {
   adoptVenueMap,
   getVenueMapByUrl,
@@ -72,6 +79,9 @@ import {
 
 const NO_ZONE = "__none__";
 const NEW_VENUE = "__new__";
+
+/** The zones board, left to right: our own tickets, then the supplier we attach. */
+const BOARD_COLUMNS = ["Ours · TixStock", "LiveTickets"] as const;
 
 const ZONE_FILL = "#C2FFD8";
 const ACTIVE_ZONE_FILL = "#0E6F57";
@@ -318,8 +328,9 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
   // Folded by default: once a venue is zoned the editor is rarely needed, and
   // the event page is long enough without a second stadium drawing on it.
   const [zoneEditorOpen, setZoneEditorOpen] = useState(false);
-  // Draft ticket id → zone the operator just created for it (not saved yet).
-  const [pendingDraftZones, setPendingDraftZones] = useState<
+  // Draft ticket id → zone the operator opened for it with "Own zone" - only
+  // to keep the "mark its sections" note on that draft.
+  const [openedForDraft, setOpenedForDraft] = useState<
     Record<string, string>
   >({});
 
@@ -425,8 +436,14 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     setZonesDirty(true);
   };
 
-  const handleSaveZones = async () => {
-    if (!venueMap) return;
+  /**
+   * Save the zone list. Returns whether it is saved now. Called by the button
+   * AND before a ticket takes a zone that exists only here - the zone lists
+   * used to be two (saved vs. being edited), and a zone added or renamed but
+   * not saved was missing from every "choose zone" list (QA 23.09).
+   */
+  const saveZones = async (quiet = false): Promise<boolean> => {
+    if (!venueMap) return false;
     setSavingZones(true);
     try {
       const result = await saveVenueZones(venueMap.id, zones);
@@ -436,25 +453,11 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
           description: result.error,
           variant: "destructive",
         });
-        return;
+        return false;
       }
       setVenueMap(result.data);
       setZones(result.data.zones);
       setZonesDirty(false);
-      // Zones created for a supplier's category are now real - select them
-      // on the drafts they were made for.
-      const savedIds = new Set(result.data.zones.map((z) => z.id));
-      const ready = Object.entries(pendingDraftZones).filter(([, zoneId]) =>
-        savedIds.has(zoneId),
-      );
-      if (ready.length > 0) {
-        setDraftZones((prev) => ({ ...prev, ...Object.fromEntries(ready) }));
-        setChosen((prev) => ({
-          ...prev,
-          ...Object.fromEntries(ready.map(([ticketId]) => [ticketId, true])),
-        }));
-      }
-      setPendingDraftZones({});
       // A renamed or removed zone must not leave a stale label on a ticket.
       const byId = new Map(result.data.zones.map((z) => [z.id, z]));
       onEventChange((prev) => ({
@@ -470,18 +473,46 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
             : { ...ticket, zoneLabel: zone.label };
         }),
       }));
-      toast({
-        title: "Zones saved",
-        description: "The map on the site updates within a minute.",
-      });
+      if (!quiet) {
+        toast({
+          title: "Zones saved",
+          description: "The map on the site updates within a minute.",
+        });
+      }
+      return true;
     } finally {
       setSavingZones(false);
     }
   };
 
+  const handleSaveZones = () => {
+    void saveZones();
+  };
+
   /* ── 3. Tickets → zones ─────────────────────────────────────────── */
 
   const savedZones = useMemo(() => venueMap?.zones ?? [], [venueMap?.zones]);
+
+  /** In the list being edited but not (or not so) in the database. */
+  const isUnsavedZone = useCallback(
+    (zone: VenueZone) =>
+      !savedZones.some((z) => z.id === zone.id && z.label === zone.label),
+    [savedZones],
+  );
+
+  /** Before a ticket takes `zoneId`: make sure the zone exists in the database. */
+  const ensureZoneSaved = async (zoneId: string | undefined) => {
+    const zone = zones.find((z) => z.id === zoneId);
+    if (!zone || !isUnsavedZone(zone)) return true;
+    return saveZones(true);
+  };
+
+  /** The zone the supplier's own words point at - offered, never applied unseen. */
+  const suggestionFor = useCallback(
+    (ticket: EventTicket) =>
+      suggestZone(ticket.description || ticket.category, zones)?.zoneId,
+    [zones],
+  );
 
   const templateZoneFor = useCallback(
     (ticket: EventTicket): string | undefined => {
@@ -499,15 +530,15 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
 
   const withZone = useCallback(
     (ticket: EventTicket, zoneId: string | undefined): EventTicket => {
-      const zone = savedZones.find((z) => z.id === zoneId);
+      const zone = zones.find((z) => z.id === zoneId);
       return {
         ...ticket,
         supplierCategory: ticket.supplierCategory || ticket.category,
         zoneId: zone?.id,
-        zoneLabel: zone?.label,
+        zoneLabel: zone?.label.trim(),
       };
     },
-    [savedZones],
+    [zones],
   );
 
   const rememberInTemplate = (
@@ -526,8 +557,10 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
       .catch((error) => console.error("venue template save failed", error));
   };
 
-  const handleTicketZone = (ticket: EventTicket, value: string) => {
+  const handleTicketZone = async (ticket: EventTicket, value: string) => {
     const zoneId = value === NO_ZONE ? undefined : value;
+    // A zone only edited here must reach the database before a ticket points at it.
+    if (!(await ensureZoneSaved(zoneId))) return;
     onEventChange((prev) => ({
       ...prev,
       tickets_and_rates: prev.tickets_and_rates.map((t) =>
@@ -574,6 +607,26 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
   const [draftZones, setDraftZones] = useState<Record<string, string>>({});
+  // Draft ids whose zone is OUR suggestion, not the venue template or a person.
+  const [suggestedDrafts, setSuggestedDrafts] = useState<
+    Record<string, boolean>
+  >({});
+  // "Bring non-instant-confirm too" (Alon 23.09): internal only - the ticket
+  // is flagged `nonInstant` and warned about on the event and on the order.
+  const [includeNonInstant, setIncludeNonInstant] = useState(false);
+
+  const isAttachable = (category: LiveTicketsDraft["category"]) =>
+    category.sellable || (includeNonInstant && category.nonInstantOnly);
+
+  const setDraftZone = (ticketId: string, zoneId: string | undefined) => {
+    setDraftZones((prev) => {
+      const next = { ...prev };
+      if (zoneId) next[ticketId] = zoneId;
+      else delete next[ticketId];
+      return next;
+    });
+    setSuggestedDrafts((prev) => ({ ...prev, [ticketId]: false }));
+  };
 
   const attachedIds = useMemo(
     () =>
@@ -631,19 +684,25 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
         return;
       }
       setDrafts(result.data);
-      const zonesFromTemplate: Record<string, string> = {};
+      const startZones: Record<string, string> = {};
+      const suggested: Record<string, boolean> = {};
       const preselected: Record<string, boolean> = {};
       for (const draft of result.data) {
-        const zoneId = templateZoneFor(draft.ticket);
-        if (zoneId) zonesFromTemplate[draft.ticket.id] = zoneId;
+        const fromTemplate = templateZoneFor(draft.ticket);
+        // No template answer: our suggestion from their own words ("סקטורים
+        // 500-600", "מאחורי השער"), shown as such until someone confirms it.
+        const zoneId = fromTemplate ?? suggestionFor(draft.ticket);
+        if (zoneId) startZones[draft.ticket.id] = zoneId;
+        if (zoneId && !fromTemplate) suggested[draft.ticket.id] = true;
         // Pre-tick only what is sellable AND already zoned by the venue
-        // template - everything else needs the operator's eyes.
+        // template - a suggestion still needs the operator's eyes.
         preselected[draft.ticket.id] =
           draft.category.sellable &&
-          !!zoneId &&
+          !!fromTemplate &&
           !attachedIds.has(draft.ticket.id);
       }
-      setDraftZones(zonesFromTemplate);
+      setDraftZones(startZones);
+      setSuggestedDrafts(suggested);
       setChosen(preselected);
     } finally {
       setLoadingDrafts(false);
@@ -652,9 +711,9 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
 
   /**
    * The supplier slices the stand differently from every zone we have: open a
-   * zone of its own for this category. The operator marks its sections on our
-   * drawing (their map is shown next to it) and saves the zones; the draft
-   * then picks the new zone up by itself.
+   * zone of its own for this category. The draft takes it at once; the
+   * operator marks its sections on our drawing (their map is shown next to
+   * it), and the zones are saved with "Save zones" or, at the latest, by Add.
    */
   const handleZoneForDraft = (draft: LiveTicketsDraft) => {
     const label =
@@ -670,29 +729,40 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     setActiveZoneId(zone.id);
     setZonesDirty(true);
     setZoneEditorOpen(true);
-    setPendingDraftZones((prev) => ({ ...prev, [draft.ticket.id]: zone.id }));
+    setOpenedForDraft((prev) => ({ ...prev, [draft.ticket.id]: zone.id }));
+    setDraftZone(draft.ticket.id, zone.id);
+    setChosen((prev) => ({ ...prev, [draft.ticket.id]: true }));
     document
       .getElementById("venue-zone-editor")
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const zoneExists = (zoneId: string | undefined) =>
+    !!zoneId && zones.some((z) => z.id === zoneId);
+
   const selectedDrafts = drafts.filter(
     (d) =>
       chosen[d.ticket.id] &&
-      d.category.sellable &&
+      isAttachable(d.category) &&
       !attachedIds.has(d.ticket.id),
   );
   const selectedWithoutZone = selectedDrafts.filter(
-    (d) => !draftZones[d.ticket.id],
+    (d) => !zoneExists(draftZones[d.ticket.id]),
   );
 
   const gapNeedsDecision = !!picked && picked.dateGapDays !== 0 && !gapAcknowledged;
 
-  const handleAttach = () => {
+  const handleAttach = async () => {
     if (selectedDrafts.length === 0 || selectedWithoutZone.length > 0 || gapNeedsDecision) return;
-    const tickets = selectedDrafts.map((d) =>
-      withZone(d.ticket, draftZones[d.ticket.id]),
-    );
+    // Zones opened or renamed for these categories go to the database first -
+    // a ticket must never point at a zone that exists only in this editor.
+    if (zonesDirty && !(await saveZones(true))) return;
+    const tickets = selectedDrafts.map((d) => {
+      const zoned = withZone(d.ticket, draftZones[d.ticket.id]);
+      return d.category.sellable
+        ? zoned
+        : { ...zoned, available: true, nonInstant: true };
+    });
     onEventChange((prev) => ({
       ...prev,
       tickets_and_rates: [...prev.tickets_and_rates, ...tickets],
@@ -707,10 +777,21 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
       ),
     );
     setAttachOpen(false);
+    setOpenedForDraft({});
+    const nonInstantCount = tickets.filter((t) => t.nonInstant).length;
     toast({
       title: `${tickets.length} LiveTickets ticket(s) added`,
-      description: "Save the event to put them on sale.",
+      description: `Save the event to put them on sale.${
+        nonInstantCount > 0
+          ? ` ${nonInstantCount} of them are NOT instant-confirm - orders for them are flagged.`
+          : ""
+      }`,
     });
+  };
+
+  /** One click for an unzoned ticket: take the zone its own words point at. */
+  const handleUseSuggestion = (ticket: EventTicket, zoneId: string) => {
+    void handleTicketZone(ticket, zoneId);
   };
 
   const handleDetachLiveTickets = () => {
@@ -724,16 +805,243 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
 
   /* ── Render ─────────────────────────────────────────────────────── */
 
-  const canZone = isOurMap && savedZones.length > 0;
+  // Zones being edited count: a zone added or renamed a moment ago is offered
+  // at once and saved the moment a ticket takes it (`ensureZoneSaved`).
+  const canZone = isOurMap && zones.length > 0;
   const hiddenTickets = event.tickets_and_rates.filter(
     (t) => ticketSupplier(t, event.type) !== "tixstock" && !t.zoneId,
   );
+  const nonInstantTickets = event.tickets_and_rates.filter((t) => t.nonInstant);
 
-  const zoneSelectItems = savedZones.map((zone) => (
+  const zoneName = (zone: VenueZone) => zone.label.trim() || zone.id;
+  const zoneSelectItems = zones.map((zone) => (
     <SelectItem key={zone.id} value={zone.id}>
-      {zone.label}
+      {zoneName(zone)}
+      {isUnsavedZone(zone) ? " · unsaved" : ""}
     </SelectItem>
   ));
+
+  /* The board: one row per zone, our tickets beside LiveTickets' (QA 23.09 -
+     comparing two stacked lists was the slow part). Drafts of the event being
+     attached sit in the row of the zone they are about to take. */
+  const showDrafts = attachOpen && !!picked && !loadingDrafts;
+  const boardDrafts = showDrafts
+    ? drafts.filter((d) => !attachedIds.has(d.ticket.id))
+    : [];
+  const columnOf = (ticket: EventTicket) =>
+    ticketSupplier(ticket, event.type) === "livetickets" ? 1 : 0;
+  const boardRows: { key: string; zone: VenueZone | null }[] = [
+    ...zones.map((zone) => ({ key: zone.id, zone })),
+    { key: NO_ZONE, zone: null },
+  ];
+  const ticketsIn = (zone: VenueZone | null) =>
+    event.tickets_and_rates.filter((t) =>
+      zone ? t.zoneId === zone.id : !zoneExists(t.zoneId),
+    );
+  const draftsIn = (zone: VenueZone | null) =>
+    boardDrafts.filter((d) =>
+      zone
+        ? draftZones[d.ticket.id] === zone.id
+        : !zoneExists(draftZones[d.ticket.id]),
+    );
+  const nonInstantDrafts = drafts.filter(
+    (d) => d.category.nonInstantOnly && !attachedIds.has(d.ticket.id),
+  ).length;
+  const suggestedCount = boardDrafts.filter(
+    (d) => suggestedDrafts[d.ticket.id],
+  ).length;
+
+  const renderTicket = (ticket: EventTicket) => {
+    const suggestion = !zoneExists(ticket.zoneId)
+      ? suggestionFor(ticket)
+      : undefined;
+    const suggested = zones.find((z) => z.id === suggestion);
+    return (
+      <div
+        key={ticket.id}
+        className={cn(
+          "space-y-2 rounded-md border bg-background p-2 text-sm",
+          ticket.available === false && "opacity-60",
+        )}
+      >
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-medium">
+              {ticket.supplierCategory || ticket.category}
+            </div>
+            <div dir="rtl" className="truncate text-xs text-muted-foreground">
+              {ticket.description}
+            </div>
+          </div>
+          <span className="tabular-nums">${ticket.price}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {ticket.available === false && (
+            <Badge variant="outline">Off sale</Badge>
+          )}
+          {ticket.nonInstant && (
+            <Badge className="gap-1 bg-amber-100 text-amber-900 hover:bg-amber-100">
+              <AlertTriangle className="h-3 w-3" /> Not instant-confirm
+            </Badge>
+          )}
+          <Select
+            value={zoneExists(ticket.zoneId) ? ticket.zoneId : NO_ZONE}
+            onValueChange={(value) => void handleTicketZone(ticket, value)}
+            disabled={!canZone || savingZones}
+          >
+            <SelectTrigger className="h-8 w-full sm:w-60" dir="rtl">
+              <SelectValue placeholder="No zone" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_ZONE}>— No zone —</SelectItem>
+              {zoneSelectItems}
+            </SelectContent>
+          </Select>
+          {suggested && canZone && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={() => handleUseSuggestion(ticket, suggested.id)}
+            >
+              Suggested:{" "}
+              <span dir="rtl" className="ml-1">
+                {zoneName(suggested)}
+              </span>
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderDraft = (draft: LiveTicketsDraft) => {
+    const { ticket, category } = draft;
+    const attachable = isAttachable(category);
+    return (
+      <div
+        key={`draft-${ticket.id}`}
+        className={cn(
+          "space-y-2 rounded-md border border-dashed border-primary/50 bg-primary/5 p-2 text-sm",
+          !attachable && "opacity-60",
+        )}
+      >
+        <div className="flex items-start gap-2">
+          <Checkbox
+            className="mt-0.5"
+            checked={!!chosen[ticket.id] && attachable}
+            disabled={!attachable}
+            onCheckedChange={(value) =>
+              setChosen((prev) => ({ ...prev, [ticket.id]: value === true }))
+            }
+          />
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">
+              {category.title}{" "}
+              <span className="text-xs font-normal text-muted-foreground">
+                new · up to {category.maxPerOrder}/order
+              </span>
+            </div>
+            <div dir="rtl" className="truncate text-xs text-muted-foreground">
+              {category.description}
+            </div>
+          </div>
+          <span className="tabular-nums">${ticket.price}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {!category.sellable && (
+            <Badge
+              variant="outline"
+              className={cn(
+                category.nonInstantOnly &&
+                  attachable &&
+                  "border-amber-400 text-amber-800",
+              )}
+            >
+              {category.blockedReason}
+            </Badge>
+          )}
+          {category.maxPerOrder === 1 && (
+            <Badge variant="outline">Shown to a party of 1 only</Badge>
+          )}
+          {attachable && (
+            <>
+              <Select
+                value={
+                  zoneExists(draftZones[ticket.id])
+                    ? draftZones[ticket.id]
+                    : NO_ZONE
+                }
+                onValueChange={(value) =>
+                  setDraftZone(ticket.id, value === NO_ZONE ? undefined : value)
+                }
+              >
+                <SelectTrigger className="h-8 w-full sm:w-60" dir="rtl">
+                  <SelectValue placeholder="Zone" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_ZONE}>— Choose zone —</SelectItem>
+                  {zoneSelectItems}
+                </SelectContent>
+              </Select>
+              {suggestedDrafts[ticket.id] && (
+                <Badge variant="secondary">Suggested - check it</Badge>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8"
+                disabled={!!openedForDraft[ticket.id]}
+                onClick={() => handleZoneForDraft(draft)}
+              >
+                <Plus className="mr-1 h-4 w-4" /> Own zone
+              </Button>
+            </>
+          )}
+        </div>
+        {openedForDraft[ticket.id] && (
+          <p className="text-xs text-amber-700">
+            Zone opened above - mark its sections on our map. It is saved with
+            “Save zones”, or by “Add” at the latest.
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  const attachBar = showDrafts && (
+    <div className="flex flex-wrap items-center justify-end gap-3">
+      {selectedWithoutZone.length > 0 && (
+        <span className="text-sm text-amber-700">
+          {selectedWithoutZone.length} selected ticket(s) still need a zone.
+        </span>
+      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => setAttachOpen(false)}
+      >
+        Cancel
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        onClick={() => void handleAttach()}
+        disabled={
+          selectedDrafts.length === 0 ||
+          selectedWithoutZone.length > 0 ||
+          gapNeedsDecision ||
+          savingZones
+        }
+      >
+        {savingZones && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        Add {selectedDrafts.length} ticket(s)
+      </Button>
+    </div>
+  );
 
   return (
     <Card
@@ -748,6 +1056,14 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
           here is manual: you decide whether to add a supplier, which of their
           events it is, and which of our zones each category belongs to.
         </CardDescription>
+        {nonInstantTickets.length > 0 && (
+          <p className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            {nonInstantTickets.length} ticket(s) on this event are NOT
+            instant-confirm - every order for them must be confirmed with
+            LiveTickets by hand. The customer is not told.
+          </p>
+        )}
       </CardHeader>
       <CardContent className="space-y-8">
         {/* ── Map ownership ── */}
@@ -965,81 +1281,6 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
           </section>
         )}
 
-        {/* ── Tickets → zones ── */}
-        <section className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="font-medium">Tickets by zone</h3>
-            {unzonedFromTemplate.length > 0 && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={handleApplyTemplate}
-              >
-                Apply venue template ({unzonedFromTemplate.length})
-              </Button>
-            )}
-          </div>
-          {!canZone && (
-            <p className="text-sm text-muted-foreground">
-              Own the map and save at least one zone to start zoning tickets.
-            </p>
-          )}
-          {hiddenTickets.length > 0 && (
-            <p className="flex items-center gap-2 text-sm text-amber-700">
-              <AlertTriangle className="h-4 w-4" />
-              {hiddenTickets.length} ticket(s) from another supplier have no
-              zone — they stay hidden on the site until zoned.
-            </p>
-          )}
-          <div className="divide-y rounded-md border">
-            {event.tickets_and_rates.map((ticket) => {
-              const supplier = ticketSupplier(ticket, event.type);
-              return (
-                <div
-                  key={ticket.id}
-                  className="flex flex-wrap items-center gap-3 p-2 text-sm"
-                >
-                  <Badge
-                    variant={
-                      supplier === "livetickets" ? "default" : "secondary"
-                    }
-                  >
-                    {SUPPLIER_LABELS[supplier]}
-                  </Badge>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium">
-                      {ticket.supplierCategory || ticket.category}
-                    </div>
-                    <div
-                      dir="rtl"
-                      className="truncate text-xs text-muted-foreground"
-                    >
-                      {ticket.description}
-                    </div>
-                  </div>
-                  <span className="w-16 text-right tabular-nums">
-                    ${ticket.price}
-                  </span>
-                  <Select
-                    value={ticket.zoneId ?? NO_ZONE}
-                    onValueChange={(value) => handleTicketZone(ticket, value)}
-                    disabled={!canZone}
-                  >
-                    <SelectTrigger className="w-64" dir="rtl">
-                      <SelectValue placeholder="No zone" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NO_ZONE}>— No zone —</SelectItem>
-                      {zoneSelectItems}
-                    </SelectContent>
-                  </Select>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
         {/* ── Attach LiveTickets ── */}
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1183,133 +1424,121 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                       Reading their categories…
                     </p>
                   ) : (
-                    <div className="divide-y rounded-md border">
-                      {drafts.map((draft) => {
-                        const { ticket, category } = draft;
-                        const already = attachedIds.has(ticket.id);
-                        const disabled = !category.sellable || already;
-                        return (
-                          <div
-                            key={ticket.id}
-                            className={cn(
-                              "flex flex-wrap items-center gap-3 p-2 text-sm",
-                              disabled && "opacity-60",
-                            )}
-                          >
-                            <Checkbox
-                              checked={!!chosen[ticket.id] && !disabled}
-                              disabled={disabled}
-                              onCheckedChange={(value) =>
-                                setChosen((prev) => ({
-                                  ...prev,
-                                  [ticket.id]: value === true,
-                                }))
-                              }
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="font-medium">
-                                {category.title}{" "}
-                                <span className="text-xs text-muted-foreground">
-                                  up to {category.maxPerOrder}/order
-                                </span>
-                              </div>
-                              <div
-                                dir="rtl"
-                                className="truncate text-xs text-muted-foreground"
-                              >
-                                {category.description}
-                              </div>
-                            </div>
-                            {already ? (
-                              <Badge variant="secondary">Already added</Badge>
-                            ) : !category.sellable ? (
-                              <Badge variant="outline">
-                                {category.blockedReason}
-                              </Badge>
-                            ) : (
-                              <>
-                                <span className="w-16 text-right tabular-nums">
-                                  ${ticket.price}
-                                </span>
-                                <Select
-                                  value={draftZones[ticket.id] ?? NO_ZONE}
-                                  onValueChange={(value) =>
-                                    setDraftZones((prev) => {
-                                      const next = { ...prev };
-                                      if (value === NO_ZONE) {
-                                        delete next[ticket.id];
-                                      } else {
-                                        next[ticket.id] = value;
-                                      }
-                                      return next;
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger className="w-64" dir="rtl">
-                                    <SelectValue placeholder="Zone" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value={NO_ZONE}>
-                                      — Choose zone —
-                                    </SelectItem>
-                                    {zoneSelectItems}
-                                  </SelectContent>
-                                </Select>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={!!pendingDraftZones[ticket.id]}
-                                  onClick={() => handleZoneForDraft(draft)}
-                                >
-                                  <Plus className="mr-1 h-4 w-4" /> Own zone
-                                </Button>
-                                {pendingDraftZones[ticket.id] && (
-                                  <span className="w-full text-xs text-amber-700">
-                                    Zone opened above - mark its sections on
-                                    our map and press “Save zones”. It is
-                                    selected here once saved.
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <>
+                      <label
+                        className={cn(
+                          "flex items-start gap-2 rounded-md border p-2 text-sm",
+                          includeNonInstant && "border-amber-400 bg-amber-50",
+                        )}
+                      >
+                        <Checkbox
+                          className="mt-0.5"
+                          checked={includeNonInstant}
+                          disabled={nonInstantDrafts === 0}
+                          onCheckedChange={(v) =>
+                            setIncludeNonInstant(v === true)
+                          }
+                        />
+                        <span>
+                          Bring non-instant-confirm categories too (
+                          {nonInstantDrafts}).{" "}
+                          <span className="text-muted-foreground">
+                            Internal only: the customer sees a normal ticket;
+                            the event and every order for it are flagged so ops
+                            confirm with LiveTickets by hand.
+                          </span>
+                        </span>
+                      </label>
+                      <p className="text-sm text-muted-foreground">
+                        Their {boardDrafts.length} categories are placed in the
+                        zones board below, next to our tickets
+                        {suggestedCount > 0
+                          ? ` - ${suggestedCount} on a suggested zone (read off their sectors and wording), check each one`
+                          : ""}
+                        .
+                      </p>
+                    </>
                   )}
-                  <div className="flex flex-wrap items-center justify-end gap-3">
-                    {selectedWithoutZone.length > 0 && (
-                      <span className="text-sm text-amber-700">
-                        {selectedWithoutZone.length} selected ticket(s) still
-                        need a zone.
-                      </span>
-                    )}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setAttachOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={handleAttach}
-                      disabled={
-                        selectedDrafts.length === 0 ||
-                        selectedWithoutZone.length > 0 ||
-                        gapNeedsDecision
-                      }
-                    >
-                      Add {selectedDrafts.length} ticket(s)
-                    </Button>
-                  </div>
+                  {attachBar}
                 </>
               )}
             </div>
           )}
+        </section>
+
+        {/* ── Zones board: our tickets | LiveTickets ── */}
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-medium">Tickets by zone</h3>
+            {unzonedFromTemplate.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleApplyTemplate}
+              >
+                Apply venue template ({unzonedFromTemplate.length})
+              </Button>
+            )}
+          </div>
+          {!canZone && (
+            <p className="text-sm text-muted-foreground">
+              Own the map and add at least one zone to start zoning tickets.
+            </p>
+          )}
+          {hiddenTickets.length > 0 && (
+            <p className="flex items-center gap-2 text-sm text-amber-700">
+              <AlertTriangle className="h-4 w-4" />
+              {hiddenTickets.length} ticket(s) from another supplier have no
+              zone — they stay hidden on the site until zoned.
+            </p>
+          )}
+          <div className="space-y-2">
+            {boardRows.map(({ key, zone }) => {
+              const tickets = ticketsIn(zone);
+              const rowDrafts = draftsIn(zone);
+              if (!zone && tickets.length === 0 && rowDrafts.length === 0) {
+                return null;
+              }
+              const columns: [ReactNode[], ReactNode[]] = [[], []];
+              for (const ticket of tickets) {
+                columns[columnOf(ticket)].push(renderTicket(ticket));
+              }
+              for (const draft of rowDrafts) columns[1].push(renderDraft(draft));
+              return (
+                <div
+                  key={key}
+                  className={cn("rounded-md border", !zone && "border-amber-300")}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-3 py-1.5">
+                    <span dir="rtl" className="font-medium">
+                      {zone ? zoneName(zone) : "ללא אזור"}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {zone
+                        ? `${zone.sections.length} sections${isUnsavedZone(zone) ? " · unsaved" : ""}`
+                        : "Not on the map yet"}
+                    </span>
+                  </div>
+                  <div className="grid gap-2 p-2 md:grid-cols-2">
+                    {BOARD_COLUMNS.map((label, i) => (
+                      <div key={label} className="space-y-2">
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          {label}
+                        </div>
+                        {columns[i].length > 0 ? (
+                          columns[i]
+                        ) : (
+                          <p className="text-xs text-muted-foreground">—</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {attachBar}
         </section>
       </CardContent>
     </Card>
