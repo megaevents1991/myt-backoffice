@@ -9,7 +9,7 @@
 // No new table - the memory IS the existing events.
 import { supabase } from "@/lib/supabase-server";
 import { normalizeForSearch } from "@/lib/search";
-import type { EventTicket } from "@/types/app.types";
+import type { Event, EventTicket } from "@/types/app.types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
@@ -37,10 +37,19 @@ export function normalizeVenueName(name: string): string {
   return normalizeForSearch(name);
 }
 
+/** Lodging fields a venue "remembers" (spec part C): the next home game at Anfield gets
+ *  the same event city / mode / default without anyone re-typing them. */
+export type VenueLodging = Pick<
+  Event,
+  "event_location" | "lodging_mode" | "lodging_default" | "lodging_note" | "split_default_nights"
+>;
+
 export type VenueMemory = {
   fromEventId: number;
   fromEventName: string;
   tickets: EventTicket[];
+  /** null when the remembered event had no event city. */
+  lodging: VenueLodging | null;
 } | null;
 
 interface MemoryRow {
@@ -48,6 +57,11 @@ interface MemoryRow {
   name: string;
   location: { latitude?: number; longitude?: number; name?: string } | null;
   tickets_and_rates: EventTicket[] | null;
+  event_location: Event["event_location"];
+  lodging_mode: Event["lodging_mode"] | null;
+  lodging_default: Event["lodging_default"] | null;
+  lodging_note: string | null;
+  split_default_nights: number | null;
 }
 
 /**
@@ -63,7 +77,7 @@ export async function findVenueMemory(
 ): Promise<VenueMemory> {
   const { data, error } = await db
     .from("events")
-    .select("id,name,location,tickets_and_rates")
+    .select("id,name,location,tickets_and_rates,event_location,lodging_mode,lodging_default,lodging_note,split_default_nights")
     .is("is_deleted", null)
     .order("date", { ascending: false })
     .limit(400);
@@ -105,5 +119,14 @@ export async function findVenueMemory(
       ...ticket,
       id: crypto.randomUUID(),
     })),
+    lodging: match.event_location
+      ? {
+          event_location: match.event_location,
+          lodging_mode: match.lodging_mode ?? "flight_city",
+          lodging_default: match.lodging_default ?? "flight",
+          lodging_note: match.lodging_note ?? null,
+          split_default_nights: match.split_default_nights ?? 2,
+        }
+      : null,
   };
 }

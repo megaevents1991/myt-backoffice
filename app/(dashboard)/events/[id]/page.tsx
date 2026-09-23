@@ -92,6 +92,8 @@ import {
 } from "@/lib/actions/event-taxonomy-actions";
 import { flattenWithPath } from "@/lib/taxonomy-tree";
 import { isTicketOnlyEvent, ticketOnlyProblems } from "@/lib/package-mode";
+import { hasEventCity, lodgingProblems, LODGING_MODES } from "@/lib/lodging";
+import { HotelWarmButton } from "@/components/hotel-warm-button";
 import {
   isSectionExcluded,
   isUnlabeledSectionId,
@@ -1242,6 +1244,11 @@ export default function EventPage({
         title: "Ticket-only event",
         description: ticketOnlyIssues.join(" "),
       });
+      return;
+    }
+    const lodgingIssues = lodgingProblems(event);
+    if (lodgingIssues.length) {
+      toast({ variant: "destructive", title: "Lodging", description: lodgingIssues.join(" ") });
       return;
     }
 
@@ -2441,6 +2448,191 @@ export default function EventPage({
                 />
               </div>
             </div>
+            <HotelWarmButton
+              point={{ name: event.location.name, latitude: event.location.latitude, longitude: event.location.longitude }}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Lodging cities (spec part C): the flight city above is where the customer lands
+            and, by default, sleeps; the EVENT city is where the match/show is when that is
+            a different town (Liverpool game, London flight). Rules: lib/lodging.ts. */}
+        <Card id="section-lodging" data-editor-section="Lodging" className="scroll-mt-20">
+          <CardHeader>
+            <CardTitle>Lodging - event city</CardTitle>
+            <CardDescription>
+              Leave empty when the match/show is in the flight city. Set it when customers may sleep in
+              the event city (or split the stay) - the site then shows &quot;הלינה ב: …&quot; with a city
+              button and, in split mode, the &quot;מפוצל&quot; popup.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="event_location_select">Event city from saved locations</Label>
+              <select
+                id="event_location_select"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value=""
+                disabled={locationsLoading}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!val) return;
+                  if (val === "clear") {
+                    setEvent((prev) => (prev ? { ...prev, event_location: null, lodging_mode: "flight_city" } : prev));
+                    return;
+                  }
+                  const loc = locations.find((l) => l.id === Number(val));
+                  if (!loc) return;
+                  setEvent((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          event_location: {
+                            name: loc.name,
+                            latitude: loc.latitude,
+                            longitude: loc.longitude,
+                            country_code: loc.country_code || null,
+                          },
+                          lodging_mode: prev.lodging_mode && prev.lodging_mode !== "flight_city" ? prev.lodging_mode : "choice_split",
+                        }
+                      : prev
+                  );
+                }}
+              >
+                <option value="">{locationsLoading ? "Loading locations..." : "Pick a saved location…"}</option>
+                {locations.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.name}
+                  </option>
+                ))}
+                <option value="clear">— Clear event city (same as flight city) —</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="event_location.name">Event city name</Label>
+                <Input
+                  id="event_location.name"
+                  value={event.event_location?.name ?? ""}
+                  placeholder="e.g. ליברפול"
+                  onChange={(e) =>
+                    setEvent((prev) =>
+                      prev
+                        ? { ...prev, event_location: { latitude: 0, longitude: 0, ...(prev.event_location ?? {}), name: e.target.value } }
+                        : prev
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="event_location.latitude">Latitude</Label>
+                <Input
+                  id="event_location.latitude"
+                  type="number"
+                  step="0.000001"
+                  value={event.event_location?.latitude ?? ""}
+                  onChange={(e) =>
+                    setEvent((prev) =>
+                      prev
+                        ? { ...prev, event_location: { name: "", longitude: 0, ...(prev.event_location ?? {}), latitude: Number(e.target.value) } }
+                        : prev
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="event_location.longitude">Longitude</Label>
+                <Input
+                  id="event_location.longitude"
+                  type="number"
+                  step="0.000001"
+                  value={event.event_location?.longitude ?? ""}
+                  onChange={(e) =>
+                    setEvent((prev) =>
+                      prev
+                        ? { ...prev, event_location: { name: "", latitude: 0, ...(prev.event_location ?? {}), longitude: Number(e.target.value) } }
+                        : prev
+                    )
+                  }
+                />
+              </div>
+            </div>
+            {hasEventCity(event) && (
+              <>
+                <HotelWarmButton
+                  point={{
+                    name: event.event_location?.name ?? "",
+                    latitude: Number(event.event_location?.latitude),
+                    longitude: Number(event.event_location?.longitude),
+                  }}
+                />
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="lodging_mode">What the hotel step offers</Label>
+                    <select
+                      id="lodging_mode"
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={event.lodging_mode ?? "flight_city"}
+                      onChange={(e) =>
+                        setEvent((prev) => (prev ? { ...prev, lodging_mode: e.target.value as Event["lodging_mode"] } : prev))
+                      }
+                    >
+                      {LODGING_MODES.map((m) => (
+                        <option key={m} value={m}>
+                          {m === "flight_city"
+                            ? "Flight city only (today's flow)"
+                            : m === "event_city_only"
+                              ? "Event city only"
+                              : m === "choice"
+                                ? "Customer picks a city"
+                                : "Customer picks a city or splits the stay"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lodging_default">Opens on</Label>
+                    <select
+                      id="lodging_default"
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={event.lodging_default ?? "flight"}
+                      onChange={(e) =>
+                        setEvent((prev) => (prev ? { ...prev, lodging_default: e.target.value as Event["lodging_default"] } : prev))
+                      }
+                    >
+                      <option value="flight">Flight city ({event.location.name})</option>
+                      <option value="event">Event city ({event.event_location?.name})</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="split_default_nights">Split default: nights in event city</Label>
+                    <select
+                      id="split_default_nights"
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={String(event.split_default_nights ?? 2)}
+                      onChange={(e) =>
+                        setEvent((prev) => (prev ? { ...prev, split_default_nights: Number(e.target.value) } : prev))
+                      }
+                    >
+                      <option value="1">1 - the event night</option>
+                      <option value="2">2 - night before + event night</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lodging_note">Transfer note (shown to the customer under the city line)</Label>
+                  <Textarea
+                    id="lodging_note"
+                    rows={2}
+                    value={event.lodging_note ?? ""}
+                    placeholder="רכבת לונדון–ליברפול כשעתיים ורבע, ההעברה אינה כלולה במחיר."
+                    onChange={(e) =>
+                      setEvent((prev) => (prev ? { ...prev, lodging_note: e.target.value || null } : prev))
+                    }
+                  />
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 

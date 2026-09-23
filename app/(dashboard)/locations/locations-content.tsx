@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { HotelWarmButton } from "@/components/hotel-warm-button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -243,6 +244,13 @@ export default function LocationsContent() {
                   <p className="text-xs text-muted-foreground">
                     Created {new Date(location.created_at).toLocaleDateString()}
                   </p>
+                  {/* Warm RateHawk static hotels around this point (spec part B-min):
+                      a cold city shows 14 hotels per customer page load and no 3★
+                      base price until someone has browsed it. */}
+                  <HotelWarmButton
+                    compact
+                    point={{ name: location.name, latitude: location.latitude, longitude: location.longitude }}
+                  />
                 </div>
               </CardContent>
             </Card>

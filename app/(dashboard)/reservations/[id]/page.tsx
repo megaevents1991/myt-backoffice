@@ -892,6 +892,38 @@ export default function ReservationDetailsPage({
                       {reservation.hotel_order_info.address}
                     </p>
                   </div>
+                  {(reservation.hotel_segments?.length ?? 0) > 1 ? (
+                    // Split stay (spec part C2): one hotel per city segment, in night order.
+                    // hotel_order_info above is the FIRST segment.
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Split stay - {reservation.hotel_segments!.length} hotels</p>
+                      <div className="divide-y rounded-md border">
+                        {reservation.hotel_segments!.map((seg, i) => (
+                          <div key={`${seg.id}-${i}`} className="grid grid-cols-4 gap-3 p-3 text-sm">
+                            <div>
+                              <p className="text-xs text-muted-foreground">City</p>
+                              <p className="font-medium">{seg.cityName ?? seg.city ?? "-"}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Dates</p>
+                              <p>
+                                {new Date(seg.checkin).toLocaleDateString()} → {new Date(seg.checkout).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Hotel</p>
+                              <p className="font-medium">{seg.name}</p>
+                              <p className="text-xs text-muted-foreground">{seg.rate?.room_name ?? seg.hotelInformation?.roomName ?? ""}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Price</p>
+                              <p>${Number(seg.price).toLocaleString()}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm font-medium">Check-in</p>
@@ -910,6 +942,7 @@ export default function ReservationDetailsPage({
                       </p>
                     </div>
                   </div>
+                  )}
 
                   <div>
                     <p className="text-sm font-medium">Rooms Information</p>
