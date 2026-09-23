@@ -199,7 +199,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >     returns `sent`/`skipped`/`failed`; `createTask`/`updateTask` pass it back as
 >     `mail` and the dialog's toast says what happened - it no longer promises a mail).
 >     `@mention` -> the mentioned. New in `lib/services/task-watch-notify.ts`: a task
->     marked **done** mails its creator; a new **comment** mails creator + assignee -
+>     marked **done** mails its creator; a new **comment** mails creator + assignee (19.09: the whole conversation - see below) -
 >     never the actor, never someone the mention mail already covers. Every send/skip
 >     is logged (`tasks: <kind> mail sent|skipped|failed for task <id>`), so Vercel logs
 >     can tell "sent" from "never tried". Rule-made tasks have no human creator.
@@ -211,6 +211,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >     renders as "באתר" next to "Do:"; the Pricing tab has the same link per row and its
 >     gap filter is a two-thumb range slider (`components/ui/slider.tsx` renders one
 >     thumb per value).
+>   - **Unread comments + reply mails (2026-09-19).** One pure rule,
+>     `lib/tasks/thread-watch.ts` (`scripts/task-thread-selftest.ts`): a conversation
+>     belongs to the task's creator, its assignee, and whoever wrote or was @mentioned
+>     in it. (a) **Mail:** a new comment mails all of them (`commentMailTargets`) - so a
+>     REPLY reaches the person it answers, not only creator + assignee - minus the author
+>     and the people this comment mentions (the mention mail covers them). Both mails
+>     carry the comment itself (`commentForMail`, 2000 chars), not a 300-char teaser.
+>     (b) **Unread marker:** table `task_reads` (task_id, user_id, last_read_at; migration
+>     `20260919100000`), stamped by `markTaskRead` every time `TaskThread` loads (never
+>     while impersonating). `TaskWithNames.unread_count` (`unreadCounts`) = comments by
+>     someone else newer than the viewer's stamp, ONLY on tasks whose conversation they
+>     are part of - the whole board is visible to everyone, a dot on every commented task
+>     would mark nothing. Shown on the table's speech bubble ("N חדשות"), as a dot on
+>     kanban / roadmap cards, and as a "חדש" tag on those comments inside the thread
+>     (what was unread when it OPENED). A failed `task_reads` read (table not migrated
+>     yet) = nothing unread, never "everything unread". (c) A comment's edit / delete are
+>     icon buttons in its header (delete asks once); rules unchanged - the author edits
+>     and deletes their own, an admin deletes anyone's but never edits.
 >   - **Recurring rules** (`lib/services/task-rules/*`, one file per domain -
 >     `price-light.ts`, `price-changes.ts`, `creative-gaps.ts`, `custom.ts`):
 >     each rule's `candidates()` generator **throws** on a load failure rather
@@ -487,6 +505,8 @@ Built on **shadcn/ui** (Radix UI + Tailwind). Component config in `components.js
 Events have a `type` field (`sports_event`, `music_event`, `sports_event_dynamic`, `sports_live_event_dynamic`, `music_live_event_dynamic`, `tx_event`). When creating events from external providers (P1, LiveTickets), prices are converted to USD with markups and rounded to nearest $10 minus $1 (e.g. $129, $199).
 
 Soft deletes use the `is_deleted` column - set to a `MM-DD-YYYY` date string (not a boolean). Never hard-delete events; use `softDeleteEvent` / `bulkSoftDeleteEvents` from `lib/actions/event-actions.ts`.
+
+**Ticket-only events (2026-09-23, spec `docs/superpowers/specs/2026-09-20-lodging-destinations-design.md` part A, plan `docs/superpowers/plans/2026-09-23-ticket-only-events.md`).** `events.package_mode` text (`package` default | `ticket_only`, NO check constraint - a later mode needs no migration; helpers `isTicketOnlyEvent` / `ticketOnlyProblems` in `lib/package-mode.ts`, selftest `scripts/package-mode-selftest.ts`, mirrored in main `lib/events/price.ts`). The editor switch ("Ticket only (no flight, no hotel)") **zeroes `base_flight_price`/`base_hotel_price` and requires `ticket_only_markup`** (0 allowed) - so every existing `base > 0` gate (base-price-sync, price-light-ours, alternatives, package light = `na`) skips the event with no code of its own; the ticket light still runs. Events table: filter reads the flag (not the noisy `skip_flight`), amber badge, bulk ON/OFF. Portal: `BuilderEvent.package_mode`, the wizard is locked to tickets (`lockedTicketsOnly`). Main (branch `feat/ticket-only-events`): forces both skips, walks 1 → 4 with a 2-step stepper, prices via `isTicketOnlyOverride`, card badge "כרטיס בלבד" + ticket icon only + "מחיר / לכרטיס", feeds say "כרטיס", `confirm-order` rejects any flight/hotel on such an event. Deploy backoffice (migration) before main.
 
 Exchange rates (EUR, ILS, GBP → USD) are managed via `lib/services/exchange-rate-client.ts` and the `/api/exchange-rates` route. The sync services call this when converting ticket prices.
 
@@ -918,7 +938,7 @@ LOCAL_CHROME_PATH=
 
 Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, `locations`, `p1_events`, `live_events`, `sports_events`, `offline_flights`, `tixstock_events`. Managed via Supabase (PostgreSQL).
 
-Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `task_rules`, `task_comments`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `event_drafts`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`, `competitor_crawl_runs`, `competitor_listings`, `competitor_matches`, `competitor_listing_corrections`, `event_price_snapshots`. Same shape but READ by main with its service client: `google_reviews` + `google_review_sources` (the site's "לקוחות משתפים"; `is_hidden` pulls a review off the site). Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
+Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `task_rules`, `task_comments`, `task_reads`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `event_drafts`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`, `competitor_crawl_runs`, `competitor_listings`, `competitor_matches`, `competitor_listing_corrections`, `event_price_snapshots`. Same shape but READ by main with its service client: `google_reviews` + `google_review_sources` (the site's "לקוחות משתפים"; `is_hidden` pulls a review off the site). Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
 
 ### Migrations (Supabase CLI)
 

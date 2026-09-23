@@ -125,6 +125,48 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    id: "ticket-only",
+    title: t("Ticket-only events", "אירועי כרטיס-בלבד"),
+    intro: t(
+      "An event sold as a ticket alone - no flight, no hotel (e.g. a show in a city with no convenient flight). The site skips both steps and charges exactly ticket + Ticket-Only Markup.",
+      "אירוע שנמכר ככרטיס בלבד - בלי טיסה ובלי מלון (למשל הופעה בעיר בלי טיסה נוחה). האתר מדלג על שני השלבים וגובה בדיוק כרטיס + Ticket-Only Markup.",
+    ),
+    points: [
+      t(
+        "On the site: the card shows the \"כרטיס בלבד\" badge, only the ticket icon and \"מחיר לכרטיס\"; the order flow is tickets → summary with a 2-step stepper; the product feeds say \"כרטיס\" only.",
+        "באתר: הכרטיס מציג תגית \"כרטיס בלבד\", אייקון כרטיס בלבד ו-\"מחיר לכרטיס\"; ההזמנה היא כרטיסים ← סיכום עם stepper של שני צעדים; הפידים אומרים \"כרטיס\" בלבד.",
+      ),
+      t(
+        "Switching it ON zeroes the flight/hotel base prices - the nightly base-price sync, \"our offer\" and the package light then skip the event by themselves. The ticket light keeps working.",
+        "הדלקה מאפסת את מחירי הבסיס של טיסה/מלון - הסנכרון הלילי, \"ההצעה שלנו\" ורמזור החבילה מדלגים על האירוע מעצמם. רמזור הכרטיס ממשיך לעבוד.",
+      ),
+      t(
+        "Events table: filter \"Ticket-only events only\", an amber \"ticket only\" badge on the name (with \"no markup!\" when the markup is still empty), and a bulk menu that switches several events at once.",
+        "טבלת האירועים: פילטר \"Ticket-only events only\", תגית \"ticket only\" כתומה על השם (עם \"no markup!\" כשה-markup עוד ריק), ותפריט bulk שמחליף כמה אירועים בבת אחת.",
+      ),
+      t(
+        "Partner portal: the package wizard opens such an event on tickets and never offers the flight/hotel steps.",
+        "פורטל השותפים: אשף החבילה נפתח על כרטיסים ולא מציע שלבי טיסה/מלון לאירוע כזה.",
+      ),
+    ],
+    rules: [
+      t(
+        "Ticket-Only Markup is REQUIRED (0 is allowed). Saving a ticket-only event without it is blocked - the site would otherwise sell at cost.",
+        "Ticket-Only Markup הוא חובה (0 מותר). שמירת אירוע כרטיס-בלבד בלעדיו נחסמת - אחרת האתר ימכור במחיר עלות.",
+      ),
+    ],
+    links: [{ label: t("Events table", "טבלת אירועים"), href: "/events" }],
+    flow: {
+      title: t("Mark an event ticket-only", "סימון אירוע ככרטיס-בלבד"),
+      steps: [
+        { label: t("Events → open the event → Pricing card", "אירועים ← פתיחת האירוע ← כרטיס Pricing") },
+        { label: t("Switch \"Ticket only (no flight, no hotel)\" ON", "מדליקים את המתג \"Ticket only (no flight, no hotel)\""), sub: t("Bases drop to 0 automatically", "הבסיסים יורדים ל-0 אוטומטית") },
+        { label: t("Fill Ticket-Only Markup (USD per ticket) and save", "ממלאים Ticket-Only Markup (USD לכרטיס) ושומרים") },
+        { label: t("Check the card on the site: badge + \"מחיר לכרטיס\"", "בודקים את הכרטיס באתר: תגית + \"מחיר לכרטיס\"") },
+      ],
+    },
+  },
+  {
     id: "pricing",
     title: t("Pricing - the chain", "תמחור — השרשרת"),
     intro: t(
@@ -620,8 +662,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "לשונית חוסרי הקריאייטיב היא תור מאוחד אחד, החוסם קודם, עם צ'יפי סינון לפי סוג (All ברירת המחדל). Do / צור משימה / Done על כל שורה.",
       ),
       t(
-        "Click a task's row (or its speech-bubble button) and its thread opens right under the row - no edit dialog needed; the pencil is only for changing the task itself. The thread holds every comment, screenshot and status change in one chronological scroll. Paste a screenshot straight from the clipboard (it's shrunk automatically); type @ and a name to mention a teammate - they get an email with an excerpt of the comment. Email also goes out without a mention: a new comment mails the task's creator and its assignee (never the person who wrote it), and marking a task Done mails the person who created it. Assigning a task mails the assignee, and the toast tells you whether that email actually went out. The system posts its own lines into the same thread whenever the task's status, assignee, priority, due date, progress or board changes, so the whole history of a task lives in one place, not scattered across edits.",
-        "לוחצים על שורת המשימה (או על כפתור בועת השיחה) והפתיל נפתח מתחת לשורה — בלי דיאלוג העריכה; העיפרון נשאר רק לשינוי המשימה עצמה. בפתיל: כל תגובה, צילום מסך ושינוי סטטוס בגלילה כרונולוגית אחת. מדביקים צילום מסך ישר מהלוח (מוקטן אוטומטית); מקלידים @ ושם כדי לתייג עמית — הוא מקבל מייל עם קטע מהתגובה. מיילים יוצאים גם בלי תיוג: תגובה חדשה נשלחת ליוצר המשימה ולמשובץ (לעולם לא למי שכתב אותה), וסימון משימה כ־Done שולח מייל למי שיצר אותה. שיבוץ משימה שולח מייל למשובץ, וההודעה הקופצת אומרת אם המייל באמת יצא. המערכת כותבת שורות משלה לאותו פתיל בכל פעם שסטטוס, שיוך, עדיפות, תאריך יעד, התקדמות או לוח של המשימה משתנים, כך שכל ההיסטוריה של משימה חיה במקום אחד ולא מפוזרת בין עריכות.",
+        "Click a task's row (or its speech-bubble button) and its thread opens right under the row - no edit dialog needed; the pencil is only for changing the task itself. The thread holds every comment, screenshot and status change in one chronological scroll. Paste a screenshot straight from the clipboard (it's shrunk automatically); type @ and a name to mention a teammate - they get an email with the comment itself. Email also goes out without a mention: a new comment mails everyone in the conversation - the task's creator, its assignee, and whoever wrote or was mentioned in the thread before, so a reply reaches the person it answers (never the person who wrote it) - and marking a task Done mails the person who created it. Assigning a task mails the assignee, and the toast tells you whether that email actually went out. The system posts its own lines into the same thread whenever the task's status, assignee, priority, due date, progress or board changes, so the whole history of a task lives in one place, not scattered across edits. A comment you have not read yet shows from the outside: the row's speech bubble turns mint with a \"new\" count (a dot on kanban and roadmap cards), only on tasks whose conversation you are part of; opening the thread clears it and tags those comments \"חדש\". Your own comment has a pencil and a bin in its header - edit it (it is marked as edited) or delete it; an admin can delete anyone's comment but never edit it.",
+        "לוחצים על שורת המשימה (או על כפתור בועת השיחה) והפתיל נפתח מתחת לשורה — בלי דיאלוג העריכה; העיפרון נשאר רק לשינוי המשימה עצמה. בפתיל: כל תגובה, צילום מסך ושינוי סטטוס בגלילה כרונולוגית אחת. מדביקים צילום מסך ישר מהלוח (מוקטן אוטומטית); מקלידים @ ושם כדי לתייג עמית — הוא מקבל מייל עם התגובה עצמה. מיילים יוצאים גם בלי תיוג: תגובה חדשה נשלחת לכל מי שהשיחה שייכת לו — יוצר המשימה, המשובץ, וכל מי שכתב או תויג בפתיל קודם, כך שתשובה מגיעה למי שענו לו (לעולם לא למי שכתב אותה) — וסימון משימה כ־Done שולח מייל למי שיצר אותה. שיבוץ משימה שולח מייל למשובץ, וההודעה הקופצת אומרת אם המייל באמת יצא. המערכת כותבת שורות משלה לאותו פתיל בכל פעם שסטטוס, שיוך, עדיפות, תאריך יעד, התקדמות או לוח של המשימה משתנים, כך שכל ההיסטוריה של משימה חיה במקום אחד ולא מפוזרת בין עריכות. תגובה שעוד לא קראתם נראית מבחוץ: בועת השיחה בשורה נצבעת במנטה עם מונה \"חדשות\" (נקודה בכרטיסי הקנבן והרודמאפ), רק במשימות שהשיחה בהן שייכת לכם; פתיחת הפתיל מנקה את הסימון ומתייגת את התגובות האלה \"חדש\". בתגובה שלכם יש עיפרון ופח בכותרת — עריכה (מסומנת כ\"נערך\") או מחיקה; אדמין יכול למחוק תגובה של כל אחד אבל לא לערוך אותה.",
       ),
       t(
         "Recurring rules (admins, the Task rules tab on /tasks) create tasks automatically every week without anyone remembering to look - one rule can either drop a single weekly summary task, or open one task per item it finds (say, one per event whose price light has been red too long). Each rule has a day of the week it runs on, always read in UTC, not Israel time - the check itself runs every morning at 06:00 UTC and each rule fires only on its own day. A per-item rule opens at most 25 tasks per run (the rest follow on its next run) and its assignee gets one summary email listing them, not one email per task.",
