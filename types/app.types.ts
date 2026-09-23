@@ -6,6 +6,12 @@ export type EventType =
   | "music_live_event_dynamic"
   | "tx_event";
 
+// How the site sells an event. 'package' = flight + hotel + ticket (today's flow);
+// 'ticket_only' = the ticket alone - no flight/hotel steps, price = ticket + ticket_only_markup.
+// Text column, no CHECK - a later mode must not need a migration. Mirrored in main lib/app.types.ts.
+export const PACKAGE_MODES = ["package", "ticket_only"] as const;
+export type PackageMode = (typeof PACKAGE_MODES)[number];
+
 export type Event = {
   id: number;
   name: string;
@@ -86,6 +92,10 @@ export type Event = {
   // ticket_cost + this value (no other markup at all). Every other path is
   // unchanged. Empty/null = no override.
   ticket_only_markup?: number | null;
+  // 'package' (default) or 'ticket_only' (the site sells the ticket alone; the
+  // backoffice then requires ticket_only_markup and zeroes the travel bases).
+  // Missing on rows older than the column = 'package'. See lib/package-mode.ts.
+  package_mode?: PackageMode;
   // Auto-generated campaign creative for the Meta product feed (nightly cron;
   // square = feed image_link, banner = additional_image_link). Synced to main.
   campaign_image_url?: string | null;
