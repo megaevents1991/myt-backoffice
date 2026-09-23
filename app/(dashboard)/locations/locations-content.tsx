@@ -216,7 +216,7 @@ export default function LocationsContent() {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Delete Location</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Are you sure you want to delete "{location.name}"?
+                            Are you sure you want to delete &quot;{location.name}&quot;?
                             This action cannot be undone.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
