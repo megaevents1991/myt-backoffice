@@ -167,6 +167,63 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     },
   },
   {
+    id: "lodging",
+    title: t("Lodging - event city & split stay", "לינה - עיר המשחק ושהות מפוצלת"),
+    intro: t(
+      "When the match is in one city and the flight lands in another (a Liverpool game on a London flight), the event gets an EVENT CITY next to its flight city. The site then shows \"הלינה ב: לונדון\" above the hotel list with a button for the other city and, in split mode, a \"מפוצל\" popup where the customer assigns each night to a city.",
+      "כשהמשחק בעיר אחת והטיסה נוחתת באחרת (משחק בליברפול על טיסה ללונדון), לאירוע מוגדרת עיר משחק לצד עיר הטיסה. האתר מציג \"הלינה ב: לונדון\" מעל רשימת המלונות עם כפתור לעיר השנייה, ובמצב מפוצל חלון \"מפוצל\" שבו הלקוח מחלק את הלילות בין הערים.",
+    ),
+    points: [
+      t(
+        "Flight city = the event's Location (unchanged, carries the IATA). Event city = the new \"Lodging\" card: pick a saved location or type name + coordinates. Empty = today's flow.",
+        "עיר הטיסה = ה-Location של האירוע (ללא שינוי, נושא את ה-IATA). עיר המשחק = כרטיס \"Lodging\" החדש: בוחרים Location שמור או מקלידים שם + קואורדינטות. ריק = הזרימה של היום.",
+      ),
+      t(
+        "Mode: flight city only / event city only / customer picks a city / customer picks or splits. \"Opens on\" is the default city. \"Split default\" = 1 or 2 nights in the event city our popup proposes (2 = night before + event night).",
+        "מצב: עיר טיסה בלבד / עיר משחק בלבד / הלקוח בוחר עיר / הלקוח בוחר או מפצל. \"Opens on\" = עיר ברירת המחדל. \"Split default\" = 1 או 2 לילות בעיר המשחק שהחלון מציע (2 = ליל לפני + ליל המשחק).",
+      ),
+      t(
+        "The split never changes dates - nights = the flight dates the customer chose. Max 3 segments (A → B → A). Each segment gets an auto-picked hotel; \"החלפת מלון\" opens that segment's list. Price = sum of the segment hotels vs the base, same +/- as today.",
+        "הפיצול לא משנה תאריכים - הלילות = תאריכי הטיסה שהלקוח בחר. עד 3 מקטעים (א ← ב ← א). כל מקטע מקבל מלון אוטומטי; \"החלפת מלון\" פותח את הרשימה של המקטע. המחיר = סכום מלונות המקטעים מול הבסיס, אותו +/- כמו היום.",
+      ),
+      t(
+        "Transfer note: free text shown under the city line (\"רכבת לונדון–ליברפול כשעתיים ורבע, לא כלול\"). Transfers are NOT sold.",
+        "הערת מעבר: טקסט חופשי מתחת לשורת העיר (\"רכבת לונדון–ליברפול כשעתיים ורבע, לא כלול\"). העברות לא נמכרות.",
+      ),
+      t(
+        "Venue memory copies the event city + mode to the next event at the same venue. The reservation page lists every segment of a split stay (hotel_order_info = the first one).",
+        "זיכרון האצטדיון מעתיק את עיר המשחק והמצב לאירוע הבא באותו מגרש. דף ההזמנה מציג כל מקטע של שהות מפוצלת (hotel_order_info = הראשון).",
+      ),
+      t(
+        "\"טען מלונות\" (Locations screen and both location cards in the editor): warms RateHawk static hotel data for a cold city, ~12 hotels per step, 15-20 minutes for a whole city. Without it a new city shows few hotels and gets no 3★ base price.",
+        "\"טען מלונות\" (מסך Locations ושני כרטיסי המיקום בעורך): טוען דאטא סטטי של מלונות מ-RateHawk לעיר קרה, כ-12 מלונות לצעד, 15-20 דקות לעיר שלמה. בלעדיו עיר חדשה מציגה מעט מלונות ולא מקבלת מחיר בסיס 3★.",
+      ),
+    ],
+    rules: [
+      t(
+        "Load hotels for a NEW event city BEFORE the event goes live - the customer list and the base-price probe both read the hotels table.",
+        "טוענים מלונות לעיר משחק חדשה לפני שהאירוע עולה לאוויר - רשימת הלקוח וחישוב מחיר הבסיס קוראים את טבלת המלונות.",
+      ),
+      t(
+        "A lodging mode other than \"flight city only\" needs an event city different from the flight city - save is blocked otherwise.",
+        "מצב לינה שאינו \"עיר טיסה בלבד\" דורש עיר משחק שונה מעיר הטיסה - אחרת השמירה נחסמת.",
+      ),
+    ],
+    links: [
+      { label: t("Locations", "מיקומים"), href: "/locations" },
+      { label: t("Events table", "טבלת אירועים"), href: "/events" },
+    ],
+    flow: {
+      title: t("Set up a Liverpool game on a London flight", "הגדרת משחק בליברפול על טיסה ללונדון"),
+      steps: [
+        { label: t("Locations → add \"ליברפול\" (name + coordinates, no IATA) → \"טען מלונות\"", "Locations ← מוסיפים \"ליברפול\" (שם + קואורדינטות, בלי IATA) ← \"טען מלונות\""), sub: t("15-20 minutes, once", "15-20 דקות, פעם אחת") },
+        { label: t("Event → Location card stays London (LON)", "אירוע ← כרטיס Location נשאר לונדון (LON)") },
+        { label: t("Lodging card → pick ליברפול → mode \"picks a city or splits\", opens on London, 2 nights, transfer note", "כרטיס Lodging ← בוחרים ליברפול ← מצב \"בוחר או מפצל\", נפתח על לונדון, 2 לילות, הערת מעבר") },
+        { label: t("Save. On the site: card \"ליברפול · טיסה ללונדון\", hotel step shows the city line", "שומרים. באתר: כרטיס \"ליברפול · טיסה ללונדון\", שלב המלון מציג את שורת העיר") },
+      ],
+    },
+  },
+  {
     id: "pricing",
     title: t("Pricing - the chain", "תמחור — השרשרת"),
     intro: t(
