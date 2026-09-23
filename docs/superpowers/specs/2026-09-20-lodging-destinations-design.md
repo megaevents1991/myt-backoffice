@@ -4,6 +4,7 @@
 **מקור:** טאב "חבילות עם יעד לינה שונה מטיסה" במסמך הבאגים/תיקונים
 **גרסת HTML לסקירה (כולל הדגמה חיה של בחירת הלילות):** https://claude.ai/artifact/1o7DTc9Jcg7EZ4FueBf2kq
 **מוקאפ שלב המלון באתר (אינטראקטיבי, בלוק של main):** https://claude.ai/artifact/DiCwnfjyL4KMKa6VZnsNGX
+**טופס בדיקות + מדריך קטן לאלון (חלק A):** https://claude.ai/artifact/PSXv3mC8feqk2PNtWjyhHS · **סטטוס חלק A (23.09):** נבנה בשני ה-repos (בקאופיס master, main ענף `feat/ticket-only-events`), לא נדחף, לא נבדק בדפדפן.
 **נוגע ב:** backoffice + האתר (main) + מסד הנתונים המשותף
 
 ---
