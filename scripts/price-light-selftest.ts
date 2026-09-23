@@ -11,6 +11,7 @@ import {
   kindOf, competitorsFor, normalize,
   computeScopeLight, previewMarkupChange, LIGHT_RED_USD, decidePriceDrop, pickRuleMatch, candidateCoversDate, signedUsd, stampLightChange,
   nameTokens, ruleMatchScore, ruleSaysAbsent, isMultiMatchTitle, RULE_MATCH_MIN_SCORE, RULE_ABSENT_BELOW,
+  LOW_COST_USD, isLowCostAirline, competitorOverrideHolds,
   type PricedEvent, type LatestMatch,
 } from "../lib/services/price-light.ts";
 import { UNKNOWN_ATTRS, type LightScopeDetail } from "../types/price-light.types.ts";
@@ -536,5 +537,47 @@ assert.deepEqual(supplierSwapFacts(null, [lt]), []);
 const both = priceAdviceFacts({ event: base, scope: "ticket", detail: { diff_usd: 170, uncertainty_usd: 0, nights: null }, liveTicketsUsd: 100,
   alt: { at: "2026-09-18T00:00:00Z", base: null, dates: [], suppliers: [{ ...lt, sell_usd: 100 }], errors: [] } });
 assert.ok(both.some((x) => x.kind === "supplier_swap") && !both.some((x) => x.kind === "cheaper_ticket"));
+
+// ---- low-cost carrier (staff note 23.09) ----
+assert.equal(isLowCostAirline("וויז אייר"), true);
+assert.equal(isLowCostAirline("Wizz Air"), true);
+assert.equal(isLowCostAirline("ישראייר"), true);
+assert.equal(isLowCostAirline("FR"), true);
+assert.equal(isLowCostAirline("אל על"), false);
+assert.equal(isLowCostAirline("לופטהנזה"), false);
+assert.equal(isLowCostAirline(null), null);
+const lc = normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 3 }, { ours: "אל על", theirs: "וויז אייר" });
+assert.equal(lc.normalizedUsd, 1000 + LOW_COST_USD);
+assert.equal(lc.adjustments.find((a) => a.key === "low_cost")?.usd, LOW_COST_USD);
+// one direction only, and an unknown airline on either side adjusts nothing
+assert.equal(normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 3 }, { ours: "וויז אייר", theirs: "אל על" }).normalizedUsd, 1000);
+assert.equal(normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 3 }, { ours: "וויז אייר", theirs: "ריינאייר" }).normalizedUsd, 1000);
+assert.equal(normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 3 }, { ours: null, theirs: "וויז אייר" }).normalizedUsd, 1000);
+assert.equal(normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 3 }, { ours: "אל על", theirs: null }).normalizedUsd, 1000);
+
+// ---- per-competitor staff call (staff note 23.09) ----
+const call = (light: "green" | "orange" | "red") => ({ light, note: "הם לואו קוסט", by: "a@b", at: NOW });
+// golasso alone decides red; staff marks it green -> green, and golasso's own verdict says so
+const forcedAlone = computeScopeLight({ ourUsd: ours, matches: [m({ competitor: "golasso", normalized_usd: 1100 })], competitors: [...sports], now: NOW,
+  forced: { golasso: call("green") } });
+assert.equal(forcedAlone.light, "green");
+assert.equal(forcedAlone.per_competitor.golasso?.light, "green");
+assert.equal(forcedAlone.per_competitor.golasso?.forced?.computed, "red");
+// the others keep counting: golasso forced green, issta still makes it orange
+const forcedMixed = computeScopeLight({ ourUsd: ours, competitors: [...sports], now: NOW, forced: { golasso: call("green") },
+  matches: [m({ competitor: "golasso", normalized_usd: 1100 }), m({ competitor: "issta", normalized_usd: 1300 })] });
+assert.equal(forcedMixed.light, "orange"); assert.equal(forcedMixed.competitor, "issta"); assert.equal(forcedMixed.diff_usd, 75);
+// a forced verdict WORSE than the rest wins and becomes the named competitor
+const forcedWorse = computeScopeLight({ ourUsd: ours, competitors: [...sports], now: NOW, forced: { issta: call("red") },
+  matches: [m({ competitor: "golasso", normalized_usd: 1600 }), m({ competitor: "issta", normalized_usd: 1500 })] });
+assert.equal(forcedWorse.light, "red"); assert.equal(forcedWorse.competitor, "issta");
+// a call on a competitor with no price forces nothing
+const forcedNoPrice = computeScopeLight({ ourUsd: ours, competitors: [...sports], now: NOW, forced: { issta: call("green") },
+  matches: [m({ competitor: "golasso", normalized_usd: 1100 }), m({ competitor: "issta", status: "not_selling", normalized_usd: null })] });
+assert.equal(forcedNoPrice.light, "red");
+// the call lapses once that competitor's price drifted past $20
+assert.equal(competitorOverrideHolds({ normalized_usd: 1100 }, 1115), true);
+assert.equal(competitorOverrideHolds({ normalized_usd: 1100 }, 1125), false);
+assert.equal(competitorOverrideHolds({ normalized_usd: 1100 }, null), false);
 
 console.log("price-light selftest: all assertions passed");

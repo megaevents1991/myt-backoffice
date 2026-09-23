@@ -3,14 +3,14 @@
 import { supabase } from "@/lib/supabase-server";
 import { ACTIVE_COMPETITORS } from "@/lib/services/competitor-scrapers";
 import {
-  competitorsFor, computeScopeLight, decidePriceDrop, kindOf, lightSettled, minAvailableTicketUsd,
+  competitorOverrideHolds, competitorsFor, computeScopeLight, decidePriceDrop, kindOf, lightSettled, minAvailableTicketUsd,
   nightsUncertaintyUsd, ourFromUsd, ourNightRateUsd, ourNights, ourPackageUsd, ourTicketUsd,
   stampLightChange, totalMarkupUsd,
   OVERRIDE_DRIFT_USD, PRICE_DROP_LOOKBACK_DAYS, type LatestMatch, type PricedEvent,
 } from "@/lib/services/price-light";
 import { tagSlugsForEvent } from "@/lib/services/price-light-tags";
 import type {
-  EventKind, ExtractedAttrs, Light, LightDetail, LightOverride, LightScopeDetail, MatchRow, MatchTrigger, Scope,
+  CompetitorKey, CompetitorOverride, CompetitorOverrides, EventKind, ExtractedAttrs, Light, LightDetail, LightOverride, LightScopeDetail, MatchRow, MatchTrigger, Scope,
 } from "@/types/price-light.types";
 import { redSinceUpdate, type Lights } from "@/lib/services/price-light-red-since";
 
@@ -106,6 +106,7 @@ function scopeDetail(
   matches: (LatestMatch & { scope: Scope; attrs: Partial<ExtractedAttrs> | null })[],
   now: string,
   kind: EventKind,
+  forced: Partial<Record<CompetitorKey, CompetitorOverride>> = {},
 ): LightScopeDetail {
   // `kind` is passed in, never recomputed here: it is read off the event's feed tags
   // (kindOf, 2026-09-17), which are loaded once per event by the caller.
@@ -123,7 +124,26 @@ function scopeDetail(
       nights: { ours: nightsOurs, theirs },
     };
   });
-  return computeScopeLight({ ourUsd, matches: scoped, competitors, now });
+  return computeScopeLight({ ourUsd, matches: scoped, competitors, now, forced });
+}
+
+/**
+ * The per-competitor staff calls that still hold for one scope: that competitor still has a
+ * price, and it has not drifted past OVERRIDE_DRIFT_USD from the one the call was made against.
+ * A lapsed one is dropped here, so the write below no longer carries it.
+ */
+function holdingOverrides(
+  overrides: CompetitorOverrides | null | undefined,
+  scope: Scope,
+  matches: (LatestMatch & { scope: Scope })[],
+): Partial<Record<CompetitorKey, CompetitorOverride>> {
+  const out: Partial<Record<CompetitorKey, CompetitorOverride>> = {};
+  for (const [competitor, o] of Object.entries(overrides?.[scope] ?? {}) as [CompetitorKey, CompetitorOverride | undefined][]) {
+    if (!o) continue;
+    const m = matches.find((x) => x.scope === scope && x.competitor === competitor && x.status === "found");
+    if (competitorOverrideHolds(o, m?.normalized_usd ?? null)) out[competitor] = o;
+  }
+  return out;
 }
 
 /**
@@ -151,8 +171,11 @@ export async function recomputeEventLights(
   // The vertical comes off the feed tags, not `type` alone (kindOf, 2026-09-17): 136 live music
   // events are `tx_event`. Loaded ONCE per event here; matchAllForEvent hands its copy down.
   const kind = kindOf(event, opts.tagSlugs ?? (await tagSlugsForEvent(eventId)));
-  const pkg = scopeDetail(event, "package", matches, now, kind);
-  const tkt = scopeDetail(event, "ticket", matches, now, kind);
+  const compOverrides = event.light_detail?.competitor_overrides ?? null;
+  const forcedPkg = holdingOverrides(compOverrides, "package", matches);
+  const forcedTkt = holdingOverrides(compOverrides, "ticket", matches);
+  const pkg = scopeDetail(event, "package", matches, now, kind, forcedPkg);
+  const tkt = scopeDetail(event, "ticket", matches, now, kind, forcedTkt);
 
   // `light_detail.override` is a single scope-tagged field (setLightOverride replaces
   // it wholesale), so at most one scope is ever overridden. Keep it while it still
@@ -177,6 +200,9 @@ export async function recomputeEventLights(
     package: stampLightChange(pkg, after.package, before.package, event.light_detail?.package, now),
     ticket: stampLightChange(tkt, after.ticket, before.ticket, event.light_detail?.ticket, now),
     override: keepOverride ? override : null,
+    competitor_overrides: Object.keys(forcedPkg).length + Object.keys(forcedTkt).length > 0
+      ? { package: forcedPkg, ticket: forcedTkt }
+      : null,
     ours: event.light_detail?.ours ?? null,
   };
   // "השאר בפיד" mutes a RED light. Once no scope is red any more the mute has nothing

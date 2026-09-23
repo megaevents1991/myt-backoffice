@@ -22,7 +22,24 @@ import {
   type AttrField, type CorrectionField,
 } from "@/lib/services/price-light-corrections";
 import { COMPETITOR_LABEL } from "@/app/(dashboard)/events/price-light-ui";
-import type { ComparisonOffer, Currency, OfferCorrection, PriceLightComparison, PriceLightRow, Scope } from "@/types/price-light.types";
+import type { ComparisonOffer, Currency, Light, OfferCorrection, PriceLightComparison, PriceLightRow, Scope } from "@/types/price-light.types";
+
+const LIGHT_WORD: Record<Light, string> = {
+  green: "ירוק", orange: "כתום", red: "אדום", alone: "לבד בשוק", unchecked: "לא נבדק", na: "לא רלוונטי",
+};
+
+/**
+ * What a save did to the lights, in words: "חבילה: אדום ← כתום" or "חבילה נשאר אדום". Staff read
+ * an unchanged red as "the save did not recompute" (22.09, a correction that moved the gap $9).
+ */
+export function lightsChangeText(lights: { before: Record<Scope, Light | null>; after: Record<Scope, Light | null> } | null, scope: Scope): string | null {
+  if (!lights) return null;
+  const name = scope === "package" ? "חבילה" : "כרטיס";
+  const was = lights.before[scope];
+  const now = lights.after[scope];
+  if (!now) return null;
+  return was && was !== now ? `${name}: ${LIGHT_WORD[was]} ← ${LIGHT_WORD[now]}` : `${name}: נשאר ${LIGHT_WORD[now]}`;
+}
 
 export const FIELD_HE: Record<CorrectionField, string> = {
   price: "מחיר", not_same_event: "לא אותו אירוע", nights: "לילות", hotel_stars: "כוכבי מלון",
@@ -134,7 +151,9 @@ export function CorrectionDialog({
       if (!res.ok) { toast({ variant: "destructive", title: "התיקון לא נשמר", description: res.error }); return; }
       toast({
         title: res.saved === 0 ? "לא היה מה לשנות" : res.recomputed ? "התיקון נשמר והרמזור חושב מחדש" : "התיקון נשמר",
-        description: res.saved > 0 && !res.recomputed ? "חישוב הרמזור נכשל כרגע - לחצו \"בדוק עכשיו\" בשורה, או שיתעדכן בלילה." : undefined,
+        description: res.saved > 0 && !res.recomputed
+          ? "חישוב הרמזור נכשל כרגע - לחצו \"בדוק עכשיו\" בשורה, או שיתעדכן בלילה."
+          : res.saved > 0 ? lightsChangeText(res.lights, scope) ?? undefined : undefined,
       });
       onChanged(res.comparison, res.row);
       onOpenChange(false);
@@ -153,7 +172,7 @@ export function CorrectionDialog({
       if (!res.ok) { toast({ variant: "destructive", title: "הביטול נכשל", description: res.error }); return; }
       toast({
         title: "התיקון בוטל - הערך מהסריקה חזר",
-        description: res.recomputed ? undefined : "חישוב הרמזור נכשל כרגע - לחצו \"בדוק עכשיו\" בשורה, או שיתעדכן בלילה.",
+        description: res.recomputed ? lightsChangeText(res.lights, scope) ?? undefined : "חישוב הרמזור נכשל כרגע - לחצו \"בדוק עכשיו\" בשורה, או שיתעדכן בלילה.",
       });
       onChanged(res.comparison, res.row);
       onOpenChange(false);

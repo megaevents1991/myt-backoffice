@@ -52,7 +52,7 @@ export const UNKNOWN_ATTRS: ExtractedAttrs = {
 };
 
 export interface Adjustment {
-  key: "bag" | "connection" | "stars" | "nights" | "breakfast" | "transfers";
+  key: "bag" | "connection" | "stars" | "nights" | "breakfast" | "transfers" | "low_cost";
   usd: number;
   /** Short human label, e.g. "+bag −$120". */
   label: string;
@@ -78,6 +78,9 @@ export interface PerCompetitor {
   /** Sells the event, publishes no price ("לקבלת הצעת מחיר") - status stays `unsure`, since there
    *  is nothing to compare, but it is NOT a doubt about whether they sell it. */
   quote_only?: boolean;
+  /** A staff call against THIS competitor (CompetitorOverride) that still holds - `light` above is
+   *  then the forced one, and the scope's light answers to it. */
+  forced?: { note: string; by: string; at: string; computed: Light | null };
 }
 
 export type UncheckedReason =
@@ -151,6 +154,23 @@ export interface LightOverride {
   // the common case an override is actually used for (Phase 1 task 4, setLightOverride).
   competitor_normalized_usd: number | null;
 }
+
+/**
+ * A staff call against ONE competitor, made from the detailed comparison (2026-09-23, Alon: "גולאסו
+ * שם לואו קוסט ואנחנו אל על - מבחינתי הפער משאיר אותנו ירוק, לא הכל זה מחיר"). Unlike the scope-wide
+ * `LightOverride` the other competitors keep counting: this one's verdict is forced, and the scope's
+ * light is the worse of that and what the rest compute. Stands while that competitor's normalized
+ * price stays within OVERRIDE_DRIFT_USD of `normalized_usd`; past it the market moved and it lapses.
+ */
+export interface CompetitorOverride {
+  light: "green" | "orange" | "red";
+  note: string;
+  by: string;
+  at: string;
+  normalized_usd: number | null;
+}
+
+export type CompetitorOverrides = Partial<Record<Scope, Partial<Record<CompetitorKey, CompetitorOverride>>>>;
 
 // ---- what a package contains (partner format, 2026-09-14) ------------------------------------
 // "טיסות: אל על עם מזוודה ישיר 16-20 | מלון: שם מלון כולל ארוחת בוקר או ללא | סוג כרטיס".
@@ -240,6 +260,8 @@ export interface LightDetail {
   package?: LightScopeDetail;
   ticket?: LightScopeDetail;
   override?: LightOverride | null;
+  /** Per-competitor staff calls; carried over by `recomputeEventLights` while they hold. */
+  competitor_overrides?: CompetitorOverrides | null;
   /** Preserved across every recompute - written only by lib/services/our-offer-detail.ts. */
   ours?: OurOfferSnapshot | null;
 }
@@ -460,6 +482,8 @@ export interface ComparisonOffer {
   /** OUR price minus theirs, normalized; null for us and for anyone with no price. */
   diff_usd: number | null;
   light: Light | null;
+  /** A staff call on this competitor that still holds (the light above is then the forced one). */
+  forced: { note: string; by: string; at: string; computed: Light | null } | null;
   decided: boolean;
   title: string | null;
   url: string | null;

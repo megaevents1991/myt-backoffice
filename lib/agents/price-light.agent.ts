@@ -6,7 +6,7 @@
 // it. Everything the agent IS - model, ceiling, timeout, confidence floor, what it learns from -
 // is declared here; the plumbing lives in lib/agents/.
 import {
-  BAG_USD, BREAKFAST_USD, CONNECTION_USD, MAX_WINDOW_DAYS, NIGHT_RATE_MAX_USD,
+  BAG_USD, BREAKFAST_USD, CONNECTION_USD, LOW_COST_USD, MAX_WINDOW_DAYS, NIGHT_RATE_MAX_USD,
   NIGHT_RATE_MIN_USD, STAR_STEP_USD, TRANSFER_USD,
 } from "@/lib/services/price-light";
 import { correctionLessonText, isAttrField } from "@/lib/services/price-light-corrections";
@@ -26,7 +26,7 @@ export function priceLightHouseRules(): string {
     "HOUSE RULES (generated from our pricing engine - your answers feed this arithmetic):",
     "- Everything is per person, in a double room. Compare like for like.",
     `- DURATION MATTERS MOST. When the page prints departure and return dates, nights = return - departure; report that number even when the marketing copy says otherwise. A travel window longer than ${MAX_WINDOW_DAYS} days is a season page, not one trip - then nights is "unknown".`,
-    `- What each extracted attribute is worth to us: checked bag $${BAG_USD}, a connecting flight $${CONNECTION_USD}, each hotel star $${STAR_STEP_USD} per night, each night $${NIGHT_RATE_MIN_USD}-${NIGHT_RATE_MAX_USD} (our own hotel rate for that trip), breakfast $${BREAKFAST_USD} per night, transfers $${TRANSFER_USD}.`,
+    `- What each extracted attribute is worth to us: checked bag $${BAG_USD}, a connecting flight $${CONNECTION_USD}, each hotel star $${STAR_STEP_USD} per night, each night $${NIGHT_RATE_MIN_USD}-${NIGHT_RATE_MAX_USD} (our own hotel rate for that trip), breakfast $${BREAKFAST_USD} per night, transfers $${TRANSFER_USD}. A low-cost airline against our full-service one is priced by the engine ($${LOW_COST_USD}) from the airline NAME - you do not extract it.`,
     '- "unknown" is always better than a guess: an invented attribute moves real money, a missing one only widens our tolerance.',
     `- Our package price in recorded decisions before 2026-09-17 included the site's +$${FLIGHT_MARGIN_USD} flight / +$${HOTEL_MARGIN_USD} hotel margins; from then on it is the margin-free 'from' price.`,
   ].join("\n");

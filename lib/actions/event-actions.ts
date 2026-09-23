@@ -130,6 +130,15 @@ export async function updateEvent(id: number, input: Partial<Event>) {
     entityId: id,
     changes: diffChanges(before, event),
   });
+  // A saved price/markup/ticket changes OUR side of every comparison, so the lights are re-derived
+  // now from the stored competitor answers (no crawl, no AI) - not left for tonight's pass (staff
+  // note 23.09: "גם אם אני עורך חבילה שלנו" the light did not move). Never fails the save.
+  try {
+    const { recomputeEventLights } = await import("@/lib/services/price-light-store");
+    await recomputeEventLights(id, "manual");
+  } catch (e) {
+    console.error(`updateEvent: light recompute for ${id} failed`, e);
+  }
   // /price-light caches its rows; a saved price/date/name must show there at once - the "הוזל"
   // flow edits the base price here and goes straight back to that screen.
   invalidatePriceLight("rows");

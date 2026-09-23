@@ -4,7 +4,7 @@
 // (scripts/price-light-selftest.ts runs it under plain node).
 // Spec: docs/superpowers/specs/2026-09-09-price-light-design.md §2.
 import type {
-  Adjustment, CompetitorKey, Currency, EventKind, ExtractedAttrs, Light,
+  Adjustment, CompetitorKey, CompetitorOverride, Currency, EventKind, ExtractedAttrs, Light,
   LightScopeDetail, MatchStatus, PerCompetitor, Scope, UncheckedReason,
 } from "../../types/price-light.types";
 import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "./price-margins.ts";
@@ -31,6 +31,31 @@ export const STAR_STEP_USD = 40;   // per star per night
 export const NIGHT_USD = 90;       // per night - the FALLBACK rate only (see ourNightRateUsd)
 export const BREAKFAST_USD = 15;   // per night
 export const TRANSFER_USD = 30;
+/**
+ * A low-cost carrier on THEIR side while we fly a full-service one (Dor, 2026-09-23: "גולאסו שם
+ * לואו קוסט ואנחנו אל על... לא הכל זה מחיר"). Per person, on top of the bag adjustment - this is
+ * the service gap (seat, times, reliability), not the luggage, which BAG_USD already prices.
+ * One direction only, as agreed: it raises their normalized price when they fly low-cost and we
+ * do not; it never lowers it. Needs both airlines known - an unknown one adjusts nothing and does
+ * not make the comparison "partial" (most listings never name their airline).
+ */
+export const LOW_COST_USD = 60;
+/** Low-cost / charter carriers as the parsers and Amadeus name them (offer-detail.ts), Hebrew and
+ *  Latin. Israir and Arkia are in on purpose: staff's own rule compares "ישראייר" against El Al. */
+const LOW_COST_AIRLINES: RegExp[] = [
+  /וויז|WIZZ/i, /ריי?נאייר|RYANAIR/i, /איזי\s?ג'?יט|EASYJET/i, /ווילינג|וואלינג|VUELING/i,
+  /טרנסאוויה|TRANSAVIA/i, /פגסוס|PEGASUS/i, /בלו\s?בירד|BLUE\s?BIRD/i, /JET\s?2|ג'ט\s?2/i,
+  /יורווינגס|EUROWINGS/i, /VOLOTEA|וולוטאה/i, /ישראייר|ISRAIR/i, /ארקיע|ARKIA/i,
+  // A bare IATA code - `airlineFromCode` returns the code itself for a carrier it has no name for.
+  /^(W4|W6|W9|5W|FR|RK|U2|EC|VY|HV|TO|PC|BZ|LS|EW|V7|6H|IZ)$/i,
+];
+
+/** true = a low-cost carrier, false = a named full-service one, null = no airline to judge. */
+export function isLowCostAirline(airline: string | null | undefined): boolean | null {
+  const name = (airline ?? "").trim();
+  if (!name) return null;
+  return LOW_COST_AIRLINES.some((re) => re.test(name));
+}
 
 /**
  * A night is the single biggest difference between two packages for the same fixture, and it
@@ -399,6 +424,7 @@ export function normalize(
   priceUsd: number,
   attrs: Partial<ExtractedAttrs> | null | undefined,
   ours: { nights: number | null; nightRateUsd?: number },
+  airlines?: { ours: string | null; theirs: string | null },
 ): Normalized {
   const a = attrs ?? {};
   const adjustments: Adjustment[] = [];
@@ -435,6 +461,9 @@ export function normalize(
   else partial = true;
   if (known(a.transfers)) { if (a.transfers) adjustments.push({ key: "transfers", usd: -TRANSFER_USD, label: `+transfers −$${TRANSFER_USD}` }); }
   else partial = true;
+  if (airlines && isLowCostAirline(airlines.theirs) === true && isLowCostAirline(airlines.ours) === false) {
+    adjustments.push({ key: "low_cost", usd: LOW_COST_USD, label: `low-cost +$${LOW_COST_USD}` });
+  }
 
   const normalizedUsd = Math.round(priceUsd + adjustments.reduce((s, x) => s + x.usd, 0));
   const theirNights = known(a.nights) && a.nights <= MAX_WINDOW_DAYS ? a.nights : "unknown";
@@ -517,12 +546,25 @@ export function previewMarkupChange(
   return { ourUsd, diffUsd, light: lightFor(diffUsd, Math.max(0, Math.round(uncertaintyUsd))) };
 }
 
+const LIGHT_RANK: Record<Light, number> = { green: 1, alone: 1, orange: 2, red: 3, unchecked: 0, na: 0 };
+
+/** A per-competitor staff call stands while that competitor's normalized price stays within
+ *  OVERRIDE_DRIFT_USD of the one it was made against; with no number on either side it stands
+ *  only while the competitor still has a price at all (nothing to compare = nothing to force). */
+export function competitorOverrideHolds(o: Pick<CompetitorOverride, "normalized_usd">, normalizedUsd: number | null): boolean {
+  if (normalizedUsd == null) return false;
+  if (o.normalized_usd == null) return true;
+  return Math.abs(normalizedUsd - o.normalized_usd) <= OVERRIDE_DRIFT_USD;
+}
+
 export function computeScopeLight(input: {
   ourUsd: number | null;
   matches: LatestMatch[];
   competitors: readonly CompetitorKey[];
   now: string;
   staleDays?: number;
+  /** Per-competitor staff calls that still hold (see CompetitorOverride). */
+  forced?: Partial<Record<CompetitorKey, Pick<CompetitorOverride, "light" | "note" | "by" | "at">>>;
 }): LightScopeDetail {
   const staleDays = input.staleDays ?? LIGHT_STALE_DAYS;
   const empty: LightScopeDetail = {
@@ -579,13 +621,40 @@ export function computeScopeLight(input: {
     if (onlyQuotes) return { ...empty, reason: "quote_only", per_competitor: per };
     return { ...empty, reason: "partial_coverage", per_competitor: per };
   }
+  // Staff calls against single competitors (CompetitorOverride): that competitor's verdict is the
+  // forced one, and it no longer competes for "cheapest on the shelf" - the rest decide among
+  // themselves, and the scope takes the WORSE of their light and every forced one. The caller
+  // hands in only overrides that still hold (`competitorOverrideHolds`).
+  const forcedLight = (c: CompetitorKey): Light | null => {
+    const o = input.forced?.[c];
+    return o && per[c]?.light != null ? o.light : null;
+  };
+  for (const c of input.competitors) {
+    const o = input.forced?.[c];
+    const own = per[c];
+    if (!o || !own || own.light == null) continue;
+    per[c] = { ...own, light: o.light, forced: { note: o.note, by: o.by, at: o.at, computed: own.light } };
+  }
+  const cheapest = (xs: LatestMatch[]) => xs.reduce((a, b) => ((b.normalized_usd as number) < (a.normalized_usd as number) ? b : a));
+  const free = found.filter((x) => forcedLight(x.competitor) == null);
   // The cheapest normalized competitor is still the one we answer to, uncertainty or not - a
   // light must describe the toughest offer on the shelf. The doubt attached to THAT match then
   // widens the band around it.
-  const best = found.reduce((a, b) => ((b.normalized_usd as number) < (a.normalized_usd as number) ? b : a));
-  const diff = Math.round(input.ourUsd - (best.normalized_usd as number));
-  const uncertainty = Math.max(0, Math.round(best.uncertainty_usd ?? 0));
-  const light: Light = lightFor(diff, uncertainty);
+  let best = cheapest(free.length > 0 ? free : found);
+  let diff = Math.round(input.ourUsd - (best.normalized_usd as number));
+  let uncertainty = Math.max(0, Math.round(best.uncertainty_usd ?? 0));
+  let light: Light = free.length > 0 ? lightFor(diff, uncertainty) : (forcedLight(best.competitor) as Light);
+  // A forced verdict worse than the free one wins, and then IT is the competitor the light names.
+  const worse = found
+    .filter((x) => { const f = forcedLight(x.competitor); return f != null && LIGHT_RANK[f] > LIGHT_RANK[light]; })
+    .sort((a, b) => LIGHT_RANK[forcedLight(b.competitor) as Light] - LIGHT_RANK[forcedLight(a.competitor) as Light]
+      || (a.normalized_usd as number) - (b.normalized_usd as number))[0];
+  if (worse) {
+    best = worse;
+    diff = Math.round(input.ourUsd - (worse.normalized_usd as number));
+    uncertainty = Math.max(0, Math.round(worse.uncertainty_usd ?? 0));
+    light = forcedLight(worse.competitor) as Light;
+  }
   return {
     light, diff_usd: diff, our_usd: input.ourUsd, competitor: best.competitor, raw: best.raw,
     raw_currency: best.raw_currency, normalized_usd: best.normalized_usd, adjustments: best.adjustments ?? [],

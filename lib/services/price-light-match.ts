@@ -8,8 +8,8 @@ import {
   ourFromUsd, ourNights, ourTicketUsd, pickRuleMatch, ruleSaysAbsent, type MatchCandidate,
 } from "@/lib/services/price-light";
 import { ACTIVE_COMPETITORS, scraperFor } from "@/lib/services/competitor-scrapers";
-import { isMultiMatchText } from "@/lib/services/offer-detail";
-import { correctAttrs, correctCandidates } from "@/lib/services/price-light-corrections";
+import { isMultiMatchText, parseOfferDetail } from "@/lib/services/offer-detail";
+import { correctAttrs, correctCandidates, correctOffer, liveCorrections } from "@/lib/services/price-light-corrections";
 import { listingUsd, loadCorrections } from "@/lib/services/price-light-corrections-store";
 import { loadEventForLight, recomputeEventLights, type LightEvent } from "@/lib/services/price-light-store";
 // Lives in its own module (not here) so price-light-store.ts can read tags too without
@@ -257,8 +257,9 @@ export async function matchEvent(
   // rule, the judge and the normalization all see. The attribute fixes are applied after the
   // page/AI merge below - staff > page > AI, per field.
   const crawled = await candidatesFor(event, competitor, scope);
+  const corrections = await loadCorrections(crawled.map((c) => c.id));
   const { candidates, attrFixes } = correctCandidates(
-    crawled, await loadCorrections(crawled.map((c) => c.id)), event.id,
+    crawled, corrections, event.id,
     (amount, currency) => listingUsd(competitor, amount, currency),
   );
   let picked: ListingRow | null = null;
@@ -372,8 +373,16 @@ export async function matchEvent(
     const base = mergeAttrs(attrs, picked.attrs);
     const derived = scope === "package" ? withListingNights(base, picked) : base;
     const merged = correctAttrs(derived, attrFixes.get(picked.id) ?? []);
+    // Who flies them and who flies us - a low-cost carrier against our full-service one is worth
+    // LOW_COST_USD (price-light.ts). Theirs is the airline the offer parser reads off the stored
+    // detail page, with a staff "airline" correction on top; ours is what the rule would buy today.
+    const crawledOffer = scope === "package" ? parseOfferDetail(competitor, picked.detail_text, merged) : null;
+    const theirAirline = crawledOffer
+      ? correctOffer(crawledOffer, liveCorrections(corrections, picked, crawledOffer, event.id)).flight?.airline ?? null
+      : null;
     const norm = scope === "package"
-      ? normalize(priceUsd, merged, { nights: ourNights(event), nightRateUsd: ourNightRateUsd(event) })
+      ? normalize(priceUsd, merged, { nights: ourNights(event), nightRateUsd: ourNightRateUsd(event) },
+        { ours: event.light_detail?.ours?.flight?.airline ?? null, theirs: theirAirline })
       : { normalizedUsd: Math.round(priceUsd), adjustments: [], partial: false };
     // A verdict produced THIS run against a row that has none must always be persisted,
     // even when the price landed on the same number: otherwise the call is paid for,

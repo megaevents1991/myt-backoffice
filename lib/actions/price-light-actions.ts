@@ -278,7 +278,7 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
       : { flight: null, hotel: null, ticket: ticketName };
     const us: ComparisonOffer = {
       who: "ours", status: "ours", quote_only: false, raw: ourUsd, raw_currency: "USD", usd: ourUsd,
-      normalized_usd: ourUsd, diff_usd: null, light: null, decided: false, title: event.name,
+      normalized_usd: ourUsd, diff_usd: null, light: null, forced: null, decided: false, title: event.name,
       url: `${PUBLIC_SITE_URL}/order/${event.id}`, // our own page on the site, the way each competitor links to theirs
       depart: scope === "package" ? event.def_date_depart ?? null : null,
       return: scope === "package" ? event.def_date_return ?? null : null,
@@ -316,6 +316,7 @@ async function buildComparison(eventId: number): Promise<PriceLightComparison | 
         normalized_usd: per?.normalized_usd ?? m?.normalized_usd ?? null,
         diff_usd: per?.diff_usd ?? m?.diff_usd ?? null,
         light: per?.light ?? null,
+        forced: per?.forced ?? null,
         decided: detail?.competitor === competitor,
         title: listing?.title ?? null,
         url: listing?.url ?? null,
@@ -416,7 +417,7 @@ export async function getPriceLightComparison(eventId: number): Promise<PriceLig
  */
 export async function refreshOurOffer(
   eventId: number,
-): Promise<{ ok: true; comparison: PriceLightComparison } | { ok: false; error: string }> {
+): Promise<{ ok: true; comparison: PriceLightComparison; row: PriceLightRow | null } | { ok: false; error: string }> {
   await requireAdmin();
   try {
     const { data, error } = await db.from("events").select(OUR_OFFER_EVENT_COLUMNS).eq("id", eventId).maybeSingle();
@@ -434,9 +435,13 @@ export async function refreshOurOffer(
     } catch (e) {
       console.error("refreshOurOffer: alternatives failed", e);
     }
+    // Our side just changed - the "from" price, and the airline the low-cost step reads - so the
+    // lights are re-derived now, not at tonight's pass (staff note 23.09: "גם אם אני עורך חבילה
+    // שלנו"). Same rules as "בדוק עכשיו"; never fails the refresh it rides on.
+    await rematchEvent(eventId);
     invalidatePriceLight("rows");
     const comparison = await buildComparison(eventId);
-    return comparison ? { ok: true, comparison } : { ok: false, error: "event not found" };
+    return comparison ? { ok: true, comparison, row: await buildPriceLightRow(eventId) } : { ok: false, error: "event not found" };
   } catch (e) {
     console.error("refreshOurOffer failed", e);
     return { ok: false, error: e instanceof Error ? e.message : "failed" };
@@ -450,9 +455,35 @@ const CORRECTION_REMATCH_OTHERS = 5;
 const CORRECTION_CHANGES_MAX = 12;
 
 type CorrectionResult =
-  /** `recomputed: false` = the correction is saved but the lights were not recalculated just now. */
-  | { ok: true; saved: number; recomputed: boolean; comparison: PriceLightComparison | null; row: PriceLightRow | null }
+  /** `recomputed: false` = the correction is saved but the lights were not recalculated just now.
+   *  `lights` = the event's two lights before and after, so the dialog can SAY what the save did
+   *  (staff read an unchanged red as "it did not recompute", 22.09). */
+  | { ok: true; saved: number; recomputed: boolean; comparison: PriceLightComparison | null; row: PriceLightRow | null; lights: { before: Lights; after: Lights } | null }
   | { ok: false; error: string };
+
+/** The event's lights as they stand - null when it cannot be read (the caller then says nothing). */
+async function currentLights(eventId: number): Promise<Lights | null> {
+  const e = await loadEventForLight(eventId).catch(() => null);
+  return e ? { package: e.light_package, ticket: e.light_ticket } : null;
+}
+
+/**
+ * Re-match one event by "בדוק עכשיו"'s rules (the judge available under one click-sized budget, so
+ * an AI-made match whose verdict cannot be reused does not turn "unsure") and recompute its
+ * lights. Never throws - returns whether it ran.
+ */
+async function rematchEvent(eventId: number): Promise<boolean> {
+  try {
+    const opts: Parameters<typeof matchAllForEvent>[2] = aiEnabled()
+      ? { aiMemory: await loadJudgeMemory(), aiBudget: { remaining: RECHECK_AI_CALLS } }
+      : { judge: null };
+    await matchAllForEvent(eventId, "manual", opts);
+    return true;
+  } catch (e) {
+    console.error(`rematchEvent: event ${eventId} failed`, e);
+    return false;
+  }
+}
 
 type CorrectedListing = Pick<ListingRow, "id" | "competitor" | "scope" | "external_key" | "title" | "price_from" | "currency" |
   "attrs" | "detail_text" | "travel_depart" | "travel_return">;
@@ -518,6 +549,7 @@ export async function saveListingCorrections(input: {
 
     const event = await loadEventForLight(input.eventId);
     if (!event || event.is_deleted) return { ok: false, error: "event not found" };
+    const lightsBefore: Lights = { package: event.light_package, ticket: event.light_ticket };
     const { data: listingData, error: listingError } = await db.from("competitor_listings")
       .select("id,competitor,scope,external_key,title,price_from,currency,attrs,detail_text,travel_depart,travel_return")
       .eq("id", input.listingId).maybeSingle();
@@ -619,7 +651,11 @@ export async function saveListingCorrections(input: {
       invalidatePriceLight("rows", "runs", "cost"); // "runs" carries the per-competitor corrections count
     }
     if (failure) return { ok: false, error: saved > 0 ? `נשמרו ${saved} תיקונים, ואז: ${failure}` : failure };
-    return { ok: true, saved, recomputed, comparison: await buildComparison(input.eventId), row: await buildPriceLightRow(input.eventId) };
+    const lightsAfter = await currentLights(input.eventId);
+    return {
+      ok: true, saved, recomputed, comparison: await buildComparison(input.eventId), row: await buildPriceLightRow(input.eventId),
+      lights: lightsAfter ? { before: lightsBefore, after: lightsAfter } : null,
+    };
   } catch (e) {
     console.error("saveListingCorrections failed", e);
     return { ok: false, error: e instanceof Error ? e.message : "failed" };
@@ -631,6 +667,7 @@ export async function revokeListingCorrection(eventId: number, correctionId: num
   const session = await requireAdmin();
   try {
     if (!Number.isInteger(eventId) || !Number.isInteger(correctionId)) return { ok: false, error: "bad id" };
+    const lightsBefore = await currentLights(eventId);
     const revoked = await revokeCorrection(correctionId, session.email ?? null);
     let recomputed = true;
     if (revoked) {
@@ -641,7 +678,11 @@ export async function revokeListingCorrection(eventId: number, correctionId: num
       recomputed = await rematchAfterCorrection(eventId, revoked.listing_id, revoked.event_id == null);
       invalidatePriceLight("rows", "runs", "cost");
     }
-    return { ok: true, saved: revoked ? 1 : 0, recomputed, comparison: await buildComparison(eventId), row: await buildPriceLightRow(eventId) };
+    const lightsAfter = await currentLights(eventId);
+    return {
+      ok: true, saved: revoked ? 1 : 0, recomputed, comparison: await buildComparison(eventId), row: await buildPriceLightRow(eventId),
+      lights: lightsBefore && lightsAfter ? { before: lightsBefore, after: lightsAfter } : null,
+    };
   } catch (e) {
     console.error("revokeListingCorrection failed", e);
     return { ok: false, error: e instanceof Error ? e.message : "failed" };
@@ -895,6 +936,78 @@ export async function setLightOverride(eventId: number, scope: Scope, light: Lig
     return { ok: true };
   } catch (e) {
     console.error("setLightOverride failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "failed" };
+  }
+}
+
+const COMPETITOR_OVERRIDE_LIGHTS = ["green", "orange", "red"] as const;
+
+/**
+ * "סמן מול המתחרה" in the detailed comparison (staff note 23.09, Alon: "גולאסו שם לואו קוסט ואנחנו
+ * אל על - מבחינתי הפער משאיר אותנו ירוק, לא הכל זה מחיר"). Forces the verdict against ONE
+ * competitor; the others keep counting and the scope takes the worse of them (computeScopeLight).
+ * `light: null` clears it. Lapses by itself once that competitor's normalized price moves more
+ * than OVERRIDE_DRIFT_USD. Recomputes at once and hands back the sheet + the table row. Audited as
+ * `price_light.override` with the competitor's own comparison - a note the judge learns from.
+ */
+export async function setCompetitorLightOverride(input: {
+  eventId: number; scope: Scope; competitor: CompetitorKey; light: "green" | "orange" | "red" | null; note: string;
+}): Promise<{ ok: true; comparison: PriceLightComparison | null; row: PriceLightRow | null } | { ok: false; error: string }> {
+  const session = await requireAdmin();
+  const { eventId, scope, competitor, light } = input;
+  if (!Number.isInteger(eventId)) return { ok: false, error: "bad id" };
+  if (!(SCOPES as readonly string[]).includes(scope)) return { ok: false, error: "invalid scope" };
+  if (!(ACTIVE_COMPETITORS as readonly string[]).includes(competitor)) return { ok: false, error: "invalid competitor" };
+  if (light !== null && !(COMPETITOR_OVERRIDE_LIGHTS as readonly string[]).includes(light)) return { ok: false, error: "invalid light" };
+  const note = (input.note ?? "").replace(/\s+/g, " ").trim();
+  if (light !== null && note.length < 3) return { ok: false, error: "הערה של 3 תווים לפחות היא חובה" };
+  if (note.length > OVERRIDE_NOTE_MAX) return { ok: false, error: `עד ${OVERRIDE_NOTE_MAX} תווים` };
+  try {
+    const event = await loadEventForLight(eventId);
+    if (!event || event.is_deleted) return { ok: false, error: "event not found" };
+    const detail: LightDetail = event.light_detail ?? {};
+    const per = detail[scope]?.per_competitor?.[competitor];
+    if (light !== null && (per?.status !== "found" || per.normalized_usd == null)) {
+      return { ok: false, error: "למתחרה אין מחיר להשוואה - אין מה לסמן" };
+    }
+    const scoped = { ...(detail.competitor_overrides?.[scope] ?? {}) };
+    if (light === null) {
+      if (!scoped[competitor]) return { ok: false, error: "אין סימון לבטל" };
+      delete scoped[competitor];
+    } else {
+      scoped[competitor] = { light, note, by: session.email, at: new Date().toISOString(), normalized_usd: per?.normalized_usd ?? null };
+    }
+    const nextDetail: LightDetail = { ...detail, competitor_overrides: { ...(detail.competitor_overrides ?? {}), [scope]: scoped } };
+    const { error } = await db.from("events").update({ light_detail: nextDetail }).eq("id", eventId);
+    if (error) {
+      console.error("setCompetitorLightOverride failed", JSON.stringify(error));
+      return { ok: false, error: "update failed" };
+    }
+    await recomputeEventLights(eventId, "manual");
+    // The comparison the human judged: THIS competitor's gap, not the scope's winner. `light` is
+    // the verdict overruled (the lesson formatter reads it that way), `to_light` the human's call.
+    const before = lightSnapshot(event, scope);
+    await logAudit({
+      action: light === null ? "price_light.override_cleared" : "price_light.override",
+      entityType: "event",
+      entityId: eventId,
+      metadata: light === null
+        ? { scope, competitor, per_competitor: true }
+        : {
+            ...(before ?? { scope }),
+            light: per?.forced?.computed ?? per?.light ?? before?.light ?? light,
+            competitor,
+            normalized_usd: per?.normalized_usd ?? null,
+            diff_usd: per?.diff_usd ?? null,
+            to_light: light,
+            note,
+            per_competitor: true,
+          },
+    });
+    invalidatePriceLight("rows");
+    return { ok: true, comparison: await buildComparison(eventId), row: await buildPriceLightRow(eventId) };
+  } catch (e) {
+    console.error("setCompetitorLightOverride failed", e);
     return { ok: false, error: e instanceof Error ? e.message : "failed" };
   }
 }

@@ -5,18 +5,22 @@
 // partner's format (2026-09-14): "טיסות: אל על עם מזוודה ישיר 16-20 | מלון: שם מלון כולל ארוחת בוקר או
 // ללא | סוג כרטיס". Loaded on demand - detail pages are long, the list never carries them.
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { BedDouble, ExternalLink, Lightbulb, Loader2, Pencil, Plane, RefreshCw, Ticket } from "lucide-react";
+import { BedDouble, Brain, ExternalLink, Hand, Lightbulb, Loader2, Pencil, Plane, RefreshCw, Ticket } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { getPriceLightComparison, refreshOurOffer } from "@/lib/actions/price-light-actions";
+import { Textarea } from "@/components/ui/textarea";
+import { getPriceLightComparison, refreshOurOffer, setCompetitorLightOverride } from "@/lib/actions/price-light-actions";
+import { addAgentInstruction } from "@/lib/actions/ai-factory-actions";
 import { signedUsd } from "@/lib/services/price-light";
 import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "@/lib/services/price-margins";
 import { COMPETITOR_LABEL, PILL } from "@/app/(dashboard)/events/price-light-ui";
 import type { CorrectionField } from "@/lib/services/price-light-corrections";
-import type { ComparisonOffer, PriceLightComparison, PriceLightRow, Scope } from "@/types/price-light.types";
+import type { CompetitorKey, ComparisonOffer, PriceLightComparison, PriceLightRow, Scope } from "@/types/price-light.types";
 import { CorrectionDialog, correctionValueText, FIELD_HE } from "./correction-dialog";
 
 const SCOPE_HE: Record<Scope, string> = { package: "חבילה", ticket: "כרטיס בלבד" };
@@ -96,9 +100,148 @@ function Part({ text, note = null }: { text: string | null; note?: string | null
 // The like-for-like steps between the published price and the normalized one, in the reader's words.
 const ADJUSTMENT_HE: Record<string, string> = {
   bag: "כולל מזוודה", connection: "טיסת קונקשן", stars: "כוכבי מלון", nights: "הפרש לילות", breakfast: "כולל ארוחת בוקר", transfers: "כולל העברות",
+  low_cost: "טיסת לואו-קוסט מול שלנו",
 };
 
-function OfferRow({ offer, scope, onEdit }: { offer: ComparisonOffer; scope: Scope; onEdit: () => void }) {
+const FORCE_LIGHTS = [
+  { light: "green", label: "ירוק", cls: "bg-emerald-600 hover:bg-emerald-700 text-white" },
+  { light: "orange", label: "כתום", cls: "bg-amber-500 hover:bg-amber-600 text-white" },
+  { light: "red", label: "אדום", cls: "bg-red-600 hover:bg-red-700 text-white" },
+] as const;
+const LIGHT_HE: Record<string, string> = { green: "ירוק", orange: "כתום", red: "אדום" };
+
+type Changed = (comparison: PriceLightComparison | null, row: PriceLightRow | null) => void;
+
+/**
+ * "סמן מול <מתחרה>" (staff note 23.09): after reading the comparison, decide the verdict against
+ * THIS competitor yourself - "they fly low-cost, we fly El Al, the gap keeps us green". The other
+ * competitors keep counting; the call lapses once this competitor's price moves more than $20.
+ */
+function CompetitorVerdict({ eventId, scope, offer, onChanged }: { eventId: number; scope: Scope; offer: ComparisonOffer; onChanged: Changed }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const name = COMPETITOR_LABEL[offer.who as CompetitorKey] ?? offer.who;
+
+  const save = async (light: "green" | "orange" | "red" | null) => {
+    setBusy(true);
+    try {
+      const res = await setCompetitorLightOverride({ eventId, scope, competitor: offer.who as CompetitorKey, light, note });
+      if (!res.ok) { toast({ variant: "destructive", title: "לא נשמר", description: res.error }); return; }
+      toast({ title: light ? `סומן ${LIGHT_HE[light]} מול ${name} - הרמזור חושב מחדש` : `הסימון מול ${name} בוטל` });
+      onChanged(res.comparison, res.row);
+      setOpen(false);
+      setNote("");
+    } catch (e) {
+      console.error("setCompetitorLightOverride failed", e);
+      toast({ variant: "destructive", title: "לא נשמר", description: e instanceof Error ? e.message : "שגיאה" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (offer.forced) {
+    return (
+      <div className="mt-1 space-y-0.5">
+        <div
+          className="inline-block rounded bg-violet-100 px-1 py-0.5 text-violet-900 dark:bg-violet-900/40 dark:text-violet-200"
+          title={`${offer.forced.note} · ${offer.forced.by} · ${offer.forced.at.slice(0, 10)}`}
+        >
+          ✋ סומן ידנית{offer.forced.computed ? ` (מחושב: ${LIGHT_HE[offer.forced.computed] ?? offer.forced.computed})` : ""}
+        </div>
+        <div dir="auto" className="line-clamp-2 text-muted-foreground" title={offer.forced.note}>{offer.forced.note}</div>
+        <button type="button" disabled={busy} onClick={() => save(null)} className="text-muted-foreground underline hover:text-foreground">
+          {busy ? "…" : "בטל סימון"}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button type="button" className="mt-1 flex items-center gap-1 text-muted-foreground hover:text-foreground" title="אחרי שבדקת את ההשוואה - קבע בעצמך את הצבע מול המתחרה הזה">
+          <Hand className="h-3 w-3" aria-hidden /> סמן צבע מול {name}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent dir="rtl" className="w-72 space-y-2 text-xs">
+        <div className="font-medium">הצבע מול {name}</div>
+        <p className="text-muted-foreground">
+          שאר המתחרים ממשיכים להיספר, והרמזור לוקח את הגרוע מביניהם. הסימון פג לבד אם המחיר של {name} זז ביותר מ-$20.
+        </p>
+        <Textarea dir="auto" rows={2} maxLength={300} placeholder="למה? (חובה) - למשל: הם לואו קוסט ואנחנו אל על" value={note} onChange={(e) => setNote(e.target.value)} />
+        <div className="flex gap-1.5">
+          {FORCE_LIGHTS.map((f) => (
+            <Button key={f.light} size="sm" className={cn("flex-1", f.cls)} disabled={busy || note.trim().length < 3} onClick={() => save(f.light)}>
+              {f.label}
+            </Button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * "הוסף חוק ל-AI" (staff note 23.09): a standing instruction for the price-light agent, written
+ * where the reader just saw it get something wrong. Same `agent_instructions` rows as AI Factory's
+ * "זיכרון ולימוד" tab, where they are listed and retired. The agent matches events and reads what a
+ * listing contains - it never sets a color or a price, and the dialog says so.
+ */
+function TeachAiDialog({ eventName }: { eventName: string }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const res = await addAgentInstruction("price-light", text);
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "החוק לא נשמר", description: res.kind === "invalid_text" ? "בין 3 ל-500 תווים" : res.kind });
+        return;
+      }
+      toast({ title: "החוק נוסף ל-AI", description: "ייכנס לכל קריאה הבאה. לרשימה ולביטול: AI Factory ← זיכרון ולימוד" });
+      setText("");
+      setOpen(false);
+    } catch (e) {
+      console.error("addAgentInstruction failed", e);
+      toast({ variant: "destructive", title: "החוק לא נשמר", description: e instanceof Error ? e.message : "שגיאה" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        <Brain className="me-1 h-3.5 w-3.5" /> הוסף חוק ל-AI
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent dir="rtl" className="max-w-lg">
+          <DialogHeader className="text-start">
+            <DialogTitle>חוק חדש ל-AI של הרמזור</DialogTitle>
+            <DialogDescription className="text-xs leading-relaxed">
+              ה-AI מחליט <b>איזו מודעה היא אותו אירוע</b> ו<b>קורא מה יש בחבילה</b> (לילות, כוכבים, מזוודה, טיסה ישירה,
+              ארוחת בוקר, העברות). הוא לא קובע צבע ולא מחיר - לזה יש את &quot;סמן צבע מול מתחרה&quot; בטבלה.
+              דוגמה טובה: &quot;תיק גב בלבד במודעה = בלי מזוודה&quot;. נכתב מתוך: {eventName}.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea dir="auto" rows={4} maxLength={500} value={text} onChange={(e) => setText(e.target.value)} placeholder="החוק, במשפט אחד או שניים" />
+          <DialogFooter className="gap-2 sm:justify-start">
+            <Button onClick={save} disabled={busy || text.trim().length < 3}>
+              {busy && <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" />} שמור חוק
+            </Button>
+            <Button variant="ghost" onClick={() => setOpen(false)}>ביטול</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function OfferRow({ offer, scope, onEdit, eventId, onChanged }: {
+  offer: ComparisonOffer; scope: Scope; onEdit: () => void; eventId: number; onChanged: Changed;
+}) {
   const ours = offer.who === "ours";
   const pkg = scope === "package";
   const name = offer.who === "ours" ? "אנחנו" : COMPETITOR_LABEL[offer.who] ?? offer.who;
@@ -165,9 +308,12 @@ function OfferRow({ offer, scope, onEdit }: { offer: ComparisonOffer; scope: Sco
         {published && offer.raw_currency !== "USD" && <div className="text-muted-foreground">({published})</div>}
         {/* Why the big number is not the published one (staff read $801 as a bad conversion of
             €899, 18.09): the published price in dollars, then every like-for-like step. */}
+        {offer.adjustments.length === 0 && offer.usd != null && !ours && offer.raw_currency !== "USD" && (
+          <div className="mt-1 text-[11px] text-muted-foreground">פורסם <span dir="ltr">${Math.round(offer.usd).toLocaleString("en-US")}</span> בדולר, ללא נרמול</div>
+        )}
         {offer.adjustments.length > 0 && offer.usd != null && (
           <div className="mt-1 space-y-0.5 text-[11px] leading-snug text-muted-foreground">
-            <div>פורסם <span dir="ltr">${Math.round(offer.usd).toLocaleString("en-US")}</span>, מנורמל להשוואה:</div>
+            <div>פורסם <span dir="ltr">${Math.round(offer.usd).toLocaleString("en-US")}</span> בדולר, מנורמל להשוואה:</div>
             {offer.adjustments.map((a) => (
               <div key={a.key}>{ADJUSTMENT_HE[a.key] ?? a.key} <span dir="ltr">{signedUsd(a.usd)}</span></div>
             ))}
@@ -177,6 +323,9 @@ function OfferRow({ offer, scope, onEdit }: { offer: ComparisonOffer; scope: Sco
           <span dir="ltr" className={cn("mt-1 inline-block rounded-full px-1.5 py-0.5 font-medium", PILL[offer.light])} title="המחיר שלנו פחות שלהם, מנורמל">
             {signedUsd(offer.diff_usd)}
           </span>
+        )}
+        {!ours && offer.light && offer.diff_usd != null && (
+          <CompetitorVerdict eventId={eventId} scope={scope} offer={offer} onChanged={onChanged} />
         )}
         {!empty && status && <div className="text-muted-foreground">{status}</div>}
         {/* Our headline is the margin-free "from" price the light compares; the site price is not. */}
@@ -220,7 +369,9 @@ export function AdviceBlock({ lines, altAt }: { lines: string[]; altAt: string |
 }
 
 /** Suppliers down, components across: our flight above their flight, our hotel above their hotel. */
-function OfferTable({ offers, scope, onEdit }: { offers: ComparisonOffer[]; scope: Scope; onEdit: (offer: ComparisonOffer) => void }) {
+function OfferTable({ offers, scope, onEdit, eventId, onChanged }: {
+  offers: ComparisonOffer[]; scope: Scope; onEdit: (offer: ComparisonOffer) => void; eventId: number; onChanged: Changed;
+}) {
   const pkg = scope === "package";
   const head = "border-s px-3 py-2 text-start font-medium";
   return (
@@ -236,7 +387,9 @@ function OfferTable({ offers, scope, onEdit }: { offers: ComparisonOffer[]; scop
           </tr>
         </thead>
         <tbody>
-          {offers.map((offer) => <OfferRow key={`${scope}:${offer.who}`} offer={offer} scope={scope} onEdit={() => onEdit(offer)} />)}
+          {offers.map((offer) => (
+            <OfferRow key={`${scope}:${offer.who}`} offer={offer} scope={scope} onEdit={() => onEdit(offer)} eventId={eventId} onChanged={onChanged} />
+          ))}
         </tbody>
       </table>
     </div>
@@ -285,6 +438,8 @@ export function ComparisonSheet({
         return;
       }
       setData(res.comparison);
+      // Our side moved - the lights were re-derived on the server; the table behind follows.
+      if (res.row) onRowPatched?.(eventId, res.row);
       const errors = res.comparison.ours_errors;
       toast({
         title: errors.length ? "פורט חלקית" : "הפירוט שלנו עודכן",
@@ -296,6 +451,10 @@ export function ComparisonSheet({
   };
 
   const scopes = (["package", "ticket"] as const).filter((s) => (data?.[s].length ?? 0) > 0);
+  const changed: Changed = (comparison, row) => {
+    if (comparison) setData(comparison);
+    if (row) onRowPatched?.(eventId, row);
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -314,10 +473,13 @@ export function ComparisonSheet({
               ? `הפירוט שלנו נכון ל-${data.ours_at.slice(0, 10)} (הטיסה והמלון שהכלל בוחר)`
               : "הפירוט שלנו טרם נשלף - מוצג הכלל"}
           </span>
-          <Button size="sm" variant="outline" onClick={refresh} disabled={refreshing || loading}>
-            {refreshing ? <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="me-1 h-3.5 w-3.5" />}
-            פרט את שלנו עכשיו
-          </Button>
+          <div className="flex gap-2">
+            <TeachAiDialog eventName={eventName} />
+            <Button size="sm" variant="outline" onClick={refresh} disabled={refreshing || loading}>
+              {refreshing ? <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="me-1 h-3.5 w-3.5" />}
+              פרט את שלנו עכשיו
+            </Button>
+          </div>
         </div>
         {data && data.ours_errors.length > 0 && (
           <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">{data.ours_errors.join(" · ")}</div>
@@ -334,7 +496,7 @@ export function ComparisonSheet({
           <section key={scope} className="mt-5 space-y-2">
             <h3 className="text-sm font-semibold">{SCOPE_HE[scope]}</h3>
             <AdviceBlock lines={data.advice?.[scope] ?? []} altAt={data.alt_at ?? null} />
-            <OfferTable offers={data[scope]} scope={scope} onEdit={(offer) => setEditing({ scope, offer })} />
+            <OfferTable offers={data[scope]} scope={scope} onEdit={(offer) => setEditing({ scope, offer })} eventId={eventId} onChanged={changed} />
           </section>
         ))}
 
@@ -347,10 +509,7 @@ export function ComparisonSheet({
             offer={editing.offer}
             open
             onOpenChange={(next) => { if (!next) setEditing(null); }}
-            onChanged={(comparison, row) => {
-              if (comparison) setData(comparison);
-              if (row) onRowPatched?.(eventId, row);
-            }}
+            onChanged={changed}
           />
         )}
       </SheetContent>
