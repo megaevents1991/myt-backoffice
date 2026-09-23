@@ -448,6 +448,9 @@ export type EventTicket = {
 
 export type OrderTicket = Omit<EventTicket, "description" | "colorOnTheMap"> & {
   quantity: number;
+  // The customer picked between "all together" and "pairs + a triple" for the
+  // same zone (two suppliers, main lib/supplier-offers.ts `zoneOffers`).
+  seatingChoice?: "together" | "split";
 };
 
 export type Log = {
