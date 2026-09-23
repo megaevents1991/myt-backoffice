@@ -28,6 +28,7 @@ import { partnerLink } from "@/lib/site";
 import { matchesSearch } from "@/lib/search";
 import { computePerPersonPackagePrice } from "@/lib/package-price";
 import type { BuilderEvent } from "@/lib/actions/portal-package-actions";
+import { isTicketOnlyEvent } from "@/lib/package-mode";
 
 const dateFmt = (value: string) => new Date(value).toLocaleDateString("he-IL");
 const usd = (value: number) => `$${Math.round(value).toLocaleString("en-US")}`;
@@ -516,7 +517,9 @@ export function DashboardSearch({
       ) : (
         <ul className="divide-y rounded-xl border bg-card">
           {matches.map((event) => {
-            const perPerson = ticketsOnly
+            // A ticket-only EVENT is always sold as a ticket, whatever the switch says.
+            const rowTicketsOnly = ticketsOnly || isTicketOnlyEvent(event);
+            const perPerson = rowTicketsOnly
               ? ticketOnlyPerPerson(event)
               : event.site_price;
             return (
@@ -555,7 +558,7 @@ export function DashboardSearch({
                         <span dir="ltr" className="tabular-nums">
                           {usd(perPerson * PRICE_PREVIEW_TRAVELERS)}
                         </span>
-                        {ticketsOnly && " · כרטיס בלבד"}
+                        {rowTicketsOnly && " · כרטיס בלבד"}
                       </p>
                     </div>
                   )}
@@ -589,10 +592,10 @@ export function DashboardSearch({
                         ticket → flight → hotel → summary. */}
                     <Link
                       href={`/portal/packages/new?event=${event.id}${
-                        ticketsOnly ? "&tickets=1" : ""
+                        rowTicketsOnly ? "&tickets=1" : ""
                       }`}
                     >
-                      {ticketsOnly ? "בניית כרטיס" : "בניית חבילה"}
+                      {rowTicketsOnly ? "בניית כרטיס" : "בניית חבילה"}
                     </Link>
                   </Button>
                 </div>

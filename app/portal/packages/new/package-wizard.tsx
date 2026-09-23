@@ -14,6 +14,7 @@ import { BedDouble, Plane, Search, Ticket } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { computePerPersonPackagePrice } from "@/lib/package-price";
+import { isTicketOnlyEvent } from "@/lib/package-mode";
 import {
   createPreparedPackage,
   updatePreparedPackage,
@@ -85,6 +86,9 @@ export function PackageWizard({
   const [returnToSummary, setReturnToSummary] = useState(false);
   const [query, setQuery] = useState("");
   const [event, setEvent] = useState<BuilderEvent | null>(null);
+  // A ticket-only EVENT (backoffice switch) is sold as a ticket, full stop: the flight and
+  // hotel steps stay "ללא" and nothing on this screen can re-open them.
+  const lockedTicketsOnly = !!event && isTicketOnlyEvent(event);
   const [category, setCategory] = useState<string | null>(null);
   const [qty, setQty] = useState(2);
   const [flights, setFlights] = useState<BuilderFlight[]>([]);
@@ -259,8 +263,9 @@ export function PackageWizard({
     setCategory(cheapestCategory(e.tickets));
     // Ticket-only entry starts with both parts OFF, so the summary is one
     // step away; the regular build leaves them for the agent to pick live.
-    setFlightChoice(ticketsOnly ? { mode: "none" } : { mode: "live" });
-    setHotelChoice(ticketsOnly ? { mode: "none" } : { mode: "live" });
+    const startTicketsOnly = ticketsOnly || isTicketOnlyEvent(e);
+    setFlightChoice(startTicketsOnly ? { mode: "none" } : { mode: "live" });
+    setHotelChoice(startTicketsOnly ? { mode: "none" } : { mode: "live" });
     setFsResults(null);
     setHsResults(null);
     setFsError(null);
@@ -578,7 +583,10 @@ export function PackageWizard({
   const editStep = (target: number) => {
     // Opening the flight (2) or hotel (3) step from the summary means the
     // agent wants that part after all - leave ticket-only mode.
-    if (target === 2 || target === 3) setTicketsOnly(false);
+    if (target === 2 || target === 3) {
+      if (lockedTicketsOnly) return; // ticket-only event: no flight/hotel to add
+      setTicketsOnly(false);
+    }
     setReturnToSummary(true);
     setStep(target);
   };
@@ -1061,7 +1069,7 @@ export function PackageWizard({
               else if (target === nextUnresolvedStep(step) && !primaryDisabled) goNext();
               // A settled "ללא" step ahead - open it to add that part (leaves
               // ticket-only mode, same as editStep from the summary).
-              else if (target > step && target < nextUnresolvedStep(step) && !primaryDisabled) {
+              else if (target > step && target < nextUnresolvedStep(step) && !primaryDisabled && !lockedTicketsOnly) {
                 setTicketsOnly(false);
                 setStep(target);
               }

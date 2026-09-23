@@ -19,7 +19,7 @@ import {
   isEventSoldOut,
 } from "@/lib/package-price";
 import type { TixStockListing } from "@/lib/tixstock.types";
-import type { EventTicket, EventType } from "@/types/app.types";
+import type { EventTicket, EventType, PackageMode } from "@/types/app.types";
 
 /** myt-main's deployment - the same base URL the hotel proxy already uses. */
 const MAIN_APP_URL = (
@@ -120,6 +120,8 @@ export interface BuilderEvent {
   skip_flight_markup: number | null;
   skip_hotel_markup: number | null;
   ticket_only_markup: number | null;
+  /** 'ticket_only' = the site sells the ticket alone; the wizard is then locked to tickets. */
+  package_mode: PackageMode;
   sold_out: boolean;
   locked_flight_id: number | null;
   def_date_depart: string | null;
@@ -169,6 +171,7 @@ type EventListRow = {
   skip_flight_markup?: number | null;
   skip_hotel_markup?: number | null;
   ticket_only_markup?: number | null;
+  package_mode?: PackageMode | string | null;
   tags?: string | null;
   locked_flight_id?: number | null;
   def_date_depart?: string | null;
@@ -178,7 +181,7 @@ type EventListRow = {
 
 const EVENT_COLUMNS =
   "id, name, name_english, date, location, type, tickets_and_rates, map_image_url, card_image_url, art_image_url, tx_excluded_sections, is_deleted, base_flight_price, base_hotel_price, " +
-  "event_additional_markup, markup_ticket, markup_flight, markup_hotel, skip_flight, skip_flight_markup, skip_hotel_markup, ticket_only_markup, tags, locked_flight_id, " +
+  "event_additional_markup, markup_ticket, markup_flight, markup_hotel, skip_flight, skip_flight_markup, skip_hotel_markup, ticket_only_markup, package_mode, tags, locked_flight_id, " +
   "def_date_depart, def_date_return, is_prioritized";
 
 /**
@@ -368,6 +371,7 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
       skip_flight_markup: row.skip_flight_markup ?? null,
       skip_hotel_markup: row.skip_hotel_markup ?? null,
       ticket_only_markup: row.ticket_only_markup ?? null,
+      package_mode: (row.package_mode === "ticket_only" ? "ticket_only" : "package") as PackageMode,
       sold_out: soldOut,
       locked_flight_id: row.locked_flight_id ?? null,
       def_date_depart: row.def_date_depart ?? null,
