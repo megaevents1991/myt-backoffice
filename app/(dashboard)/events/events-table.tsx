@@ -33,6 +33,7 @@ import {
   getTaxonomyLinkMaps,
 } from "@/lib/actions/event-taxonomy-actions";
 import { buildTree, descendantIds, flattenWithPath } from "@/lib/taxonomy-tree";
+import { isTicketOnlyEvent } from "@/lib/package-mode";
 import type { EventCategory } from "@/types/taxonomy.types";
 import {
   EventTaxonomySelect,
@@ -512,7 +513,7 @@ export function EventsTable() {
       today.setHours(0, 0, 0, 0);
       if (eventDate < today) return false;
     }
-    if (showTicketOnly && !event.skip_flight) return false;
+    if (showTicketOnly && !isTicketOnlyEvent(event)) return false;
     if (filterCatIdSet) {
       const ids = catsByEvent[event.id] ?? [];
       if (!ids.some((id) => filterCatIdSet.has(id))) return false;
@@ -691,6 +692,15 @@ export function EventsTable() {
                 className="text-destructive border-destructive"
               >
                 Deleted
+              </Badge>
+            )}
+            {isTicketOnlyEvent(row.original) && (
+              <Badge
+                variant="outline"
+                className="border-amber-400 text-amber-800"
+                title="Sold as a ticket alone - no flight/hotel steps on the site"
+              >
+                ticket only{row.original.ticket_only_markup == null ? " · no markup!" : ""}
               </Badge>
             )}
             {nonInstant && (
@@ -1178,7 +1188,7 @@ export function EventsTable() {
             htmlFor="show-ticket-only"
             className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
           >
-            Show ticket only events
+            Ticket-only events only
           </label>
         </div>
 
@@ -1266,8 +1276,18 @@ export function EventsTable() {
               <DropdownMenuContent align="start">
                 <DropdownMenuLabel>Set skip flight</DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() =>
+                    handleBulkUpdate({ package_mode: "ticket_only", base_flight_price: 0, base_hotel_price: 0 })
+                  }
+                >
+                  Ticket only: ON (bases → 0; set each markup after)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleBulkUpdate({ package_mode: "package" })}>
+                  Ticket only: OFF
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleBulkUpdate({ skip_flight: true })}>
-                  Yes (ticket only)
+                  Skip flight: Yes
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleBulkUpdate({ skip_flight: false })}>
                   No (full package)
