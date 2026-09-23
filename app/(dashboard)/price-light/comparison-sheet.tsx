@@ -97,10 +97,11 @@ function Part({ text, note = null }: { text: string | null; note?: string | null
   );
 }
 
-// The like-for-like steps between the published price and the normalized one, in the reader's words.
+// The like-for-like steps that move OUR package onto theirs, in the reader's words (shown with the
+// sign flipped: a step that would lower THEIR price raises ours by the same amount).
 const ADJUSTMENT_HE: Record<string, string> = {
-  bag: "כולל מזוודה", connection: "טיסת קונקשן", stars: "כוכבי מלון", nights: "הפרש לילות", breakfast: "כולל ארוחת בוקר", transfers: "כולל העברות",
-  low_cost: "טיסת לואו-קוסט מול שלנו",
+  bag: "מזוודה כמו אצלם", connection: "הם בקונקשן", stars: "כוכבי מלון כמו אצלם", nights: "לילות כמו אצלם", breakfast: "ארוחת בוקר כמו אצלם", transfers: "העברות כמו אצלם",
+  low_cost: "הפרש לואו-קוסט",
 };
 
 const FORCE_LIGHTS = [
@@ -239,8 +240,10 @@ function TeachAiDialog({ eventName }: { eventName: string }) {
   );
 }
 
-function OfferRow({ offer, scope, onEdit, eventId, onChanged }: {
+function OfferRow({ offer, scope, onEdit, eventId, onChanged, ourUsd }: {
   offer: ComparisonOffer; scope: Scope; onEdit: () => void; eventId: number; onChanged: Changed;
+  /** Our price for this scope - a competitor row shows it adjusted onto their package. */
+  ourUsd: number | null;
 }) {
   const ours = offer.who === "ours";
   const pkg = scope === "package";
@@ -304,23 +307,29 @@ function OfferRow({ offer, scope, onEdit, eventId, onChanged }: {
       )}
 
       <td className="w-36 border-s px-3 py-2 align-top tabular-nums">
-        {offer.normalized_usd != null && <div className="text-sm font-semibold">${offer.normalized_usd.toLocaleString("en-US")}</div>}
-        {published && offer.raw_currency !== "USD" && <div className="text-muted-foreground">({published})</div>}
-        {/* Why the big number is not the published one (staff read $801 as a bad conversion of
-            €899, 18.09): the published price in dollars, then every like-for-like step. */}
-        {offer.adjustments.length === 0 && offer.usd != null && !ours && offer.raw_currency !== "USD" && (
-          <div className="mt-1 text-[11px] text-muted-foreground">פורסם <span dir="ltr">${Math.round(offer.usd).toLocaleString("en-US")}</span> בדולר, ללא נרמול</div>
+        {/* Their price stays what they PUBLISHED; the like-for-like steps move OUR package onto
+            theirs instead (Alon, QA 23.09: "לא רוצה שיוריד את המחיר מהם אלא שיתאים את החבילה שלנו
+            לחבילה שלהם"). Same arithmetic, same gap and light: ours − Σadj vs theirs. */}
+        {ours && offer.normalized_usd != null && <div className="text-sm font-semibold">${offer.normalized_usd.toLocaleString("en-US")}</div>}
+        {!ours && (offer.usd ?? offer.normalized_usd) != null && (
+          <div className="text-sm font-semibold">${Math.round((offer.usd ?? offer.normalized_usd) as number).toLocaleString("en-US")}</div>
         )}
-        {offer.adjustments.length > 0 && offer.usd != null && (
+        {published && offer.raw_currency !== "USD" && <div className="text-muted-foreground">({published})</div>}
+        {!ours && offer.adjustments.length > 0 && ourUsd != null && (
           <div className="mt-1 space-y-0.5 text-[11px] leading-snug text-muted-foreground">
-            <div>פורסם <span dir="ltr">${Math.round(offer.usd).toLocaleString("en-US")}</span> בדולר, מנורמל להשוואה:</div>
+            <div>
+              שלנו מותאם לחבילה שלהם:{" "}
+              <span dir="ltr" className="font-semibold text-foreground">
+                ${Math.round(ourUsd - offer.adjustments.reduce((sum, a) => sum + a.usd, 0)).toLocaleString("en-US")}
+              </span>
+            </div>
             {offer.adjustments.map((a) => (
-              <div key={a.key}>{ADJUSTMENT_HE[a.key] ?? a.key} <span dir="ltr">{signedUsd(a.usd)}</span></div>
+              <div key={a.key}>{ADJUSTMENT_HE[a.key] ?? a.key} <span dir="ltr">{signedUsd(-a.usd)}</span></div>
             ))}
           </div>
         )}
         {offer.light && offer.diff_usd != null && (
-          <span dir="ltr" className={cn("mt-1 inline-block rounded-full px-1.5 py-0.5 font-medium", PILL[offer.light])} title="המחיר שלנו פחות שלהם, מנורמל">
+          <span dir="ltr" className={cn("mt-1 inline-block rounded-full px-1.5 py-0.5 font-medium", PILL[offer.light])} title="שלנו, מותאם לחבילה שלהם, פחות המחיר שלהם">
             {signedUsd(offer.diff_usd)}
           </span>
         )}
@@ -383,12 +392,15 @@ function OfferTable({ offers, scope, onEdit, eventId, onChanged }: {
             {pkg && <th className={head}><Plane className="me-1 inline h-3.5 w-3.5" aria-hidden />טיסה</th>}
             {pkg && <th className={head}><BedDouble className="me-1 inline h-3.5 w-3.5" aria-hidden />מלון</th>}
             <th className={head}><Ticket className="me-1 inline h-3.5 w-3.5" aria-hidden />כרטיס</th>
-            <th className={head}>מחיר מנורמל</th>
+            <th className={head}>מחיר · פער</th>
           </tr>
         </thead>
         <tbody>
           {offers.map((offer) => (
-            <OfferRow key={`${scope}:${offer.who}`} offer={offer} scope={scope} onEdit={() => onEdit(offer)} eventId={eventId} onChanged={onChanged} />
+            <OfferRow
+              key={`${scope}:${offer.who}`} offer={offer} scope={scope} onEdit={() => onEdit(offer)} eventId={eventId} onChanged={onChanged}
+              ourUsd={offers.find((o) => o.who === "ours")?.usd ?? null}
+            />
           ))}
         </tbody>
       </table>
@@ -463,7 +475,7 @@ export function ComparisonSheet({
         <SheetHeader className="space-y-1 text-start">
           <SheetTitle>השוואה · {eventName}</SheetTitle>
           <SheetDescription className="text-xs">
-            המחירים מנורמלים לדולר ולאותו תוכן (לילות, מזוודה, כוכבים). הפער = שלנו פחות שלהם.
+            המחיר של כל מתחרה = מה שפרסם, בדולר. את החבילה שלנו מתאימים לתוכן שלהם (לילות, מזוודה, כוכבים, לואו-קוסט). הפער = שלנו המותאם פחות שלהם.
           </SheetDescription>
         </SheetHeader>
 

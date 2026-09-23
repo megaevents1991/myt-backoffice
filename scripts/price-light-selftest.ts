@@ -541,7 +541,8 @@ assert.ok(both.some((x) => x.kind === "supplier_swap") && !both.some((x) => x.ki
 // ---- low-cost carrier (staff note 23.09) ----
 assert.equal(isLowCostAirline("וויז אייר"), true);
 assert.equal(isLowCostAirline("Wizz Air"), true);
-assert.equal(isLowCostAirline("ישראייר"), true);
+assert.equal(isLowCostAirline("ישראייר"), false); // charter, not low-cost (Alon 23.09)
+assert.equal(isLowCostAirline("ארקיע"), false);
 assert.equal(isLowCostAirline("FR"), true);
 assert.equal(isLowCostAirline("אל על"), false);
 assert.equal(isLowCostAirline("לופטהנזה"), false);
@@ -549,8 +550,8 @@ assert.equal(isLowCostAirline(null), null);
 const lc = normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 3 }, { ours: "אל על", theirs: "וויז אייר" });
 assert.equal(lc.normalizedUsd, 1000 + LOW_COST_USD);
 assert.equal(lc.adjustments.find((a) => a.key === "low_cost")?.usd, LOW_COST_USD);
-// one direction only, and an unknown airline on either side adjusts nothing
-assert.equal(normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 3 }, { ours: "וויז אייר", theirs: "אל על" }).normalizedUsd, 1000);
+// both directions: we fly low-cost and they do not -> theirs counts cheaper; unknown adjusts nothing
+assert.equal(normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 3 }, { ours: "וויז אייר", theirs: "אל על" }).normalizedUsd, 1000 - LOW_COST_USD);
 assert.equal(normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 3 }, { ours: "וויז אייר", theirs: "ריינאייר" }).normalizedUsd, 1000);
 assert.equal(normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 3 }, { ours: null, theirs: "וויז אייר" }).normalizedUsd, 1000);
 assert.equal(normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 3 }, { ours: "אל על", theirs: null }).normalizedUsd, 1000);

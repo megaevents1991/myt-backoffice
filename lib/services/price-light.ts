@@ -32,22 +32,23 @@ export const NIGHT_USD = 90;       // per night - the FALLBACK rate only (see ou
 export const BREAKFAST_USD = 15;   // per night
 export const TRANSFER_USD = 30;
 /**
- * A low-cost carrier on THEIR side while we fly a full-service one (Dor, 2026-09-23: "גולאסו שם
- * לואו קוסט ואנחנו אל על... לא הכל זה מחיר"). Per person, on top of the bag adjustment - this is
- * the service gap (seat, times, reliability), not the luggage, which BAG_USD already prices.
- * One direction only, as agreed: it raises their normalized price when they fly low-cost and we
- * do not; it never lowers it. Needs both airlines known - an unknown one adjusts nothing and does
- * not make the comparison "partial" (most listings never name their airline).
+ * A low-cost carrier on one side and a full-service one on the other (Dor, 2026-09-23: "גולאסו
+ * שם לואו קוסט ואנחנו אל על... לא הכל זה מחיר"). Per person, on top of the bag adjustment - this
+ * is the service gap (seat, times, reliability), not the luggage, which BAG_USD already prices.
+ * Both directions (Alon's QA, 23.09: "$300 לטובת הנוסע שלא עם הלואו קוסט"): they fly low-cost and
+ * we do not -> their package is worth $300 less than ours, so it counts as $300 dearer; we fly
+ * low-cost and they do not -> $300 cheaper. Needs both airlines known - an unknown one adjusts
+ * nothing and does not make the comparison "partial" (most listings never name their airline).
  */
-export const LOW_COST_USD = 60;
-/** Low-cost / charter carriers as the parsers and Amadeus name them (offer-detail.ts), Hebrew and
- *  Latin. Israir and Arkia are in on purpose: staff's own rule compares "ישראייר" against El Al. */
+export const LOW_COST_USD = 300;
+/** Low-cost carriers as the parsers and Amadeus name them (offer-detail.ts), Hebrew and Latin.
+ *  Israir and Arkia are NOT low-cost - they are charters (Alon, QA 23.09). */
 const LOW_COST_AIRLINES: RegExp[] = [
   /וויז|WIZZ/i, /ריי?נאייר|RYANAIR/i, /איזי\s?ג'?יט|EASYJET/i, /ווילינג|וואלינג|VUELING/i,
   /טרנסאוויה|TRANSAVIA/i, /פגסוס|PEGASUS/i, /בלו\s?בירד|BLUE\s?BIRD/i, /JET\s?2|ג'ט\s?2/i,
-  /יורווינגס|EUROWINGS/i, /VOLOTEA|וולוטאה/i, /ישראייר|ISRAIR/i, /ארקיע|ARKIA/i,
+  /יורווינגס|EUROWINGS/i, /VOLOTEA|וולוטאה/i,
   // A bare IATA code - `airlineFromCode` returns the code itself for a carrier it has no name for.
-  /^(W4|W6|W9|5W|FR|RK|U2|EC|VY|HV|TO|PC|BZ|LS|EW|V7|6H|IZ)$/i,
+  /^(W4|W6|W9|5W|FR|RK|U2|EC|VY|HV|TO|PC|BZ|LS|EW|V7)$/i,
 ];
 
 /** true = a low-cost carrier, false = a named full-service one, null = no airline to judge. */
@@ -461,8 +462,12 @@ export function normalize(
   else partial = true;
   if (known(a.transfers)) { if (a.transfers) adjustments.push({ key: "transfers", usd: -TRANSFER_USD, label: `+transfers −$${TRANSFER_USD}` }); }
   else partial = true;
-  if (airlines && isLowCostAirline(airlines.theirs) === true && isLowCostAirline(airlines.ours) === false) {
+  const theirLow = isLowCostAirline(airlines?.theirs);
+  const ourLow = isLowCostAirline(airlines?.ours);
+  if (theirLow === true && ourLow === false) {
     adjustments.push({ key: "low_cost", usd: LOW_COST_USD, label: `low-cost +$${LOW_COST_USD}` });
+  } else if (theirLow === false && ourLow === true) {
+    adjustments.push({ key: "low_cost", usd: -LOW_COST_USD, label: `vs our low-cost −$${LOW_COST_USD}` });
   }
 
   const normalizedUsd = Math.round(priceUsd + adjustments.reduce((s, x) => s + x.usd, 0));

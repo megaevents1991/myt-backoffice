@@ -798,12 +798,16 @@ competitor's normalized price moves > OVERRIDE_DRIFT_USD or it has no price (`co
 `price_light.override` with `per_competitor: true` (the judge's override lesson source). The scope-wide "דריסה" is
 unchanged. (4) **Low-cost step** in `normalize()`: THEIR airline (offer parser over the stored detail text + a live
 staff "airline" correction, `price-light-match.ts`) low-cost and OURS (`light_detail.ours.flight.airline`) a named
-full-service carrier -> +`LOW_COST_USD` ($60, Dor) on their normalized price, adjustment key `low_cost`. One direction
-only (as agreed - never lowers theirs), unknown airline = no step and NOT partial. `isLowCostAirline` list includes
-Israir and Arkia on purpose (staff's own rule compares Israir to El Al) plus bare IATA codes. Measured on 430 live
-events: 44 low-cost-vs-full pairs (40 of the competitor airlines seen were Arkia), 8 per-competitor lights move one
-step (5 red/orange -> orange/green); ours flies low-cost on 64 events (no step). It lands on the next match of each
-event (nightly, "בדוק עכשיו", a correction). Selftests: `scripts/price-light-selftest.ts`.
+full-service carrier -> +`LOW_COST_USD` on their normalized price, adjustment key `low_cost`; and the reverse (we
+low-cost, they full-service) -> -`LOW_COST_USD`. Alon's QA the same day set it to **$300, both directions**, and ruled
+Israir / Arkia **charters, not low-cost** (out of `isLowCostAirline`; the list is Wizz, Ryanair, easyJet, Vueling,
+Transavia, Pegasus, Blue Bird, Jet2, Eurowings, Volotea + bare IATA codes). Unknown airline = no step and NOT partial.
+Measured on 431 live events after that: 4 low-cost-vs-full pairs (all Wizz on their side), 3 lights red -> orange
+(Muse 868/869, Inter-Juve 760). It lands on the next match of each event (nightly, "בדוק עכשיו", a correction).
+**The sheet shows it from OUR side** (Alon: "לא רוצה שיוריד את המחיר מהם אלא שיתאים את החבילה שלנו לחבילה שלהם"):
+a competitor row's big number is what they PUBLISHED (in dollars), and under it "שלנו מותאם לחבילה שלהם: $X" =
+our price − Σadjustments, with each step sign-flipped. Same arithmetic, so the gap and the light are unchanged; the
+engine still stores `normalized_usd` on their side. Selftests: `scripts/price-light-selftest.ts`.
 
 **Quote-only is its own answer (2026-09-17).** LiveEvents publishes NO price for any sports match ("לקבלת הצעת מחיר" - 164 live listings; many music rows too), so those events could never get a package verdict and sat on "לא נבדק / כיסוי חלקי" - 175 of the 248 unchecked package lights - sending staff to look for a crawl problem that did not exist. `computeScopeLight` now separates a competitor that SELLS without a number (`quote_only`, fresh) from a real hole (no match, stale, unsure, skipped): with no priced competitor, at least one quote and zero holes the scope is `unchecked` with `reason: "quote_only"` ("מתחרה מוכר בהצעת מחיר בלבד", view **"הצעת מחיר בלבד"**, `PriceLightScopeCell.quote_only`). Never "alone" (someone does sell it); a hole beside the quote is still `partial_coverage`; a priced competitor still sets the light as before. **LiveEvents music catalog without a browser:** `/events/` fills its month containers from `admin-ajax.php` (`action=events_table_action&month=MM.YYYY&count=N`); `fetchMusicCatalogViaAjax` POSTs the same (24 months, `MUSIC_MONTH_BATCH` 4 side by side, `pauseShort()` between batches - the real page fires all of them at once) and falls back to the Playwright page only when that yields no rows. The Playwright path returned ZERO music rows from Vercel on 2026-09-15 (607 -> 239 listings) and every music listing was left to go stale. **Ticket light check (2026-09-17):** the 225 red ticket lights are real, not a matching or units bug - all 225 matched the right LiveTickets event, `brt` equals the shelf price on their site (spot check: £125 both), and 197 of them carry `ticket_only_markup` $200, so our ticket-only price sits a median $229 above theirs; the fix is a pricing decision, not code.
 
