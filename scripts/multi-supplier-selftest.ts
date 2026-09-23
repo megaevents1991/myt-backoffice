@@ -18,6 +18,7 @@ import {
   sectionNumber,
   sectorRange,
   suggestZone,
+  suggestZoneTiered,
 } from "../lib/venue-maps/zone-suggest";
 import { toLiveTicketsCategory } from "../lib/services/livetickets-offers";
 import { applyLiveTicketsStock } from "../lib/services/attached-suppliers-sync";
@@ -206,6 +207,19 @@ assert.equal(suggested("לאורך המגרש קומות 1-2 מרכזי (סקט�
 assert.equal(suggested("מאחורי השער"), null);
 assert.equal(suggested("Category 1"), null);
 assert.equal(suggestZone("לאורך המגרש קומה 3", []), null);
+// strong answers stay strong in the tiered form
+assert.equal(suggestZoneTiered("לאורך המגרש קומה 1 (סקטורים 100-200)", bernabeu)?.strong, true);
+// a map sliced coarser than LiveTickets (the older Madrid drawing): no strong
+// match exists, the nearest zone is still offered - as a guess
+const coarse = [
+  bz("premium", "לאורך המגרש במרכז יציעים 100-400", [129, 134, 229, 234, 301, 306, 401, 406]),
+  bz("cat1", "לאורך המגרש יציע 500-600", [501, 512]),
+  bz("fondo", "מאחורי השער אזור 100-500", [115, 126, 215, 226, 315, 326, 415, 426]),
+  bz("lateral", "לאורך המגרש אזור 700", [601, 610, 701, 710]),
+];
+const weak = suggestZoneTiered("מאחורי השער קומות 1-2 (סקטורים 100-400)", coarse);
+assert.equal(weak?.zoneId, "fondo");
+assert.equal(suggestZoneTiered("Category 1", coarse), null);
 
 console.log("multi-supplier selftest: all assertions passed");
 process.exit(0);

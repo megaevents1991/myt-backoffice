@@ -2561,8 +2561,10 @@ export default function EventPage({
                   {usesOurMap && !sourceMapOpen ? (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm text-muted-foreground">
                       <span>
-                        The seat map is ours - it is edited under &quot;Suppliers
-                        &amp; zones&quot; below. The TixStock preview map is folded.
+                        The seat map is ours - zones are edited under
+                        &quot;Suppliers &amp; zones&quot; below. Sections this
+                        event does not sell are still excluded here, on the
+                        same drawing, and show dark grey in the zone editor.
                       </span>
                       <Button
                         type="button"
@@ -2570,7 +2572,7 @@ export default function EventPage({
                         variant="outline"
                         onClick={() => setSourceMapOpen(true)}
                       >
-                        Show TixStock map
+                        Exclude sections on the map
                       </Button>
                     </div>
                   ) : mapSourceUrl ? (

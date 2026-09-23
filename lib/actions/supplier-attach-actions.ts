@@ -223,3 +223,30 @@ export async function buildLiveTicketsDrafts(
     })),
   };
 }
+
+/**
+ * LiveTickets' own picture of one of THEIR events (Hebrew when they have
+ * one), for an event whose LiveTickets tickets are already attached - the
+ * zones board shows it next to their tickets. null = none on file.
+ */
+export async function getLiveTicketsMapUrl(
+  liveEventId: string,
+): Promise<Result<string | null>> {
+  await requireStaff();
+  if (!/^\d{1,12}$/.test(liveEventId)) {
+    return { ok: false, error: "Invalid LiveTickets event id" };
+  }
+  const { data, error } = await db
+    .from("live_events")
+    .select("venue_map_url,venue_map_heb_url")
+    .eq("event_id", Number(liveEventId))
+    .maybeSingle();
+  if (error) {
+    console.error("getLiveTicketsMapUrl:", JSON.stringify(error));
+    return { ok: false, error: "Could not read the LiveTickets map" };
+  }
+  return {
+    ok: true,
+    data: data?.venue_map_heb_url || data?.venue_map_url || null,
+  };
+}

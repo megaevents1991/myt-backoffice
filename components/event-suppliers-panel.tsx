@@ -61,7 +61,10 @@ import {
   type VenueMap,
   type VenueZone,
 } from "@/lib/venue-maps/svg-zones";
-import { suggestZone } from "@/lib/venue-maps/zone-suggest";
+import {
+  suggestZoneTiered,
+  type TieredSuggestion,
+} from "@/lib/venue-maps/zone-suggest";
 import {
   adoptVenueMap,
   getVenueMapByUrl,
@@ -73,6 +76,7 @@ import {
 import {
   buildLiveTicketsDrafts,
   findLiveTicketsCandidates,
+  getLiveTicketsMapUrl,
   type LiveTicketsCandidate,
   type LiveTicketsDraft,
 } from "@/lib/actions/supplier-attach-actions";
@@ -86,6 +90,8 @@ const BOARD_COLUMNS = ["Ours · TixStock", "LiveTickets"] as const;
 const ZONE_FILL = "#C2FFD8";
 const ACTIVE_ZONE_FILL = "#0E6F57";
 const IDLE_FILL = "#E8E6E0";
+/** A section this event does not sell (`tx_excluded_sections`). */
+const EXCLUDED_FILL = "#4B5563";
 
 type Props = {
   event: Event;
@@ -175,6 +181,29 @@ function SupplierMap({ url, label }: { url: string; label: string }) {
           className="max-h-[420px] w-auto max-w-full rounded-md border bg-white"
         />
       </a>
+    </div>
+  );
+}
+
+/** What the colours on our drawings mean. */
+function MapLegend() {
+  const items: [string, string][] = [
+    [ACTIVE_ZONE_FILL, "This zone"],
+    [ZONE_FILL, "Another zone"],
+    [IDLE_FILL, "No zone"],
+    [EXCLUDED_FILL, "Excluded on this event"],
+  ];
+  return (
+    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+      {items.map(([color, label]) => (
+        <span key={label} className="flex items-center gap-1">
+          <span
+            className="inline-block h-3 w-3 rounded-sm border"
+            style={{ backgroundColor: color }}
+          />
+          {label}
+        </span>
+      ))}
     </div>
   );
 }
@@ -347,9 +376,10 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     setDrawing(null);
   }, [venueMapId]);
 
-  // The drawing is only fetched while the editor is open.
+  // Fetched once per venue: the editor draws it and every row of the zones
+  // board shows a thumbnail of it with that zone painted.
   useEffect(() => {
-    if (!venueMapId || !zoneEditorOpen) return;
+    if (!venueMapId) return;
     let cancelled = false;
     getVenueMapDrawing(venueMapId)
       .then((result) => {
@@ -360,7 +390,15 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [venueMapId, zoneEditorOpen]);
+  }, [venueMapId]);
+
+  // Sections this EVENT does not sell (the TixStock map's exclude mode). Zones
+  // belong to the venue, so they keep these sections - but every drawing here
+  // shows them as excluded, which is also what main does on the site.
+  const excludedSections = useMemo(
+    () => new Set(event.tx_excluded_sections ?? []),
+    [event.tx_excluded_sections],
+  );
 
   // Paint: the active zone dark, sections of any other zone light, rest idle.
   useEffect(() => {
@@ -372,11 +410,13 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     );
     root.querySelectorAll("[data-section]").forEach((el) => {
       const id = el.getAttribute("data-section") || "";
-      const fill = active.has(id)
-        ? ACTIVE_ZONE_FILL
-        : zoned.has(id)
-          ? ZONE_FILL
-          : IDLE_FILL;
+      const fill = excludedSections.has(id)
+        ? EXCLUDED_FILL
+        : active.has(id)
+          ? ACTIVE_ZONE_FILL
+          : zoned.has(id)
+            ? ZONE_FILL
+            : IDLE_FILL;
       const blocks = el.querySelectorAll(".block");
       const shapes = blocks.length
         ? blocks
@@ -388,7 +428,32 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
           : "default";
       });
     });
-  }, [drawing, zones, activeZoneId, zoneEditorOpen]);
+  }, [drawing, zones, activeZoneId, zoneEditorOpen, excludedSections]);
+
+  /* One small picture of our map per zone, that zone painted - the zones
+     board's left column (Alon 23.09: "to be sure everything is right").
+     Built as images, not live SVG: eight copies of a stadium in the DOM
+     would be heavy, and these are only looked at. */
+  const zoneThumbs = useMemo(() => {
+    const thumbs = new Map<string, string>();
+    if (!drawing) return thumbs;
+    const open = drawing.indexOf(">", drawing.indexOf("<svg"));
+    if (open < 0) return thumbs;
+    const shapes = ":is(.block, polygon, path, rect, circle, ellipse)";
+    const sel = (id: string) => `[data-section="${id.replace(/["\\]/g, "\\$&")}"] ${shapes}`;
+    const excludedCss = [...excludedSections]
+      .map((id) => `${sel(id)}{fill:${EXCLUDED_FILL} !important}`)
+      .join("");
+    for (const zone of zones) {
+      const css =
+        `[data-section] ${shapes}{fill:${IDLE_FILL}}` +
+        zone.sections.map((id) => `${sel(id)}{fill:${ACTIVE_ZONE_FILL}}`).join("") +
+        excludedCss;
+      const svg = `${drawing.slice(0, open + 1)}<style>${css}</style>${drawing.slice(open + 1)}`;
+      thumbs.set(zone.id, `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+    }
+    return thumbs;
+  }, [drawing, zones, excludedSections]);
 
   // Click a section = toggle it in the active zone.
   useEffect(() => {
@@ -509,8 +574,8 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
 
   /** The zone the supplier's own words point at - offered, never applied unseen. */
   const suggestionFor = useCallback(
-    (ticket: EventTicket) =>
-      suggestZone(ticket.description || ticket.category, zones)?.zoneId,
+    (ticket: EventTicket): TieredSuggestion | null =>
+      suggestZoneTiered(ticket.description || ticket.category, zones),
     [zones],
   );
 
@@ -607,9 +672,10 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
   const [draftZones, setDraftZones] = useState<Record<string, string>>({});
-  // Draft ids whose zone is OUR suggestion, not the venue template or a person.
-  const [suggestedDrafts, setSuggestedDrafts] = useState<
-    Record<string, boolean>
+  // Where a draft's pre-filled zone came from: the venue template, or our
+  // suggestion (strong / weak). Gone once a person picks the zone.
+  const [draftZoneOrigin, setDraftZoneOrigin] = useState<
+    Record<string, "template" | "strong" | "weak">
   >({});
   // "Bring non-instant-confirm too" (Alon 23.09): internal only - the ticket
   // is flagged `nonInstant` and warned about on the event and on the order.
@@ -625,7 +691,11 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
       else delete next[ticketId];
       return next;
     });
-    setSuggestedDrafts((prev) => ({ ...prev, [ticketId]: false }));
+    setDraftZoneOrigin((prev) => {
+      const next = { ...prev };
+      delete next[ticketId];
+      return next;
+    });
   };
 
   const attachedIds = useMemo(
@@ -638,6 +708,38 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     [event.tickets_and_rates, event.type],
   );
   const hasLiveTickets = attachedIds.size > 0;
+
+  // LiveTickets' picture of the stadium: of the event being attached, else of
+  // the one already attached. One copy, under our map in the zone editor, and
+  // small beside their tickets on the board (QA 23.09: it vanished once the
+  // attach was done, and showed twice while it was open).
+  const attachedLiveEid = useMemo(
+    () =>
+      event.tickets_and_rates.find(
+        (t) => ticketSupplier(t, event.type) === "livetickets" && t.eid,
+      )?.eid ?? null,
+    [event.tickets_and_rates, event.type],
+  );
+  const [attachedLiveMapUrl, setAttachedLiveMapUrl] = useState<string | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!attachedLiveEid) {
+      setAttachedLiveMapUrl(null);
+      return;
+    }
+    let cancelled = false;
+    getLiveTicketsMapUrl(attachedLiveEid)
+      .then((result) => {
+        if (!cancelled) setAttachedLiveMapUrl(result.ok ? result.data : null);
+      })
+      .catch((error) => console.error("LiveTickets map lookup failed", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [attachedLiveEid]);
+  const liveMapUrl =
+    (attachOpen && picked?.venueMapUrl) || attachedLiveMapUrl || null;
 
   const loadCandidates = async (term?: string) => {
     setLoadingCandidates(true);
@@ -670,6 +772,8 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
 
   const handlePick = async (candidate: LiveTicketsCandidate) => {
     setPicked(candidate);
+    // Their categories are matched inside the zone editor, beside both maps.
+    setZoneEditorOpen(true);
     setGapAcknowledged(false);
     setLoadingDrafts(true);
     try {
@@ -685,15 +789,19 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
       }
       setDrafts(result.data);
       const startZones: Record<string, string> = {};
-      const suggested: Record<string, boolean> = {};
+      const origin: Record<string, "template" | "strong" | "weak"> = {};
       const preselected: Record<string, boolean> = {};
       for (const draft of result.data) {
         const fromTemplate = templateZoneFor(draft.ticket);
         // No template answer: our suggestion from their own words ("סקטורים
         // 500-600", "מאחורי השער"), shown as such until someone confirms it.
-        const zoneId = fromTemplate ?? suggestionFor(draft.ticket);
+        const suggestion = fromTemplate ? null : suggestionFor(draft.ticket);
+        const zoneId = fromTemplate ?? suggestion?.zoneId;
         if (zoneId) startZones[draft.ticket.id] = zoneId;
-        if (zoneId && !fromTemplate) suggested[draft.ticket.id] = true;
+        if (fromTemplate) origin[draft.ticket.id] = "template";
+        else if (suggestion) {
+          origin[draft.ticket.id] = suggestion.strong ? "strong" : "weak";
+        }
         // Pre-tick only what is sellable AND already zoned by the venue
         // template - a suggestion still needs the operator's eyes.
         preselected[draft.ticket.id] =
@@ -702,7 +810,7 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
           !attachedIds.has(draft.ticket.id);
       }
       setDraftZones(startZones);
-      setSuggestedDrafts(suggested);
+      setDraftZoneOrigin(origin);
       setChosen(preselected);
     } finally {
       setLoadingDrafts(false);
@@ -821,9 +929,9 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     </SelectItem>
   ));
 
-  /* The board: one row per zone, our tickets beside LiveTickets' (QA 23.09 -
-     comparing two stacked lists was the slow part). Drafts of the event being
-     attached sit in the row of the zone they are about to take. */
+  /* The board: one row per zone - our map with the zone painted, our tickets,
+     LiveTickets' map + their tickets (QA 23.09). Drafts of an event being
+     attached are matched in the zone editor, not here. */
   const showDrafts = attachOpen && !!picked && !loadingDrafts;
   const boardDrafts = showDrafts
     ? drafts.filter((d) => !attachedIds.has(d.ticket.id))
@@ -838,24 +946,18 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     event.tickets_and_rates.filter((t) =>
       zone ? t.zoneId === zone.id : !zoneExists(t.zoneId),
     );
-  const draftsIn = (zone: VenueZone | null) =>
-    boardDrafts.filter((d) =>
-      zone
-        ? draftZones[d.ticket.id] === zone.id
-        : !zoneExists(draftZones[d.ticket.id]),
-    );
   const nonInstantDrafts = drafts.filter(
     (d) => d.category.nonInstantOnly && !attachedIds.has(d.ticket.id),
   ).length;
   const suggestedCount = boardDrafts.filter(
-    (d) => suggestedDrafts[d.ticket.id],
+    (d) => draftZoneOrigin[d.ticket.id] === "strong" || draftZoneOrigin[d.ticket.id] === "weak",
   ).length;
 
   const renderTicket = (ticket: EventTicket) => {
     const suggestion = !zoneExists(ticket.zoneId)
       ? suggestionFor(ticket)
-      : undefined;
-    const suggested = zones.find((z) => z.id === suggestion);
+      : null;
+    const suggested = zones.find((z) => z.id === suggestion?.zoneId);
     return (
       <div
         key={ticket.id}
@@ -985,8 +1087,21 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                   {zoneSelectItems}
                 </SelectContent>
               </Select>
-              {suggestedDrafts[ticket.id] && (
+              {draftZoneOrigin[ticket.id] === "template" && (
+                <Badge variant="secondary">From the venue template</Badge>
+              )}
+              {draftZoneOrigin[ticket.id] === "strong" && (
                 <Badge variant="secondary">Suggested - check it</Badge>
+              )}
+              {draftZoneOrigin[ticket.id] === "weak" && (
+                <Badge variant="outline" className="border-amber-400 text-amber-800">
+                  Closest zone - a guess, check it
+                </Badge>
+              )}
+              {!zoneExists(draftZones[ticket.id]) && (
+                <span className="text-xs text-muted-foreground">
+                  No zone of ours matches - pick one or open its own
+                </span>
               )}
               <Button
                 type="button"
@@ -1134,153 +1249,6 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
           )}
         </section>
 
-        {/* ── Zone editor ── */}
-        {venueMap && (
-          <section id="venue-zone-editor" className="scroll-mt-20 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-medium">
-                Our zones at this venue{" "}
-                <span className="text-sm font-normal text-muted-foreground">
-                  · {zones.length} zone(s), shared by every event here
-                </span>
-              </h3>
-              <div className="flex gap-2">
-                {zoneEditorOpen && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={handleSaveZones}
-                    disabled={!zonesDirty || savingZones}
-                  >
-                    {savingZones && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    Save zones
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setZoneEditorOpen((open) => !open)}
-                >
-                  {zoneEditorOpen ? "Close" : "Edit zones"}
-                </Button>
-              </div>
-            </div>
-            {zoneEditorOpen && (
-            <>
-            <p className="text-sm text-muted-foreground">
-              Zones belong to the venue and are shared by every event here. Pick
-              a zone (the dot), then click sections on the map to add or remove
-              them. The zone name is what the customer sees.
-            </p>
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-              <div className="space-y-2">
-                {zones.map((zone) => (
-                  <div
-                    key={zone.id}
-                    className={cn(
-                      "flex items-center gap-2 rounded-md border p-2",
-                      activeZoneId === zone.id && "border-primary bg-primary/5",
-                    )}
-                  >
-                    <button
-                      type="button"
-                      className="h-4 w-4 shrink-0 rounded-full border"
-                      style={{
-                        backgroundColor:
-                          activeZoneId === zone.id
-                            ? ACTIVE_ZONE_FILL
-                            : ZONE_FILL,
-                      }}
-                      aria-label={`Edit sections of ${zone.label}`}
-                      onClick={() =>
-                        setActiveZoneId(
-                          activeZoneId === zone.id ? null : zone.id,
-                        )
-                      }
-                    />
-                    <Input
-                      dir="rtl"
-                      value={zone.label}
-                      onChange={(e) => {
-                        const label = e.target.value;
-                        setZones((prev) =>
-                          prev.map((z) =>
-                            z.id === zone.id ? { ...z, label } : z,
-                          ),
-                        );
-                        setZonesDirty(true);
-                      }}
-                    />
-                    <span className="w-16 shrink-0 text-xs text-muted-foreground">
-                      {zone.sections.length} sections
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRemoveZone(zone.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-                <div className="flex gap-2">
-                  <Input
-                    dir="rtl"
-                    placeholder="שם אזור חדש, למשל: לאורך המגרש - קומה 3"
-                    value={newZoneLabel}
-                    onChange={(e) => setNewZoneLabel(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddZone();
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddZone}
-                  >
-                    <Plus className="mr-1 h-4 w-4" /> Zone
-                  </Button>
-                </div>
-                {attachOpen && picked?.venueMapUrl && (
-                  <SupplierMap
-                    url={picked.venueMapUrl}
-                    label="LiveTickets' map of this event, for reference while marking sections."
-                  />
-                )}
-              </div>
-              <div className="rounded-md border bg-[#f5f6f7] p-2">
-                {drawing ? (
-                  <div
-                    ref={drawingRef}
-                    dir="ltr"
-                    className="[&_svg]:h-auto [&_svg]:max-h-[60vh] [&_svg]:w-full"
-                    dangerouslySetInnerHTML={{ __html: drawing }}
-                  />
-                ) : (
-                  <p className="p-6 text-center text-sm text-muted-foreground">
-                    Loading the drawing…
-                  </p>
-                )}
-              </div>
-            </div>
-            </>
-            )}
-            {zonesDirty && (
-              <p className="text-sm text-amber-700">
-                Unsaved zone changes — tickets can only use saved zones.
-              </p>
-            )}
-          </section>
-        )}
-
         {/* ── Attach LiveTickets ── */}
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1413,12 +1381,6 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                       </label>
                     </div>
                   )}
-                  {picked.venueMapUrl && (
-                    <SupplierMap
-                      url={picked.venueMapUrl}
-                      label="LiveTickets' own map of this event - match each category to one of our zones, or open a zone of its own when they slice the stand differently."
-                    />
-                  )}
                   {loadingDrafts ? (
                     <p className="text-sm text-muted-foreground">
                       Reading their categories…
@@ -1451,7 +1413,7 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                       </label>
                       <p className="text-sm text-muted-foreground">
                         Their {boardDrafts.length} categories are placed in the
-                        zones board below, next to our tickets
+                        zone editor below - our map beside theirs
                         {suggestedCount > 0
                           ? ` - ${suggestedCount} on a suggested zone (read off their sectors and wording), check each one`
                           : ""}
@@ -1465,6 +1427,170 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
             </div>
           )}
         </section>
+
+        {/* ── Zone editor ── */}
+        {venueMap && (
+          <section id="venue-zone-editor" className="scroll-mt-20 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-medium">
+                Our zones at this venue{" "}
+                <span className="text-sm font-normal text-muted-foreground">
+                  · {zones.length} zone(s), shared by every event here
+                </span>
+              </h3>
+              <div className="flex gap-2">
+                {zoneEditorOpen && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleSaveZones}
+                    disabled={!zonesDirty || savingZones}
+                  >
+                    {savingZones && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Save zones
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setZoneEditorOpen((open) => !open)}
+                >
+                  {zoneEditorOpen ? "Close" : "Edit zones"}
+                </Button>
+              </div>
+            </div>
+            {zoneEditorOpen && (
+            <>
+            <p className="text-sm text-muted-foreground">
+              Zones belong to the venue and are shared by every event here. Pick
+              a zone (the dot), then click sections on the map to add or remove
+              them. The zone name is what the customer sees.
+            </p>
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+              <div className="space-y-2">
+                {zones.map((zone) => (
+                  <div
+                    key={zone.id}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md border p-2",
+                      activeZoneId === zone.id && "border-primary bg-primary/5",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      className="h-4 w-4 shrink-0 rounded-full border"
+                      style={{
+                        backgroundColor:
+                          activeZoneId === zone.id
+                            ? ACTIVE_ZONE_FILL
+                            : ZONE_FILL,
+                      }}
+                      aria-label={`Edit sections of ${zone.label}`}
+                      onClick={() =>
+                        setActiveZoneId(
+                          activeZoneId === zone.id ? null : zone.id,
+                        )
+                      }
+                    />
+                    <Input
+                      dir="rtl"
+                      value={zone.label}
+                      onChange={(e) => {
+                        const label = e.target.value;
+                        setZones((prev) =>
+                          prev.map((z) =>
+                            z.id === zone.id ? { ...z, label } : z,
+                          ),
+                        );
+                        setZonesDirty(true);
+                      }}
+                    />
+                    <span className="w-16 shrink-0 text-xs text-muted-foreground">
+                      {zone.sections.length} sections
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRemoveZone(zone.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <Input
+                    dir="rtl"
+                    placeholder="שם אזור חדש, למשל: לאורך המגרש - קומה 3"
+                    value={newZoneLabel}
+                    onChange={(e) => setNewZoneLabel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddZone();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddZone}
+                  >
+                    <Plus className="mr-1 h-4 w-4" /> Zone
+                  </Button>
+                </div>
+                {/* Their categories sit HERE, beside our map and theirs, so
+                    each one is matched to a zone while both drawings are in
+                    view (QA 23.09 - at the bottom of the page they could not
+                    be compared). */}
+                {showDrafts && (
+                  <div className="space-y-2 pt-4">
+                    <h4 className="text-sm font-medium">
+                      LiveTickets categories - choose our zone for each
+                    </h4>
+                    {boardDrafts.map(renderDraft)}
+                    {attachBar}
+                  </div>
+                )}
+              </div>
+              <div className="space-y-3">
+                <div className="rounded-md border bg-[#f5f6f7] p-2">
+                  {drawing ? (
+                    <div
+                      ref={drawingRef}
+                      dir="ltr"
+                      className="[&_svg]:h-auto [&_svg]:max-h-[60vh] [&_svg]:w-full"
+                      dangerouslySetInnerHTML={{ __html: drawing }}
+                    />
+                  ) : (
+                    <p className="p-6 text-center text-sm text-muted-foreground">
+                      Loading the drawing…
+                    </p>
+                  )}
+                </div>
+                <MapLegend />
+                {liveMapUrl && (
+                  <SupplierMap
+                    url={liveMapUrl}
+                    label="LiveTickets' map of this event - how they slice the stands."
+                  />
+                )}
+              </div>
+            </div>
+            </>
+            )}
+            {zonesDirty && (
+              <p className="text-sm text-amber-700">
+                Unsaved zone changes - saved with “Save zones”, or on their own
+                the moment a ticket takes one of them.
+              </p>
+            )}
+          </section>
+        )}
 
         {/* ── Zones board: our tickets | LiveTickets ── */}
         <section className="space-y-3">
@@ -1496,15 +1622,12 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
           <div className="space-y-2">
             {boardRows.map(({ key, zone }) => {
               const tickets = ticketsIn(zone);
-              const rowDrafts = draftsIn(zone);
-              if (!zone && tickets.length === 0 && rowDrafts.length === 0) {
-                return null;
-              }
+              if (!zone && tickets.length === 0) return null;
               const columns: [ReactNode[], ReactNode[]] = [[], []];
               for (const ticket of tickets) {
                 columns[columnOf(ticket)].push(renderTicket(ticket));
               }
-              for (const draft of rowDrafts) columns[1].push(renderDraft(draft));
+              const thumb = zone ? zoneThumbs.get(zone.id) : undefined;
               return (
                 <div
                   key={key}
@@ -1520,12 +1643,47 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                         : "Not on the map yet"}
                     </span>
                   </div>
-                  <div className="grid gap-2 p-2 md:grid-cols-2">
+                  {/* Left to right (Alon 23.09): our map with this zone
+                      painted, our TixStock tickets, then LiveTickets' own map
+                      beside their tickets - so every match can be checked by eye. */}
+                  <div className="grid gap-3 p-2 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)]">
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Our map
+                      </div>
+                      {thumb ? (
+                        // A data: URL of our own sanitized drawing - no loader applies.
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={thumb}
+                          alt={zone ? `Zone ${zoneName(zone)} on our map` : ""}
+                          className="w-full max-w-[160px] rounded-md border bg-[#f5f6f7]"
+                        />
+                      ) : (
+                        <p className="text-xs text-muted-foreground">—</p>
+                      )}
+                    </div>
                     {BOARD_COLUMNS.map((label, i) => (
                       <div key={label} className="space-y-2">
                         <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                           {label}
                         </div>
+                        {i === 1 && liveMapUrl && columns[1].length > 0 && (
+                          <a
+                            href={liveMapUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="LiveTickets' map - open full size"
+                          >
+                            {/* A supplier's PNG behind our proxy - next/image has no loader for it. */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={`/api/proxy-image?url=${encodeURIComponent(liveMapUrl)}`}
+                              alt="LiveTickets' map"
+                              className="max-h-40 w-auto rounded-md border bg-white"
+                            />
+                          </a>
+                        )}
                         {columns[i].length > 0 ? (
                           columns[i]
                         ) : (
@@ -1538,7 +1696,6 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
               );
             })}
           </div>
-          {attachBar}
         </section>
       </CardContent>
     </Card>

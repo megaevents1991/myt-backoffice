@@ -114,6 +114,39 @@ export function suggestZone(
   text: string,
   zones: VenueZone[],
 ): ZoneSuggestion | null {
+  const scored = rankZones(text, zones);
+  const [best, second] = scored;
+  if (!best || best.score < SUGGEST_MIN_SCORE) return null;
+  if (second && best.score - second.score < SUGGEST_MIN_MARGIN) return null;
+  return { zoneId: best.zoneId, score: Math.round(best.score * 100) / 100 };
+}
+
+/**
+ * A zone map sliced coarser than the supplier (TixStock's "Categoría 1" vs
+ * LiveTickets' floors) never scores "strong", yet the operator still wants
+ * the nearest zone offered (QA 23.09). Weak = pre-filled but labelled as a
+ * guess; below `WEAK_MIN_SCORE`, or a tie, nothing is offered.
+ */
+export const WEAK_MIN_SCORE = 0.35;
+
+export type TieredSuggestion = ZoneSuggestion & { strong: boolean };
+
+export function suggestZoneTiered(
+  text: string,
+  zones: VenueZone[],
+): TieredSuggestion | null {
+  const [best, second] = rankZones(text, zones);
+  if (!best || best.score < WEAK_MIN_SCORE) return null;
+  if (second && best.score - second.score < SUGGEST_MIN_MARGIN) return null;
+  return {
+    zoneId: best.zoneId,
+    score: Math.round(best.score * 100) / 100,
+    strong: best.score >= SUGGEST_MIN_SCORE,
+  };
+}
+
+/** Every zone scored for this text, best first. */
+export function rankZones(text: string, zones: VenueZone[]): ZoneSuggestion[] {
   const range = sectorRange(text);
   const words = tokens(text);
   const side = sideOf(text);
@@ -131,9 +164,5 @@ export function suggestZone(
       return { zoneId: zone.id, score };
     })
     .sort((x, y) => y.score - x.score);
-
-  const [best, second] = scored;
-  if (!best || best.score < SUGGEST_MIN_SCORE) return null;
-  if (second && best.score - second.score < SUGGEST_MIN_MARGIN) return null;
-  return { zoneId: best.zoneId, score: Math.round(best.score * 100) / 100 };
+  return scored;
 }
