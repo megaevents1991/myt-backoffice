@@ -14,6 +14,15 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import type { OrderHotel } from "@/types/app.types";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -853,6 +862,15 @@ export default function ReservationDetailsPage({
             {hasHotelInfo(reservation.hotel_order_info) ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
+                  {(reservation.hotel_segments?.length ?? 0) > 1 ? (
+                    // Split stay (spec part C2): one hotel per city segment, in
+                    // night order. hotel_order_info is the FIRST segment; the
+                    // table spans both grid columns, rooms + meal stay below.
+                    <div className="col-span-2">
+                      <SplitStayTable segments={reservation.hotel_segments!} />
+                    </div>
+                  ) : (
+                  <>
                   <div>
                     <p className="text-sm font-medium">Hotel Name</p>
                     <p className="text-lg">
@@ -892,38 +910,6 @@ export default function ReservationDetailsPage({
                       {reservation.hotel_order_info.address}
                     </p>
                   </div>
-                  {(reservation.hotel_segments?.length ?? 0) > 1 ? (
-                    // Split stay (spec part C2): one hotel per city segment, in night order.
-                    // hotel_order_info above is the FIRST segment.
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">Split stay - {reservation.hotel_segments!.length} hotels</p>
-                      <div className="divide-y rounded-md border">
-                        {reservation.hotel_segments!.map((seg, i) => (
-                          <div key={`${seg.id}-${i}`} className="grid grid-cols-4 gap-3 p-3 text-sm">
-                            <div>
-                              <p className="text-xs text-muted-foreground">City</p>
-                              <p className="font-medium">{seg.cityName ?? seg.city ?? "-"}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">Dates</p>
-                              <p>
-                                {new Date(seg.checkin).toLocaleDateString()} → {new Date(seg.checkout).toLocaleDateString()}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">Hotel</p>
-                              <p className="font-medium">{seg.name}</p>
-                              <p className="text-xs text-muted-foreground">{seg.rate?.room_name ?? seg.hotelInformation?.roomName ?? ""}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">Price</p>
-                              <p>${Number(seg.price).toLocaleString()}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm font-medium">Check-in</p>
@@ -942,7 +928,8 @@ export default function ReservationDetailsPage({
                       </p>
                     </div>
                   </div>
-                  )}
+                </>
+                )}
 
                   <div>
                     <p className="text-sm font-medium">Rooms Information</p>
@@ -1158,3 +1145,75 @@ Standard JSON data for flight offer
 Charter JSON data for flight offer
 {"offer":{},"id":"1","numOfTravelers":2,"price":700,"duration":"PT8H55M","stops":0,"airline":"LY","outbound":{"stops":[{"iataCode":"BCN","duration":null}],"departureTime":"2025-10-28T06:30:00","departureAirport":"TLV","arrivalAirport":"BCN","arrivalTime":"2025-10-28T10:15:00","duration":"PT4H45M","checkBagsIncluded":true,"cabinBagsIncluded":true,"flightNumber":"LY393"},"inbound":{"stops":[{"iataCode":"TLV","duration":null}],"departureTime":"2025-11-01T22:50:00","departureAirport":"BCN","arrivalAirport":"TLV","arrivalTime":"2025-11-02T04:00:00","duration":"PT4H10M","checkBagsIncluded":true,"cabinBagsIncluded":true,"flightNumber":"LY392"},"metadata":{"iata":"LY","name":"EL AL","logo":"https://www.avcodes.co.uk/images/logos/ELY.png"},"penalties":"PE.PENALTIES \nCANCELLATIONS \n45 DAYS OR MORE BEFORE DEPARTURE CHARGE USD 100.00 FOR CANCELLATIONS PER TICKET.\n44-30 DAYS BEFORE DEPARTURE CHARGE USD 250.00 FOR CANCELLATIONS PER TICKET.\nLESS THAN 30 DAYS BEFORE DEPARTURE NON-REFUNDABLE. \nCHANGES \nBEFORE DEPARTURE CHARGE USD 120.00 FOR REISSUE/REVALIDATION. NOTE - WHEN THE FIRST FLIGHT COUPON IS BEING CHANGED NEW FARE WILL BE RECALCULATED USING FARES AND IATA RATE OF EXCHANGE IN EFFECT ON THE DATE OF REISSUE. \nAFTER DEPARTURE CHARGE USD 120.00 FOR REISSUE/REVALIDATION. CHARGE USD 200.00 FOR NO-SHOW. NOTE - BEFORE EXPIRY OF FLIGHT COUPON. UPGRADE TO ANY HIGHER FARE PERMITTED IN WHICH CASE CHANGE OF RESERVATION FEE OF USD 120.00 WILL ALSO APPLY. ------------------------------------------------ THE AP THE SECURITY AND INSURANCE SURCHARGE WHICH IS COLLECTED IN THE TFC AREA OF THE TICKET IS NOT REFUNDABLE. UNLESS THE TICKETS FARE IS FULLY REFUNDABLE ","bags":65}
 */
+
+/** Split stay: one row per city segment - city, dates + nights, hotel + room, price, and the total. */
+function SplitStayTable({ segments }: { segments: OrderHotel[] }) {
+  const nightsOf = (s: OrderHotel) =>
+    Math.max(
+      1,
+      Math.round(
+        (new Date(s.checkout).getTime() - new Date(s.checkin).getTime()) / 86_400_000
+      )
+    );
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const total = segments.reduce((n, s) => n + Number(s.price || 0), 0);
+  const nights = segments.reduce((n, s) => n + nightsOf(s), 0);
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium">Split stay</p>
+          <p className="text-xs text-muted-foreground">
+            {segments.length} hotels · {nights} nights · {fmt(segments[0].checkin)} → {fmt(segments[segments.length - 1].checkout)}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-medium">Total hotels</p>
+          <p className="text-lg tabular-nums">${total.toLocaleString()}</p>
+        </div>
+      </div>
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-8">#</TableHead>
+              <TableHead>City</TableHead>
+              <TableHead>Dates</TableHead>
+              <TableHead>Hotel</TableHead>
+              <TableHead className="text-right">Price</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {segments.map((seg, i) => (
+              <TableRow key={`${seg.id}-${i}`}>
+                <TableCell className="text-muted-foreground">{i + 1}</TableCell>
+                <TableCell className="whitespace-nowrap font-medium" dir="auto">
+                  {seg.cityName ?? seg.city ?? "-"}
+                </TableCell>
+                <TableCell className="whitespace-nowrap tabular-nums">
+                  {fmt(seg.checkin)} → {fmt(seg.checkout)}
+                  <span className="ms-2 text-xs text-muted-foreground">
+                    {nightsOf(seg)} {nightsOf(seg) === 1 ? "night" : "nights"}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <p className="font-medium">{seg.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {seg.rate?.room_name ?? seg.hotelInformation?.roomName ?? ""}
+                  </p>
+                  {seg.address && (
+                    <p className="text-xs text-muted-foreground">{seg.address}</p>
+                  )}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  ${Number(seg.price).toLocaleString()}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
