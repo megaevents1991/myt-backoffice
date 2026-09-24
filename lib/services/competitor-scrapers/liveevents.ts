@@ -208,10 +208,17 @@ export function parseDetail(html: string): Partial<Listing> {
  * ("גולד טיסות ישירות 19-22.11 | וויז אייר | מלון | כרטיסים להופעה החל מ- 929 €"). The cheapest tier
  * is the one the board's "from" price quotes, so that is the page worth reading. 12 of the 42
  * matched listings pointed at a /show/ page on 2026-09-18 and could never show their contents.
+ *
+ * Only the show's OWN tiers count - the `a.litem` rows of its tier list (`div.list-rap`). The page
+ * also links other cities of the same artist (`a.button`, a table) and a site-wide featured slider
+ * (`a.sitem` - Olivia Rodrigo Paris / Backstreet Boys on every page). Reading any `/package/` link
+ * gave Stevie Wonder London and J. Cole Berlin Olivia Paris's price and contents (2026-09-24).
+ * Slugs cannot tell them apart (`/show/olivia-rod-lon/` -> `olivia-rodrigo-lon-plat`, typos like
+ * `ndre-rieu-vie-plat`). No own tier -> null, never a guess.
  */
 export function cheapestPackageUrl(html: string, origin = BASE): string | null {
   let best: { url: string; price: number } | null = null;
-  for (const a of Array.from(doc(html).querySelectorAll('a[href*="/package/"]'))) {
+  for (const a of Array.from(doc(html).querySelectorAll('a.litem[href*="/package/"]'))) {
     const href = a.getAttribute("href") ?? "";
     if (!href) continue;
     const url = href.startsWith("http") ? href : `${origin}${href.startsWith("/") ? "" : "/"}${href}`;
