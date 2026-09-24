@@ -145,7 +145,7 @@ async function main() {
     const iso = (d: Date) => d.toISOString().slice(0, 10);
 
     const common = {
-      name: fx.name, name_english: fx.name_english, type: "tx_event", date: fx.date,
+      name: fx.name, name_english: fx.name_english, type: "tx_event", date: fx.date, description: "",
       def_date_depart: iso(depart), def_date_return: iso(ret),
       map_image_url: ANFIELD_MAP, card_image_url: "", tags: "", is_test: true, is_deleted: null,
       skip_flight: true, ticket_only_markup: 200, tickets_and_rates: tickets, usual_price: 0,
