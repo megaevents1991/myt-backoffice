@@ -2811,15 +2811,21 @@ export default function EventPage({
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm text-muted-foreground">
                       <span>
                         The seat map is ours - zones are edited under
-                        &quot;Suppliers &amp; zones&quot; below. Sections this
-                        event does not sell are still excluded here, on the
-                        same drawing, and show dark grey in the zone editor.
+                        &quot;Suppliers &amp; zones&quot; below, and sections
+                        this event does not sell can be excluded there
+                        (&quot;Exclude sections&quot; above our map) or here,
+                        on the same drawing.
                       </span>
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        onClick={() => setSourceMapOpen(true)}
+                        onClick={() => {
+                          // The button promises excluding, not just the map
+                          // (Alon 24.09: it opened the map in select mode).
+                          setSourceMapOpen(true);
+                          setExcludeSectionsMode(true);
+                        }}
                       >
                         Exclude sections on the map
                       </Button>

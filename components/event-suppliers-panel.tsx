@@ -65,6 +65,7 @@ import {
   suggestZoneTiered,
   type TieredSuggestion,
 } from "@/lib/venue-maps/zone-suggest";
+import { isSectionExcluded } from "@/lib/tixstock-map";
 import {
   adoptVenueMap,
   getVenueMapByUrl,
@@ -399,6 +400,10 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     () => new Set(event.tx_excluded_sections ?? []),
     [event.tx_excluded_sections],
   );
+  // Exclude straight on OUR drawing (Alon 24.09: once the map was ours there
+  // was no way to exclude). Same list as the TixStock map's exclude mode,
+  // saved with the event; a click here never touches a zone.
+  const [excludeMode, setExcludeMode] = useState(false);
 
   // Paint: the active zone dark, sections of any other zone light, rest idle.
   useEffect(() => {
@@ -408,9 +413,10 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     const active = new Set(
       zones.find((z) => z.id === activeZoneId)?.sections ?? [],
     );
+    const excludedList = [...excludedSections];
     root.querySelectorAll("[data-section]").forEach((el) => {
       const id = el.getAttribute("data-section") || "";
-      const fill = excludedSections.has(id)
+      const fill = isSectionExcluded(id, excludedList)
         ? EXCLUDED_FILL
         : active.has(id)
           ? ACTIVE_ZONE_FILL
@@ -423,12 +429,11 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
         : el.querySelectorAll("polygon, path, rect, circle, ellipse");
       shapes.forEach((shape) => {
         (shape as SVGElement).style.fill = fill;
-        (shape as SVGElement).style.cursor = activeZoneId
-          ? "pointer"
-          : "default";
+        (shape as SVGElement).style.cursor =
+          activeZoneId || excludeMode ? "pointer" : "default";
       });
     });
-  }, [drawing, zones, activeZoneId, zoneEditorOpen, excludedSections]);
+  }, [drawing, zones, activeZoneId, zoneEditorOpen, excludedSections, excludeMode]);
 
   /* One small picture of our map per zone, that zone painted - the zones
      board's left column (Alon 23.09: "to be sure everything is right").
@@ -455,14 +460,27 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     return thumbs;
   }, [drawing, zones, excludedSections]);
 
-  // Click a section = toggle it in the active zone.
+  // Click a section = toggle it in the active zone, or - in exclude mode - in
+  // the sections this event does not sell.
   useEffect(() => {
     const root = drawingRef.current;
-    if (!root || !activeZoneId) return;
+    if (!root || (!activeZoneId && !excludeMode)) return;
     const onClick = (ev: MouseEvent) => {
       const el = (ev.target as Element | null)?.closest("[data-section]");
       const id = el?.getAttribute("data-section");
       if (!id) return;
+      if (excludeMode) {
+        onEventChange((prev) => {
+          const current = prev.tx_excluded_sections ?? [];
+          return {
+            ...prev,
+            tx_excluded_sections: current.includes(id)
+              ? current.filter((s) => s !== id)
+              : [...current, id],
+          };
+        });
+        return;
+      }
       setZones((prev) =>
         prev.map((zone) =>
           zone.id !== activeZoneId
@@ -479,7 +497,7 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     };
     root.addEventListener("click", onClick);
     return () => root.removeEventListener("click", onClick);
-  }, [drawing, activeZoneId, zoneEditorOpen]);
+  }, [drawing, activeZoneId, zoneEditorOpen, excludeMode, onEventChange]);
 
   const handleAddZone = () => {
     const label = newZoneLabel.trim();
@@ -490,6 +508,7 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
       sections: [],
     };
     setZones((prev) => [...prev, zone]);
+    setExcludeMode(false);
     setActiveZoneId(zone.id);
     setNewZoneLabel("");
     setZonesDirty(true);
@@ -1489,11 +1508,12 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                             : ZONE_FILL,
                       }}
                       aria-label={`Edit sections of ${zone.label}`}
-                      onClick={() =>
+                      onClick={() => {
+                        setExcludeMode(false);
                         setActiveZoneId(
                           activeZoneId === zone.id ? null : zone.id,
-                        )
-                      }
+                        );
+                      }}
                     />
                     <Input
                       dir="rtl"
@@ -1558,6 +1578,24 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                 )}
               </div>
               <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={excludeMode ? "destructive" : "outline"}
+                    onClick={() => {
+                      setActiveZoneId(null);
+                      setExcludeMode((on) => !on);
+                    }}
+                  >
+                    {excludeMode ? "✕ Done excluding" : "Exclude sections"}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {excludeMode
+                      ? "Click the sections this event does not sell - they turn dark grey and TixStock tickets there drop off the site. Saved with the event (Save at the bottom); zones are not changed."
+                      : `${excludedSections.size} section(s) excluded on this event.`}
+                  </span>
+                </div>
                 <div className="rounded-md border bg-[#f5f6f7] p-2">
                   {drawing ? (
                     <div
