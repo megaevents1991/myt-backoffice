@@ -7,12 +7,17 @@
 // (`options.budgetMs`, measured from the top of this function) so the whole
 // run - LiveTickets refresh included - always fits inside the cron's
 // maxDuration:
-//  1. Snapshot + tag - least-recently-checked events first, cut off by the
-//     shared budget. It's one read + one upsert per event; a cutoff records
+//  1. Snapshot + tag - least-recently-checked events first, SNAPSHOT_CONCURRENCY
+//     at a time, and it stops early enough to leave pass 2 at least
+//     MATCH_RESERVE_MS. It's one read + one upsert per event; a cutoff records
 //     how many were skipped in `snapshotsRemaining` rather than silently
 //     dropping the tail.
-//  2. Match + recompute lights - same order, same shared budget, so nothing
-//     is stranded behind a backlog when time runs out.
+//  2. Match + recompute lights - same order, MATCH_CONCURRENCY events at a
+//     time, same shared budget, so nothing is stranded behind a backlog when
+//     time runs out.
+// Both passes used to run one event at a time: pass 1 alone ate most of the
+// window and pass 2 reached ~60 of 433 events a night, so a light went ~8 days
+// between checks (2026-09-24).
 // `writeSnapshotAndTag` and `recomputeEventLights` (via `matchAllForEvent`)
 // both throw on write failure, so each pass wraps every event in its own
 // try/catch - one event's DB failure never stops the batch.
@@ -50,6 +55,32 @@ const REVALIDATE_TIMEOUT_MS = 10_000;
 // Live future events can outgrow PostgREST's 1000-row page cap - never trust
 // a single unpaged read for this table.
 const EVENTS_LOAD_MAX_ROWS = 20_000;
+/** Pass 1 is a read + an upsert per event - plain DB round trips, safe to overlap. */
+export const SNAPSHOT_CONCURRENCY = 8;
+/** Pass 2 events in flight at once - same as price-light-ours' OUR_OFFER_CONCURRENCY. Each one
+ *  already fans out over its competitors, and the AI ceiling is the shared run-wide `aiBudget`
+ *  (`takeBudget` decrements synchronously, so parallel events can never overspend it). */
+export const MATCH_CONCURRENCY = 3;
+/** Wall-clock pass 1 must leave for pass 2: the snapshots are nice to have, the lights are the job. */
+export const MATCH_RESERVE_MS = 150_000;
+
+/**
+ * Run `work` over `items` in order, `concurrency` at a time, starting a new item only while
+ * `keepGoing()` - the budget is checked before every START, as the old sequential loops did.
+ * Returns how many items were started (the rest are what the budget left for the next run).
+ * `work` must not throw: each pass wraps its own event in try/catch.
+ */
+async function runPool<T>(items: T[], concurrency: number, keepGoing: () => boolean, work: (item: T) => Promise<void>): Promise<number> {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length && keepGoing()) {
+      const item = items[next++];
+      await work(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, worker));
+  return next;
+}
 
 // New tables/columns predate the generated DB types - one boundary cast (repo pattern).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -102,22 +133,30 @@ async function openAutoRedTasks(
       const scopeDetail = detail[scope];
       if (!scopeDetail) continue;
       if (summary.autoTasks >= AUTO_RED_TASKS_PER_RUN) { summary.autoTasksSkipped += 1; continue; }
-      // `alt` = other travel days / suppliers quoted by the 02:40 pass (price-alternatives.ts). A
-      // scope that turned red only tonight has none yet - its task gets the three older facts, and
-      // the /price-light comparison shows the rest once they are quoted.
-      const facts = priceAdviceFacts({ event, scope, detail: scopeDetail, liveTicketsUsd, alt: event.light_detail?.ours?.alt ?? null });
-      const worded = await wordAdvice({ eventName: event.name, scope, facts, budget: advisorBudget, memory: advisorMemory });
-      if (worded.ai) {
-        // A source for the AI Factory log (spec: item 4) - the advisor has no per-call storage of
-        // its own yet, so this audit row is the only trail one AI-worded suggestion leaves.
-        await logAudit({
-          action: "agent.advice", entityType: "event", entityId: eventId,
-          metadata: { agent: "price-advisor", event_id: eventId, scope, cost_usd: worded.cost_usd },
-        });
+      // Take the slot BEFORE the awaits below and give it back unless a task was really opened -
+      // events run in parallel (MATCH_CONCURRENCY), and a check here with the count after the
+      // awaits would let two events pass the same last slot.
+      summary.autoTasks += 1;
+      let opened: Awaited<ReturnType<typeof openPriceLightTask>> | null = null;
+      try {
+        // `alt` = other travel days / suppliers quoted by the 02:40 pass (price-alternatives.ts). A
+        // scope that turned red only tonight has none yet - its task gets the three older facts, and
+        // the /price-light comparison shows the rest once they are quoted.
+        const facts = priceAdviceFacts({ event, scope, detail: scopeDetail, liveTicketsUsd, alt: event.light_detail?.ours?.alt ?? null });
+        const worded = await wordAdvice({ eventName: event.name, scope, facts, budget: advisorBudget, memory: advisorMemory });
+        if (worded.ai) {
+          // A source for the AI Factory log (spec: item 4) - the advisor has no per-call storage of
+          // its own yet, so this audit row is the only trail one AI-worded suggestion leaves.
+          await logAudit({
+            action: "agent.advice", entityType: "event", entityId: eventId,
+            metadata: { agent: "price-advisor", event_id: eventId, scope, cost_usd: worded.cost_usd },
+          });
+        }
+        opened = await openPriceLightTask(event, scope, scopeDetail, [], { id: null }, worded.text);
+        if (!opened.ok) summary.errors.push({ eventId, note: `auto task (${scope}): ${opened.error}` });
+      } finally {
+        if (!(opened?.ok && !opened.existed)) summary.autoTasks -= 1;
       }
-      const opened = await openPriceLightTask(event, scope, scopeDetail, [], { id: null }, worded.text);
-      if (opened.ok && !opened.existed) summary.autoTasks += 1;
-      if (!opened.ok) summary.errors.push({ eventId, note: `auto task (${scope}): ${opened.error}` });
     }
   } catch (e) {
     const note = e instanceof Error ? e.message : String(e);
@@ -176,11 +215,9 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
   // shared budget - a run with enough events (plus the LiveTickets refresh above) could
   // otherwise blow past the cron's maxDuration before ever reaching pass 2 or the summary
   // email (finding I3). Anything not reached here is recorded, never silently dropped.
-  for (const [index, event] of events.entries()) {
-    if (Date.now() - start > options.budgetMs) {
-      summary.snapshotsRemaining = events.length - index;
-      break;
-    }
+  // Stops by `budgetMs - MATCH_RESERVE_MS` (never below zero): pass 2 always gets its share.
+  const snapshotDeadlineMs = Math.max(0, options.budgetMs - MATCH_RESERVE_MS);
+  const snapshotStarted = await runPool(events, SNAPSHOT_CONCURRENCY, () => Date.now() - start <= snapshotDeadlineMs, async (event) => {
     summary.scanned += 1;
     try {
       const snap = await writeSnapshotAndTag(event, today, { dryRun: options.dryRun });
@@ -192,7 +229,8 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
       console.error(`price-light-nightly: snapshot ${event.id} failed`, note);
       summary.errors.push({ eventId: event.id, note: `snapshot: ${note}` });
     }
-  }
+  });
+  summary.snapshotsRemaining = events.length - snapshotStarted;
 
   // Pass 2: match every competitor + recompute lights, least-recently-checked
   // first (the query order above), budgeted. ONE AI budget for the whole pass -
@@ -210,11 +248,7 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
   // (see below), so building this unconditionally here just mirrors aiBudget/aiMemory above.
   const advisorBudget: AgentBudget = newBudget(PRICE_ADVISOR_AGENT);
   const advisorMemory = options.dryRun || !agentEnabled(PRICE_ADVISOR_AGENT) ? null : await loadAgentMemory(PRICE_ADVISOR_AGENT);
-  for (const [index, event] of events.entries()) {
-    if (Date.now() - start > options.budgetMs) {
-      summary.remaining = events.length - index;
-      break;
-    }
+  const matchStarted = await runPool(events, MATCH_CONCURRENCY, () => Date.now() - start <= options.budgetMs, async (event) => {
     try {
       const result = await matchAllForEvent(event.id, "nightly", {
         dryRun: options.dryRun,
@@ -222,7 +256,7 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
         aiBudget,
         aiMemory,
       });
-      if (!result) continue;
+      if (!result) return;
       summary.matched += result.outcomes.filter((o) => o.wrote).length;
       const { before, after } = result.lights;
       if (after.package) summary.lightCounts.package[after.package] += 1;
@@ -247,7 +281,8 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
       console.error(`price-light-nightly: match ${event.id} failed`, note);
       summary.errors.push({ eventId: event.id, note: `match: ${note}` });
     }
-  }
+  });
+  summary.remaining = events.length - matchStarted;
   summary.aiCalls = AI_CALLS_PER_RUN - aiBudget.remaining;
   summary.advisorCalls = PRICE_ADVISOR_AGENT.callsPerRun - advisorBudget.remaining;
 
