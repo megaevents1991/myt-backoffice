@@ -18,6 +18,11 @@
 // Both passes used to run one event at a time: pass 1 alone ate most of the
 // window and pass 2 reached ~60 of 433 events a night, so a light went ~8 days
 // between checks (2026-09-24).
+// FOLLOW-UP runs (`followUp`, vercel.json `?followup=1`, later the same night): the same
+// least-recently-checked queue, but no LiveTickets refresh and no second snapshot for an
+// event pass 1 already wrote today - so nearly the whole window goes to the lights the
+// first run did not reach. A follow-up mails only when a light moved to/from red or
+// something failed; the steady-state summary is the first run's job.
 // `writeSnapshotAndTag` and `recomputeEventLights` (via `matchAllForEvent`)
 // both throw on write failure, so each pass wraps every event in its own
 // try/catch - one event's DB failure never stops the batch.
@@ -112,6 +117,8 @@ export interface NightlySummary {
   autoTasks: number;
   autoTasksSkipped: number;
   dryRun: boolean;
+  /** A later run the same night (see the header): skipped the refresh and today's done snapshots. */
+  followUp: boolean;
 }
 
 /** Never throws: a task that failed to open must not cost the event its light or the run its mail. */
@@ -169,19 +176,21 @@ function emptyLightCounts(): Record<Light, number> {
   return Object.fromEntries(LIGHTS.map((l) => [l, 0])) as Record<Light, number>;
 }
 
-export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs: number }): Promise<NightlySummary> {
+export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs: number; followUp?: boolean }): Promise<NightlySummary> {
+  const followUp = options.followUp === true;
   const start = Date.now();
   const today = new Date().toISOString().slice(0, 10);
   const summary: NightlySummary = {
     scanned: 0, snapshots: 0, tagged: 0, cleared: 0, matched: 0,
     lightChanges: [], lightCounts: { package: emptyLightCounts(), ticket: emptyLightCounts() },
     errors: [], remaining: 0, snapshotsRemaining: 0, aiCalls: 0, advisorCalls: 0, autoTasks: 0, autoTasksSkipped: 0, dryRun: options.dryRun,
+    followUp,
   };
 
   // LiveTickets listings are a table read - refresh them every night before matching.
   // Budgeted well under the crawler's 240s default so it can never eat the whole
   // 300s cron window on its own before pass 1 gets a chance to run (finding I3).
-  try {
+  if (!followUp) try {
     await runCrawl("livetickets", options.dryRun ? "dry_run" : "schedule", {
       dryRun: options.dryRun, budgetMs: LIVETICKETS_REFRESH_BUDGET_MS,
     });
@@ -210,6 +219,10 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
   }
   if (truncated) console.error("price-light-nightly: events load hit the paging cap - raise it");
   const events = rows.filter((e) => !e.is_test);
+  // A follow-up leaves out what the first run already snapshotted today (a failed read = none
+  // done: at worst an event is re-snapshotted, an idempotent upsert on (event_id, day)).
+  const snapshotDone = followUp ? await snapshottedOn(today) : new Set<number>();
+  const toSnapshot = events.filter((e) => !snapshotDone.has(e.id));
 
   // Pass 1: snapshot + price-drop tag, least-recently-checked first, cut off by the
   // shared budget - a run with enough events (plus the LiveTickets refresh above) could
@@ -217,7 +230,7 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
   // email (finding I3). Anything not reached here is recorded, never silently dropped.
   // Stops by `budgetMs - MATCH_RESERVE_MS` (never below zero): pass 2 always gets its share.
   const snapshotDeadlineMs = Math.max(0, options.budgetMs - MATCH_RESERVE_MS);
-  const snapshotStarted = await runPool(events, SNAPSHOT_CONCURRENCY, () => Date.now() - start <= snapshotDeadlineMs, async (event) => {
+  const snapshotStarted = await runPool(toSnapshot, SNAPSHOT_CONCURRENCY, () => Date.now() - start <= snapshotDeadlineMs, async (event) => {
     summary.scanned += 1;
     try {
       const snap = await writeSnapshotAndTag(event, today, { dryRun: options.dryRun });
@@ -230,7 +243,7 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
       summary.errors.push({ eventId: event.id, note: `snapshot: ${note}` });
     }
   });
-  summary.snapshotsRemaining = events.length - snapshotStarted;
+  summary.snapshotsRemaining = toSnapshot.length - snapshotStarted;
 
   // Pass 2: match every competitor + recompute lights, least-recently-checked
   // first (the query order above), budgeted. ONE AI budget for the whole pass -
@@ -293,6 +306,19 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
   return summary;
 }
 
+/** Event ids that already have a snapshot row for `day`. Paged by hand - the table has no `id`. */
+async function snapshottedOn(day: string): Promise<Set<number>> {
+  const done = new Set<number>();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db.from("event_price_snapshots").select("event_id")
+      .eq("day", day).order("event_id", { ascending: true }).range(from, from + PAGE - 1);
+    if (error) { console.error("price-light-nightly: today's snapshots read failed", JSON.stringify(error)); return new Set(); }
+    for (const r of (data ?? []) as { event_id: number }[]) done.add(r.event_id);
+    if (!data || data.length < PAGE) return done;
+  }
+}
+
 async function revalidateMain(): Promise<void> {
   // Mirrors app/api/revalidate/route.ts's target list and settle semantics exactly
   // (that route is customer-facing and stays untouched here): primary + parallel
@@ -338,6 +364,8 @@ async function sendSummaryEmail(s: NightlySummary): Promise<void> {
   // catalog still gets a nightly email instead of going silent.
   const redNow = s.lightCounts.package.red + s.lightCounts.ticket.red;
   if (!s.tagged && !s.cleared && redMoves.length === 0 && s.errors.length === 0 && redNow === 0) return;
+  // The first run already mailed tonight's steady state; a follow-up speaks only for news.
+  if (s.followUp && redMoves.length === 0 && s.errors.length === 0) return;
   const to = process.env.NEXT_SECRET_ADMIN_EMAIL;
   if (!to) return;
   const countsLine = (scope: "package" | "ticket") =>
@@ -345,7 +373,7 @@ async function sendSummaryEmail(s: NightlySummary): Promise<void> {
   try {
     await sendMail({
       to,
-      subject: `Price light: ${redNow} red now (${redMoves.length} changes) · ${s.tagged} new price-drop tags · ${s.errors.length} errors`,
+      subject: `Price light${s.followUp ? " (follow-up)" : ""}: ${redNow} red now (${redMoves.length} changes) · ${s.tagged} new price-drop tags · ${s.errors.length} errors`,
       html: [
         `<p><a href="${appOrigin()}/events">Events</a> · scanned ${s.scanned} · ${s.remaining} left for tomorrow` +
           (s.snapshotsRemaining ? ` · ${s.snapshotsRemaining} snapshots not reached` : "") +

@@ -65,6 +65,14 @@
       "schedule": "15 0 * * *"
     },
     {
+      "path": "/api/cron/price-light-nightly?followup=1",
+      "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/price-light-nightly?followup=1",
+      "schedule": "30 5 * * *"
+    },
+    {
       "path": "/api/cron/price-light-retention",
       "schedule": "0 3 * * 0"
     },
