@@ -16,7 +16,23 @@ const CURRENCY_BY_CODE: Record<number, Currency> = { 1: "USD", 2: "EUR", 3: "GBP
 interface LiveRow {
   event_id: number; event_name: string; event_name_heb: string | null; show_date: string;
   city_name: string; street_address: string | null; currency: number;
-  ticket_categories: { cost: number; brt: number; title: string }[] | null; last_synced: string;
+  ticket_categories: ShelfCategory[] | null; last_synced: string;
+}
+
+type ShelfCategory = { cost: number; brt: number; title: string; maxTicketAmount?: number | null };
+
+/**
+ * The party the light prices for - a couple, like every package price we compare. A category
+ * LiveTickets sells one per order (`maxTicketAmount` 1) is a price two people cannot pay, so it is
+ * not their shelf price (2026-09-24: it set the ticket light against seats a pair could not buy).
+ * Same bar as the price advisor's LiveTickets quote (price-alternatives.ts, `maxPerOrder >= 2`).
+ * A category with no `maxTicketAmount` on record is kept - older snapshots never stored it.
+ */
+export const MIN_PARTY = 2;
+
+/** A couple can buy this category in one order. */
+export function buyableForParty(c: { maxTicketAmount?: number | null }): boolean {
+  return c.maxTicketAmount == null || Number(c.maxTicketAmount) >= MIN_PARTY;
 }
 
 export function toUsd(amount: number, currency: Currency): number {
@@ -24,9 +40,10 @@ export function toUsd(amount: number, currency: Currency): number {
   return multiCurrencyExchangeRateService.convertToUSD(amount, currency);
 }
 
-/** Cheapest shelf price per person for one live event, in the site's currency. */
+/** Cheapest shelf price per person for one live event, in the site's currency - among the
+ *  categories a couple can buy (MIN_PARTY). */
 export function cheapestShelf(categories: LiveRow["ticket_categories"]): number | null {
-  const prices = (categories ?? []).map((c) => Number(c.brt)).filter((n) => Number.isFinite(n) && n > 0);
+  const prices = (categories ?? []).filter(buyableForParty).map((c) => Number(c.brt)).filter((n) => Number.isFinite(n) && n > 0);
   return prices.length ? Math.min(...prices) : null;
 }
 

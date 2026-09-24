@@ -47,6 +47,7 @@ import {
   type CompetitorScraper,
 } from "@/lib/services/competitor-scrapers";
 import { circuitOpen, runCrawl, type CrawlSummary } from "@/lib/services/price-light-crawl";
+import { buyableForParty } from "@/lib/services/competitor-scrapers/livetickets-api";
 import { softDeleteEvent } from "@/lib/actions/event-actions";
 import { CORRECTION_REPORT_DAYS, OVERRIDE_NOTE_MAX, RECHECK_AI_CALLS, SILENCE_DAYS, SILENCE_DAYS_MAX } from "@/lib/actions/price-light-constants";
 import { ADMIN_ROLES } from "@/types/auth.types";
@@ -172,13 +173,15 @@ const nightsBetweenDays = (a: string | null, b: string | null): number | null =>
 // live_events.currency: 1=USD, 2=EUR, 3=GBP, 4=ILS (types/live-events.types.ts)
 const LIVE_CURRENCY_SIGN: Record<number, string> = { 1: "$", 2: "€", 3: "£", 4: "₪" };
 
-/** Every priced seat LiveTickets lists for one live event, cheapest first, and the currency sign. */
+/** Every priced seat LiveTickets lists for one live event that a couple can buy (the same bar as
+ *  the light's shelf price, `cheapestShelf`), cheapest first, and the currency sign. */
 async function liveTicketsSeats(externalKey: string): Promise<{ seats: PricedSeat[]; sign: string }> {
   const liveEventId = Number(externalKey);
   if (!Number.isInteger(liveEventId)) return { seats: [], sign: "" };
   const { data, error } = await db.from("live_events").select("ticket_categories,currency").eq("event_id", liveEventId).maybeSingle();
   if (error) console.error("liveTicketsSeats: live_events failed", JSON.stringify(error));
-  const seats = ((data?.ticket_categories ?? []) as { brt: number; title: string | null; hebTitle?: string | null }[])
+  const seats = ((data?.ticket_categories ?? []) as { brt: number; title: string | null; hebTitle?: string | null; maxTicketAmount?: number | null }[])
+    .filter(buyableForParty)
     .map((c) => ({ title: (c.title ?? "").trim(), titleHe: (c.hebTitle ?? "").trim() || null, price: Number(c.brt) }))
     .filter((s) => Number.isFinite(s.price) && s.price > 0)
     .sort((a, b) => a.price - b.price);
