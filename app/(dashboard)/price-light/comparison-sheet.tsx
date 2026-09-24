@@ -100,7 +100,7 @@ function Part({ text, note = null }: { text: string | null; note?: string | null
 // The like-for-like steps that move OUR package onto theirs, in the reader's words (shown with the
 // sign flipped: a step that would lower THEIR price raises ours by the same amount).
 const ADJUSTMENT_HE: Record<string, string> = {
-  bag: "מזוודה כמו אצלם", connection: "הם בקונקשן", stars: "כוכבי מלון כמו אצלם", nights: "לילות כמו אצלם", breakfast: "ארוחת בוקר כמו אצלם", transfers: "העברות כמו אצלם",
+  bag: "מזוודה כמו אצלם", connection: "קונקשן כמו אצלם", stars: "כוכבי מלון כמו אצלם", nights: "לילות כמו אצלם", breakfast: "ארוחת בוקר כמו אצלם", transfers: "העברות כמו אצלם",
   low_cost: "הפרש לואו-קוסט",
 };
 

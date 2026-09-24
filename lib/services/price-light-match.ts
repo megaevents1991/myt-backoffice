@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase-server";
 import { takeBudget, type AgentBudget } from "@/lib/agents/switch";
 import {
   DATE_TOLERANCE_DAYS, LIGHT_STALE_DAYS, competitorsFor, kindOf, listingNights, normalize, ourNightRateUsd,
-  ourFromUsd, ourNights, ourTicketUsd, pickRuleMatch, ruleSaysAbsent, type MatchCandidate,
+  ourFromUsd, ourNights, ourPackageAttrs, ourTicketUsd, pickRuleMatch, ruleSaysAbsent, type MatchCandidate,
 } from "@/lib/services/price-light";
 import { ACTIVE_COMPETITORS, scraperFor } from "@/lib/services/competitor-scrapers";
 import { isMultiMatchText, parseOfferDetail } from "@/lib/services/offer-detail";
@@ -381,7 +381,10 @@ export async function matchEvent(
       ? correctOffer(crawledOffer, liveCorrections(corrections, picked, crawledOffer, event.id)).flight?.airline ?? null
       : null;
     const norm = scope === "package"
-      ? normalize(priceUsd, merged, { nights: ourNights(event), nightRateUsd: ourNightRateUsd(event) },
+      // Our own bag / board / stars / direct off the described offer, so each step prices the
+      // DIFFERENCE between the packages (no `ours` yet = the old bare-package assumption).
+      ? normalize(priceUsd, merged,
+        { nights: ourNights(event), nightRateUsd: ourNightRateUsd(event), ...ourPackageAttrs(event.light_detail?.ours) },
         { ours: event.light_detail?.ours?.flight?.airline ?? null, theirs: theirAirline })
       : { normalizedUsd: Math.round(priceUsd), adjustments: [], partial: false };
     // A verdict produced THIS run against a row that has none must always be persisted,

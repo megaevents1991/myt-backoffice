@@ -23,8 +23,10 @@ export const DATE_TOLERANCE_DAYS = 1;
  *  silently cover both legs of a tie (final review, M1). */
 export const MAX_WINDOW_DAYS = 14;
 
-// ---- normalization (applied to the COMPETITOR's price to look like ours:
-// direct, no bag, 3*, our nights, no breakfast, no transfers) ---------------
+// ---- normalization (applied to the COMPETITOR's price to look like ours: our
+// bag, our direct/connection, our stars, our board, our nights, no transfers -
+// and where our own side is not described, the old assumption: direct, no bag,
+// 3*, no breakfast; see `normalize`) -----------------------------------------
 export const BAG_USD = 120;        // partners' number
 export const CONNECTION_USD = 100; // opening values below - calibrate after a month
 export const STAR_STEP_USD = 40;   // per star per night
@@ -414,39 +416,91 @@ export interface Normalized {
 }
 
 /**
+ * What OUR package contains, as `normalize` needs it - read off `light_detail.ours` (the offer the
+ * pricing rule would buy today). Every field null = not described, and `normalize` then assumes
+ * what it always did: a bare package (direct, no bag, 3★, no breakfast).
+ */
+export interface OurPackageAttrs {
+  bag: boolean | null;
+  breakfast: boolean | null;
+  direct: boolean | null;
+  stars: number | null;
+}
+
+/** Our bag wording (our-offer-detail.ts `bagOf` / offline rows, offer-detail.ts `bagFrom`) as a yes/no. */
+export function bagIncludedFrom(text: string | null | undefined): boolean | null {
+  const t = (text ?? "").trim();
+  if (!t) return null;
+  if (/ללא|לא\s*כולל|טרולי\s*בלבד|תיק\s*גב/.test(t)) return false;
+  if (/כולל\s*מזוודה|כבודה\s*מלאה/.test(t)) return true;
+  return null;
+}
+
+export function ourPackageAttrs(
+  ours: { flight?: { bag: string | null; direct: boolean | null } | null; hotel?: { stars: number | null; board: string | null } | null } | null | undefined,
+): OurPackageAttrs {
+  const board = ours?.hotel?.board ?? null;
+  const stars = ours?.hotel?.stars;
+  return {
+    bag: bagIncludedFrom(ours?.flight?.bag),
+    breakfast: board == null ? null : board !== "room_only",
+    direct: typeof ours?.flight?.direct === "boolean" ? ours.flight.direct : null,
+    stars: typeof stars === "number" && stars >= 1 && stars <= 5 ? stars : null,
+  };
+}
+
+/**
+ * Their price moved onto OUR package, step by step - each step prices the DIFFERENCE between the
+ * two sides, so a step both packages share is simply omitted (2026-09-24: every step used to
+ * assume our package was bare, so event 781's El Al fare - bag included - still had $120 taken
+ * off the competitor for THEIR bag, and 868/869's breakfast was taken off theirs while ours had
+ * one too). `ours.bag/breakfast/direct/stars` null or omitted = our side not described = the old
+ * assumption (no bag, no breakfast, direct, 3★), so an event with no `ours` does not move.
+ *
+ * Stars and breakfast are scaled by THEIR nights - that is how many nights of 4★ or breakfast
+ * their price carries; the nights step then prices the remaining gap at OUR night rate. Their
+ * nights unknown (or impossible) -> ours, else NIGHTS_FALLBACK, as before.
+ *
  * `ours.nights` null = our own travel window is missing: the nights GAP is then unknowable, so
- * no gap adjustment is made and the comparison is partial. Per-night scaling that still has to
- * happen (stars, breakfast) falls back to NIGHTS_FALLBACK rather than dropping the adjustment
- * entirely - a 4★ hotel is still worth less to us than a 3★ one whatever the length.
+ * no gap adjustment is made and the comparison is partial.
  *
  * `ours.nightRateUsd` is what a night costs on THIS event (ourNightRateUsd); omitted = NIGHT_USD.
  */
 export function normalize(
   priceUsd: number,
   attrs: Partial<ExtractedAttrs> | null | undefined,
-  ours: { nights: number | null; nightRateUsd?: number },
+  ours: { nights: number | null; nightRateUsd?: number } & Partial<OurPackageAttrs>,
   airlines?: { ours: string | null; theirs: string | null },
 ): Normalized {
   const a = attrs ?? {};
   const adjustments: Adjustment[] = [];
   let partial = false;
   const known = <T>(v: T | "unknown" | undefined): v is T => v !== undefined && v !== "unknown";
-  const scaleNights = ours.nights ?? NIGHTS_FALLBACK;
   const nightRate = ours.nightRateUsd != null && Number.isFinite(ours.nightRateUsd) && ours.nightRateUsd > 0
     ? Math.round(ours.nightRateUsd)
     : NIGHT_USD;
+  // Same ceiling as `listingNights`: an impossible duration is an unknown one, never an adjustment.
+  const theirNights = known(a.nights) && a.nights <= MAX_WINDOW_DAYS ? a.nights : "unknown";
+  const scaleNights = theirNights !== "unknown" ? theirNights : ours.nights ?? NIGHTS_FALLBACK;
+  const ourBag = ours.bag ?? false;
+  const ourDirect = ours.direct ?? true;
+  const ourStars = ours.stars ?? 3;
+  const ourBreakfast = ours.breakfast ?? false;
 
-  if (known(a.bag_included)) { if (a.bag_included) adjustments.push({ key: "bag", usd: -BAG_USD, label: `+bag −$${BAG_USD}` }); }
-  else partial = true;
-  if (known(a.direct_flight)) { if (!a.direct_flight) adjustments.push({ key: "connection", usd: CONNECTION_USD, label: `connection +$${CONNECTION_USD}` }); }
-  else partial = true;
+  if (known(a.bag_included)) {
+    if (a.bag_included && !ourBag) adjustments.push({ key: "bag", usd: -BAG_USD, label: `+bag −$${BAG_USD}` });
+    else if (!a.bag_included && ourBag) adjustments.push({ key: "bag", usd: BAG_USD, label: `no bag +$${BAG_USD}` });
+  } else partial = true;
+  if (known(a.direct_flight)) {
+    if (!a.direct_flight && ourDirect) adjustments.push({ key: "connection", usd: CONNECTION_USD, label: `connection +$${CONNECTION_USD}` });
+    else if (a.direct_flight && !ourDirect) adjustments.push({ key: "connection", usd: -CONNECTION_USD, label: `direct vs our connection −$${CONNECTION_USD}` });
+  } else partial = true;
   if (known(a.hotel_stars)) {
-    const usd = (3 - a.hotel_stars) * STAR_STEP_USD * scaleNights;
+    const usd = (ourStars - a.hotel_stars) * STAR_STEP_USD * scaleNights;
     if (usd !== 0) adjustments.push({ key: "stars", usd, label: `${a.hotel_stars}★ ${usd > 0 ? "+" : "−"}$${Math.abs(usd)}` });
   } else partial = true;
-  // Same ceiling as `listingNights`: an impossible duration is an unknown one, never an adjustment.
-  if (known(a.nights) && a.nights <= MAX_WINDOW_DAYS && ours.nights != null) {
-    const usd = (ours.nights - a.nights) * nightRate;
+  if (theirNights !== "unknown" && ours.nights != null) {
+    const usd = (ours.nights - theirNights) * nightRate;
     // English, like the other five labels: these are engine strings, and the Hebrew duration
     // line the staff actually read is built in the UI (`nightsLine`). One mixed-language label
     // in a row of English ones is a presentation decision leaking into the engine.
@@ -454,12 +508,15 @@ export function normalize(
       adjustments.push({
         key: "nights",
         usd,
-        label: `${a.nights}n vs ${ours.nights}n ${usd > 0 ? "+" : "−"}$${Math.abs(usd)}`,
+        label: `${theirNights}n vs ${ours.nights}n ${usd > 0 ? "+" : "−"}$${Math.abs(usd)}`,
       });
     }
   } else partial = true;
-  if (known(a.breakfast)) { if (a.breakfast) adjustments.push({ key: "breakfast", usd: -BREAKFAST_USD * scaleNights, label: `+breakfast −$${BREAKFAST_USD * scaleNights}` }); }
-  else partial = true;
+  if (known(a.breakfast)) {
+    const usd = BREAKFAST_USD * scaleNights;
+    if (a.breakfast && !ourBreakfast) adjustments.push({ key: "breakfast", usd: -usd, label: `+breakfast −$${usd}` });
+    else if (!a.breakfast && ourBreakfast) adjustments.push({ key: "breakfast", usd, label: `no breakfast +$${usd}` });
+  } else partial = true;
   if (known(a.transfers)) { if (a.transfers) adjustments.push({ key: "transfers", usd: -TRANSFER_USD, label: `+transfers −$${TRANSFER_USD}` }); }
   else partial = true;
   const theirLow = isLowCostAirline(airlines?.theirs);
@@ -471,7 +528,6 @@ export function normalize(
   }
 
   const normalizedUsd = Math.round(priceUsd + adjustments.reduce((s, x) => s + x.usd, 0));
-  const theirNights = known(a.nights) && a.nights <= MAX_WINDOW_DAYS ? a.nights : "unknown";
   return {
     normalizedUsd,
     adjustments,

@@ -8,7 +8,7 @@ import {
   NIGHTS_FALLBACK, NIGHT_RATE_MIN_USD, NIGHT_RATE_MAX_USD,
   ourPackageUsd, ourTicketUsd, ourNights, ourNightRateUsd, listingNights, nightsUncertaintyUsd,
   cheapestAvailableTicket, ourOfferLines, ourFromUsd, ourNetFlightUsd, ourNetHotelUsd,
-  kindOf, competitorsFor, normalize,
+  kindOf, competitorsFor, normalize, ourPackageAttrs, bagIncludedFrom,
   computeScopeLight, previewMarkupChange, LIGHT_RED_USD, decidePriceDrop, pickRuleMatch, candidateCoversDate, signedUsd, stampLightChange,
   nameTokens, ruleMatchScore, ruleSaysAbsent, isMultiMatchTitle, RULE_MATCH_MIN_SCORE, RULE_ABSENT_BELOW,
   LOW_COST_USD, isLowCostAirline, competitorOverrideHolds,
@@ -110,11 +110,12 @@ const n1 = normalize(1000, { ...UNKNOWN_ATTRS, bag_included: true }, { nights: 3
 assert.equal(n1.normalizedUsd, 1000 - BAG_USD);
 assert.equal(n1.partial, true);
 const n2 = normalize(1000, { bag_included: false, direct_flight: false, hotel_stars: 4, nights: 4, breakfast: true, transfers: true }, { nights: 3 });
-assert.equal(n2.normalizedUsd, 1000 + CONNECTION_USD - STAR_STEP_USD * 3 - NIGHT_USD - BREAKFAST_USD * 3 - TRANSFER_USD);
+// stars and breakfast scale by THEIR nights (4) - that is what their price carries (2026-09-24)
+assert.equal(n2.normalizedUsd, 1000 + CONNECTION_USD - STAR_STEP_USD * 4 - NIGHT_USD - BREAKFAST_USD * 4 - TRANSFER_USD);
 assert.equal(n2.partial, false);
 assert.equal(n2.adjustments.length, 5);
 const n3 = normalize(1000, { bag_included: false, direct_flight: true, hotel_stars: 2, nights: 2, breakfast: false, transfers: false }, { nights: 3 });
-assert.equal(n3.normalizedUsd, 1000 + STAR_STEP_USD * 3 + NIGHT_USD);
+assert.equal(n3.normalizedUsd, 1000 + STAR_STEP_USD * 2 + NIGHT_USD); // their 2 nights of 2★
 assert.equal(n3.uncertaintyUsd, 0);
 assert.deepEqual(n3.nights, { ours: 3, theirs: 2 });
 // the nights gap is priced at THIS event's night rate, not the flat fallback
@@ -127,11 +128,62 @@ const n5 = normalize(1000, { ...UNKNOWN_ATTRS }, { nights: 4, nightRateUsd: 190 
 assert.equal(n5.normalizedUsd, 1000);
 assert.equal(n5.uncertaintyUsd, 190);
 assert.deepEqual(n5.nights, { ours: 4, theirs: "unknown" });
-// our own window missing: no gap adjustment either way, per-night scaling falls back to 3 nights
+// our own window missing: no gap adjustment either way, per-night scaling uses their 5 nights
 const n6 = normalize(1000, { ...UNKNOWN_ATTRS, nights: 5, hotel_stars: 4 }, { nights: null, nightRateUsd: 190 });
-assert.equal(n6.normalizedUsd, 1000 - STAR_STEP_USD * NIGHTS_FALLBACK);
+assert.equal(n6.normalizedUsd, 1000 - STAR_STEP_USD * 5);
 assert.equal(n6.partial, true);
 assert.equal(n6.uncertaintyUsd, 190);
+// ...and with neither side's nights known, the old NIGHTS_FALLBACK scale
+assert.equal(normalize(1000, { ...UNKNOWN_ATTRS, hotel_stars: 4 }, { nights: null }).normalizedUsd, 1000 - STAR_STEP_USD * NIGHTS_FALLBACK);
+
+// ---- symmetric normalization: each step prices the DIFFERENCE between the packages (2026-09-24) ----
+{
+  const allKnown = { bag_included: false, direct_flight: true, hotel_stars: 3, nights: 3, breakfast: false, transfers: false } as const;
+  const keys = (n: { adjustments: { key: string }[] }) => n.adjustments.map((a) => a.key);
+  // we have a bag, they do not -> their package is worth a bag more to match ours
+  const weBag = normalize(1000, { ...allKnown }, { nights: 3, bag: true });
+  assert.equal(weBag.normalizedUsd, 1000 + BAG_USD);
+  assert.deepEqual(keys(weBag), ["bag"]);
+  // both have a bag (event 781: El Al with a bag vs theirs with a bag) -> no step at all
+  const bothBag = normalize(1000, { ...allKnown, bag_included: true }, { nights: 3, bag: true });
+  assert.equal(bothBag.normalizedUsd, 1000);
+  assert.deepEqual(keys(bothBag), [], "a shared feature is omitted, not a $0 step");
+  // we have breakfast, they do not -> +breakfast for THEIR nights; both breakfast -> nothing (868/869)
+  const weBf = normalize(1000, { ...allKnown, nights: 4 }, { nights: 4, breakfast: true });
+  assert.equal(weBf.normalizedUsd, 1000 + BREAKFAST_USD * 4);
+  assert.equal(normalize(1000, { ...allKnown, breakfast: true }, { nights: 3, breakfast: true }).normalizedUsd, 1000);
+  // they 4★ for 3 nights vs our 4 nights: stars scaled by their 3, the 4th night priced at our rate
+  const star = normalize(1000, { ...allKnown, hotel_stars: 4, nights: 3 }, { nights: 4, nightRateUsd: 150, stars: 3 });
+  assert.equal(star.adjustments.find((a) => a.key === "stars")?.usd, -STAR_STEP_USD * 3);
+  assert.equal(star.normalizedUsd, 1000 - STAR_STEP_USD * 3 + 150);
+  // our hotel is 4★ too -> no stars step
+  assert.deepEqual(keys(normalize(1000, { ...allKnown, hotel_stars: 4 }, { nights: 3, stars: 4 })), []);
+  // we connect, they fly direct -> their direct flight is worth a connection more than ours
+  const weConnect = normalize(1000, { ...allKnown }, { nights: 3, direct: false });
+  assert.equal(weConnect.normalizedUsd, 1000 - CONNECTION_USD);
+  assert.equal(weConnect.adjustments[0]?.key, "connection");
+  // both connect -> nothing
+  assert.deepEqual(keys(normalize(1000, { ...allKnown, direct_flight: false }, { nights: 3, direct: false })), []);
+  // our side unknown (null / omitted) = the old bare-package assumption, exactly
+  const theirs = { bag_included: true, direct_flight: false, hotel_stars: 4, nights: 3, breakfast: true, transfers: false } as const;
+  const legacy = normalize(1000, { ...theirs }, { nights: 3 });
+  assert.equal(legacy.normalizedUsd, 1000 - BAG_USD + CONNECTION_USD - STAR_STEP_USD * 3 - BREAKFAST_USD * 3);
+  assert.deepEqual(normalize(1000, { ...theirs }, { nights: 3, bag: null, breakfast: null, direct: null, stars: null }), legacy);
+}
+// our offer -> the attrs normalize reads
+assert.deepEqual(ourPackageAttrs(null), { bag: null, breakfast: null, direct: null, stars: null });
+assert.deepEqual(
+  ourPackageAttrs({ flight: { bag: 'כולל מזוודה 23 ק"ג', direct: true }, hotel: { stars: 3, board: "breakfast" } }),
+  { bag: true, breakfast: true, direct: true, stars: 3 },
+);
+assert.deepEqual(
+  ourPackageAttrs({ flight: { bag: "ללא מזוודה", direct: false }, hotel: { stars: null, board: "room_only" } }),
+  { bag: false, breakfast: false, direct: false, stars: null },
+);
+assert.equal(bagIncludedFrom("כבודה מלאה"), true);
+assert.equal(bagIncludedFrom("טרולי בלבד"), false);
+assert.equal(bagIncludedFrom("תיק גב בלבד"), false);
+assert.equal(bagIncludedFrom(null), null);
 
 // lights
 const ours = 1375;
