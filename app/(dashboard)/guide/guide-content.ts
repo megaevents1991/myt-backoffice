@@ -170,8 +170,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     id: "lodging",
     title: t("Lodging - event city & split stay", "לינה - עיר המשחק ושהות מפוצלת"),
     intro: t(
-      "When the match is in one city and the flight lands in another (a Liverpool game on a London flight), the event gets an EVENT CITY next to its flight city. The site then shows \"הלינה ב: לונדון\" above the hotel list with a button for the other city and, in split mode, a \"מפוצל\" popup where the customer assigns each night to a city.",
-      "כשהמשחק בעיר אחת והטיסה נוחתת באחרת (משחק בליברפול על טיסה ללונדון), לאירוע מוגדרת עיר משחק לצד עיר הטיסה. האתר מציג \"הלינה ב: לונדון\" מעל רשימת המלונות עם כפתור לעיר השנייה, ובמצב מפוצל חלון \"מפוצל\" שבו הלקוח מחלק את הלילות בין הערים.",
+      "When the match is in one city and the flight lands in another (a Liverpool game on a London flight), the event gets an EVENT CITY next to its flight city. On entering the hotel step the site first opens an \"איפה ישנים?\" popup - hotel dates (± a night, with a loud warning when they differ from the flight; the flight never moves), guests, and where to sleep: the recommended split preselected, or one city for the whole stay - and searches ONCE after the answer. Above the hotel list \"הלינה ב: לונדון\" with a button for the other city and \"מפוצל\" / \"שינוי הפיצול\" stay for later changes.",
+      "כשהמשחק בעיר אחת והטיסה נוחתת באחרת (משחק בליברפול על טיסה ללונדון), לאירוע מוגדרת עיר משחק לצד עיר הטיסה. בכניסה לשלב המלון האתר פותח קודם פופ-אפ \"איפה ישנים?\" - תאריכי המלון (± לילה, עם התראה בולטת כשהם שונים מהטיסה; הטיסה לא משתנה), אורחים, ואיפה ישנים: הפיצול המומלץ מסומן, או עיר אחת לכל השהות - ומחפש פעם אחת אחרי התשובה. מעל רשימת המלונות נשארים \"הלינה ב: לונדון\" עם כפתור לעיר השנייה ו\"מפוצל\" / \"שינוי הפיצול\" לשינויים אחר כך.",
     ),
     points: [
       t(
@@ -183,8 +183,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "מצב: עיר טיסה בלבד / עיר משחק בלבד / הלקוח בוחר עיר / הלקוח בוחר או מפצל. \"Opens on\" = עיר ברירת המחדל. \"Split default\" = 1 או 2 לילות בעיר המשחק שהחלון מציע (2 = ליל לפני + ליל המשחק).",
       ),
       t(
-        "The split never changes dates - nights = the flight dates the customer chose. Max 3 segments (A → B → A). Each segment gets an auto-picked hotel; \"החלפת מלון\" opens that segment's list. Price = sum of the segment hotels vs the base, same +/- as today.",
-        "הפיצול לא משנה תאריכים - הלילות = תאריכי הטיסה שהלקוח בחר. עד 3 מקטעים (א ← ב ← א). כל מקטע מקבל מלון אוטומטי; \"החלפת מלון\" פותח את הרשימה של המקטע. המחיר = סכום מלונות המקטעים מול הבסיס, אותו +/- כמו היום.",
+        "Hotel nights start at the flight dates; the customer may add or drop a night in the popup or the date picker (a loud warning when they differ from the flight - the flight never moves). Max 3 segments (A → B → A). Each segment gets an auto-picked hotel; \"החלפת מלון\" opens that segment's list. Price = sum of the segment hotels vs the base, same +/- as today.",
+        "לילות המלון מתחילים מתאריכי הטיסה; הלקוח יכול להוסיף או להוריד לילה בפופ-אפ או בבורר התאריכים (התראה בולטת כשהם שונים מהטיסה - הטיסה לא משתנה). עד 3 מקטעים (א ← ב ← א). כל מקטע מקבל מלון אוטומטי; \"החלפת מלון\" פותח את הרשימה של המקטע. המחיר = סכום מלונות המקטעים מול הבסיס, אותו +/- כמו היום.",
       ),
       t(
         "Transfer note: free text shown under the city line (\"רכבת לונדון–ליברפול כשעתיים ורבע, לא כלול\"). Transfers are NOT sold.",
