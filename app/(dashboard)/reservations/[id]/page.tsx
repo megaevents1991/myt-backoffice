@@ -594,7 +594,7 @@ export default function ReservationDetailsPage({
                       <b>
                         {evt.seating_choice === "split"
                           ? "pairs + a triple (split)"
-                          : "all together"}
+                          : "all together - buy seats that sit together, not the cheapest split listing"}
                       </b>
                     </p>
                   )}

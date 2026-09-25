@@ -91,8 +91,9 @@ const BOARD_COLUMNS = ["Ours · TixStock", "LiveTickets"] as const;
 const ZONE_FILL = "#C2FFD8";
 const ACTIVE_ZONE_FILL = "#0E6F57";
 const IDLE_FILL = "#E8E6E0";
-/** A section this event does not sell (`tx_excluded_sections`). */
-const EXCLUDED_FILL = "#4B5563";
+/** A section this event does not sell (`tx_excluded_sections`) - red, as on
+ *  the TixStock map's exclude mode (Alon 25.09). */
+const EXCLUDED_FILL = "#E53E3E";
 
 type Props = {
   event: Event;
@@ -394,8 +395,8 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
   }, [venueMapId]);
 
   // Sections this EVENT does not sell (the TixStock map's exclude mode). Zones
-  // belong to the venue, so they keep these sections - but every drawing here
-  // shows them as excluded, which is also what main does on the site.
+  // belong to the venue, so they keep these sections - but the zone editor's
+  // drawing shows them as excluded, which is also what main does on the site.
   const excludedSections = useMemo(
     () => new Set(event.tx_excluded_sections ?? []),
     [event.tx_excluded_sections],
@@ -438,7 +439,8 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
   /* One small picture of our map per zone, that zone painted - the zones
      board's left column (Alon 23.09: "to be sure everything is right").
      Built as images, not live SVG: eight copies of a stadium in the DOM
-     would be heavy, and these are only looked at. */
+     would be heavy, and these are only looked at. The zone alone: excluded
+     sections are marked in the zone editor only (Alon 25.09). */
   const zoneThumbs = useMemo(() => {
     const thumbs = new Map<string, string>();
     if (!drawing) return thumbs;
@@ -446,19 +448,15 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     if (open < 0) return thumbs;
     const shapes = ":is(.block, polygon, path, rect, circle, ellipse)";
     const sel = (id: string) => `[data-section="${id.replace(/["\\]/g, "\\$&")}"] ${shapes}`;
-    const excludedCss = [...excludedSections]
-      .map((id) => `${sel(id)}{fill:${EXCLUDED_FILL} !important}`)
-      .join("");
     for (const zone of zones) {
       const css =
         `[data-section] ${shapes}{fill:${IDLE_FILL}}` +
-        zone.sections.map((id) => `${sel(id)}{fill:${ACTIVE_ZONE_FILL}}`).join("") +
-        excludedCss;
+        zone.sections.map((id) => `${sel(id)}{fill:${ACTIVE_ZONE_FILL}}`).join("");
       const svg = `${drawing.slice(0, open + 1)}<style>${css}</style>${drawing.slice(open + 1)}`;
       thumbs.set(zone.id, `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
     }
     return thumbs;
-  }, [drawing, zones, excludedSections]);
+  }, [drawing, zones]);
 
   // Click a section = toggle it in the active zone, or - in exclude mode - in
   // the sections this event does not sell.
@@ -1592,7 +1590,7 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                   </Button>
                   <span className="text-xs text-muted-foreground">
                     {excludeMode
-                      ? "Click the sections this event does not sell - they turn dark grey and TixStock tickets there drop off the site. Saved with the event (Save at the bottom); zones are not changed."
+                      ? "Click the sections this event does not sell - they turn red and TixStock tickets there drop off the site. Saved with the event (Save at the bottom); zones are not changed."
                       : `${excludedSections.size} section(s) excluded on this event.`}
                   </span>
                 </div>
