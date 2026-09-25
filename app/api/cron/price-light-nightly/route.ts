@@ -7,6 +7,10 @@ import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 // 05:30 (`?followup=1`: no LiveTickets refresh, no second snapshot - the lights the first run did
 // not reach). ?dry_run=1 = zero writes.
 export const maxDuration = 300;
+// Next to the database (Supabase eu-central-1, Frankfurt). Matching one event is dozens of small
+// queries; from Vercel's default iad1 each one crossed the Atlantic and pass 2 ran ~7.5s an
+// event - 59 of 433 lights a night even with the passes in parallel (2026-09-25).
+export const preferredRegion = "fra1";
 
 export async function GET(request: NextRequest) {
   const denied = await guardCronRoute(request);
