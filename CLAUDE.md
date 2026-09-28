@@ -260,6 +260,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >     a swimlane view of the same tasks: the board lens (`all` or one of
 >     `dev`/`marketing`/`ops`) filters the table, its counts and the kanban
 >     together from one query-string source.
+>   - **Pricing board + bulk bar + sub-tasks (2026-09-28, doc tab "באגים ושיפורים" section "טסקס",
+>     migration `20260928120000_tasks_pricing_board_subtasks.sql`).** A fourth board `pricing`
+>     (`TASK_BOARDS`, `BOARD_META` "תמחור"): `defaultBoardFor(source)` (`lib/task-boards.ts`) puts
+>     `price_light` / `price_review` tasks there (createTask, `openPriceLightTask`'s insert, the
+>     editor's prefill); the migration moved the open ones, their rules' digests and the price rules
+>     themselves off `ops` (32 of ops' 37 open tasks were price lights). The rules form's board
+>     follows the domain while it is still a default. **Bulk bar** (admins): the table ticks rows and
+>     `bulkUpdateTasks(ids, { assignee_id | board | status })` - one UPDATE for assignee/board with an
+>     activity row per task, status via `setTaskStatus` per task (gap closing unchanged), and ONE
+>     mail per recipient (`notifyTasksAssigned`, `sendTaskListMail` shared with the rule summary).
+>     **Sub-tasks:** `tasks.parent_id` (FK, one level - createTask refuses a parent that is itself a
+>     sub-task; only an admin or the parent's assignee/creator may split). A sub-task inherits board,
+>     phase and channel, is an ordinary task (own status, thread, mails), sits right under its
+>     parent in the table ("חלק מ:"), and the parent shows done/total (`subtaskProgress`, cancelled
+>     parts excluded). Panel: `components/task-subtasks.tsx`, in the expanded row and the dialog
+>     (TaskEditor's children slot). The parent is never auto-closed.
 >   - **Pricing tab** (`?tab=pricing`, all staff, not admin-only like
 >     `/price-light`): every open pricing problem - red price lights and
 >     frozen `/price-changes` rows - in one list via

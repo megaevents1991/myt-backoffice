@@ -1,13 +1,20 @@
-/** Labels for the three boards, the seven roadmap phases and the marketing
+/** Labels for the four boards, the seven roadmap phases and the marketing
  *  channels. The ONLY place these strings live (spec §1.1) - the old roadmap
  *  app's palette is not carried over; colours come from the MYT Admin tokens. */
-import { MKT_CHANNELS, TASK_BOARDS, type MktChannel, type TaskBoard } from "@/types/task.types";
+import { MKT_CHANNELS, TASK_BOARDS, type MktChannel, type TaskBoard, type TaskSource } from "@/types/task.types";
 
 export const BOARD_META: Record<TaskBoard, { label: string; hint: string }> = {
   dev: { label: "פיתוח", hint: "מפת הדרכים של המוצר" },
   marketing: { label: "שיווק", hint: "קמפיינים, תוכן, שותפויות" },
-  ops: { label: "תפעול", hint: "מה שהמערכת מייצרת + משימות שוטפות" },
+  ops: { label: "תפעול", hint: "משימות שוטפות ומה שהמערכת מייצרת" },
+  pricing: { label: "תמחור", hint: "רמזור ושינויי מחיר - מה שהמערכת פותחת על מחירים" },
 };
+
+/** Where a new task lands when nobody chose a board: price tasks on "pricing" (they
+ *  swallowed "ops" - Alon, 28.09), everything else on "ops". */
+export function defaultBoardFor(source: TaskSource): TaskBoard {
+  return source === "price_light" || source === "price_review" ? "pricing" : "ops";
+}
 
 export const PHASES: Record<number, { name: string; sub: string }> = {
   1: { name: "ליבה ותפעול", sub: "ספקים, הזמנות, כרטיסים" },

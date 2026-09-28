@@ -110,7 +110,42 @@ export interface RuleTasksCreatedInput {
  * failure is logged and never fails the run. The caller never calls this on a dry run.
  */
 export async function notifyRuleTasksCreated(input: RuleTasksCreatedInput): Promise<void> {
-  if (input.titles.length === 0) return;
+  await sendTaskListMail({
+    assigneeId: input.assigneeId,
+    subject: `${input.titles.length} משימות חדשות מהכלל ${input.ruleName}`,
+    kicker: "MYT Admin · משימות חוזרות",
+    titles: input.titles,
+    failLabel: `rule summary mail for rule ${input.ruleId}`,
+  });
+}
+
+/**
+ * The bulk bar's "שייך ל…" on /tasks (Alon, 28.09): ONE mail listing every task just handed
+ * to this person, not one mail per task. Best-effort, and it says what happened - the bar's
+ * toast reports it like the single-task dialog does.
+ */
+export async function notifyTasksAssigned(input: {
+  assigneeId: string;
+  titles: string[];
+}): Promise<TaskMailOutcome> {
+  return sendTaskListMail({
+    assigneeId: input.assigneeId,
+    subject: input.titles.length === 1 ? `משימה שויכה אליך: ${input.titles[0]}` : `${input.titles.length} משימות שויכו אליך`,
+    kicker: "MYT Admin · שיוך משימות",
+    titles: input.titles,
+    failLabel: `bulk assignment mail (${input.titles.length} tasks)`,
+  });
+}
+
+/** One mail with a list of task titles and a button to the board. */
+async function sendTaskListMail(input: {
+  assigneeId: string;
+  subject: string;
+  kicker: string;
+  titles: string[];
+  failLabel: string;
+}): Promise<TaskMailOutcome> {
+  if (input.titles.length === 0) return "skipped";
   try {
     const { data, error } = await db
       .from("user_profiles")
@@ -119,13 +154,13 @@ export async function notifyRuleTasksCreated(input: RuleTasksCreatedInput): Prom
       .maybeSingle();
     if (error) throw error;
     const assignee = data as Profile | null;
-    if (!assignee?.email) return;
+    if (!assignee?.email) return "skipped";
 
     const boardUrl = `${appOrigin()}/tasks`;
     const count = input.titles.length;
     const shown = input.titles.slice(0, SUMMARY_TITLES_MAX);
     const more = count - shown.length;
-    const subject = `${count} משימות חדשות מהכלל ${input.ruleName}`;
+    const subject = input.subject;
 
     const items = shown
       .map((title) => `<li style="padding:2px 0;">${escapeHtml(title)}</li>`)
@@ -136,7 +171,7 @@ export async function notifyRuleTasksCreated(input: RuleTasksCreatedInput): Prom
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
       <tr><td align="center">
         <table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border-radius:12px;padding:32px;" cellpadding="0" cellspacing="0" dir="rtl">
-          <tr><td style="text-align:right;font-size:13px;color:#6b7280;padding-bottom:4px;">MYT Admin · משימות חוזרות</td></tr>
+          <tr><td style="text-align:right;font-size:13px;color:#6b7280;padding-bottom:4px;">${escapeHtml(input.kicker)}</td></tr>
           <tr><td style="text-align:right;font-size:20px;font-weight:bold;color:#111827;padding-bottom:12px;">${escapeHtml(subject)}</td></tr>
           <tr><td style="text-align:right;font-size:14px;color:#374151;line-height:1.6;padding-bottom:16px;">
             <ul style="margin:0;padding-right:18px;">${items}</ul>
@@ -164,11 +199,13 @@ export async function notifyRuleTasksCreated(input: RuleTasksCreatedInput): Prom
         .filter(Boolean)
         .join("\n"),
     });
+    return "sent";
   } catch (error) {
     console.error(
-      `tasks: rule summary mail failed for rule ${input.ruleId}`,
+      `tasks: ${input.failLabel} failed`,
       error instanceof Error ? error.message : JSON.stringify(error),
     );
+    return "failed";
   }
 }
 

@@ -41,8 +41,9 @@ export const TASK_SOURCES = [
 ] as const;
 export type TaskSource = (typeof TASK_SOURCES)[number];
 
-/** dev = roadmap product work · marketing = campaigns · ops = what the system generates. */
-export const TASK_BOARDS = ["dev", "marketing", "ops"] as const;
+/** dev = roadmap product work · marketing = campaigns · ops = day-to-day operations ·
+ *  pricing = what the price light / price changes open (moved off ops 28.09 - it swallowed it). */
+export const TASK_BOARDS = ["dev", "marketing", "ops", "pricing"] as const;
 export type TaskBoard = (typeof TASK_BOARDS)[number];
 
 export const MKT_CHANNELS = [
@@ -96,6 +97,8 @@ export interface Task {
   channel: MktChannel | null;
   /** 0..100, marketing board only. */
   progress: number | null;
+  /** Set on a sub-task: the general task it is a part of (one level only, 28.09). */
+  parent_id: string | null;
 }
 
 /** Task row joined with the names the list screen shows. */

@@ -25,7 +25,7 @@ import {
 import { createTask, updateTask } from "@/lib/actions/task-actions";
 import { listUsers } from "@/lib/actions/user-actions";
 import { TaskThread } from "@/components/task-thread";
-import { BOARD_META, CHANNEL_META, PHASES } from "@/lib/task-boards";
+import { BOARD_META, CHANNEL_META, PHASES, defaultBoardFor } from "@/lib/task-boards";
 import { TASK_FIELDS, type EditableTaskField } from "@/lib/tasks/permissions";
 import { STAFF_ROLES, type UserProfile } from "@/types/auth.types";
 import {
@@ -84,6 +84,7 @@ export function TaskEditor({
   onClose,
   onSaved,
   onThreadRead,
+  children,
 }: {
   state: TaskEditorState;
   isManager: boolean;
@@ -98,6 +99,8 @@ export function TaskEditor({
   onSaved: () => void;
   /** The dialog's thread was shown (= stamped read) - /tasks drops that row's unread marker. */
   onThreadRead?: (taskId: string) => void;
+  /** Shown above the thread on an existing task - /tasks puts the sub-tasks panel here. */
+  children?: React.ReactNode;
 }) {
   const { toast } = useToast();
   const { task, prefill } = state;
@@ -115,7 +118,9 @@ export function TaskEditor({
   const [assignee, setAssignee] = useState<string>(task?.assignee_id ?? "unassigned");
   const [dueDate, setDueDate] = useState(task?.due_date ?? "");
   const { defaults } = state;
-  const [board, setBoard] = useState<TaskBoard>(task?.board ?? defaults?.board ?? "ops");
+  const [board, setBoard] = useState<TaskBoard>(
+    task?.board ?? defaults?.board ?? defaultBoardFor(prefill?.source ?? "manual"),
+  );
   const [phase, setPhase] = useState<number | null>(
     task ? (task.phase ?? null) : defaults?.board === "dev" ? (defaults.phase ?? null) : null,
   );
@@ -381,6 +386,7 @@ export function TaskEditor({
         </div>
 
         {/* No thread on a brand-new task - there is no task id to hang comments off yet. */}
+        {task && children && <div className="mt-2">{children}</div>}
         {task && (
           <div className="mt-2 border-t pt-4">
             <TaskThread taskId={task.id} onRead={() => onThreadRead?.(task.id)} />

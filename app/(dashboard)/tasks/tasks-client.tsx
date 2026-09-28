@@ -6,8 +6,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
   Check,
+  CornerDownLeft,
   ExternalLink,
   Eye,
+  ListTree,
   MessageSquare,
   Pencil,
   Plus,
@@ -39,12 +41,15 @@ import {
   type TaskPrefill,
 } from "@/components/task-editor";
 import { TaskThread } from "@/components/task-thread";
+import { TaskSubtasks, subtaskProgress, type StaffOption } from "@/components/task-subtasks";
 import {
+  bulkUpdateTasks,
   deleteTask,
   listTasks,
   openTaskGapKeys,
   setTaskStatus,
 } from "@/lib/actions/task-actions";
+import { listUsers } from "@/lib/actions/user-actions";
 import {
   dismissCreativeGap,
   listAllCreativeGaps,
@@ -65,7 +70,7 @@ import {
   STATUS_LABEL,
   type GroupBy,
 } from "@/lib/tasks/kanban";
-import { ADMIN_ROLES } from "@/types/auth.types";
+import { ADMIN_ROLES, STAFF_ROLES } from "@/types/auth.types";
 import {
   GAP_KINDS,
   GAP_META,
@@ -77,6 +82,7 @@ import {
   OPEN_TASK_STATUSES,
   PRIORITY_ORDER,
   TASK_BOARDS,
+  type TaskBoard,
   type TaskSource,
   type TaskStatus,
   type TaskWithNames,
@@ -155,6 +161,36 @@ export function TasksClient() {
     reload();
   }, [reload]);
 
+  // Assignable people for the bulk bar and the sub-tasks panel. listUsers is admin-guarded,
+  // so a non-admin never asks (their sub-task is always their own).
+  const [staff, setStaff] = useState<StaffOption[] | null>(null);
+  useEffect(() => {
+    if (!isManager) return;
+    listUsers()
+      .then((users) =>
+        setStaff(
+          users
+            .filter((u) => u.is_active && (STAFF_ROLES as readonly string[]).includes(u.role))
+            .map((u) => ({ id: u.id, name: u.display_name || u.email })),
+        ),
+      )
+      .catch((error) => console.error("tasks: staff list failed", error));
+  }, [isManager]);
+
+  // Sub-tasks by general task, over the WHOLE board (a part assigned to someone else still
+  // counts toward its parent's "x/y" when the "my tasks" switch hides it).
+  const taskById = useMemo(() => new Map(tasks.map((task) => [task.id, task] as const)), [tasks]);
+  const childrenOf = useMemo(() => {
+    const map = new Map<string, TaskWithNames[]>();
+    for (const task of [...tasks].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
+      if (!task.parent_id) continue;
+      const list = map.get(task.parent_id) ?? [];
+      list.push(task);
+      map.set(task.parent_id, list);
+    }
+    return map;
+  }, [tasks]);
+
   useEffect(() => {
     if (loading || !tasks.length || !initialTaskId) return;
     if (handledTaskRef.current === initialTaskId) return;
@@ -223,6 +259,64 @@ export function TasksClient() {
           (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"),
       ),
     [filtered],
+  );
+
+  // Each sub-task sits right under its general task when both are on screen; one whose parent
+  // is filtered out stays where its own priority puts it.
+  const ordered = useMemo(() => {
+    const onScreen = new Set(sorted.map((task) => task.id));
+    const under = new Map<string, TaskWithNames[]>();
+    for (const task of sorted) {
+      if (task.parent_id && onScreen.has(task.parent_id)) {
+        const list = under.get(task.parent_id) ?? [];
+        list.push(task);
+        under.set(task.parent_id, list);
+      }
+    }
+    const out: TaskWithNames[] = [];
+    for (const task of sorted) {
+      if (task.parent_id && onScreen.has(task.parent_id)) continue;
+      out.push(task, ...(under.get(task.id) ?? []));
+    }
+    return out;
+  }, [sorted]);
+
+  // Bulk bar (admins): tick rows, then assign / move / set status in one go.
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const selectedIds = useMemo(
+    () => Object.entries(rowSelection).filter(([, on]) => on).map(([id]) => id),
+    [rowSelection],
+  );
+  const runBulk = useCallback(
+    async (patch: { assignee_id?: string | null; board?: TaskBoard; status?: TaskStatus }, what: string) => {
+      if (selectedIds.length === 0) return;
+      setBulkBusy(true);
+      try {
+        const result = await bulkUpdateTasks(selectedIds, patch);
+        if (!result.ok) {
+          toast({ variant: "destructive", title: "העדכון נכשל", description: result.error });
+          return;
+        }
+        toast({
+          variant: result.mail === "failed" ? "destructive" : undefined,
+          title: `${result.updated} משימות ${what}`,
+          description:
+            result.mail === "sent"
+              ? "נשלח מייל אחד עם כל המשימות."
+              : result.mail === "failed"
+                ? "המייל לאחראי נכשל - תעדכן אותו ישירות."
+                : result.mail === "skipped"
+                  ? "לאחראי אין כתובת מייל."
+                  : undefined,
+        });
+        setRowSelection({});
+        reload();
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [selectedIds, toast, reload],
   );
 
   const counts = useMemo(() => {
@@ -310,10 +404,26 @@ export function TasksClient() {
       {
         accessorKey: "title",
         header: "Task",
-        cell: ({ row }) => (
-          <div className="min-w-[220px] max-w-[420px]">
+        cell: ({ row }) => {
+          const parent = row.original.parent_id ? taskById.get(row.original.parent_id) : undefined;
+          const parts = childrenOf.get(row.original.id) ?? [];
+          const progress = parts.length > 0 ? subtaskProgress(parts) : null;
+          return (
+          <div className={cn("min-w-[220px] max-w-[420px]", parent && "border-s-2 border-border ps-3")}>
+            {parent && (
+              <p className="flex items-center gap-1 truncate text-[11px] text-muted-foreground" title={parent.title}>
+                <CornerDownLeft className="h-3 w-3 shrink-0" />
+                חלק מ: {parent.title}
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <span className="truncate font-medium">{row.original.title}</span>
+              {progress && (
+                <Badge variant="outline" className="shrink-0 gap-1 text-[10px]" title="תתי-משימות שהושלמו">
+                  <ListTree className="h-3 w-3" />
+                  {progress.done}/{progress.total}
+                </Badge>
+              )}
               {SOURCE_BADGE[row.original.source] && (
                 <Badge variant="secondary" className="shrink-0 text-[10px]">
                   {SOURCE_BADGE[row.original.source]}
@@ -346,7 +456,8 @@ export function TasksClient() {
               </a>
             )}
           </div>
-        ),
+          );
+        },
       },
       {
         accessorKey: "assignee_name",
@@ -485,8 +596,23 @@ export function TasksClient() {
           ),
       },
     ],
-    [isManager, user, onStatus, onDelete, threadTaskId, toggleThread],
+    [isManager, user, onStatus, onDelete, threadTaskId, toggleThread, taskById, childrenOf],
   );
+
+  // The sub-tasks panel for one task (none on a sub-task - one level only).
+  const subtasksPanel = (task: TaskWithNames) =>
+    task.parent_id ? null : (
+      <TaskSubtasks
+        parent={task}
+        subtasks={childrenOf.get(task.id) ?? []}
+        staff={staff}
+        isManager={isManager}
+        userId={user?.id ?? null}
+        role={user?.role ?? ""}
+        onChanged={reload}
+        onOpenTask={(sub) => setEditor({ open: true, task: sub })}
+      />
+    );
 
   return (
     <Tabs
@@ -529,8 +655,69 @@ export function TasksClient() {
       <TabsContent value="tasks" className="mt-4">
         <DataTable
           columns={columns}
-          data={sorted}
+          data={ordered}
           getRowId={(task) => task.id}
+          enableRowSelection={isManager}
+          rowSelection={rowSelection}
+          onRowSelectionChange={setRowSelection}
+          bulkActions={
+            <>
+              <Select
+                value=""
+                onValueChange={(value) =>
+                  runBulk({ assignee_id: value === "unassigned" ? null : value }, "שויכו")
+                }
+                disabled={bulkBusy}
+              >
+                <SelectTrigger className="h-8 w-[160px]">
+                  <SelectValue placeholder="שייך ל…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">ללא שיוך</SelectItem>
+                  {(staff ?? []).map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value=""
+                onValueChange={(value) => runBulk({ board: value as TaskBoard }, "הועברו")}
+                disabled={bulkBusy}
+              >
+                <SelectTrigger className="h-8 w-[130px]">
+                  <SelectValue placeholder="ללוח…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TASK_BOARDS.map((board) => (
+                    <SelectItem key={board} value={board}>
+                      {BOARD_META[board].label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value=""
+                onValueChange={(value) => runBulk({ status: value as TaskStatus }, "עודכנו")}
+                disabled={bulkBusy}
+              >
+                <SelectTrigger className="h-8 w-[130px]">
+                  <SelectValue placeholder="סטטוס…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(STATUS_LABEL) as TaskStatus[]).map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {STATUS_LABEL[status]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="ghost" onClick={() => setRowSelection({})} disabled={bulkBusy}>
+                נקה בחירה
+              </Button>
+            </>
+          }
           onRowClick={(task) => toggleThread(task.id)}
           expandedRowId={threadTaskId}
           renderExpandedRow={(task) => (
@@ -538,6 +725,7 @@ export function TasksClient() {
               {task.description && (
                 <p className="whitespace-pre-line text-sm text-muted-foreground">{task.description}</p>
               )}
+              {subtasksPanel(task)}
               <TaskThread
                 taskId={task.id}
                 onCommentAdded={reload}
@@ -664,7 +852,9 @@ export function TasksClient() {
           setEditor({ open: false, task: null });
           reload();
         }}
-      />
+      >
+        {editor.task ? subtasksPanel(editor.task) : null}
+      </TaskEditor>
     </Tabs>
   );
 }

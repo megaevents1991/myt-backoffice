@@ -80,6 +80,8 @@ export async function openPriceLightTask(
         created_by: actor.id,
         source: "price_light",
         source_ref: sourceRef(event, scope),
+        // Its own board since 28.09 - price lights swallowed "ops" (defaultBoardFor).
+        board: "pricing",
       })
       .select("id")
       .single();

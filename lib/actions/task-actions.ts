@@ -5,7 +5,7 @@ import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
-import { notifyTaskAssigned, type TaskMailOutcome } from "@/lib/services/task-notify";
+import { notifyTaskAssigned, notifyTasksAssigned, type TaskMailOutcome } from "@/lib/services/task-notify";
 import { notifyTaskDone } from "@/lib/services/task-watch-notify";
 import { siteUrlOf, siteUrlsForRefs } from "@/lib/services/task-site-url";
 import { resolveGapForTask } from "@/lib/services/gap-resolution";
@@ -24,7 +24,7 @@ import {
   type TaskStatus,
   type TaskWithNames,
 } from "@/types/task.types";
-import { validBoard, validChannel, validPhase, validProgress } from "@/lib/task-boards";
+import { defaultBoardFor, validBoard, validChannel, validPhase, validProgress } from "@/lib/task-boards";
 import { diffActivities, recordActivity } from "@/lib/services/task-activity";
 import { editableFields, type EditableTaskField } from "@/lib/tasks/permissions";
 import { unreadCounts, type ThreadCommentRow } from "@/lib/tasks/thread-watch";
@@ -51,7 +51,7 @@ function isManager(role: string): boolean {
 
 // One literal (not concatenated) so the typed client can parse the column list.
 const TASK_COLUMNS =
-  "id,title,description,status,priority,assignee_id,created_by,due_date,source,source_ref,board,phase,channel,progress,deleted_at,completed_at,created_at,updated_at";
+  "id,title,description,status,priority,assignee_id,created_by,due_date,source,source_ref,board,phase,channel,progress,parent_id,deleted_at,completed_at,created_at,updated_at";
 
 function validStatus(value: string): value is TaskStatus {
   return (TASK_STATUSES as readonly string[]).includes(value);
@@ -256,6 +256,8 @@ export async function createTask(input: {
   phase?: number | null;
   channel?: MktChannel | null;
   progress?: number | null;
+  /** Makes this a sub-task of that task (one level - a sub-task has no sub-tasks). */
+  parent_id?: string | null;
 }): Promise<CreateResult> {
   const session = await requireStaff();
 
@@ -293,6 +295,31 @@ export async function createTask(input: {
     ? (input.assignee_id ?? null)
     : session.sub;
 
+  // A sub-task lives where its parent lives (board, phase, channel) unless told otherwise,
+  // and only its parent's owners - an admin, or whoever the general task is assigned to or
+  // was opened by - may split it.
+  let parent: { id: string; board: string; phase: number | null; channel: string | null } | null = null;
+  if (input.parent_id) {
+    const { data: row, error: parentError } = await db
+      .from("tasks")
+      .select("id,board,phase,channel,parent_id,assignee_id,created_by")
+      .eq("id", input.parent_id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (parentError) {
+      console.error("tasks: parent read failed", JSON.stringify(parentError));
+      return { ok: false, error: "Create failed - check the log" };
+    }
+    if (!row) return { ok: false, error: "משימת האב לא נמצאה" };
+    if (row.parent_id) return { ok: false, error: "תת-משימה לא מתחלקת שוב - רמה אחת בלבד" };
+    if (!isManager(session.role) && row.assignee_id !== session.sub && row.created_by !== session.sub) {
+      return { ok: false, error: "רק מנהל או האחראי על המשימה מחלקים אותה" };
+    }
+    parent = { id: row.id, board: row.board, phase: row.phase, channel: row.channel };
+  }
+  const board: TaskBoard =
+    input.board ?? (parent && validBoard(parent.board) ? parent.board : defaultBoardFor(source));
+
   const { data, error } = await db
     .from("tasks")
     .insert({
@@ -304,10 +331,11 @@ export async function createTask(input: {
       due_date: input.due_date || null,
       source,
       source_ref: cleanRef,
-      board: input.board ?? "ops",
-      phase: input.phase ?? null,
-      channel: input.channel ?? null,
+      board,
+      phase: input.phase ?? (parent && board === parent.board ? parent.phase : null),
+      channel: input.channel ?? (parent && board === parent.board ? (parent.channel as MktChannel | null) : null),
       progress: input.progress ?? null,
+      parent_id: parent?.id ?? null,
     })
     .select("id")
     .single();
@@ -321,7 +349,7 @@ export async function createTask(input: {
     action: "task.create",
     entityType: "task",
     entityId: data.id,
-    changes: { title, assignee_id: assigneeId, priority: input.priority },
+    changes: { title, assignee_id: assigneeId, priority: input.priority, board, parent_id: parent?.id ?? null },
   });
   if (input.source === "price_light") invalidatePriceLight("rows");
 
@@ -609,4 +637,88 @@ export async function openTaskGapKeys(
     // Keyed by kind too: a team can need both a crest and a gallery, and one
     // task about the crest must not silently claim the gallery as handled.
     .map((ref: TaskSourceRef) => `${ref.kind}:${ref.table}:${ref.row_id}`);
+}
+
+/** Most tasks one bulk action may touch - the bar works on what a person ticked, not the board. */
+const BULK_MAX = 200;
+
+/**
+ * The bulk bar on /tasks (Alon, 28.09: "לשייך מספר משימות במכה אחת"). Admins only.
+ * Assignee and board are ONE update over the ticked ids, with an activity row per task that
+ * really changed; a status goes through setTaskStatus task by task, so gap closing and the
+ * done-mail behave exactly as for one task. Whoever receives tasks gets ONE mail listing them
+ * (notifyTasksAssigned) - never one per task, and never the admin who assigned to themself.
+ */
+export async function bulkUpdateTasks(
+  ids: string[],
+  patch: { assignee_id?: string | null; board?: TaskBoard; status?: TaskStatus },
+): Promise<{ ok: true; updated: number; mail?: TaskMailOutcome } | { ok: false; error: string }> {
+  const session = await requireStaff();
+  if (!isManager(session.role)) return { ok: false, error: "רק מנהל מעדכן כמה משימות יחד" };
+  const unique = [...new Set((ids ?? []).filter((id): id is string => typeof id === "string" && id.length > 0))];
+  if (unique.length === 0) return { ok: false, error: "לא נבחרו משימות" };
+  if (unique.length > BULK_MAX) return { ok: false, error: `עד ${BULK_MAX} משימות בפעולה אחת` };
+  if (patch.board !== undefined && !validBoard(patch.board)) return { ok: false, error: "Bad board" };
+  if (patch.status !== undefined && !validStatus(patch.status)) return { ok: false, error: "Bad status" };
+  const fieldPatch = patch.assignee_id !== undefined || patch.board !== undefined;
+  if (!fieldPatch && patch.status === undefined) return { ok: false, error: "אין מה לעדכן" };
+
+  let updated = 0;
+  let mail: TaskMailOutcome | undefined;
+
+  if (fieldPatch) {
+    const { data: before, error: beforeError } = await db
+      .from("tasks")
+      .select("id,title,assignee_id,board")
+      .in("id", unique)
+      .is("deleted_at", null);
+    if (beforeError) {
+      console.error("tasks: bulk before-read failed", JSON.stringify(beforeError));
+      return { ok: false, error: "Update failed" };
+    }
+    const rows = before ?? [];
+    if (rows.length === 0) return { ok: false, error: "המשימות לא נמצאו" };
+
+    const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (patch.assignee_id !== undefined) update.assignee_id = patch.assignee_id;
+    if (patch.board !== undefined) update.board = patch.board;
+    const { error } = await db.from("tasks").update(update).in("id", rows.map((row) => row.id));
+    if (error) {
+      console.error("tasks: bulk update failed", JSON.stringify(error));
+      return { ok: false, error: "Update failed" };
+    }
+    updated = rows.length;
+
+    for (const row of rows) {
+      for (const activity of diffActivities(row, update)) {
+        await recordActivity(row.id, session.sub, activity);
+      }
+    }
+    await logAudit({
+      action: "task.bulk_update",
+      entityType: "task",
+      changes: { ids: rows.map((row) => row.id), ...update },
+    });
+
+    // Only the tasks this person did not already have - re-assigning a task to its own
+    // assignee is no news.
+    const newAssignee = patch.assignee_id ?? null;
+    if (newAssignee && newAssignee !== session.sub) {
+      const handed = rows.filter((row) => row.assignee_id !== newAssignee).map((row) => row.title);
+      if (handed.length > 0) mail = await notifyTasksAssigned({ assigneeId: newAssignee, titles: handed });
+    }
+  }
+
+  if (patch.status !== undefined) {
+    let statusOk = 0;
+    for (const id of unique) {
+      const result = await setTaskStatus(id, patch.status);
+      if (result.ok) statusOk += 1;
+    }
+    if (statusOk === 0) return { ok: false, error: "עדכון הסטטוס נכשל" };
+    updated = Math.max(updated, statusOk);
+  }
+
+  invalidatePriceLight("rows");
+  return { ok: true, updated, mail };
 }

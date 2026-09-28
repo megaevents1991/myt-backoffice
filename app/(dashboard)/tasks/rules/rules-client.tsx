@@ -103,7 +103,8 @@ function emptyForm(): RuleFormState {
     priority: "medium",
     due_days: "",
     dow: 0,
-    board: "ops",
+    // The form opens on a price_light rule - its tasks belong on the pricing board (28.09).
+    board: "pricing",
     title: "",
     description: "",
     active: true,
@@ -218,8 +219,15 @@ export function RulesClient({
   // Switching domain clears the other domains' match keys (and custom's title/
   // description) - a football filter left behind on a creative-gaps rule would
   // be silently ignored by the generator, but confusing to see in the editor.
+  // The board follows the domain while it is still one of the two defaults (price rules ->
+  // "pricing", the rest -> "ops"); a board someone picked on purpose stays.
   const setDomain = useCallback((domain: RuleDomain) => {
-    setForm((prev) => ({ ...prev, domain, match: {}, title: "", description: "" }));
+    setForm((prev) => {
+      const priceDomain = domain === "price_light" || domain === "price_changes";
+      const board: TaskBoard =
+        prev.board === "ops" || prev.board === "pricing" ? (priceDomain ? "pricing" : "ops") : prev.board;
+      return { ...prev, domain, board, match: {}, title: "", description: "" };
+    });
   }, []);
 
   const save = useCallback(async () => {
