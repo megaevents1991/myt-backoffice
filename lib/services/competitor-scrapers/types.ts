@@ -23,6 +23,13 @@ export interface CrawlContext {
   /** Random 5-15s pause - only between paginated GETs of the same site in fetch mode. */
   pauseShort: () => Promise<void>;
   log: (msg: string) => void;
+  /**
+   * PART of the catalog failed or came back empty while the rest was fine (one of LiveEvents'
+   * two boards). `runCrawl` records the run `partial` with this note and mails - before this
+   * existed such a run read "ok", and LiveEvents' music listings went stale for two weeks
+   * unnoticed (2026-09-15..28). Optional: a details pass does not listen for it.
+   */
+  degrade?: (note: string) => void;
   dryRun: boolean;
 }
 
@@ -49,7 +56,8 @@ export interface CompetitorScraper {
    * hourly tick never picks it, `runCrawl` records `skipped` when it runs ON Vercel, and the
    * panel shows no "סרוק עכשיו". The catalog is refreshed by `scripts/crawl-local.ts` on a
    * machine with an Israeli address - it writes the same run row, so the panel and the
-   * freshness rules read it exactly like a Vercel run.
+   * freshness rules read it exactly like a Vercel run. LiveEvents too since 2026-09-28: its
+   * music board's AJAX answers Vercel with no rows (header of liveevents.ts).
    */
   crawlFrom?: "vercel" | "local";
   crawl(ctx: CrawlContext): AsyncGenerator<Listing>;

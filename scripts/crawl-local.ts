@@ -1,6 +1,6 @@
 /**
  * Crawl one competitor from THIS machine and write the result to the shared backoffice DB -
- * for sites that cannot be crawled from Vercel (`crawlFrom: "local"`, today only ISSTA: its
+ * for sites that cannot be crawled from Vercel (`crawlFrom: "local"`, ISSTA and, since 2026-09-28, LiveEvents - ISSTA's
  * league pages answer Vercel's address with HTTP 200 and no cards, an Israeli address gets
  * them). It goes through the same `runCrawl` as the hourly tick, so the run row, the listing
  * upserts, the circuit and the panel on /price-light all read a local run exactly like a

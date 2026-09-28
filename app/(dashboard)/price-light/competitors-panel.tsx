@@ -3,7 +3,7 @@
 // Crawl-status strip: one compact card per registered competitor scraper, all five on a single
 // row from `lg` up (they used to wrap 4+1, leaving an orphan card). Two kinds of card have no
 // "סרוק עכשיו": "table" mode (LiveTickets, read from live_events - no network crawl, refreshes
-// overnight from the API) and `crawlFrom: "local"` (ISSTA - the site serves Vercel's address a
+// overnight from the API) and `crawlFrom: "local"` (ISSTA, LiveEvents - the site serves Vercel's address a
 // page without its cards, so it is crawled by scripts/crawl-local.ts from an Israeli machine and
 // this screen only reads the run that leaves behind).
 import { useState } from "react";

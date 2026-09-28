@@ -1,12 +1,15 @@
 // LiveEvents package crawler. Selectors + URLs from docs/superpowers/scrapers/liveevents.md.
 // Pure parsers (parseCatalog/parseDetail) are tested on scripts/fixtures/liveevents/*.html.
 //
-// mode: "browser" - the controller's initial ruling was "fetch" (the recon doc reads as
-// fully server-rendered, no bot wall), and /matches/ + /package/ detail pages really are;
-// but /events/ hydrates its rows via a client-side WP AJAX call, so a plain fetch there
-// only returns the empty containers (see the "Addendum" section the recon doc gained while
-// building this). `fetchCatalogHtml()` below is the only place that actually drives
-// `ctx.page` (Playwright, for /events/ only) vs `ctx.fetch` (for /matches/ and detail).
+// mode: "fetch", crawled from a LOCAL (Israeli) machine (2026-09-28). /matches/ + /package/
+// detail pages are server-rendered; /events/ (music) hydrates its rows from a WP AJAX call,
+// which `fetchMusicCatalogViaAjax()` makes as plain POSTs. That call answers an Israeli
+// address (74 rows for 11.2026 on 2026-09-28) but gave Vercel ZERO music rows on every run
+// since 2026-09-15 - by Playwright (15.09) and by the POSTs (23.09) alike - while /matches/
+// kept working, and the runs were recorded "ok". The music listings aged past the 14-day
+// freshness line on 2026-09-26 and 38 music package lights fell to a false "alone". Hence
+// `crawlFrom: "local"` (scripts/crawl-local.ts, ISSTA's daily task) and no browser at all:
+// a Windows machine has no @sparticuz/chromium, and the page path never worked anyway.
 //
 // This crawler also reuses the Israeli UA rotation, which now comes via ./shared.ts (which
 // reads it from lib/services/ua.ts - a dependency-free module) so a plain `node script.ts`
@@ -255,7 +258,8 @@ export function parseLateloadMonths(shellHtml: string): { month: string; count: 
  * The /events/ shell carries one empty container per month; the site's own script fills each by
  * POSTing `action=events_table_action&month=MM.YYYY&count=N` to admin-ajax and pasting the
  * `div.line` rows it gets back. Doing the same needs no browser. Returns null when the shell
- * has no month containers or no month answered with rows - the caller then tries the browser.
+ * has no month containers or no month answered with rows - the caller counts that as a failed
+ * catalog.
  */
 async function fetchMusicCatalogViaAjax(url: string, ctx: CrawlContext): Promise<string | null> {
   const shell = await ctx.fetch(url, { headers: stealthHeaders() });
@@ -292,18 +296,15 @@ async function fetchMusicCatalogViaAjax(url: string, ctx: CrawlContext): Promise
   const html = parts.join("");
   if (!html.includes("td artist")) return null;
   ctx.log(`liveevents: music catalog via ajax - ${months.length} months, ${failed} failed`);
+  if (failed > 0) ctx.degrade?.(`music catalog: ${failed} of ${months.length} months failed`);
   return `<div class="accord-crap">${html}</div>`;
 }
 
 /**
  * The `/matches/` (sports) board is fully server-rendered (confirmed against the fixture),
  * but `/events/` (music) renders its `div.line` rows via a client-side WP AJAX call into
- * initially-empty `.accord-crap` containers - a plain `ctx.fetch` gets the empty shell.
- * That contradicts the recon doc's "no XHR / fully server-rendered" note but matches its
- * own documented fallback ("if a future crawl comes back without div.line rows ... switch
- * mode to browser"), so this scraper is `mode: "browser"` and only actually drives the
- * Playwright page for the music catalog; the sports catalog and package detail pages still
- * go through the cheaper `ctx.fetch` path since both are confirmed server-rendered.
+ * initially-empty `.accord-crap` containers - a plain GET gets the empty shell, so the music
+ * catalog is the same AJAX call made as plain POSTs (`fetchMusicCatalogViaAjax`).
  */
 async function fetchCatalogHtml(kind: "sports" | "music", url: string, ctx: CrawlContext): Promise<string> {
   if (kind === "sports") {
@@ -311,23 +312,9 @@ async function fetchCatalogHtml(kind: "sports" | "music", url: string, ctx: Craw
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.text();
   }
-  // First choice: the same WP AJAX call the page itself makes, as plain POSTs (2026-09-17). The
-  // Playwright path came back with ZERO music rows from Vercel on 2026-09-15 (607 -> 239
-  // listings, every music listing left to go stale) while this endpoint answers a plain request.
-  try {
-    const viaAjax = await fetchMusicCatalogViaAjax(url, ctx);
-    if (viaAjax) return viaAjax;
-  } catch (err) {
-    ctx.log(`liveevents: music ajax path failed (${(err as Error).message}) - trying the browser`);
-  }
-  const page = ctx.page;
-  if (!page) throw new Error("liveevents: music catalog needs a browser page");
-  // Playwright resolves an HTTP error page as a normal load - check the status like the fetch path does.
-  const response = await page.goto(url, { waitUntil: "domcontentloaded" });
-  if (response && response.status() >= 400) throw new Error(`HTTP ${response.status()}`);
-  await page.waitForSelector(".accord-crap div.line", { timeout: 20_000 }).catch(() => undefined);
-  await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => undefined);
-  return page.content();
+  const viaAjax = await fetchMusicCatalogViaAjax(url, ctx);
+  if (!viaAjax) throw new Error("music catalog: no month answered with rows");
+  return viaAjax;
 }
 
 export const liveevents: CompetitorScraper = {
@@ -336,10 +323,9 @@ export const liveevents: CompetitorScraper = {
   kinds: ["sports", "music"],
   // Weekly (168h) - see the note on golasso.ts: one site per tick, each site once a week.
   intervalHours: 168,
-  mode: "browser",
-  // Only the /events/ (music) catalog needs the page; the /package/ detail pages below are
-  // plain stealth fetches, so the crawl loop paces them with pauseShort() (final review, I2).
-  detailMode: "fetch",
+  mode: "fetch",
+  // See the header: the music catalog answers only an Israeli address.
+  crawlFrom: "local",
   async *crawl(ctx: CrawlContext): AsyncGenerator<Listing> {
     const { toUsd } = await import("./livetickets-api.ts");
     const failures: string[] = [];
@@ -354,12 +340,17 @@ export const liveevents: CompetitorScraper = {
         // Every catalog failing is a blocked/broken site, not an empty one: throw so the run is
         // recorded as such (and the circuit can open) instead of a clean crawl with no listings.
         if (failures.length === CATALOG_URLS.length) throw new Error(`liveevents: every catalog page failed (${failures.join("; ")})`);
+        // One catalog failing is half the site going stale - never a quiet "ok" (2026-09-28).
+        ctx.degrade?.(`${kind} catalog failed: ${msg}`);
         await ctx.pause();
         continue;
       }
       const listings = parseCatalog(html, url);
       ctx.log(`liveevents: ${url} -> ${listings.length} listings`);
-      if (listings.length === 0) ctx.log(`liveevents: ZERO listings on ${url} - selectors may have changed`);
+      if (listings.length === 0) {
+        ctx.log(`liveevents: ZERO listings on ${url} - selectors may have changed`);
+        ctx.degrade?.(`${kind} catalog parsed 0 listings`);
+      }
       for (const l of listings) {
         yield {
           ...l,

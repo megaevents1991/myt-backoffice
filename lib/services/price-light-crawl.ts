@@ -542,6 +542,7 @@ export async function runCrawl(
 
   const nowIso = new Date().toISOString();
   const ids: number[] = [];
+  const degraded: string[] = [];
   // Every plain GET is bounded like a page load. Node's own fetch waits ~5 minutes on a stalled
   // socket - longer than the function's maxDuration - and a site that stalls on purpose (an anti-bot
   // tactic) would otherwise kill the run before it can record itself as failed.
@@ -554,6 +555,7 @@ export async function runCrawl(
     // `pages` now just marks that the (one) catalog crawl ran - detailPages counts enrichment
     // separately and both are folded together when the run row is written (fix round 1, minor).
     log: (m) => console.log(`[price-light-crawl:${competitor}] ${m}`), dryRun,
+    degrade: (note) => { degraded.push(note); console.warn(`[price-light-crawl:${competitor}] degraded: ${note}`); },
   });
 
   const work = async (page: CrawlContext["page"]) => {
@@ -667,14 +669,23 @@ export async function runCrawl(
       if (!dryRun && (await circuitOpen(competitor))) await alert(competitor, `error: ${summary.note}`);
     }
     if (summary.status === "running") summary.status = "ok";
-    if (summary.status !== "error" && summary.prevListings != null && summary.listings < summary.prevListings * DROP_ALARM_RATIO) {
+    // A part of the catalog that failed or parsed empty (ctx.degrade) makes the run partial, with
+    // the reason in the note - the rest of the listings still count as a good crawl.
+    const degradeNote = degraded.length > 0 ? degraded.join(" | ") : null;
+    if (degradeNote && summary.status !== "error") {
+      if (summary.status === "ok") summary.status = "partial";
+      summary.note = summary.note ? `${summary.note} | ${degradeNote}` : degradeNote;
+    }
+    const dropped = summary.status !== "error" && summary.prevListings != null && summary.listings < summary.prevListings * DROP_ALARM_RATIO;
+    if (dropped) {
       summary.status = "partial";
       // Don't clobber a note the failed-upsert check above may have already set - append instead
       // (fix round 2, out-of-scope observation from the re-reviewer).
       const dropNote = `listings dropped ${summary.prevListings} -> ${summary.listings} - site structure may have changed`;
       summary.note = summary.note ? `${summary.note} | ${dropNote}` : dropNote;
-      if (!dryRun) await alert(competitor, summary.note);
     }
+    // One mail for either reason, not two.
+    if (!dryRun && summary.status !== "error" && (dropped || degradeNote) && summary.note) await alert(competitor, summary.note);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     summary.status = /403|captcha|blocked|access denied|429/i.test(msg) ? "blocked" : "error";
