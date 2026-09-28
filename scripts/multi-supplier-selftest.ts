@@ -147,6 +147,10 @@ assert.equal(
   false,
 );
 assert.equal(toLiveTicketsCategory(raw).nonInstantOnly, false);
+// "doubles" with no group size (event 717) seat in pairs; standing (GA) promises nothing
+assert.equal(toLiveTicketsCategory({ ...raw, seatingMethodId: 3, seatingGroupMAXSize: null }).seatingGroupMax, 2);
+assert.equal(toLiveTicketsCategory({ ...raw, seatingMethodId: 4, seatingGroupMAXSize: 4 }).seatingGroupMax, 4);
+assert.equal(toLiveTicketsCategory({ ...raw, seatingMethodId: 1, seatingGroupMAXSize: null }).seatingGroupMax, null);
 assert.equal(
   toLiveTicketsCategory({ ...raw, hebComments: "אדום במפה, לאורך המגרש קומה 3" }).description,
   "לאורך המגרש קומה 3",

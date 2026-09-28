@@ -25,6 +25,21 @@ const CURRENCY_BY_CODE: Record<number, SupplierCurrency> = {
 
 /** `seatingMethodId` 2 = singles: no promise the party sits together. */
 const SINGLES_SEATING_METHOD = 2;
+/** `seatingMethodId` 3 = "doubles": seated in pairs, with no group size given. */
+const DOUBLES_SEATING_METHOD = 3;
+
+/**
+ * A "doubles" category sends no `seatingGroupMAXSize` but seats in pairs - read
+ * as 2 (main then promises a pair together, four as two pairs, an odd party
+ * nothing; Dor 28.09, event 717). Same rule as main lib/livetickets-quantity.ts
+ * `seatingGroupMaxOf`.
+ */
+export const seatingGroupMaxOf = (raw: {
+  seatingMethodId?: number;
+  seatingGroupMAXSize?: number | null;
+}): number | null =>
+  raw.seatingGroupMAXSize ??
+  (raw.seatingMethodId === DOUBLES_SEATING_METHOD ? 2 : null);
 
 /** Raw category - the live API and the `live_events` snapshot name comments differently. */
 export interface RawLiveTicketsCategory {
@@ -105,7 +120,7 @@ export function toLiveTicketsCategory(
     ),
     cost: raw.cost ?? 0,
     maxPerOrder: raw.maxTicketAmount ?? 0,
-    seatingGroupMax: raw.seatingGroupMAXSize ?? null,
+    seatingGroupMax: seatingGroupMaxOf(raw),
     sellable: reason === "",
     nonInstantOnly: reason === NOT_INSTANT_REASON,
     blockedReason: reason,
