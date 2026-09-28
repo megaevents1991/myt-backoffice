@@ -578,6 +578,16 @@ export default function ReservationDetailsPage({
                       </p>
                     </div>
                   )}
+                  {evt.own_stock && (
+                    <div className="mt-4 rounded-md border border-success/40 bg-success-muted p-3 text-sm">
+                      <p className="font-semibold">Our stock - nothing to buy</p>
+                      <p>
+                        Allocate {evt.number_of_ticket} of the seats we hold
+                        {evt.zone_label ? ` · zone shown: ${evt.zone_label}` : ""}
+                        {evt.id ? ` · ticket id ${evt.id}` : ""}.
+                      </p>
+                    </div>
+                  )}
                   {evt.non_instant && (
                     <div className="mt-4 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
                       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

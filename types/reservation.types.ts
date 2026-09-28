@@ -23,6 +23,9 @@ export type ReservationEventOrderInfoItem = {
   // The ticket was sold although the supplier does not confirm it instantly
   // (EventTicket.nonInstant). Ops must confirm with the supplier by hand.
   non_instant?: boolean;
+  // One of OUR OWN seats (EventTicket.stock): nothing to buy - ops allocate
+  // from the seats we hold. Set by main's confirm-order from the event.
+  own_stock?: boolean;
   // How the party was promised to sit when the order page offered a choice
   // (all together vs pairs + a triple): "together" | "split".
   seating_choice?: string;

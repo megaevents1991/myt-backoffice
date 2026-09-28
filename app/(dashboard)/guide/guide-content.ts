@@ -485,6 +485,10 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "From any provider row: open the single-event page to create one event, or multi-select rows for Batch create / Send to factory.",
         "מכל שורת ספק: פותחים את עמוד האירוע הבודד ליצירה אחת, או מסמנים כמה שורות ל־Batch create / שליחה למפעל.",
       ),
+      t(
+        "Our own tickets: on a TixStock event, Suppliers & zones → \"Our own ticket\" adds seats WE hold - name, price (USD, the ticket part), number of seats, zone. The site sells them beside the suppliers (in a shared zone the cheaper offer wins) and stops when the seats are gone: every live reservation of that ticket takes seats (Cancelled / Lost / 24Save don't), and checkout re-counts before it books. The board shows \"sold X · left Y\"; the order mail and reservation page say \"our stock - nothing to buy\".",
+        "כרטיסים שלנו: באירוע TixStock, ב-Suppliers & zones ← \"Our own ticket\" מוסיפים מושבים שמוחזקים אצלנו - שם, מחיר (דולר, חלק הכרטיס), מספר מושבים, אזור. האתר מוכר אותם לצד הספקים (באזור משותף ההצעה הזולה מנצחת) ועוצר כשהמושבים נגמרים: כל הזמנה חיה של הכרטיס תופסת מושבים (Cancelled / Lost / 24Save לא), והקופה סופרת שוב לפני שהיא מזמינה. הלוח מראה \"sold X · left Y\"; מייל ההזמנה ועמוד ההזמנה אומרים \"מלאי שלנו - אין מה לקנות\".",
+      ),
     ],
     links: [
       { label: t("Sports (XS2E)", "ספורט (XS2E)"), href: "/sports-events" },

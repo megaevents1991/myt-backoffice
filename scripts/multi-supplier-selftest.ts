@@ -23,6 +23,7 @@ import {
   suggestZoneTiered,
 } from "../lib/venue-maps/zone-suggest";
 import { toLiveTicketsCategory } from "../lib/services/livetickets-offers";
+import { hasOwnStock, holdsSeats, seatsHeldByTicket, stockLeft } from "../lib/own-stock";
 import { applyLiveTicketsStock } from "../lib/services/attached-suppliers-sync";
 import type { EventTicket } from "../types/app.types";
 
@@ -59,6 +60,28 @@ assert.equal(moved.id, "new-id");
 assert.equal(moved.eid, "01next");
 assert.equal(moved.category, tx.category);
 assert.equal("eid" in ticketForFixture(tx, "new-id", null), false); // never the old fixture's id
+
+/* our own stock: seats left = stock - seats held by live reservations */
+const ours = ticket({ id: "own1", supplier: "static", stock: 10 });
+assert.equal(hasOwnStock(ours), true);
+assert.equal(hasOwnStock(ticket({ supplier: "static" })), false); // no stock = not limited
+assert.equal(hasOwnStock(ticket({ stock: 5 })), false); // stock on a supplier ticket means nothing
+const held = seatsHeldByTicket([
+  { status: "Paid", event_order_info: { id: "own1", number_of_ticket: 4 } },
+  { status: "Pending", event_order_info: { id: "own1", number_of_ticket: "2" } },
+  { status: " cancelled ", event_order_info: { id: "own1", number_of_ticket: 3 } }, // released
+  { status: "24Save", event_order_info: { id: "own1", number_of_ticket: 3 } }, // a price hold
+  { status: "Lost", event_order_info: { id: "own1", number_of_ticket: 1 } },
+  { status: "Paid", event_order_info: { events: [{ id: "own1", number_of_ticket: 1 }] } }, // bundle shape
+  { status: "Paid", event_order_info: { id: "tx1", number_of_ticket: 2 } },
+  { status: "Paid", event_order_info: null },
+]);
+assert.equal(held.get("own1"), 7);
+assert.equal(stockLeft(ours, held), 3);
+assert.equal(stockLeft({ ...ours, stock: 5 }, held), 0); // oversold never goes negative
+assert.equal(stockLeft(tx, held), null);
+assert.equal(holdsSeats("Follow-up"), true);
+assert.equal(holdsSeats(null), true);
 
 assert.equal(normalizeSupplierCategory("CATEGORÍA 2 (CAT2) - FONDO"), "categoria 2 fondo");
 assert.equal(normalizeSupplierCategory("Categoría 2 Fondo"), "categoria 2 fondo");

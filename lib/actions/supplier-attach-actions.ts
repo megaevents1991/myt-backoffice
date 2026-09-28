@@ -18,6 +18,7 @@ import {
   type LiveTicketsCategory,
   type RawLiveTicketsCategory,
 } from "@/lib/services/livetickets-offers";
+import { seatsHeldByTicket, type StockReservation } from "@/lib/own-stock";
 import type { EventTicket } from "@/types/app.types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -221,6 +222,33 @@ export async function buildLiveTicketsDrafts(
         available: category.sellable,
       },
     })),
+  };
+}
+
+/**
+ * Seats held per ticket id by the live reservations of one event - what the
+ * panel subtracts from an own ticket's stock ("sold X · left Y"). Same count
+ * main enforces at checkout (lib/own-stock.ts).
+ */
+export async function getOwnStockHeld(
+  eventId: number,
+): Promise<Result<Record<string, number>>> {
+  await requireStaff();
+  if (!Number.isInteger(eventId) || eventId <= 0) {
+    return { ok: true, data: {} }; // a new event has no reservations yet
+  }
+  const { data, error } = await db
+    .from("reservations")
+    .select("status,event_order_info")
+    .eq("event_id", eventId)
+    .is("is_deleted", null);
+  if (error) {
+    console.error("getOwnStockHeld:", JSON.stringify(error));
+    return { ok: false, error: "Could not count the seats sold" };
+  }
+  return {
+    ok: true,
+    data: Object.fromEntries(seatsHeldByTicket((data ?? []) as StockReservation[])),
   };
 }
 

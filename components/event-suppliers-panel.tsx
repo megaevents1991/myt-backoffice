@@ -78,15 +78,20 @@ import {
   buildLiveTicketsDrafts,
   findLiveTicketsCandidates,
   getLiveTicketsMapUrl,
+  getOwnStockHeld,
   type LiveTicketsCandidate,
   type LiveTicketsDraft,
 } from "@/lib/actions/supplier-attach-actions";
+import { hasOwnStock, stockLeft } from "@/lib/own-stock";
 
 const NO_ZONE = "__none__";
 const NEW_VENUE = "__new__";
 
-/** The zones board, left to right: our own tickets, then the supplier we attach. */
-const BOARD_COLUMNS = ["Ours · TixStock", "LiveTickets"] as const;
+/** The zones board, left to right: TixStock, the supplier we attach, our own stock. */
+const BOARD_COLUMNS = ["TixStock", "LiveTickets", "Our stock"] as const;
+
+/** Map colour of our own tickets - the brand forest. */
+const OWN_TICKET_COLOR = "rgb(10, 26, 20)";
 
 const ZONE_FILL = "#C2FFD8";
 const ACTIVE_ZONE_FILL = "#0E6F57";
@@ -653,8 +658,9 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     // Sent as "" it deleted the mapping from `venue_maps.supplier_categories`: the "Apply venue
     // template" button, which is counted from that same mapping, appeared and vanished a moment
     // later with nothing left to restore - here and at the next event in that stadium. Only a
-    // zone that was CHOSEN is remembered.
-    if (!zoneId) return;
+    // zone that was CHOSEN is remembered. Our own tickets are placed by hand per game - the
+    // venue template is for suppliers' category names.
+    if (!zoneId || hasOwnStock(ticket)) return;
     rememberInTemplate(ticketSupplier(ticket, event.type), {
       [ticket.supplierCategory || ticket.category]: zoneId,
     });
@@ -928,11 +934,104 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     }));
   };
 
+  /* ── 5. Our own tickets ─────────────────────────────────────────── */
+
+  // Seats WE hold for this game (`supplier: "static"` + `stock`). Main sells
+  // them beside the suppliers - in their zone, the cheaper offer wins - and
+  // stops at the stock: seats left = stock - seats held by live reservations,
+  // checked again at checkout (lib/own-stock.ts, same count here and there).
+  const [ownOpen, setOwnOpen] = useState(false);
+  const [ownCategory, setOwnCategory] = useState("");
+  const [ownDescription, setOwnDescription] = useState("");
+  const [ownPrice, setOwnPrice] = useState("");
+  const [ownStock, setOwnStock] = useState("");
+  const [ownZone, setOwnZone] = useState(NO_ZONE);
+  const [held, setHeld] = useState<Map<string, number>>(new Map());
+
+  const ownTicketCount = event.tickets_and_rates.filter(hasOwnStock).length;
+  useEffect(() => {
+    if (ownTicketCount === 0 || !event.id) return;
+    let cancelled = false;
+    getOwnStockHeld(event.id)
+      .then((result) => {
+        if (!cancelled && result.ok) setHeld(new Map(Object.entries(result.data)));
+      })
+      .catch((error) => console.error("own stock count failed", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [event.id, ownTicketCount]);
+
+  const ownPriceValue = Number(ownPrice);
+  const ownStockValue = Number(ownStock);
+
+  const handleAddOwnTicket = async () => {
+    if (ownProblems.length > 0) return;
+    const zoneId = ownZone === NO_ZONE ? undefined : ownZone;
+    if (!(await ensureZoneSaved(zoneId))) return;
+    const category = ownCategory.trim();
+    const ticket: EventTicket = withZone(
+      {
+        id: crypto.randomUUID(),
+        supplier: "static",
+        vendor: "Mega Events",
+        category,
+        description: ownDescription.trim(),
+        price: Math.round(ownPriceValue),
+        stock: ownStockValue,
+        colorOnTheMap: OWN_TICKET_COLOR,
+        available: true,
+      },
+      zoneId,
+    );
+    onEventChange((prev) => ({
+      ...prev,
+      tickets_and_rates: [...prev.tickets_and_rates, ticket],
+    }));
+    setOwnCategory("");
+    setOwnDescription("");
+    setOwnPrice("");
+    setOwnStock("");
+    setOwnZone(NO_ZONE);
+    setOwnOpen(false);
+    toast({
+      title: "Our ticket added",
+      description: `${ownStockValue} seat(s) of "${category}". Save the event to put them on sale.`,
+    });
+  };
+
+  /** Price / stock of one of our own tickets, edited in place. */
+  const updateOwnTicket = (
+    ticketId: string,
+    patch: Partial<Pick<EventTicket, "price" | "stock" | "available">>,
+  ) => {
+    onEventChange((prev) => ({
+      ...prev,
+      tickets_and_rates: prev.tickets_and_rates.map((t) =>
+        t.id === ticketId ? { ...t, ...patch } : t,
+      ),
+    }));
+  };
+
+  const removeOwnTicket = (ticketId: string) => {
+    onEventChange((prev) => ({
+      ...prev,
+      tickets_and_rates: prev.tickets_and_rates.filter((t) => t.id !== ticketId),
+    }));
+  };
+
   /* ── Render ─────────────────────────────────────────────────────── */
 
   // Zones being edited count: a zone added or renamed a moment ago is offered
   // at once and saved the moment a ticket takes it (`ensureZoneSaved`).
   const canZone = isOurMap && zones.length > 0;
+  // What still stops "Add" on our own ticket - shown, never guessed.
+  const ownProblems = [
+    !ownCategory.trim() && "a name",
+    !(Number.isFinite(ownPriceValue) && ownPriceValue > 0) && "a price above $0",
+    !(Number.isInteger(ownStockValue) && ownStockValue > 0) && "a whole number of seats",
+    canZone && ownZone === NO_ZONE && "a zone",
+  ].filter((problem): problem is string => !!problem);
   const hiddenTickets = event.tickets_and_rates.filter(
     (t) => ticketSupplier(t, event.type) !== "tixstock" && !t.zoneId,
   );
@@ -954,7 +1053,11 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     ? drafts.filter((d) => !attachedIds.has(d.ticket.id))
     : [];
   const columnOf = (ticket: EventTicket) =>
-    ticketSupplier(ticket, event.type) === "livetickets" ? 1 : 0;
+    hasOwnStock(ticket)
+      ? 2
+      : ticketSupplier(ticket, event.type) === "livetickets"
+        ? 1
+        : 0;
   const boardRows: { key: string; zone: VenueZone | null }[] = [
     ...zones.map((zone) => ({ key: zone.id, zone })),
     { key: NO_ZONE, zone: null },
@@ -969,6 +1072,66 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
   const suggestedCount = boardDrafts.filter(
     (d) => draftZoneOrigin[d.ticket.id] === "strong" || draftZoneOrigin[d.ticket.id] === "weak",
   ).length;
+
+  /** Price, seats and what is left of one of our own tickets. */
+  const renderOwnStock = (ticket: EventTicket) => {
+    const sold = held.get(ticket.id) ?? 0;
+    const left = stockLeft(ticket, held) ?? 0;
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <label className="flex items-center gap-1">
+          $
+          <Input
+            type="number"
+            min={1}
+            className="h-8 w-20"
+            value={ticket.price}
+            onChange={(e) =>
+              updateOwnTicket(ticket.id, {
+                price: Math.max(0, Math.round(Number(e.target.value) || 0)),
+              })
+            }
+          />
+        </label>
+        <label className="flex items-center gap-1">
+          Seats
+          <Input
+            type="number"
+            min={0}
+            className="h-8 w-20"
+            value={ticket.stock ?? 0}
+            onChange={(e) =>
+              updateOwnTicket(ticket.id, {
+                stock: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+              })
+            }
+          />
+        </label>
+        <span className="tabular-nums text-muted-foreground">
+          sold {sold} · left {left}
+        </span>
+        {left === 0 && <Badge variant="outline">Sold out</Badge>}
+        {(ticket.stock ?? 0) < sold && (
+          <span className="text-amber-700">below the seats already sold</span>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8"
+          disabled={sold > 0}
+          title={
+            sold > 0
+              ? `${sold} seat(s) already sold - set the seats to what you still hold instead`
+              : "Remove this ticket"
+          }
+          onClick={() => removeOwnTicket(ticket.id)}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+  };
 
   const renderTicket = (ticket: EventTicket) => {
     const suggestion = !zoneExists(ticket.zoneId)
@@ -1031,6 +1194,7 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
             </Button>
           )}
         </div>
+        {hasOwnStock(ticket) && renderOwnStock(ticket)}
       </div>
     );
   };
@@ -1290,6 +1454,14 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
               >
                 <Plus className="mr-1 h-4 w-4" /> Add LiveTickets tickets
               </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setOwnOpen((open) => !open)}
+              >
+                <Plus className="mr-1 h-4 w-4" /> Our own ticket
+              </Button>
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -1297,6 +1469,87 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
             prices refresh automatically; a new category at the supplier is
             never published on its own.
           </p>
+
+          {ownOpen && (
+            <div className="space-y-3 rounded-md border p-3">
+              <p className="text-sm text-muted-foreground">
+                Seats we hold ourselves for this game. The site sells them next
+                to the suppliers - in the same zone the cheaper offer wins - and
+                stops at the number of seats: every live reservation of this
+                ticket (not Cancelled / Lost / 24Save) takes seats, and checkout
+                re-counts before it books.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_110px_110px_minmax(0,1.5fr)]">
+                <Input
+                  dir="auto"
+                  placeholder="Ticket name, e.g. לאורך המגרש - קומה 1"
+                  value={ownCategory}
+                  onChange={(e) => setOwnCategory(e.target.value)}
+                />
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="Price $"
+                  value={ownPrice}
+                  onChange={(e) => setOwnPrice(e.target.value)}
+                />
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  placeholder="Seats"
+                  value={ownStock}
+                  onChange={(e) => setOwnStock(e.target.value)}
+                />
+                <Select
+                  value={ownZone}
+                  onValueChange={setOwnZone}
+                  disabled={!canZone}
+                >
+                  <SelectTrigger dir="rtl">
+                    <SelectValue placeholder="Zone" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_ZONE}>— Choose zone —</SelectItem>
+                    {zoneSelectItems}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Input
+                dir="auto"
+                placeholder="Description the customer sees (optional)"
+                value={ownDescription}
+                onChange={(e) => setOwnDescription(e.target.value)}
+              />
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                {ownProblems.length > 0 && (
+                  <span className="text-sm text-muted-foreground">
+                    Needs {ownProblems.join(", ")}.
+                  </span>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setOwnOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void handleAddOwnTicket()}
+                  disabled={ownProblems.length > 0 || savingZones}
+                >
+                  Add
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                The price is the ticket part of the package in USD, like every
+                other ticket here - the site adds its markup on top.
+              </p>
+            </div>
+          )}
 
           {attachOpen && (
             <div className="space-y-4 rounded-md border p-3">
@@ -1659,7 +1912,7 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
             {boardRows.map(({ key, zone }) => {
               const tickets = ticketsIn(zone);
               if (!zone && tickets.length === 0) return null;
-              const columns: [ReactNode[], ReactNode[]] = [[], []];
+              const columns: [ReactNode[], ReactNode[], ReactNode[]] = [[], [], []];
               for (const ticket of tickets) {
                 columns[columnOf(ticket)].push(renderTicket(ticket));
               }
@@ -1680,9 +1933,10 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
                     </span>
                   </div>
                   {/* Left to right (Alon 23.09): our map with this zone
-                      painted, our TixStock tickets, then LiveTickets' own map
-                      beside their tickets - so every match can be checked by eye. */}
-                  <div className="grid gap-3 p-2 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)]">
+                      painted, the TixStock tickets, LiveTickets' own map beside
+                      their tickets - so every match can be checked by eye - and
+                      the seats we hold ourselves. */}
+                  <div className="grid gap-3 p-2 lg:grid-cols-[160px_repeat(3,minmax(0,1fr))]">
                     <div className="space-y-1">
                       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                         Our map

@@ -470,6 +470,10 @@ export type EventTicket = {
   // (LiveTickets `apiImmediatePurchase` false). INTERNAL ONLY - the customer
   // sees an ordinary ticket; the backoffice warns on the event and the order.
   nonInstant?: boolean;
+  // Our own seats (`supplier: "static"`, 2026-09-28): how many we hold for this
+  // game. Seats left = stock - seats held by live reservations (lib/own-stock.ts);
+  // absent = not stock-limited. Synced with main lib/app.types.ts.
+  stock?: number;
 };
 
 export type OrderTicket = Omit<EventTicket, "description" | "colorOnTheMap"> & {
