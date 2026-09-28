@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { OrderHotel } from "@/types/app.types";
+import { shortPlace } from "@/lib/lodging";
 import {
   Collapsible,
   CollapsibleContent,
@@ -965,15 +966,18 @@ export default function ReservationDetailsPage({
                   <div>
                     <p className="text-sm font-medium">Meal</p>
                     <p className="text-lg">
-                      {reservation.hotel_order_info?.rate?.meal_data
-                        ?.has_breakfast
-                        ? "Includes Breakfast"
-                        : "No Meal Included"}
+                      {(reservation.hotel_segments?.length ?? 0) > 1
+                        ? "Per hotel - see the Meal column above"
+                        : reservation.hotel_order_info?.rate?.meal_data
+                              ?.has_breakfast
+                          ? "Includes Breakfast"
+                          : "No Meal Included"}
                     </p>
                     {/* Breakfast bought as an upsell on the order summary -
                         the rate above already includes it; this flags the
                         paid delta so ops knows it was an add-on. */}
-                    {reservation.hotel_order_info?.breakfast_upgrade && (
+                    {(reservation.hotel_segments?.length ?? 0) <= 1 &&
+                      reservation.hotel_order_info?.breakfast_upgrade && (
                       <p className="text-sm text-muted-foreground">
                         ארוחת בוקר נוספה כשדרוג · +$
                         {Number(
@@ -1191,6 +1195,7 @@ function SplitStayTable({ segments }: { segments: OrderHotel[] }) {
               <TableHead>City</TableHead>
               <TableHead>Dates</TableHead>
               <TableHead>Hotel</TableHead>
+              <TableHead>Meal</TableHead>
               <TableHead className="text-right">Price</TableHead>
             </TableRow>
           </TableHeader>
@@ -1199,7 +1204,7 @@ function SplitStayTable({ segments }: { segments: OrderHotel[] }) {
               <TableRow key={`${seg.id}-${i}`}>
                 <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                 <TableCell className="whitespace-nowrap font-medium" dir="auto">
-                  {seg.cityName ?? seg.city ?? "-"}
+                  {seg.cityName ? shortPlace(seg.cityName) : seg.city ?? "-"}
                 </TableCell>
                 <TableCell className="whitespace-nowrap tabular-nums">
                   {fmt(seg.checkin)} → {fmt(seg.checkout)}
@@ -1214,6 +1219,20 @@ function SplitStayTable({ segments }: { segments: OrderHotel[] }) {
                   </p>
                   {seg.address && (
                     <p className="text-xs text-muted-foreground">{seg.address}</p>
+                  )}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {seg.rate?.meal_data?.has_breakfast ? (
+                    <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                      Breakfast
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">No meal</span>
+                  )}
+                  {seg.breakfast_upgrade && (
+                    <p className="text-xs text-muted-foreground">
+                      added +${Number(seg.breakfast_upgrade.delta_usd).toFixed(0)}
+                    </p>
                   )}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">

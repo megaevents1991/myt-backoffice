@@ -64,8 +64,14 @@ export function lodgingLocation(e: LodgingEvent, city: LodgingCity): LodgingPoin
   return e.location;
 }
 
+/** "לונדון, בריטניה" → "לונדון": locations are named "City, Country"; the
+ *  lodging surfaces show the city alone (Alon 25.09). */
+export function shortPlace(name: string | null | undefined): string {
+  return (name ?? "").split(",")[0].trim();
+}
+
 export function cityName(e: LodgingEvent, city: LodgingCity): string {
-  return lodgingLocation(e, city).name;
+  return shortPlace(lodgingLocation(e, city).name);
 }
 
 /** Cities the hotel step offers, in display order. Without a real event city everything collapses to the flight city. */
