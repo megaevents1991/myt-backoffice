@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {
   allNights, defaultCity, defaultSplit, flipNight, hasEventCity, lodgingLocation, lodgingProblems,
-  nightsBetween, offeredCities, refitNights, segmentsFromNights, splitOffered,
+  nightsBetween, offeredCities, proposedSplit, refitNights, segmentsFromNights, splitOffered,
 } from "../lib/lodging";
 
 const london = { name: "לונדון, בריטניה", latitude: 51.509865, longitude: -0.118092, city_iata: "LON" };
@@ -38,6 +38,13 @@ const split1 = defaultSplit({ ...base, event_location: liverpool, split_default_
 assert.deepEqual(split1.map((n) => n.city), ["flight", "flight", "event", "flight"]);
 const late = defaultSplit({ ...base, date: "2026-10-20", event_location: liverpool }, "2026-10-13", "2026-10-17");
 assert.deepEqual(late.map((n) => n.city), ["flight", "flight", "event", "event"], "event after the window → last nights");
+
+// "פיצול מלונות" (hotel step, 28.09): the default split, always two cities
+const ev = { ...base, event_location: liverpool, lodging_mode: "choice_split" };
+assert.deepEqual(proposedSplit(ev, "2026-10-13", "2026-10-17"), split2, "a normal stay = the default split");
+assert.deepEqual(proposedSplit(ev, "2026-10-14", "2026-10-16").map((n) => n.city), ["flight", "event"], "2 nights both in the event city → first one back to the flight city");
+assert.deepEqual(proposedSplit(ev, "2026-10-15", "2026-10-17").map((n) => n.city), ["event", "flight"], "already two cities → unchanged");
+assert.deepEqual(proposedSplit(ev, "2026-10-15", "2026-10-16").map((n) => n.city), ["event"], "one night = no split to offer");
 
 // Segments
 const segs = segmentsFromNights(split2);

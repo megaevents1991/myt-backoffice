@@ -140,6 +140,17 @@ export function defaultSplit(e: LodgingEvent, checkin: string, checkout: string)
   return nights.map((date, i) => ({ date, city: evNights.has(i) ? "event" : "flight" }));
 }
 
+/**
+ * What the hotel step's "פיצול מלונות" lays out (Dor + Alon 28.09): the default split,
+ * except that a stay so short the default fills every night keeps its first night in the
+ * flight city - the button always means two cities. Under 2 nights there is no split.
+ */
+export function proposedSplit(e: LodgingEvent, checkin: string, checkout: string): NightAssign[] {
+  const nights = defaultSplit(e, checkin, checkout);
+  if (nights.length < 2 || nights.some((n) => n.city === "flight")) return nights;
+  return nights.map((n, i) => (i === 0 ? { ...n, city: "flight" as LodgingCity } : n));
+}
+
 /** Consecutive nights in one city → one segment. */
 export function segmentsFromNights(nights: NightAssign[]): StaySegment[] {
   const out: StaySegment[] = [];
