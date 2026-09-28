@@ -3,22 +3,21 @@
 // the same building blocks the wizard uses - nearest-iata, stadium memory,
 // live base-price quotes. Whatever stays empty is reported in `missing` so
 // the review grid can highlight exactly the human work left.
-import type { Event } from "@/types/app.types";
-import type { DraftMissingField } from "@/types/factory.types";
+import type { DraftMissingField, DraftPayload } from "@/types/factory.types";
 import { nearestIataFor } from "@/lib/services/nearest-location";
 import { findVenueMemory } from "@/lib/services/venue-memory";
 import { quoteFlight, quoteHotel } from "@/lib/services/price-quote";
 
 export interface BuiltDraft {
-  payload: Omit<Event, "id">;
+  payload: DraftPayload;
   missing: DraftMissingField[];
 }
 
 export async function buildDraftPayload(
-  input: Omit<Event, "id">,
+  input: DraftPayload,
 ): Promise<BuiltDraft> {
   // jsonb round-trip clone: the builder never mutates the stored payload.
-  const payload = JSON.parse(JSON.stringify(input)) as Omit<Event, "id">;
+  const payload = JSON.parse(JSON.stringify(input)) as DraftPayload;
   const missing: DraftMissingField[] = [];
 
   // 1) city_iata from venue coords (artist/tour + providers without iata).
@@ -29,13 +28,17 @@ export async function buildDraftPayload(
   }
   if (!payload.location.city_iata) missing.push("city_iata");
 
-  // 2) Stadium memory for empty ticket structures.
+  // 2) Stadium memory for empty ticket structures - same seat map, copies
+  //    stamped with THIS fixture's TixStock id.
   if (payload.tickets_and_rates.length === 0) {
-    const memory = await findVenueMemory(
-      payload.location?.name ?? "",
-      latitude ?? 0,
-      longitude ?? 0,
-    ).catch(() => null);
+    // A TixStock draft's location.name is still TixStock's venue name here.
+    const tixstock = payload.type === "tx_event" && !!payload.source_event_id;
+    const memory = await findVenueMemory({
+      mapUrl: payload.map_image_url ?? "",
+      eventType: payload.type,
+      supplierEventId: tixstock ? (payload.source_event_id ?? null) : null,
+      supplierVenueName: tixstock ? (payload.location?.name ?? null) : null,
+    }).catch(() => null);
     if (memory) payload.tickets_and_rates = memory.tickets;
   }
   if (payload.tickets_and_rates.length === 0) missing.push("tickets");

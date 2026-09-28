@@ -2,9 +2,11 @@
 //   npx tsx --env-file=.env.local scripts/multi-supplier-selftest.ts
 import assert from "node:assert/strict";
 import {
+  carriesToAnotherFixture,
   normalizeSupplierCategory,
   supplierEventId,
   supplierPriceUsd,
+  ticketForFixture,
   ticketSupplier,
 } from "../lib/suppliers";
 import {
@@ -44,6 +46,19 @@ assert.equal(ticketSupplier(tx, "sports_event"), "static");
 assert.equal(supplierEventId([lt, tx], "tixstock", "tx_event"), "01kv");
 assert.equal(supplierEventId([lt, tx], "livetickets", "tx_event"), "2326006");
 assert.equal(supplierEventId([tx], "livetickets", "tx_event"), null);
+
+/* what may move to ANOTHER fixture (batch "Save & Next", stadium memory) */
+assert.equal(carriesToAnotherFixture(tx, "tx_event"), true);
+assert.equal(carriesToAnotherFixture(lt, "tx_event"), false);
+assert.equal(carriesToAnotherFixture(ticket({ supplier: "static" }), "tx_event"), false); // our own seats
+assert.equal(carriesToAnotherFixture(ticket({}), "sports_live_event_dynamic"), false); // LiveTickets ids
+assert.equal(carriesToAnotherFixture(ticket({}), "sports_event_dynamic"), false); // XS2Event ticket ids
+assert.equal(carriesToAnotherFixture(ticket({}), "sports_event"), true); // manual structure
+const moved = ticketForFixture(tx, "new-id", "01next");
+assert.equal(moved.id, "new-id");
+assert.equal(moved.eid, "01next");
+assert.equal(moved.category, tx.category);
+assert.equal("eid" in ticketForFixture(tx, "new-id", null), false); // never the old fixture's id
 
 assert.equal(normalizeSupplierCategory("CATEGORÍA 2 (CAT2) - FONDO"), "categoria 2 fondo");
 assert.equal(normalizeSupplierCategory("Categoría 2 Fondo"), "categoria 2 fondo");

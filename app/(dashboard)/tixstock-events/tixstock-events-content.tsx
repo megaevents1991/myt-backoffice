@@ -96,7 +96,11 @@ export function TixStockEventsContent() {
     const result = await createDraftBatch({
       source: "tixstock",
       scope: { manual: true, count: selectedEvents.length },
-      payloads: selectedEvents.map(tixstockToEvent),
+      // The TixStock id rides the draft so stadium memory stamps it on the copies.
+      payloads: selectedEvents.map((row) => ({
+        ...tixstockToEvent(row),
+        source_event_id: row.event_id,
+      })),
     });
     if (!result.ok) {
       toast({ variant: "destructive", title: "Factory intake failed" });

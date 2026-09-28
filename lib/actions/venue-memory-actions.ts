@@ -2,17 +2,19 @@
 
 import { requireStaff } from "@/lib/auth/guards";
 import { nearestIataFor } from "@/lib/services/nearest-location";
-import { findVenueMemory, type VenueMemory } from "@/lib/services/venue-memory";
+import {
+  findVenueMemory,
+  type VenueMemory,
+  type VenueMemoryInput,
+} from "@/lib/services/venue-memory";
 
 /** Wizard-facing wrapper for the stadium-memory lookup. */
 export async function findVenueMemoryAction(
-  venueName: string,
-  lat: number,
-  lon: number,
+  input: VenueMemoryInput,
 ): Promise<VenueMemory> {
   await requireStaff();
   try {
-    return await findVenueMemory(venueName, lat, lon);
+    return await findVenueMemory(input);
   } catch (error) {
     console.error("venue-memory action failed", JSON.stringify(error));
     return null;

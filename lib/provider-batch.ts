@@ -138,6 +138,21 @@ export function mapBatchRow(
   }
 }
 
+/**
+ * What stadium memory needs from a step's provider row: the supplier event id
+ * the copied tickets carry as `eid`, and the supplier's own venue name. Only
+ * TixStock keeps its id at the event level (every ticket of the fixture shares
+ * it); the other providers' ids are per ticket and never travel between fixtures.
+ */
+export function batchSupplierRef(
+  provider: BatchProvider,
+  row: BatchRow,
+): { eventId: string | null; venueName: string | null } {
+  if (provider !== "tixstock") return { eventId: null, venueName: null };
+  const tx = row as TixStockEventDB;
+  return { eventId: tx.event_id ?? null, venueName: tx.venue_name ?? null };
+}
+
 /** Step label bits the wizard shows per provider row. */
 export function batchRowIdentity(
   provider: BatchProvider,

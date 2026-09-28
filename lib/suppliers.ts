@@ -57,6 +57,44 @@ export function supplierEventId(
 }
 
 /**
+ * Whether a ticket may be copied onto ANOTHER fixture - the batch wizard's
+ * "Save & Next" and stadium memory both do that.
+ *
+ * Only a TixStock ticket survives the move: TixStock prices by category NAME,
+ * so once the copy carries the new fixture's `eid` the sync and main price it
+ * right. Everything else belongs to ONE event: a LiveTickets ticket's id is
+ * that event's category id, an XS2Event ticket's id is that event's ticket id,
+ * and our own stock (`supplier: "static"`) is seats we hold for one game. Copied,
+ * they keep the old event's identity - main then asks the supplier with the
+ * wrong id and sells the copy on its stale price. A manual ticket on a manual
+ * event has no supplier behind it and moves as plain structure.
+ */
+export function carriesToAnotherFixture(
+  ticket: Pick<EventTicket, "supplier">,
+  eventType: EventType | undefined,
+): boolean {
+  if (ticket.supplier === "static") return false;
+  const supplier = ticketSupplier(ticket, eventType);
+  if (supplier === "tixstock") return true;
+  if (supplier === "livetickets") return false;
+  return eventType !== "sports_event_dynamic";
+}
+
+/**
+ * A ticket as it lands on another fixture: a fresh id, and the NEW fixture's
+ * supplier event id - never the old one (no id known = no `eid` at all).
+ */
+export function ticketForFixture(
+  ticket: EventTicket,
+  id: string,
+  eid: string | null,
+): EventTicket {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { eid: _previous, ...rest } = ticket;
+  return eid ? { ...rest, id, eid } : { ...rest, id };
+}
+
+/**
  * Comparable form of a supplier's category name: accents, parenthesised codes
  * and punctuation dropped, whitespace collapsed. TixStock restyles venue names
  * over time ("CATEGORÍA 2 (CAT2) - FONDO" → "Categoría 2 Fondo"); both become

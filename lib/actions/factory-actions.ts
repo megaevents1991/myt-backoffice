@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase-server";
 import { buildDraftPayload } from "@/lib/services/draft-builder";
 import { createEvent } from "@/lib/actions/event-actions";
 import type { Event } from "@/types/app.types";
-import type { EventDraft } from "@/types/factory.types";
+import type { DraftPayload, EventDraft } from "@/types/factory.types";
 
 // event_drafts predates the generated database types - cast once at the
 // boundary, same pattern as the tasks/creative-gaps actions.
@@ -20,7 +20,7 @@ const DRAFT_COLUMNS =
 export async function createDraftBatch(input: {
   source: string;
   scope: Record<string, unknown>;
-  payloads: Omit<Event, "id">[];
+  payloads: DraftPayload[];
 }): Promise<{ ok: boolean; ids: string[] }> {
   const session = await requireAdmin();
   if (input.payloads.length === 0) return { ok: false, ids: [] };
@@ -70,7 +70,7 @@ export async function buildNextDraft(): Promise<{ done: boolean; built?: string 
   if (!draft) return { done: true };
 
   try {
-    const built = await buildDraftPayload(draft.payload as Omit<Event, "id">);
+    const built = await buildDraftPayload(draft.payload as DraftPayload);
     const { error: saveError } = await db
       .from("event_drafts")
       .update({
@@ -126,10 +126,10 @@ export async function updateDraftPayload(
     return { ok: false, error: "Draft not found" };
   }
 
-  const payload = { ...(draft.payload as Omit<Event, "id">), ...patch };
+  const payload = { ...(draft.payload as DraftPayload), ...patch };
   if (patch.location) {
     payload.location = {
-      ...(draft.payload as Omit<Event, "id">).location,
+      ...(draft.payload as DraftPayload).location,
       ...patch.location,
     };
   }
@@ -180,7 +180,11 @@ export async function approveDrafts(
     if (draft.status === "created") continue;
 
     try {
-      const event = await createEvent(draft.payload as Omit<Event, "id">);
+      // The provider's id rides the draft for stadium memory only - `events`
+      // has no column for it (the created tickets carry it as `eid`).
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { source_event_id: _sourceId, ...payload } = draft.payload as DraftPayload;
+      const event = await createEvent(payload);
       created += 1;
       await db
         .from("event_drafts")

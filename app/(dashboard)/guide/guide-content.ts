@@ -523,8 +523,12 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "באץ' רב־קבוצות (TixStock): הבחירה נצברת בין קבוצות עם שורת צ'יפים; \"בחר את כל משחקי הבית של X\" משתמש בכלל שם־מתחיל־בשם־הקבוצה; מעבר לקבוצה אחרת מאפס את הטופס הנגרר כדי שהמתחם הקודם לא ידלוף.",
       ),
       t(
-        "Stadium memory: a step that lands with no ticket categories copies the structure from the last event at the same venue (banner + undo). Live listings then reprice whatever matches.",
-        "זיכרון אצטדיון: שלב שמגיע בלי קטגוריות כרטיסים מעתיק את המבנה מהאירוע האחרון באותו מתחם (באנר + ביטול). הליסטינגים החיים מתמחרים מחדש את מה שמתאים.",
+        "Stadium memory: a step that lands with no ticket categories copies the TixStock categories of the last event on the same seat map - the stadium's drawing, never the city (banner + undo). The copies carry this game's TixStock id, so live listings reprice them. A generic map (\"General Admission\") remembers nothing.",
+        "זיכרון אצטדיון: שלב שמגיע בלי קטגוריות כרטיסים מעתיק את קטגוריות ה-TixStock מהאירוע האחרון על אותה מפת מושבים - השרטוט של האצטדיון, לא העיר (באנר + ביטול). ההעתקים נושאים את מזהה ה-TixStock של המשחק הזה, כך שהליסטינגים החיים מתמחרים אותם מחדש. מפה כללית (\"General Admission\") לא זוכרת כלום.",
+      ),
+      t(
+        "Save & Next carries only TixStock tickets to the next game. LiveTickets tickets and our own stock belong to ONE game - attach them again on each step (the venue template zones LiveTickets); a banner says how many were left behind.",
+        "Save & Next מעביר למשחק הבא רק כרטיסי TixStock. כרטיסי LiveTickets והמלאי שלנו שייכים למשחק אחד - מצרפים אותם מחדש בכל שלב (תבנית האצטדיון משייכת את LiveTickets לאזורים); באנר מראה כמה לא הועברו.",
       ),
       t(
         "Auto-fill: once a step has an IATA and dates, flight+hotel base prices fill themselves in the background - empty fields only, with a green flash. A venue without IATA resolves it from the nearest known location within 50km (that's what makes artist tours work city by city).",

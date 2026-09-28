@@ -52,6 +52,7 @@ import { findVenueMemoryAction, nearestIataAction } from "@/lib/actions/venue-me
 import { homeTeamOf } from "@/lib/tixstock-home";
 import {
   batchRowIdentity,
+  batchSupplierRef,
   mapBatchRow,
   type BatchEnvelope,
   type BatchProvider,
@@ -81,7 +82,12 @@ import { StickySaveBar } from "@/components/sticky-save-bar";
 import { EditorRail } from "@/components/editor-rail";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EventSuppliersPanel } from "@/components/event-suppliers-panel";
-import { supplierEventId, ticketSupplier } from "@/lib/suppliers";
+import {
+  carriesToAnotherFixture,
+  supplierEventId,
+  ticketForFixture,
+  ticketSupplier,
+} from "@/lib/suppliers";
 import { EventTaxonomySelect, type TaxonomyOption } from "@/components/taxonomy/event-taxonomy-select";
 import {
   listCategories,
@@ -158,6 +164,9 @@ export default function EventPage({
   const [batchIndex, setBatchIndex] = useState(0);
   // Stadium memory: which past event the current step's ticket structure came from.
   const [memoryBanner, setMemoryBanner] = useState<{ from: string } | null>(null);
+  // Batch "Save & Next": tickets of the previous step that belong to ONE game
+  // (LiveTickets, our own stock) and were therefore not carried to this one.
+  const [notCarried, setNotCarried] = useState(0);
   // Auto base-fill (spec 2026-09-02 4b): which fields the background quote just
   // filled (drives a brief highlight) and which quotes failed (inline warning).
   const [autoFilled, setAutoFilled] = useState<{ flight?: boolean; hotel?: boolean }>({});
@@ -294,7 +303,7 @@ export default function EventPage({
             if (rep) {
               const seeded = mapBatchRow(provider, rep);
               setEvent({ id: 0, ...seeded });
-              void seedVenueMemory(seeded.location);
+              void seedVenueMemory(seeded, batchSupplierRef(provider, rep));
               setLoading(false);
               return;
             }
@@ -1413,17 +1422,21 @@ export default function EventPage({
   ]);
 
   // Stadium memory (spec 2026-09-02): when a step lands with no ticket
-  // categories, pull the structure from the most recent event at the same
-  // venue. Prices come along as the fallback; the reprice mechanism replaces
-  // them from live listings wherever one matches. Dismissible via the banner.
-  const seedVenueMemory = async (location: Event["location"]) => {
+  // categories, pull the structure from the most recent event on the same seat
+  // map. The copies carry THIS fixture's TixStock id, so the sync and main
+  // re-price them from this game's listings. Dismissible via the banner.
+  const seedVenueMemory = async (
+    target: Pick<Event, "map_image_url" | "type">,
+    supplier: { eventId: string | null; venueName: string | null },
+  ) => {
     setMemoryBanner(null);
     try {
-      const memory = await findVenueMemoryAction(
-        location?.name ?? "",
-        location?.latitude ?? 0,
-        location?.longitude ?? 0,
-      );
+      const memory = await findVenueMemoryAction({
+        mapUrl: target.map_image_url ?? "",
+        eventType: target.type,
+        supplierEventId: supplier.eventId,
+        supplierVenueName: supplier.venueName,
+      });
       if (!memory || memory.tickets.length === 0) return;
       setEvent((prev) => {
         if (!prev || prev.tickets_and_rates.length > 0) return prev;
@@ -1461,7 +1474,8 @@ export default function EventPage({
     if (previous && groupOf(previous) !== groupOf(ev)) {
       setEvent({ id: 0, ...identity });
       setBatchIndex(index);
-      void seedVenueMemory(identity.location);
+      setNotCarried(0);
+      void seedVenueMemory(identity, batchSupplierRef(batchProvider, ev));
       setSelectedSection(null);
       setSelectedCategory(null);
       setExcludeSectionsMode(false);
@@ -1470,26 +1484,32 @@ export default function EventPage({
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id: _carriedId, ...current } = event;
+    // Only tickets that survive a move to another game come along. A LiveTickets
+    // ticket is one category of ONE LiveTickets event (and our own stock is seats
+    // for one game): stamped with this fixture's TixStock id, main would ask
+    // LiveTickets with the wrong id and sell it on the previous game's price.
+    const carried = current.tickets_and_rates.filter((ft) =>
+      carriesToAnotherFixture(ft, current.type),
+    );
     let tickets: EventTicket[] = [];
-    if (batchProvider === "tixstock" && current.tickets_and_rates.length > 0) {
+    if (batchProvider === "tixstock" && carried.length > 0) {
       const txEvent = ev as TixStockEventDB;
       await exchangeRateClientService.updateAllExchangeRates();
       const source = await getTixStockTickets(txEvent.event_id).catch(() => [] as TixStockListing[]);
       tickets = await Promise.all(
-        current.tickets_and_rates.map(async (ft) => ({
-          ...ft,
-          id: uuidv4(),
+        carried.map(async (ft) => ({
+          ...ticketForFixture(ft, uuidv4(), txEvent.event_id),
           price: await repriceCategoryForEvent(ft.category, source, ft.price),
-          eid: txEvent.event_id,
           vendor: "TixStock",
           colorOnTheMap: TX_TICKET_COLOR,
         }))
       );
-    } else if (current.tickets_and_rates.length > 0) {
+    } else if (carried.length > 0) {
       // Non-tixstock providers have no live reprice here - carry the structure
       // with fresh ids; prices stay as reviewed on the previous step.
-      tickets = current.tickets_and_rates.map((ft) => ({ ...ft, id: uuidv4() }));
+      tickets = carried.map((ft) => ({ ...ft, id: uuidv4() }));
     }
+    setNotCarried(current.tickets_and_rates.length - carried.length);
     setEvent({
       id: 0,
       // `...current` carries the shared config forward INCLUDING location + map_image_url -
@@ -1506,7 +1526,7 @@ export default function EventPage({
     });
     setBatchIndex(index);
     if (tickets.length === 0) {
-      void seedVenueMemory(identity.location);
+      void seedVenueMemory(current, batchSupplierRef(batchProvider, ev));
     } else {
       setMemoryBanner(null);
     }
@@ -1820,6 +1840,13 @@ export default function EventPage({
             <Button type="button" variant="ghost" size="sm" onClick={undoVenueMemory}>
               בטל
             </Button>
+          </div>
+        )}
+        {isBatchCreate && notCarried > 0 && (
+          <div className="rounded-md border border-warning/40 bg-warning-muted px-4 py-2.5 text-sm">
+            {notCarried} כרטיסים מהמשחק הקודם לא הועברו (LiveTickets / מלאי שלנו) - הם שייכים
+            למשחק אחד. צרפו אותם מחדש למשחק הזה בפאנל Suppliers &amp; zones; תבנית האצטדיון
+            משייכת את האזורים.
           </div>
         )}
         <Card id="section-basic" data-editor-section="Basic information" className="scroll-mt-20">
