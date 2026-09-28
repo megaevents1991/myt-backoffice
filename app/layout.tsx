@@ -5,6 +5,10 @@ import { Assistant, Rubik } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
+// 23 screens (offline flights, hotels, events...) call react-hot-toast; its Toaster was never
+// mounted, so every one of their success/error messages was invisible (28.09: "Validate does
+// nothing" on /offline-flights/new - the call answered, the toast had nowhere to show).
+import { Toaster as HotToaster } from "react-hot-toast";
 import { AuthProvider } from "@/contexts/auth-context";
 import { ConfirmProvider } from "@/components/confirm-provider";
 
@@ -44,6 +48,7 @@ export default function RootLayout({
             <AuthProvider>{children}</AuthProvider>
           </ConfirmProvider>
           <Toaster />
+          <HotToaster position="top-center" />
         </ThemeProvider>
       </body>
     </html>
