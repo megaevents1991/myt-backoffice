@@ -326,6 +326,34 @@ export function EventSuppliersPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event.id, venueMap?.id, venueMap?.svg_url]);
 
+  // Tickets that appear while the editor is open (added from "Source Tickets") are zoned from
+  // the venue template at once - the recognition above ran when the page opened, before they
+  // existed. Oasis Munich 06.07 (29.09) went live with four TixStock rows showing their raw
+  // German names and competing with LiveTickets in the middle ring. Only NEW ticket ids and
+  // only unzoned ones: a ticket the operator took out of a zone stays out.
+  const seenTicketsRef = useRef<{ eventId: Event["id"]; ids: Set<string> } | null>(null);
+  useEffect(() => {
+    const ids = event.tickets_and_rates.map((ticket) => ticket.id);
+    if (!seenTicketsRef.current || seenTicketsRef.current.eventId !== event.id) {
+      seenTicketsRef.current = { eventId: event.id, ids: new Set(ids) };
+      return;
+    }
+    const seen = seenTicketsRef.current.ids;
+    const fresh = new Set(ids.filter((id) => !seen.has(id)));
+    fresh.forEach((id) => seen.add(id));
+    if (fresh.size === 0 || !venueMap || !isOurMap) return;
+    const zoneFresh = (tickets: EventTicket[], type: Event["type"]) =>
+      tickets.map((ticket) =>
+        fresh.has(ticket.id) ? zoneFromTemplate([ticket], type, venueMap)[0] : ticket,
+      );
+    const zoned = zoneFresh(event.tickets_and_rates, event.type);
+    if (zoned.every((ticket, i) => ticket === event.tickets_and_rates[i])) return;
+    onEventChange((prev) => ({
+      ...prev,
+      tickets_and_rates: zoneFresh(prev.tickets_and_rates, prev.type),
+    }));
+  }, [event.id, event.tickets_and_rates, event.type, venueMap, isOurMap, onEventChange]);
+
   const handleAdopt = async () => {
     setAdopting(true);
     try {
