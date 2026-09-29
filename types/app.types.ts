@@ -114,6 +114,9 @@ export type Event = {
   campaign_banner_url?: string | null;
   campaign_input_hash?: string | null;
   campaign_generated_at?: string | null;
+  // Why the generator made no creative - it refused (no price) or crashed; null
+  // once one is made. Main's /product-feed prints it (lib/feed/skipExplain.ts).
+  campaign_skip_reason?: string | null;
   // Direct video FILE url (mp4/mov/…) for the Meta activities feed's
   // video[0].url. Player/YouTube links are rejected by Meta. Set manually in
   // the event editor; synced to main.

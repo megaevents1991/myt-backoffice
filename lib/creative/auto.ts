@@ -765,6 +765,13 @@ export async function runCampaignCreatives(
       const message = e instanceof Error ? e.message : String(e);
       console.error(`[campaign] event ${event.id} failed:`, message);
       summary.errors.push({ id: event.id, error: message });
+      // A crash leaves no hash, so the next run tries again - but without this
+      // note a crashing event looks exactly like one never reached, and
+      // /product-feed could not say which.
+      await setSkipReason(
+        event.id,
+        `שגיאה ביצירת התמונה: ${message}`.slice(0, 300),
+      );
     }
   }
 
