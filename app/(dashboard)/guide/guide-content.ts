@@ -596,6 +596,10 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "אירוע אחד, עכשיו: \"העלה לפיד עכשיו\" בראש עורך האירוע מייצר את הקריאייטיב של האירוע ומפרסם מחדש את קובץ הפיד (בלי כל תהליך הסנכרון המלא), ואומר אם האירוע בפיד ואם לא - למה (אזל, פחות מ-3 ימים לאירוע, אירוע בדיקה, אין מחיר). קודם שומרים את האירוע. מטא קוראת את הקובץ כל שעה.",
       ),
       t(
+        "A missing crest or artist cut-out makes a weaker ad: one team instead of team vs team, the artist in a small circle, or no picture at all. Upload it once - a crest to the logo library (Assets), a cut-out to the artist card (Templates → Artists) - and every event of that team or artist is redrawn on the next creative run, no per-event step. Main's /product-feed lists what is missing.",
+        "סמל קבוצה או cut-out של אמן שחסרים מייצרים מודעה חלשה: קבוצה אחת במקום קבוצה נגד קבוצה, האמן בעיגול קטן, או בלי תמונה בכלל. מעלים פעם אחת - סמל לספריית הסמלים (Assets), cut-out לכרטיס האמן (תבניות ← אמנים) - וכל האירועים של אותה קבוצה או אמן מצוירים מחדש בהרצת הקריאייטיב הבאה, בלי צעד לכל אירוע.",
+      ),
+      t(
         "The Creative Generator makes one manually - gap links open it with the event pre-selected.",
         "מחולל הקריאייטיב מייצר ידנית — קישורי חוסרים פותחים אותו עם האירוע כבר נבחר.",
       ),
