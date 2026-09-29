@@ -647,6 +647,22 @@ export async function generateCampaignForEvent(
 
 /* ----------------------- batch runner (cron + UI) ----------------------- */
 
+/** Every column the creative pipeline reads - the cron's scan and the single-event push. */
+export const CAMPAIGN_EVENT_COLUMNS =
+  "id,name,name_english,type,date,location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,art_image_url,card_image_url,campaign_input_hash,campaign_image_url";
+
+/**
+ * Work order for a run: events with no creative at all before everything
+ * else, each group in the order given. Pure.
+ */
+export function firstNeverRendered<
+  T extends { campaign_image_url?: string | null },
+>(events: T[]): T[] {
+  const never = events.filter((event) => !event.campaign_image_url);
+  const rendered = events.filter((event) => !!event.campaign_image_url);
+  return [...never, ...rendered];
+}
+
 export type CampaignRunSummary = {
   /** Feed-eligible events looked at (not deleted, today onward). */
   scanned: number;
@@ -685,9 +701,7 @@ export async function runCampaignCreatives(
 
   const { data, error } = await supabase
     .from("events")
-    .select(
-      "id,name,name_english,type,date,location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,art_image_url,card_image_url,campaign_input_hash",
-    )
+    .select(CAMPAIGN_EVENT_COLUMNS)
     .is("is_deleted", null)
     .gte("date", todayISO)
     .order("date", { ascending: true });
@@ -696,7 +710,16 @@ export async function runCampaignCreatives(
     throw new Error("events query failed");
   }
 
-  const events = (data ?? []) as unknown as CampaignEventRow[];
+  // Events that never got a creative first, then the rest soonest first.
+  // The hash carries the package price, which moves several times a day on
+  // near events (supplier + base-price syncs) - scanned by date alone, every
+  // run spent its budget re-rendering those, and a new event dated a year out
+  // never got a creative, so the feed skipped it until someone ran "sync
+  // everything" (2026-09-29: 31 live events, Oasis / Harry Styles 2027 among
+  // them). A stable sort keeps date order inside each group.
+  const events = firstNeverRendered(
+    (data ?? []) as unknown as CampaignEventRow[],
+  );
   const summary: CampaignRunSummary = {
     scanned: events.length,
     current: 0,

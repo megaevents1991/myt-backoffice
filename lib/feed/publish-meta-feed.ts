@@ -44,7 +44,19 @@ export type PublishResult = {
   activitiesUrl: string;
   /** Rows in the activities feed (header excluded). */
   activityRows: number;
+  /** Our event ids in the activities feed - what Meta will list. */
+  activityIds: number[];
 };
+
+/** The `id` column (first field) of every data row of the activities CSV. Pure. */
+export function activityIdsOf(csv: string): number[] {
+  return csv
+    .trim()
+    .split(/\r?\n/)
+    .slice(1)
+    .map((line) => Number(line.slice(0, line.indexOf(",")).replace(/"/g, "")))
+    .filter((id) => Number.isInteger(id) && id > 0);
+}
 
 async function fetchLiveSource(
   url: string,
@@ -128,5 +140,6 @@ export async function publishMetaFeeds(): Promise<PublishResult> {
     csvUrl,
     activitiesUrl,
     activityRows,
+    activityIds: activityIdsOf(activitiesBody.toString("utf-8")),
   };
 }

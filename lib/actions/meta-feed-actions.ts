@@ -5,6 +5,13 @@ import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import {
+  CAMPAIGN_EVENT_COLUMNS,
+  generateCampaignForEvent,
+  type CampaignEventRow,
+  type CampaignResult,
+} from "@/lib/creative/auto";
+import type { Event } from "@/types/app.types";
+import {
   publishMetaFeeds,
   STORAGE_BUCKET,
   STORAGE_PATH_ACTIVITIES,
@@ -50,6 +57,107 @@ export async function syncMetaFeedAction(): Promise<SyncMetaFeedResult> {
     console.error("[meta-feed] manual sync failed:", error);
     return { ok: false, error };
   }
+}
+
+export type PushEventToFeedResult =
+  | {
+      ok: true;
+      /** What happened to this event's creative. */
+      creative: "generated" | "current" | "skipped";
+      /** Why the creative was skipped (only when `creative` is "skipped"). */
+      creativeNote?: string;
+      /** The event is a row of the file Meta reads. */
+      inFeed: boolean;
+      /** When it is not: the likely reasons, read off the event (Hebrew). */
+      whyNot: string[];
+      activityRows: number;
+    }
+  | { ok: false; error: string };
+
+/** Days before an event the site stops selling it - main's AVAILABILITY_WINDOW_DAYS. */
+const FEED_BOOKING_WINDOW_DAYS = 3;
+
+/**
+ * One event into the Meta feed now, without waiting for the crons or running
+ * "sync everything": make its creative (the feed skips an event with none),
+ * then republish the feed files. The files are always built whole from the
+ * database, so this republishes every event - it just skips the providers,
+ * the price syncs and every other event's creative. Meta still reads the file
+ * on its own schedule (hourly).
+ */
+export async function pushEventToFeedAction(
+  eventId: number,
+): Promise<PushEventToFeedResult> {
+  await requireStaff();
+  if (!Number.isInteger(eventId) || eventId <= 0) {
+    return { ok: false, error: "Invalid event id" };
+  }
+  try {
+    // events' generated types lag the campaign columns - cast once, like auto.ts.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any;
+    const { data: event, error } = await db
+      .from("events")
+      .select(`${CAMPAIGN_EVENT_COLUMNS},is_deleted,is_test,tags`)
+      .eq("id", eventId)
+      .maybeSingle();
+    if (error || !event) {
+      if (error) console.error("[meta-feed] push: event read failed", JSON.stringify(error));
+      return { ok: false, error: "Event not found" };
+    }
+
+    const creative = await generateCampaignForEvent(event as CampaignEventRow);
+    const result = await publishMetaFeeds();
+    const inFeed = result.activityIds.includes(eventId);
+
+    await logAudit({
+      action: "publish",
+      entityType: "meta_feed",
+      entityId: eventId,
+      metadata: {
+        trigger: "event",
+        creative: creative.status,
+        inFeed,
+        activityRows: result.activityRows,
+      },
+    });
+    revalidatePath("/meta-feed");
+
+    return {
+      ok: true,
+      creative: creative.status,
+      creativeNote: creative.status === "skipped" ? creative.reason : undefined,
+      inFeed,
+      whyNot: inFeed ? [] : feedBlockers(event as FeedBlockerRow, creative),
+      activityRows: result.activityRows,
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    console.error("[meta-feed] push event failed:", error);
+    return { ok: false, error };
+  }
+}
+
+type FeedBlockerRow = Pick<
+  Event,
+  "date" | "tickets_and_rates" | "tags" | "is_deleted" | "is_test"
+>;
+
+/** Why main's activities feed leaves an event out - its own rules, read off the row. */
+function feedBlockers(event: FeedBlockerRow, creative: CampaignResult): string[] {
+  const reasons: string[] = [];
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() + FEED_BOOKING_WINDOW_DAYS);
+  if (event.is_deleted) reasons.push("האירוע מחוק");
+  if (event.is_test) reasons.push("אירוע בדיקה - לא נכנס לפיד");
+  if (event.date.slice(0, 10) < cutoff.toISOString().slice(0, 10)) {
+    reasons.push(`פחות מ-${FEED_BOOKING_WINDOW_DAYS} ימים לאירוע - האתר כבר לא מוכר אותו`);
+  }
+  const available = (event.tickets_and_rates ?? []).some((t) => t.available !== false);
+  if (!available || event.tags === "Sold") reasons.push("אזל - אין כרטיס זמין");
+  if (creative.status === "skipped") reasons.push(`אין קריאייטיב: ${creative.reason}`);
+  if (reasons.length === 0) reasons.push("לא נמצאה סיבה בנתוני האירוע - בדקו ב-/product-feed באתר");
+  return reasons;
 }
 
 export type SyncHealthRow = {

@@ -5,6 +5,7 @@ import { useState, useEffect, use, useLayoutEffect, useRef, useMemo, useCallback
 import { cn } from "@/lib/utils";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RevalidateButton } from "@/components/templates/RevalidateButton";
+import { PushToFeedButton } from "@/components/push-to-feed-button";
 import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown, Plane, ExternalLink, BedDouble, ChevronDown } from "lucide-react";
 import {
   Collapsible,
@@ -1780,7 +1781,8 @@ export default function EventPage({
             ticket change, bust main's ISR cache from right here instead of
             walking back to the events list. */}
         {!isNewEvent && (
-          <div className="ml-auto">
+          <div className="ml-auto flex flex-wrap gap-2">
+            <PushToFeedButton eventId={event.id} unsaved={isDirty} />
             <RevalidateButton />
           </div>
         )}

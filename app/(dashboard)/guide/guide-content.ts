@@ -588,6 +588,14 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     },
     points: [
       t(
+        "An event reaches Meta only once it has a creative. The creative cron now makes the missing ones FIRST (new events), then re-renders the ones whose price or date moved - soonest first. Before 29.09 it went by date alone, spent every run re-rendering near events whose price had moved, and new events dated far out never got a creative.",
+        "אירוע מגיע למטא רק אחרי שיש לו קריאייטיב. ה-cron של הקריאייטיבים מייצר עכשיו קודם את החסרים (אירועים חדשים), ורק אחר כך מרנדר מחדש את אלה שהמחיר או התאריך שלהם זזו - הקרובים קודם. עד 29.09 הוא עבר רק לפי תאריך, בזבז כל הרצה על רינדור מחדש של אירועים קרובים שהמחיר שלהם זז, ואירועים חדשים רחוקים לא קיבלו קריאייטיב.",
+      ),
+      t(
+        "One event, now: \"העלה לפיד עכשיו\" at the top of the event editor makes that event's creative and republishes the feed file (not the whole sync-everything pipeline), then says whether the event is in the feed and, if not, why (sold out, less than 3 days out, test event, no price). Save the event first. Meta reads the file hourly.",
+        "אירוע אחד, עכשיו: \"העלה לפיד עכשיו\" בראש עורך האירוע מייצר את הקריאייטיב של האירוע ומפרסם מחדש את קובץ הפיד (בלי כל תהליך הסנכרון המלא), ואומר אם האירוע בפיד ואם לא - למה (אזל, פחות מ-3 ימים לאירוע, אירוע בדיקה, אין מחיר). קודם שומרים את האירוע. מטא קוראת את הקובץ כל שעה.",
+      ),
+      t(
         "The Creative Generator makes one manually - gap links open it with the event pre-selected.",
         "מחולל הקריאייטיב מייצר ידנית — קישורי חוסרים פותחים אותו עם האירוע כבר נבחר.",
       ),
