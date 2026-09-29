@@ -155,6 +155,106 @@ export async function findLiveTicketsCandidates(
   return { ok: true, data: candidates };
 }
 
+export type TixStockCandidate = {
+  eventId: string;
+  name: string;
+  showDate: string;
+  venue: string;
+  city: string;
+  ticketCount: number;
+  /** Whole days between their date and ours - 0 is what we expect. */
+  dateGapDays: number;
+  /** Words of our event name found in theirs, 0..1. Sorts the list. */
+  nameScore: number;
+};
+
+interface TixStockEventRow {
+  event_id: string;
+  event_name: string | null;
+  show_date: string;
+  venue_name: string | null;
+  city_name: string | null;
+  ticket_count: number | null;
+}
+
+/**
+ * TixStock shows that could be this event - the LiveTickets rules (calendar days within
+ * CANDIDATE_WINDOW_DAYS, ranked by shared name words, a manual search widens it). Needed
+ * because the editor's "Source Tickets" list knows a TixStock show only through a TixStock
+ * ticket already on the event: one built without them (Oasis Munich 06.07, 28.09 - its only
+ * ticket was LiveTickets) had no way to ever load TixStock's categories. Picking a show here
+ * points "Source Tickets" at it; the categories are then added there as usual.
+ */
+export async function findTixStockCandidates(
+  eventNameEnglish: string,
+  eventDateIso: string,
+  search?: string,
+): Promise<Result<TixStockCandidate[]>> {
+  await requireStaff();
+
+  const ourDay = dayIndex(eventDateIso);
+  if (ourDay == null) {
+    return { ok: false, error: "Event has no date" };
+  }
+
+  let query = db
+    .from("tixstock_events")
+    .select("event_id,event_name,show_date,venue_name,city_name,ticket_count")
+    .eq("is_active", true)
+    .order("show_date", { ascending: true })
+    .limit(200);
+
+  const term = search?.trim();
+  if (term) {
+    query = query
+      .ilike("event_name", `%${term.replace(/[%_]/g, "")}%`)
+      .gte("show_date", new Date().toISOString());
+  } else {
+    // By name in the query itself: a week of TixStock holds more than the row limit (200+
+    // active shows around 06.07.2027), so a name filter applied afterwards could miss ours.
+    const nameWords = words(eventNameEnglish)
+      .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ""))
+      .filter(Boolean);
+    if (nameWords.length === 0) return { ok: true, data: [] };
+    query = query
+      .gte("show_date", new Date((ourDay - CANDIDATE_WINDOW_DAYS) * DAY_MS).toISOString())
+      .lt("show_date", new Date((ourDay + CANDIDATE_WINDOW_DAYS + 1) * DAY_MS).toISOString())
+      .or(nameWords.map((w) => `event_name.ilike.%${w}%`).join(","));
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("supplier-attach: tixstock candidates failed", JSON.stringify(error));
+    return { ok: false, error: "Could not load TixStock events" };
+  }
+
+  const ourWords = words(eventNameEnglish);
+  const candidates = ((data ?? []) as TixStockEventRow[])
+    .map((row): TixStockCandidate => {
+      const theirWords = new Set(words(row.event_name ?? ""));
+      const shared = ourWords.filter((w) => theirWords.has(w)).length;
+      return {
+        eventId: String(row.event_id),
+        name: row.event_name ?? "",
+        showDate: row.show_date,
+        venue: row.venue_name ?? "",
+        city: row.city_name ?? "",
+        ticketCount: row.ticket_count ?? 0,
+        dateGapDays: (dayIndex(row.show_date) ?? ourDay) - ourDay,
+        nameScore: ourWords.length ? shared / ourWords.length : 0,
+      };
+    })
+    .filter((c) => term || c.nameScore > 0)
+    .sort(
+      (a, b) =>
+        b.nameScore - a.nameScore ||
+        Math.abs(a.dateGapDays) - Math.abs(b.dateGapDays),
+    )
+    .slice(0, MAX_CANDIDATES);
+
+  return { ok: true, data: candidates };
+}
+
 /**
  * Draft tickets for every category of a LiveTickets event, priced now. Read
  * live from their API, falling back to our `live_events` snapshot when the

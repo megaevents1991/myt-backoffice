@@ -9,7 +9,9 @@
  *  2. Put every ticket - of any supplier - into one of our zones. Suppliers
  *     slice a stadium differently; offers only compete inside one zone.
  *  3. Attach a second supplier (LiveTickets) to this event: pick their event,
- *     pick categories, zone them.
+ *     pick categories, zone them. And connect / change / remove the TixStock show
+ *     (28.09): an event built without TixStock tickets had no way to get them - the
+ *     editor's "Source Tickets" list only knew a show through a ticket already on it.
  *
  * Works on the editor's form state (`onEventChange`); tickets are saved with
  * the event. Zones and the venue template save on their own (they belong to
@@ -77,11 +79,14 @@ import {
 import {
   buildLiveTicketsDrafts,
   findLiveTicketsCandidates,
+  findTixStockCandidates,
   getLiveTicketsMapUrl,
   getOwnStockHeld,
   type LiveTicketsCandidate,
   type LiveTicketsDraft,
+  type TixStockCandidate,
 } from "@/lib/actions/supplier-attach-actions";
+import { useConfirm } from "@/components/confirm-provider";
 import { hasOwnStock, stockLeft } from "@/lib/own-stock";
 
 const NO_ZONE = "__none__";
@@ -103,6 +108,10 @@ const EXCLUDED_FILL = "#E53E3E";
 type Props = {
   event: Event;
   onEventChange: (update: (prev: Event) => Event) => void;
+  /** The TixStock show the editor's "Source Tickets" list loads (null = none). */
+  tixStockEventId?: string | null;
+  /** Point "Source Tickets" at another TixStock show, or at none (null). */
+  onTixStockShowChange?: (showId: string | null) => void;
 };
 
 /** Strip scripts / inline handlers - the drawing came from a supplier. */
@@ -215,8 +224,14 @@ function MapLegend() {
   );
 }
 
-export function EventSuppliersPanel({ event, onEventChange }: Props) {
+export function EventSuppliersPanel({
+  event,
+  onEventChange,
+  tixStockEventId = null,
+  onTixStockShowChange,
+}: Props) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const mapUrl = event.map_image_url || "";
 
   const [venueMap, setVenueMap] = useState<VenueMap | null>(null);
@@ -934,6 +949,86 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
     }));
   };
 
+  /* ── 4b. The TixStock show ──────────────────────────────────────── */
+
+  // One TixStock show per event: its tickets all carry its id (`eid`), and the site reads the
+  // show off the first of them. Changing the show therefore takes the old show's tickets off.
+  const tixStockTicketCount = event.tickets_and_rates.filter(
+    (t) => ticketSupplier(t, event.type) === "tixstock",
+  ).length;
+  const [txPickerOpen, setTxPickerOpen] = useState(false);
+  const [txSearch, setTxSearch] = useState("");
+  const [txCandidates, setTxCandidates] = useState<TixStockCandidate[]>([]);
+  const [txLoading, setTxLoading] = useState(false);
+
+  const loadTxCandidates = async (term?: string) => {
+    setTxLoading(true);
+    try {
+      const result = await findTixStockCandidates(
+        event.name_english || event.name,
+        event.date,
+        term,
+      );
+      if (!result.ok) {
+        toast({ title: "TixStock", description: result.error, variant: "destructive" });
+        return;
+      }
+      setTxCandidates(result.data);
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  const handleOpenTxPicker = () => {
+    setTxPickerOpen(true);
+    setTxSearch("");
+    loadTxCandidates();
+  };
+
+  const dropTixStockTickets = () =>
+    onEventChange((prev) => ({
+      ...prev,
+      tickets_and_rates: prev.tickets_and_rates.filter(
+        (t) => ticketSupplier(t, prev.type) !== "tixstock",
+      ),
+    }));
+
+  const handleConnectTx = async (candidate: TixStockCandidate) => {
+    if (candidate.eventId === tixStockEventId && tixStockTicketCount > 0) {
+      setTxPickerOpen(false);
+      return;
+    }
+    if (tixStockTicketCount > 0) {
+      const ok = await confirm({
+        title: "Change the TixStock show?",
+        description: `The ${tixStockTicketCount} TixStock ticket(s) of the current show come off this event - an event sells from one TixStock show. Nothing is saved until you save the event.`,
+        confirmLabel: "Change show",
+        destructive: true,
+      });
+      if (!ok) return;
+      dropTixStockTickets();
+    }
+    onTixStockShowChange?.(candidate.eventId);
+    setTxPickerOpen(false);
+    toast({
+      title: `TixStock: ${candidate.name}`,
+      description:
+        "Connected. Add its categories from Source Tickets above, zone them here, then save the event.",
+    });
+  };
+
+  const handleDetachTixStock = async () => {
+    const ok = await confirm({
+      title: "Remove the TixStock tickets?",
+      description: `${tixStockTicketCount} TixStock ticket(s) come off this event and the TixStock show is disconnected. Nothing is saved until you save the event.`,
+      confirmLabel: "Remove",
+      destructive: true,
+    });
+    if (!ok) return;
+    dropTixStockTickets();
+    onTixStockShowChange?.(null);
+  };
+
   /* ── 5. Our own tickets ─────────────────────────────────────────── */
 
   // Seats WE hold for this game (`supplier: "static"` + `stock`). Main sells
@@ -1434,7 +1529,33 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-medium">Add a supplier</h3>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              {tixStockTicketCount > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleDetachTixStock}
+                >
+                  <Trash2 className="mr-1 h-4 w-4" /> Remove TixStock tickets
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleOpenTxPicker}
+              >
+                {tixStockEventId ? (
+                  <>
+                    <Search className="mr-1 h-4 w-4" /> Change TixStock show
+                  </>
+                ) : (
+                  <>
+                    <Plus className="mr-1 h-4 w-4" /> Connect TixStock show
+                  </>
+                )}
+              </Button>
               {hasLiveTickets && (
                 <Button
                   type="button"
@@ -1464,6 +1585,95 @@ export function EventSuppliersPanel({ event, onEventChange }: Props) {
               </Button>
             </div>
           </div>
+          {txPickerOpen && (
+            <div className="space-y-2 rounded-md border p-3" id="tixstock-show-picker">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium">TixStock show</span>
+                <Input
+                  value={txSearch}
+                  onChange={(e) => setTxSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      loadTxCandidates(txSearch);
+                    }
+                  }}
+                  placeholder="Search by name, e.g. Oasis"
+                  className="h-8 max-w-xs"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => loadTxCandidates(txSearch)}
+                  disabled={txLoading}
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setTxPickerOpen(false)}
+                >
+                  Close
+                </Button>
+              </div>
+              {txLoading ? (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Looking for TixStock shows…
+                </p>
+              ) : txCandidates.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No TixStock show within 3 days of this event&apos;s date shares its name - search by name.
+                </p>
+              ) : (
+                <ul className="divide-y rounded-md border">
+                  {txCandidates.map((candidate) => {
+                    const current = candidate.eventId === tixStockEventId;
+                    return (
+                      <li
+                        key={candidate.eventId}
+                        className="flex flex-wrap items-center justify-between gap-2 p-2 text-sm"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium">
+                            {candidate.name}{" "}
+                            <span className="tabular text-muted-foreground">
+                              {candidate.showDate.slice(0, 10)}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {[candidate.venue, candidate.city].filter(Boolean).join(", ")}
+                            {` · ${candidate.ticketCount} tickets`}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {candidate.dateGapDays !== 0 && (
+                            <Badge variant="destructive">
+                              {candidate.dateGapDays > 0 ? "+" : ""}
+                              {candidate.dateGapDays} day(s)
+                            </Badge>
+                          )}
+                          {current && <Badge variant="secondary">Connected</Badge>}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={current ? "ghost" : "default"}
+                            onClick={() => handleConnectTx(candidate)}
+                            disabled={current && tixStockTicketCount > 0}
+                          >
+                            {current ? "Connected" : tixStockEventId ? "Switch to this" : "Connect"}
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+
           <p className="text-sm text-muted-foreground">
             Only instant-confirm categories can be added. After saving, their
             prices refresh automatically; a new category at the supplier is

@@ -460,10 +460,16 @@ export default function EventPage({
   }, [toast]);
 
   const txEventIdFromQuery = searchParams.get("txEventId");
+  // Set from "Suppliers & zones" (connect / change / remove the TixStock show): undefined =
+  // untouched, null = disconnected on purpose. Wins over everything below, or a changed show
+  // would keep loading the old one through the query / an old ticket.
+  const [txShowOverride, setTxShowOverride] = useState<string | null | undefined>(undefined);
 
   const tixStockEventId =
     event?.type === "tx_event"
-      ? txEventIdFromQuery ??
+      ? txShowOverride !== undefined
+        ? txShowOverride
+        : txEventIdFromQuery ??
         (isBatchCreate && batchProvider === "tixstock"
           ? (batchEvents[batchIndex] as TixStockEventDB | undefined)?.event_id ?? null
           : null) ??
@@ -3065,7 +3071,7 @@ export default function EventPage({
                     </div>
                   )}
 
-                  <div className="space-y-2">
+                  <div className="space-y-2 scroll-mt-24" id="source-tickets">
                     <div className="flex items-center justify-between">
                       <Label>Source Tickets</Label>
                       {(selectedSection || selectedCategory) && (
@@ -3104,7 +3110,9 @@ export default function EventPage({
                           ) : sourceTicketsForDisplay.length === 0 ? (
                             <tr>
                               <td colSpan={5} className="p-3 text-center text-muted-foreground">
-                                No source tickets found.
+                                {tixStockEventId
+                                  ? "No source tickets found."
+                                  : "No TixStock show connected - connect one under Suppliers & zones."}
                               </td>
                             </tr>
                           ) : (
@@ -3836,6 +3844,17 @@ export default function EventPage({
             onEventChange={(update) =>
               setEvent((prev) => (prev ? update(prev) : prev))
             }
+            tixStockEventId={tixStockEventId}
+            onTixStockShowChange={(showId) => {
+              setTxShowOverride(showId);
+              if (showId) {
+                requestAnimationFrame(() =>
+                  document
+                    .getElementById("source-tickets")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                );
+              }
+            }}
           />
         )}
 
