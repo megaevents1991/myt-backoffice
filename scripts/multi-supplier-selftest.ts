@@ -23,7 +23,8 @@ import {
   suggestZoneTiered,
 } from "../lib/venue-maps/zone-suggest";
 import { toLiveTicketsCategory } from "../lib/services/livetickets-offers";
-import { hasOwnStock, holdsSeats, seatsHeldByTicket, stockLeft } from "../lib/own-stock";
+import { hasOwnStock, holdsSeats, ownSeating, seatsHeldByTicket, stockLeft } from "../lib/own-stock";
+import { isFixtureDrawing } from "../lib/services/venue-memory";
 import { applyLiveTicketsStock } from "../lib/services/attached-suppliers-sync";
 import type { EventTicket } from "../types/app.types";
 
@@ -262,6 +263,23 @@ const coarse = [
 const weak = suggestZoneTiered("מאחורי השער קומות 1-2 (סקטורים 100-400)", coarse);
 assert.equal(weak?.zoneId, "fondo");
 assert.equal(suggestZoneTiered("Category 1", coarse), null);
+
+/* stadium memory widens to a venue's other drawings only for football (Alon 29.09):
+   the Etihad's Oasis drawing is a concert, its EPL drawing a football layout */
+assert.equal(isFixtureDrawing(["Oasis Manchester", "Oasis Manchester"]), false);
+assert.equal(
+  isFixtureDrawing(["Manchester City FC vs AFC Bournemouth", "Manchester City FC vs Newcastle United FC"]),
+  true,
+);
+assert.equal(isFixtureDrawing(["Liverpool FC vs Manchester City FC", "Liverpool Legends Charity Match"]), false); // half is not most
+assert.equal(isFixtureDrawing([]), false); // unknown drawing - no widening
+assert.equal(isFixtureDrawing([null, "  "]), false);
+
+/* our own ticket's seating (Alon 29.09): up to seatsTogether together, more in groups */
+assert.deepEqual(ownSeating({ seatsTogether: 4 }, 4), { seating: "together" });
+assert.deepEqual(ownSeating({ seatsTogether: 4 }, 5), { seating: "groups", seatingGroupMax: 4 });
+assert.deepEqual(ownSeating({}, 2), { seating: "none" });
+assert.deepEqual(ownSeating({ seatsTogether: 1 }, 2), { seating: "none" });
 
 console.log("multi-supplier selftest: all assertions passed");
 process.exit(0);

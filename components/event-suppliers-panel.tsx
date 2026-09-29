@@ -1068,6 +1068,8 @@ export function EventSuppliersPanel({
   const [ownDescription, setOwnDescription] = useState("");
   const [ownPrice, setOwnPrice] = useState("");
   const [ownStock, setOwnStock] = useState("");
+  // How many of these seats sit together (Alon 29.09) - empty = no promise.
+  const [ownTogether, setOwnTogether] = useState("");
   const [ownZone, setOwnZone] = useState(NO_ZONE);
   const [held, setHeld] = useState<Map<string, number>>(new Map());
 
@@ -1087,6 +1089,7 @@ export function EventSuppliersPanel({
 
   const ownPriceValue = Number(ownPrice);
   const ownStockValue = Number(ownStock);
+  const ownTogetherValue = ownTogether.trim() === "" ? undefined : Number(ownTogether);
 
   const handleAddOwnTicket = async () => {
     if (ownProblems.length > 0) return;
@@ -1102,6 +1105,7 @@ export function EventSuppliersPanel({
         description: ownDescription.trim(),
         price: Math.round(ownPriceValue),
         stock: ownStockValue,
+        ...(ownTogetherValue !== undefined ? { seatsTogether: ownTogetherValue } : {}),
         colorOnTheMap: OWN_TICKET_COLOR,
         available: true,
       },
@@ -1115,6 +1119,7 @@ export function EventSuppliersPanel({
     setOwnDescription("");
     setOwnPrice("");
     setOwnStock("");
+    setOwnTogether("");
     setOwnZone(NO_ZONE);
     setOwnOpen(false);
     toast({
@@ -1126,7 +1131,7 @@ export function EventSuppliersPanel({
   /** Price / stock of one of our own tickets, edited in place. */
   const updateOwnTicket = (
     ticketId: string,
-    patch: Partial<Pick<EventTicket, "price" | "stock" | "available">>,
+    patch: Partial<Pick<EventTicket, "price" | "stock" | "available" | "seatsTogether">>,
   ) => {
     onEventChange((prev) => ({
       ...prev,
@@ -1153,6 +1158,9 @@ export function EventSuppliersPanel({
     !ownCategory.trim() && "a name",
     !(Number.isFinite(ownPriceValue) && ownPriceValue > 0) && "a price above $0",
     !(Number.isInteger(ownStockValue) && ownStockValue > 0) && "a whole number of seats",
+    ownTogetherValue !== undefined &&
+      !(Number.isInteger(ownTogetherValue) && ownTogetherValue >= 2) &&
+      "seats together as a whole number of 2 or more (or empty)",
     canZone && ownZone === NO_ZONE && "a zone",
   ].filter((problem): problem is string => !!problem);
   const hiddenTickets = event.tickets_and_rates.filter(
@@ -1228,6 +1236,26 @@ export function EventSuppliersPanel({
                 stock: Math.max(0, Math.floor(Number(e.target.value) || 0)),
               })
             }
+          />
+        </label>
+        <label
+          className="flex items-center gap-1"
+          title="How many of these seats sit together - empty = no seating promise"
+        >
+          Together ≤
+          <Input
+            type="number"
+            min={2}
+            className="h-8 w-16"
+            value={ticket.seatsTogether ?? ""}
+            onChange={(e) => {
+              const value = Math.floor(Number(e.target.value));
+              updateOwnTicket(ticket.id, {
+                // Any whole number is kept while typing ("1" on the way to "12");
+                // under 2 promises nothing (`ownSeating`).
+                seatsTogether: e.target.value === "" || !(value >= 1) ? undefined : value,
+              });
+            }}
           />
         </label>
         <span className="tabular-nums text-muted-foreground">
@@ -1717,7 +1745,7 @@ export function EventSuppliersPanel({
                 ticket (not Cancelled / Lost / 24Save) takes seats, and checkout
                 re-counts before it books.
               </p>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_110px_110px_minmax(0,1.5fr)]">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_110px_110px_130px_minmax(0,1.5fr)]">
                 <Input
                   dir="auto"
                   placeholder="Ticket name, e.g. לאורך המגרש - קומה 1"
@@ -1738,6 +1766,15 @@ export function EventSuppliersPanel({
                   placeholder="Seats"
                   value={ownStock}
                   onChange={(e) => setOwnStock(e.target.value)}
+                />
+                <Input
+                  type="number"
+                  min={2}
+                  step={1}
+                  placeholder="Together (up to)"
+                  title="How many of these seats sit together. A party up to this size is promised to sit together; a bigger one sits in groups of up to this many. Empty = no seating promise."
+                  value={ownTogether}
+                  onChange={(e) => setOwnTogether(e.target.value)}
                 />
                 <Select
                   value={ownZone}

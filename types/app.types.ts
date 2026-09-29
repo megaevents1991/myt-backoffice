@@ -477,6 +477,11 @@ export type EventTicket = {
   // game. Seats left = stock - seats held by live reservations (lib/own-stock.ts);
   // absent = not stock-limited. Synced with main lib/app.types.ts.
   stock?: number;
+  // How many of our own seats sit together (Alon 29.09): a party of up to this
+  // many is promised to sit together, a bigger one in groups of up to this many
+  // (`ownSeating`, lib/own-stock.ts). Absent / under 2 = no seating promise.
+  // Only on our own tickets. Synced with main lib/app.types.ts.
+  seatsTogether?: number;
 };
 
 export type OrderTicket = Omit<EventTicket, "description" | "colorOnTheMap"> & {

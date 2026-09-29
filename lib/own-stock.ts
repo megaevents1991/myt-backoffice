@@ -60,6 +60,25 @@ export function seatsHeldByTicket(
   return held;
 }
 
+/**
+ * The seating one of our own tickets promises a party of `qty` (Alon 29.09):
+ * up to `seatsTogether` sit together, a bigger party in groups of up to that
+ * many. No `seatsTogether` (or under 2), or a party of one = no promise.
+ */
+export function ownSeating(
+  ticket: Pick<EventTicket, "seatsTogether">,
+  qty: number,
+): { seating: "together" | "groups" | "none"; seatingGroupMax?: number } {
+  const max = ticket.seatsTogether;
+  if (typeof max !== "number" || !Number.isInteger(max) || max < 2) {
+    return { seating: "none" };
+  }
+  if (!Number.isInteger(qty) || qty < 2) return { seating: "none" };
+  return qty <= max
+    ? { seating: "together" }
+    : { seating: "groups", seatingGroupMax: max };
+}
+
 /** Seats of an own ticket still for sale (never below 0); null = not stock-limited. */
 export function stockLeft(
   ticket: Pick<EventTicket, "id" | "supplier" | "stock">,

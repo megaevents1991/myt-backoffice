@@ -16,6 +16,7 @@
 //
 // No new table - the memory IS the existing events.
 import { supabase } from "@/lib/supabase-server";
+import { fixturePair } from "@/lib/creative/fixture";
 import { carriesToAnotherFixture, ticketForFixture } from "@/lib/suppliers";
 import type { Event, EventTicket, EventType } from "@/types/app.types";
 
@@ -46,23 +47,39 @@ function urlSpellings(url: string): string[] {
   return [...out];
 }
 
-/** Whether TixStock uses this drawing for several different venues. */
-async function isGenericMap(urls: string[]): Promise<boolean> {
+/**
+ * Whether a drawing is a football layout, by the TixStock events drawn on it:
+ * most of them are "A vs B" fixtures. Pure. No events = not known to be one.
+ */
+export function isFixtureDrawing(eventNames: (string | null)[]): boolean {
+  const names = eventNames.filter((name): name is string => !!name?.trim());
+  const fixtures = names.filter((name) => fixturePair(name) !== null).length;
+  return names.length > 0 && fixtures * 2 > names.length;
+}
+
+/**
+ * What TixStock's own events say about a drawing: `generic` when it serves
+ * several different venues (a placeholder), `fixtures` when it is a football
+ * layout (`isFixtureDrawing`).
+ */
+async function drawingProfile(
+  urls: string[],
+): Promise<{ generic: boolean; fixtures: boolean }> {
   const { data, error } = await db
     .from("tixstock_events")
-    .select("venue_name")
+    .select("venue_name,event_name")
     .in("venue_map_url", urls)
     .limit(200);
   if (error) {
     console.warn("venue-memory: tixstock_events read failed", JSON.stringify(error));
-    return false;
+    return { generic: false, fixtures: false };
   }
-  const venues = new Set(
-    ((data ?? []) as { venue_name: string | null }[]).map((row) =>
-      (row.venue_name ?? "").trim().toLowerCase(),
-    ),
-  );
-  return venues.size > GENERIC_MAP_VENUES;
+  const rows = (data ?? []) as { venue_name: string | null; event_name: string | null }[];
+  const venues = new Set(rows.map((row) => (row.venue_name ?? "").trim().toLowerCase()));
+  return {
+    generic: venues.size > GENERIC_MAP_VENUES,
+    fixtures: isFixtureDrawing(rows.map((row) => row.event_name)),
+  };
 }
 
 /** Lodging fields a venue "remembers" (spec part C): the next home game at Anfield gets
@@ -127,47 +144,54 @@ async function adoptedTwins(mapUrl: string): Promise<string[]> {
   return urls;
 }
 
-/** Every drawing TixStock uses for a venue, placeholders left out. */
-async function tixstockVenueMaps(venueName: string): Promise<string[]> {
+/** Every FOOTBALL drawing TixStock uses for a venue, placeholders left out. */
+async function tixstockVenueFixtureMaps(venueName: string): Promise<string[]> {
   const { data, error } = await db
     .from("tixstock_events")
-    .select("venue_map_url")
+    .select("venue_map_url,event_name")
     .eq("venue_name", venueName)
     .limit(500);
   if (error) {
     console.warn("venue-memory: tixstock venue maps read failed", JSON.stringify(error));
     return [];
   }
-  const maps = [
-    ...new Set(
-      ((data ?? []) as { venue_map_url: string | null }[])
-        .map((row) => (row.venue_map_url ?? "").trim())
-        .filter(Boolean),
-    ),
-  ];
+  const namesByMap = new Map<string, (string | null)[]>();
+  for (const row of (data ?? []) as { venue_map_url: string | null; event_name: string | null }[]) {
+    const url = (row.venue_map_url ?? "").trim();
+    if (url) namesByMap.set(url, [...(namesByMap.get(url) ?? []), row.event_name]);
+  }
   const kept: string[] = [];
-  for (const url of maps) {
-    if (!(await isGenericMap(urlSpellings(url)))) kept.push(url);
+  for (const [url, names] of namesByMap) {
+    if (!isFixtureDrawing(names)) continue;
+    if (!(await drawingProfile(urlSpellings(url))).generic) kept.push(url);
   }
   return kept;
 }
 
 /**
  * Every URL that draws the same venue as `mapUrl`: its spellings, our adopted
- * copy (or the drawing it came from), and - given TixStock's venue name - the
- * other drawings TixStock keeps of that venue. Empty = no venue to remember:
- * `mapUrl` is a placeholder shared by many venues.
+ * copy (or the drawing it came from), and - for a football drawing, given
+ * TixStock's venue name - the other football drawings TixStock keeps of that
+ * venue. Empty = no venue to remember: `mapUrl` is a placeholder shared by
+ * many venues.
+ *
+ * Only football widens to the venue: every football drawing of a stadium is
+ * the same seating (Anfield has two), while a concert is staged per tour and
+ * its drawing is its own map. Widened by venue name, Oasis at the Etihad
+ * copied Man City - Aston Villa's tickets (Alon 29.09); the Etihad has five
+ * TixStock drawings - two football, three concerts.
  */
 async function sameVenueMapUrls(
   mapUrl: string,
   supplierVenueName: string | null,
 ): Promise<string[]> {
   const primary = [...urlSpellings(mapUrl), ...(await adoptedTwins(mapUrl))];
-  if (await isGenericMap(primary)) return [];
+  const profile = await drawingProfile(primary);
+  if (profile.generic) return [];
   const urls = new Set(primary);
   const venue = supplierVenueName?.trim();
-  if (venue) {
-    for (const drawing of await tixstockVenueMaps(venue)) {
+  if (venue && profile.fixtures) {
+    for (const drawing of await tixstockVenueFixtureMaps(venue)) {
       urlSpellings(drawing).forEach((url) => urls.add(url));
       (await adoptedTwins(drawing)).forEach((url) => urls.add(url));
     }
