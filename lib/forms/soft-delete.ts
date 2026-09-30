@@ -1,13 +1,15 @@
 /**
- * `form_responses.is_deleted` (migration 20260930120000) hides a response
- * staff removed from the report. Until that migration has run, a filter on the
- * column fails (42703 raw, PGRST204 from the schema cache) - read without it
- * rather than break the whole forms area for the minutes between a deploy and
- * its migration, or for as long as a failed migration run stays unfixed.
+ * Soft delete in the forms area: `form_responses.is_deleted` (migration
+ * 20260930120000) hides a response, `form_invites.is_deleted` (20260930150000)
+ * a trip link the user did not need. Until a column's migration has run, a
+ * filter on it fails (42703 raw, PGRST204 from the schema cache) - read without
+ * it rather than break the whole forms area (or every trip link) for the
+ * minutes between a deploy and its migration, or for as long as a failed
+ * migration run stays unfixed.
  *
  * `run(true)` must apply the `is_deleted is null` filter, `run(false)` must not.
  */
-export async function liveResponsesQuery(
+export async function liveRowsQuery(
   run: (filterDeleted: boolean) => PromiseLike<LiveQueryResult>,
 ): Promise<LiveQueryResult> {
   const res = await run(true);
@@ -24,6 +26,8 @@ export async function liveResponsesQuery(
 export type LiveQueryResult = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any;
+  /** Set on a `{ count: "exact" }` select. */
+  count?: number | null;
   error: { code?: string; message?: string } | null;
 };
 

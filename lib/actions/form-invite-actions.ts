@@ -12,6 +12,7 @@ import { logAudit } from "@/lib/audit";
 import { appOrigin, sendMail } from "@/lib/email";
 import { pickLang, fieldAdminLabel } from "@/lib/forms/i18n";
 import { buildFieldSchema, isEmptyAnswer } from "@/lib/forms/validation";
+import { liveRowsQuery, softDeleteStamp } from "@/lib/forms/soft-delete";
 import { resolveLang } from "@/types/form.types";
 import type {
   AnswerMap,
@@ -117,10 +118,12 @@ const newToken = () => randomBytes(16).toString("hex");
 export async function getFormInvites(formId: number): Promise<FormInvite[]> {
   const actor = await requireFormsAccess();
   await requireFormVisible(actor, formId);
-  const { data, error } = await invitesTable()
-    .select(INVITE_COLUMNS)
-    .eq("form_id", formId)
-    .order("created_at", { ascending: false });
+  // A trip link removed from the report is gone from this list too.
+  const { data, error } = await liveRowsQuery((filterDeleted) => {
+    let query = invitesTable().select(INVITE_COLUMNS).eq("form_id", formId);
+    if (filterDeleted) query = query.is("is_deleted", null);
+    return query.order("created_at", { ascending: false });
+  });
 
   if (error) {
     console.error("getFormInvites failed:", JSON.stringify(error));
@@ -511,6 +514,119 @@ export async function deleteInvite(
   });
   revalidatePath(`/forms/${formId}/invites`);
   return true;
+}
+
+export type TripLinkResult = { ok: true } | { ok: false; message: string };
+
+const missingColumn = (code: string | undefined) =>
+  code === "42703" || code === "PGRST204";
+
+/**
+ * Staff/operator: remove a trip link nobody needs (a duplicate, a typo in the
+ * code or the date) from the trips report and the links list. A SOFT delete -
+ * `restoreTripLink` brings it back - and the link stops taking answers
+ * meanwhile. Only an EMPTY trip can go: one with live responses keeps its
+ * row, so real feedback never disappears with a click on the wrong line
+ * (delete its irrelevant responses first, one by one).
+ */
+export async function deleteTripLink(
+  inviteId: number,
+  formId: number,
+): Promise<TripLinkResult> {
+  const actor = await requireFormsAccess();
+  await requireFormVisible(actor, formId);
+
+  const { data: invite, error: loadError } = await invitesTable()
+    .select("id,multi_use,trip_code_prefix,trip_code_num")
+    .eq("id", inviteId)
+    .eq("form_id", formId)
+    .maybeSingle();
+  if (loadError) {
+    console.error("deleteTripLink load failed:", JSON.stringify(loadError));
+    return { ok: false, message: "Could not load the trip." };
+  }
+  if (!invite || !invite.trip_code_prefix || !invite.trip_code_num) {
+    return { ok: false, message: "Trip not found." };
+  }
+
+  const { count, error: countError } = await liveRowsQuery((filterDeleted) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (supabase as any)
+      .from("form_responses")
+      .select("id", { count: "exact", head: true })
+      .eq("invite_id", inviteId);
+    if (filterDeleted) query = query.is("is_deleted", null);
+    return query;
+  });
+  if (countError) {
+    console.error("deleteTripLink count failed:", JSON.stringify(countError));
+    return { ok: false, message: "Could not check the trip's responses." };
+  }
+  if ((count ?? 0) > 0) {
+    return {
+      ok: false,
+      message: `לטיול יש ${count} משובים - מוחקים אותם קודם, ואז את הטיול.`,
+    };
+  }
+
+  const code = `${invite.trip_code_prefix}-${invite.trip_code_num}`;
+  const { data, error } = await invitesTable()
+    .update({ is_deleted: softDeleteStamp() })
+    .eq("id", inviteId)
+    .eq("form_id", formId)
+    .is("is_deleted", null)
+    .select("id");
+  if (error) {
+    console.error("deleteTripLink failed:", JSON.stringify(error));
+    return {
+      ok: false,
+      message: missingColumn(error.code)
+        ? "Deleting is not available yet - try again in a few minutes."
+        : "Deleting failed.",
+    };
+  }
+  if (!data || data.length === 0) return { ok: false, message: "Trip already deleted." };
+
+  await logAudit({
+    action: "delete",
+    entityType: "form_invite",
+    entityId: inviteId,
+    metadata: { form_id: formId, trip_link: true, trip_code: code },
+  });
+  revalidatePath(`/forms/${formId}/report`);
+  revalidatePath(`/forms/${formId}/invites`);
+  return { ok: true };
+}
+
+/** Undo of `deleteTripLink` - the trip is back in the report and its link answers again. */
+export async function restoreTripLink(
+  inviteId: number,
+  formId: number,
+): Promise<TripLinkResult> {
+  const actor = await requireFormsAccess();
+  await requireFormVisible(actor, formId);
+
+  const { data, error } = await invitesTable()
+    .update({ is_deleted: null })
+    .eq("id", inviteId)
+    .eq("form_id", formId)
+    .not("is_deleted", "is", null)
+    .select("id");
+  if (error) {
+    console.error("restoreTripLink failed:", JSON.stringify(error));
+    return { ok: false, message: "Restoring failed." };
+  }
+  if (!data || data.length === 0) return { ok: false, message: "Trip not found." };
+
+  await logAudit({
+    action: "restore",
+    entityType: "form_invite",
+    entityId: inviteId,
+    metadata: { form_id: formId, trip_link: true },
+  });
+  revalidatePath(`/forms/${formId}/report`);
+  revalidatePath(`/forms/${formId}/invites`);
+  return { ok: true };
 }
 
 /** Absolute public URL for the shared link, shown in the builder. */

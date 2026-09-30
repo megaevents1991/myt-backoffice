@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/supabase-server";
 import { requireFormVisible, requireFormsAccess } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
-import { liveResponsesQuery, softDeleteStamp } from "@/lib/forms/live-responses";
+import { liveRowsQuery, softDeleteStamp } from "@/lib/forms/soft-delete";
 import { buildFieldSchema, isEmptyAnswer, validateAnswers } from "@/lib/forms/validation";
 import { fieldAdminLabel, strings } from "@/lib/forms/i18n";
 import { STAFF_EDITABLE_TYPES, resolveLang } from "@/types/form.types";
@@ -172,13 +172,17 @@ export async function getPublicFormBySlug(
 export async function getPublicFormByToken(
   token: string,
 ): Promise<PublicFormLoad> {
-  const { data: invite, error } = await invitesTable()
-    .select(
-      "id,form_id,token,lang,prefill,recipient_name,submitted_at,opened_at," +
-        "multi_use,trip_code_prefix,trip_code_num",
-    )
-    .eq("token", token)
-    .maybeSingle();
+  // A trip link the user removed from the report is a dead link.
+  const { data: invite, error } = await liveRowsQuery((filterDeleted) => {
+    let query = invitesTable()
+      .select(
+        "id,form_id,token,lang,prefill,recipient_name,submitted_at,opened_at," +
+          "multi_use,trip_code_prefix,trip_code_num",
+      )
+      .eq("token", token);
+    if (filterDeleted) query = query.is("is_deleted", null);
+    return query.maybeSingle();
+  });
 
   if (error) {
     console.error("getPublicFormByToken failed:", JSON.stringify(error));
@@ -285,10 +289,13 @@ export async function submitFormResponse(
     let reviewMinAvg: number | null = null;
 
     if (input.token) {
-      const { data: invite } = await invitesTable()
-        .select("id,form_id,submitted_at,multi_use,prefill")
-        .eq("token", input.token)
-        .maybeSingle();
+      const { data: invite } = await liveRowsQuery((filterDeleted) => {
+        let query = invitesTable()
+          .select("id,form_id,submitted_at,multi_use,prefill")
+          .eq("token", input.token);
+        if (filterDeleted) query = query.is("is_deleted", null);
+        return query.maybeSingle();
+      });
       if (!invite) return { ok: false, message: t.sendFailed };
       inviteId = invite.id;
       formId = invite.form_id;
@@ -426,7 +433,7 @@ export async function getFormResponses(
   const actor = await requireFormsAccess();
   await requireFormVisible(actor, formId);
 
-  const { data, error } = await liveResponsesQuery((filterDeleted) => {
+  const { data, error } = await liveRowsQuery((filterDeleted) => {
     let query = responsesTable()
       .select(
         "id,form_id,invite_id,answers,lang,submitted_at,form_invites(recipient_name,recipient_email)",

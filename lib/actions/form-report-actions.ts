@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase-server";
 import { requireFormVisible, requireFormsAccess } from "@/lib/auth/guards";
 import { fieldAdminLabel } from "@/lib/forms/i18n";
 import { buildTripReport } from "@/lib/forms/report";
-import { liveResponsesQuery } from "@/lib/forms/live-responses";
+import { liveRowsQuery } from "@/lib/forms/soft-delete";
 import type { TripReport } from "@/lib/forms/report";
 import type { AnswerMap, FormField } from "@/types/form.types";
 
@@ -34,10 +34,15 @@ export async function getFormTripReport(
       .select("id,form_id,type,position,label_en,label_he,required,staff_only,options,config")
       .eq("form_id", formId)
       .order("position", { ascending: true }),
-    table("form_invites")
-      .select("id,trip_code_prefix,trip_code_num,total_travelers,prefill,created_at")
-      .eq("form_id", formId),
-    liveResponsesQuery((filterDeleted) => {
+    // A trip link the user removed leaves the report with it.
+    liveRowsQuery((filterDeleted) => {
+      let query = table("form_invites")
+        .select("id,trip_code_prefix,trip_code_num,total_travelers,prefill,created_at")
+        .eq("form_id", formId);
+      if (filterDeleted) query = query.is("is_deleted", null);
+      return query;
+    }),
+    liveRowsQuery((filterDeleted) => {
       let query = table("form_responses")
         .select("invite_id,answers,submitted_at")
         .eq("form_id", formId);

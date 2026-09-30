@@ -51,7 +51,11 @@ import {
   restoreFormResponse,
   updateFormResponseAnswers,
 } from "@/lib/actions/form-response-actions";
-import { setTripTotalTravelers } from "@/lib/actions/form-invite-actions";
+import {
+  deleteTripLink,
+  restoreTripLink,
+  setTripTotalTravelers,
+} from "@/lib/actions/form-invite-actions";
 import {
   buildEscortRows,
   compareWithEscortPast,
@@ -156,6 +160,7 @@ export function ReportClient({
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [prefix, setPrefix] = useState("");
   const [num, setNum] = useState("");
   const [escort, setEscort] = useState("");
@@ -183,18 +188,22 @@ export function ReportClient({
   // Trip sizes typed in this session, keyed by invite id - the row and the
   // summary move at once instead of waiting for router.refresh().
   const [sizes, setSizes] = useState<Record<number, number | null>>({});
+  // Trip links deleted this session (invite ids) - off the table at once.
+  const [removedTrips, setRemovedTrips] = useState<ReadonlySet<number>>(() => new Set());
   const hasTravelerField = report.travelerFieldId !== null;
   const allTrips = useMemo(
     () =>
-      report.trips.map((trip) =>
-        trip.inviteId !== null && trip.inviteId in sizes
-          ? {
-              ...trip,
-              travelers: withTotal(trip.travelers, sizes[trip.inviteId], hasTravelerField),
-            }
-          : trip,
-      ),
-    [report.trips, sizes, hasTravelerField],
+      report.trips
+        .filter((trip) => trip.inviteId === null || !removedTrips.has(trip.inviteId))
+        .map((trip) =>
+          trip.inviteId !== null && trip.inviteId in sizes
+            ? {
+                ...trip,
+                travelers: withTotal(trip.travelers, sizes[trip.inviteId], hasTravelerField),
+              }
+            : trip,
+        ),
+    [report.trips, sizes, hasTravelerField, removedTrips],
   );
   // The column is where a size gets typed, so it shows whenever there is a
   // trip to size - not only once a size or a traveller question exists.
@@ -283,6 +292,63 @@ export function ReportClient({
       })
       .catch((e) => {
         console.error("restoreFormResponse threw:", e);
+        toast({ variant: "destructive", title: "השחזור נכשל" });
+      });
+  }
+
+  // A trip link nobody needs (a duplicate, a typo) - only an empty trip; the
+  // server checks the same. The toast undoes it.
+  async function deleteTrip(trip: TripRow) {
+    const inviteId = trip.inviteId;
+    if (inviteId === null) return;
+    const sure = await confirm({
+      title: `למחוק את הטיול ${trip.code}?`,
+      description:
+        "הטיול יוצא מהדוח ומרשימת הקישורים, והקישור שלו מפסיק לקבל תשובות. אפשר להחזיר אותו מיד, מההודעה שתופיע.",
+      confirmLabel: "מחיקה",
+      cancelLabel: "ביטול",
+      destructive: true,
+    });
+    if (!sure) return;
+    try {
+      const result = await deleteTripLink(inviteId, formId);
+      if (!result.ok) {
+        toast({ variant: "destructive", title: "המחיקה נכשלה", description: result.message });
+        return;
+      }
+      setRemovedTrips((prev) => new Set(prev).add(inviteId));
+      if (openTrip === inviteId) setOpenTrip(undefined);
+      router.refresh();
+      toast({
+        title: `הטיול ${trip.code} נמחק`,
+        action: (
+          <ToastAction altText="ביטול המחיקה" onClick={() => undoTrip(inviteId)}>
+            ביטול
+          </ToastAction>
+        ),
+      });
+    } catch (e) {
+      console.error("deleteTripLink threw:", e);
+      toast({ variant: "destructive", title: "המחיקה נכשלה" });
+    }
+  }
+
+  function undoTrip(inviteId: number) {
+    restoreTripLink(inviteId, formId)
+      .then((result) => {
+        if (!result.ok) {
+          toast({ variant: "destructive", title: "השחזור נכשל", description: result.message });
+          return;
+        }
+        setRemovedTrips((prev) => {
+          const next = new Set(prev);
+          next.delete(inviteId);
+          return next;
+        });
+        router.refresh();
+      })
+      .catch((e) => {
+        console.error("restoreTripLink threw:", e);
         toast({ variant: "destructive", title: "השחזור נכשל" });
       });
   }
@@ -457,13 +523,14 @@ export function ReportClient({
                 )}
                 <TableHead>Average</TableHead>
                 <TableHead>Last response</TableHead>
+                <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {trips.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={showTravelers ? 8 : 7}
+                    colSpan={showTravelers ? 9 : 8}
                     className="h-24 text-center text-muted-foreground"
                   >
                     No trips match the filters.
@@ -491,6 +558,7 @@ export function ReportClient({
                   comparison={openTrip === trip.inviteId ? comparisonOf(trip) : null}
                   pdfUrl={pdfHref(formId, { trip: trip.inviteId ?? "none" })}
                   onView={(r) => setViewingId(r.id)}
+                  onDelete={() => deleteTrip(trip)}
                 />
               ))}
             </TableBody>
@@ -960,6 +1028,7 @@ function TripRows({
   comparison,
   pdfUrl,
   onView,
+  onDelete,
 }: {
   trip: TripRow;
   ratingFields: RatingFieldInfo[];
@@ -976,6 +1045,8 @@ function TripRows({
   /** This trip alone as a PDF. */
   pdfUrl: string;
   onView: (response: FormResponseRow) => void;
+  /** Remove this (empty) trip link - the "no trip" bucket has none. */
+  onDelete: () => void;
 }) {
   return (
     <>
@@ -1019,11 +1090,38 @@ function TripRows({
             ? new Date(trip.lastSubmittedAt).toLocaleDateString()
             : "-"}
         </TableCell>
+        <TableCell className="w-10 p-1 text-right">
+          {trip.inviteId !== null && (
+            // A trip that got answers keeps its row - its responses go first.
+            <span
+              title={
+                responses.length > 0
+                  ? "בטיול יש משובים - מוחקים אותם קודם, ואז את הטיול"
+                  : "מחיקת הטיול - אם לא צריך אותו"
+              }
+            >
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                disabled={responses.length > 0}
+                aria-label={`Delete trip ${trip.code ?? ""}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDelete();
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </span>
+          )}
+        </TableCell>
       </TableRow>
 
       {open && (
         <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableCell colSpan={showTravelers ? 8 : 7} className="space-y-4 p-4">
+          <TableCell colSpan={showTravelers ? 9 : 8} className="space-y-4 p-4">
             <div className="flex justify-end">
               <Button asChild variant="outline" size="sm" className="h-7">
                 <a href={pdfUrl} target="_blank" rel="noopener noreferrer">

@@ -17,7 +17,7 @@ import type {
 } from "@/types/form.types";
 import { FORM_FIELD_TYPES } from "@/types/form.types";
 import { DEFAULT_ACCENT } from "@/lib/forms/brand";
-import { liveResponsesQuery } from "@/lib/forms/live-responses";
+import { liveRowsQuery } from "@/lib/forms/soft-delete";
 
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
@@ -74,7 +74,7 @@ async function uniqueSlug(base: string, ignoreId?: number): Promise<string> {
 
 export async function getForms(): Promise<FormSummary[]> {
   const actor = await requireFormsAccess();
-  const { data, error } = await liveResponsesQuery((filterDeleted) => {
+  const { data, error } = await liveRowsQuery((filterDeleted) => {
     let query = formsTable()
       .select(`${FORM_COLUMNS},form_fields(count),form_responses(count)`)
       .is("is_deleted", null)

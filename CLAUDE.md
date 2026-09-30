@@ -488,9 +488,13 @@ these tables.
   SOFT-deletes an irrelevant response: `form_responses.is_deleted` ("MM-DD-YYYY", migration
   `20260930120000`), `deleteFormResponse` / `restoreFormResponse` (the toast's "ביטול"), audit
   `delete` / `restore` with the answers in metadata. Every read skips it - report, `/forms`
-  count, xlsx - through `liveResponsesQuery` (`lib/forms/live-responses.ts`), which re-reads
+  count, xlsx - through `liveRowsQuery` (`lib/forms/soft-delete.ts`), which re-reads
   unfiltered on 42703/PGRST204 so the forms area survives a deploy that beat its migration. The
-  invite is left alone. (b) **One filter rule** for the screen and the PDF, pure in
+  invite is left alone. A TRIP LINK the user does not need goes the same way: the bin at the end
+  of its report row → `deleteTripLink` / `restoreTripLink` (`form_invites.is_deleted`, migration
+  `20260930150000`), only for an EMPTY trip (server re-counts live responses); a removed link
+  leaves the report and the links list and stops taking answers (`getPublicFormByToken` /
+  `submitFormResponse` skip it). (b) **One filter rule** for the screen and the PDF, pure in
   `lib/forms/report.ts` (`filterTrips`, `responsesOfTrips`, `summarizeTrips`,
   `tripFiltersToQuery`/`FromQuery`; selftest `scripts/forms-report-selftest.ts`): code, escort
   (part match, `escortKey` = trimmed / spaces collapsed / lower case), departure from / to, year,
