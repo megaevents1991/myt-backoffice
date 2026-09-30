@@ -1098,8 +1098,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     },
     points: [
       t(
-        "Multi-team batch (TixStock): selection accumulates across teams with a chips row; \"select all home games of X\" uses the name-starts-with-team rule; crossing into another team resets the dragged form so the previous venue doesn't leak.",
-        "באץ' רב־קבוצות (TixStock): הבחירה נצברת בין קבוצות עם שורת צ'יפים; \"בחר את כל משחקי הבית של X\" משתמש בכלל שם־מתחיל־בשם־הקבוצה; מעבר לקבוצה אחרת מאפס את הטופס הנגרר כדי שהמתחם הקודם לא ידלוף.",
+        "Multi-team batch (TixStock): selection accumulates across teams with a chips row; \"select all home games of X\" uses the name-starts-with-team rule; crossing into another team - or another venue, as on an artist's tour - resets the dragged form so the previous venue doesn't leak.",
+        "באץ' רב־קבוצות (TixStock): הבחירה נצברת בין קבוצות עם שורת צ'יפים; \"בחר את כל משחקי הבית של X\" משתמש בכלל שם־מתחיל־בשם־הקבוצה; מעבר לקבוצה אחרת - או לאולם אחר, כמו בסיבוב הופעות של אמן - מאפס את הטופס הנגרר כדי שהמתחם הקודם לא ידלוף.",
       ),
       t(
         "Stadium memory: a step that lands with no ticket categories copies the TixStock categories of the last event on the same seat map - the stadium's drawing, never the city (banner + undo). The copies carry this game's TixStock id, so live listings reprice them. A generic map (\"General Admission\") remembers nothing. Only football reaches the stadium's OTHER drawings (football drawings of one stadium are the same seating); a concert remembers only its own drawing - each tour has its own stage.",

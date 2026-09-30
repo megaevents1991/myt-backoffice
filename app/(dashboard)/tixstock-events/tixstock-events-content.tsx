@@ -33,7 +33,7 @@ import { matchesSearch } from "@/lib/search";
 import { TixStockEventDB, TixStockListing } from "@/types/tixstock.types";
 import { Checkbox } from "@/components/ui/checkbox";
 import { tixstockToEvent } from "./batch/tixstock-to-event";
-import { homeTeamOf, isHomeGame } from "@/lib/tixstock-home";
+import { batchGroupOf, homeTeamOf, isHomeGame } from "@/lib/tixstock-home";
 import { createDraftBatch } from "@/lib/actions/factory-actions";
 import {
   FilterSortControls,
@@ -364,9 +364,13 @@ export function TixStockEventsContent() {
     () =>
       events
         .filter((e) => selectedEventIds.has(e.event_id))
+        // Team, then venue, then date: the wizard drags one step's form into
+        // the next only inside one team-at-one-venue group (batchGroupOf), so a
+        // tour's shows at one venue stay together instead of resetting per step.
         .sort(
           (a, b) =>
             homeTeamOf(a).localeCompare(homeTeamOf(b)) ||
+            batchGroupOf(a).localeCompare(batchGroupOf(b)) ||
             Date.parse(a.show_date) - Date.parse(b.show_date),
         ),
     [events, selectedEventIds]

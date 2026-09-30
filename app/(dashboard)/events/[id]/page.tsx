@@ -50,7 +50,7 @@ import { getLocations } from "@/lib/actions/location-actions";
 import type { Location } from "@/types/location.types";
 import { getTixStockTickets } from "@/lib/actions/tixstock-actions";
 import { findVenueMemoryAction, nearestIataAction } from "@/lib/actions/venue-memory-actions";
-import { homeTeamOf } from "@/lib/tixstock-home";
+import { batchGroupOf } from "@/lib/tixstock-home";
 import {
   batchRowIdentity,
   batchSupplierRef,
@@ -1471,12 +1471,13 @@ export default function EventPage({
 
     // Crossing into another group's fixtures starts from the fresh mapping -
     // the dragged form (venue, prices, images) belongs to the previous group's
-    // ground. Tixstock groups by home team; other providers by venue. Stadium
-    // memory then refires for the new one.
+    // ground. Tixstock groups by home team AND venue (batchGroupOf - an
+    // artist's tour is one performer across many venues); other providers by
+    // venue. Stadium memory then refires for the new one.
     const previous = batchEvents[batchIndex];
     const groupOf = (row: BatchRow) =>
       batchProvider === "tixstock"
-        ? homeTeamOf(row as TixStockEventDB)
+        ? batchGroupOf(row as TixStockEventDB)
         : batchRowIdentity(batchProvider, row).group;
     if (previous && groupOf(previous) !== groupOf(ev)) {
       setEvent({ id: 0, ...identity });

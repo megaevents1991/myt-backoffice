@@ -23,3 +23,15 @@ export function homeTeamOf(event: TixStockEventDB): string {
   );
   return home?.name ?? performers[0]?.name ?? "—";
 }
+
+/**
+ * The batch wizard's group: one home team at one venue. A team's home games
+ * share a ground, so the dragged form (location, map, zones) carries between
+ * them; an artist's tour is one performer across many venues and each venue
+ * must start fresh (2026-09-30: Oasis Munich was saved with the Etihad's map,
+ * zones and London flight). The venue is normalised so TixStock's spellings of
+ * one ground ("Red Bull Arena - Leipzig", accents) stay one group.
+ */
+export function batchGroupOf(event: TixStockEventDB): string {
+  return `${homeTeamOf(event)}|${normalizeForSearch(event.venue_name ?? "")}`;
+}
