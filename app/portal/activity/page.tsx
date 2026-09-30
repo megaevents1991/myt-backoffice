@@ -7,6 +7,8 @@ import {
 } from "@/lib/actions/portal-activity-actions";
 import type { PortalActivityType } from "@/lib/actions/portal-activity-actions";
 import { getPortalDashboard } from "@/lib/actions/portal-dashboard-actions";
+import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
+import { cn } from "@/lib/utils";
 import {
   getMyCredit,
   getMyVoucherSettlement,
@@ -317,12 +319,49 @@ async function SettlementTab({
   );
 }
 
-async function DemandTab() {
-  const dashboard = await getPortalDashboard("all", "office");
+/** The demand tab's period - the same pills the staff partner view has. It
+ *  scopes everything on the tab: the funnel, the clicked events, the top picks
+ *  and the entry cards. */
+const DEMAND_RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
+  { key: "today", label: "היום" },
+  { key: "yesterday", label: "אתמול" },
+  { key: "3d", label: "3 ימים" },
+  { key: "7d", label: "7 ימים" },
+  { key: "30d", label: "30 יום" },
+  { key: "90d", label: "90 יום" },
+  { key: "all", label: "הכל" },
+];
+const DEFAULT_DEMAND_RANGE: InsightsRange = "30d";
+
+async function DemandTab({ range }: { range: InsightsRange }) {
+  const dashboard = await getPortalDashboard(range, "office");
   const topStage = Math.max(...dashboard.traffic.byStage.map((s) => s.visitors), 1);
+  const ranged = range !== "all";
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="me-1 text-sm text-muted-foreground">תקופה:</span>
+        {DEMAND_RANGE_OPTIONS.map((option) => (
+          <Link
+            key={option.key}
+            href={
+              option.key === DEFAULT_DEMAND_RANGE
+                ? "/portal/activity?tab=demand"
+                : `/portal/activity?tab=demand&range=${option.key}`
+            }
+            className={cn(
+              "rounded-full border px-3 py-1 text-sm transition-colors",
+              option.key === range
+                ? "border-transparent bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            {option.label}
+          </Link>
+        ))}
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -334,8 +373,9 @@ async function DemandTab() {
           <CardContent>
             {!dashboard.traffic.hasData ? (
               <p className="py-6 text-sm text-muted-foreground">
-                עדיין לא נרשמו כניסות. הנתונים מתחילים להיאסף ברגע שמישהו נכנס
-                דרך לינק שמכיל את הקוד שלכם.
+                {ranged
+                  ? "לא נרשמו כניסות בתקופה הזו."
+                  : "עדיין לא נרשמו כניסות. הנתונים מתחילים להיאסף ברגע שמישהו נכנס דרך לינק שמכיל את הקוד שלכם."}
               </p>
             ) : (
               <div className="space-y-3">
@@ -378,8 +418,9 @@ async function DemandTab() {
           <CardContent>
             {dashboard.clickedEvents.length === 0 ? (
               <p className="py-6 text-sm text-muted-foreground">
-                עדיין אין מספיק נתונים. הרשימה תתמלא ככל שיותר אנשים יקליקו על
-                אירועים דרך הלינקים שלכם.
+                {ranged
+                  ? "אף אירוע לא נלחץ בתקופה הזו."
+                  : "עדיין אין מספיק נתונים. הרשימה תתמלא ככל שיותר אנשים יקליקו על אירועים דרך הלינקים שלכם."}
               </p>
             ) : (
               <ul className="space-y-3">
@@ -469,18 +510,23 @@ async function DemandTab() {
 export default async function PortalActivityPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; range?: string }>;
 }) {
   const session = await getSession();
   const isPartner = !!session && PARTNER_ROLES.includes(session.role);
   // Staff visiting /portal see the layout's notice only.
   if (!isPartner) return null;
 
-  const { tab: rawTab } = await searchParams;
+  const { tab: rawTab, range: rawRange } = await searchParams;
   const tab: InfoTabKey =
     rawTab === "users" || rawTab === "settlement" || rawTab === "demand"
       ? rawTab
       : "updates";
+  const demandRange: InsightsRange = DEMAND_RANGE_OPTIONS.some(
+    (o) => o.key === rawRange,
+  )
+    ? (rawRange as InsightsRange)
+    : DEFAULT_DEMAND_RANGE;
 
   const profile = await getPortalProfile().catch(() => null);
   const creditAllowed = (profile?.credit_per_ticket ?? 0) > 0;
@@ -508,7 +554,7 @@ export default async function PortalActivityPage({
           creditAllowed={creditAllowed}
         />
       )}
-      {tab === "demand" && <DemandTab />}
+      {tab === "demand" && <DemandTab range={demandRange} />}
     </div>
   );
 }

@@ -56,6 +56,14 @@ export type EntryScanRow = {
 export const ENTRY_SCAN_SELECT =
   "id,user_id,stage,created_at,affiliate_id,path:data->>path,event_name:data->data->>eventName,event:data->data->>event,event_date:data->data->>eventDate,event_location:data->data->>eventLocation";
 
+/** An artist's or a team's page under the category tree - a leaf of the
+ *  `artists` / `teams` hub ("/c/music/artists/oasis", "/c/football/teams/
+ *  liverpool"). Every partner link to an artist or a team points there
+ *  (partnerPageLink, 2026-09-11); the hub itself ("/c/music/artists") is a
+ *  list and stays a category page. Same pattern, as a POSIX regex, in the two
+ *  entry-funnel SQL functions. */
+const CMS_PERSON_PAGE = /^\/c\/(?:[^/]+\/)*(?:artists|teams)\/[^/]+\/?$/;
+
 /** Mirror of the classification in partners_entry_funnels_all (SQL). A first
  *  row that is not a VISIT means the user surfaced inside the order flow -
  *  order pages fired no VISIT until main's Aug 2026 tracker fix, so that's a
@@ -67,7 +75,11 @@ export function classifyEntry(
 ): EntryKind {
   if (stage !== "VISIT") return "event";
   if (!path || path === "/") return "home";
-  if (path.startsWith("/artists") || path.startsWith("/football"))
+  if (
+    path.startsWith("/artists") ||
+    path.startsWith("/football") ||
+    CMS_PERSON_PAGE.test(path)
+  )
     return "artist";
   if (path.startsWith("/order")) return "event";
   return "other";

@@ -48,8 +48,8 @@ import type { ReservationEventOrderInfo } from "@/types/reservation.types";
 /**
  * Everything the partner dashboard shows, in one round trip.
  *
- * The activity tiles, funnel, entry funnels and clicked events are scoped to
- * the requested time range (the top filter). The commission money tiles are
+ * The activity tiles, funnel, entry funnels, clicked events and top picks are
+ * scoped to the requested time range (the top filter). The commission money tiles are
  * deliberately NOT ranged: pending/billed are read from the same `billed_at`
  * fact the monthly report bills on, and a windowed figure would disagree with
  * the invoice - the kind of ambiguity that turns into an argument about money.
@@ -132,7 +132,7 @@ export interface PortalDashboard {
    *  no artist group under their own name). */
   newGroups: PortalNewGroup[];
   /** Most-picked flight routes / hotels / ticket categories on this partner's
-   *  PAID bookings - the per-partner cut of the staff performance view. */
+   *  PAID bookings in the range - the per-partner cut of the staff performance view. */
   topPicks: {
     flights: TopPick[];
     hotels: TopPick[];
@@ -469,7 +469,9 @@ export async function getPortalDashboard(
     const key = (label ?? "").trim();
     if (key) map.set(key, (map.get(key) ?? 0) + 1);
   };
-  for (const row of scopedRows) {
+  // Ranged like the funnel and the clicked events beside it (the demand tab's
+  // period pills) - "all" is the whole history, as before.
+  for (const row of rangedRows) {
     if (row.status !== "Paid") continue;
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

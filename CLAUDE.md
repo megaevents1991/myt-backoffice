@@ -55,6 +55,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > checkout offers agent card / voucher); an influencer has no agent mode and simply
 > opens the site through their own tracking link. Do NOT build a partner login on main.
 >
+> **Entry funnels + demand period (2026-09-30):** the three "entered on" cards
+> (staff `/partners/[code]/view`, Insights tab, portal "ביקושים") classify a
+> visitor by their FIRST tracked page - `classifyEntry` in
+> `lib/partner-entry-funnels.ts`, mirrored as SQL in `partner_entry_funnels_range`
+> / `partners_entry_funnels_all` (migration `20260930170000`; selftest
+> `scripts/partner-entry-funnels-selftest.ts`). A LEAF of the `artists` / `teams`
+> hub (`/c/music/artists/oasis`, `/c/football/teams/liverpool` - where every
+> partner link to a person has pointed since 09-11) is an ARTIST entry; the hub
+> itself, genres, leagues and destinations stay "other" (the footnote). Before
+> this, an influencer had 1,366 of 1,927 monthly visitors in the footnote. The
+> portal's demand tab has the same period pills as the staff view
+> (`?tab=demand&range=`, default 30 days) and its top picks follow the range.
+>
 > **Portal history cut-off (2026-09-16):** `partners.portal_history_from`
 > (date, null = all) - set in the partner editor ("Portal History From") for a
 > partner starting fresh on a code that already has bookings (Aviran: code
