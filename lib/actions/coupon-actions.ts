@@ -1,7 +1,7 @@
 "use server";
 
 import { supabase } from "@/lib/supabase-server";
-import { requireStaff } from "@/lib/auth/guards";
+import { requireAdmin, requireStaff } from "@/lib/auth/guards";
 import type { Coupon } from "@/types/app.types";
 import { isCustomerRefundPartner } from "@/types/partner.types";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
@@ -89,8 +89,12 @@ export async function toggleCouponActive(id: number, isActive: boolean) {
   return data[0] as Coupon;
 }
 
+/**
+ * A HARD delete - the row goes, and its times_used / times_paid history with
+ * it. Admins only; switching "Active" off is how staff stop a coupon.
+ */
 export async function deleteCoupon(id: number) {
-  await requireStaff();
+  await requireAdmin();
   const { error } = await coupons().delete().eq("id", id);
 
   if (error) throw error;

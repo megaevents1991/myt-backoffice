@@ -15,19 +15,23 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "react-hot-toast";
 import { useConfirm } from "@/components/confirm-provider";
-import { Edit, Trash2, Eye } from "lucide-react";
+import { Edit, Trash2, Eye, RotateCcw } from "lucide-react";
 import type { OfflineHotel } from "@/types/offline-hotel.types";
 import {
   getOfflineHotels,
+  restoreOfflineHotel,
   softDeleteOfflineHotel,
 } from "@/lib/actions/offline-hotel-actions";
 
 export function OfflineHotelsTable() {
-  const [hotels, setHotels] = useState<OfflineHotel[]>([]);
+  const [allHotels, setHotels] = useState<OfflineHotel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [showDeleted, setShowDeleted] = useState(false);
   const [isPending, startTransition] = useTransition();
   const confirm = useConfirm();
+  // Deleted hotels are hidden unless asked for - same as the flights list.
+  const hotels = showDeleted ? allHotels : allHotels.filter((h) => !h.is_deleted);
 
   useEffect(() => {
     setIsLoading(true);
@@ -78,10 +82,45 @@ export function OfflineHotelsTable() {
     });
   };
 
+  const handleRestore = async (id: number) => {
+    if (
+      !(await confirm({
+        title: "Restore hotel?",
+        description: "The hotel returns to active status.",
+        confirmLabel: "Restore",
+      }))
+    )
+      return;
+    startTransition(async () => {
+      try {
+        await restoreOfflineHotel(id);
+        setHotels((prev) =>
+          prev.map((h) => (h.id === id ? { ...h, is_deleted: false } : h))
+        );
+        toast.success("Hotel restored successfully.");
+      } catch (error) {
+        console.error("Failed to restore hotel:", error);
+        toast.error("Failed to restore hotel.");
+      }
+    });
+  };
+
   if (isLoading) return <div>Loading hotels...</div>;
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-end">
+        <label className="flex items-center gap-2 text-xs">
+          <Checkbox
+            checked={showDeleted}
+            onCheckedChange={(checked) => {
+              setShowDeleted(Boolean(checked));
+              setSelectedRows(new Set());
+            }}
+          />
+          Show deleted
+        </label>
+      </div>
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -162,21 +201,31 @@ export function OfflineHotelsTable() {
                           <span className="sr-only">Edit Hotel</span>
                         </Button>
                       </Link>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Delete Hotel"
-                        onClick={() => handleDelete(hotel.id)}
-                        disabled={isPending || Boolean(hotel.is_deleted)}
-                        className={
-                          hotel.is_deleted
-                            ? "text-muted-foreground cursor-not-allowed"
-                            : "text-red-600 hover:text-red-700"
-                        }
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">Delete Hotel</span>
-                      </Button>
+                      {hotel.is_deleted ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Restore Hotel"
+                          onClick={() => handleRestore(hotel.id)}
+                          disabled={isPending}
+                          className="text-green-600 hover:text-green-700"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                          <span className="sr-only">Restore Hotel</span>
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Delete Hotel"
+                          onClick={() => handleDelete(hotel.id)}
+                          disabled={isPending}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Delete Hotel</span>
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

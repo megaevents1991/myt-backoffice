@@ -59,6 +59,15 @@ function sideIsTeam(side: string, team: string): boolean {
   return tokensEqual(significantTokens(side), significantTokens(team));
 }
 
+/**
+ * Main's `clubNamesMatch` (lib/eventNameMatch.ts): the same club once
+ * qualifiers are stripped - "Tottenham Hotspur FC" ≡ the crest library's
+ * "Tottenham Hotspur". Latin tokens only; compare Hebrew names exactly.
+ */
+export function clubNamesMatch(a: string, b: string): boolean {
+  return tokensEqual(significantTokens(a), significantTokens(b));
+}
+
 const VS_SPLIT = /\s+vs\.?\s+/i;
 const COMPETITION_TAIL = /\s+[-–—]\s+.*$/;
 

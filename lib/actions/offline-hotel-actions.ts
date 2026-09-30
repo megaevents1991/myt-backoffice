@@ -242,6 +242,28 @@ export async function softDeleteOfflineHotel(
   return data[0] as OfflineHotel;
 }
 
+/** Undo softDeleteOfflineHotel - same shape as restoreOfflineFlight. */
+export async function restoreOfflineHotel(
+  id: number,
+): Promise<OfflineHotel> {
+  await requireStaff();
+  const { data, error } = await hotelsTable()
+    .update({ is_deleted: false })
+    .eq("id", id)
+    .select();
+
+  if (error) throw error;
+  await logAudit({
+    action: "update",
+    entityType: "offline_hotel",
+    entityId: id,
+    metadata: { restored: true },
+  });
+  revalidatePath("/offline-hotels");
+  revalidatePath(`/offline-hotels/${id}`);
+  return data[0] as OfflineHotel;
+}
+
 export async function getHotelsByEventId(
   eventId: number,
 ): Promise<OfflineHotel[]> {

@@ -61,7 +61,8 @@ export async function findInfluencerCoupon(
  * Create the partner's coupon, or bring the existing one in line with the
  * partner's current follower discount (code included - "AVIRAN30" becomes
  * "AVIRAN25" when the discount drops to 25; the old code stops working).
- * `create = false` only touches a coupon that already exists.
+ * `create = false` only touches a coupon that already exists. An existing
+ * coupon keeps its own `is_active`; only a newly inserted one starts active.
  */
 export async function syncInfluencerCoupon(
   trackingCode: string,
@@ -85,7 +86,8 @@ export async function syncInfluencerCoupon(
 
   if (!terms) {
     // No follower discount → nothing to sell. Switch an existing coupon off
-    // rather than deleting it (times_used / times_paid history stays).
+    // rather than deleting it (times_used / times_paid history stays). A later
+    // discount does NOT switch it back on - a re-sync never touches is_active.
     if (existing && existing.is_active) {
       await db.from("coupons").update({ is_active: false }).eq("id", existing.id);
       return { ok: true, coupon: { ...existing, is_active: false }, created: false };
@@ -118,10 +120,12 @@ export async function syncInfluencerCoupon(
   }
 
   if (target) {
+    // A re-sync carries the TERMS only: `is_active` stays whatever the coupon
+    // holds now, so one switched off in /coupons is not turned back on by the
+    // next partner save or portal rebalance. Only a new coupon starts active.
     const patch = {
       code,
       ...terms,
-      is_active: true,
       partner_tracking_code: trackingCode,
       influencer_partner_code: trackingCode,
     };

@@ -12,6 +12,7 @@ import {
   pickFlightColumns,
   assertFlightValues,
 } from "./offline-flight-columns";
+import { pushFlightsToEvents } from "./offline-flight-event-sync";
 
 // The `flights` table is not in db.schema.sql so Supabase's generated types don't
 // include it - all .from("flights") calls are cast to bypass the `never` inference.
@@ -56,10 +57,12 @@ export async function createOfflineFlight(
     entityId: created.id,
     changes: flight,
   });
+  // Every event on a new flight is newly linked: price + default dates, the
+  // same as linking it through updateOfflineFlight.
+  await pushFlightsToEvents([
+    { flight: created, added: created.event_ids ?? [] },
+  ]);
   revalidatePath("/offline-flights");
-  for (const id of flight.event_ids ?? []) {
-    revalidatePath(`/events/${id}`);
-  }
   return created;
 }
 
@@ -94,41 +97,18 @@ export async function updateOfflineFlight(
   });
 
   const updated = data[0] as OfflineFlight;
-  const defDepart = updated.outbound_departure_time.slice(0, 10);
-  // Return date = takeoff of the return leg (inbound_departure_time),
-  // NOT the landing-back-in-Israel time (inbound_arrival_time).
-  const defReturn = updated.inbound_departure_time.slice(0, 10);
-  const baseFlightPrice = Math.round(Number(updated.price));
-  const priceChanged = baseFlightPrice !== Math.round(oldPrice);
+  const priceChanged =
+    Math.round(Number(updated.price)) !== Math.round(oldPrice);
 
-  // Push price to newly added events; also push to existing events if price changed
-  const eventsNeedingPriceUpdate = new Set<number>(addedEventIds);
-  if (priceChanged) {
-    for (const eid of newEventIds) eventsNeedingPriceUpdate.add(eid);
-  }
-
-  if (eventsNeedingPriceUpdate.size > 0) {
-    await Promise.all(
-      Array.from(eventsNeedingPriceUpdate).map(async (eventId) => {
-        const isNewlyAdded = addedEventIds.includes(eventId);
-        const eventUpdate: Record<string, unknown> = {
-          base_flight_price: baseFlightPrice,
-        };
-        if (isNewlyAdded) {
-          eventUpdate.def_date_depart = defDepart;
-          eventUpdate.def_date_return = defReturn;
-        }
-        const { error: evErr } = await (supabase as any)
-          .from("events")
-          .update(eventUpdate)
-          .eq("id", eventId);
-        if (evErr) throw evErr;
-      }),
-    );
-    for (const eventId of eventsNeedingPriceUpdate) {
-      revalidatePath(`/events/${eventId}`);
-    }
-  }
+  // Newly added events take price + default dates; already-linked ones take
+  // the price only, and only when it moved.
+  await pushFlightsToEvents([
+    {
+      flight: updated,
+      added: addedEventIds,
+      repriced: priceChanged ? newEventIds : [],
+    },
+  ]);
 
   revalidatePath("/offline-flights");
   revalidatePath(`/offline-flights/${id}/edit`);

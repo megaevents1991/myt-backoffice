@@ -21,6 +21,8 @@ import {
   type CouponInput,
 } from "@/lib/actions/coupon-actions";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/auth-context";
+import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   Dialog,
   DialogContent,
@@ -76,6 +78,10 @@ export function CouponsTable() {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Coupon | null>(null);
   const { toast } = useToast();
+  // Delete is a hard delete (usage history goes with it) - admins only, the
+  // server action refuses anyone else. Everyone else stops a coupon with Active.
+  const { user: me } = useAuth();
+  const canDelete = !!me && ADMIN_ROLES.includes(me.role);
 
   useEffect(() => {
     async function fetchData() {
@@ -334,13 +340,15 @@ export function CouponsTable() {
           >
             <Pencil className="h-4 w-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setDeleteTarget(row.original)}
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
+          {canDelete && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setDeleteTarget(row.original)}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          )}
         </div>
       ),
     },
@@ -571,9 +579,11 @@ export function CouponsTable() {
               Delete coupon {deleteTarget?.code}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Customers will no longer be able to redeem it. Past orders keep
-              their recorded discount. To pause a coupon instead, toggle it
-              inactive.
+              This cannot be undone. Customers will no longer be able to
+              redeem it, and its usage count ({deleteTarget?.times_used ?? 0}{" "}
+              used, {deleteTarget?.times_paid ?? 0} paid) is lost. Past orders
+              keep their recorded discount. To stop a coupon, switch Active off
+              instead.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -14,7 +14,7 @@
  * gallery is jsonb defaulting to '[]' - an empty one is never NULL.
  */
 import { supabaseTyped } from "@/lib/supabase-server";
-import { buildLiveEventCounter, type OnTourEvent } from "@/lib/on-tour";
+import { buildLiveEventCounter, clubNamesMatch, type OnTourEvent } from "@/lib/on-tour";
 import {
   findTwin,
   TWIN_HUB_SLUG,
@@ -173,6 +173,52 @@ export async function buildGapContext(opts: GapLoadOptions = {}): Promise<GapCon
   };
 }
 
+type CrestLibraryRow = { name_english: string; name_hebrew: string | null };
+
+/**
+ * Main's `libraryUrlFor` (myt-main lib/football.ts): the site, the team pages
+ * and the creative generator take a team's crest from the football_logos
+ * library (/assets) FIRST - exact English name (case-insensitive), exact
+ * Hebrew name, then the same club by English tokens ("Tottenham Hotspur FC" ≡
+ * "Tottenham Hotspur"). A team with a library row has a crest on the site even
+ * when its own football_teams.logo_url is empty.
+ */
+function hasLibraryCrest(
+  team: { name: string | null; name_english: string | null },
+  lib: CrestLibraryRow[],
+): boolean {
+  const en = (team.name_english ?? "").trim();
+  const he = (team.name ?? "").trim();
+  return lib.some(
+    (l) =>
+      (!!en && l.name_english.trim().toLowerCase() === en.toLowerCase()) ||
+      (!!he && l.name_hebrew?.trim() === he) ||
+      (!!en && clubNamesMatch(l.name_english, en)),
+  );
+}
+
+/**
+ * The team_logo gap: teams with no crest anywhere the site looks - no
+ * football_teams.logo_url AND no crest-library row for the team. Uncapped, so
+ * the dashboard count and the list read the same rows; throws on a failed read
+ * (the callers decide whether that degrades or propagates).
+ */
+export async function listTeamsWithoutCrest() {
+  const [teamsRes, libRes] = await Promise.all([
+    db
+      .from("football_teams")
+      .select("id,name,name_english,art_image_url")
+      .eq("is_deleted", false)
+      .is("logo_url", null)
+      .order("name"),
+    db.from("football_logos").select("name_english,name_hebrew"),
+  ]);
+  if (teamsRes.error) throw teamsRes.error;
+  if (libRes.error) throw libRes.error;
+  const lib = (libRes.data ?? []) as CrestLibraryRow[];
+  return (teamsRes.data ?? []).filter((team) => !hasLibraryCrest(team, lib));
+}
+
 /** Concrete rows for one gap kind - the drill-down tab. */
 export async function listGapsOfKind(
   kind: GapKind,
@@ -235,7 +281,22 @@ export async function listGapsOfKind(
           detail: row.date,
         }));
       }
-      case "team_logo":
+      case "team_logo": {
+        const rows = await listTeamsWithoutCrest();
+        return rows.slice(0, LIST_LIMIT).map((row) =>
+          personGap({
+            kind,
+            table: "football_teams",
+            row,
+            label: String(row.name || row.name_english || row.id),
+            url: `/templates/football/${row.id}/edit`,
+            // Crests are uploaded in the shared logo library (/assets), not on
+            // the team form - send "Do" there with the search prefilled.
+            fixUrl: `/assets?q=${encodeURIComponent(String(row.name_english || row.name || ""))}`,
+            ctx,
+          }),
+        );
+      }
       case "team_hero":
       case "team_gallery":
       case "team_bio": {
@@ -246,37 +307,29 @@ export async function listGapsOfKind(
           .order("name")
           .limit(LIST_LIMIT);
         query =
-          kind === "team_logo"
-            ? query.is("logo_url", null)
-            : kind === "team_hero"
-              // Blob card-art satisfies the page hero (Dor, 16.09: "יש בלוב
-              // לא מחייב הירו") - a team with art_image_url isn't a gap at
-              // all, not merely demoted.
-              ? query.is("image_url", null).is("art_image_url", null)
-              : kind === "team_bio"
-                ? query.is("bio", null)
-                : query.eq("gallery", "[]");
+          kind === "team_hero"
+            // Blob card-art satisfies the page hero (Dor, 16.09: "יש בלוב
+            // לא מחייב הירו") - a team with art_image_url isn't a gap at
+            // all, not merely demoted.
+            ? query.is("image_url", null).is("art_image_url", null)
+            : kind === "team_bio"
+              ? query.is("bio", null)
+              : query.eq("gallery", "[]");
         const { data, error } = await query;
         if (error) throw error;
-        return (data ?? []).map((row) => {
-          const label = String(row.name || row.name_english || row.id);
-          // Crests are uploaded in the shared logo library (/assets), not on
-          // the team form - send "Do" there with the search prefilled. Hero,
-          // gallery and bio ARE edited on the form, so those keep their anchors.
-          const fixUrl =
-            kind === "team_logo"
-              ? `/assets?q=${encodeURIComponent(String(row.name_english || row.name || ""))}`
-              : `/templates/football/${row.id}/edit#${TEAM_ANCHOR[kind]}`;
-          return personGap({
+        // Hero, gallery and bio ARE edited on the team form - "Do" lands on
+        // the field that fixes them.
+        return (data ?? []).map((row) =>
+          personGap({
             kind,
             table: "football_teams",
             row,
-            label,
+            label: String(row.name || row.name_english || row.id),
             url: `/templates/football/${row.id}/edit`,
-            fixUrl,
+            fixUrl: `/templates/football/${row.id}/edit#${TEAM_ANCHOR[kind]}`,
             ctx,
-          });
-        });
+          }),
+        );
       }
       case "artist_hero":
       case "artist_gallery":

@@ -10,6 +10,7 @@ import {
   feedEvents,
   listCategoryContentGaps,
   listGapsOfKind,
+  listTeamsWithoutCrest,
 } from "@/lib/services/creative-gaps";
 import {
   GAP_KINDS,
@@ -59,11 +60,12 @@ export async function getCreativeGapCounts(): Promise<GapCounts> {
   ] = await Promise.all([
     feedEvents().is("campaign_image_url", null),
     feedEvents().is("card_image_url", null),
-    db
-      .from("football_teams")
-      .select("id", { count: "exact", head: true })
-      .eq("is_deleted", false)
-      .is("logo_url", null),
+    // A crest in the library (/assets) closes the gap even with logo_url
+    // empty - the matching is in code, so this counts the list's own rows.
+    listTeamsWithoutCrest().then(
+      (rows) => ({ count: rows.length, error: null }),
+      (error: unknown) => ({ count: 0, error }),
+    ),
     // Blob card-art satisfies the page hero (Task 16) - mirrors the
     // team_hero/artist_hero query filters in creative-gaps.ts.
     db
@@ -189,8 +191,8 @@ export interface DismissedGap {
 
 /**
  * "Already on the site" - files a gap away without touching the row it points
- * at. Arsenal's crest is on the site even though football_teams.logo_url is
- * null; the radar should stop reporting it, but the data stays as it is.
+ * at: the radar should stop reporting it, but the data stays as it is. (A crest
+ * in the library no longer needs this - team_logo reads the library itself.)
  */
 export async function dismissCreativeGap(input: {
   kind: string;
