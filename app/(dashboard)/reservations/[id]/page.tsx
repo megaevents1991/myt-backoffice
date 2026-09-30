@@ -818,6 +818,11 @@ export default function ReservationDetailsPage({
                         <p className="text-sm text-muted-foreground">
                           {fareUpgrade.brand || "CLASSIC"} (כולל מזוודה) · +${Number(fareUpgrade.delta_total_usd || 0).toFixed(0)}
                         </p>
+                        {/* The stored offer is the fare that was searched (LITE) -
+                            the upgrade lives only in this field (main, 30.09). */}
+                        <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                          להזמין {fareUpgrade.brand || "CLASSIC"} - ההצעה השמורה והשורות שמעל הן של התעריף הנמוך
+                        </p>
                       </div>
                     );
                   })()}
