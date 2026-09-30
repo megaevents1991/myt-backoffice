@@ -74,6 +74,25 @@ export function cityName(e: LodgingEvent, city: LodgingCity): string {
   return shortPlace(lodgingLocation(e, city).name);
 }
 
+/**
+ * Where the event is, as the site shows it (Dor 30.09 - everywhere, not only the order):
+ * "<event city> · טיסה ל<flight city>" on a two-city event, else the location name.
+ * `event.location` is the FLIGHT city - showing it alone put every Oasis Manchester
+ * show under "לונדון, בריטניה".
+ */
+export function placeLabel(e: LodgingEvent | null | undefined): string {
+  if (!e?.location) return "";
+  return hasEventCity(e)
+    ? `${cityName(e, "event")} · טיסה ל${cityName(e, "flight")}`
+    : (e.location.name ?? "").trim();
+}
+
+/** The city the event itself takes place in: the event city on a two-city event, else the flight city. */
+export function eventCityName(e: LodgingEvent | null | undefined): string {
+  if (!e?.location) return "";
+  return hasEventCity(e) ? cityName(e, "event") : shortPlace(e.location.name);
+}
+
 /** Cities the hotel step offers, in display order. Without a real event city everything collapses to the flight city. */
 export function offeredCities(e: LodgingEvent): LodgingCity[] {
   if (!hasEventCity(e)) return ["flight"];

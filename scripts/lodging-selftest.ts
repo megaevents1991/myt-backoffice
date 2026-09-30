@@ -1,8 +1,8 @@
 // Run: npx tsx scripts/lodging-selftest.ts
 import assert from "node:assert/strict";
 import {
-  allNights, defaultCity, defaultSplit, flipNight, hasEventCity, lodgingLocation, lodgingProblems,
-  nightsBetween, offeredCities, proposedSplit, refitNights, segmentsFromNights, splitOffered,
+  allNights, defaultCity, defaultSplit, eventCityName, flipNight, hasEventCity, lodgingLocation, lodgingProblems,
+  nightsBetween, offeredCities, placeLabel, proposedSplit, refitNights, segmentsFromNights, splitOffered,
 } from "../lib/lodging";
 
 const london = { name: "לונדון, בריטניה", latitude: 51.509865, longitude: -0.118092, city_iata: "LON" };
@@ -23,6 +23,14 @@ assert.equal(defaultCity({ ...base, event_location: liverpool, lodging_mode: "ch
 assert.equal(defaultCity({ ...base, event_location: liverpool, lodging_mode: "flight_city", lodging_default: "event" }), "flight", "default not offered → first offered");
 assert.equal(lodgingLocation({ ...base, event_location: liverpool }, "event").city_iata, "LON", "event city borrows the flight IATA");
 assert.equal(lodgingLocation(base, "event").name, london.name, "no event city → flight location");
+
+// Place label (Dor 30.09: every surface shows the event city with the flight city beside it)
+assert.equal(placeLabel({ ...base, event_location: liverpool }), "ליברפול · טיסה ללונדון");
+assert.equal(placeLabel(base), "לונדון, בריטניה", "one city → the location name as is");
+assert.equal(placeLabel({ ...base, event_location: { ...london, name: "London" } }), "לונדון, בריטניה", "same point = one city");
+assert.equal(placeLabel(null), "");
+assert.equal(eventCityName({ ...base, event_location: liverpool }), "ליברפול");
+assert.equal(eventCityName(base), "לונדון", "one city → the city without its country");
 
 // Problems
 assert.deepEqual(lodgingProblems(base), []);

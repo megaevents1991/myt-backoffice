@@ -27,6 +27,7 @@ import {
   type CreativeParams,
 } from "@/lib/creative/input";
 import { computePackagePrice } from "@/lib/package-price";
+import { hasEventCity, placeLabel } from "@/lib/lodging";
 import type { Event } from "@/types/app.types";
 
 export type CreativeDefaults = {
@@ -428,7 +429,7 @@ export async function deriveCreativeDefaults(
   const { data, error } = await supabase
     .from("events")
     .select(
-      "id,name,name_english,type,date,location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,art_image_url,card_image_url",
+      "id,name,name_english,type,date,location,event_location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,art_image_url,card_image_url",
     )
     .eq("id", eventId)
     .single();
@@ -444,7 +445,8 @@ export async function deriveCreativeDefaults(
   // would shift stored midnight to 02:00/03:00 Israel time).
   const { dateText, timeText } = eventDateTexts(event.date);
 
-  const locationText = event.location?.name ?? "";
+  // "מנצ'סטר · טיסה ללונדון" on a two-city event - `location` alone is the flight city.
+  const locationText = placeLabel(event);
   const price = computePackagePrice(event);
   if (price === null)
     warnings.push("אין כרטיסים זמינים - מחיר לא חושב, מלא ידנית");
@@ -550,9 +552,13 @@ export function campaignInputHash(
   // either re-rendered only the events it concerns, never the whole catalog.
   const gallerySegment = galleryUrl ? `|${galleryUrl}` : "";
   const gapSegment = gap ? `|gap:${gap}` : "";
+  // Only a two-city event carries its place: the creative prints placeLabel, and
+  // until 2026-09-30 it printed the flight city alone ("לונדון" on a Manchester
+  // show). Everyone else keeps a byte-identical hash, so only those redraw.
+  const placeSegment = hasEventCity(event) ? `|place:${placeLabel(event)}` : "";
   return createHash("sha1")
     .update(
-      `${RENDER_VERSION}|${dateText}|${price ?? "none"}|${event.name}|${event.card_image_url ?? ""}|${event.art_image_url ?? ""}${gallerySegment}${gapSegment}`,
+      `${RENDER_VERSION}|${dateText}|${price ?? "none"}|${event.name}|${event.card_image_url ?? ""}|${event.art_image_url ?? ""}${gallerySegment}${gapSegment}${placeSegment}`,
     )
     .digest("hex")
     .slice(0, 12);
@@ -740,7 +746,7 @@ export async function generateCampaignForEvent(
 
 /** Every column the creative pipeline reads - the cron's scan and the single-event push. */
 export const CAMPAIGN_EVENT_COLUMNS =
-  "id,name,name_english,type,date,location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,art_image_url,card_image_url,campaign_input_hash,campaign_image_url";
+  "id,name,name_english,type,date,location,event_location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,art_image_url,card_image_url,campaign_input_hash,campaign_image_url";
 
 /**
  * Work order for a run: events with no creative at all before everything
