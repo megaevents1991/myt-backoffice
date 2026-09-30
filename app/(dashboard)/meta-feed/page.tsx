@@ -1,4 +1,6 @@
 import { getMetaFeedSnapshots, getSyncHealth } from "@/lib/actions/meta-feed-actions";
+import { getSession } from "@/lib/auth/guards";
+import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   Card,
   CardContent,
@@ -12,8 +14,9 @@ import { SyncAllButton } from "./sync-all-button";
 
 /**
  * Meta product feed status + manual sync. The feed itself is built live by the
- * main app; a cron copies those bytes to Storage twice a day (06:00 + 15:00
- * UTC) and Meta fetches the Storage file hourly.
+ * main app; the publishMetaFeed cron copies those bytes to Storage six times a
+ * day (every 3h, 05:00-20:00 UTC - vercel.json) and Meta fetches the Storage
+ * file hourly. "סנכרן הכל" (/api/admin-sync) is admin-only, so editors don't get it.
  */
 export const dynamic = "force-dynamic";
 
@@ -50,10 +53,12 @@ function formatAge(
 }
 
 export default async function MetaFeedPage() {
-  const [snapshots, health] = await Promise.all([
+  const [snapshots, health, session] = await Promise.all([
     getMetaFeedSnapshots(),
     getSyncHealth(),
+    getSession(),
   ]);
+  const isAdmin = !!session && ADMIN_ROLES.includes(session.role);
   const staleSyncs = health.rows.filter(
     (row) => formatAge(row.lastRun, row.staleAfterHours).stale,
   );
@@ -65,7 +70,7 @@ export default async function MetaFeedPage() {
           <h1 className="text-3xl font-bold">Meta Product Feed</h1>
           <p className="text-muted-foreground mt-1">
             הפיד נבנה חי מהמערכת. הסנכרון מעתיק אותו לקובץ הסטטי שמטא קוראת -
-            רץ אוטומטית פעמיים ביום (09:00 ו־18:00 שעון ישראל).
+            רץ אוטומטית שש פעמים ביום, כל שלוש שעות בין 05:00 ל־20:00 UTC.
           </p>
         </div>
         <SyncFeedButton />
@@ -77,7 +82,8 @@ export default async function MetaFeedPage() {
           <CardDescription>
             מתי כל סנכרון כתב נתונים בפעם האחרונה. אם כולם אדומים - הקרונים של
             Vercel לא רצים (בדוק ש־<code dir="ltr">CRON_SECRET</code> מוגדר
-            בפרויקט), והכפתור כאן מריץ את הכול ידנית.
+            בפרויקט), והכפתור &quot;סנכרן הכל&quot; כאן (מנהלים בלבד) מריץ את הכול
+            ידנית.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -105,10 +111,17 @@ export default async function MetaFeedPage() {
 
           <p className="text-sm text-muted-foreground">
             קריאטיבים: {health.eventsWithCreative} מתוך {health.eventsInFeedWindow}{" "}
-            אירועים בחלון הפיד. אירוע בלי קריאטיב מופיע במטא עם התמונה המקורית.
+            אירועים בחלון הפיד. אירוע בלי קריאטיב לא נכנס לפיד, ולכן לא מופיע
+            במטא.
           </p>
 
-          <SyncAllButton />
+          {isAdmin ? (
+            <SyncAllButton />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              &quot;סנכרן הכל&quot; (כל ה־API) זמין למנהלים בלבד.
+            </p>
+          )}
         </CardContent>
       </Card>
 

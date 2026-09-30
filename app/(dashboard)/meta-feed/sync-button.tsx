@@ -8,7 +8,7 @@ import { syncMetaFeedAction } from "@/lib/actions/meta-feed-actions";
 
 /**
  * Manual "publish now" for the Meta feed snapshots - same code path as the
- * twice-daily cron. Meta still refetches on its own hourly schedule, so this
+ * publishMetaFeed cron (six times a day). Meta still refetches on its own hourly schedule, so this
  * only guarantees the snapshot is current, not that Meta has read it yet.
  */
 export function SyncFeedButton() {

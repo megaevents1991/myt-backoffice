@@ -1,5 +1,5 @@
 "use server";
-import { requireStaff } from "@/lib/auth/guards";
+import { requireAdmin } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 
 export interface AuditRow {
@@ -13,7 +13,8 @@ export async function getAuditLogs(filters: {
   actorEmail?: string; action?: string; entityType?: string;
   from?: string; to?: string; limit?: number;
 }): Promise<AuditRow[]> {
-  await requireStaff();
+  // Admin-only, like the /audit-log screen (ADMIN_ROLES) - every staff member's actions are in here.
+  await requireAdmin();
   let q = (supabase as any)
     .from("audit_log")
     .select("id,created_at,actor_id,actor_email,actor_role,action,entity_type,entity_id,changes,metadata,ip")

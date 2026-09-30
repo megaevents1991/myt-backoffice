@@ -16,7 +16,12 @@ import {
   verifySessionValue,
   type SessionPayload,
 } from "./session";
-import { PARTNER_ROLES, STAFF_ROLES, type Role } from "@/types/auth.types";
+import {
+  ADMIN_ROLES,
+  PARTNER_ROLES,
+  STAFF_ROLES,
+  type Role,
+} from "@/types/auth.types";
 import { supabase } from "@/lib/supabase-server";
 
 /**
@@ -28,6 +33,9 @@ import { supabase } from "@/lib/supabase-server";
  * see it, and it coexists with a staff `session` cookie in the same browser.
  * Restricted to partner roles so a forged/stale value can never ESCALATE
  * above the real session.
+ *
+ * A STAFF session is checked against the live profile (liveStaffSession), so
+ * what /users says now - not what it said at sign-in - decides.
  */
 export async function getSession(): Promise<SessionPayload | null> {
   const store = await cookies();
@@ -38,7 +46,83 @@ export async function getSession(): Promise<SessionPayload | null> {
     return portal;
   }
   const cookie = store.get(SESSION_COOKIE);
-  return verifySessionValue(cookie?.value);
+  const session = await verifySessionValue(cookie?.value);
+  if (session && STAFF_ROLES.includes(session.role)) {
+    return liveStaffSession(session);
+  }
+  return session;
+}
+
+/**
+ * The staff cookie is signed for a week with the role it was minted with, so
+ * deactivating someone in /users or changing their role used to wait for their
+ * next sign-in. Same re-check partners and forms_operator already get
+ * (assertActorActive), on every staff request:
+ *  - no row, a failed read or is_active=false -> no session (fail closed);
+ *  - the role changed -> the session carries the CURRENT role, so a demoted
+ *    admin loses admin powers on the next request and a promotion lands at
+ *    once. A move to a non-staff role (partner / forms_operator) needs a new
+ *    sign-in - that account lives on a different cookie - so it reads as none.
+ */
+async function liveStaffSession(
+  session: SessionPayload,
+): Promise<SessionPayload | null> {
+  const profile = await loadActorProfile(session.sub);
+  if (!profile || profile.is_active === false) return null;
+  const role = profile.role;
+  if (!role || !STAFF_ROLES.includes(role)) return null;
+  return role === session.role ? session : { ...session, role };
+}
+
+type ActorProfile = { is_active: boolean | null; role: Role | null };
+
+/**
+ * Per-request memo for loadActorProfile, keyed on the request's own cookie
+ * store: Next 15 resolves every `await cookies()` of one request to the same
+ * object - in page renders, server actions and route handlers alike - so a
+ * guard plus logAudit's getSession() cost ONE profile read. (React cache()
+ * only dedupes inside a page render; in actions and route handlers it is a
+ * pass-through.) A request that ever saw a different object would just read
+ * again - never a stale answer, and never one shared across requests.
+ */
+const actorProfileReads = new WeakMap<
+  object,
+  Map<string, Promise<ActorProfile | null>>
+>();
+
+/** The actor's live user_profiles row; null on a failed read or no row (callers fail closed). */
+async function loadActorProfile(sub: string): Promise<ActorProfile | null> {
+  const store = await cookies();
+  let reads = actorProfileReads.get(store);
+  if (!reads) {
+    reads = new Map();
+    actorProfileReads.set(store, reads);
+  }
+  let read = reads.get(sub);
+  if (!read) {
+    read = readActorProfile(sub);
+    reads.set(sub, read);
+  }
+  return read;
+}
+
+async function readActorProfile(sub: string): Promise<ActorProfile | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any)
+      .from("user_profiles")
+      .select("is_active, role")
+      .eq("id", sub)
+      .maybeSingle();
+    if (error) {
+      console.error("loadActorProfile:", JSON.stringify(error));
+      return null;
+    }
+    return (data as ActorProfile | null) ?? null;
+  } catch (e) {
+    console.error("loadActorProfile:", e);
+    return null;
+  }
 }
 
 /** Server-action guard: caller must hold one of the given roles. Returns the actor. */
@@ -69,7 +153,7 @@ export async function requireFormsAccess(): Promise<SessionPayload> {
   );
   // An external operator's still-signed cookie must stop working the moment
   // the account is disabled in /users - same decision as requirePartner
-  // (QA 20.08). Staff roles skip the extra query.
+  // (QA 20.08). Staff roles were already re-checked by getSession.
   if (session.role === "forms_operator") await assertActorActive(session.sub);
   return session;
 }
@@ -130,17 +214,8 @@ export async function requirePartner(): Promise<
  * same as is_active === false - only a confirmed active row passes.
  */
 async function assertActorActive(sub: string): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("user_profiles")
-    .select("is_active")
-    .eq("id", sub)
-    .maybeSingle();
-  if (error) {
-    console.error("assertActorActive:", JSON.stringify(error));
-    throw new Error("Unauthorized");
-  }
-  if (!data || data.is_active === false) {
+  const profile = await loadActorProfile(sub);
+  if (!profile || profile.is_active === false) {
     throw new Error("Unauthorized");
   }
 }
@@ -159,11 +234,25 @@ export async function requireOfficeManager(): Promise<
  * Guard for API route handlers used by dashboard staff.
  *   const denied = await guardAdminRoute();
  *   if (denied) return denied;
+ * Despite the name it admits EVERY staff role (editor included) - the route
+ * twin of requireStaff(). For an admin-only route use guardAdminOnlyRoute.
  */
 export async function guardAdminRoute(): Promise<NextResponse | null> {
   const session = await getSession();
   if (session && STAFF_ROLES.includes(session.role)) return null;
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+/**
+ * Admin-only route guard (ADMIN_ROLES) - the route twin of requireAdmin().
+ * 401 with no session, 403 for a signed-in role below admin.
+ */
+export async function guardAdminOnlyRoute(): Promise<NextResponse | null> {
+  const session = await getSession();
+  if (session && ADMIN_ROLES.includes(session.role)) return null;
+  return session
+    ? NextResponse.json({ error: "Admins only" }, { status: 403 })
+    : NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
 /**

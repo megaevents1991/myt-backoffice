@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { guardAdminRoute } from "@/lib/auth/guards";
+import { guardAdminOnlyRoute } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import {
   isSyncStepId,
@@ -15,10 +15,11 @@ import { runCampaignCreatives } from "@/lib/creative/auto";
 import { publishMetaFeeds } from "@/lib/feed/publish-meta-feed";
 
 /**
- * Staff-triggered version of the nightly crons - one step per request, driven
- * by the "סנכרון מלא" button on /meta-feed (see lib/sync-steps.ts for the
- * pipeline). Admin-triggered, so it takes `guardAdminRoute()`, NOT the cron
- * guard: no secret is involved, the caller's session decides.
+ * Admin-triggered version of the nightly crons - one step per request, driven
+ * by the "סנכרן הכל" button on /meta-feed (see lib/sync-steps.ts for the
+ * pipeline). Admin-only (`guardAdminOnlyRoute()`, ADMIN_ROLES - the page hides
+ * the button from editors), NOT the cron guard: no secret is involved, the
+ * caller's session decides.
  *
  * Long jobs (TixStock, creatives) are why this route carries the same 800s
  * duration as the crons; the creatives step additionally reports `remaining`
@@ -98,7 +99,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ step: string }> },
 ) {
-  const denied = await guardAdminRoute();
+  const denied = await guardAdminOnlyRoute();
   if (denied) return denied;
 
   const { step } = await params;

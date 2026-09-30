@@ -45,7 +45,7 @@ import { getPartnerCredit } from "@/lib/actions/partner-credit-actions";
 import { getUnbilledPaidReservations } from "@/lib/actions/partner-billing-actions";
 import { describeCommission } from "@/lib/partner-commission";
 import { PARTNER_TYPE_LABELS, isCustomerRefundPartner } from "@/types/partner.types";
-import { PARTNER_ROLES } from "@/types/auth.types";
+import { ADMIN_ROLES, PARTNER_ROLES } from "@/types/auth.types";
 import { getSession } from "@/lib/auth/guards";
 import { EntryFunnelsGrid } from "../../entry-funnel-cards";
 import { CreateOfficeManagerButton } from "../../create-office-manager-dialog";
@@ -120,6 +120,10 @@ export default async function ViewPartnerPage({
       ? await getOfficeAgentStats(code, team)
       : null;
   const isSuperadmin = session?.role === "superadmin";
+  // The editor (/partners/[code]) loads through getPartnerAccount -> requireAdmin, so
+  // an editor clicking through only got "Failed to load this partner". Same gate as
+  // the partners table's Edit item (canManage).
+  const canEdit = !!session && ADMIN_ROLES.includes(session.role);
   const stats = [
     {
       label: "Commission earned",
@@ -203,12 +207,14 @@ export default async function ViewPartnerPage({
             </div>
           </div>
         </div>
-        <Link href={`/partners/${partner.partner_tracking_code}`}>
-          <Button>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit Partner
-          </Button>
-        </Link>
+        {canEdit && (
+          <Link href={`/partners/${partner.partner_tracking_code}`}>
+            <Button>
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Partner
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Time window - plain links so the whole server page re-renders scoped. */}
