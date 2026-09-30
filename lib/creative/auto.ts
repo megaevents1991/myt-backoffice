@@ -607,6 +607,25 @@ export type CampaignResult =
   | { status: "skipped"; reason: string }
   | { status: "generated"; squareUrl: string; bannerUrl: string };
 
+export type GenerateCampaignOptions = {
+  /**
+   * Redraw even when the hash says the creative is current - a staff member
+   * fixed something the hash cannot see (a picture swapped under the same
+   * URL, a render that came out wrong). The stored hash stays the expected
+   * one, so the cron does not redraw it again; only the URL's version moves.
+   */
+  force?: boolean;
+};
+
+/**
+ * The `?v=` a stored creative URL carries. A forced redraw gets a fresh one
+ * even at an unchanged hash: the same URL would keep serving Meta the cached
+ * OLD picture (2026-08-12 - see RENDER_VERSION). Pure.
+ */
+export function creativeVersion(hash: string, forcedAt?: number | null): string {
+  return forcedAt ? `${hash}.${forcedAt.toString(36)}` : hash;
+}
+
 /**
  * Ensure the event's campaign creative matches its current data. Stable
  * storage paths per event (upsert) + `?v=<hash>` on the stored URLs so the
@@ -615,6 +634,7 @@ export type CampaignResult =
 export async function generateCampaignForEvent(
   event: CampaignEventRow,
   caches?: CreativeLookupCaches,
+  options: GenerateCampaignOptions = {},
 ): Promise<CampaignResult> {
   // Gallery-aware hash: the picked gallery image is part of what gets
   // rendered, so a gallery edit must produce a new hash (→ regenerate).
@@ -623,7 +643,10 @@ export async function generateCampaignForEvent(
     loadSubjectRows(caches),
   ]);
   const hash = expectedCampaignHash(event, artistRows, subjectRows);
-  if (event.campaign_input_hash === hash) return { status: "current" };
+  if (!options.force && event.campaign_input_hash === hash) {
+    return { status: "current" };
+  }
+  const version = creativeVersion(hash, options.force ? Date.now() : null);
 
   // Records the hash even on skip - otherwise an event whose derivation
   // fails (unmatched teams, no artist image) gets re-evaluated on EVERY
@@ -719,8 +742,8 @@ export async function generateCampaignForEvent(
 
   const input = await buildCreativeInput(params);
   const urls = await renderAndUploadCreative(input, `auto/event-${event.id}`);
-  const squareUrl = `${urls.square}?v=${hash}`;
-  const bannerUrl = `${urls.banner}?v=${hash}`;
+  const squareUrl = `${urls.square}?v=${version}`;
+  const bannerUrl = `${urls.banner}?v=${version}`;
 
   const { error } = await supabase
     .from("events")

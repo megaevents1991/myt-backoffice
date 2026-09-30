@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   campaignInputHash,
   creativeGap,
+  creativeVersion,
   expectedCampaignHash,
   firstNeverRendered,
   resolveCreativeSubject,
@@ -26,6 +27,14 @@ assert.deepEqual(order, [2, 4, 1, 3]);
 const csv = 'id,image_link,title\r\n1154,https://x/a.png,"אואזיס, מדריד"\r\n"717",https://x/b.png,ריאל\r\n';
 assert.deepEqual(activityIdsOf(csv), [1154, 717]);
 assert.deepEqual(activityIdsOf("id,image_link\r\n"), []);
+
+/* image URL version: a forced redraw at an unchanged hash still gets a NEW ?v=, or Meta keeps its cached picture */
+assert.equal(creativeVersion("abc123def456"), "abc123def456");
+assert.equal(creativeVersion("abc123def456", null), "abc123def456");
+const forced = creativeVersion("abc123def456", 1_790_000_000_000);
+assert.ok(forced.startsWith("abc123def456."), forced);
+assert.notEqual(forced, creativeVersion("abc123def456"));
+assert.notEqual(forced, creativeVersion("abc123def456", 1_790_000_000_001));
 
 /* creative gap: what is missing decides the look, and the look is in the hash */
 const person = (over: Partial<PersonRow>): PersonRow => ({

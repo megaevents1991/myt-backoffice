@@ -2,6 +2,7 @@
 
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
+import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import {
@@ -93,22 +94,13 @@ export async function pushEventToFeedAction(
     return { ok: false, error: "Invalid event id" };
   }
   try {
-    // events' generated types lag the campaign columns - cast once, like auto.ts.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-    const { data: event, error } = await db
-      .from("events")
-      .select(`${CAMPAIGN_EVENT_COLUMNS},is_deleted,is_test,tags`)
-      .eq("id", eventId)
-      .maybeSingle();
-    if (error || !event) {
-      if (error) console.error("[meta-feed] push: event read failed", JSON.stringify(error));
-      return { ok: false, error: "Event not found" };
-    }
+    const event = await loadFeedEvent(eventId);
+    if (!event) return { ok: false, error: "Event not found" };
 
-    const creative = await generateCampaignForEvent(event as CampaignEventRow);
+    const creative = await generateCampaignForEvent(event);
     const result = await publishMetaFeeds();
     const inFeed = result.activityIds.includes(eventId);
+    const blockers = feedBlockers(event, creative);
 
     await logAudit({
       action: "publish",
@@ -128,7 +120,7 @@ export async function pushEventToFeedAction(
       creative: creative.status,
       creativeNote: creative.status === "skipped" ? creative.reason : undefined,
       inFeed,
-      whyNot: inFeed ? [] : feedBlockers(event as FeedBlockerRow, creative),
+      whyNot: inFeed ? [] : blockers.length ? blockers : [NO_BLOCKER_FOUND],
       activityRows: result.activityRows,
     };
   } catch (e) {
@@ -138,12 +130,145 @@ export async function pushEventToFeedAction(
   }
 }
 
+export type RenderEventCreativeResult =
+  | {
+      ok: true;
+      id: number;
+      name: string;
+      creative: "generated" | "current" | "skipped";
+      creativeNote?: string;
+      /** What keeps this event out of the feed file, read off the row (empty = nothing). */
+      blockers: string[];
+    }
+  | { ok: false; error: string };
+
+/**
+ * One event's creative on demand, WITHOUT publishing. The /meta-feed picker
+ * calls this once per ticked event and publishes once at the end
+ * (syncMetaFeedAction) - a request per event, the way "סנכרן הכל" runs a step
+ * per request, so a multi-select never meets a function duration limit.
+ * `force` redraws an unchanged event under a new image URL: the case the
+ * picker exists for - staff fixed a picture or a render that came out wrong,
+ * which the hash cannot see, and want Meta to refetch now.
+ */
+export async function renderEventCreativeAction(
+  eventId: number,
+  options: { force?: boolean } = {},
+): Promise<RenderEventCreativeResult> {
+  await requireStaff();
+  if (!Number.isInteger(eventId) || eventId <= 0) {
+    return { ok: false, error: "Invalid event id" };
+  }
+  const force = options.force === true;
+  try {
+    const event = await loadFeedEvent(eventId);
+    if (!event) return { ok: false, error: "Event not found" };
+
+    const creative = await generateCampaignForEvent(event, undefined, { force });
+    await logAudit({
+      action: "update",
+      entityType: "meta_feed_creative",
+      entityId: eventId,
+      metadata: { trigger: "picker", force, creative: creative.status },
+    });
+    return {
+      ok: true,
+      id: eventId,
+      name: event.name || event.name_english || `#${eventId}`,
+      creative: creative.status,
+      creativeNote: creative.status === "skipped" ? creative.reason : undefined,
+      blockers: feedBlockers(event, creative),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    console.error("[meta-feed] render creative failed:", error);
+    return { ok: false, error };
+  }
+}
+
+export type FeedPickerEvent = {
+  id: number;
+  name: string;
+  name_english: string | null;
+  /** The event's date-time, ISO. */
+  date: string;
+  hasCreative: boolean;
+  /** Why the last creative run skipped it, when it did. */
+  skipReason: string | null;
+  isTest: boolean;
+};
+
+type FeedPickerRow = {
+  id: number;
+  name: string | null;
+  name_english: string | null;
+  date: string;
+  campaign_image_url: string | null;
+  campaign_skip_reason: string | null;
+  is_test: boolean | null;
+};
+
+/** Live future events for the /meta-feed picker - every event a push could concern. */
+export async function listFeedPickerEvents(): Promise<FeedPickerEvent[]> {
+  await requireStaff();
+  const todayISO = new Date().toISOString().slice(0, 10);
+  // events' generated types lag the campaign columns - cast once, like auto.ts.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { rows, error } = await fetchPaged<FeedPickerRow>(
+    () =>
+      db
+        .from("events")
+        .select("id,name,name_english,date,campaign_image_url,campaign_skip_reason,is_test")
+        .is("is_deleted", null)
+        .gte("date", todayISO)
+        .order("date", { ascending: true })
+        .order("id", { ascending: true }),
+    5000,
+  );
+  if (error) {
+    console.error("[meta-feed] picker events read failed:", JSON.stringify(error));
+    return [];
+  }
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name ?? "",
+    name_english: row.name_english,
+    date: row.date,
+    hasCreative: !!row.campaign_image_url,
+    skipReason: row.campaign_skip_reason,
+    isTest: row.is_test === true,
+  }));
+}
+
+type FeedEventRow = CampaignEventRow &
+  Pick<Event, "tickets_and_rates" | "tags" | "is_deleted" | "is_test">;
+
+/** The event as the creative pipeline and the feed blockers read it. */
+async function loadFeedEvent(eventId: number): Promise<FeedEventRow | null> {
+  // events' generated types lag the campaign columns - cast once, like auto.ts.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data, error } = await db
+    .from("events")
+    .select(`${CAMPAIGN_EVENT_COLUMNS},is_deleted,is_test,tags`)
+    .eq("id", eventId)
+    .maybeSingle();
+  if (error) console.error("[meta-feed] event read failed", JSON.stringify(error));
+  return (data as FeedEventRow | null) ?? null;
+}
+
 type FeedBlockerRow = Pick<
   Event,
   "date" | "tickets_and_rates" | "tags" | "is_deleted" | "is_test"
 >;
 
-/** Why main's activities feed leaves an event out - its own rules, read off the row. */
+const NO_BLOCKER_FOUND = "לא נמצאה סיבה בנתוני האירוע - בדקו ב-/product-feed באתר";
+
+/**
+ * Why main's activities feed leaves an event out - its own rules, read off the
+ * row. Empty when nothing on the row blocks it.
+ */
 function feedBlockers(event: FeedBlockerRow, creative: CampaignResult): string[] {
   const reasons: string[] = [];
   const cutoff = new Date();
@@ -156,7 +281,6 @@ function feedBlockers(event: FeedBlockerRow, creative: CampaignResult): string[]
   const available = (event.tickets_and_rates ?? []).some((t) => t.available !== false);
   if (!available || event.tags === "Sold") reasons.push("אזל - אין כרטיס זמין");
   if (creative.status === "skipped") reasons.push(`אין קריאייטיב: ${creative.reason}`);
-  if (reasons.length === 0) reasons.push("לא נמצאה סיבה בנתוני האירוע - בדקו ב-/product-feed באתר");
   return reasons;
 }
 

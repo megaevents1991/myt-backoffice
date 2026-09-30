@@ -1,4 +1,8 @@
-import { getMetaFeedSnapshots, getSyncHealth } from "@/lib/actions/meta-feed-actions";
+import {
+  getMetaFeedSnapshots,
+  getSyncHealth,
+  listFeedPickerEvents,
+} from "@/lib/actions/meta-feed-actions";
 import { getSession } from "@/lib/auth/guards";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import {
@@ -11,6 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { SyncFeedButton } from "./sync-button";
 import { SyncAllButton } from "./sync-all-button";
+import { PushEventsPanel } from "./push-events-panel";
 
 /**
  * Meta product feed status + manual sync. The feed itself is built live by the
@@ -53,10 +58,11 @@ function formatAge(
 }
 
 export default async function MetaFeedPage() {
-  const [snapshots, health, session] = await Promise.all([
+  const [snapshots, health, session, pickerEvents] = await Promise.all([
     getMetaFeedSnapshots(),
     getSyncHealth(),
     getSession(),
+    listFeedPickerEvents(),
   ]);
   const isAdmin = !!session && ADMIN_ROLES.includes(session.role);
   const staleSyncs = health.rows.filter(
@@ -75,6 +81,20 @@ export default async function MetaFeedPage() {
         </div>
         <SyncFeedButton />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>אירועים ספציפיים לפיד</CardTitle>
+          <CardDescription>
+            תיקנתם אירוע או העליתם אחד חדש ולא רוצים לחכות ל-cron? בוחרים אחד או
+            כמה - כל אחד מצויר מחדש (גם אם לא השתנה בו כלום) תחת כתובת תמונה חדשה
+            כדי שמטא תמשוך אותה, ואז הקובץ מפורסם פעם אחת.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PushEventsPanel events={pickerEvents} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
