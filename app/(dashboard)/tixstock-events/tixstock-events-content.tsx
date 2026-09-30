@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/auth-context";
+import { ADMIN_ROLES } from "@/types/auth.types";
 import { getTixStockEvents, getTixStockTickets, triggerTixStockSync } from "@/lib/actions/tixstock-actions";
 import { matchesSearch } from "@/lib/search";
 import { TixStockEventDB, TixStockListing } from "@/types/tixstock.types";
@@ -67,7 +69,10 @@ const isKnownEmpty = (event: TixStockEventDB): boolean => {
 
 export function TixStockEventsContent() {
   const { toast } = useToast();
-  
+  // The factory's intake is admin-only (createDraftBatch -> requireAdmin).
+  const { user } = useAuth();
+  const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
+
   // Data states
   const [events, setEvents] = useState<TixStockEventDB[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -750,9 +755,11 @@ export function TixStockEventsContent() {
                     <Button size="sm" onClick={openBatchCreate}>
                       Create {selectedEventIds.size} events
                     </Button>
-                    <Button size="sm" variant="secondary" onClick={sendToFactory}>
-                      Send to factory
-                    </Button>
+                    {isAdmin && (
+                      <Button size="sm" variant="secondary" onClick={sendToFactory}>
+                        Send to factory
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}

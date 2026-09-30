@@ -12,6 +12,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   approveDrafts,
   buildNextDraft,
   discardDrafts,
@@ -37,6 +47,29 @@ const STATUS_LABEL: Record<DraftStatus, string> = {
   created: "נוצר",
   error: "שגיאה",
 };
+
+/** Why approve left a draft out - only a "מוכן" draft becomes an event. */
+const SKIP_REASON: Partial<Record<DraftStatus, string>> = {
+  needs_input: "חסר בהם קלט",
+  error: "הם בשגיאה",
+  building: "הם עדיין נבנים",
+  created: "הם כבר נוצרו",
+};
+
+/** "2 דולגו כי חסר בהם קלט", or "3 דולגו (2 חסר קלט, 1 שגיאה)" when mixed. */
+function skippedText(skipped: { status: DraftStatus }[]): string {
+  const byStatus = new Map<DraftStatus, number>();
+  for (const { status } of skipped) {
+    byStatus.set(status, (byStatus.get(status) ?? 0) + 1);
+  }
+  const entries = Array.from(byStatus.entries());
+  if (entries.length === 1) {
+    const [status] = entries[0];
+    return `${skipped.length} דולגו כי ${SKIP_REASON[status] ?? `הם במצב ${STATUS_LABEL[status]}`}`;
+  }
+  const parts = entries.map(([status, count]) => `${count} ${STATUS_LABEL[status]}`);
+  return `${skipped.length} דולגו (${parts.join(", ")})`;
+}
 
 /** Inline grid input: saves on blur/Enter, amber while the field is missing. */
 function InlineField({
@@ -78,6 +111,7 @@ export function FactoryClient() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("all");
   const [selection, setSelection] = useState<Record<string, boolean>>({});
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [buildTotal, setBuildTotal] = useState(0);
   const buildingRef = useRef(false);
   const stopRef = useRef(false);
@@ -169,11 +203,16 @@ export function FactoryClient() {
     if (selectedIds.length === 0) return;
     const result = await approveDrafts(selectedIds);
     setSelection({});
-    if (result.failed.length > 0) {
+    if (result.failed.length > 0 || result.skipped.length > 0) {
+      const parts = [`נוצרו ${result.created}`];
+      if (result.skipped.length > 0) parts.push(skippedText(result.skipped));
+      if (result.failed.length > 0) parts.push(`${result.failed.length} נכשלו`);
       toast({
-        variant: "destructive",
-        title: `${result.created} נוצרו, ${result.failed.length} נכשלו`,
-        description: result.failed[0]?.error,
+        variant: result.failed.length > 0 ? "destructive" : "default",
+        title: parts.join(", "),
+        description:
+          result.failed[0]?.error ??
+          "רק טיוטה במצב \"מוכן\" נוצרת כאירוע - השלם את החסר ואשר שוב.",
       });
     } else {
       toast({ title: `${result.created} אירועים נוצרו` });
@@ -370,7 +409,7 @@ export function FactoryClient() {
               <Check className="mr-1.5 h-4 w-4" />
               אשר נבחרים
             </Button>
-            <Button size="sm" variant="outline" onClick={discardSelected}>
+            <Button size="sm" variant="outline" onClick={() => setConfirmDiscard(true)}>
               <Trash2 className="mr-1.5 h-4 w-4" />
               מחק
             </Button>
@@ -382,6 +421,30 @@ export function FactoryClient() {
             "בחר אירועים בטבלת ספק (TixStock / Live / P1 / Sports) ולחץ Send to factory.",
         }}
       />
+
+      <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {selectedIds.length === 1
+                ? "למחוק טיוטה אחת?"
+                : `למחוק ${selectedIds.length} טיוטות?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              אי אפשר לבטל. אירועים שכבר נוצרו מטיוטות אלה נשארים באתר.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => void discardSelected()}
+            >
+              מחק
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

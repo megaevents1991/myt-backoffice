@@ -27,6 +27,8 @@ import {
   Trophy,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/auth-context";
+import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   getP1Events,
   getP1Tickets,
@@ -57,6 +59,9 @@ interface P1SyncStatus {
 export function P1EventsContent() {
   const { toast } = useToast();
   const router = useRouter();
+  // The factory's intake is admin-only (createDraftBatch -> requireAdmin).
+  const { user } = useAuth();
+  const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
 
   // State management
   const [categories, setCategories] = useState<string[]>([]);
@@ -65,16 +70,19 @@ export function P1EventsContent() {
   const [events, setEvents] = useState<P1EventDB[]>([]);
 
   // Batch create (spec 2026-09-02 section 7): multi-select rows -> shared wizard.
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const toggleSelected = (id: string) =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+  // The selected ROWS are kept by id, not looked up in `events`: a category /
+  // series / city change replaces `events`, and the batch must still hold every
+  // ticked row.
+  const [selectedRows, setSelectedRows] = useState<Map<string, P1EventDB>>(new Map());
+  const toggleSelected = (row: P1EventDB) =>
+    setSelectedRows((prev) => {
+      const next = new Map(prev);
+      if (next.has(row.event_id)) next.delete(row.event_id);
+      else next.set(row.event_id, row);
       return next;
     });
   const sendToFactory = async () => {
-    const rows = events.filter((e) => selectedIds.has(e.event_id));
+    const rows = Array.from(selectedRows.values());
     if (rows.length === 0) return;
     const result = await createDraftBatch({
       source: "p1",
@@ -85,11 +93,11 @@ export function P1EventsContent() {
       toast({ variant: "destructive", title: "Factory intake failed" });
       return;
     }
-    setSelectedIds(new Set());
+    setSelectedRows(new Map());
     window.open("/factory", "_blank");
   };
   const openBatchCreate = () => {
-    const rows = events.filter((e) => selectedIds.has(e.event_id));
+    const rows = Array.from(selectedRows.values());
     if (rows.length === 0) return;
     try {
       window.localStorage.setItem(
@@ -882,8 +890,8 @@ export function P1EventsContent() {
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Checkbox
-                          checked={selectedIds.has(event.event_id)}
-                          onCheckedChange={() => toggleSelected(event.event_id)}
+                          checked={selectedRows.has(event.event_id)}
+                          onCheckedChange={() => toggleSelected(event)}
                           aria-label={`Select ${event.title}`}
                         />
                       </div>
@@ -941,19 +949,21 @@ export function P1EventsContent() {
                   ))}
                 </div>
 
-                {selectedIds.size > 0 && (
+                {selectedRows.size > 0 && (
                   <div className="sticky bottom-0 z-20 mt-3 flex items-center justify-between rounded-md border bg-background p-3 shadow">
-                    <span className="text-sm font-medium">{selectedIds.size} selected</span>
+                    <span className="text-sm font-medium">{selectedRows.size} selected</span>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>
+                      <Button variant="outline" size="sm" onClick={() => setSelectedRows(new Map())}>
                         Clear
                       </Button>
                       <Button size="sm" onClick={openBatchCreate}>
-                        Create {selectedIds.size} events
+                        Create {selectedRows.size} events
                       </Button>
-                      <Button size="sm" variant="secondary" onClick={sendToFactory}>
-                        Send to factory
-                      </Button>
+                      {isAdmin && (
+                        <Button size="sm" variant="secondary" onClick={sendToFactory}>
+                          Send to factory
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}

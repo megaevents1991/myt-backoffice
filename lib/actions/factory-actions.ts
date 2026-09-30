@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase-server";
 import { buildDraftPayload } from "@/lib/services/draft-builder";
 import { createEvent } from "@/lib/actions/event-actions";
 import type { Event } from "@/types/app.types";
-import type { DraftPayload, EventDraft } from "@/types/factory.types";
+import type { DraftPayload, DraftStatus, EventDraft } from "@/types/factory.types";
 
 // event_drafts predates the generated database types - cast once at the
 // boundary, same pattern as the tasks/creative-gaps actions.
@@ -118,12 +118,17 @@ export async function updateDraftPayload(
 
   const { data: draft, error } = await db
     .from("event_drafts")
-    .select("id,payload,missing")
+    .select("id,payload,missing,status")
     .eq("id", id)
     .single();
   if (error || !draft) {
     console.error("factory: draft load failed", JSON.stringify(error));
     return { ok: false, error: "Draft not found" };
+  }
+  // Already an event: editing the draft changes nothing on the site, and it
+  // used to flip the row back to "ready" - a second approve made a duplicate.
+  if (draft.status === "created") {
+    return { ok: false, error: "Already created - edit the event itself" };
   }
 
   const payload = { ...(draft.payload as DraftPayload), ...patch };
@@ -143,12 +148,23 @@ export async function updateDraftPayload(
     return true;
   });
 
+  // Only a built draft moves between needs_input and ready. A `building` or
+  // `error` draft keeps its status: an error draft's `missing` is empty (the
+  // build never finished), so recomputing would have made it "ready" with an
+  // unbuilt payload and let approve create it.
+  const status: DraftStatus =
+    draft.status === "needs_input" || draft.status === "ready"
+      ? missing.length > 0
+        ? "needs_input"
+        : "ready"
+      : draft.status;
+
   const { error: saveError } = await db
     .from("event_drafts")
     .update({
       payload,
       missing,
-      status: missing.length > 0 ? "needs_input" : "ready",
+      status,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);
@@ -159,12 +175,20 @@ export async function updateDraftPayload(
   return { ok: true };
 }
 
-/** Approve: createEvent per draft; the created event id lands on the row. */
-export async function approveDrafts(
-  ids: string[],
-): Promise<{ created: number; failed: { id: string; error: string }[] }> {
+/**
+ * Approve: createEvent per draft; the created event id lands on the row.
+ * Only a `ready` draft is created - a ticked needs_input / error / building /
+ * created one would become a live catalog event with 0 prices or no tickets
+ * (or a duplicate), so it is skipped and reported back with its status.
+ */
+export async function approveDrafts(ids: string[]): Promise<{
+  created: number;
+  failed: { id: string; error: string }[];
+  skipped: { id: string; status: DraftStatus }[];
+}> {
   await requireAdmin();
   const failed: { id: string; error: string }[] = [];
+  const skipped: { id: string; status: DraftStatus }[] = [];
   let created = 0;
 
   for (const id of ids) {
@@ -177,7 +201,10 @@ export async function approveDrafts(
       failed.push({ id, error: "Draft not found" });
       continue;
     }
-    if (draft.status === "created") continue;
+    if (draft.status !== "ready") {
+      skipped.push({ id, status: draft.status });
+      continue;
+    }
 
     try {
       // The provider's id rides the draft for stadium memory only - `events`
@@ -222,9 +249,9 @@ export async function approveDrafts(
     action: "factory.approve",
     entityType: "event_draft",
     entityId: ids.join(","),
-    changes: { created, failed: failed.length },
+    changes: { created, failed: failed.length, skipped: skipped.length },
   });
-  return { created, failed };
+  return { created, failed, skipped };
 }
 
 /** Physical delete - drafts are work items, not history. */
