@@ -20,6 +20,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   todo: "To do",
   in_progress: "In progress",
   paused: "Paused",
+  review: "In review",
   done: "Done",
   cancelled: "Cancelled",
 };

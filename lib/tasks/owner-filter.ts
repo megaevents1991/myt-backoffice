@@ -1,6 +1,8 @@
 // lib/tasks/owner-filter.ts
 // Whose tasks the board shows (Dor, 30.09): mine, the ones I handed to someone else, one
 // person's (admins), nobody's. Pure - no DB, no session (scripts/task-thread-selftest.ts).
+import { awaitsReviewBy } from "@/lib/tasks/review";
+import type { TaskStatus } from "@/types/task.types";
 
 /** "all" | "mine" | "delegated" (I assigned it, someone else owns it) | "unassigned" |
  *  "user:<id>" (that person's tasks - the admin's per-person view). */
@@ -47,7 +49,12 @@ export function assignedByMap(
 }
 
 export function matchesOwner(
-  task: { assignee_id: string | null; assigned_by: string | null },
+  task: {
+    assignee_id: string | null;
+    assigned_by: string | null;
+    status: TaskStatus;
+    created_by: string | null;
+  },
   filter: OwnerFilter,
   userId: string | null,
 ): boolean {
@@ -55,7 +62,9 @@ export function matchesOwner(
     case "all":
       return true;
     case "mine":
-      return !!userId && task.assignee_id === userId;
+      // Mine = assigned to me, plus what came BACK to me: a task in review that I opened
+      // is my move now, whoever its assignee is (lib/tasks/review.ts).
+      return !!userId && (task.assignee_id === userId || awaitsReviewBy(task, userId));
     case "delegated":
       return !!userId && !!task.assignee_id && task.assignee_id !== userId && task.assigned_by === userId;
     case "unassigned":

@@ -35,6 +35,8 @@ check("cancelled closes", gapAction("cancelled"), "close");
 check("todo reopens", gapAction("todo"), "reopen");
 check("in_progress reopens", gapAction("in_progress"), "reopen");
 check("paused reopens", gapAction("paused"), "reopen");
+// In review = the work is handed back, not closed: the gap stays open until it is approved.
+check("review reopens", gapAction("review"), "reopen");
 
 // price_light close (final review, I6): only DONE on a still-red light is a "repriced" lesson.
 check("price_light done + red records repriced", shouldRecordRepriced("done", "red"), true);

@@ -6,7 +6,8 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { notifyTaskAssigned, notifyTasksAssigned, type TaskMailOutcome } from "@/lib/services/task-notify";
-import { notifyTaskDone } from "@/lib/services/task-watch-notify";
+import { notifyReviewOutcome, notifyTaskDone, notifyTaskReview } from "@/lib/services/task-watch-notify";
+import { reviewMove, reviewerOf } from "@/lib/tasks/review";
 import { siteUrlOf, siteUrlsForRefs } from "@/lib/services/task-site-url";
 import { resolveGapForTask } from "@/lib/services/gap-resolution";
 import { ADMIN_ROLES } from "@/types/auth.types";
@@ -250,26 +251,43 @@ export async function listTasks(): Promise<TaskWithNames[]> {
   return withNames(rows, session.sub);
 }
 
-/** The dashboard widget: my open tasks, most urgent first. */
+/**
+ * The dashboard widget: what is MY move, most urgent first. My open tasks - minus the ones I
+ * already handed over for review (they wait on someone else) - plus the tasks that came BACK
+ * to me: in review, opened by me. (A rule-made task's fallback reviewer is not looked up
+ * here; it still shows under "המשימות שלי" on the board.)
+ */
 export async function listMyOpenTasks(limit = 6): Promise<Task[]> {
   const session = await requireStaff();
 
-  const { data, error } = await db
-    .from("tasks")
-    .select(TASK_COLUMNS)
-    .is("deleted_at", null)
-    .eq("assignee_id", session.sub)
-    .in("status", OPEN_TASK_STATUSES)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (error) {
-    console.error("tasks: my-open failed", JSON.stringify(error));
+  const [mine, back] = await Promise.all([
+    db
+      .from("tasks")
+      .select(TASK_COLUMNS)
+      .is("deleted_at", null)
+      .eq("assignee_id", session.sub)
+      .in("status", OPEN_TASK_STATUSES.filter((status) => status !== "review"))
+      .order("created_at", { ascending: false })
+      .limit(200),
+    db
+      .from("tasks")
+      .select(TASK_COLUMNS)
+      .is("deleted_at", null)
+      .eq("created_by", session.sub)
+      .eq("status", "review")
+      .order("created_at", { ascending: false })
+      .limit(200),
+  ]);
+  if (mine.error) {
+    console.error("tasks: my-open failed", JSON.stringify(mine.error));
     return [];
   }
+  // The review half is an extra - without it the widget still shows my own work.
+  if (back.error) console.error("tasks: my-review failed", JSON.stringify(back.error));
 
   // Priority is a text column; the meaningful order lives in code.
   const weight: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
-  return ((data ?? []) as Task[])
+  return ([...(mine.data ?? []), ...(back.data ?? [])] as Task[])
     .sort(
       (a, b) =>
         (weight[a.priority] ?? 9) - (weight[b.priority] ?? 9) ||
@@ -529,22 +547,46 @@ export async function updateTask(
   return { ok: true, mail };
 }
 
-/** Status is the one field an editor may change - on his own tasks only. */
+/** Who handed this task to its current owner - the fallback reviewer of a task nobody
+ *  human created (lib/tasks/review.ts). One task, so one small read. */
+async function assignerOf(taskId: string, assigneeId: string | null): Promise<string | null> {
+  if (!assigneeId) return null;
+  const changes = await assigneeChangeRows([taskId]);
+  return assignedByMap([{ id: taskId, assignee_id: assigneeId, created_by: null }], changes).get(taskId) ?? null;
+}
+
+/**
+ * Status is the one field an editor may change - on his own tasks, and on a task that sits
+ * in REVIEW waiting for him (he opened it; its owner handed it back): the reviewer has to be
+ * able to approve it or send it back to work. Moving a task INTO review mails the reviewer
+ * (`mail` says what became of it); the reviewer's answer mails the assignee.
+ */
 export async function setTaskStatus(id: string, status: TaskStatus): Promise<Result> {
   const session = await requireStaff();
   if (!validStatus(status)) return { ok: false, error: "Bad status" };
+  const manager = isManager(session.role);
 
   // The status as it was - read BEFORE the update, or an activity row would
   // record "from" equal to "to".
   const { data: beforeRow, error: beforeError } = await db
     .from("tasks")
-    .select("status")
+    .select("status,assignee_id,created_by")
     .eq("id", id)
     .maybeSingle();
   if (beforeError) console.error("tasks: before-read failed", JSON.stringify(beforeError));
   // Tradeoff: if before-read fails, activity records status as changing from null (not true,
   // but safe: the actual update succeeded so audit has the final state).
   const previousStatus = (beforeRow?.status as TaskStatus | undefined) ?? null;
+
+  // A non-admin who is not the owner gets in only as the REVIEWER of a task in review.
+  let asReviewer = false;
+  if (!manager && beforeRow && beforeRow.assignee_id !== session.sub && previousStatus === "review") {
+    const reviewer = reviewerOf({
+      created_by: beforeRow.created_by,
+      assigned_by: beforeRow.created_by ? null : await assignerOf(id, beforeRow.assignee_id),
+    });
+    asReviewer = reviewer === session.sub;
+  }
 
   let query = db
     .from("tasks")
@@ -554,8 +596,9 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);
-  if (!isManager(session.role)) {
-    query = query.eq("assignee_id", session.sub);
+  if (!manager) {
+    // The reviewer's door closes the moment the task leaves review (a concurrent change).
+    query = asReviewer ? query.eq("status", "review") : query.eq("assignee_id", session.sub);
   }
 
   const { data, error } = await query.select("id,title,created_by,assignee_id,source,source_ref");
@@ -596,13 +639,24 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
   await resolveGapForTask({ id, source: row.source, source_ref: row.source_ref }, status);
 
   // Done (and it was not already) → the person who opened the task hears about it.
+  const watched = { id, title: row.title, created_by: row.created_by, assignee_id: row.assignee_id };
   if (status === "done" && previousStatus !== "done") {
-    await notifyTaskDone({
-      task: { id, title: row.title, created_by: row.created_by, assignee_id: row.assignee_id },
-      actorId: session.sub,
-    });
+    await notifyTaskDone({ task: watched, actorId: session.sub });
   }
-  return { ok: true };
+
+  // The review hand-off: into review → the reviewer is told; out of it → the assignee is.
+  let mail: TaskMailOutcome | undefined;
+  const move = reviewMove(previousStatus, status);
+  if (move === "sent") {
+    const reviewerId = reviewerOf({
+      created_by: row.created_by,
+      assigned_by: row.created_by ? null : await assignerOf(id, row.assignee_id),
+    });
+    mail = await notifyTaskReview({ task: watched, actorId: session.sub, reviewerId });
+  } else if (move) {
+    await notifyReviewOutcome({ task: watched, actorId: session.sub, outcome: move });
+  }
+  return { ok: true, mail };
 }
 
 export async function deleteTask(id: string): Promise<Result> {

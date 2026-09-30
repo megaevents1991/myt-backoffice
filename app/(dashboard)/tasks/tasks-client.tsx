@@ -61,6 +61,7 @@ import {
 } from "@/lib/actions/creative-gap-actions";
 import { editableFields } from "@/lib/tasks/permissions";
 import { matchesOwner, type OwnerFilter } from "@/lib/tasks/owner-filter";
+import { awaitsReviewBy, canChangeStatus } from "@/lib/tasks/review";
 import { BOARD_META } from "@/lib/task-boards";
 import { KanbanBoard } from "./kanban-board";
 import { PricingGapsTab } from "./pricing-gaps-tab";
@@ -352,6 +353,22 @@ export function TasksClient() {
     return { open, done: boardFiltered.length - open, all: boardFiltered.length };
   }, [boardFiltered]);
 
+  // A task moved to review goes back to whoever opened it - say whether they were told.
+  const sayReviewSent = useCallback(
+    (mail: "sent" | "skipped" | "failed" | undefined) =>
+      toast({
+        variant: mail === "failed" ? "destructive" : undefined,
+        title: "המשימה הועברה לבדיקה",
+        description:
+          mail === "sent"
+            ? "נשלח מייל למי שפתח את המשימה - היא מחכה לו ב\"המשימות שלי\"."
+            : mail === "failed"
+              ? "המייל למי שפתח את המשימה נכשל - תעדכן אותו ישירות."
+              : "לא נשלח מייל: אין למשימה בודק אחר (פתחת אותה בעצמך, או שאין לו כתובת מייל).",
+      }),
+    [toast],
+  );
+
   const onStatus = useCallback(
     async (task: TaskWithNames, status: TaskStatus) => {
       const result = await setTaskStatus(task.id, status);
@@ -363,9 +380,10 @@ export function TasksClient() {
         });
         return;
       }
+      if (status === "review") sayReviewSent(result.mail);
       reload();
     },
-    [reload, toast],
+    [reload, toast, sayReviewSent],
   );
 
   // Same server call as the table's status <Select> (onStatus above), but
@@ -383,10 +401,11 @@ export function TasksClient() {
         });
         return false;
       }
+      if (status === "review") sayReviewSent(result.mail);
       reload();
       return true;
     },
-    [reload, toast],
+    [reload, toast, sayReviewSent],
   );
 
   const onDelete = useCallback(
@@ -453,6 +472,15 @@ export function TasksClient() {
               {SOURCE_BADGE[row.original.source] && (
                 <Badge variant="secondary" className="shrink-0 text-[10px]">
                   {SOURCE_BADGE[row.original.source]}
+                </Badge>
+              )}
+              {/* It came back to the viewer: its owner finished and waits for an answer. */}
+              {awaitsReviewBy(row.original, user?.id ?? null) && (
+                <Badge
+                  className="shrink-0 text-[10px]"
+                  title="מי שביצע סיים את החלק שלו. לאשר = Done, להחזיר לעבודה = In progress"
+                >
+                  לבדיקה שלך
                 </Badge>
               )}
             </div>
@@ -522,14 +550,12 @@ export function TasksClient() {
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => {
-          const isOwnTask = !!user && row.original.assignee_id === user.id;
-          const canChangeStatus =
-            isManager || editableFields(user?.role ?? "", isOwnTask).has("status");
+          // Admins, the owner, and - while it waits for their review - whoever opened it.
           return (
             <Select
               value={row.original.status}
               onValueChange={(value) => onStatus(row.original, value as TaskStatus)}
-              disabled={!canChangeStatus}
+              disabled={!canChangeStatus(user?.role ?? "", row.original, user?.id ?? null)}
             >
               <SelectTrigger className="h-8 w-[130px]">
                 <SelectValue />

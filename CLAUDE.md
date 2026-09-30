@@ -301,6 +301,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >     (no creator) would belong to nobody. (c) The board pills count OPEN tasks only. (d) "New task"
 >     under a board pill opens on that board. (e) Bulk-bar selects carry `text-foreground` (the bar is
 >     `bg-primary`; the inherited light text made their placeholders invisible).
+>   - **"In review" status (2026-09-30).** `review` sits between `paused` and `done`, counts as OPEN
+>     (`OPEN_TASK_STATUSES`), and needed no migration (`tasks.status` has no CHECK). Meaning: the
+>     assignee finished their side and hands the task BACK - the assignee is NOT changed (it is the
+>     record of who did the work), what changes is whose move it is. Every rule is pure in
+>     `lib/tasks/review.ts` (selftest `scripts/task-thread-selftest.ts`): `reviewerOf` = `created_by`,
+>     else (a rule-made task) whoever assigned it; `awaitsReviewBy`; `canChangeStatus` = admin, the
+>     owner, or the reviewer WHILE the task waits for them (`setTaskStatus` enforces the same - a
+>     non-admin reviewer's update is scoped `status = 'review'`); `reviewMove` names the three mails
+>     (`task-watch-notify.ts`): into review -> the reviewer (`notifyTaskReview`, its outcome returned
+>     as `mail`, the board toasts it), review -> done = "אושרה" and review -> todo/in_progress/paused
+>     = "הוחזרה אליך", both to the assignee (`notifyReviewOutcome`); never to the actor. A task in
+>     review shows in its reviewer's "המשימות שלי" (`matchesOwner`) with a "לבדיקה שלך" badge, and in
+>     their dashboard widget (`listMyOpenTasks` = my working tasks + tasks in review I created; a
+>     task I sent to review leaves MY widget). Gap tasks: review keeps the gap open (`gapAction`).
 >   - **Pricing tab** (`?tab=pricing`, all staff, not admin-only like
 >     `/price-light`): every open pricing problem - red price lights and
 >     frozen `/price-changes` rows - in one list via

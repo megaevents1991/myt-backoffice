@@ -5,6 +5,8 @@ import { diffActivities } from "../lib/services/task-activity";
 import { isValidTaskAttachmentPath } from "../lib/tasks/attachment-path";
 import { mentionsStillInBody } from "../lib/tasks/mentions";
 import { assignedByMap, matchesOwner, type AssigneeChangeRow } from "../lib/tasks/owner-filter";
+import { awaitsReviewBy, canChangeStatus, reviewMove, reviewerOf } from "../lib/tasks/review";
+import type { TaskStatus } from "../types/task.types";
 import {
   commentMailTargets,
   threadParticipants,
@@ -154,7 +156,12 @@ check("assigned by: unassigned, and a rule's own assignee, are nobody's hand-off
   ], [change("t1", "dor", null, 1)])],
   []);
 
-const owned = (assignee: string | null, by: string | null) => ({ assignee_id: assignee, assigned_by: by });
+const owned = (
+  assignee: string | null,
+  by: string | null,
+  status: TaskStatus = "todo",
+  creator: string | null = null,
+) => ({ assignee_id: assignee, assigned_by: by, status, created_by: creator });
 check("owner: all shows everything", matchesOwner(owned(null, null), "all", "dor"), true);
 check("owner: mine = assigned to me", [matchesOwner(owned("dor", "alon"), "mine", "dor"), matchesOwner(owned("alon", "dor"), "mine", "dor")], [true, false]);
 check("owner: delegated = I assigned it to someone else",
@@ -168,6 +175,48 @@ check("owner: delegated = I assigned it to someone else",
 check("owner: one person's tasks", [matchesOwner(owned("alon", null), "user:alon", "dor"), matchesOwner(owned("tom", null), "user:alon", "dor")], [true, false]);
 check("owner: unassigned", [matchesOwner(owned(null, null), "unassigned", "dor"), matchesOwner(owned("alon", null), "unassigned", "dor")], [true, false]);
 check("owner: no session shows nothing of 'mine'", matchesOwner(owned(null, null), "mine", null), false);
+
+// --- review: the owner hands the task back to whoever opened it ---
+check("reviewer: the creator", reviewerOf({ created_by: "dor", assigned_by: "alon" }), "dor");
+check("reviewer: a rule-made task goes to whoever assigned it", reviewerOf({ created_by: null, assigned_by: "alon" }), "alon");
+check("reviewer: nobody opened it, nobody assigned it", reviewerOf({ created_by: null, assigned_by: null }), null);
+check("awaits review: only in review, only for the reviewer",
+  [
+    awaitsReviewBy(owned("tom", "dor", "review", "dor"), "dor"),
+    awaitsReviewBy(owned("tom", "dor", "in_progress", "dor"), "dor"),
+    awaitsReviewBy(owned("tom", "dor", "review", "dor"), "tom"),
+    awaitsReviewBy(owned("tom", "dor", "review", "dor"), null),
+  ],
+  [true, false, false, false]);
+check("owner: a task in review comes back into its creator's 'mine'",
+  [
+    matchesOwner(owned("tom", "dor", "review", "dor"), "mine", "dor"),
+    matchesOwner(owned("tom", "dor", "in_progress", "dor"), "mine", "dor"),
+    matchesOwner(owned("tom", "dor", "review", "dor"), "mine", "tom"), // still the owner's too
+  ],
+  [true, false, true]);
+check("status: admin anywhere, editor on own task, reviewer only while it waits for them",
+  [
+    canChangeStatus("admin", owned("tom", null), "alon"),
+    canChangeStatus("editor", owned("tom", null), "tom"),
+    canChangeStatus("editor", owned("tom", null, "review", "liz"), "liz"),
+    canChangeStatus("editor", owned("tom", null, "in_progress", "liz"), "liz"),
+    canChangeStatus("editor", owned("tom", null, "review", "liz"), "rina"),
+    canChangeStatus("editor", owned("tom", null, "review", "liz"), null),
+  ],
+  [true, true, true, false, false, false]);
+check("review move: into review, approved, returned, and everything else",
+  [
+    reviewMove("in_progress", "review"),
+    reviewMove(null, "review"),
+    reviewMove("review", "review"),
+    reviewMove("review", "done"),
+    reviewMove("review", "in_progress"),
+    reviewMove("review", "todo"),
+    reviewMove("review", "cancelled"),
+    reviewMove("in_progress", "done"),
+  ],
+  ["sent", "sent", null, "approved", "returned", "returned", null, null]);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

@@ -3,13 +3,17 @@
  * `npm run db:types` can regenerate (same bootstrap as user_profiles had).
  */
 
-export const TASK_STATUSES = ["todo", "in_progress", "paused", "done", "cancelled"] as const;
+/** "review" (30.09) = the owner finished their side and handed the task back to whoever
+ *  opened it (lib/tasks/review.ts). The column has no CHECK constraint, so a new status
+ *  needs no migration. */
+export const TASK_STATUSES = ["todo", "in_progress", "paused", "review", "done", "cancelled"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
-/** "paused" counts as OPEN - the DB's partial "open tasks" index includes it,
- *  so every "still open" filter (dashboards, dedupe-on-open-task checks) reads
- *  from here rather than hand-listing statuses. */
-export const OPEN_TASK_STATUSES = ["todo", "in_progress", "paused"] as const;
+/** "paused" and "review" count as OPEN - the work is not closed yet - so every "still open"
+ *  filter (dashboards, dedupe-on-open-task checks) reads from here rather than hand-listing
+ *  statuses. (The DB's partial open-tasks index lists todo/in_progress/paused; it is a speed-up
+ *  only, no query depends on it.) */
+export const OPEN_TASK_STATUSES = ["todo", "in_progress", "paused", "review"] as const;
 
 export const TASK_PRIORITIES = ["urgent", "high", "medium", "low"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];

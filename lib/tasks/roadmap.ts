@@ -22,10 +22,11 @@ function onMap<T extends RoadmapTask>(tasks: T[], board: "dev" | "marketing"): T
 
 const STATUS_RANK: Record<TaskStatus, number> = {
   in_progress: 0,
-  todo: 1,
-  paused: 2,
-  done: 3,
-  cancelled: 4,
+  review: 1,
+  todo: 2,
+  paused: 3,
+  done: 4,
+  cancelled: 5,
 };
 
 /** Inside a section: in progress first, done last; then priority; then oldest first. */

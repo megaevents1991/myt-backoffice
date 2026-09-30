@@ -10,10 +10,14 @@
  *  carries the comment itself. The person acting is never mailed about their own
  *  action, and someone the comment @mentions already gets the mention mail, so they
  *  are left out here. A rule-made task has no human creator - until someone writes on
- *  it only its assignee can be reached. */
+ *  it only its assignee can be reached.
+ *
+ *  REVIEW (Dor, 30.09): a task moved to "review" mails the person it goes back to; their
+ *  answer - approved (done) or returned to work - mails the assignee. */
 import { appOrigin, sendMail } from "@/lib/email";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { commentForMail, escapeHtml } from "@/lib/services/task-mention-notify";
+import type { TaskMailOutcome } from "@/lib/services/task-notify";
 import { commentMailTargets, type ThreadCommentRow } from "@/lib/tasks/thread-watch";
 
 const db = supabaseTyped;
@@ -97,6 +101,98 @@ export async function notifyTaskDone(input: {
   } catch (error) {
     console.error(
       `tasks: done mail failed for task ${input.task.id}`,
+      error instanceof Error ? error.message : JSON.stringify(error),
+    );
+  }
+}
+
+/**
+ * The owner finished their side and moved the task to "review" (Dor, 30.09) - tell the
+ * person it goes back to (lib/tasks/review.ts `reviewerOf`). Returns what became of the
+ * mail so the board can say it: "skipped" = nobody to tell (no reviewer, the reviewer is the
+ * one who moved it, or they have no active mailbox).
+ */
+export async function notifyTaskReview(input: {
+  task: WatchedTask;
+  actorId: string | null;
+  reviewerId: string | null;
+}): Promise<TaskMailOutcome> {
+  const { task, actorId, reviewerId } = input;
+  try {
+    if (!reviewerId || reviewerId === actorId) {
+      console.log(`tasks: review mail skipped for task ${task.id} - no reviewer other than the actor`);
+      return "skipped";
+    }
+    const profiles = await loadProfiles([reviewerId, ...(actorId ? [actorId] : [])]);
+    const reviewer = profiles.find((p) => p.id === reviewerId);
+    if (!reviewer?.email || reviewer.is_active === false) {
+      console.log(`tasks: review mail skipped for task ${task.id} - reviewer has no active mailbox`);
+      return "skipped";
+    }
+    const actorName = nameOf(profiles.find((p) => p.id === actorId), "מישהו");
+    const url = `${appOrigin()}/tasks?task=${task.id}`;
+
+    await sendMail({
+      to: reviewer.email,
+      subject: `לבדיקה שלך: ${task.title}`,
+      html: `<div dir="rtl" style="font-family:Arial,sans-serif">
+  <p>${escapeHtml(actorName)} סיים/ה את החלק שלו/ה במשימה <strong>${escapeHtml(task.title)}</strong> והעביר/ה אותה לבדיקה שלך.</p>
+  <p style="color:#666;font-size:13px">הכול בסדר? מסמנים אותה Done. צריך עוד עבודה? מחזירים אותה ל-In progress וכותבים בשיחה מה חסר.</p>
+  <p><a href="${url}">למשימה</a></p>
+</div>`,
+      text: [
+        `${actorName} סיים/ה את החלק שלו/ה והעביר/ה לבדיקה שלך: ${task.title}`,
+        "הכול בסדר? מסמנים Done. צריך עוד עבודה? מחזירים ל-In progress.",
+        url,
+      ].join("\n"),
+    });
+    console.log(`tasks: review mail sent for task ${task.id} -> ${reviewer.email}`);
+    return "sent";
+  } catch (error) {
+    console.error(
+      `tasks: review mail failed for task ${task.id}`,
+      error instanceof Error ? error.message : JSON.stringify(error),
+    );
+    return "failed";
+  }
+}
+
+/** The reviewer answered: approved (the task is done) or returned (back to work). The
+ *  person who did the work hears either way - they handed it over and are waiting. */
+export async function notifyReviewOutcome(input: {
+  task: WatchedTask;
+  actorId: string | null;
+  outcome: "approved" | "returned";
+}): Promise<void> {
+  const { task, actorId, outcome } = input;
+  try {
+    if (!task.assignee_id || task.assignee_id === actorId) return;
+
+    const profiles = await loadProfiles([task.assignee_id, ...(actorId ? [actorId] : [])]);
+    const owner = profiles.find((p) => p.id === task.assignee_id);
+    if (!owner?.email || owner.is_active === false) {
+      console.log(`tasks: review-${outcome} mail skipped for task ${task.id} - assignee has no active mailbox`);
+      return;
+    }
+    const actorName = nameOf(profiles.find((p) => p.id === actorId), "מישהו");
+    const url = `${appOrigin()}/tasks?task=${task.id}`;
+    const line =
+      outcome === "approved"
+        ? `${actorName} בדק/ה ואישר/ה את המשימה - היא סגורה.`
+        : `${actorName} בדק/ה את המשימה והחזיר/ה אותה אליך להמשך עבודה. מה שחסר כתוב בשיחה על המשימה.`;
+
+    await mailEach(`review-${outcome}`, task.id, [owner], () => ({
+      subject: `${outcome === "approved" ? "אושרה" : "הוחזרה אליך"}: ${task.title}`,
+      html: `<div dir="rtl" style="font-family:Arial,sans-serif">
+  <p><strong>${escapeHtml(task.title)}</strong></p>
+  <p>${escapeHtml(line)}</p>
+  <p><a href="${url}">למשימה</a></p>
+</div>`,
+      text: [task.title, line, url].join("\n"),
+    }));
+  } catch (error) {
+    console.error(
+      `tasks: review-${outcome} mail failed for task ${task.id}`,
       error instanceof Error ? error.message : JSON.stringify(error),
     );
   }

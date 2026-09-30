@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createTask, setTaskStatus } from "@/lib/actions/task-actions";
-import { editableFields } from "@/lib/tasks/permissions";
+import { canChangeStatus } from "@/lib/tasks/review";
 import { STATUS_LABEL } from "@/lib/tasks/kanban";
 import type { TaskStatus, TaskWithNames } from "@/types/task.types";
 
@@ -132,8 +132,7 @@ export function TaskSubtasks({
       {subtasks.length > 0 && (
         <ul className="mb-3 space-y-1.5">
           {subtasks.map((task) => {
-            const own = !!userId && task.assignee_id === userId;
-            const canStatus = isManager || editableFields(role, own).has("status");
+            const canStatus = canChangeStatus(role, task, userId);
             return (
               <li key={task.id} className="flex items-center gap-2 text-sm">
                 <Select

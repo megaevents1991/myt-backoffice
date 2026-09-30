@@ -88,6 +88,13 @@ export function MyTasksWidget() {
               <span className="min-w-0 flex-1 truncate text-sm font-medium">
                 {task.title}
               </span>
+              {/* Came back to me: its owner finished and is waiting for my answer -
+                  ticking it approves (Done). */}
+              {task.status === "review" && (
+                <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                  לבדיקה שלך
+                </span>
+              )}
               {task.due_date && (
                 <span className="shrink-0 text-xs tabular text-muted-foreground">
                   {task.due_date.slice(5)}

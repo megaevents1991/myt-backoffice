@@ -13,8 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PRIORITY_LABEL } from "@/components/task-editor";
+import { canChangeStatus } from "@/lib/tasks/review";
 import {
-  canDragCard,
   groupTasks,
   initialsOf,
   PRIORITY_STYLE,
@@ -93,7 +93,9 @@ export function KanbanBoard({
     }
   };
 
-  const isOwnTask = (task: TaskWithNames) => !!userId && task.assignee_id === userId;
+  // Same rule as the table's status select: admins, the owner, and the reviewer of a task
+  // that waits for them (lib/tasks/review.ts).
+  const canMove = (task: TaskWithNames) => canChangeStatus(role, task, userId);
 
   return (
     <div className="flex gap-3 overflow-x-auto pb-2">
@@ -172,8 +174,8 @@ export function KanbanBoard({
                       <KanbanCard
                         key={task.id}
                         task={task}
-                        canDrag={canDrag && canDragCard(role, isOwnTask(task))}
-                        canPickStatus={!canDrag && canDragCard(role, isOwnTask(task))}
+                        canDrag={canDrag && canMove(task)}
+                        canPickStatus={!canDrag && canMove(task)}
                         onClick={() => onOpenTask(task)}
                         onStatusPick={(next) => void move(task.id, next)}
                       />
