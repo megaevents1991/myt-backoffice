@@ -812,17 +812,31 @@ export default function ReservationDetailsPage({
                   {(() => {
                     const fareUpgrade = (reservation.flight_order_info as { fare_upgrade?: { brand?: string; delta_total_usd?: number } })?.fare_upgrade;
                     if (!fareUpgrade) return null;
+                    const brand = fareUpgrade.brand || "CLASSIC";
+                    // Main stores Amadeus' CLASSIC offer when it quoted one; at
+                    // the floor price the stored offer is still the LITE fare
+                    // that was searched, and the upgrade lives only in this
+                    // field (30.09). A fare with a bag on every segment = the
+                    // upgraded one.
+                    const fares = (reservation.flight_order_info.offer?.travelerPricings?.[0]?.fareDetailsBySegment ?? []) as Array<{
+                      includedCheckedBags?: { quantity?: number; weight?: number };
+                    }>;
+                    const storedIsUpgraded =
+                      fares.length > 0 &&
+                      fares.every((f) => (f.includedCheckedBags?.quantity ?? 0) > 0 || (f.includedCheckedBags?.weight ?? 0) > 0);
                     return (
                       <div className="mt-4 border-t pt-4">
                         <p className="text-sm font-medium mb-2">שדרוג כרטיס</p>
                         <p className="text-sm text-muted-foreground">
-                          {fareUpgrade.brand || "CLASSIC"} (כולל מזוודה) · +${Number(fareUpgrade.delta_total_usd || 0).toFixed(0)}
+                          {brand} (כולל מזוודה) · +${Number(fareUpgrade.delta_total_usd || 0).toFixed(0)}
                         </p>
-                        {/* The stored offer is the fare that was searched (LITE) -
-                            the upgrade lives only in this field (main, 30.09). */}
-                        <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
-                          להזמין {fareUpgrade.brand || "CLASSIC"} - ההצעה השמורה והשורות שמעל הן של התעריף הנמוך
-                        </p>
+                        {storedIsUpgraded ? (
+                          <p className="text-sm text-muted-foreground">ההצעה השמורה היא כבר תעריף {brand}</p>
+                        ) : (
+                          <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                            להזמין {brand} - ההצעה השמורה והשורות שמעל הן של התעריף הנמוך
+                          </p>
+                        )}
                       </div>
                     );
                   })()}
