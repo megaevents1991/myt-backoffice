@@ -87,7 +87,7 @@ import {
   type TixStockCandidate,
 } from "@/lib/actions/supplier-attach-actions";
 import { useConfirm } from "@/components/confirm-provider";
-import { hasOwnStock, stockLeft } from "@/lib/own-stock";
+import { hasOwnStock, ownSeating, stockLeft } from "@/lib/own-stock";
 
 const NO_ZONE = "__none__";
 const NEW_VENUE = "__new__";
@@ -221,6 +221,39 @@ function MapLegend() {
         </span>
       ))}
     </div>
+  );
+}
+
+/**
+ * The seating line main's ticket card prints for one of our own tickets
+ * (`ownSeating`), in the site's own words. Every supplier card on the page
+ * says "ישיבה ביחד מובטחת"; ours says nothing until Together is set, and the
+ * board says so instead of leaving it to be noticed on the site (Dor 30.09).
+ */
+function OwnSeatingPromise({ seatsTogether }: { seatsTogether?: number }) {
+  if (ownSeating({ seatsTogether }, 2).seating !== "together" || !seatsTogether) {
+    return (
+      <span className="text-xs text-amber-700">
+        No seating promise on the site - set Together to show{" "}
+        <span dir="rtl">&quot;ישיבה ביחד מובטחת&quot;</span> like the suppliers&apos;
+        tickets
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2 text-xs">
+      <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+        On the site:
+        <span dir="rtl" className="ml-1">
+          ישיבה ביחד מובטחת
+        </span>
+      </Badge>
+      <span className="text-muted-foreground">
+        {seatsTogether === 2 ? "a pair" : `a party of 2-${seatsTogether}`}; a
+        bigger one:{" "}
+        <span dir="rtl">ישיבה יחד בקבוצות של עד {seatsTogether}</span>
+      </span>
+    </span>
   );
 }
 
@@ -1280,6 +1313,9 @@ export function EventSuppliersPanel({
         >
           <Trash2 className="h-4 w-4" />
         </Button>
+        <div className="basis-full">
+          <OwnSeatingPromise seatsTogether={ticket.seatsTogether} />
+        </div>
       </div>
     );
   };
@@ -1790,6 +1826,7 @@ export function EventSuppliersPanel({
                   </SelectContent>
                 </Select>
               </div>
+              <OwnSeatingPromise seatsTogether={ownTogetherValue} />
               <Input
                 dir="auto"
                 placeholder="Description the customer sees (optional)"
