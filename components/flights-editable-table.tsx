@@ -811,8 +811,8 @@ export function FlightsEditableTable({
         </div>
       )}
 
-      <div className="rounded-md border">
-        <Table>
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <Table look="list">
           <TableHeader>
             <TableRow>
               <TableHead className="w-8" />
@@ -945,7 +945,7 @@ export function FlightsEditableTable({
                             href={`/offline-flights/${flight.id}`}
                             title="View Flight"
                           >
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
                               <Eye className="h-4 w-4" />
                               <span className="sr-only">View Flight</span>
                             </Button>
@@ -957,7 +957,7 @@ export function FlightsEditableTable({
                               title="Restore Flight"
                               onClick={() => handleRestore(flight.id)}
                               disabled={isPending}
-                              className="text-green-600 hover:text-green-700"
+                              className="h-8 w-8 text-green-600 hover:text-green-700"
                             >
                               <RotateCcw className="h-4 w-4" />
                               <span className="sr-only">Restore Flight</span>
@@ -969,7 +969,7 @@ export function FlightsEditableTable({
                               title="Delete Flight"
                               onClick={() => handleDelete(flight.id)}
                               disabled={isPending}
-                              className="text-red-600 hover:text-red-700"
+                              className="h-8 w-8 text-red-600 hover:text-red-700"
                             >
                               <Trash2 className="h-4 w-4" />
                               <span className="sr-only">Delete Flight</span>

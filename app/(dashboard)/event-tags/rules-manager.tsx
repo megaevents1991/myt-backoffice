@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/search-input";
 import { Switch } from "@/components/ui/switch";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -165,10 +166,10 @@ export function RulesManager({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          className="w-72"
+        <SearchInput
+          wrapperClassName="sm:w-72"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onValueChange={setSearch}
           placeholder="חיפוש כלל (דפוס, תגית או slug)"
         />
         {(

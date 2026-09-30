@@ -197,8 +197,8 @@ export function AuditClient({ initialRows }: { initialRows: AuditRow[] }) {
         </Button>
       </div>
 
-      <div className="rounded-md border">
-        <Table>
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <Table look="list">
           <TableHeader>
             <TableRow>
               <TableHead>Time</TableHead>

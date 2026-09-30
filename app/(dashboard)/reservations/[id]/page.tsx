@@ -1192,8 +1192,8 @@ function SplitStayTable({ segments }: { segments: OrderHotel[] }) {
           <p className="text-lg tabular-nums">${total.toLocaleString()}</p>
         </div>
       </div>
-      <div className="rounded-md border">
-        <Table>
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <Table look="list">
           <TableHeader>
             <TableRow>
               <TableHead className="w-8">#</TableHead>

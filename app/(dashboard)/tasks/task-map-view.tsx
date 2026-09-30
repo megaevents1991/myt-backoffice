@@ -5,7 +5,7 @@ import { MessageSquare, Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/search-input";
 import { Progress } from "@/components/ui/progress";
 import { PRIORITY_LABEL } from "@/components/task-editor";
 import { initialsOf, PRIORITY_STYLE, STATUS_LABEL } from "@/lib/tasks/kanban";
@@ -123,11 +123,12 @@ export function TaskMapView({
           ))}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Input
+          <SearchInput
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onValueChange={setQuery}
             placeholder="חיפוש משימה…"
-            className="h-8 w-full sm:w-56"
+            wrapperClassName="sm:w-56"
+            className="h-8"
           />
           <select
             value={assignee}

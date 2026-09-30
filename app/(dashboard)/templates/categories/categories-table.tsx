@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/search-input";
 import {
   Table,
   TableBody,
@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTableSkeleton } from "@/components/data-table";
 import { toast } from "react-hot-toast";
 import { useConfirm } from "@/components/confirm-provider";
-import { CornerDownLeft, Edit, Plus, Search, Trash2 } from "lucide-react";
+import { CornerDownLeft, Edit, Plus, Trash2 } from "lucide-react";
 import type { Category } from "@/types/category.types";
 import {
   getCategories,
@@ -107,19 +107,15 @@ export function CategoriesTable() {
 
   return (
     <div className="space-y-3">
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search name, slug, or sport…"
-          className="pl-8"
-        />
-      </div>
+      <SearchInput
+        value={query}
+        onValueChange={setQuery}
+        placeholder="Search name, slug, or sport…"
+      />
       <div className="overflow-hidden rounded-lg border bg-card">
-      <Table>
-        <TableHeader className="bg-muted/60">
-          <TableRow className="hover:bg-transparent">
+      <Table look="list">
+        <TableHeader>
+          <TableRow>
             <TableHead>Image</TableHead>
             <TableHead>ID</TableHead>
             <TableHead>Name</TableHead>
@@ -178,13 +174,13 @@ export function CategoriesTable() {
                       href={`/templates/categories/new?parent=${c.id}`}
                       title="Add sub-category"
                     >
-                      <Button variant="ghost" size="icon">
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
                         <Plus className="h-4 w-4" />
                         <span className="sr-only">Add sub-category</span>
                       </Button>
                     </Link>
                     <Link href={`/templates/categories/${c.id}/edit`} title="Edit">
-                      <Button variant="ghost" size="icon">
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
                         <Edit className="h-4 w-4" />
                         <span className="sr-only">Edit</span>
                       </Button>
@@ -195,7 +191,7 @@ export function CategoriesTable() {
                       title="Delete"
                       onClick={() => handleDelete(c.id)}
                       disabled={isPending}
-                      className="text-red-600 hover:text-red-700"
+                      className="h-8 w-8 text-red-600 hover:text-red-700"
                     >
                       <Trash2 className="h-4 w-4" />
                       <span className="sr-only">Delete</span>

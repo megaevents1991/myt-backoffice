@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/search-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -352,9 +353,10 @@ export function TagsManager({
           {adding ? "Adding..." : "Add"}
         </Button>
       </div>
-      <Input
+      <SearchInput
+        wrapperClassName="sm:w-[26rem]"
         value={search}
-        onChange={(e) => setSearchAndClear(e.target.value)}
+        onValueChange={setSearchAndClear}
         placeholder="חיפוש תגית (שם, אנגלית או slug)"
       />
       <div className="flex flex-wrap items-center gap-1">

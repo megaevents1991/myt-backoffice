@@ -504,8 +504,8 @@ export function ReportClient({
         </TabsContent>
 
         {/* Trips */}
-        <TabsContent value="trips" className="mt-0 rounded-lg border">
-          <Table>
+        <TabsContent value="trips" className="mt-0 overflow-hidden rounded-lg border bg-card">
+          <Table look="list">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8" />

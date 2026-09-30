@@ -341,8 +341,8 @@ export function InvitesClient({
       </div>
       )}
 
-      <div className="rounded-lg border">
-        <Table>
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <Table look="list">
           <TableHeader>
             <TableRow>
               <TableHead>Recipient</TableHead>

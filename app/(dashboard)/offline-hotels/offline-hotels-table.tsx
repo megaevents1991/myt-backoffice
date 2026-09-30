@@ -123,9 +123,9 @@ export function OfflineHotelsTable() {
         </label>
       </div>
       <div className="overflow-hidden rounded-lg border bg-card">
-        <Table>
-          <TableHeader className="bg-muted/60">
-            <TableRow className="hover:bg-transparent">
+        <Table look="list">
+          <TableHeader>
+            <TableRow>
               <TableHead>
                 <Checkbox
                   checked={hotels.length > 0 && selectedRows.size === hotels.length}
@@ -191,13 +191,13 @@ export function OfflineHotelsTable() {
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Link href={`/offline-hotels/${hotel.id}`} title="View Hotel">
-                        <Button variant="ghost" size="icon">
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
                           <Eye className="h-4 w-4" />
                           <span className="sr-only">View Hotel</span>
                         </Button>
                       </Link>
                       <Link href={`/offline-hotels/${hotel.id}/edit`} title="Edit Hotel">
-                        <Button variant="ghost" size="icon">
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
                           <Edit className="h-4 w-4" />
                           <span className="sr-only">Edit Hotel</span>
                         </Button>
@@ -209,7 +209,7 @@ export function OfflineHotelsTable() {
                           title="Restore Hotel"
                           onClick={() => handleRestore(hotel.id)}
                           disabled={isPending}
-                          className="text-green-600 hover:text-green-700"
+                          className="h-8 w-8 text-green-600 hover:text-green-700"
                         >
                           <RotateCcw className="h-4 w-4" />
                           <span className="sr-only">Restore Hotel</span>
@@ -221,7 +221,7 @@ export function OfflineHotelsTable() {
                           title="Delete Hotel"
                           onClick={() => handleDelete(hotel.id)}
                           disabled={isPending}
-                          className="text-red-600 hover:text-red-700"
+                          className="h-8 w-8 text-red-600 hover:text-red-700"
                         >
                           <Trash2 className="h-4 w-4" />
                           <span className="sr-only">Delete Hotel</span>

@@ -123,8 +123,8 @@ export function FormsClient({
         </div>
       )}
 
-      <div className="rounded-lg border">
-        <Table>
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <Table look="list">
           <TableHeader>
             <TableRow>
               <TableHead>Title</TableHead>
@@ -186,7 +186,12 @@ export function FormsClient({
                 <TableCell>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label="Form actions"
+                      >
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>

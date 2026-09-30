@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/search-input";
 import {
   Table,
   TableBody,
@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTableSkeleton } from "@/components/data-table";
 import { toast } from "react-hot-toast";
 import { useConfirm } from "@/components/confirm-provider";
-import { Edit, Trash2, Search } from "lucide-react";
+import { Edit, Trash2 } from "lucide-react";
 import type { Person, PersonKind } from "@/types/person.types";
 import * as artist from "@/lib/actions/artist-actions";
 import * as football from "@/lib/actions/football-actions";
@@ -78,19 +78,15 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
 
   return (
     <div className="space-y-3">
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search name, English, or slug…"
-          className="pl-8"
-        />
-      </div>
+      <SearchInput
+        value={query}
+        onValueChange={setQuery}
+        placeholder="Search name, English, or slug…"
+      />
       <div className="overflow-hidden rounded-lg border bg-card">
-      <Table>
-        <TableHeader className="bg-muted/60">
-          <TableRow className="hover:bg-transparent">
+      <Table look="list">
+        <TableHeader>
+          <TableRow>
             <TableHead>Image</TableHead>
             <TableHead>Gallery</TableHead>
             <TableHead>Name</TableHead>
@@ -146,14 +142,16 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
                     <Link href={`${a.base}/${r.id}/edit`} title="Edit">
-                      <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit"><Edit className="h-4 w-4" /></Button>
                     </Link>
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => handleDelete(r.id)}
                       disabled={isPending}
-                      className="text-red-600 hover:text-red-700"
+                      title="Delete"
+                      aria-label="Delete"
+                      className="h-8 w-8 text-red-600 hover:text-red-700"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

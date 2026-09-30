@@ -24,15 +24,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Inbox,
-  Search,
   SlidersHorizontal,
-  X,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { matchesSearch } from "@/lib/search";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/search-input";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -151,9 +149,22 @@ interface ScrollEdges {
   barX: number;
   barY: number;
   rtl: boolean;
+  /** The last column takes too much of the view to pin - it would hide the rest. */
+  lastTooWide: boolean;
 }
 
-const NO_EDGES: ScrollEdges = { left: false, right: false, barX: 0, barY: 0, rtl: false };
+const NO_EDGES: ScrollEdges = {
+  left: false,
+  right: false,
+  barX: 0,
+  barY: 0,
+  rtl: false,
+  lastTooWide: false,
+};
+
+/** A pinned column may cover at most this share of the table's width (price-changes
+ *  keeps four labelled buttons in its actions cell - pinned, they hid the table). */
+const PIN_MAX_SHARE = 0.35;
 
 /**
  * Which sides of a wide table still hide columns. The table scrolls inside its
@@ -174,19 +185,22 @@ function useScrollEdges(tableRef: React.RefObject<HTMLTableElement | null>): Scr
       const rtl = getComputedStyle(scroller).direction === "rtl";
       const pastStart = max > 1 && offset > 1;
       const beforeEnd = max > 1 && offset < max - 1;
+      const lastCell = table.querySelector<HTMLTableCellElement>("tbody tr:first-child > td:last-child");
       const next: ScrollEdges = {
         left: rtl ? beforeEnd : pastStart,
         right: rtl ? pastStart : beforeEnd,
         barX: scroller.offsetWidth - scroller.clientWidth,
         barY: scroller.offsetHeight - scroller.clientHeight,
         rtl,
+        lastTooWide: !!lastCell && lastCell.offsetWidth > scroller.clientWidth * PIN_MAX_SHARE,
       };
       setEdges((prev) =>
         prev.left === next.left &&
         prev.right === next.right &&
         prev.barX === next.barX &&
         prev.barY === next.barY &&
-        prev.rtl === next.rtl
+        prev.rtl === next.rtl &&
+        prev.lastTooWide === next.lastTooWide
           ? prev
           : next,
       );
@@ -371,11 +385,11 @@ export function DataTable<TData, TValue>({
     table.setGlobalFilter(value);
     table.setPageIndex(0);
   };
-  const searchRef = useRef<HTMLInputElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
   const edges = useScrollEdges(tableRef);
   const visibleColumns = table.getVisibleLeafColumns();
-  const pinsActions = visibleColumns[visibleColumns.length - 1]?.id === PINNED_COLUMN_ID;
+  const pinsActions =
+    visibleColumns[visibleColumns.length - 1]?.id === PINNED_COLUMN_ID && !edges.lastTooWide;
   // Columns still hidden past the trailing edge (the left one in an RTL table).
   const trailingHidden = edges.rtl ? edges.left : edges.right;
 
@@ -426,40 +440,11 @@ export function DataTable<TData, TValue>({
 
       <div className="flex flex-wrap items-center gap-2">
         {(searchColumn || searchColumns?.length) && (
-          <div className="relative w-full sm:w-[300px]">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              ref={searchRef}
-              placeholder={searchPlaceholder}
-              // The placeholder is cut short on a long list of fields - the
-              // tooltip still says everything the box searches.
-              title={searchPlaceholder}
-              aria-label={searchPlaceholder}
-              value={searchValue}
-              onChange={(event) => setSearchValue(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" && searchValue) setSearchValue("");
-              }}
-              className="h-9 w-full pl-8 pr-8"
-            />
-            {searchValue && (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => {
-                  setSearchValue("");
-                  searchRef.current?.focus();
-                }}
-                className={cn(
-                  "absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground",
-                  "transition-colors hover:bg-muted hover:text-foreground",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                )}
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+          <SearchInput
+            value={searchValue}
+            onValueChange={setSearchValue}
+            placeholder={searchPlaceholder}
+          />
         )}
         {filters}
         <div className="ml-auto flex flex-wrap items-center gap-2">

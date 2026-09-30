@@ -150,7 +150,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   a search resets to page 1 and the page index is clamped when rows shrink.
 >   `DataTableSkeleton` is the loading state for list screens. **Scrollbars** are themed in
 >   `app/globals.css`; add `scrollbar-rail` to a side rail (sidebar nav, guide contents,
->   `EditorRail`) - its thumb shows on hover only.
+>   `EditorRail`) - its thumb shows on hover only. A pin is skipped when that column is wider
+>   than `PIN_MAX_SHARE` (35%) of the table (price-changes' four labelled buttons). A hand-built
+>   `<Table look="list">` (users, audit log, forms, offline flights/hotels, templates) wears the
+>   same header + density by swapping the primitive's DEFAULTS only - a cell's own className
+>   still wins; the portal keeps `default`. **Search boxes** are `components/search-input.tsx`
+>   (`SearchInput`: glass, clear button, Esc, logical sides for RTL) - used by DataTable and
+>   every list screen; do not draw another.
 > - **Deep links:** `id="fix-*"` / `id="section-*"` anchors flash on arrival
 >   (`:target` keyframes in globals.css + `components/deep-link-scroll.tsx`).
 >   Event editor sections carry `data-editor-section` for the `EditorRail`.
