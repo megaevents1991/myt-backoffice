@@ -517,9 +517,20 @@ export function TasksClient() {
         accessorKey: "assignee_name",
         header: "Assignee",
         cell: ({ row }) => (
-          <span className={cn(!row.original.assignee_name && "text-muted-foreground")}>
-            {row.original.assignee_name ?? "Unassigned"}
-          </span>
+          <div className="min-w-[120px]">
+            <span className={cn(!row.original.assignee_name && "text-muted-foreground")}>
+              {row.original.assignee_name ?? "Unassigned"}
+            </span>
+            {/* Only when someone was PICKED - the default reviewer (whoever opened it) is not repeated here. */}
+            {row.original.reviewer_names.length > 0 && (
+              <p
+                className="truncate text-[11px] text-muted-foreground"
+                title={`בודקים: ${row.original.reviewer_names.join(", ")}`}
+              >
+                בודק: {row.original.reviewer_names.join(", ")}
+              </p>
+            )}
+          </div>
         ),
       },
       {

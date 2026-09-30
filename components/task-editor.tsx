@@ -24,7 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createTask, updateTask } from "@/lib/actions/task-actions";
-import { attachFilesToNewTask } from "@/lib/actions/task-comment-actions";
+import { attachFilesToNewTask, listStaffForMentions } from "@/lib/actions/task-comment-actions";
+import type { StaffMentionOption } from "@/types/task-comment.types";
 import { listUsers } from "@/lib/actions/user-actions";
 import { TaskThread } from "@/components/task-thread";
 import {
@@ -158,6 +159,21 @@ export function TaskEditor({
   const [progress, setProgress] = useState<number>(task?.progress ?? 0);
   const [saving, setSaving] = useState(false);
   const [staff, setStaff] = useState<UserProfile[]>([]);
+  // Who the task goes back to in review (Dor, 30.09: "Alon opened it, but Tom checks it, or
+  // both"). Empty = the default (whoever opened it). The picker's staff list is the
+  // requireStaff one, so an editor can name a reviewer for a task they create themself.
+  const [reviewerIds, setReviewerIds] = useState<string[]>(task?.reviewer_ids ?? []);
+  const [reviewerOptions, setReviewerOptions] = useState<StaffMentionOption[]>([]);
+  useEffect(() => {
+    if (!state.open) return;
+    listStaffForMentions()
+      .then(setReviewerOptions)
+      .catch((error) => console.error("task-editor: staff list failed", error));
+  }, [state.open]);
+  const reviewerName = (id: string) => {
+    const person = reviewerOptions.find((option) => option.id === id);
+    return person ? person.display_name || person.email : "…";
+  };
 
   // New task only (Dor, 30.09): files and sub-tasks can be added before the task exists.
   // Both need the new task's id, so they are held here and written right after createTask.
@@ -314,6 +330,7 @@ export function TaskEditor({
           ...(canEdit("phase") ? { phase: effectivePhase } : {}),
           ...(canEdit("channel") ? { channel: effectiveChannel } : {}),
           ...(canEdit("progress") ? { progress: effectiveProgress } : {}),
+          ...(canEdit("reviewer_ids") ? { reviewer_ids: reviewerIds } : {}),
         });
         if (!result.ok) {
           toast({ variant: "destructive", title: "Save failed", description: result.error });
@@ -333,6 +350,7 @@ export function TaskEditor({
           phase: effectivePhase,
           channel: effectiveChannel,
           progress: effectiveProgress,
+          reviewer_ids: reviewerIds,
         });
         if (!result.ok) {
           toast({ variant: "destructive", title: "Save failed", description: result.error });
@@ -527,6 +545,61 @@ export function TaskEditor({
               </Select>
               <p className="text-xs text-muted-foreground">
                 Assigning someone else sends them an email with the task.
+              </p>
+            </div>
+          )}
+          {/* Who reviews it: shown to everyone (it explains where the task goes back to), editable
+              on a new task by anyone and on an existing one by admins (TASK_FIELDS). */}
+          {(canEdit("reviewer_ids") || reviewerIds.length > 0) && (
+            <div className="space-y-2">
+              <Label>Reviewers</Label>
+              {reviewerIds.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {reviewerIds.map((id) => (
+                    <span
+                      key={id}
+                      className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2.5 py-1 text-xs"
+                    >
+                      {reviewerName(id)}
+                      {canEdit("reviewer_ids") && (
+                        <button
+                          type="button"
+                          aria-label={`Remove reviewer ${reviewerName(id)}`}
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => setReviewerIds((prev) => prev.filter((item) => item !== id))}
+                          disabled={saving}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {canEdit("reviewer_ids") && (
+                <Select
+                  value=""
+                  onValueChange={(value) => setReviewerIds((prev) => (prev.includes(value) ? prev : [...prev, value]))}
+                  disabled={saving || reviewerOptions.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="הוסף בודק…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {reviewerOptions
+                      .filter((option) => !reviewerIds.includes(option.id))
+                      .map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.display_name || option.email}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {reviewerIds.length > 0
+                  ? "When the task is moved to \"In review\" it goes back to these people (instead of whoever opened it), and they get an email."
+                  : "Default: the task goes back to whoever opened it when it is moved to \"In review\". Pick someone else, or several, to review instead."}
               </p>
             </div>
           )}

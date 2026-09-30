@@ -17,6 +17,7 @@ export const TASK_FIELDS = [
   "channel",
   "progress",
   "status",
+  "reviewer_ids",
 ] as const;
 export type EditableTaskField = (typeof TASK_FIELDS)[number];
 

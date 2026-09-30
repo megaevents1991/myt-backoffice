@@ -7,10 +7,10 @@ import { logAudit } from "@/lib/audit";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { notifyTaskAssigned, notifyTasksAssigned, type TaskMailOutcome } from "@/lib/services/task-notify";
 import { notifyReviewOutcome, notifyTaskDone, notifyTaskReview } from "@/lib/services/task-watch-notify";
-import { reviewMove, reviewerOf } from "@/lib/tasks/review";
+import { reviewMove, reviewersOf } from "@/lib/tasks/review";
 import { siteUrlOf, siteUrlsForRefs } from "@/lib/services/task-site-url";
 import { resolveGapForTask } from "@/lib/services/gap-resolution";
-import { ADMIN_ROLES } from "@/types/auth.types";
+import { ADMIN_ROLES, STAFF_ROLES } from "@/types/auth.types";
 import {
   OPEN_TASK_STATUSES,
   TASK_PRIORITIES,
@@ -53,7 +53,44 @@ function isManager(role: string): boolean {
 
 // One literal (not concatenated) so the typed client can parse the column list.
 const TASK_COLUMNS =
-  "id,title,description,status,priority,assignee_id,created_by,due_date,source,source_ref,board,phase,channel,progress,parent_id,deleted_at,completed_at,created_at,updated_at";
+  "id,title,description,status,priority,assignee_id,created_by,due_date,source,source_ref,board,phase,channel,progress,parent_id,reviewer_ids,deleted_at,completed_at,created_at,updated_at";
+
+/** The same list without `reviewer_ids` - the board's fallback while its migration lands. */
+const TASK_COLUMNS_BEFORE_REVIEWERS = TASK_COLUMNS.replace(",reviewer_ids", "");
+
+/** Postgres 42703 = undefined column; PostgREST answers it with that code. */
+function missingColumn(error: { code?: string; message?: string } | null): boolean {
+  return error?.code === "42703" || /reviewer_ids/.test(error?.message ?? "");
+}
+
+/** Most reviewers one task may carry - "Alon, Tom or both", not the whole company. */
+const REVIEWERS_MAX = 5;
+
+/** The reviewer ids a form sent, kept only where they are real, active staff profiles -
+ *  the client is never trusted with a user id. `null` = back to the default reviewer. */
+async function cleanReviewerIds(value: unknown): Promise<string[] | null | { error: string }> {
+  if (value === null || value === undefined) return null;
+  if (!Array.isArray(value) || value.some((id) => typeof id !== "string")) return { error: "Bad reviewers" };
+  const unique = [...new Set(value as string[])].filter((id) => id.length > 0);
+  if (unique.length === 0) return null;
+  if (unique.length > REVIEWERS_MAX) return { error: `עד ${REVIEWERS_MAX} בודקים למשימה` };
+  const { data, error } = await db
+    .from("user_profiles")
+    .select("id,role")
+    .in("id", unique)
+    .eq("is_active", true);
+  if (error) {
+    console.error("tasks: reviewer check failed", JSON.stringify(error));
+    return { error: "Save failed - check the log" };
+  }
+  const staff = new Set(
+    (data ?? [])
+      .filter((user: { role: string }) => (STAFF_ROLES as readonly string[]).includes(user.role))
+      .map((user: { id: string }) => user.id),
+  );
+  if (unique.some((id) => !staff.has(id))) return { error: "בודק חייב להיות איש צוות פעיל" };
+  return unique;
+}
 
 function validStatus(value: string): value is TaskStatus {
   return (TASK_STATUSES as readonly string[]).includes(value);
@@ -175,7 +212,7 @@ async function withNames(rows: Task[], userId: string): Promise<TaskWithNames[]>
   const ids = [
     ...new Set(
       rows
-        .flatMap((row) => [row.assignee_id, row.created_by])
+        .flatMap((row) => [row.assignee_id, row.created_by, ...(row.reviewer_ids ?? [])])
         .filter((value): value is string => !!value),
     ),
   ];
@@ -199,6 +236,7 @@ async function withNames(rows: Task[], userId: string): Promise<TaskWithNames[]>
       assignee_name: null,
       created_by_name: null,
       assigned_by: null,
+      reviewer_names: [],
       site_url: siteUrlOf(row.source_ref, siteUrls),
       comment_count: countOf.get(row.id) ?? 0,
       unread_count: unreadOf.get(row.id) ?? 0,
@@ -220,6 +258,7 @@ async function withNames(rows: Task[], userId: string): Promise<TaskWithNames[]>
     assignee_name: row.assignee_id ? (nameOf.get(row.assignee_id) ?? null) : null,
     created_by_name: row.created_by ? (nameOf.get(row.created_by) ?? null) : null,
     assigned_by: assignedBy.get(row.id) ?? null,
+    reviewer_names: (row.reviewer_ids ?? []).map((id) => nameOf.get(id) ?? "?"),
     site_url: siteUrlOf(row.source_ref, siteUrls),
     comment_count: countOf.get(row.id) ?? 0,
     unread_count: unreadOf.get(row.id) ?? 0,
@@ -233,16 +272,25 @@ export async function listTasks(): Promise<TaskWithNames[]> {
   // Everyone on staff sees the whole board (Dor, 16.09): the roadmap lives here
   // now, and a board people cannot see is not a board. Editing stays narrow -
   // an editor only changes the status/progress of tasks assigned to them.
-  const { rows, error, truncated } = await fetchPaged<Task>(
-    () =>
-      db
-        .from("tasks")
-        .select(TASK_COLUMNS)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: true }),
-    TASKS_LIST_MAX,
-  );
+  const read = (columns: string) =>
+    fetchPaged<Task>(
+      () =>
+        db
+          .from("tasks")
+          .select(columns)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true }),
+      TASKS_LIST_MAX,
+    );
+  let { rows, error, truncated } = await read(TASK_COLUMNS);
+  if (error && missingColumn(error)) {
+    // The deploy beat the reviewer_ids migration by a few minutes - read without it rather
+    // than show an empty board.
+    console.error("tasks: reviewer_ids column missing, reading without it", JSON.stringify(error));
+    ({ rows, error, truncated } = await read(TASK_COLUMNS_BEFORE_REVIEWERS));
+    rows = rows.map((row) => ({ ...row, reviewer_ids: null }));
+  }
   if (error) {
     console.error("tasks: list failed", JSON.stringify(error));
     return [];
@@ -254,8 +302,9 @@ export async function listTasks(): Promise<TaskWithNames[]> {
 /**
  * The dashboard widget: what is MY move, most urgent first. My open tasks - minus the ones I
  * already handed over for review (they wait on someone else) - plus the tasks that came BACK
- * to me: in review, opened by me. (A rule-made task's fallback reviewer is not looked up
- * here; it still shows under "המשימות שלי" on the board.)
+ * to me: in review, and I am its reviewer (picked, or opened it with nobody picked). (A
+ * rule-made task's fallback reviewer is not looked up here; it still shows under "המשימות
+ * שלי" on the board.)
  */
 export async function listMyOpenTasks(limit = 6): Promise<Task[]> {
   const session = await requireStaff();
@@ -269,12 +318,13 @@ export async function listMyOpenTasks(limit = 6): Promise<Task[]> {
       .in("status", OPEN_TASK_STATUSES.filter((status) => status !== "review"))
       .order("created_at", { ascending: false })
       .limit(200),
+    // Waiting for MY review: I am a picked reviewer, or nobody was picked and I opened it.
     db
       .from("tasks")
       .select(TASK_COLUMNS)
       .is("deleted_at", null)
-      .eq("created_by", session.sub)
       .eq("status", "review")
+      .or(`reviewer_ids.cs.{${session.sub}},and(reviewer_ids.is.null,created_by.eq.${session.sub})`)
       .order("created_at", { ascending: false })
       .limit(200),
   ]);
@@ -310,11 +360,16 @@ export async function createTask(input: {
   progress?: number | null;
   /** Makes this a sub-task of that task (one level - a sub-task has no sub-tasks). */
   parent_id?: string | null;
+  /** Who it goes back to in review; empty = the default (whoever opened it). Anyone may
+   *  pick reviewers for a task they create - an editor's own task included. */
+  reviewer_ids?: string[] | null;
 }): Promise<CreateResult> {
   const session = await requireStaff();
 
   const title = input.title?.trim();
   if (!title) return { ok: false, error: "Title is required" };
+  const reviewerIds = await cleanReviewerIds(input.reviewer_ids);
+  if (reviewerIds && !Array.isArray(reviewerIds)) return { ok: false, error: reviewerIds.error };
   if (!validPriority(input.priority)) return { ok: false, error: "Bad priority" };
   if (input.board !== undefined && !validBoard(input.board)) return { ok: false, error: "Bad board" };
   if (!validPhase(input.phase)) return { ok: false, error: "Bad phase" };
@@ -388,6 +443,9 @@ export async function createTask(input: {
       channel: input.channel ?? (parent && board === parent.board ? (parent.channel as MktChannel | null) : null),
       progress: input.progress ?? null,
       parent_id: parent?.id ?? null,
+      // Sent only when someone was picked - so a create still works in the minutes between
+      // the code deploy and the reviewer_ids migration landing.
+      ...(reviewerIds ? { reviewer_ids: reviewerIds } : {}),
     })
     .select("id")
     .single();
@@ -401,7 +459,7 @@ export async function createTask(input: {
     action: "task.create",
     entityType: "task",
     entityId: data.id,
-    changes: { title, assignee_id: assigneeId, priority: input.priority, board, parent_id: parent?.id ?? null },
+    changes: { title, assignee_id: assigneeId, priority: input.priority, board, parent_id: parent?.id ?? null, reviewer_ids: reviewerIds },
   });
   if (input.source === "price_light") invalidatePriceLight("rows");
 
@@ -434,6 +492,8 @@ export async function updateTask(
     phase?: number | null;
     channel?: MktChannel | null;
     progress?: number | null;
+    /** null / [] = back to the default reviewer. Admin-only (lib/tasks/permissions.ts). */
+    reviewer_ids?: string[] | null;
   },
 ): Promise<Result> {
   const session = await requireStaff();
@@ -482,6 +542,11 @@ export async function updateTask(
   if (patch.progress !== undefined) {
     if (!validProgress(patch.progress)) return { ok: false, error: "Bad progress" };
     update.progress = patch.progress;
+  }
+  if (patch.reviewer_ids !== undefined) {
+    const reviewerIds = await cleanReviewerIds(patch.reviewer_ids);
+    if (reviewerIds && !Array.isArray(reviewerIds)) return { ok: false, error: reviewerIds.error };
+    update.reviewer_ids = reviewerIds;
   }
 
   // The row as it was - needed to tell a re-assignment from a plain edit,
@@ -555,6 +620,20 @@ async function assignerOf(taskId: string, assigneeId: string | null): Promise<st
   return assignedByMap([{ id: taskId, assignee_id: assigneeId, created_by: null }], changes).get(taskId) ?? null;
 }
 
+/** The task's reviewers by the one rule (`reviewersOf`); the assigner is looked up only
+ *  when the rule would need it (nobody picked, nobody created). */
+async function reviewerIdsOf(
+  taskId: string,
+  row: { created_by: string | null; assignee_id: string | null; reviewer_ids: string[] | null },
+): Promise<string[]> {
+  const needsAssigner = !(row.reviewer_ids?.length) && !row.created_by;
+  return reviewersOf({
+    created_by: row.created_by,
+    reviewer_ids: row.reviewer_ids,
+    assigned_by: needsAssigner ? await assignerOf(taskId, row.assignee_id) : null,
+  });
+}
+
 /**
  * Status is the one field an editor may change - on his own tasks, and on a task that sits
  * in REVIEW waiting for him (he opened it; its owner handed it back): the reviewer has to be
@@ -570,7 +649,7 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
   // record "from" equal to "to".
   const { data: beforeRow, error: beforeError } = await db
     .from("tasks")
-    .select("status,assignee_id,created_by")
+    .select("status,assignee_id,created_by,reviewer_ids")
     .eq("id", id)
     .maybeSingle();
   if (beforeError) console.error("tasks: before-read failed", JSON.stringify(beforeError));
@@ -581,11 +660,7 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
   // A non-admin who is not the owner gets in only as the REVIEWER of a task in review.
   let asReviewer = false;
   if (!manager && beforeRow && beforeRow.assignee_id !== session.sub && previousStatus === "review") {
-    const reviewer = reviewerOf({
-      created_by: beforeRow.created_by,
-      assigned_by: beforeRow.created_by ? null : await assignerOf(id, beforeRow.assignee_id),
-    });
-    asReviewer = reviewer === session.sub;
+    asReviewer = (await reviewerIdsOf(id, beforeRow)).includes(session.sub);
   }
 
   let query = db
@@ -601,7 +676,7 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
     query = asReviewer ? query.eq("status", "review") : query.eq("assignee_id", session.sub);
   }
 
-  const { data, error } = await query.select("id,title,created_by,assignee_id,source,source_ref");
+  const { data, error } = await query.select("id,title,created_by,assignee_id,reviewer_ids,source,source_ref");
   if (error) {
     console.error("tasks: status failed", JSON.stringify(error));
     return { ok: false, error: "Update failed" };
@@ -633,6 +708,7 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
     title: string;
     created_by: string | null;
     assignee_id: string | null;
+    reviewer_ids: string[] | null;
     source: TaskSource;
     source_ref: TaskSourceRef | null;
   };
@@ -648,11 +724,11 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
   let mail: TaskMailOutcome | undefined;
   const move = reviewMove(previousStatus, status);
   if (move === "sent") {
-    const reviewerId = reviewerOf({
-      created_by: row.created_by,
-      assigned_by: row.created_by ? null : await assignerOf(id, row.assignee_id),
+    mail = await notifyTaskReview({
+      task: watched,
+      actorId: session.sub,
+      reviewerIds: await reviewerIdsOf(id, row),
     });
-    mail = await notifyTaskReview({ task: watched, actorId: session.sub, reviewerId });
   } else if (move) {
     await notifyReviewOutcome({ task: watched, actorId: session.sub, outcome: move });
   }

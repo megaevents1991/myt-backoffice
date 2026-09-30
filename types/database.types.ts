@@ -2941,6 +2941,7 @@ export type Database = {
           phase: number | null
           priority: string
           progress: number | null
+          reviewer_ids: string[] | null
           source: string
           source_ref: Json | null
           status: string
@@ -2962,6 +2963,7 @@ export type Database = {
           phase?: number | null
           priority?: string
           progress?: number | null
+          reviewer_ids?: string[] | null
           source?: string
           source_ref?: Json | null
           status?: string
@@ -2983,6 +2985,7 @@ export type Database = {
           phase?: number | null
           priority?: string
           progress?: number | null
+          reviewer_ids?: string[] | null
           source?: string
           source_ref?: Json | null
           status?: string

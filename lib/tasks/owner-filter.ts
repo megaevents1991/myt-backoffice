@@ -54,6 +54,7 @@ export function matchesOwner(
     assigned_by: string | null;
     status: TaskStatus;
     created_by: string | null;
+    reviewer_ids: string[] | null;
   },
   filter: OwnerFilter,
   userId: string | null,

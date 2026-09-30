@@ -5,7 +5,7 @@ import { diffActivities } from "../lib/services/task-activity";
 import { isValidTaskAttachmentPath } from "../lib/tasks/attachment-path";
 import { mentionsStillInBody } from "../lib/tasks/mentions";
 import { assignedByMap, matchesOwner, type AssigneeChangeRow } from "../lib/tasks/owner-filter";
-import { awaitsReviewBy, canChangeStatus, reviewMove, reviewerOf } from "../lib/tasks/review";
+import { awaitsReviewBy, canChangeStatus, reviewMove, reviewersOf } from "../lib/tasks/review";
 import type { TaskStatus } from "../types/task.types";
 import {
   commentMailTargets,
@@ -161,7 +161,8 @@ const owned = (
   by: string | null,
   status: TaskStatus = "todo",
   creator: string | null = null,
-) => ({ assignee_id: assignee, assigned_by: by, status, created_by: creator });
+  reviewers: string[] | null = null,
+) => ({ assignee_id: assignee, assigned_by: by, status, created_by: creator, reviewer_ids: reviewers });
 check("owner: all shows everything", matchesOwner(owned(null, null), "all", "dor"), true);
 check("owner: mine = assigned to me", [matchesOwner(owned("dor", "alon"), "mine", "dor"), matchesOwner(owned("alon", "dor"), "mine", "dor")], [true, false]);
 check("owner: delegated = I assigned it to someone else",
@@ -177,9 +178,21 @@ check("owner: unassigned", [matchesOwner(owned(null, null), "unassigned", "dor")
 check("owner: no session shows nothing of 'mine'", matchesOwner(owned(null, null), "mine", null), false);
 
 // --- review: the owner hands the task back to whoever opened it ---
-check("reviewer: the creator", reviewerOf({ created_by: "dor", assigned_by: "alon" }), "dor");
-check("reviewer: a rule-made task goes to whoever assigned it", reviewerOf({ created_by: null, assigned_by: "alon" }), "alon");
-check("reviewer: nobody opened it, nobody assigned it", reviewerOf({ created_by: null, assigned_by: null }), null);
+check("reviewers: the creator", reviewersOf({ created_by: "dor", assigned_by: "alon", reviewer_ids: null }), ["dor"]);
+check("reviewers: a rule-made task goes to whoever assigned it", reviewersOf({ created_by: null, assigned_by: "alon", reviewer_ids: [] }), ["alon"]);
+check("reviewers: nobody opened it, nobody assigned it", reviewersOf({ created_by: null, assigned_by: null, reviewer_ids: null }), []);
+check("reviewers: picked ones replace the creator (Alon opened it, Tom looks at it)",
+  reviewersOf({ created_by: "alon", assigned_by: null, reviewer_ids: ["tom"] }), ["tom"]);
+check("reviewers: or both, once each",
+  reviewersOf({ created_by: "alon", assigned_by: null, reviewer_ids: ["alon", "tom", "tom"] }), ["alon", "tom"]);
+check("awaits review: a picked reviewer, not the creator who was replaced",
+  [
+    awaitsReviewBy(owned("liz", "alon", "review", "alon", ["tom"]), "tom"),
+    awaitsReviewBy(owned("liz", "alon", "review", "alon", ["tom"]), "alon"),
+  ],
+  [true, false]);
+check("status: a picked reviewer may move it while it waits",
+  canChangeStatus("editor", owned("liz", null, "review", "alon", ["tom"]), "tom"), true);
 check("awaits review: only in review, only for the reviewer",
   [
     awaitsReviewBy(owned("tom", "dor", "review", "dor"), "dor"),

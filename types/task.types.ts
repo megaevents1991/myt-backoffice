@@ -103,6 +103,9 @@ export interface Task {
   progress: number | null;
   /** Set on a sub-task: the general task it is a part of (one level only, 28.09). */
   parent_id: string | null;
+  /** Who it goes back to in "review" (30.09). null / empty = the default: whoever opened
+   *  it, else whoever assigned it (lib/tasks/review.ts). */
+  reviewer_ids: string[] | null;
 }
 
 /** Task row joined with the names the list screen shows. */
@@ -112,6 +115,8 @@ export interface TaskWithNames extends Task {
   /** Who put the CURRENT assignee on it - the newest assignee change, else the creator
    *  (lib/tasks/owner-filter.ts). null = unassigned, or nobody human assigned it. */
   assigned_by: string | null;
+  /** Display names of the EXPLICIT reviewers (`reviewer_ids`), same order; empty = default. */
+  reviewer_names: string[];
   /** The subject's page on the customer site (event / team / artist / category), when it has one. */
   site_url: string | null;
   /** Comments on this task (activity rows excluded). Filled by listTasks. */

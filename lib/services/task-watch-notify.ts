@@ -115,39 +115,58 @@ export async function notifyTaskDone(input: {
 export async function notifyTaskReview(input: {
   task: WatchedTask;
   actorId: string | null;
-  reviewerId: string | null;
+  /** Every reviewer of the task (lib/tasks/review.ts reviewersOf) - each gets the mail. */
+  reviewerIds: string[];
 }): Promise<TaskMailOutcome> {
-  const { task, actorId, reviewerId } = input;
+  const { task, actorId } = input;
   try {
-    if (!reviewerId || reviewerId === actorId) {
+    const targetIds = input.reviewerIds.filter((id) => id !== actorId);
+    if (targetIds.length === 0) {
       console.log(`tasks: review mail skipped for task ${task.id} - no reviewer other than the actor`);
       return "skipped";
     }
-    const profiles = await loadProfiles([reviewerId, ...(actorId ? [actorId] : [])]);
-    const reviewer = profiles.find((p) => p.id === reviewerId);
-    if (!reviewer?.email || reviewer.is_active === false) {
-      console.log(`tasks: review mail skipped for task ${task.id} - reviewer has no active mailbox`);
+    const profiles = await loadProfiles([...targetIds, ...(actorId ? [actorId] : [])]);
+    const targets = profiles.filter((p) => targetIds.includes(p.id) && !!p.email && p.is_active !== false);
+    if (targets.length === 0) {
+      console.log(`tasks: review mail skipped for task ${task.id} - no reviewer with an active mailbox`);
       return "skipped";
     }
     const actorName = nameOf(profiles.find((p) => p.id === actorId), "מישהו");
     const url = `${appOrigin()}/tasks?task=${task.id}`;
 
-    await sendMail({
-      to: reviewer.email,
-      subject: `לבדיקה שלך: ${task.title}`,
-      html: `<div dir="rtl" style="font-family:Arial,sans-serif">
+    const results = await Promise.allSettled(
+      targets.map((target) =>
+        sendMail({
+          to: target.email,
+          subject: `לבדיקה שלך: ${task.title}`,
+          html: `<div dir="rtl" style="font-family:Arial,sans-serif">
   <p>${escapeHtml(actorName)} סיים/ה את החלק שלו/ה במשימה <strong>${escapeHtml(task.title)}</strong> והעביר/ה אותה לבדיקה שלך.</p>
   <p style="color:#666;font-size:13px">הכול בסדר? מסמנים אותה Done. צריך עוד עבודה? מחזירים אותה ל-In progress וכותבים בשיחה מה חסר.</p>
   <p><a href="${url}">למשימה</a></p>
 </div>`,
-      text: [
-        `${actorName} סיים/ה את החלק שלו/ה והעביר/ה לבדיקה שלך: ${task.title}`,
-        "הכול בסדר? מסמנים Done. צריך עוד עבודה? מחזירים ל-In progress.",
-        url,
-      ].join("\n"),
+          text: [
+            `${actorName} סיים/ה את החלק שלו/ה והעביר/ה לבדיקה שלך: ${task.title}`,
+            "הכול בסדר? מסמנים Done. צריך עוד עבודה? מחזירים ל-In progress.",
+            url,
+          ].join("\n"),
+        }),
+      ),
+    );
+    let sent = 0;
+    results.forEach((result, index) => {
+      const to = targets[index]?.email;
+      if (result.status === "rejected") {
+        console.error(
+          `tasks: review mail failed for task ${task.id} -> ${to}`,
+          result.reason instanceof Error ? result.reason.message : JSON.stringify(result.reason),
+        );
+      } else {
+        sent += 1;
+        console.log(`tasks: review mail sent for task ${task.id} -> ${to}`);
+      }
     });
-    console.log(`tasks: review mail sent for task ${task.id} -> ${reviewer.email}`);
-    return "sent";
+    // One reviewer reached is a hand-off that happened; none = the toast must say so.
+    return sent > 0 ? "sent" : "failed";
   } catch (error) {
     console.error(
       `tasks: review mail failed for task ${task.id}`,

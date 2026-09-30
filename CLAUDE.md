@@ -334,6 +334,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >     review shows in its reviewer's "המשימות שלי" (`matchesOwner`) with a "לבדיקה שלך" badge, and in
 >     their dashboard widget (`listMyOpenTasks` = my working tasks + tasks in review I created; a
 >     task I sent to review leaves MY widget). Gap tasks: review keeps the gap open (`gapAction`).
+>     **Picked reviewers (same day):** `tasks.reviewer_ids uuid[]` (migration `20260930203000`,
+>     GIN index; `types/database.types.ts` hand-patched - `npm run db:types` yields the same) -
+>     "Alon opened it, but Tom checks it, or both". `reviewersOf` = the picked ids when any, else
+>     the creator / assigner fallback; every reviewer is mailed, sees the task in "המשימות שלי" and
+>     the widget (`reviewer_ids.cs.{me}` OR null + `created_by`), and may move it while it waits.
+>     Picked on the task form ("Reviewers", chips + "הוסף בודק…", staff via `listStaffForMentions`
+>     so an editor can pick one for their own new task); on an existing task it is admin-only
+>     (`TASK_FIELDS`). Validated server-side (`cleanReviewerIds`: active staff ids, `REVIEWERS_MAX`
+>     5; `[]`/null = back to the default). The table prints "בודק: X, Y" under the assignee only
+>     when someone was picked.
 >   - **Pricing tab** (`?tab=pricing`, all staff, not admin-only like
 >     `/price-light`): every open pricing problem - red price lights and
 >     frozen `/price-changes` rows - in one list via
