@@ -278,7 +278,7 @@ export function EscortsPanel({
 
                       <div>
                         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Per question - <span dir="rtl">{escort.name}</span> vs everyone
+                          Per question - <bdi>{escort.name}</bdi> vs everyone
                         </p>
                         <div className="space-y-1.5">
                           {ratingFields.map((field) => {
@@ -332,7 +332,7 @@ export function TripComparisonBlock({
   return (
     <div>
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        vs <span dir="rtl">{comparison.escort}</span>&apos;s {n} earlier trip{n === 1 ? "" : "s"}
+        vs {n === 1 ? "the earlier trip" : `the ${n} earlier trips`} of <bdi>{comparison.escort}</bdi>
       </p>
       <p className="mb-2 text-xs text-muted-foreground">
         {comparison.pastTrips

@@ -22,6 +22,11 @@ export function fmtAvg(avg: number | null): string {
  */
 export function fmtTravelers(stat: TravelerStat | TravelerTotals | null): string {
   if (!stat) return "-";
-  if (stat.total !== null) return `${stat.reported} / ${stat.total}`;
+  if (stat.total !== null) {
+    // Rolled-up trips: the ratio counts only travellers on SIZED trips (see
+    // sumTravelers) - the rest are named apart via `unsizedReported`.
+    const reported = "sizedReported" in stat ? stat.sizedReported : stat.reported;
+    return `${reported} / ${stat.total}`;
+  }
   return stat.forms > 0 ? String(stat.reported) : "-";
 }

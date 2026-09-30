@@ -23,9 +23,11 @@ import { PrintBar } from "./print-bar";
  * browser's own "Save as PDF" makes the file - it renders Hebrew and RTL
  * exactly like the screen, which no server-side PDF library here does.
  *
- * Lives OUTSIDE the (dashboard) route group so no sidebar or top bar prints.
- * Still /forms/*, so middleware lets a forms_operator in, and every loader
- * below runs requireFormsAccess + requireFormVisible like the report itself.
+ * The dashboard layout renders this path bare (no sidebar or top bar to
+ * print). A route OUTSIDE the (dashboard) group was tried: a root-level
+ * `app/forms` shadows `app/(dashboard)/forms` and /forms itself 404s.
+ * /forms/*, so middleware lets a forms_operator in, and every loader below
+ * runs requireFormsAccess + requireFormVisible like the report itself.
  */
 
 export const dynamic = "force-dynamic";
@@ -37,6 +39,7 @@ const TEXT = {
     trips: "טיולים",
     responses: "משובים",
     travelers: "נוסעים",
+    unsized: (n: number) => `+${n} בטיולים בלי מספר נוסעים`,
     average: "ממוצע כללי",
     perQuestion: "ממוצע לפי שאלה",
     question: "שאלה",
@@ -72,6 +75,7 @@ const TEXT = {
     trips: "Trips",
     responses: "Responses",
     travelers: "Travellers",
+    unsized: (n: number) => `+${n} on trips with no size set`,
     average: "Overall average",
     perQuestion: "Average per question",
     question: "Question",
@@ -155,11 +159,14 @@ function Stars({ value, max }: { value: number; max: number }) {
   );
 }
 
-function Tile({ label, value }: { label: string; value: string }) {
+function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-lg border border-zinc-200 px-4 py-3">
       <p className="text-xs font-medium text-zinc-500">{label}</p>
-      <p className="mt-1 text-2xl font-bold tabular-nums">{value}</p>
+      <p className="mt-1 text-2xl font-bold tabular-nums">
+        <bdi>{value}</bdi>
+      </p>
+      {hint && <p className="mt-0.5 text-[11px] text-zinc-500">{hint}</p>}
     </div>
   );
 }
@@ -293,7 +300,15 @@ export default async function FormPdfPage({
           <div className="mb-6 grid grid-cols-4 gap-3">
             <Tile label={t.trips} value={String(summary.tripCount)} />
             <Tile label={t.responses} value={String(summary.responseCount)} />
-            <Tile label={t.travelers} value={fmtTravelers(summary.travelers)} />
+            <Tile
+              label={t.travelers}
+              value={fmtTravelers(summary.travelers)}
+              hint={
+                summary.travelers && summary.travelers.total !== null && summary.travelers.unsizedReported > 0
+                  ? t.unsized(summary.travelers.unsizedReported)
+                  : undefined
+              }
+            />
             <Tile label={t.average} value={fmtAvg(summary.overallAvg)} />
           </div>
 
@@ -415,7 +430,10 @@ export default async function FormPdfPage({
                       <td className="py-1.5">{trip.escort ?? "-"}</td>
                       <td className="py-1.5">{fmtDate(trip.departure)}</td>
                       <td className="py-1.5 text-center">{trip.responseCount}</td>
-                      <td className="py-1.5 text-center">{fmtTravelers(trip.travelers)}</td>
+                      <td className="py-1.5 text-center">
+                        {/* "17 / 43" - without isolation RTL flips it to "43 / 17". */}
+                        <bdi>{fmtTravelers(trip.travelers)}</bdi>
+                      </td>
                       <td className="py-1.5 text-center font-semibold">{fmtAvg(trip.overallAvg)}</td>
                     </tr>
                   ))}
@@ -457,7 +475,10 @@ export default async function FormPdfPage({
                   </bdi>
                   {trip.staffInfo.map((item) => (
                     <span key={item.label}>
-                      {item.label}: <span className="text-zinc-800">{item.value}</span>
+                      {item.label}:{" "}
+                      <span className="text-zinc-800">
+                        {/^\d{4}-\d{2}-\d{2}$/.test(item.value) ? fmtDate(item.value) : item.value}
+                      </span>
                     </span>
                   ))}
                 </p>

@@ -500,8 +500,9 @@ these tables.
   the same escort's EARLIER trips per question, plus every other response as the house average;
   always over the unfiltered trips, so a 2026 filter still compares with 2025). "Questions" tab =
   per-question averages, weakest first. (d) **PDF** = `/forms/[id]/pdf?<filters>`
-  (`app/forms/[id]/pdf`, OUTSIDE the `(dashboard)` group so no chrome prints; still `/forms/*`
-  for the operator's middleware confinement; loads through the same guarded actions). The
+  (`app/(dashboard)/forms/[id]/pdf`; the dashboard layout renders that path bare so no chrome
+  prints - a root-level `app/forms` would shadow `(dashboard)/forms` and 404 /forms; loads
+  through the same guarded actions, `/forms/*` keeps the operator's confinement). The
   browser's print → "Save as PDF" makes the file (Hebrew/RTL render exactly; no PDF library):
   page 1 = summary (+ the escort comparison when one trip is exported), then `break-before-page`
   one sheet per response. `PrintBar` names the tab (= default file name) and opens the print

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -18,6 +18,10 @@ export default function DashboardLayout({
 }) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  // A printable page (the forms PDF export) renders without the sidebar and
+  // top bar - they would print on every page. Auth still gates it below.
+  const bare = /^\/forms\/[^/]+\/pdf$/.test(pathname ?? "");
   const [searchOpen, setSearchOpen] = useState(false);
   // Error state is write-only on purpose - the handler toasts; nothing renders it.
   const [, setError] = useState<Error | null>(null);
@@ -107,6 +111,8 @@ export default function DashboardLayout({
   if (!user) {
     return null;
   }
+
+  if (bare) return <>{children}</>;
 
   return (
     <SidebarProvider>
