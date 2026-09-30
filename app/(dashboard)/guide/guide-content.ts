@@ -2,10 +2,23 @@
 // in both languages. Pure data; guide-client.tsx renders it. Think of it as
 // the CLAUDE.md of the backoffice, readable by humans.
 //
+// Laid out like the sidebar (Dor, 30.09): every section names the menu screen
+// it belongs to (`nav` = that screen's href in lib/nav.ts, or "start"), and the
+// page groups them under the sidebar's own headings. `howTo` is the
+// step-by-step part; any text may carry `[label](/path)` links, which open in a
+// new tab. scripts/guide-selftest.ts checks every menu screen has a section and
+// every link lands on a real route.
+//
 // Keep it honest: when a flow changes (pricing rules, cron cadence, batch
 // behavior), update the matching section here in the same PR.
 
 export type L = { en: string; he: string };
+
+/** One "how do I…" recipe: numbered steps, each may link with [label](/path). */
+export interface GuideHowTo {
+  title: L;
+  steps: L[];
+}
 
 export interface GuideLink {
   label: L;
@@ -25,8 +38,12 @@ export interface GuideFlow {
 
 export interface GuideSection {
   id: string;
+  /** The sidebar screen this section documents (lib/nav.ts href), or "start". */
+  nav: string;
   title: L;
   intro: L;
+  /** Step-by-step recipes - shown first, numbered. */
+  howTo?: GuideHowTo[];
   /** Detailed explanation bullets. */
   points?: L[];
   /** Iron rules - the things that must not be broken. Highlighted. */
@@ -41,6 +58,43 @@ const t = (en: string, he: string): L => ({ en, he });
 export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "getting-around",
+    nav: "start",
+    howTo: [
+      {
+        title: t("Use this guide", "להשתמש במדריך הזה"),
+        steps: [
+          t("The guide follows the sidebar: the same groups, the same screens, in the same order. Every screen's heading has \"Open the screen\", which opens it in a new tab.", "המדריך בנוי כמו התפריט: אותן קבוצות, אותם מסכים, באותו סדר. בכותרת של כל מסך יש \"פתח את המסך\", שפותח אותו בלשונית חדשה."),
+          t("Every underlined link inside a step also opens in a new tab, so the guide stays open next to the screen you are working on.", "גם כל קישור עם קו תחתון בתוך צעד נפתח בלשונית חדשה, כך שהמדריך נשאר פתוח ליד המסך שעובדים עליו."),
+          t("The search box reads Hebrew and English together - type a button's name (\"Save\", \"הוזל\") or a job (\"קופון\", \"מלונות\").", "תיבת החיפוש קוראת עברית ואנגלית יחד - מקלידים שם של כפתור (\"Save\", \"הוזל\") או פעולה (\"קופון\", \"מלונות\")."),
+          t("\"How it works\" under the recipes opens the full explanation of a screen: the rules behind it and what happens automatically.", "\"איך זה עובד\" מתחת למתכונים פותח את ההסבר המלא של המסך: החוקים שמאחוריו ומה קורה אוטומטית."),
+        ],
+      },
+      {
+        title: t("Jump to any screen", "לקפוץ לכל מסך"),
+        steps: [
+          t("Press Ctrl+K (Cmd+K on a Mac) anywhere in the dashboard, or click \"Go to page…\" at the top of the sidebar or \"Search\" in the top bar.", "לוחצים Ctrl+K (Cmd+K במק) מכל מקום בדשבורד, או \"Go to page…\" בראש הסיידבר או \"Search\" בסרגל העליון."),
+          t("Type part of a screen's name, its path or a Hebrew word - \"קופונים\" finds Coupons, \"מחירים\" finds Price Changes.", "מקלידים חלק משם המסך, את הנתיב או מילה בעברית - \"קופונים\" מוצא את Coupons, \"מחירים\" מוצא את Price Changes."),
+          t("Arrow keys to the result, Enter to go. Esc or Ctrl+K closes the palette.", "חצים לתוצאה, Enter כדי להגיע. Esc או Ctrl+K סוגרים את החלון."),
+          t("The palette lists only screens your role can open - a missing screen is admin-only.", "החלון מציג רק מסכים שהתפקיד שלכם יכול לפתוח - מסך שלא מופיע הוא למנהלים בלבד."),
+        ],
+      },
+      {
+        title: t("Make room: fold the sidebar", "לפנות מקום: לקפל את הסיידבר"),
+        steps: [
+          t("Ctrl+B shrinks the sidebar to icons and brings it back. The panel button at the left of the top bar does the same.", "Ctrl+B מכווץ את הסיידבר לאייקונים ומחזיר אותו. כפתור הפאנל בצד שמאל של הסרגל העליון עושה את אותו הדבר."),
+          t("Click a group heading (\"Website\", \"Admin\"…) to fold or unfold it - this browser remembers it.", "לחיצה על כותרת קבוצה (\"Website\", \"Admin\"…) מקפלת או פותחת אותה - הדפדפן הזה זוכר."),
+          t("Hover a folded heading to preview its screens and click one without unfolding. The group of the screen you are on opens by itself.", "ריחוף מעל כותרת מקופלת מציג את המסכים שלה, ולחיצה על אחד מגיעה אליו בלי לפתוח את הקבוצה. הקבוצה של המסך הנוכחי נפתחת מעצמה."),
+        ],
+      },
+      {
+        title: t("Theme, breadcrumbs and signing out", "ערכת צבעים, פירורי לחם והתנתקות"),
+        steps: [
+          t("The sun (or moon) icon at the right end of the top bar offers \"Light\", \"Dark\" or \"System\".", "אייקון השמש (או הירח) בקצה הימני של הסרגל העליון מציע \"Light\", \"Dark\" או \"System\"."),
+          t("Breadcrumbs in the top bar show where you are; click an earlier part to go back up (an id shows as \"#1234\").", "פירורי הלחם בסרגל העליון מראים איפה אתם; לחיצה על חלק קודם מחזירה למעלה (מזהה מופיע כ-\"#1234\")."),
+          t("Your name at the bottom of the sidebar → \"Log out\". The same menu has \"מצב סוכן\" (the partner portal in a new tab) - it works only if your user is linked to a partner in [Users](/users).", "השם שלכם בתחתית הסיידבר ← \"Log out\". באותו תפריט יש \"מצב סוכן\" (פורטל השותפים בלשונית חדשה) - עובד רק אם המשתמש שלכם מקושר לשותף ב[משתמשים](/users)."),
+        ],
+      },
+    ],
     title: t("Getting around", "התמצאות במערכת"),
     intro: t(
       "The sidebar groups every screen by area. Groups collapse (chevron), remember their state, and show a hover preview of their contents when folded. The whole sidebar collapses to icons with Ctrl+B.",
@@ -52,8 +106,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "Ctrl+K פותח את פלטת הפקודות — מחפשת כל מסך, כולל מילות מפתח בעברית (נסו \"מחירים\" או \"קופונים\").",
       ),
       t(
-        "The sun/moon button switches light and dark mode; every screen supports both.",
-        "כפתור השמש/ירח מחליף בין מצב בהיר לכהה; כל מסך תומך בשניהם.",
+        "The sun/moon button opens Light / Dark / System (System follows your computer); every screen supports both.",
+        "כפתור השמש/ירח פותח Light / Dark / System (System לפי המחשב); כל מסך תומך בכולם.",
       ),
       t(
         "Breadcrumbs at the top always show where you are and click back up the path.",
@@ -63,7 +117,124 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     links: [{ label: t("Open the dashboard", "פתח את הדשבורד"), href: "/dashboard" }],
   },
   {
+    id: "reservations",
+    nav: "/reservations",
+    title: t("Reservations - customer bookings", "הזמנות - הזמנות הלקוחות"),
+    intro: t(
+      "Every customer booking, written here by the site at checkout - one row per order with its package, payment status and source. Here you follow up with customers, buy what the order needs, and record status, accounting number and comments.",
+      "כל הזמנת לקוח, שנכתבת לכאן מהאתר בסיום ההזמנה - שורה לכל הזמנה עם תכולת החבילה, מצב התשלום והמקור. כאן עושים מעקב מול הלקוח, קונים מה שההזמנה צריכה ומתעדים סטטוס, מספר הנהלת חשבונות והערות.",
+    ),
+    howTo: [
+      {
+        title: t("Find a booking and see what was bought", "למצוא הזמנה ולראות מה נקנה"),
+        steps: [
+          t("Open [Reservations](/reservations). The newest bookings are at the top.", "פותחים את [ההזמנות](/reservations). ההזמנות החדשות למעלה."),
+          t("Type in \"Search by name, phone, email, or acc no...\" - the reservation ID works too. Click a column header (\"Email\", \"Created At\", \"Status\") to sort; \"Mega only\" keeps bookings on our own offline flights and hotels.", "מקלידים בחיפוש \"Search by name, phone, email, or acc no...\" - גם מספר הזמנה עובד. לחיצה על כותרת עמודה (\"Email\", \"Created At\", \"Status\") ממיינת; \"Mega only\" משאיר הזמנות על טיסות ומלונות האופליין שלנו."),
+          t("Click the eye icon on the row to open the booking page.", "לוחצים על אייקון העין בשורה כדי לפתוח את דף ההזמנה."),
+          t("\"Customer Information\" lists every passenger. \"Reservation Details\" has the total, status, payment info, exchange rate and partner code. Below: \"Event Information\", \"Flight Information\" and \"Hotel Information\". \"Print\" prints the page.", "\"Customer Information\" מציג את כל הנוסעים. ב-\"Reservation Details\" יש סכום, סטטוס, פרטי תשלום, שער חליפין וקוד שותף. מתחת: \"Event Information\", \"Flight Information\" ו-\"Hotel Information\". \"Print\" מדפיס את הדף."),
+          t("Left open, the list checks for new bookings after 30 idle seconds and pops \"New Reservation\" with the names. \"Refresh\" reloads right away.", "כשהרשימה פתוחה, אחרי 30 שניות בלי פעילות היא בודקת הזמנות חדשות ומקפיצה \"New Reservation\" עם השמות. \"Refresh\" טוען מיד."),
+        ],
+      },
+      {
+        title: t("Know which tickets to buy (or allocate)", "לדעת אילו כרטיסים לקנות (או להקצות)"),
+        steps: [
+          t("Open the booking and scroll to \"Event Information\": event, date, \"Ticket Category\", \"Number of Tickets\" and price per ticket.", "פותחים את ההזמנה וגוללים ל-\"Event Information\": אירוע, תאריך, \"Ticket Category\", \"Number of Tickets\" ומחיר לכרטיס."),
+          t("An amber \"Buy from: <SUPPLIER>\" box means you buy there - it shows the supplier's category name, the ticket id and their event id.", "תיבה כתומה \"Buy from: <ספק>\" אומרת שקונים שם - מופיעים בה שם הקטגוריה אצל הספק, מזהה הכרטיס ומזהה האירוע אצלם."),
+          t("A green \"Our stock - nothing to buy\" box means the seats come from stock we hold - just allocate the number shown (and the zone).", "תיבה ירוקה \"Our stock - nothing to buy\" אומרת שהמושבים ממלאי שבידינו - רק מקצים את הכמות שמופיעה (ואת האזור)."),
+          t("A red \"Not instant-confirm\" box means you confirm the ticket with that supplier by hand BEFORE confirming the order.", "תיבה אדומה \"Not instant-confirm\" אומרת שמאשרים את הכרטיס מול הספק ידנית לפני שמאשרים את ההזמנה."),
+          t("\"Seating chosen by the customer\": \"all together\" = buy seats that sit together, not the cheapest split listing; \"split\" = pairs plus a triple is fine. Several events show as \"Event 1\", \"Event 2\" - repeat for each.", "\"Seating chosen by the customer\": \"all together\" = קונים מושבים צמודים, לא את ההצעה המפוצלת הזולה; \"split\" = זוגות ושלישייה זה בסדר. כמה אירועים מופיעים כ-\"Event 1\", \"Event 2\" - חוזרים על זה לכל אחד."),
+        ],
+      },
+      {
+        title: t("Check the flight and hotel (split stay, Mega inventory)", "לבדוק טיסה ומלון (שהות מפוצלת, מלאי Mega)"),
+        steps: [
+          t("\"Flight Information\" shows the airline, airports, times, stops and bags. \"No Flight Included\" = the order has no flight.", "\"Flight Information\" מציג חברה, שדות, שעות, עצירות ומזוודות. \"No Flight Included\" = בהזמנה אין טיסה."),
+          t("Paid add-ons under the flight - \"שדרוג כרטיס\" (fare upgrade with a bag) and \"מזוודות שנוספו\" (bags bought at checkout) - are booked with the airline too.", "תוספות בתשלום מתחת לטיסה - \"שדרוג כרטיס\" (שדרוג עם מזוודה) ו-\"מזוודות שנוספו\" (מזוודות שנקנו בהזמנה) - מזמינים גם אותן מול חברת התעופה."),
+          t("A \"Mega\" badge = our own offline inventory; \"Mega inventory cost\" shows our cost × travellers or rooms. \"Mega inventory rooms\" / \"Assigned room details\" list the offline rooms with order no., supplier and \"Cancel by\" date.", "תג \"Mega\" = מלאי אופליין שלנו; \"Mega inventory cost\" מציג את העלות שלנו × נוסעים או חדרים. \"Mega inventory rooms\" / \"Assigned room details\" מציגים את חדרי האופליין עם מספר הזמנה, ספק ותאריך \"Cancel by\"."),
+          t("A split stay shows a \"Split stay\" table: one row per city with dates, nights, hotel and room, \"Meal\" and price, plus \"Total hotels\". Book each hotel separately.", "שהות מפוצלת מציגה טבלת \"Split stay\": שורה לכל עיר עם תאריכים, לילות, מלון וחדר, \"Meal\" ומחיר, ועוד \"Total hotels\". מזמינים כל מלון בנפרד."),
+          t("\"Meal\" says whether breakfast is included; \"ארוחת בוקר נוספה כשדרוג\" (or \"added +$\" in the split table) means the customer paid for it as an upgrade.", "\"Meal\" אומר אם ארוחת בוקר כלולה; \"ארוחת בוקר נוספה כשדרוג\" (או \"added +$\" בטבלת הפיצול) = הלקוח שילם עליה כשדרוג."),
+        ],
+      },
+      {
+        title: t("Update status, accounting number and comments", "לעדכן סטטוס, מספר הנהלת חשבונות והערות"),
+        steps: [
+          t("In the [Reservations](/reservations) list, type straight into \"Comment\" or \"Acc No.\" and press Enter - it saves at once.", "ברשימת [ההזמנות](/reservations) מקלידים ישר ב-\"Comment\" או ב-\"Acc No.\" ולוחצים Enter - נשמר מיד."),
+          t("Several bookings: tick the rows, choose from \"Set status…\" (Paid / Lost / Pending / Follow-up) and click \"Apply\".", "כמה הזמנות: מסמנים את השורות, בוחרים ב-\"Set status…\" (Paid / Lost / Pending / Follow-up) ולוחצים \"Apply\"."),
+          t("Cancel: open the booking → \"Edit Reservation\" → \"Status\" = \"Cancelled\" → \"Save Changes\" → \"Yes, Save\". No status fits? Type a custom one in the box next to \"Status\".", "ביטול: פותחים את ההזמנה ← \"Edit Reservation\" ← \"Status\" = \"Cancelled\" ← \"Save Changes\" ← \"Yes, Save\". אין סטטוס מתאים? מקלידים סטטוס חופשי בתיבה שליד \"Status\"."),
+          t("\"24Save\" is a customer's 24-hour price hold, not a sale - it holds no seats until the customer pays.", "\"24Save\" הוא שמירת מחיר של לקוח ל-24 שעות, לא מכירה - לא תופס מקומות עד שהלקוח משלם."),
+          t("\"Cancelled\" and \"Lost\" put Mega seats and rooms back on sale automatically. Reopening a booking does not take them back until the flight is opened in [Offline Flights](/offline-flights) or the hotel in [Offline Hotels](/offline-hotels) - the count then corrects itself.", "\"Cancelled\" ו-\"Lost\" מחזירים מושבים וחדרי Mega למכירה אוטומטית. פתיחה מחדש של הזמנה לא תופסת אותם שוב עד שפותחים את הטיסה ב-[Offline Flights](/offline-flights) או את המלון ב-[Offline Hotels](/offline-hotels) - אז הספירה מתקנת את עצמה."),
+          t("Deleting is superadmin-only (bin icon or bulk \"Delete\") and only marks the booking deleted; \"Show deleted\" brings those rows back into view.", "מחיקה היא לסופר-אדמין בלבד (אייקון הפח או \"Delete\" על כמה שורות) ורק מסמנת את ההזמנה כמחוקה; \"Show deleted\" מחזיר את השורות האלה לתצוגה."),
+        ],
+      },
+      {
+        title: t("Complete passenger details for ticketing", "להשלים פרטי נוסעים להנפקה"),
+        steps: [
+          t("Open the booking and click \"Edit Reservation\" (or the pencil icon in the list).", "פותחים את ההזמנה ולוחצים \"Edit Reservation\" (או אייקון העיפרון ברשימה)."),
+          t("Checkout collects names only; under \"Passengers\" fill each traveller's \"Passport no.\", \"Passport expiry\", \"Date of birth\", \"Nationality\" (2 letters, e.g. IL) and \"Gender\".", "באתר נאספים רק שמות; תחת \"Passengers\" ממלאים לכל נוסע \"Passport no.\", \"Passport expiry\", \"Date of birth\", \"Nationality\" (2 אותיות, למשל IL) ו-\"Gender\"."),
+          t("Click \"Save Changes\" and confirm with \"Yes, Save\". \"no passport details yet\" on the booking page means something is still missing.", "לוחצים \"Save Changes\" ומאשרים ב-\"Yes, Save\". \"no passport details yet\" בדף ההזמנה אומר שעדיין חסר משהו."),
+        ],
+      },
+      {
+        title: t("Agent and voucher bookings, travel material, source", "הזמנות סוכן ושובר, חומר ללקוח, מקור הגעה"),
+        steps: [
+          t("\"Source\" shows the partner code, or \"Organic\" when the customer came directly; \"סוכן\" shows the office agent it is credited to. Fix a wrong code in \"Edit Reservation\" → \"Partner Tracking Code\".", "\"Source\" מציג את קוד השותף, או \"Organic\" כשהלקוח הגיע ישירות; \"סוכן\" מציג את סוכן המשרד שההזמנה נזקפת לו. קוד שגוי מתקנים ב-\"Edit Reservation\" ← \"Partner Tracking Code\"."),
+          t("An amber \"Voucher\" badge means the agent pays with a voucher - do not call the customer for payment. Move \"Voucher State\" along in \"Agent Settlement\" (\"שובר נשלח\" → \"שובר נקלט\" → \"שובר נגבה\") and set \"Paid\" only once it is collected.", "תג כתום \"Voucher\" אומר שהסוכן משלם בשובר - לא מתקשרים ללקוח לגבייה. מקדמים את \"Voucher State\" ב-\"Agent Settlement\" (\"שובר נשלח\" ← \"שובר נקלט\" ← \"שובר נגבה\") ומסמנים \"Paid\" רק אחרי שנגבה."),
+          t("After sending the travel documents, click \"סמן שחומר נשלח ללקוח\" (\"בטל סימון\" undoes it). \"מקור הגעה\" at the bottom lists the ad/UTM visits before the booking; \"Primary\" gets the credit.", "אחרי ששולחים את מסמכי הנסיעה לוחצים \"סמן שחומר נשלח ללקוח\" (\"בטל סימון\" מבטל). \"מקור הגעה\" בתחתית מציג את ביקורי הפרסום/UTM שלפני ההזמנה; \"Primary\" מקבל את הזיכוי."),
+        ],
+      },
+    ],
+    links: [{ label: t("Reservations", "הזמנות"), href: "/reservations" }],
+  },
+  {
     id: "dashboard",
+    nav: "/dashboard",
+    howTo: [
+      {
+        title: t("Start the day from the dashboard", "לפתוח את היום מהדשבורד"),
+        steps: [
+          t("Open the [Dashboard](/dashboard).", "פותחים את [הדשבורד](/dashboard)."),
+          t("A red \"Google reviews sync is broken\" banner at the top means new Google reviews stopped reaching the site. Admins click \"Run sync now\" (admins); everyone else tells an admin.", "באנר אדום \"Google reviews sync is broken\" למעלה אומר שביקורות גוגל חדשות לא מגיעות לאתר. מנהלים לוחצים \"Run sync now\" (מנהלים); כל השאר מעדכנים מנהל."),
+          t("The top cards count \"Events\" (7+ days away), \"Agents\", \"Partners\", \"Paid Reservations\" and \"Pending Reservations\".", "הכרטיסים העליונים סופרים \"Events\" (7+ ימים קדימה), \"Agents\", \"Partners\", \"Paid Reservations\" ו-\"Pending Reservations\"."),
+          t("\"Pending Reservations\" is the follow-up pile. Open [Reservations](/reservations) and sort by \"Status\" to work through it.", "\"Pending Reservations\" היא ערימת המעקב. פותחים את [ההזמנות](/reservations) וממיינים לפי \"Status\" כדי לעבור עליה."),
+          t("\"My tasks\" lists up to 6 of your open tasks, most urgent first (dot = priority, date = due date). \"All tasks\" opens the full board.", "\"My tasks\" מציג עד 6 משימות פתוחות שלכם, הדחופה קודם (נקודה = עדיפות, תאריך = יעד). \"All tasks\" פותח את הלוח המלא."),
+        ],
+      },
+      {
+        title: t("Close a task without leaving the dashboard", "לסגור משימה בלי לצאת מהדשבורד"),
+        steps: [
+          t("In the \"My tasks\" card on the [Dashboard](/dashboard), tick the checkbox next to the task.", "בכרטיס \"My tasks\" ב[דשבורד](/dashboard) מסמנים וי ליד המשימה."),
+          t("It leaves the list right away and is marked \"Done\" on the board. Whoever opened the task gets an email.", "היא יורדת מהרשימה מיד ומסומנת \"Done\" בלוח. מי שפתח את המשימה מקבל מייל."),
+          t("Ticked the wrong one? Open [Tasks](/tasks), pick the \"Done\" view and set its \"Status\" back to \"In progress\".", "סימנתם בטעות? פותחים את [המשימות](/tasks), בוחרים בתצוגה \"Done\" ומחזירים את ה-\"Status\" ל-\"In progress\"."),
+        ],
+      },
+      {
+        title: t("Read the sales numbers", "לקרוא את מספרי המכירות"),
+        steps: [
+          t("Scroll to \"Statistics\". Every number there counts only Paid bookings, and deleted ones are left out.", "גוללים ל-\"Statistics\". כל מספר שם סופר רק הזמנות Paid, והזמנות מחוקות לא נספרות."),
+          t("\"Reservations Last 7 Days\" / \"Last 30 Days\" / \"This Month\" / \"Last Month\" count bookings. The \"PAX:\" line under each one counts travellers.", "\"Reservations Last 7 Days\" / \"Last 30 Days\" / \"This Month\" / \"Last Month\" סופרים הזמנות. שורת \"PAX:\" מתחת לכל אחד סופרת נוסעים."),
+          t("\"Total Revenue\" is not the sum of booking prices. It is $175 (the site markup) per traveller on every Paid booking - an estimate of our margin.", "\"Total Revenue\" הוא לא סכום מחירי ההזמנות. זה 175$ (תוספת האתר) לכל נוסע בכל הזמנת Paid - הערכה של הרווח שלנו."),
+          t("\"Top Events\" and \"Top Sources\" (30d, This Month, Last Month) show what sells and which partner codes bring buyers. \"Organic\" = no partner code.", "\"Top Events\" ו-\"Top Sources\" (30d, This Month, Last Month) מראים מה נמכר ואילו קודי שותף מביאים קונים. \"Organic\" = בלי קוד שותף."),
+          t("In \"Reservations Over Time\", click \"Last 7 days\", \"Last 30 days\", \"Last 90 days\", \"YTD\" or \"Last year\" to change the range. This chart also counts only Paid bookings.", "ב-\"Reservations Over Time\" לוחצים \"Last 7 days\", \"Last 30 days\", \"Last 90 days\", \"YTD\" או \"Last year\" כדי לשנות את הטווח. גם הגרף הזה סופר רק הזמנות Paid."),
+        ],
+      },
+      {
+        title: t("Pick up missing creative work", "לאסוף עבודת קריאייטיב חסרה"),
+        steps: [
+          t("The \"Creative gaps\" card counts missing visuals by type. Red numbers block advertising; amber ones hurt page quality.", "כרטיס \"Creative gaps\" סופר ויזואלים חסרים לפי סוג. מספר אדום חוסם פרסום; כתום פוגע באיכות העמוד."),
+          t("Click a tile to jump to the screen where that asset is added (a template, the event, the creative generator).", "לחיצה על משבצת קופצת למסך שבו מוסיפים את הנכס הזה (תבנית, האירוע, מחולל הקריאייטיב)."),
+          t("Or click \"Details\" to see the whole queue in [Creative gaps](/tasks?tab=gaps), most blocking first.", "או לוחצים \"Details\" כדי לראות את כל התור ב-[Creative gaps](/tasks?tab=gaps), החוסם קודם."),
+        ],
+      },
+      {
+        title: t("Check the price-light summary (admins)", "לבדוק את סיכום הרמזור (מנהלים)"),
+        steps: [
+          t("Only admins see the \"רמזור מחירים\" card. Its bar splits every price conclusion by color - hover a segment for its count.", "רק מנהלים רואים את כרטיס \"רמזור מחירים\". הפס שלו מחלק כל מסקנת מחיר לפי צבע - ריחוף על קטע מציג את הכמות."),
+          t("The line under it reads \"X אדומים · Y ממתינים להחלטה\". Y counts red events that nobody silenced or opened a task for.", "השורה מתחת: \"X אדומים · Y ממתינים להחלטה\". Y סופר אירועים אדומים שאף אחד לא השתיק ולא פתח להם משימה."),
+          t("Click \"פירוט\" to go straight to those [pending reds](/price-light?f=pending) and decide on each one.", "לוחצים \"פירוט\" ומגיעים ישר ל[אדומים הממתינים](/price-light?f=pending) כדי להחליט על כל אחד."),
+          t("Editors don't see this card. Red prices reach them in the [Pricing tab](/tasks?tab=pricing).", "עורכים לא רואים את הכרטיס. מחירים אדומים מגיעים אליהם ב[לשונית התמחור](/tasks?tab=pricing)."),
+        ],
+      },
+    ],
     title: t("Dashboard", "דשבורד"),
     intro: t(
       "The daily starting point: reservation stats and trend, your open tasks ordered by priority, and the creative-gaps radar showing what the site is missing.",
@@ -86,6 +257,99 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "events",
+    nav: "/events",
+    howTo: [
+      {
+        title: t("Find and edit an event", "למצוא אירוע ולערוך אותו"),
+        steps: [
+          t("Open [Events](/events) and type part of the name in \"Search events...\". \"Hide past events\" shortens the list; deleted events show only with \"Show deleted events\".", "פותחים את [האירועים](/events) ומקלידים חלק מהשם ב-\"Search events...\". \"Hide past events\" מקצר את הרשימה; אירועים מחוקים מופיעים רק עם \"Show deleted events\"."),
+          t("Small changes save right in the row: \"Tags\", \"Skip Flight\", \"Add. Markup\" (Enter saves) and \"Prioritized\".", "שינויים קטנים נשמרים ישר בשורה: \"Tags\", \"Skip Flight\", \"Add. Markup\" (Enter שומר) ו-\"Prioritized\"."),
+          t("For anything else, the row's \"...\" menu → \"Edit\". \"View\" is read-only; \"Duplicate\" makes a \"(Copy)\" you can move to another date.", "לכל השאר, תפריט ה-\"...\" בשורה ← \"Edit\". \"View\" לקריאה בלבד; \"Duplicate\" יוצר \"(Copy)\" שאפשר להעביר לתאריך אחר."),
+          t("On a wide screen the \"On this page\" rail jumps between cards: Basic information, Location, Lodging, Images, Tickets & rates, Suppliers & zones.", "במסך רחב, מסילת \"On this page\" קופצת בין הכרטיסים: Basic information, Location, Lodging, Images, Tickets & rates, Suppliers & zones."),
+          t("Once you change something, \"You have unsaved changes\" appears at the bottom: \"Save Event\" → \"Save Changes\", or \"Discard\".", "ברגע שמשנים משהו מופיע למטה \"You have unsaved changes\": \"Save Event\" ← \"Save Changes\", או \"Discard\"."),
+          t("To see the change on the site right away, click \"Revalidate live site\" at the top of the editor.", "כדי לראות את השינוי באתר מיד, לוחצים \"Revalidate live site\" בראש העורך."),
+        ],
+      },
+      {
+        title: t("Set or refresh an event's base prices", "לעדכן את מחירי הבסיס של אירוע"),
+        steps: [
+          t("Open the event. \"לתקן\" on the [Pricing tab](/tasks?tab=pricing) and \"הוזל\" on Price Light (admins) land straight on the price fields in \"Basic Information\".", "פותחים את האירוע. \"לתקן\" ב[לשונית התמחור](/tasks?tab=pricing) ו-\"הוזל\" ברמזור (מנהלים) נוחתים ישר על שדות המחיר בכרטיס \"Basic Information\"."),
+          t("Check the inputs: \"City IATA Code\", \"Latitude\" and \"Longitude\" in \"Location\", and \"Default Departure Date\" / \"Default Return Date\" (they follow \"Date\" automatically).", "בודקים את הנתונים: \"City IATA Code\", \"Latitude\" ו-\"Longitude\" בכרטיס \"Location\", ו-\"Default Departure Date\" / \"Default Return Date\" (מתעדכנים לבד לפי \"Date\")."),
+          t("\"Search Flights\" fills \"Base Flight Price\" by the pricing rule and shows the arithmetic; \"Search Hotels\" does the same for \"Base Hotel Price\".", "\"Search Flights\" ממלא את \"Base Flight Price\" לפי כלל התמחור ומציג את החשבון; \"Search Hotels\" עושה אותו דבר ל-\"Base Hotel Price\"."),
+          t("You can also type a base by hand (e.g. offline inventory linked). The per-event extra is \"Additional Event Markup (USD)\"; \"Skip-Flight Markup (USD per ticket)\" appears only with \"Allow Skip Flight\" on.", "אפשר גם להקליד בסיס ידנית (למשל כשמקושר מלאי offline). התוספת לאירוע היא \"Additional Event Markup (USD)\"; \"Skip-Flight Markup (USD per ticket)\" מופיע רק כש-\"Allow Skip Flight\" דלוק."),
+          t("Save. The price light recalculates on save; \"Revalidate live site\" puts the new price on the site right away.", "שומרים. הרמזור מחושב מחדש בשמירה; \"Revalidate live site\" מעלה את המחיר החדש לאתר מיד."),
+          t("Don't set base prices with the refresh icon in the table's \"Usual Price\" column - it writes raw market prices, not the pricing rule.", "לא מעדכנים מחירי בסיס דרך אייקון הרענון בעמודת \"Usual Price\" בטבלה - הוא כותב מחירי שוק גולמיים, לא לפי כלל התמחור."),
+        ],
+      },
+      {
+        title: t("Create a single event", "ליצור אירוע בודד"),
+        steps: [
+          t("Easiest from a provider: on [TixStock](/tixstock-events), [Sports](/sports-events), [Live](/live-events) or [P1](/p1-events), click the calendar icon \"Create Event\" - the form opens filled in.", "הכי קל מספק: ב-[TixStock](/tixstock-events), [ספורט](/sports-events), [Live](/live-events) או [P1](/p1-events) לוחצים על אייקון היומן \"Create Event\" - הטופס נפתח ממולא."),
+          t("From scratch: [Add Event](/events/new). Pick \"Event Type\" and fill \"Name\", \"English Name\" and \"Date\" (all required); flight dates fill themselves.", "מאפס: [Add Event](/events/new). בוחרים \"Event Type\" וממלאים \"Name\", \"English Name\" ו-\"Date\" (כולם חובה); תאריכי הטיסה מתמלאים לבד."),
+          t("In \"Location\", pick from \"Select Existing Location\" (fills name, IATA and coordinates) or type them - \"Location Name\" is required.", "בכרטיס \"Location\" בוחרים מ-\"Select Existing Location\" (ממלא שם, IATA וקואורדינטות) או מקלידים - \"Location Name\" חובה."),
+          t("With an IATA and dates, both base prices fill themselves (green flash). \"חיפוש אוטומטי נכשל\"? Click \"Search Flights\" / \"Search Hotels\" or type them.", "כשיש IATA ותאריכים, שני הבסיסים מתמלאים לבד (הבהוב ירוק). \"חיפוש אוטומטי נכשל\"? לוחצים \"Search Flights\" / \"Search Hotels\" או מקלידים."),
+          t("Tickets: on a TixStock event, \"Add\" next to each category under \"Source Tickets\"; other types use \"Add Ticket\" in \"Tickets and Rates\" (price in USD).", "כרטיסים: באירוע TixStock לוחצים \"Add\" ליד כל קטגוריה ב-\"Source Tickets\"; בסוגים אחרים \"Add Ticket\" בכרטיס \"Tickets and Rates\" (מחיר בדולר)."),
+          t("\"Save Event\" → \"Create Event\". You land on the new event, where offline flights/hotels and \"Suppliers & zones\" become available.", "\"Save Event\" ← \"Create Event\". נוחתים על האירוע החדש, ושם זמינים קישור טיסות/מלונות offline ו-\"Suppliers & zones\"."),
+        ],
+      },
+      {
+        title: t("Mark sold out, or remove from the site", "לסמן אזל או להוריד מהאתר"),
+        steps: [
+          t("Sold out (stays on the site, can't be booked): set \"Tag\" in \"Basic Information\" to \"Sold\" and save. In the table's \"Tags\" cell, \"Sold\" must be the ONLY tag - \"Hot, Sold\" stays bookable.", "אזל (נשאר באתר, אי אפשר להזמין): מגדירים \"Tag\" בכרטיס \"Basic Information\" ל-\"Sold\" ושומרים. בתא ה-\"Tags\" בטבלה, \"Sold\" חייבת להיות התגית היחידה - \"Hot, Sold\" נשאר פתוח להזמנה."),
+          t("Back on sale: set \"Tag\" to \"None\" (or another tag) and save.", "חזרה למכירה: מגדירים \"Tag\" ל-\"None\" (או לתגית אחרת) ושומרים."),
+          t("Off the site: in [Events](/events), the row's \"...\" menu → \"Delete\" → confirm. A soft delete - the event gets a \"Deleted Date\", nothing is erased. Several at once: tick rows → \"Delete\" in the selection bar.", "הורדה מהאתר: ב[אירועים](/events), תפריט ה-\"...\" בשורה ← \"Delete\" ← אישור. מחיקה רכה - האירוע מקבל \"Deleted Date\", שום דבר לא נמחק. כמה בבת אחת: מסמנים שורות ← \"Delete\" בפס הבחירה."),
+          t("Deleted events show only with \"Show deleted events\". There is no restore button - ask a developer.", "אירועים מחוקים מופיעים רק עם \"Show deleted events\". אין כפתור שחזור - מבקשים ממפתח."),
+        ],
+      },
+      {
+        title: t("Connect or change an event's TixStock show", "לחבר או להחליף הופעת TixStock לאירוע"),
+        steps: [
+          t("Open the event - \"Event Type\" must be \"TixStock Event\", only then does \"Suppliers & zones\" appear.", "פותחים את האירוע - \"Event Type\" חייב להיות \"TixStock Event\", רק אז מופיע \"Suppliers & zones\"."),
+          t("Click \"Connect TixStock show\" (\"Change TixStock show\" when one is connected). Pick a show (a red badge = a day gap from our date) or type a name and press Enter, then \"Connect\" / \"Switch to this\".", "לוחצים \"Connect TixStock show\" (\"Change TixStock show\" כשכבר מחוברת). בוחרים הופעה (תג אדום = פער ימים מהתאריך שלנו) או מקלידים שם ולוחצים Enter, ואז \"Connect\" / \"Switch to this\"."),
+          t("Switching asks to confirm and takes the old show's TixStock tickets off - an event sells from one TixStock show.", "החלפה מבקשת אישור ומורידה את כרטיסי ה-TixStock של ההופעה הקודמת - אירוע מוכר מהופעת TixStock אחת."),
+          t("The page scrolls to \"Source Tickets\": \"Add\" each category you want (price converted to USD with the supplier markup), then give a zone to anything under \"ללא אזור\" in \"Tickets by zone\".", "הדף גולל ל-\"Source Tickets\": לוחצים \"Add\" על כל קטגוריה שרוצים (המחיר מומר לדולר עם תוספת הספק), ואז משייכים לאזור כל מה שתחת \"ללא אזור\" ב-\"Tickets by zone\"."),
+          t("Mix-up? \"Remove TixStock tickets\" takes them all off. Nothing changes until you save.", "טעות? \"Remove TixStock tickets\" מוריד את כולם. שום דבר לא משתנה עד השמירה."),
+        ],
+      },
+      {
+        title: t("Add LiveTickets tickets or our own seats", "להוסיף כרטיסי LiveTickets או מושבים שלנו"),
+        steps: [
+          t("In \"Suppliers & zones\", if \"Seat map\" says the map comes from the supplier, click \"Make this map ours\" first - zoning needs our map and at least one zone (\"Same stadium as: …\" reuses zones when offered).", "ב-\"Suppliers & zones\", אם ב-\"Seat map\" כתוב שהמפה מהספק, לוחצים קודם \"Make this map ours\" - שיוך לאזורים דורש את המפה שלנו ולפחות אזור אחד (\"Same stadium as: …\" משתמש שוב באזורים כשמוצע)."),
+          t("LiveTickets: \"Add LiveTickets tickets\" → pick their event (search by name if missing) → under \"LiveTickets categories - choose our zone for each\" tick categories and pick a zone each. Double-check \"Suggested - check it\" / \"Closest zone - a guess\" badges.", "LiveTickets: \"Add LiveTickets tickets\" ← בוחרים את האירוע שלהם (חיפוש לפי שם אם חסר) ← ב-\"LiveTickets categories - choose our zone for each\" מסמנים קטגוריות ובוחרים אזור לכל אחת. בודקים שוב תגיות \"Suggested - check it\" / \"Closest zone - a guess\"."),
+          t("Different date on their side? Tick \"Same fixture - the date is not final. Attach anyway.\", then \"Add N ticket(s)\".", "תאריך שונה אצלם? מסמנים \"Same fixture - the date is not final. Attach anyway.\" ואז \"Add N ticket(s)\"."),
+          t("Our own seats: \"Our own ticket\" → name, \"Price $\" (the ticket part, USD), \"Seats\", optional \"Together (up to)\", zone → \"Add\".", "מושבים שלנו: \"Our own ticket\" ← שם, \"Price $\" (חלק הכרטיס, בדולר), \"Seats\", אם רוצים \"Together (up to)\", אזור ← \"Add\"."),
+          t("Save the event - nothing sells before that. Our tickets then show \"sold X · left Y\"; once seats are sold, lower \"Seats\" instead of deleting.", "שומרים את האירוע - לפני כן שום דבר לא נמכר. אחר כך הכרטיסים שלנו מציגים \"sold X · left Y\"; אחרי שנמכרו מושבים מורידים את \"Seats\" במקום למחוק."),
+        ],
+      },
+      {
+        title: t("Change many events at once", "לשנות הרבה אירועים בבת אחת"),
+        steps: [
+          t("In [Events](/events), narrow first: \"Hide sold events\", \"Hide past events\", \"Ticket-only events only\", \"All categories\", \"All feed tags\" (\"ללא תגיות (untagged)\" finds events with no feed tag).", "ב[אירועים](/events) קודם מצמצמים: \"Hide sold events\", \"Hide past events\", \"Ticket-only events only\", \"All categories\", \"All feed tags\" (\"ללא תגיות (untagged)\" מוצא אירועים בלי תגית פיד)."),
+          t("Tick rows - a bar with \"N selected\" opens: \"Set Tags\" (site badge on/off), \"Prioritized\" (Yes/No), \"Tags (feed)\" (add / replace / remove feed tags).", "מסמנים שורות - נפתח פס \"N selected\": \"Set Tags\" (תגית אתר מופעלת/כבויה), \"Prioritized\" (Yes/No), \"Tags (feed)\" (הוספה / החלפה / הסרה של תגיות פיד)."),
+          t("Ticket-only in bulk: \"Skip Flight\" → \"Ticket only: ON (bases → 0; set each markup after)\". The selection clears - tick the same rows again → \"Ticket Markup\" → USD per ticket → \"Apply\". Until then the name shows \"ticket only · no markup!\".", "כרטיס-בלבד בבת אחת: \"Skip Flight\" ← \"Ticket only: ON (bases → 0; set each markup after)\". הבחירה מתאפסת - מסמנים שוב את אותן שורות ← \"Ticket Markup\" ← דולר לכרטיס ← \"Apply\". עד אז ליד השם מופיע \"ticket only · no markup!\"."),
+          t("Price light column \"רמזור\": two pills (חב׳ = package, כר׳ = ticket); click a pill for its history. The small refresh icon rechecks against the stored catalogs - instant and safe.", "עמודת \"רמזור\": שני תגים (חב׳ = חבילה, כר׳ = כרטיס); לחיצה על תג פותחת היסטוריה. אייקון הרענון הקטן בודק מחדש מול הקטלוגים השמורים - מיידי ובטוח."),
+        ],
+      },
+      {
+        title: t("Push one event to the Meta feed now", "להעלות אירוע אחד לפיד של מטא עכשיו"),
+        steps: [
+          t("Open the event and save first - \"העלה לפיד עכשיו\" is disabled while there are unsaved changes.", "פותחים את האירוע ושומרים קודם - \"העלה לפיד עכשיו\" נעול כל עוד יש שינויים שלא נשמרו."),
+          t("Click \"העלה לפיד עכשיו\" at the top of the editor, next to \"Revalidate live site\".", "לוחצים \"העלה לפיד עכשיו\" בראש העורך, ליד \"Revalidate live site\"."),
+          t("\"האירוע בפיד\" = the creative is ready and the feed file was rewritten; Meta picks it up within the hour.", "\"האירוע בפיד\" = הקריאייטיב מוכן וקובץ הפיד נכתב מחדש; מטא קוראת אותו תוך שעה."),
+          t("\"האירוע לא נכנס לפיד\" says why (sold out, under 3 days away, test event, no price). Fix it - usually the base prices - save and click again. The whole feed is on [Meta Product Feed](/meta-feed).", "\"האירוע לא נכנס לפיד\" אומר למה (אזל, פחות מ-3 ימים, אירוע בדיקה, אין מחיר). מתקנים - לרוב את מחירי הבסיס - שומרים ולוחצים שוב. הפיד המלא ב[פיד מטא](/meta-feed)."),
+        ],
+      },
+      {
+        title: t("Set up an event city or split stay", "להגדיר עיר משחק או לינה מפוצלת"),
+        steps: [
+          t("Make sure the event city is in [Locations](/locations) (name + coordinates, no IATA needed).", "מוודאים שעיר המשחק קיימת ב[מיקומים](/locations) (שם + קואורדינטות, בלי IATA)."),
+          t("Open the event. \"Location\" stays the flight city with its IATA - don't change it.", "פותחים את האירוע. \"Location\" נשאר עיר הטיסה עם ה-IATA שלה - לא משנים."),
+          t("In \"Lodging - event city\", pick the city in \"Event city from saved locations\" (or type \"Event city name\" + coordinates). The mode switches to \"Customer picks a city or splits the stay\" by itself.", "בכרטיס \"Lodging - event city\" בוחרים את העיר ב-\"Event city from saved locations\" (או מקלידים \"Event city name\" + קואורדינטות). המצב עובר לבד ל-\"Customer picks a city or splits the stay\"."),
+          t("\"מלונות: לא נטען\"? Click \"טען מלונות\" and leave the page open - 15-20 minutes for a new city (\"עצירה\" stops, \"המשך טעינה\" resumes).", "\"מלונות: לא נטען\"? לוחצים \"טען מלונות\" ומשאירים את הדף פתוח - 15-20 דקות לעיר חדשה (\"עצירה\" עוצר, \"המשך טעינה\" ממשיך)."),
+          t("Set \"What the hotel step offers\", \"Opens on\", \"Split default: nights in event city\" (1 or 2) and the \"Transfer note\", then save. Back to a regular event: \"Clear event city (same as flight city)\" in the same list.", "מגדירים \"What the hotel step offers\", \"Opens on\", \"Split default: nights in event city\" (1 או 2) ואת ה-\"Transfer note\", ושומרים. חזרה לאירוע רגיל: \"Clear event city (same as flight city)\" באותה רשימה."),
+        ],
+      },
+    ],
     title: t("Events - the catalog", "אירועים — הקטלוג"),
     intro: t(
       "Events are what customers buy on the main site. The main app reads this table DIRECTLY - everything you save here is live for customers within minutes. An event bundles tickets + flight + hotel into one package.",
@@ -101,8 +365,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "תאריכי הטיסה מחושבים אוטומטית: יציאה יומיים לפני (שישי/שבת נדחפים לחמישי), חזרה יום אחרי (שבת נדחפת לראשון).",
       ),
       t(
-        "The editor has a section rail on the right - jump straight to Images, Flights, Hotels, Tickets. Deep links from other screens land on the exact field with a highlight flash.",
-        "לעורך יש מסילת סקשנים מימין — קפיצה ישירה לתמונות, טיסות, מלונות, כרטיסים. קישורים עמוקים ממסכים אחרים נוחתים על השדה המדויק עם הבהוב.",
+        "The editor has an \"On this page\" section rail - jump straight to Images, Flights, Hotels, Tickets. Deep links from other screens land on the exact field with a highlight flash.",
+        "לעורך יש מסילת סקשנים \"On this page\" — קפיצה ישירה לתמונות, טיסות, מלונות, כרטיסים. קישורים עמוקים ממסכים אחרים נוחתים על השדה המדויק עם הבהוב.",
       ),
       t(
         "Legacy composed-pricing markups live under a collapsed \"Advanced\" section; it opens automatically for old events that still use them.",
@@ -126,6 +390,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "ticket-only",
+    nav: "/events",
     title: t("Ticket-only events", "אירועי כרטיס-בלבד"),
     intro: t(
       "An event sold as a ticket alone - no flight, no hotel (e.g. a show in a city with no convenient flight). The site skips both steps and charges exactly ticket + Ticket-Only Markup.",
@@ -159,7 +424,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     flow: {
       title: t("Mark an event ticket-only", "סימון אירוע ככרטיס-בלבד"),
       steps: [
-        { label: t("Events → open the event → Pricing card", "אירועים ← פתיחת האירוע ← כרטיס Pricing") },
+        { label: t("Events → open the event → Basic Information card", "אירועים ← פתיחת האירוע ← כרטיס Basic Information") },
         { label: t("Switch \"Ticket only (no flight, no hotel)\" ON", "מדליקים את המתג \"Ticket only (no flight, no hotel)\""), sub: t("Bases drop to 0 automatically", "הבסיסים יורדים ל-0 אוטומטית") },
         { label: t("Fill Ticket-Only Markup (USD per ticket) and save", "ממלאים Ticket-Only Markup (USD לכרטיס) ושומרים") },
         { label: t("Check the card on the site: badge + \"מחיר לכרטיס\"", "בודקים את הכרטיס באתר: תגית + \"מחיר לכרטיס\"") },
@@ -168,6 +433,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "lodging",
+    nav: "/events",
     title: t("Lodging - event city & split stay", "לינה - עיר המשחק ושהות מפוצלת"),
     intro: t(
       "When the match is in one city and the flight lands in another (a Liverpool game on a London flight), the event gets an EVENT CITY next to its flight city. The hotel step opens on the ordinary hotel list of the default city; above it \"איפה ישנים?\" offers three buttons - \"לינה בלונדון\", \"לינה בליברפול\" and \"פיצול מלונות\" (the event's default split: 2 nights around the match in the match city, the rest in the flight city). With a split on, \"עריכת הפיצול\" opens the night squares in place (a tap moves a night between the cities, then \"עדכון הלינה\"). The first visit to such an event shows a one-time bubble on the split button. Coming back to the same city after the match city defaults to the SAME hotel (tag \"חוזרים לאותו מלון\"); swapping that hotel moves the other nights in that city with it. City names show without the country (\"לונדון\", not \"לונדון, בריטניה\").",
@@ -225,6 +491,42 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "pricing",
+    nav: "/price-changes",
+    howTo: [
+      {
+        title: t("Review a frozen price change", "בדיקת שינוי מחיר קפוא"),
+        steps: [
+          t("Open [Price Changes](/price-changes) (admins) and switch to \"Needs review\" - the changes above $400 the nightly sync froze.", "פותחים את [שינויי מחיר](/price-changes) (מנהלים) ועוברים ל-\"Needs review\" - השינויים מעל $400 שהסנכרון הלילי הקפיא."),
+          t("Read the row: \"Event date\", \"Component\" (flight or hotel), \"Change\" (old → new) and the \"Why\" note - hover it for the full arithmetic. Click the event name to check it (the editor opens on its price fields).", "קוראים את השורה: \"Event date\", \"Component\" (טיסה או מלון), \"Change\" (ישן → חדש) והערת \"Why\" - ריחוף מציג את כל החשבון. לחיצה על שם האירוע פותחת את העורך על שדות המחיר."),
+          t("New price right? Click \"אשר עדכון\" - the market price is written onto the event (\"עודכן\" toast).", "המחיר החדש נכון? לוחצים \"אשר עדכון\" - מחיר השוק נכתב על האירוע (הודעת \"עודכן\")."),
+          t("Otherwise: set it yourself, hand it over as a task, or remove the event (next recipes).", "אחרת: קובעים בעצמכם, מעבירים כמשימה, או מסירים את האירוע (המתכונים הבאים)."),
+        ],
+      },
+      {
+        title: t("Set the price yourself, then close the row", "לקבוע את המחיר בעצמכם ולסגור את השורה"),
+        steps: [
+          t("Click the event name on the frozen row, type the base flight or hotel price you decided on, and save the event.", "לוחצים על שם האירוע בשורה הקפואה, מקלידים את מחיר הבסיס שהחלטתם עליו ושומרים את האירוע."),
+          t("Back on [Price Changes](/price-changes), click \"עודכן באירוע\" on that row - it records what the event holds now, no waiting for the next cron.", "חוזרים ל[שינויי מחיר](/price-changes) ולוחצים \"עודכן באירוע\" באותה שורה - נרשם מה שהאירוע מחזיק עכשיו, בלי לחכות ל-cron."),
+          t("\"סומן כעודכן\" = worked. A red \"סומן - אבל האירוע לא השתנה\" means the event still holds the old price - the row closed anyway, so go back and fix the event.", "\"סומן כעודכן\" = הצליח. \"סומן - אבל האירוע לא השתנה\" באדום אומר שהאירוע עדיין מחזיק את המחיר הישן - השורה נסגרה בכל זאת, אז חוזרים לתקן את האירוע."),
+        ],
+      },
+      {
+        title: t("Hand a frozen row to a teammate, or remove the event", "להעביר שורה קפואה למישהו, או להסיר את האירוע"),
+        steps: [
+          t("\"Create task\" opens the task form pre-filled (\"בדיקת מחיר: …\", the change and date, high priority). Pick \"Assign to\" and click \"Create task\" - they get an email with a link to the price fields.", "\"Create task\" פותח טופס משימה ממולא (\"בדיקת מחיר: …\", השינוי והתאריך, עדיפות גבוהה). בוחרים \"Assign to\" ולוחצים \"Create task\" - האחראי מקבל מייל עם קישור לשדות המחיר."),
+          t("The row's button turns into \"Task exists\" (no second task for the same event). Closing the task as Done or Cancelled closes the row as \"נבדק\".", "הכפתור בשורה הופך ל-\"Task exists\" (בלי משימה שנייה לאותו אירוע). סגירת המשימה כבוצעה או כבוטלה סוגרת את השורה כ-\"נבדק\"."),
+          t("\"הסר מהאתר\" → confirm soft-deletes the event (like the events table) and closes all its review rows.", "\"הסר מהאתר\" ← אישור מוחק את האירוע מחיקה רכה (כמו בטבלת האירועים) וסוגר את כל שורות הבדיקה שלו."),
+        ],
+      },
+      {
+        title: t("Find out why an event's price did not move", "לבדוק למה המחיר של אירוע לא זז"),
+        steps: [
+          t("Open [Price Changes](/price-changes) → \"All visits\" (includes the skipped visits the default \"Changes\" view hides) and type the event in \"Search events...\".", "פותחים את [שינויי מחיר](/price-changes) ← \"All visits\" (כולל ביקורים שדולגו, שתצוגת \"Changes\" מסתירה) ומקלידים את האירוע ב-\"Search events...\"."),
+          t("Read \"Status\" (applied / needs review / skipped / error / נבדק) and the \"Why\" note - the arithmetic and the reason nothing changed.", "קוראים את ה-\"Status\" (applied / needs review / skipped / error / נבדק) ואת הערת \"Why\" - החשבון והסיבה שלא השתנה כלום."),
+          t("No row at all? The screen keeps the last 1,500 visits and each night re-quotes only part of the catalog - the rotation may not have reached it yet.", "אין שורה בכלל? המסך שומר את 1,500 הביקורים האחרונים וכל לילה מתמחר רק חלק מהקטלוג - ייתכן שהרוטציה עוד לא הגיעה לאירוע."),
+        ],
+      },
+    ],
     title: t("Pricing - the chain", "תמחור — השרשרת"),
     intro: t(
       "One price rule everywhere. What the customer pays is built in layers, and this backoffice owns the base of the chain; the main site finishes it.",
@@ -291,6 +593,54 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "price-light",
+    nav: "/price-light",
+    howTo: [
+      {
+        title: t("Work the pending queue", "עבודה על תור הממתינים"),
+        steps: [
+          t("Open [Price Light](/price-light?f=pending) (admins). It opens on \"ממתינים להחלטה\": red rows not muted and with no open task.", "פותחים את [רמזור המחירים](/price-light?f=pending) (מנהלים). המסך נפתח על \"ממתינים להחלטה\": שורות אדומות שלא מושתקות ואין להן משימה פתוחה."),
+          t("One conclusion at a time: pick \"חבילה\" or \"כרטיס\" above the tiles, e.g. [packages only](/price-light?f=pending&scope=package).", "מסקנה אחת בכל פעם: בוחרים \"חבילה\" או \"כרטיס\" מעל התגים, למשל [חבילות בלבד](/price-light?f=pending&scope=package)."),
+          t("Biggest gap first. Hover a pill for the competitor, their raw price and every adjustment; if a gap looks odd, open \"השוואה מפורטת\" before deciding.", "הפער הגדול ראשון. ריחוף על תג מציג את המתחרה, המחיר הגולמי וכל התאמה; פער מוזר - פותחים \"השוואה מפורטת\" לפני שמחליטים."),
+          t("Decide on the row - it leaves the view once it is muted, has a task, or changes color.", "מחליטים על השורה - היא יוצאת מהתצוגה כשהיא מושתקת, יש לה משימה או שהצבע משתנה."),
+        ],
+      },
+      {
+        title: t("Decide on a red row", "החלטה על שורה אדומה"),
+        steps: [
+          t("\"הוזל\" opens a popover that edits only that scope's markup (\"הוזל · חבילה\" / \"הוזל · כרטיס\" when both are red) - base prices are not touched.", "\"הוזל\" פותח חלון שעורך רק את המארקאפ של אותו היקף (\"הוזל · חבילה\" / \"הוזל · כרטיס\" כששניהם אדומים) - מחירי הבסיס לא משתנים."),
+          t("In it, \"לכתום\" / \"לירוק\" fill the markup that reaches that color and the preview shows the new price, gap and light. On a package cut of $50+ you can tick 'סמן \"המחיר ירד\" באתר ל-14 יום'. Click \"שמור\" - or \"לעריכה מלאה באירוע\" for the event's price fields.", "בחלון, \"לכתום\" / \"לירוק\" ממלאים את המארקאפ שמגיע לצבע הזה והתצוגה מראה מחיר, פער ואור חדשים. בהוזלת חבילה של $50+ אפשר לסמן 'סמן \"המחיר ירד\" באתר ל-14 יום'. לוחצים \"שמור\" - או \"לעריכה מלאה באירוע\" לשדות המחיר של האירוע."),
+          t("The ⋯ menu: \"השאר בפיד\" mutes the red for 14 days; \"משימה\" opens a high-priority task with the competitor numbers; \"סולד אאוט\" makes the event unbookable and pulls it from search and the feed (\"בטל סולד אאוט\" undoes).", "בתפריט ⋯: \"השאר בפיד\" משתיק את האדום ל-14 יום; \"משימה\" פותחת משימה בעדיפות גבוהה עם מספרי המתחרים; \"סולד אאוט\" חוסם הזמנה ומוציא מהחיפוש ומהפיד (\"בטל סולד אאוט\" מבטל)."),
+          t("\"דריסה\" forces a light: \"על מה\" (when both scopes), the \"אור\", a note of 3+ characters → \"שמור דריסה\" (\"בטל דריסה\" removes it).", "\"דריסה\" כופה אור: \"על מה\" (כשיש שני היקפים), ה-\"אור\", הערה של 3+ תווים ← \"שמור דריסה\" (\"בטל דריסה\" מסירה)."),
+          t("\"הסר מהאתר\" (red rows only) soft-deletes after a confirm. \"בדוק עכשיו\" works on any row and re-matches it against the stored catalogs.", "\"הסר מהאתר\" (רק בשורות אדומות) מוחק מחיקה רכה אחרי אישור. \"בדוק עכשיו\" עובד בכל שורה ומתאים אותה מחדש מול הקטלוגים השמורים."),
+        ],
+      },
+      {
+        title: t("Read the detailed comparison", "לקרוא את ההשוואה המפורטת"),
+        steps: [
+          t("On any row, \"השוואה מפורטת\" (column \"פירוט\") opens one table per scope: our row first, then every competitor with flight, hotel, ticket and \"מחיר · פער\". ● marks the one that set the light.", "בכל שורה, \"השוואה מפורטת\" (עמודת \"פירוט\") פותח טבלה לכל היקף: השורה שלנו ראשונה, אחריה כל מתחרה עם טיסה, מלון, כרטיס ו-\"מחיר · פער\". ● מסמן את מי שקבע את האור."),
+          t("Under each competitor, \"שלנו מותאם לחבילה שלהם\" shows our price moved onto their package step by step.", "מתחת לכל מתחרה, \"שלנו מותאם לחבילה שלהם\" מראה את המחיר שלנו מותאם לחבילה שלהם צעד אחר צעד."),
+          t("Our side out of date? \"פרט את שלנו עכשיו\" re-describes our flight and hotel and recomputes the light (a few seconds).", "הצד שלנו לא מעודכן? \"פרט את שלנו עכשיו\" מפרט מחדש את הטיסה והמלון שלנו ומחשב את הרמזור (כמה שניות)."),
+          t("Your own call against one competitor: \"סמן צבע מול <competitor>\" → why → ירוק / כתום / אדום (\"בטל סימון\" removes). A standing reading rule for the AI: \"הוסף חוק ל-AI\" → \"שמור חוק\".", "הכרעה משלכם מול מתחרה אחד: \"סמן צבע מול <מתחרה>\" ← למה ← ירוק / כתום / אדום (\"בטל סימון\" מסיר). כלל קריאה קבוע ל-AI: \"הוסף חוק ל-AI\" ← \"שמור חוק\"."),
+        ],
+      },
+      {
+        title: t("Correct a competitor's row", "לתקן שורה של מתחרה"),
+        steps: [
+          t("In \"השוואה מפורטת\", click the pencil next to the competitor's name.", "ב-\"השוואה מפורטת\" לוחצים על העיפרון שליד שם המתחרה."),
+          t("Change only what is wrong (price and currency, nights, stars, breakfast, bag, direct flight, transfers, airline, hotel name, ticket type) - or tick \"לא האירוע שלנו\" for a different event (this event only).", "משנים רק מה ששגוי (מחיר ומטבע, לילות, כוכבים, ארוחת בוקר, מזוודה, טיסה ישירה, העברות, חברת תעופה, שם מלון, סוג כרטיס) - או מסמנים \"לא האירוע שלנו\" לאירוע אחר (חל רק על האירוע הזה)."),
+          t("Pick a reason in \"למה הערך היה שגוי?\" and write \"הערה ל-AI (חובה)\" as a reading rule (\"מוזכר רק תיק גב, לכן אין מזוודה\"). Click \"שמור\" - if disabled, \"כדי לשמור חסר:\" says what's missing.", "בוחרים סיבה ב-\"למה הערך היה שגוי?\" וכותבים \"הערה ל-AI (חובה)\" ככלל קריאה (\"מוזכר רק תיק גב, לכן אין מזוודה\"). לוחצים \"שמור\" - אם מושבת, \"כדי לשמור חסר:\" אומר מה חסר."),
+          t("The toast says what happened to the light (\"חבילה: אדום ← כתום\" / \"נשאר אדום\"); the row shows \"✎ תוקן ידנית\". To undo, open the pencil again → \"בטל\".", "ההודעה אומרת מה קרה לרמזור (\"חבילה: אדום ← כתום\" / \"נשאר אדום\"); בשורה מופיע \"✎ תוקן ידנית\". לביטול פותחים שוב את העיפרון ← \"בטל\"."),
+        ],
+      },
+      {
+        title: t("Look at one competitor, or crawl it now", "להתמקד במתחרה אחד, או לסרוק אותו עכשיו"),
+        steps: [
+          t("Pick it in the \"כל המתחרים\" select, click its column header, or click its card in the competitors strip - e.g. [Golasso only](/price-light?comp=golasso).", "בוחרים אותו ברשימה \"כל המתחרים\", לוחצים על כותרת העמודה שלו או על הכרטיס שלו בשורת המתחרים - למשל [גולאסו בלבד](/price-light?comp=golasso)."),
+          t("Only its column and the events it sells stay, and the gap becomes \"פער מול <competitor>\". Click the header again to sort by that gap; a third click, the card again, or × on \"מוכר ע״י …\" clears it.", "נשארות רק העמודה שלו והאירועים שהוא מוכר, והפער הופך ל-\"פער מול <מתחרה>\". לחיצה נוספת על הכותרת ממיינת לפי הפער הזה; לחיצה שלישית, לחיצה על הכרטיס או × ב-\"מוכר ע״י …\" מנקים."),
+          t("Crawl now: the refresh icon on the card (\"סרוק עכשיו\") - Golasso and OnTour only; a crawl can take minutes. Hover a card for its last run, next due, an open breaker (\"בלם\") and staff corrections (\"✎\").", "סריקה עכשיו: אייקון הרענון בכרטיס (\"סרוק עכשיו\") - רק לגולאסו ול-OnTour; סריקה יכולה לקחת דקות. ריחוף על כרטיס מציג ריצה אחרונה, מועד הבא, בלם פתוח (\"בלם\") ותיקוני צוות (\"✎\")."),
+        ],
+      },
+    ],
     title: t("Price light (רמזור)", "רמזור מחירים"),
     intro: t(
       "A traffic-light column on the events table (right after the usual price) shows how our price compares to competitors, per event. It never changes a price by itself - it's a read, not a rule. It compares our real \"from\" price: the site price minus the +$100 flight / +$120 hotel margins (taken from the latest search), plus ticket and site markup.",
@@ -327,7 +677,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       ),
       t(
         "Each competitor site is crawled at most once a week, one crawl running at a time system-wide (a check every 6 hours picks whichever due site has waited longest). LiveTickets is the exception - its numbers come from the same live_events sync that already runs twice a day, so there's no separate crawl for it.",
-        "כל אתר מתחרה נסרק לכל היותר פעם ב-72 שעות, סריקה אחת רצה בכל זמן נתון במערכת (בדיקה שעתית בוחרת את האתר הכי \"רעב\" שממתין). LiveTickets הוא היוצא מן הכלל — המספרים שלו מגיעים מאותו סנכרון live_events שכבר רץ פעמיים ביום, אז אין לו סריקה נפרדת.",
+        "כל אתר מתחרה נסרק לכל היותר פעם בשבוע, סריקה אחת רצה בכל זמן נתון במערכת (בדיקה כל 6 שעות בוחרת את האתר שממתין הכי הרבה זמן). LiveTickets הוא היוצא מן הכלל — המספרים שלו מגיעים מאותו סנכרון live_events שכבר רץ פעמיים ביום, אז אין לו סריקה נפרדת.",
       ),
       t(
         "PRICE_LIGHT_SCRAPE=off is the kill switch: it stops all crawling (runs show as skipped) but matching and the lights keep working off whatever was already crawled - flip it off if a competitor site ever needs to be left alone.",
@@ -342,8 +692,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "שלב 1 (מנהלים): מסך /price-light הוא המקום שבו אור אדום מקבל החלטה במקום לשבת בשקט על טבלת האירועים. התגים למעלה משמשים גם כפילטרים — לבד בשוק/ירוק/כתום/אדום/לא נבדק, ובנוסף \"ממתינים להחלטה\" שמנחית אתכם בדיוק על האדומים שעדיין צריכים בן אדם: לא מושתקים כרגע, ואין להם כבר משימה רודפת. תצוגת הטבלה מוסיפה 45 הימים הקרובים, סריקות בכיסוי חלקי, מה שהשתנה השבוע, ותצוגת מדגם AI.",
       ),
       t(
-        "A red row gets four decisions: \"הוזל\" jumps straight to that event's price section to fix the base price (the light itself never writes a price); \"השאר בפיד\" silences the red for 14 days - it stays red, it just drops off the pending view until it expires or the light itself changes; \"הסר מהאתר\" soft-deletes the event after a confirm (never a hard delete); \"משימה\" opens a high-priority task with the competitor numbers baked into its description - clicking it again when one is already open just tells you it exists instead of creating a duplicate. Any row (not only red) also gets \"בדוק עכשיו\" (re-match against the stored catalogs, instant) and \"דריסה\" - force a light by hand when the automatic read is wrong, but only with a note of 3+ characters, and it's logged; \"בטל דריסה\" removes it.",
-        "לשורה אדומה יש ארבע החלטות: \"הוזל\" קופץ ישר לקטע המחיר של האירוע כדי לתקן את מחיר הבסיס (הרמזור עצמו אף פעם לא כותב מחיר); \"השאר בפיד\" משתיק את האדום ל-14 יום — הוא נשאר אדום, רק יורד מתצוגת הממתינים עד שהוא פג או שהאור עצמו משתנה; \"הסר מהאתר\" מסיר את האירוע בעדינות (soft delete) אחרי אישור — לעולם לא מחיקה לצמיתות; \"משימה\" פותחת משימה בעדיפות גבוהה עם מספרי המתחרים משובצים בתיאור — לחיצה נוספת כשכבר יש אחת פתוחה רק אומרת שהיא קיימת, לא יוצרת כפילות. לכל שורה (לא רק אדומה) יש גם \"בדוק עכשיו\" (התאמה מחדש מול הקטלוגים השמורים, מיידי) ו\"דריסה\" — כפיית אור ידנית כשהקריאה האוטומטית טועה, אבל רק עם הערה של 3+ תווים, והיא נרשמת; \"בטל דריסה\" מסירה אותה.",
+        "A red row gets its decisions: \"הוזל\" opens a popover that sets that scope's markup (the one price the light may write - never a base price, and the popover also links to the event's price fields); \"סולד אאוט\" makes the event unbookable; \"השאר בפיד\" silences the red for 14 days - it stays red, it just drops off the pending view until it expires or the light itself changes; \"הסר מהאתר\" soft-deletes the event after a confirm (never a hard delete); \"משימה\" opens a high-priority task with the competitor numbers baked into its description - clicking it again when one is already open just tells you it exists instead of creating a duplicate. Any row (not only red) also gets \"בדוק עכשיו\" (re-match against the stored catalogs, instant) and \"דריסה\" - force a light by hand when the automatic read is wrong, but only with a note of 3+ characters, and it's logged; \"בטל דריסה\" removes it.",
+        "לשורה אדומה יש ההחלטות שלה: \"הוזל\" פותח חלון שקובע את המארקאפ של אותו היקף (המחיר היחיד שהרמזור רשאי לכתוב - אף פעם לא מחיר בסיס, והחלון מקשר גם לשדות המחיר של האירוע); \"סולד אאוט\" חוסם הזמנה; \"השאר בפיד\" משתיק את האדום ל-14 יום — הוא נשאר אדום, רק יורד מתצוגת הממתינים עד שהוא פג או שהאור עצמו משתנה; \"הסר מהאתר\" מסיר את האירוע בעדינות (soft delete) אחרי אישור — לעולם לא מחיקה לצמיתות; \"משימה\" פותחת משימה בעדיפות גבוהה עם מספרי המתחרים משובצים בתיאור — לחיצה נוספת כשכבר יש אחת פתוחה רק אומרת שהיא קיימת, לא יוצרת כפילות. לכל שורה (לא רק אדומה) יש גם \"בדוק עכשיו\" (התאמה מחדש מול הקטלוגים השמורים, מיידי) ו\"דריסה\" — כפיית אור ידנית כשהקריאה האוטומטית טועה, אבל רק עם הערה של 3+ תווים, והיא נרשמת; \"בטל דריסה\" מסירה אותה.",
       ),
       t(
         "One line per event (2026-09-14). The /price-light table shows BOTH conclusions on the same row - the package pill and the ticket pill, each with its own gap and its own price, and every competitor we asked for that event, with the one that set the light marked. Decisions that belong to a single conclusion say so: when both are red you get \"הוזל · חבילה\" and \"הוזל · כרטיס\" as separate buttons, and דריסה asks which one. \"השאר בפיד\", \"הסר מהאתר\" and \"בדוק עכשיו\" are about the whole event, so they ask nothing.",
@@ -411,12 +761,53 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "ai-factory",
+    nav: "/ai-factory",
     title: t("AI Factory", "AI Factory"),
     adminOnly: true,
     intro: t(
       "One screen per agent running in this system - what it is, what it has learned, every AI call it made, and how well its calls have held up against what staff actually decided. The price-light judge is agent #1; the price advisor (agent #2, 2026-09-17) words and ranks price suggestions from facts the light already computed. More will follow the same shape.",
       "מסך אחד לכל agent שרץ במערכת - מה הוא, מה הוא למד, כל קריאת AI שהוא ביצע, ומידת ההתאמה בין הקריאות שלו לבין מה שהצוות בפועל החליט. שופט הרמזור הוא agent מספר 1; יועץ המחיר (agent מספר 2, 17.09.2026) מנסח ומדרג הצעות מחיר מתוך עובדות שהרמזור עצמו חישב. עוד ילכו בעקבותיהם באותה תצורה.",
     ),
+    howTo: [
+      {
+        title: t("Open an agent and check it is on", "לפתוח agent ולבדוק שהוא דלוק"),
+        steps: [
+          t("Open [AI Factory](/ai-factory) (admins). Each card shows the agent's status pill, \"עלות החודש\", \"קריאות החודש\" and \"שיעור התאמה\".", "פותחים את [AI Factory](/ai-factory) (מנהלים). בכל כרטיס רואים את תג הסטטוס של הסוכן, \"עלות החודש\", \"קריאות החודש\" ו\"שיעור התאמה\"."),
+          t("Click a card (\"לפרטים\"), or go straight to the [Price light judge](/ai-factory/price-light) or the [Price advisor](/ai-factory/price-advisor).", "לוחצים על כרטיס (\"לפרטים\"), או נכנסים ישר ל[שופט הרמזור](/ai-factory/price-light) או ל[יועץ המחיר](/ai-factory/price-advisor)."),
+          t("The pill should read \"פעיל\". \"כבוי\", \"מפתח חסר\" or \"כבוי (מפסק ראשי)\" means the agent is not running.", "התג צריך להראות \"פעיל\". \"כבוי\", \"מפתח חסר\" או \"כבוי (מפסק ראשי)\" אומרים שהסוכן לא רץ."),
+          t("To switch it on, pass the \"איך מדליקים\" list from the \"זהות\" tab to the developer. You can't turn an agent on from this screen.", "כדי להדליק אותו מעבירים למפתח את רשימת \"איך מדליקים\" מלשונית \"זהות\". אי אפשר להדליק סוכן מהמסך הזה."),
+        ],
+      },
+      {
+        title: t("Add or retire a team rule", "להוסיף או לבטל כלל צוות"),
+        steps: [
+          t("Open the agent's [memory tab](/ai-factory/price-light?tab=memory) and scroll down to \"כללי צוות\".", "פותחים את [לשונית הזיכרון](/ai-factory/price-light?tab=memory) של הסוכן וגוללים עד \"כללי צוות\"."),
+          t("Write one reading rule in the box (3-500 characters). It should be about something the agent reads: nights, stars, bag, breakfast, direct flight, transfers, or which listing is our event.", "כותבים בתיבה כלל קריאה אחד (3-500 תווים). הכלל צריך לעסוק במשהו שהסוכן קורא: לילות, כוכבים, מזוודה, ארוחת בוקר, טיסה ישירה, העברות, או איזו מודעה היא האירוע שלנו."),
+          t("Click \"למד אותו\" (admins). The rule appears at the top of the list with your email, and every call from now on includes it.", "לוחצים \"למד אותו\" (מנהלים). הכלל מופיע בראש הרשימה עם המייל שלכם, ומעכשיו הוא נכלל בכל קריאה."),
+          t("To see the exact text the model gets, open \"הזיכרון המלא\" above the rules.", "כדי לראות את הטקסט המדויק שהמודל מקבל, פותחים את \"הזיכרון המלא\" מעל הכללים."),
+          t("To retire a rule, click its X (admins). It turns grey and struck through, marked \"בוטל\" with a date. You can't undo this, so add the rule again if you still need it.", "כדי לבטל כלל לוחצים על ה-X שלו (מנהלים). הוא הופך לאפור ומחוק, עם \"בוטל\" ותאריך. אי אפשר לבטל את הפעולה, אז אם עדיין צריך את הכלל מוסיפים אותו מחדש."),
+        ],
+      },
+      {
+        title: t("Review the log and mark right or wrong", "לעבור על היומן ולסמן נכון / לא נכון"),
+        steps: [
+          t("Open the judge's [log tab](/ai-factory/price-light?tab=log). The newest AI calls come first, 25 per page (\"הקודם\" / \"הבא\").", "פותחים את [לשונית היומן](/ai-factory/price-light?tab=log) של השופט. קריאות ה-AI החדשות ביותר מופיעות ראשונות, 25 בעמוד (\"הקודם\" / \"הבא\")."),
+          t("Read the row: \"אותו אירוע?\" is the agent's answer and \"ביטחון\" is its confidence. Click the event name to check the event yourself.", "קוראים את השורה: \"אותו אירוע?\" היא התשובה של הסוכן ו\"ביטחון\" היא רמת הביטחון שלו. לוחצים על שם האירוע כדי לבדוק אותו בעצמכם."),
+          t("Click ✓ if the agent was right, or ✗ if it was wrong (admins).", "לוחצים ✓ אם הסוכן צדק, או ✗ אם הוא טעה (מנהלים)."),
+          t("Optionally write a note in \"הערה (רשות)\" (up to 300 characters, phrased as a reading rule), then click \"שלח\".", "אפשר לכתוב הערה ב\"הערה (רשות)\" (עד 300 תווים, בניסוח של כלל קריאה), ואז לוחצים \"שלח\"."),
+          t("The row now shows \"אושר\" or \"נדחה\". You get one mark per row and can't change it. The Price advisor has no log yet, so its tab is empty.", "עכשיו מופיע בשורה \"אושר\" או \"נדחה\". כל שורה מקבלת סימון אחד ואי אפשר לשנות אותו. ליועץ המחיר עדיין אין יומן, אז הלשונית שלו ריקה."),
+        ],
+      },
+      {
+        title: t("Read maturity", "לקרוא את הבשלות"),
+        steps: [
+          t("Open the [maturity tab](/ai-factory/price-light?tab=maturity).", "פותחים את [לשונית הבשלות](/ai-factory/price-light?tab=maturity)."),
+          t("\"הסכמה\" counts red rows that staff acted on (הוזל, הסר מהאתר, סולד אאוט). \"חוסר הסכמה\" counts reds that were silenced (\"השאר בפיד\") or overridden to another color.", "\"הסכמה\" סופרת שורות אדומות שהצוות פעל עליהן (הוזל, הסר מהאתר, סולד אאוט). \"חוסר הסכמה\" סופרת אדומים שהושתקו (\"השאר בפיד\") או נדרסו לצבע אחר."),
+          t("\"משוב חיובי\" / \"משוב שלילי\" are the ✓/✗ marks from the log. AI values fixed in the detailed comparison also count as negative. These counts are not part of the rate.", "\"משוב חיובי\" / \"משוב שלילי\" הם סימוני ה-✓/✗ מהיומן. ערכי AI שתוקנו בהשוואה המפורטת נספרים גם הם כשליליים. הספירות האלה לא נכנסות לשיעור."),
+          t("\"שיעור התאמה (30 יום)\" is agreed divided by agreed + disagreed. It shows \"אין מספיק החלטות\" until there are 10 decisions. The chart below shows the same week by week.", "\"שיעור התאמה (30 יום)\" הוא ההסכמות חלקי הסכמות + חוסרי הסכמה. עד שיש 10 החלטות מופיע \"אין מספיק החלטות\". הגרף מתחת מציג את אותו הדבר שבוע אחר שבוע."),
+        ],
+      },
+    ],
     points: [
       t(
         "Identity tab: a Hebrew paragraph on what the agent is for, three lists (decides on its own / never does / stays with the team), its live settings (model, call ceiling, confidence floor, token prices), and the env var names that switch it on - never their values.",
@@ -458,7 +849,150 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    id: "offline-flights",
+    nav: "/offline-flights",
+    title: t("Offline flights - our own seats", "טיסות אופליין - המושבים שלנו"),
+    intro: t(
+      "Mega's own flight inventory: seats we hold on charters and group blocks. A flight linked to an event is offered on that event's package, and the nightly price sync then leaves that event's flight price alone - the price of fixed inventory is your decision.",
+      "מלאי הטיסות של מגה עצמה: מושבים שאנחנו מחזיקים בצ'רטרים ובבלוקים. טיסה שמקושרת לאירוע מוצעת בחבילה שלו, והסנכרון הלילי לא נוגע אז במחיר הטיסה של האירוע - המחיר של מלאי קבוע הוא החלטה שלכם.",
+    ),
+    howTo: [
+      {
+        title: t("Create a flight", "יצירת טיסה"),
+        steps: [
+          t("Open [Offline Flights](/offline-flights) and click \"Add New Flight\".", "פותחים את [הטיסות האופליין](/offline-flights) ולוחצים \"Add New Flight\"."),
+          t("Type the \"Airline Code (IATA)\" (e.g. LY) and click \"Validate\" - it fills the airline name and logo. \"Create Flight\" stays disabled until the button reads \"Validated\".", "מקלידים \"Airline Code (IATA)\" (למשל LY) ולוחצים \"Validate\" - זה ממלא שם ולוגו של חברת התעופה. \"Create Flight\" נשאר מושבת עד שעל הכפתור כתוב \"Validated\"."),
+          t("Fill \"Price (USD)\" (per seat) and \"Initial Quantity\" (seats we hold).", "ממלאים \"Price (USD)\" (למושב) ו-\"Initial Quantity\" (המושבים שאנחנו מחזיקים)."),
+          t("Under \"Outbound Flight\" / \"Inbound Flight\", fill flight numbers, airports (IATA) and times - durations calculate themselves. For a connection set \"Outbound Stops\" / \"Inbound Stops\" with the stopover; tick the bags each leg includes.", "תחת \"Outbound Flight\" / \"Inbound Flight\" ממלאים מספרי טיסה, שדות (IATA) ושעות - המשכים מחושבים לבד. בקונקשן מגדירים \"Outbound Stops\" / \"Inbound Stops\" עם שדה העצירה; מסמנים אילו מזוודות כלולות בכל כיוון."),
+          t("Optionally link events (next recipe), then \"Create Flight\".", "אפשר לקשר אירועים (המתכון הבא), ואז \"Create Flight\"."),
+        ],
+      },
+      {
+        title: t("Link a flight to events", "קישור טיסה לאירועים"),
+        steps: [
+          t("In the flight form, \"Linked Events\" lists only events in the arrival city dated between the outbound and return departures - fill airports and dates first.", "בטופס הטיסה, \"Linked Events\" מציג רק אירועים בעיר הנחיתה שהתאריך שלהם בין ההמראה הלוך להמראה חזור - קודם ממלאים שדות ותאריכים."),
+          t("Tick the events and save. Saving on the edit page (\"Update Flight\") also copies the flight's price and dates onto each newly linked event.", "מסמנים את האירועים ושומרים. שמירה בדף העריכה (\"Update Flight\") מעתיקה גם את מחיר הטיסה והתאריכים לכל אירוע שקושר עכשיו."),
+          t("Several flights to one event: tick rows in the table → pick the \"Event\" in the bar → \"Link event\" (\"Unlink event\" removes). From the event side: the editor's \"Offline Flights\" card → \"Link Existing\".", "כמה טיסות לאירוע אחד: מסמנים שורות ← בוחרים \"Event\" בסרגל ← \"Link event\" (\"Unlink event\" מסיר). מצד האירוע: כרטיס \"Offline Flights\" בעורך ← \"Link Existing\"."),
+          t("After \"Link event\" or creating a new flight, check the event's base flight price - those two paths don't copy it.", "אחרי \"Link event\" או יצירת טיסה חדשה בודקים את מחיר הבסיס לטיסה באירוע - שתי הדרכים האלה לא מעתיקות אותו."),
+        ],
+      },
+      {
+        title: t("Edit a flight or change its price", "עריכת טיסה או שינוי מחיר"),
+        steps: [
+          t("Click any table cell to edit in place (Enter saves, Esc cancels), click the flight ID for all fields in a side panel, or the eye icon → \"Edit Flight\" → \"Update Flight\" for the full form.", "לוחצים על תא בטבלה לעריכה במקום (Enter שומר, Esc מבטל), על מזהה הטיסה לכל השדות בחלונית צד, או אייקון העין ← \"Edit Flight\" ← \"Update Flight\" לטופס המלא."),
+          t("Changing one flight's price (cell or form) pushes the new base flight price to every linked event.", "שינוי מחיר של טיסה אחת (בתא או בטופס) דוחף את מחיר הבסיס החדש לכל האירועים המקושרים."),
+          t("Many at once: tick them → \"Set field\" + \"Value\" + \"Apply\", or \"Price\" (± %, ± $, set $) + \"Apply price\". A bulk price change does NOT update the events - check their base flight price after.", "הרבה בבת אחת: מסמנים ← \"Set field\" + \"Value\" + \"Apply\", או \"Price\" (± %, ± $, set $) + \"Apply price\". שינוי מחיר ב-bulk לא מעדכן את האירועים - בודקים אחר כך את מחיר הבסיס לטיסה שלהם."),
+          t("\"Columns\" picks the visible fields; \"Filters\" narrows by airline, dates, series, block status or event; \"Show deleted\" brings deleted flights back with \"Restore Flight\".", "\"Columns\" בוחר שדות מוצגים; \"Filters\" מסנן לפי חברה, תאריכים, סדרה, סטטוס בלוק או אירוע; \"Show deleted\" מחזיר טיסות שנמחקו עם \"Restore Flight\"."),
+        ],
+      },
+      {
+        title: t("Split a flight's seats between events", "חלוקת מושבים בין אירועים"),
+        steps: [
+          t("Click the arrow at the start of the row (\"Seat allocations\") - every linked event with ORG / TAKEN / AVAILABLE.", "לוחצים על החץ בתחילת השורה (\"Seat allocations\") - כל אירוע מקושר עם ORG / TAKEN / AVAILABLE."),
+          t("An event without an allocation sells from the shared \"global pool\". To reserve seats: \"Allocate\", type the number, Enter. You can't go below what it sold or above the free seats.", "אירוע בלי הקצאה מוכר מהמאגר המשותף (\"global pool\"). לשריון מושבים: \"Allocate\", מספר, Enter. אי אפשר לרדת מתחת למה שנמכר או לעבור את המושבים הפנויים."),
+          t("\"Remove allocation\" (X) returns it to the pool; \"Unallocated: X of Y\" turns red when allocations exceed the seats. An amber dot by the ID = a ticketing deadline or option expiry is near or past.", "\"Remove allocation\" (X) מחזיר למאגר; \"Unallocated: X of Y\" אדום כשההקצאות עוברות את המושבים. נקודה כתומה ליד המזהה = מועד כרטוס או תפוגת אופציה קרובים או עברו."),
+          t("\"Export for ticketing\" downloads the passenger list; \"Export inventory\" downloads the flights.", "\"Export for ticketing\" מוריד את רשימת הנוסעים; \"Export inventory\" מוריד את הטיסות."),
+        ],
+      },
+      {
+        title: t("Create a series (same route, many dates)", "יצירת סדרה (אותו מסלול, הרבה תאריכים)"),
+        steps: [
+          t("Click [New series](/offline-flights/series/new).", "לוחצים [New series](/offline-flights/series/new)."),
+          t("Step 1 \"Shared template\": \"Series name\", \"Airline code\" (\"Look up\"), airports, flight numbers, times, \"Price per seat (USD)\", \"Seats per flight (ORG)\", \"Block status\" → \"Next: pick dates\".", "שלב 1 \"Shared template\": \"Series name\", \"Airline code\" (\"Look up\"), שדות, מספרי טיסה, שעות, \"Price per seat (USD)\", \"Seats per flight (ORG)\", \"Block status\" ← \"Next: pick dates\"."),
+          t("Step 2: pick every departure date and \"Number of days\" (return = departure + days) → \"Next: preview\".", "שלב 2: בוחרים את כל תאריכי היציאה ו-\"Number of days\" (חזרה = יציאה + ימים) ← \"Next: preview\"."),
+          t("Step 3 \"Preview & adjust\": change any flight, untick suggested events, remove rows → \"Create N flight(s)\". Later, \"Filters\" → \"Series\" shows just that series.", "שלב 3 \"Preview & adjust\": משנים כל טיסה, מבטלים אירועים מוצעים, מסירים שורות ← \"Create N flight(s)\". בהמשך, \"Filters\" ← \"Series\" מציג רק את הסדרה."),
+        ],
+      },
+    ],
+    links: [
+      { label: t("Offline flights", "טיסות אופליין"), href: "/offline-flights" },
+      { label: t("New series", "סדרה חדשה"), href: "/offline-flights/series/new" },
+    ],
+  },
+  {
+    id: "offline-hotels",
+    nav: "/offline-hotels",
+    title: t("Offline hotels - our own rooms", "מלונות אופליין - החדרים שלנו"),
+    intro: t(
+      "Mega's own hotel inventory: rooms we hold for fixed dates. A hotel linked to an event is offered on it, and its cheapest free room per person becomes the event's base hotel price - only when the stay matches the event's default travel dates.",
+      "מלאי המלונות של מגה עצמה: חדרים שאנחנו מחזיקים לתאריכים קבועים. מלון שמקושר לאירוע מוצע בו, והחדר הפנוי הזול שלו לאדם הופך למחיר הבסיס למלון של האירוע - רק כשהשהות תואמת את תאריכי הנסיעה הדיפולטיים של האירוע.",
+    ),
+    howTo: [
+      {
+        title: t("Create a hotel", "יצירת מלון"),
+        steps: [
+          t("Open [Offline Hotels](/offline-hotels) and click \"Add New Hotel\".", "פותחים את [המלונות האופליין](/offline-hotels) ולוחצים \"Add New Hotel\"."),
+          t("In \"Search Hotel (WorldOTA)\" type 2+ letters and pick the hotel - it fills \"Hotel Name\" and \"City\" and links the hotel id. Check the city (it is read from the address).", "ב-\"Search Hotel (WorldOTA)\" מקלידים 2+ אותיות ובוחרים את המלון - זה ממלא \"Hotel Name\" ו-\"City\" ומקשר את מזהה המלון. בודקים את העיר (נקראת מהכתובת)."),
+          t("Set \"Check-in Date\", \"Check-out Date\", \"Room Type\" and \"Price (USD)\" - the total per room for the whole stay, not per night or per person.", "קובעים \"Check-in Date\", \"Check-out Date\", \"Room Type\" ו-\"Price (USD)\" - סך הכול לחדר לכל השהות, לא ללילה ולא לאדם."),
+          t("Optional: \"Meal Plan\", \"Last Cancellation Date\" (shown to customers), \"Guest Rating\" / \"Review Count\" (blank = from WorldOTA), \"Notes\". Add rooms and links, then \"Create Hotel\".", "לא חובה: \"Meal Plan\", \"Last Cancellation Date\" (מוצג ללקוחות), \"Guest Rating\" / \"Review Count\" (ריק = מ-WorldOTA), \"Notes\". מוסיפים חדרים וקישורים, ואז \"Create Hotel\"."),
+        ],
+      },
+      {
+        title: t("Add rooms and record bookings", "הוספת חדרים ותיעוד הזמנות"),
+        steps: [
+          t("Under \"Rooms\", fill the \"Room Template\" (\"Room Type\", \"Price (USD)\", \"Meal\", \"Cancel by\", \"Supplier\"), set \"Generate\" to the number of rooms and click \"Generate rooms\" (replaces the current list).", "תחת \"Rooms\" ממלאים את ה-\"Room Template\" (\"Room Type\", \"Price (USD)\", \"Meal\", \"Cancel by\", \"Supplier\"), מגדירים ב-\"Generate\" את מספר החדרים ולוחצים \"Generate rooms\" (מחליף את הרשימה)."),
+          t("Adjust a room in its own card; \"Add room\" adds one, the bin removes one, \"Apply template to all\" resets them. A later save never deletes booked rooms.", "משנים חדר בכרטיס שלו; \"Add room\" מוסיף, הפח מוחק, \"Apply template to all\" מאפס לתבנית. שמירה מאוחרת לא מוחקת חדרים שהוזמנו."),
+          t("After a sale, open the hotel (eye icon) → \"Rooms\" → pick the booking in \"Reservation\" (the room turns \"Booked\") and expand it for \"Supplier\", \"Order No\", \"Acc No\".", "אחרי מכירה פותחים את המלון (אייקון העין) ← \"Rooms\" ← בוחרים את ההזמנה בעמודת \"Reservation\" (החדר הופך ל-\"Booked\") ופותחים אותו ל-\"Supplier\", \"Order No\", \"Acc No\"."),
+        ],
+      },
+      {
+        title: t("Link a hotel to events", "קישור מלון לאירועים"),
+        steps: [
+          t("Fill the dates first, then open \"Linked Events\" - events in the hotel's city dated between check-in and check-out. The matching charter can go under \"Linked Flights\".", "קודם ממלאים תאריכים, ואז פותחים \"Linked Events\" - אירועים בעיר המלון שהתאריך שלהם בין הצ'ק-אין לצ'ק-אאוט. את הצ'רטר המתאים אפשר לקשר ב-\"Linked Flights\"."),
+          t("Save (\"Create Hotel\" / \"Update Hotel\"). On the edit page, a newly linked event with no offline flight takes the hotel's dates as its travel dates.", "שומרים (\"Create Hotel\" / \"Update Hotel\"). בדף העריכה, אירוע שקושר עכשיו ואין לו טיסה אופליין מקבל את תאריכי המלון כתאריכי הנסיעה שלו."),
+          t("The price reaches an event only when the hotel's check-in / check-out equal the event's default travel dates - otherwise customers don't see the hotel at all. From the event side: the \"Offline Hotels\" card → \"Link Existing\".", "המחיר מגיע לאירוע רק כשהצ'ק-אין / צ'ק-אאוט של המלון שווים לתאריכי הנסיעה הדיפולטיים של האירוע - אחרת הלקוחות לא רואים את המלון בכלל. מצד האירוע: כרטיס \"Offline Hotels\" ← \"Link Existing\"."),
+        ],
+      },
+      {
+        title: t("Edit or remove a hotel", "עריכה או הסרה של מלון"),
+        steps: [
+          t("\"Rooms\" in the table shows free / total. Row icons: eye (\"View Hotel\"), pencil (\"Edit Hotel\"), bin (\"Delete Hotel\").", "\"Rooms\" בטבלה מציג פנויים / סך הכול. אייקונים בשורה: עין (\"View Hotel\"), עיפרון (\"Edit Hotel\"), פח (\"Delete Hotel\")."),
+          t("\"Update Hotel\" after a new price or room type pushes the new per-person price (room ÷ guests, e.g. Double = 2) to the linked events.", "\"Update Hotel\" אחרי מחיר או סוג חדר חדשים דוחף את המחיר החדש לאדם (חדר ÷ אורחים, למשל Double = 2) לאירועים המקושרים."),
+          t("Delete is soft (the row shows \"Deleted\"). There is no Restore button here - ask a developer.", "המחיקה רכה (השורה מציגה \"Deleted\"). אין כאן כפתור שחזור - פונים למפתח."),
+        ],
+      },
+    ],
+    links: [{ label: t("Offline hotels", "מלונות אופליין"), href: "/offline-hotels" }],
+  },
+  {
     id: "sources",
+    nav: "/sports-events",
+    howTo: [
+      {
+        title: t("Find a match or show", "למצוא משחק או הופעה"),
+        steps: [
+          t("[Sports (XS2E)](/sports-events): pick a sport under \"Sports\", then a tournament (\"Filter tournaments...\"), then narrow \"Events\" with \"Filter events...\". Click a match for its \"Live Tickets\".", "[ספורט (XS2E)](/sports-events): בוחרים ענף תחת \"Sports\", אחר כך טורניר (\"Filter tournaments...\"), ומצמצמים את \"Events\" עם \"Filter events...\". לחיצה על משחק מציגה את ה-\"Live Tickets\" שלו."),
+          t("[Live (LiveTickets)](/live-events): \"Categories\" (then \"Category 2\" / \"Category 3\"), optionally \"Performers\", then \"Filter events...\". \"Clear All Filters\" resets.", "[Live (LiveTickets)](/live-events): \"Categories\" (ואז \"Category 2\" / \"Category 3\"), אם רוצים \"Performers\", ואז \"Filter events...\". \"Clear All Filters\" מאפס."),
+          t("[P1 Tickets](/p1-events): \"Categories\", \"Series\" and \"Cities\", then \"Filter events...\".", "[P1 Tickets](/p1-events): \"Categories\", \"Series\" ו-\"Cities\", ואז \"Filter events...\"."),
+          t("[TixStock](/tixstock-events): a category, then a team or artist under \"Performers\", then \"Search events...\" (name, venue or city, any word order). \"Hide events without tickets\" is on by default; events under 48 hours away never appear.", "[TixStock](/tixstock-events): קטגוריה, ואז קבוצה או אמן תחת \"Performers\", ואז \"Search events...\" (שם, מקום או עיר, מילים בכל סדר). \"Hide events without tickets\" דלוק כברירת מחדל; אירועים בעוד פחות מ-48 שעות לא מופיעים."),
+        ],
+      },
+      {
+        title: t("Create one event from a row", "ליצור אירוע אחד משורה"),
+        steps: [
+          t("Hover the row and click the calendar icon (\"Create Event\"). The event form opens pre-filled (TixStock: in a new tab, already connected to that TixStock show).", "מרחפים על השורה ולוחצים על אייקון לוח השנה (\"Create Event\"). טופס האירוע נפתח ממולא (TixStock: בלשונית חדשה, כבר מחובר להופעת ה-TixStock)."),
+          t("Sports: the Hebrew name is left empty on purpose - fill it; tickets with 4+ in stock come in converted to USD. Use the row icon, not \"View Details\" → \"Create Event\" (that path copies EUR prices unconverted).", "ספורט: השם בעברית נשאר ריק בכוונה - ממלאים; כרטיסים עם 4+ במלאי נכנסים מומרים לדולר. משתמשים באייקון שבשורה, לא ב-\"View Details\" ← \"Create Event\" (הדרך הזו מעתיקה מחירים ביורו בלי המרה)."),
+          t("Live: set the venue - LiveTickets sends the city but no venue coordinates. P1: fill the city IATA (P1 sends none) and fix the type if it isn't sports. TixStock: add the categories from \"Source Tickets\", zone them, fill the Hebrew name and check the IATA.", "Live: קובעים את המקום - LiveTickets שולח עיר בלי קואורדינטות. P1: ממלאים IATA (P1 לא שולח) ומתקנים סוג אם זה לא ספורט. TixStock: מוסיפים קטגוריות מ-\"Source Tickets\", משייכים לאזורים, ממלאים שם בעברית ובודקים IATA."),
+          t("Check the base prices, then save.", "בודקים את מחירי הבסיס ושומרים."),
+        ],
+      },
+      {
+        title: t("Create many events at once", "ליצור כמה אירועים בבת אחת"),
+        steps: [
+          t("Set the filters FIRST, then tick each event. On Sports, Live and P1, changing a tournament / category / series / city silently drops ticks outside the new filter even though \"N selected\" still counts them - TixStock keeps them.", "קודם קובעים את הסינון, ואז מסמנים כל אירוע. בספורט, Live ו-P1, החלפת טורניר / קטגוריה / סדרה / עיר מורידה בשקט סימונים שמחוץ לסינון החדש, גם אם \"N selected\" עדיין סופר אותם - ב-TixStock הם נשמרים."),
+          t("\"Create N events\" opens the batch wizard in a new tab: \"Save & Next (i/N)\", \"Skip this event\", and \"Save & Finish\" on the last step.", "\"Create N events\" פותח את וויזרד הבאץ' בלשונית חדשה: \"Save & Next (i/N)\", \"Skip this event\", ו-\"Save & Finish\" בשלב האחרון."),
+          t("Or \"Send to factory\" (admins) - drafts build in the background and [Events Factory](/factory) opens for approval. \"Clear\" empties the selection.", "או \"Send to factory\" (מנהלים) - הטיוטות נבנות ברקע ו[מפעל האירועים](/factory) נפתח לאישור. \"Clear\" מנקה את הבחירה."),
+        ],
+      },
+      {
+        title: t("Batch home games for several teams (TixStock)", "באץ' משחקי בית לכמה קבוצות (TixStock)"),
+        steps: [
+          t("On [TixStock](/tixstock-events), pick a team under \"Performers\" and click \"בחר את כל משחקי הבית של <team>\" - its home games are ticked and marked \"בית\".", "ב-[TixStock](/tixstock-events) בוחרים קבוצה תחת \"Performers\" ולוחצים \"בחר את כל משחקי הבית של <קבוצה>\" - משחקי הבית שלה מסומנים ומקבלים \"בית\"."),
+          t("Pick the next team and repeat - the selection accumulates, one chip per team (× clears that team).", "בוחרים את הקבוצה הבאה וחוזרים - הבחירה מצטברת, צ'יפ לכל קבוצה (× מנקה את הקבוצה)."),
+          t("\"Create N events\" opens the wizard ordered team by team. Save & Next carries only TixStock tickets to the next game - attach LiveTickets and our own stock again on each step.", "\"Create N events\" פותח את הוויזרד מסודר קבוצה אחרי קבוצה. Save & Next מעביר למשחק הבא רק כרטיסי TixStock - את LiveTickets והמלאי שלנו מצרפים מחדש בכל שלב."),
+        ],
+      },
+    ],
     title: t("Event sources - the providers", "מקורות אירועים — הספקים"),
     intro: t(
       "Four external providers feed raw events into their own tables; you turn the good ones into catalog events. Syncs run on schedule - you never import by hand.",
@@ -503,6 +1037,42 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "batch-factory",
+    nav: "/factory",
+    howTo: [
+      {
+        title: t("Send provider events to the factory (admins)", "לשלוח אירועי ספק למפעל (מנהלים)"),
+        steps: [
+          t("Open a provider page - [TixStock](/tixstock-events), [Sports](/sports-events), [Live](/live-events) or [P1](/p1-events) - and tick the events you want.", "פותחים עמוד ספק - [TixStock](/tixstock-events), [ספורט](/sports-events), [Live](/live-events) או [P1](/p1-events) - ומסמנים את האירועים שרוצים."),
+          t("In the bottom bar (\"N selected\") click \"Send to factory\". Each event becomes a draft and [Events Factory](/factory) opens in a new tab.", "בפס שלמטה (\"N selected\") לוחצים \"Send to factory\". כל אירוע הופך לטיוטה ו[מפעל האירועים](/factory) נפתח בלשונית חדשה."),
+          t("Drafts are not on the site - nothing reaches customers until you approve. Want to review each event on the full form instead? Use \"Create N events\" (the batch wizard).", "טיוטות לא מופיעות באתר - שום דבר לא מגיע ללקוחות עד שמאשרים. רוצים לעבור על כל אירוע בטופס המלא? \"Create N events\" (וויזרד הבאץ')."),
+        ],
+      },
+      {
+        title: t("Let the drafts build", "לתת לטיוטות להיבנות"),
+        steps: [
+          t("Keep [Events Factory](/factory) open - the build loop starts by itself, one draft at a time (IATA, stadium-memory tickets, live flight/hotel prices).", "משאירים את [מפעל האירועים](/factory) פתוח - לולאת הבנייה מתחילה לבד, טיוטה אחת בכל פעם (IATA, כרטיסים מזיכרון האצטדיון, מחירי טיסה/מלון חיים)."),
+          t("The bar shows \"נבנו X מתוך Y\". \"עצור\" stops after the current draft; closing the page pauses, reopening resumes.", "הפס מציג \"נבנו X מתוך Y\". \"עצור\" עוצר אחרי הטיוטה הנוכחית; סגירת הדף משהה, פתיחה מחדש ממשיכה."),
+          t("Each row ends \"מוכן\" (complete), \"חסר קלט\" (something missing, amber) or \"שגיאה\" (hover the red text for why).", "כל שורה מסתיימת ב-\"מוכן\" (שלם), \"חסר קלט\" (חסר משהו, בענבר) או \"שגיאה\" (ריחוף על הטקסט האדום מסביר)."),
+        ],
+      },
+      {
+        title: t("Fill in what the automation missed", "להשלים מה שהאוטומציה לא מילאה"),
+        steps: [
+          t("The \"Needs input\" view shows only \"חסר קלט\" rows. Amber cells are what's missing: \"IATA\", \"Flight $\", \"Hotel $\" - type and press Enter; it saves and the status updates.", "התצוגה \"Needs input\" מציגה רק שורות \"חסר קלט\". תאים בענבר הם מה שחסר: \"IATA\", \"Flight $\", \"Hotel $\" - מקלידים ולוחצים Enter; נשמר והסטטוס מתעדכן."),
+          t("Typing an IATA doesn't re-quote the flight - fill \"Flight $\" too. The \"Event\" name can also be fixed inline.", "הקלדת IATA לא מתמחרת את הטיסה מחדש - ממלאים גם את \"Flight $\". גם את השם בעמודת \"Event\" אפשר לתקן בגריד."),
+          t("An amber \"Tickets\" count (0) can't be fixed here: approve and add tickets in the event, or \"מחק\" the draft and use the batch wizard.", "ספירת \"Tickets\" בענבר (0) לא מתקנים כאן: מאשרים ומוסיפים כרטיסים באירוע, או \"מחק\" לטיוטה ועוברים לוויזרד הבאץ'."),
+        ],
+      },
+      {
+        title: t("Approve drafts into real events", "לאשר טיוטות לאירועים אמיתיים"),
+        steps: [
+          t("Open the \"Ready\" view, tick the rows and click \"אשר נבחרים\" - each draft becomes a live catalog event.", "פותחים את התצוגה \"Ready\", מסמנים שורות ולוחצים \"אשר נבחרים\" - כל טיוטה הופכת לאירוע חי בקטלוג."),
+          t("The row turns \"נוצר\" with a \"לאירוע\" link - open it and check images, tags and tickets like any event.", "השורה הופכת ל-\"נוצר\" עם קישור \"לאירוע\" - פותחים ובודקים תמונות, תגיות וכרטיסים כמו בכל אירוע."),
+          t("Approving checks nothing - a ticked \"חסר קלט\" row is created with its gaps. Tick only \"מוכן\" rows.", "האישור לא בודק כלום - שורת \"חסר קלט\" מסומנת נוצרת עם מה שחסר בה. מסמנים רק שורות \"מוכן\"."),
+          t("\"מחק\" deletes the selected drafts for good, with no confirmation. Created and failed rows clean up after 30 days.", "\"מחק\" מוחק את הטיוטות המסומנות לצמיתות, בלי אישור. שורות שנוצרו או נכשלו מתנקות אחרי 30 יום."),
+        ],
+      },
+    ],
     title: t("Batch wizard & the Factory", "וויזרד הבאץ' והמפעל"),
     intro: t(
       "Three ways to create events, from hands-on to hands-off. All three share the same automation blocks: stadium memory, live price quotes, automatic IATA.",
@@ -560,6 +1130,43 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "creative-feed",
+    nav: "/creative-generator",
+    howTo: [
+      {
+        title: t("Make an ad image for an event", "יצירת תמונת מודעה לאירוע"),
+        steps: [
+          t("Open the [Creative Generator](/creative-generator) and click the picker under \"בחר אירוע - הכול יתמלא אוטומטית\" - search by name, city or date (future events only).", "פותחים את [מחולל הקריאייטיב](/creative-generator) ולוחצים על הבורר מתחת ל-\"בחר אירוע - הכול יתמלא אוטומטית\" - חיפוש לפי שם, עיר או תאריך (רק אירועים עתידיים)."),
+          t("Pick the event - type, teams or artist, date, time, location, price and currency fill themselves (still editable). Read any amber ⚠ line: an unmatched team or artist switches Type to \"Regular photo (no matched logo)\".", "בוחרים את האירוע - סוג, קבוצות או אמן, תאריך, שעה, מיקום, מחיר ומטבע מתמלאים לבד (אפשר לערוך). קוראים כל שורה כתומה עם ⚠: קבוצה או אמן שלא זוהו מעבירים את ה-Type ל-\"Regular photo (no matched logo)\"."),
+          t("Check \"Mode\" - it starts on \"Package (flight+hotel+ticket)\", switch to \"Ticket only\" for a ticket-only event.", "בודקים את \"Mode\" - הוא נפתח על \"Package (flight+hotel+ticket)\", באירוע כרטיס-בלבד מחליפים ל-\"Ticket only\"."),
+          t("Optionally change \"פריסת טקסט\", \"רקע כרטיס\", \"צבע Blob\", \"צורת Blob\", or the \"זום תמונה\" / \"מיקום תמונה\" sliders (\"איפוס\" resets).", "אם רוצים משנים \"פריסת טקסט\", \"רקע כרטיס\", \"צבע Blob\", \"צורת Blob\", או את הסליידרים \"זום תמונה\" / \"מיקום תמונה\" (\"איפוס\" מאפס)."),
+          t("Click \"צור תמונה\" and download both sizes: \"Download 1080×1350\" and \"Download 1200×628\".", "לוחצים \"צור תמונה\" ומורידים את שני הגדלים: \"Download 1080×1350\" ו-\"Download 1200×628\"."),
+        ],
+      },
+      {
+        title: t("Redo the ad Meta shows for an event", "חידוש המודעה שמטא מציגה לאירוע"),
+        steps: [
+          t("The generator's image is NOT sent to Meta. Meta's image comes from the creative run - fix what should change first (price, date, name, card image, or the team crest / artist cut-out) and save the event.", "התמונה מהמחולל לא נשלחת למטא. התמונה של מטא מגיעה מריצת הקריאייטיב - קודם מתקנים את מה שצריך להשתנות (מחיר, תאריך, שם, תמונת קארד, או סמל הקבוצה / cut-out של האמן) ושומרים את האירוע."),
+          t("In [Events](/events), open the event and click \"העלה לפיד עכשיו\" (greyed while there are unsaved changes).", "ב[אירועים](/events) פותחים את האירוע ולוחצים \"העלה לפיד עכשיו\" (אפור כל עוד יש שינויים שלא נשמרו)."),
+          t("\"נוצר קריאייטיב חדש\" = redrawn; \"הקריאייטיב כבר עדכני\" = nothing printed on it changed; \"לא נוצר קריאייטיב\" usually = no price to calculate. Meta reads the file hourly.", "\"נוצר קריאייטיב חדש\" = צויר מחדש; \"הקריאייטיב כבר עדכני\" = שום דבר שמודפס עליו לא השתנה; \"לא נוצר קריאייטיב\" בדרך כלל = אין מחיר לחשב. מטא קוראת את הקובץ כל שעה."),
+        ],
+      },
+      {
+        title: t("Build a match or artist creative by hand", "בניית קריאייטיב של משחק או אמן ידנית"),
+        steps: [
+          t("Leave the picker empty and choose \"Type\": \"Match (2 teams + VS)\" or \"Artist (single image)\".", "משאירים את הבורר ריק ובוחרים \"Type\": \"Match (2 teams + VS)\" או \"Artist (single image)\"."),
+          t("Match: pick \"Home team\" and \"Away team\" (Hebrew or English). A team missing from the list has no logo yet - \"Manage logos\" → upload in [Assets](/assets).", "משחק: בוחרים \"Home team\" ו-\"Away team\" (עברית או אנגלית). קבוצה שלא ברשימה עוד אין לה לוגו - \"Manage logos\" ← מעלים ב-[Assets](/assets)."),
+          t("Artist: \"Artist name\" and \"Artist image URL\"; untick \"Real cut-out (transparent PNG) - uncheck for a regular photo\" for an ordinary photo.", "אמן: \"Artist name\" ו-\"Artist image URL\"; לצילום רגיל מורידים את הסימון מ-\"Real cut-out (transparent PNG) - uncheck for a regular photo\"."),
+          t("Fill \"Date\", \"Location\" and \"Price\" (\"צור תמונה\" needs a subject, a date and a price above 0), then \"צור תמונה\" and download.", "ממלאים \"Date\", \"Location\" ו-\"Price\" (\"צור תמונה\" צריך נושא, תאריך ומחיר מעל 0), ואז \"צור תמונה\" ומורידים."),
+        ],
+      },
+      {
+        title: t("Put it on the site card, or send files to a designer", "הצבה על כרטיס האתר, או קבצים למעצב"),
+        steps: [
+          t("With an event chosen, \"Set as event card image (overwrites current card)\" puts the square image on the site card - off by default, tick it only to really replace the card.", "כשנבחר אירוע, \"Set as event card image (overwrites current card)\" שם את התמונה המרובעת על כרטיס האתר - כבוי כברירת מחדל, מסמנים רק כשבאמת רוצים להחליף."),
+          t("Under \"קבצי עזר למעצב\": \"צורת Blob שקופה (PNG)\" (the empty blob) and \"תבנית מלאה בלי תמונה\" (the template without the picture) - for events with no cut-out yet.", "תחת \"קבצי עזר למעצב\": \"צורת Blob שקופה (PNG)\" (הבלוב הריק) ו-\"תבנית מלאה בלי תמונה\" (התבנית בלי התמונה) - לאירועים שעוד אין להם cut-out."),
+        ],
+      },
+    ],
     title: t("Creatives & the Meta feed", "קריאייטיבים והפיד למטא"),
     intro: t(
       "Every feed event needs a campaign creative - the ad image Meta shows. Most are generated automatically; the gaps radar catches the rest.",
@@ -600,8 +1207,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "סמל קבוצה או cut-out של אמן שחסרים מייצרים מודעה חלשה: קבוצה אחת במקום קבוצה נגד קבוצה, האמן בעיגול קטן, או בלי תמונה בכלל. מעלים פעם אחת - סמל לספריית הסמלים (Assets), cut-out לכרטיס האמן (תבניות ← אמנים) - וכל האירועים של אותה קבוצה או אמן מצוירים מחדש בהרצת הקריאייטיב הבאה, בלי צעד לכל אירוע.",
       ),
       t(
-        "The Creative Generator makes one manually - gap links open it with the event pre-selected.",
-        "מחולל הקריאייטיב מייצר ידנית — קישורי חוסרים פותחים אותו עם האירוע כבר נבחר.",
+        "The Creative Generator makes an image by hand for downloads, a designer or the site card - it does NOT feed Meta; only the creative run or \"העלה לפיד עכשיו\" does.",
+        "מחולל הקריאייטיב מייצר תמונה ידנית להורדה, למעצב או לכרטיס האתר - הוא לא מזין את מטא; רק ריצת הקריאייטיב או \"העלה לפיד עכשיו\" עושים את זה.",
       ),
       t(
         "When a creative is missing, the recorded skip reason is almost always \"no computable price\" - the Do button on the gap sends you to the event's price fields, not to the generator, because that's the actual fix.",
@@ -628,6 +1235,42 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "taxonomy",
+    nav: "/event-tags",
+    howTo: [
+      {
+        title: t("Create a tag", "יצירת תגית"),
+        steps: [
+          t("Open [Tags & Rules](/event-tags) on \"תגיות (Tags)\" and search \"חיפוש תגית (שם, אנגלית או slug)\" first - no duplicates.", "פותחים את [תגיות וחוקים](/event-tags) בלשונית \"תגיות (Tags)\" ומחפשים קודם ב\"חיפוש תגית (שם, אנגלית או slug)\" - בלי כפילויות."),
+          t("Type the Hebrew name in \"New tag name (Hebrew)\" and the English one in \"English name (→ feed slug)\" (required - it becomes the slug, e.g. premier-league).", "מקלידים את השם בעברית ב\"New tag name (Hebrew)\" ובאנגלית ב\"English name (→ feed slug)\" (חובה - הוא הופך ל-slug, למשל premier-league)."),
+          t("Pick the type (ליגה, קבוצה, אמן, ז'אנר, עיר, ורטיקל, אחר) and click \"Add\". Any tag picker (event editor, category form) can also create one: type it → \"Create \"…\"\".", "בוחרים סוג (ליגה, קבוצה, אמן, ז'אנר, עיר, ורטיקל, אחר) ולוחצים \"Add\". גם כל בורר תגיות (עורך האירוע, טופס הקטגוריה) יכול ליצור: מקלידים ← \"Create \"…\"\"."),
+          t("New artists and teams get their tag automatically when created in [Templates](/templates).", "אמנים וקבוצות חדשים מקבלים תגית אוטומטית כשיוצרים אותם ב[תבניות](/templates)."),
+        ],
+      },
+      {
+        title: t("Tag events", "תיוג אירועים"),
+        steps: [
+          t("One event: open it from [Events](/events), pick tags in \"Tags (feed / promo)\" in \"Basic Information\", save. \"קטגוריות (נגזר מהתגיות)\" shows its categories now.", "אירוע אחד: פותחים מ[אירועים](/events), בוחרים תגיות ב-\"Tags (feed / promo)\" בכרטיס \"Basic Information\" ושומרים. \"קטגוריות (נגזר מהתגיות)\" מראה את הקטגוריות שלו עכשיו."),
+          t("Many events: in [Events](/events) tick rows → \"Tags (feed)\" → pick tags → \"Add\" or \"Remove\" → \"Apply\". Careful: \"Replace\" first removes ALL other tags from those events.", "הרבה אירועים: ב[אירועים](/events) מסמנים שורות ← \"Tags (feed)\" ← בוחרים תגיות ← \"Add\" או \"Remove\" ← \"Apply\". זהירות: \"Replace\" קודם מוחק את כל שאר התגיות מהאירועים האלה."),
+          t("From the tag's side: \"Events\" on a tag → search \"חיפוש אירוע להוספה\" → \"חפש\" → \"הוסף\" (\"הסר\" takes one off).", "מצד התגית: \"Events\" על תגית ← חיפוש ב\"חיפוש אירוע להוספה\" ← \"חפש\" ← \"הוסף\" (\"הסר\" מוריד)."),
+        ],
+      },
+      {
+        title: t("Auto-tag events with a rule", "תיוג אוטומטי עם כלל"),
+        steps: [
+          t("Open the [Rules tab](/event-tags?tab=rules), pick the \"Tag\", then \"Event name contains\" or \"City IATA equals\".", "פותחים את [לשונית הכללים](/event-tags?tab=rules), בוחרים \"Tag\", ואז \"Event name contains\" או \"City IATA equals\"."),
+          t("Type the pattern (a word from the Hebrew or English name - Arsenal, any case - or an IATA like LON) → \"Add rule\".", "מקלידים את הדפוס (מילה מהשם בעברית או באנגלית - Arsenal, בלי חשיבות לאותיות - או IATA כמו LON) ← \"Add rule\"."),
+          t("New events are tagged on creation; for existing ones click \"Run rules on all events\" (the toast counts the links added). Rules only add, never remove; a league/team tag also adds the football vertical, an artist/genre tag adds music.", "אירועים חדשים מתויגים ביצירה; לקיימים לוחצים \"Run rules on all events\" (ההודעה סופרת קישורים שנוספו). כללים רק מוסיפים, לא מוחקים; תגית ליגה/קבוצה מוסיפה גם ורטיקל כדורגל, תגית אמן/ז'אנר מוסיפה מוזיקה."),
+          t("Pause a rule with its switch or \"Delete\" it - tags it already added stay.", "משהים כלל במתג או \"Delete\" - תגיות שכבר הוסיף נשארות."),
+        ],
+      },
+      {
+        title: t("Edit or delete a tag", "עריכה או מחיקה של תגית"),
+        steps: [
+          t("\"Edit\" on the tag → fix \"Name\", \"Name (English - used for the URL slug)\", \"Type\" or \"Active\" → \"Save\". Changing the English name doesn't change an existing slug.", "\"Edit\" על התגית ← מתקנים \"Name\", \"Name (English - used for the URL slug)\", \"Type\" או \"Active\" ← \"Save\". שינוי השם באנגלית לא משנה slug קיים."),
+          t("\"Delete\" removes the tag from every event AND every category it composes (the confirm shows how many events). Several: tick them (or \"Select all\") → \"Delete selected (N)\".", "\"Delete\" מוריד את התגית מכל אירוע וגם מכל קטגוריה שהיא מרכיבה (האישור מראה על כמה אירועים). כמה: מסמנים (או \"Select all\") ← \"Delete selected (N)\"."),
+        ],
+      },
+    ],
     title: t("Tags & categories", "תגיות וקטגוריות"),
     intro: t(
       "Events are only ever TAGGED. A category declares which tags compose it, and every event carrying one of those tags is pulled in automatically. You never assign an event to a category directly.",
@@ -659,12 +1302,99 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
     links: [
       { label: t("Feed tags", "תגיות פיד"), href: "/event-tags" },
-      { label: t("Tag rules", "חוקי תיוג"), href: "/tag-rules" },
+      { label: t("Tag rules", "חוקי תיוג"), href: "/event-tags?tab=rules" },
       { label: t("Categories", "קטגוריות"), href: "/templates/categories" },
     ],
   },
   {
+    id: "categories",
+    nav: "/templates/categories",
+    title: t("Categories - the /c/ pages", "קטגוריות - עמודי ה-/c/"),
+    intro: t(
+      "Categories are the site's /c/ pages and the category tiles. Each one is a node in a tree and collects events through its tags - you never put an event into a category directly.",
+      "קטגוריות הן עמודי ה-/c/ באתר ואריחי הקטגוריות. כל קטגוריה היא צומת בעץ ואוספת אירועים דרך התגיות שלה - אף פעם לא מכניסים אירוע לקטגוריה ישירות.",
+    ),
+    howTo: [
+      {
+        title: t("Create a category and place it in the tree", "יצירת קטגוריה ומיקום שלה בעץ"),
+        steps: [
+          t("Open [Categories](/templates/categories) - a tree, sub-categories indented under their parent.", "פותחים את [הקטגוריות](/templates/categories) - עץ, תתי-קטגוריות מוזחות מתחת לאב."),
+          t("Under an existing one: the + (\"Add sub-category\") on the parent's row. Top level: [\"Add New Category\"](/templates/categories/new).", "מתחת לקיימת: ה-+ (\"Add sub-category\") בשורת האב. ברמה העליונה: [\"Add New Category\"](/templates/categories/new)."),
+          t("\"Name (Hebrew)\", \"Name (English, optional)\"; an empty \"Slug (optional)\" is built from the English name. \"קטגוריית אב\" sets the address /c/<parent>/<slug> (\"- ראשית -\" = top level); a lower \"Display order\" shows first.", "\"Name (Hebrew)\", \"Name (English, optional)\"; \"Slug (optional)\" ריק נבנה מהשם באנגלית. \"קטגוריית אב\" קובעת את הכתובת /c/<אב>/<slug> (\"- ראשית -\" = רמה עליונה); \"Display order\" נמוך יותר מוצג ראשון."),
+          t("Add its tags (next recipe) and click \"Create Category\". Page content and featured events come afterwards, on the edit screen.", "מוסיפים תגיות (המתכון הבא) ולוחצים \"Create Category\". תוכן העמוד והאירועים הבולטים מתווספים אחר כך, במסך העריכה."),
+        ],
+      },
+      {
+        title: t("Give a category its tags", "הגדרת התגיות של קטגוריה"),
+        steps: [
+          t("In \"תגיות שמרכיבות את הקטגוריה\" pick the tags - every event carrying ONE of them joins automatically. Missing tag? Type it → \"Create \"…\"\".", "ב\"תגיות שמרכיבות את הקטגוריה\" בוחרים תגיות - כל אירוע שיש לו אחת מהן נכנס אוטומטית. חסרה תגית? מקלידים ← \"Create \"…\"\"."),
+          t("A hub that only shows child tiles (leagues, destinations) can stay tagless - the amber warning is fine there.", "צומת-אב שמציג רק אריחי ילדים (ליגות, יעדים) יכול להישאר בלי תגיות - האזהרה הכתומה בסדר שם."),
+          t("Save. To check an event, open it in [Events](/events) - \"קטגוריות (נגזר מהתגיות)\" lists its categories.", "שומרים. לבדיקת אירוע פותחים אותו ב[אירועים](/events) - \"קטגוריות (נגזר מהתגיות)\" מציג את הקטגוריות שלו."),
+        ],
+      },
+      {
+        title: t("Switch a category live or hide it", "העלאה לאוויר או הסתרה של קטגוריה"),
+        steps: [
+          t("\"פעיל באתר\" turns on both the homepage tile and the /c/ page - ticked by default on a new category, so untick it before \"Create Category\" if the page isn't ready.", "\"פעיל באתר\" מדליק גם את האריח בדף הבית וגם את עמוד ה-/c/ - מסומן כברירת מחדל בקטגוריה חדשה, אז מורידים לפני \"Create Category\" אם העמוד לא מוכן."),
+          t("To hide a live one: open it, untick \"פעיל באתר\", \"Save Changes\" (the Status column shows \"Active\" / \"Hidden\").", "להסתרת קטגוריה חיה: פותחים, מורידים את \"פעיל באתר\", \"Save Changes\" (עמודת Status מציגה \"Active\" / \"Hidden\")."),
+          t("Category saves don't refresh the site - click \"Revalidate live site\" at the top of the list to show the change now. A category can be deleted (trash) only after its sub-categories are moved or deleted.", "שמירת קטגוריה לא מרעננת את האתר - לוחצים \"Revalidate live site\" בראש הרשימה כדי להציג עכשיו. אפשר למחוק קטגוריה (פח) רק אחרי שמעבירים או מוחקים את תתי-הקטגוריות שלה."),
+        ],
+      },
+      {
+        title: t("Page content, images and featured events", "תוכן עמוד, תמונות ואירועים בולטים"),
+        steps: [
+          t("Open the category with its pencil. \"Banner image\": upload, paste a URL, or browse storage (folder icon). \"Card art - cut-out + blob (optional)\": \"Upload + cut out\" removes the background, then blob colour, background and zoom.", "פותחים בעיפרון. \"Banner image\": העלאה, URL, או דפדוף באחסון (אייקון התיקייה). \"Card art - cut-out + blob (optional)\": \"Upload + cut out\" מסיר רקע, ואז צבע בלוב, רקע וזום."),
+          t("Expand \"תוכן עמוד הקטגוריה\": \"פתיח על הקאבר\", \"כותרת הטקסט השיווקי\", \"טקסט שיווקי / SEO\", \"גלריית תמונות\", \"תמונות רקע לטייל (מתחלפות)\", stadiums, fact cards, FAQ - anything empty isn't shown. Team categories also have \"עמוד קבוצה\".", "פותחים את \"תוכן עמוד הקטגוריה\": \"פתיח על הקאבר\", \"כותרת הטקסט השיווקי\", \"טקסט שיווקי / SEO\", \"גלריית תמונות\", \"תמונות רקע לטייל (מתחלפות)\", אצטדיונים, כרטיסי מידע, שאלות נפוצות - מה שריק לא מוצג. לקטגוריות קבוצה יש גם \"עמוד קבוצה\"."),
+          t("Hand-picked events: \"אירועים בולטים וחבילות מומלצות (אוצרות ידנית)\" → search \"חיפוש אירוע להוספה…\" under \"בולטים\" (arrow order = site order); \"חבילות מומלצות\" works the same on the vertical pages. An empty list fills itself.", "אירועים בבחירה ידנית: \"אירועים בולטים וחבילות מומלצות (אוצרות ידנית)\" ← חיפוש ב\"חיפוש אירוע להוספה…\" תחת \"בולטים\" (סדר החצים = הסדר באתר); \"חבילות מומלצות\" עובד אותו דבר בעמודי הוורטיקל. רשימה ריקה מתמלאת לבד."),
+          t("\"Save Changes\", then \"Revalidate live site\".", "\"Save Changes\" ואז \"Revalidate live site\"."),
+        ],
+      },
+    ],
+    links: [
+      { label: t("Categories", "קטגוריות"), href: "/templates/categories" },
+      { label: t("New category", "קטגוריה חדשה"), href: "/templates/categories/new" },
+    ],
+  },
+  {
     id: "homepage",
+    nav: "/homepage",
+    howTo: [
+      {
+        title: t("Reorder or hide a section", "שינוי סדר או הסתרה של סקשן"),
+        steps: [
+          t("Open [Homepage](/homepage) - each box is one section of the site's homepage, in site order.", "פותחים את [עמוד הבית](/homepage) - כל קופסה היא סקשן אחד בדף הבית של האתר, לפי הסדר באתר."),
+          t("Drag a section by its header or use its up/down arrows (the hero is locked first). The eye toggle hides a section (\"hidden\" badge).", "גוררים סקשן מהכותרת או משתמשים בחצים (ההירו נעול ראשון). מתג העין מסתיר סקשן (תג \"hidden\")."),
+          t("Click \"Save homepage\" in the bottom bar (\"Discard\" throws away everything since the last save). Allow a minute, then check \"Open live site\".", "לוחצים \"Save homepage\" בסרגל התחתון (\"Discard\" מבטל הכול מאז השמירה האחרונה). מחכים דקה ובודקים ב-\"Open live site\"."),
+        ],
+      },
+      {
+        title: t("Pin items at the front of a carousel", "הצמדת פריטים לתחילת קרוסלה"),
+        steps: [
+          t("Dashed \"auto\" cards are what the site shows by itself right now. \"Pin\" on one, or the \"Add\" tile at the end of the strip to search an event, artist or team.", "כרטיסים מקווקווים עם \"auto\" הם מה שהאתר מציג לבד כרגע. \"Pin\" על אחד מהם, או אריח \"Add\" בסוף השורה לחיפוש אירוע, אמן או קבוצה."),
+          t("Drag pinned cards into order (or the arrows under each); hover and click × to unpin.", "מסדרים מוצמדים בגרירה (או בחצים שמתחת); ריחוף ו-× מבטל הצמדה."),
+          t("Most wanted: \"Remove\" on a dashed card drops the event's Prioritized flag at once (not part of Save). Newest: \"Remove\" takes it out of this row only - removed events wait as chips under the row, click to restore.", "המבוקשים: \"Remove\" על כרטיס מקווקו מוריד מיד את סימון ה-Prioritized (לא חלק מ-Save). החדשים: \"Remove\" מוציא רק מהשורה הזו - אירועים שהוסרו מחכים כצ'יפים מתחת, לחיצה מחזירה."),
+          t("Click \"Save homepage\".", "לוחצים \"Save homepage\"."),
+        ],
+      },
+      {
+        title: t("Add a block between sections", "הוספת בלוק בין סקשנים"),
+        steps: [
+          t("Click the thin \"+ Add block\" line where it should go, pick a type, and type a heading (or leave it empty).", "לוחצים על השורה הדקה \"+ Add block\" במקום הרצוי, בוחרים סוג ומקלידים כותרת (או משאירים ריק)."),
+          t("\"סליידר אירועים\": pin events with \"Add\" and/or pick a category under \"מילוי אוטומטי אחרי הפריטים המוצמדים\" (with neither, the block is not shown).", "\"סליידר אירועים\": מצמידים אירועים עם \"Add\" ו/או בוחרים קטגוריה תחת \"מילוי אוטומטי אחרי הפריטים המוצמדים\" (בלי אף אחד מהם הבלוק לא מוצג)."),
+          t("\"באנרים\": upload each \"Banner image\" (it must be uploaded here, not a pasted outside URL), optional \"קישור (לא חובה)\" (/c/... or https://...) and \"כותרת על התמונה (לא חובה)\"; \"באנר נוסף\" up to 3.", "\"באנרים\": מעלים כל \"Banner image\" (חייב לעלות כאן, לא URL חיצוני), \"קישור (לא חובה)\" (/c/... או https://...) ו\"כותרת על התמונה (לא חובה)\"; \"באנר נוסף\" עד 3."),
+          t("\"טקסט\": plain paragraphs with a blank line between - no HTML or links. \"סליידר יעדים\": \"+ קטגוריה\" and/or \"כל הילדים של: …\". \"גלריית תמונות\": up to 12 uploaded images (\"תמונה נוספת\"), each with an optional caption.", "\"טקסט\": פסקאות פשוטות עם שורה ריקה ביניהן - בלי HTML וקישורים. \"סליידר יעדים\": \"+ קטגוריה\" ו/או \"כל הילדים של: …\". \"גלריית תמונות\": עד 12 תמונות שמועלות כאן (\"תמונה נוספת\"), לכל אחת תיאור לא חובה."),
+          t("Click \"Save homepage\". To delete a block later: its trash icon, then save again.", "לוחצים \"Save homepage\". למחיקת בלוק בהמשך: הפח שלו ושמירה נוספת."),
+        ],
+      },
+      {
+        title: t("Rename a section", "שינוי כותרת של סקשן"),
+        steps: [
+          t("Click the pencil next to the section's title (the hero has no heading, so no pencil).", "לוחצים על העיפרון ליד כותרת הסקשן (להירו אין כותרת ולכן אין עיפרון)."),
+          t("Type the heading the site should show and press Enter - the section gets a \"renamed\" badge. Clear the field to bring back the default.", "מקלידים את הכותרת שהאתר יציג ולוחצים Enter - הסקשן מקבל תג \"renamed\". מרוקנים את השדה כדי להחזיר את ברירת המחדל."),
+          t("Click \"Save homepage\".", "לוחצים \"Save homepage\"."),
+        ],
+      },
+    ],
     title: t("Homepage layout", "עמוד הבית"),
     intro: t(
       "A dummy of the customer site's homepage. Sections are dragged into order or hidden; inside every carousel section you pin the items that open it. Whatever is not pinned follows the section's automatic rule after the pinned items.",
@@ -720,6 +1450,71 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "tasks",
+    nav: "/tasks",
+    howTo: [
+      {
+        title: t("Create a task and assign it", "ליצור משימה ולשבץ אותה"),
+        steps: [
+          t("Open [Tasks](/tasks) and click \"New task\".", "פותחים את [המשימות](/tasks) ולוחצים \"New task\"."),
+          t("Fill in \"Title\" (required) and, if useful, \"Description\", \"Priority\" and \"Due date\".", "ממלאים \"Title\" (חובה) ולפי הצורך \"Description\", \"Priority\" ו-\"Due date\"."),
+          t("Pick the \"Board\": פיתוח, שיווק, תפעול or תמחור. Dev adds a \"Phase\" field; Marketing adds \"Channel\" and \"Progress\".", "בוחרים \"Board\": פיתוח, שיווק, תפעול או תמחור. פיתוח מוסיף שדה \"Phase\"; שיווק מוסיף \"Channel\" ו-\"Progress\"."),
+          t("Choose a person in \"Assign to\" (admins) - they get an email. A task an editor creates is always assigned to them.", "בוחרים אדם ב-\"Assign to\" (מנהלים) - הוא מקבל מייל. משימה שעורך יוצר תמיד משובצת אליו."),
+          t("Click \"Create task\". The toast tells you whether the email to the assignee actually went out.", "לוחצים \"Create task\". ההודעה הקופצת אומרת אם המייל למשובץ באמת יצא."),
+          t("Shortcut: in [Roadmap](/tasks?tab=roadmap) or [Marketing](/tasks?tab=marketing), the + next to a phase or channel opens the form with that phase or channel already set.", "קיצור דרך: ב-[Roadmap](/tasks?tab=roadmap) או ב-[Marketing](/tasks?tab=marketing), ה-+ ליד שלב או ערוץ פותח את הטופס כשהשלב או הערוץ כבר מוגדרים."),
+        ],
+      },
+      {
+        title: t("Find your work and move it along", "למצוא את העבודה שלכם ולקדם אותה"),
+        steps: [
+          t("The pills above the tabs (\"הכל\", \"פיתוח\", \"שיווק\", \"תפעול\", \"תמחור\") narrow both the table and the Kanban to one board, e.g. [the Pricing board](/tasks?board=pricing).", "התגים מעל הלשוניות (\"הכל\", \"פיתוח\", \"שיווק\", \"תפעול\", \"תמחור\") מצמצמים גם את הטבלה וגם את הקאנבן ללוח אחד, למשל [לוח התמחור](/tasks?board=pricing)."),
+          t("\"המשימות שלי\" shows only tasks assigned to you. It is on by default for editors and off for admins.", "\"המשימות שלי\" מציג רק משימות שמשובצות אליכם. כברירת מחדל הוא דלוק לעורכים וכבוי למנהלים."),
+          t("Pick \"Open\", \"Done\" or \"All\", and use \"Search tasks...\" to find a task by its title.", "בוחרים \"Open\", \"Done\" או \"All\", ומחפשים משימה לפי כותרת ב-\"Search tasks...\"."),
+          t("Change the row's \"Status\": \"To do\", \"In progress\", \"Paused\", \"Done\", \"Cancelled\". Editors can change it only on their own tasks.", "משנים את ה-\"Status\" בשורה: \"To do\", \"In progress\", \"Paused\", \"Done\", \"Cancelled\". עורכים יכולים לשנות רק במשימות שלהם."),
+          t("A \"Do: …\" link under the title jumps to the exact control that fixes the problem. \"באתר\" opens the page on the site.", "קישור \"Do: …\" מתחת לכותרת קופץ לפקד המדויק שמתקן את הבעיה. \"באתר\" פותח את העמוד באתר."),
+          t("Prefer cards? In [Kanban](/tasks?tab=kanban), drag a card to another status column (on a phone, use the card's status menu). \"קיבוץ:\" groups the cards by \"פאזה\" or \"משובץ\".", "מעדיפים כרטיסים? ב-[Kanban](/tasks?tab=kanban) גוררים כרטיס לעמודת סטטוס אחרת (בטלפון - תפריט הסטטוס שבכרטיס). \"קיבוץ:\" מקבץ את הכרטיסים לפי \"פאזה\" או \"משובץ\"."),
+        ],
+      },
+      {
+        title: t("Discuss a task in its thread", "לדבר על משימה בפתיל שלה"),
+        steps: [
+          t("Click the task's row (or its speech-bubble button). The thread opens right under the row.", "לוחצים על שורת המשימה (או על כפתור בועת השיחה). הפתיל נפתח מיד מתחת לשורה."),
+          t("Write in \"הוסף תגובה\". Type @ and pick a name to mention a teammate - they get the comment by email.", "כותבים ב-\"הוסף תגובה\". מקלידים @ ובוחרים שם כדי לתייג עמית - הוא מקבל את התגובה במייל."),
+          t("To add a screenshot, paste it with Ctrl+V, drag an image in, or use the paperclip. It is shrunk automatically.", "כדי להוסיף צילום מסך, מדביקים עם Ctrl+V, גוררים תמונה פנימה או לוחצים על אטב הנייר. התמונה מוקטנת אוטומטית."),
+          t("Click \"שלח\" or press Ctrl+Enter. The creator, the assignee and everyone already in the thread get an email.", "לוחצים \"שלח\" או Ctrl+Enter. יוצר המשימה, המשובץ וכל מי שכבר בפתיל מקבלים מייל."),
+          t("A mint bubble with \"חדשה\" or \"N חדשות\" means comments you haven't read yet. Opening the thread clears it. Your own comment has a pencil (edit) and a bin (delete).", "בועה במנטה עם \"חדשה\" או \"N חדשות\" = תגובות שעוד לא קראתם. פתיחת הפתיל מנקה את הסימון. בתגובה שלכם יש עיפרון (עריכה) ופח (מחיקה)."),
+        ],
+      },
+      {
+        title: t("Split work between people, or change many tasks at once", "לחלק עבודה בין כמה אנשים, או לשנות הרבה משימות בבת אחת"),
+        steps: [
+          t("Open the general task: click its row, or open the dialog with the pencil (admins) or the eye icon.", "פותחים את המשימה הכללית: לוחצים על השורה, או פותחים את הדיאלוג בעיפרון (מנהלים) או באייקון העין."),
+          t("In \"תתי-משימות\", type the part in \"חלק חדש במשימה…\", pick its owner (admins) and click \"הוסף\". Each part becomes a task of its own, shown under the parent, which counts how many are done.", "ב-\"תתי-משימות\" מקלידים את החלק ב-\"חלק חדש במשימה…\", בוחרים אחראי (מנהלים) ולוחצים \"הוסף\". כל חלק הופך למשימה בפני עצמה, שמוצגת מתחת למשימת האב, שסופרת כמה הושלמו."),
+          t("Only an admin or the general task's owner or creator can split it, one level only.", "רק מנהל או האחראי/היוצר של המשימה הכללית יכולים לחלק אותה, ברמה אחת בלבד."),
+          t("Many tasks at once (admins): tick their rows in the Tasks tab - a bar appears with \"N selected\".", "הרבה משימות בבת אחת (מנהלים): מסמנים את השורות בלשונית Tasks - מופיע סרגל עם \"N selected\"."),
+          t("\"שייך ל…\" assigns them all, \"ללוח…\" moves them to another board and \"סטטוס…\" sets the status. The person receiving them gets ONE email. \"נקה בחירה\" clears the ticks.", "\"שייך ל…\" משבץ את כולן, \"ללוח…\" מעביר ללוח אחר ו-\"סטטוס…\" קובע סטטוס. מי שמקבל אותן מקבל מייל אחד. \"נקה בחירה\" מנקה את הסימון."),
+        ],
+      },
+      {
+        title: t("Clear the Pricing and Creative gaps queues", "לנקות את תורי התמחור והקריאייטיב"),
+        steps: [
+          t("Open [Pricing](/tasks?tab=pricing). It lists every red price light and frozen price change, and all staff can see it.", "פותחים את [Pricing](/tasks?tab=pricing). הלשונית מציגה כל רמזור אדום וכל שינוי מחיר קפוא, וכל הצוות רואה אותה."),
+          t("Narrow the list with \"מקור\", \"סקופ\" and the $ gap slider. \"רק בלי משימה\" is on by default - switch it off to see rows someone already took.", "מצמצמים עם \"מקור\", \"סקופ\" וסרגל הפער בדולרים. \"רק בלי משימה\" דלוק כברירת מחדל - מכבים אותו כדי לראות שורות שמישהו כבר לקח."),
+          t("\"לתקן\" jumps to the price field that fixes the row. \"באתר\" opens the event on the site. \"משימה\" opens a tracked task on the תמחור board.", "\"לתקן\" קופץ לשדה המחיר שמתקן את השורה. \"באתר\" פותח את האירוע באתר. \"משימה\" פותח משימה עוקבת בלוח תמחור."),
+          t("\"טופל\" means you dealt with the row without changing a price. A red light stays hidden until the nightly check and comes back if it is still red.", "\"טופל\" = טיפלתם בשורה בלי לשנות מחיר. רמזור אדום נשאר מוסתר עד הבדיקה הלילית וחוזר אם הוא עדיין אדום."),
+          t("For missing visuals, open [Creative gaps](/tasks?tab=gaps): \"Do\" goes to the fix, \"Create task\" hands the job to someone else, and \"Done\" means it is already on the site.", "לוויזואלים חסרים פותחים את [Creative gaps](/tasks?tab=gaps): \"Do\" מוביל לתיקון, \"Create task\" מעביר את העבודה למישהו אחר, ו-\"Done\" אומר שזה כבר באתר."),
+        ],
+      },
+      {
+        title: t("Set up a weekly recurring rule (admins)", "להגדיר כלל שבועי חוזר (מנהלים)"),
+        steps: [
+          t("Open [Task rules](/tasks?tab=rules) (admins - editors don't see this tab) and click \"כלל חדש\".", "פותחים את [Task rules](/tasks?tab=rules) (מנהלים - עורכים לא רואים את הלשונית) ולוחצים \"כלל חדש\"."),
+          t("Fill in \"שם הכלל\" and pick the \"תחום\": רמזור מחירים, שינויי מחיר, פערים ויזואליים or מותאם אישית.", "ממלאים \"שם הכלל\" ובוחרים \"תחום\": רמזור מחירים, שינויי מחיר, פערים ויזואליים או מותאם אישית."),
+          t("Pick the \"מצב\": \"סיכום שבועי אחד\" (one summary task) or \"משימה לכל פריט\" (one task per item, up to 25 per run), and set that domain's thresholds.", "בוחרים \"מצב\": \"סיכום שבועי אחד\" (משימת סיכום אחת) או \"משימה לכל פריט\" (משימה לכל פריט, עד 25 בריצה), וקובעים את הספים של התחום."),
+          t("Choose \"יום בשבוע\" (in UTC - the check runs every day at 06:00 UTC), \"משויך ל-\", \"עדיפות\" and \"יעד (board)\", then click \"שמירה\".", "בוחרים \"יום בשבוע\" (לפי UTC - הבדיקה רצה כל יום ב-06:00 UTC), \"משויך ל-\", \"עדיפות\" ו-\"יעד (board)\", ולוחצים \"שמירה\"."),
+          t("\"תצוגה מקדימה\" shows what the rule would create without writing anything. \"הרץ עכשיו\" runs it right away, and the \"פעיל\" switch pauses it.", "\"תצוגה מקדימה\" מראה מה הכלל היה יוצר בלי לכתוב כלום. \"הרץ עכשיו\" מריץ אותו מיד, ומתג \"פעיל\" משהה אותו."),
+        ],
+      },
+    ],
     title: t("Tasks", "משימות"),
     intro: t(
       "The team's shared work board. Everyone sees every task; admins can touch anything, an editor changes status and progress only on tasks assigned to them.",
@@ -751,8 +1546,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "כללים חוזרים (מנהלים, לשונית Task rules ב־/tasks) יוצרים משימות אוטומטית כל שבוע בלי שמישהו צריך לזכור לבדוק — כלל אחד יכול להטיל משימת סיכום שבועית אחת, או לפתוח משימה לכל פריט שהוא מוצא (למשל, אחת לכל אירוע שהרמזור שלו אדום יותר מדי זמן). לכל כלל יום בשבוע שבו הוא רץ, נקרא תמיד לפי UTC ולא לפי שעון ישראל — הבדיקה עצמה רצה כל בוקר ב־06:00 UTC וכל כלל פועל רק ביום שלו. כלל ״משימה לכל פריט״ פותח לכל היותר 25 משימות בריצה (השאר בריצה הבאה שלו), והמשובץ מקבל מייל סיכום אחד עם הרשימה ולא מייל לכל משימה.",
       ),
       t(
-        "The board also has a Kanban view (the Kanban tab) alongside the table - drag a card to change its status. The board lens above both (All / Dev / Marketing / Ops) narrows the table, its counts and the Kanban together to one board at a time.",
-        "ללוח יש גם תצוגת קאנבן (לשונית Kanban) לצד הטבלה — גוררים כרטיס כדי לשנות סטטוס. עדשת הלוח מעל שתיהן (הכול / Dev / Marketing / Ops) מצמצמת יחד את הטבלה, הספירות והקאנבן ללוח אחד בכל פעם.",
+        "The board also has a Kanban view (the Kanban tab) alongside the table - drag a card to change its status. The board pills above both (הכל / פיתוח / שיווק / תפעול / תמחור) narrow the table, its counts and the Kanban together to one board at a time.",
+        "ללוח יש גם תצוגת קאנבן (לשונית Kanban) לצד הטבלה — גוררים כרטיס כדי לשנות סטטוס. תגי הלוח מעל שתיהן (הכל / פיתוח / שיווק / תפעול / תמחור) מצמצמים יחד את הטבלה, הספירות והקאנבן ללוח אחד בכל פעם.",
       ),
       t(
         "Four boards since 28.09: Dev, Marketing, Ops and Pricing. Every task the price light or the price-changes screen opens lands on Pricing (it used to fill Ops - 32 of its 37 open tasks were price lights), and so do the weekly price rules. Admins can tick several rows in the table and, from the bar that appears, assign them to one person, move them to another board or set their status in one go - the person receiving them gets ONE email listing them all. A general task can be split into sub-tasks, one per person: open the task (row or dialog), add a part with its owner under the sub-tasks panel, and each part becomes a task of its own (its own status, thread and email) shown right under its parent, which counts x/y done. One level only; an admin or the general task's owner splits it.",
@@ -763,7 +1558,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "לשונית Roadmap היא מפת הדרכים של המוצר שהייתה פעם אפליקציה נפרדת: כל משימות לוח הפיתוח מסודרות לפי השלב שלהן (1-7), עם הושלם/סה״כ ופס התקדמות לכל שלב. לשונית Marketing עושה אותו דבר ללוח השיווק לפי ערוץ, עם ההתקדמות של כל קמפיין. לחיצה על כרטיס פותחת את המשימה; ה־+ ליד שלב או ערוץ יוצר משימה שכבר משובצת שם. שתיהן מציגות את כל הצוות - מסננים לפי שם או מחפשים בתוך הלשונית.",
       ),
       t(
-        "The Pricing tab (visible to everyone, not just admins) lists every open pricing problem - red price lights and frozen price-change rows - in one place. The gap slider narrows the list to a range, both ends (say $0-$150 to see only the small gaps), and every row links to the event's page on the site. Each row has three buttons: Task opens a tracked task for it, Fix jumps straight to the field that actually fixes it, and Handled records that you dealt with it without touching a price - a price light stays hidden until the next nightly check (and comes back if it is still red), a frozen price row is marked reviewed with the note 'סומן כטופל' in front of the sync's original note. That mark is final - nothing reopens it. Only a price-change row closed through its TASK can come back: reopening that task restores the row and its original note.",
+        "The Pricing tab (visible to everyone, not just admins) lists every open pricing problem - red price lights and frozen price-change rows - in one place. The gap slider narrows the list to a range, both ends (say $0-$150 to see only the small gaps), and every row links to the event's page on the site. Each row has three buttons: \"משימה\" opens a tracked task for it, \"לתקן\" jumps straight to the field that actually fixes it, and \"טופל\" records that you dealt with it without touching a price - a price light stays hidden until the next nightly check (and comes back if it is still red), a frozen price row is marked reviewed with the note 'סומן כטופל' in front of the sync's original note. That mark is final - nothing reopens it. Only a price-change row closed through its TASK can come back: reopening that task restores the row and its original note.",
         "לשונית התמחור (גלויה לכולם, לא רק למנהלים) מרכזת כל בעיית תמחור פתוחה — רמזורים אדומים ושורות שינוי מחיר קפואות — במקום אחד. סרגל הפער מצמצם את הרשימה לטווח, משני הקצוות (למשל $0-$150 כדי לראות רק את הפערים הקטנים), ולכל שורה יש קישור לעמוד האירוע באתר. לכל שורה שלושה כפתורים: משימה פותחת משימה עוקבת, לתקן קופץ ישר לשדה שבאמת מתקן את זה, וטופל מתעד שטיפלתם בלי לגעת במחיר — רמזור נשאר מוסתר עד הבדיקה הלילית הבאה (וחוזר אם הוא עדיין אדום), ושורת מחיר קפואה מסומנת כנבדקה עם 'סומן כטופל' לפני ההערה המקורית של הסנכרון. הסימון הזה סופי — שום דבר לא פותח אותו מחדש. רק שורת שינוי מחיר שנסגרה דרך המשימה שלה יכולה לחזור: פתיחה מחדש של אותה משימה משחזרת את השורה ואת ההערה המקורית.",
       ),
     ],
@@ -778,6 +1573,54 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "partners",
+    nav: "/partners",
+    howTo: [
+      {
+        title: t("Create a partner (admins)", "יצירת שותף (מנהלים)"),
+        steps: [
+          t("Open [Partners](/partners) and click \"Add Partner\" (admins).", "פותחים את [השותפים](/partners) ולוחצים \"Add Partner\" (מנהלים)."),
+          t("Fill \"Tracking Code\" - it goes into every link and coupon and can't be changed later.", "ממלאים \"Tracking Code\" - הקוד נכנס לכל קישור וקופון ואי אפשר לשנות אותו אחר כך."),
+          t("\"Partner Type\": סוכן (books for customers, is invoiced) or משפיען (brings traffic with a code) - also their portal role.", "\"Partner Type\": סוכן (מזמין עבור לקוחות ומקבל חשבונית) או משפיען (מביא תנועה עם קוד) - זה גם התפקיד שלו בפורטל."),
+          t("\"Partner Name\", \"Email\" (the portal login, gets the monthly report) and \"Password\" (8+ characters, not shown again - pass it on now).", "\"Partner Name\", \"Email\" (שם המשתמש לפורטל, מקבל את הדוח החודשי) ו-\"Password\" (8+ תווים, לא מוצג שוב - מעבירים עכשיו)."),
+          t("Set \"Commercial terms\" (next recipe), attach the agreement under \"Cooperation agreement\", then \"Save Partner\" → \"Create Partner\" - the partner and their portal login are created together.", "מגדירים \"Commercial terms\" (המתכון הבא), מצרפים הסכם ב-\"Cooperation agreement\", ואז \"Save Partner\" ← \"Create Partner\" - השותף והכניסה שלו לפורטל נוצרים יחד."),
+        ],
+      },
+      {
+        title: t("Change commission, follower discount or terms (admins)", "שינוי עמלה, הנחת עוקבים או תנאים (מנהלים)"),
+        steps: [
+          t("In [Partners](/partners), the \"Partners list\" tab → the row's ⋯ → \"Edit\" (admins).", "ב[שותפים](/partners), לשונית \"Partners list\" ← ⋯ בשורה ← \"Edit\" (מנהלים)."),
+          t("\"Commission Basis\": \"דולר לכרטיס\" ($ per ticket) or \"אחוז ממחיר החבילה\" (% of the package). Only paid reservations earn commission.", "\"Commission Basis\": \"דולר לכרטיס\" (דולרים לכרטיס) או \"אחוז ממחיר החבילה\" (אחוז מהחבילה). רק הזמנות ששולמו מקבלות עמלה."),
+          t("\"Follower Discount ($)\" is what the partner's customers get off. Careful: 1-10 counts as a PERCENT of the order, above 10 as dollars per person.", "\"Follower Discount ($)\" היא ההנחה ללקוחות של השותף. שימו לב: 1-10 נחשב אחוז מההזמנה, מעל 10 - דולרים לאדם."),
+          t("If they apply: \"Site Credit ($ per ticket)\" (0 = not in the deal), \"Coupon Cap\" (empty = the commission rate), \"Voucher Payment\" (agents). Starting fresh on a code with old bookings? \"Portal History From\" hides earlier bookings in the portal only.", "אם רלוונטי: \"Site Credit ($ per ticket)\" (0 = לא בהסכם), \"Coupon Cap\" (ריק = שיעור העמלה), \"Voucher Payment\" (סוכנים). מתחיל מחדש על קוד עם הזמנות ישנות? \"Portal History From\" מסתיר הזמנות קודמות בפורטל בלבד."),
+          t("To pause a partner switch \"Status\" off (no portal, no monthly report) - better than Delete, which is permanent. \"Save Partner\" → \"Save Changes\"; new rates apply to new bookings only.", "להשהיית שותף מכבים את \"Status\" (בלי פורטל, בלי דוח חודשי) - עדיף על Delete, שהוא סופי. \"Save Partner\" ← \"Save Changes\"; תעריפים חדשים חלים רק על הזמנות חדשות."),
+        ],
+      },
+      {
+        title: t("Give an influencer their coupon (admins)", "קופון למשפיען (מנהלים)"),
+        steps: [
+          t("Open the existing influencer's editor (\"Partners list\" → ⋯ → \"Edit\") - the coupon box doesn't appear while creating one.", "פותחים את העורך של משפיען קיים (\"Partners list\" ← ⋯ ← \"Edit\") - תיבת הקופון לא מופיעה בזמן היצירה."),
+          t("Make sure \"Follower Discount ($)\" is filled - the coupon is built from it.", "מוודאים ש-\"Follower Discount ($)\" מלא - הקופון נבנה ממנו."),
+          t("In \"Influencer coupon\" click \"Create coupon\": code = tracking code + value (AVIRAN30). Copy it with the copy icon.", "ב-\"Influencer coupon\" לוחצים \"Create coupon\": הקוד = קוד מעקב + ערך (AVIRAN30). מעתיקים עם אייקון ההעתקה."),
+          t("Saving a new follower discount renames the coupon (AVIRAN30 → AVIRAN25) and the old code stops working; \"Re-sync\" re-applies the current terms. Orders with the code count as the influencer's.", "שמירת הנחת עוקבים חדשה משנה את שם הקופון (AVIRAN30 ← AVIRAN25) והקוד הישן מפסיק לעבוד; \"Re-sync\" מחיל מחדש את התנאים. הזמנות עם הקוד נספרות למשפיען."),
+        ],
+      },
+      {
+        title: t("Check a partner's performance", "בדיקת הביצועים של שותף"),
+        steps: [
+          t("\"Insights\" compares all partners. For one partner, \"Partners list\" → click the name (or ⋯ → \"View performance\").", "\"Insights\" משווה בין כל השותפים. לשותף אחד: \"Partners list\" ← לחיצה על השם (או ⋯ ← \"View performance\")."),
+          t("Pick \"Period:\" - the cards show commission earned and pending, paid reservations, sales, conversion and average order.", "בוחרים \"Period:\" - הכרטיסים מציגים עמלה שנצברה וממתינה, הזמנות ששולמו, מכירות, המרה וממוצע הזמנה."),
+          t("\"Pending commission\" lists paid bookings not yet in a monthly report. If a report went out by hand, tick those rows → \"Mark as reported\".", "\"Pending commission\" מציג הזמנות ששולמו ועוד לא בדוח חודשי. אם דוח נשלח ידנית, מסמנים את השורות ← \"Mark as reported\"."),
+        ],
+      },
+      {
+        title: t("See the portal as the partner, get their tracking link", "כניסה לפורטל בתור השותף וקבלת קישור המעקב"),
+        steps: [
+          t("Superadmin: \"Partners list\" → ⋯ → \"Login as agent\" / \"Login as affiliate\" opens the portal as them in a new tab (your login is unaffected).", "סופר-אדמין: \"Partners list\" ← ⋯ ← \"Login as agent\" / \"Login as affiliate\" פותח את הפורטל בתור השותף בלשונית חדשה (ההתחברות שלכם לא מושפעת)."),
+          t("If your user is linked to a partner: your name at the bottom of the sidebar → \"מצב סוכן\" opens [the portal](/portal) as that partner.", "אם המשתמש שלכם מקושר לשותף: השם שלכם בתחתית הסיידבר ← \"מצב סוכן\" פותח את [הפורטל](/portal) בתור אותו שותף."),
+          t("In the portal, \"הלינקים שלי\" shows \"הלינק הכללי שלכם\" and builds links for an event or any site page. By hand: add ?utm_source=<tracking code>&utm_medium=influencer to a site address.", "בפורטל, \"הלינקים שלי\" מציג את \"הלינק הכללי שלכם\" ובונה קישורים לאירוע או לכל עמוד באתר. ידנית: מוסיפים ?utm_source=<קוד מעקב>&utm_medium=influencer לכתובת באתר."),
+        ],
+      },
+    ],
     title: t("Partners & the portal", "שותפים והפורטל"),
     intro: t(
       "Agents and affiliates sell through tracking links and get commissions. They have their own self-service portal, completely separated from this dashboard.",
@@ -811,7 +1654,126 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    id: "meta-feed",
+    nav: "/meta-feed",
+    title: t("Meta product feed", "פיד המוצרים למטא"),
+    intro: t(
+      "The state of the file Meta reads. The feed is built live from the catalog; publishing copies it into the fixed file registered in Meta Commerce Manager, and Meta fetches that file by itself every hour.",
+      "מצב הקובץ שמטא קוראת. הפיד נבנה חי מהקטלוג; פרסום מעתיק אותו לקובץ הקבוע שרשום ב-Commerce Manager של מטא, ומטא מושכת את הקובץ בעצמה כל שעה.",
+    ),
+    howTo: [
+      {
+        title: t("Read the screen", "קריאת המסך"),
+        steps: [
+          t("Open [Meta Product Feed](/meta-feed). \"בריאות הסנכרונים\" shows when each sync last wrote data - a red badge is late, a red banner counts the late ones. All red = the scheduled syncs stopped: tell a developer and use \"סנכרן הכל (כל ה־API)\" meanwhile.", "פותחים את [פיד המוצרים למטא](/meta-feed). \"בריאות הסנכרונים\" מראה מתי כל סנכרון כתב נתונים לאחרונה - תג אדום = באיחור, באנר אדום סופר כמה. הכול אדום = הסנכרונים המתוזמנים הפסיקו: מעדכנים מפתח ובינתיים \"סנכרן הכל (כל ה־API)\"."),
+          t("\"קריאטיבים: X מתוך Y\" = how many future events already have an ad creative.", "\"קריאטיבים: X מתוך Y\" = לכמה אירועים עתידיים כבר יש קריאייטיב."),
+          t("Under \"סטטוס הקבצים\", only \"Meta - Activities (הפיד הפעיל)\" with \"פעיל במטא\" is the file Meta reads; the E-commerce files are for Google Merchant. Each shows age, size and public URL.", "תחת \"סטטוס הקבצים\", רק \"Meta - Activities (הפיד הפעיל)\" עם \"פעיל במטא\" הוא הקובץ שמטא קוראת; קבצי ה-E-commerce הם ל-Google Merchant. לכל אחד גיל, גודל וכתובת ציבורית."),
+        ],
+      },
+      {
+        title: t("Publish the feed now, or run every sync by hand", "פרסום הפיד עכשיו, או הרצת כל הסנכרונים ידנית"),
+        steps: [
+          t("After editing events, click \"סנכרן פיד עכשיו\" - \"הפיד סונכרן\" says how many events went into the file. It only republishes the file (no prices, providers or creatives); Meta picks it up within the hour.", "אחרי עריכת אירועים לוחצים \"סנכרן פיד עכשיו\" - \"הפיד סונכרן\" אומר כמה אירועים נכנסו לקובץ. זה רק מפרסם מחדש (בלי מחירים, ספקים או קריאייטיבים); מטא מושכת תוך שעה."),
+          t("When the health badges are red: \"סנכרן הכל (כל ה־API)\" runs seven steps in order (XS2Event, LIVE, TixStock events, TixStock prices, ticket prices, feed creatives, publish), each with ✓ / ✗ - keep the tab open; it can take many minutes.", "כשתגי הבריאות אדומים: \"סנכרן הכל (כל ה־API)\" מריץ שבעה שלבים לפי הסדר (XS2Event, LIVE, אירועי TixStock, מחירי TixStock, מחירי כרטיסים, קריאייטיבים, פרסום), כל אחד עם ✓ / ✗ - משאירים את הלשונית פתוחה; זה יכול לקחת הרבה דקות."),
+          t("It ends with \"כל הסנכרונים הושלמו\" or \"הסנכרון הסתיים עם N כשלים\" - a failed step's ✗ line shows the error.", "בסוף: \"כל הסנכרונים הושלמו\" או \"הסנכרון הסתיים עם N כשלים\" - שורת ה-✗ של שלב שנכשל מציגה את השגיאה."),
+        ],
+      },
+      {
+        title: t("Find out why an event is missing from Meta", "בדיקה למה אירוע לא מופיע במטא"),
+        steps: [
+          t("Open the event from [Events](/events), save, and click \"העלה לפיד עכשיו\" - it makes the creative if needed and republishes.", "פותחים את האירוע מ[אירועים](/events), שומרים ולוחצים \"העלה לפיד עכשיו\" - מייצר קריאייטיב אם צריך ומפרסם מחדש."),
+          t("\"האירוע בפיד\" = in the file, Meta shows it after its next hourly read. \"האירוע לא נכנס לפיד\" lists why: deleted, test event, under 3 days away, sold out, or no creative (almost always = no price to calculate).", "\"האירוע בפיד\" = בקובץ, מטא תציג אחרי הקריאה השעתית הבאה. \"האירוע לא נכנס לפיד\" מפרט למה: נמחק, אירוע בדיקה, פחות מ-3 ימים, אזל, או אין קריאייטיב (כמעט תמיד = אין מחיר לחשב)."),
+          t("Fix the reason (usually the price fields or ticket availability), save and click again. No reason found? Ask a developer to check the main site's /product-feed.", "מתקנים את הסיבה (לרוב שדות המחיר או זמינות כרטיסים), שומרים ולוחצים שוב. לא נמצאה סיבה? מבקשים ממפתח לבדוק את /product-feed באתר הראשי."),
+        ],
+      },
+    ],
+    links: [{ label: t("Meta product feed", "פיד מטא"), href: "/meta-feed" }],
+  },
+  {
+    id: "coupons",
+    nav: "/coupons",
+    title: t("Coupons", "קופונים"),
+    intro: t(
+      "Discount codes customers type on the order summary. The bigger discount wins - a coupon never adds on top of a partner's follower discount. Codes are saved in capitals and match whatever case the customer types.",
+      "קודי הנחה שלקוחות מקלידים בסיכום ההזמנה. ההנחה הגדולה מנצחת - קופון אף פעם לא מתווסף להנחת העוקבים של שותף. הקודים נשמרים באותיות גדולות ומזוהים בלי קשר לאותיות שהלקוח מקליד.",
+    ),
+    howTo: [
+      {
+        title: t("Create a coupon", "יצירת קופון"),
+        steps: [
+          t("Open [Coupons](/coupons) and click \"Add Coupon\".", "פותחים את [הקופונים](/coupons) ולוחצים \"Add Coupon\"."),
+          t("\"Code\": letters, numbers, dashes or underscores, up to 64, unique. Pick \"Type\" (\"Percent (%)\" or \"Fixed ($)\") and \"Value\" (a percent can't pass 100).", "\"Code\": אותיות, מספרים, מקף או קו תחתון, עד 64, ייחודי. בוחרים \"Type\" (\"Percent (%)\" או \"Fixed ($)\") ו-\"Value\" (אחוז לא עובר 100)."),
+          t("\"Event restriction\": \"All events\" or one event. To credit the sales to a partner, pick them in \"Attribute to affiliate\" (not when the order already came through its own affiliate).", "\"Event restriction\": \"All events\" או אירוע אחד. לזקיפת המכירות לשותף בוחרים אותו ב-\"Attribute to affiliate\" (לא חל כשההזמנה כבר הגיעה דרך שותף משלה)."),
+          t("Keep \"Active\" on and click \"Create Coupon\" - it works on the site right away.", "משאירים \"Active\" דלוק ולוחצים \"Create Coupon\" - עובד באתר מיד."),
+        ],
+      },
+      {
+        title: t("Per person or per order", "לאדם או להזמנה"),
+        steps: [
+          t("Only a \"Fixed ($)\" coupon has the \"Per person\" switch.", "רק לקופון \"Fixed ($)\" יש את המתג \"Per person\"."),
+          t("On: the amount comes off every ticket, like the follower discount ($50 × 4 travellers = $200). Off: once per order.", "דלוק: הסכום יורד מכל כרטיס, כמו הנחת העוקבים (50$ × 4 נוסעים = 200$). כבוי: פעם אחת להזמנה."),
+          t("A \"Percent (%)\" coupon always applies to the whole order. \"/ person\" next to the discount in the table marks a per-person coupon.", "קופון \"Percent (%)\" תמיד חל על כל ההזמנה. \"/ person\" ליד ההנחה בטבלה מסמן קופון לאדם."),
+        ],
+      },
+      {
+        title: t("Limit, pause or remove a coupon", "הגבלה, השהיה או מחיקה של קופון"),
+        steps: [
+          t("The pencil on the row: \"Valid until\" (empty = \"No expiry\"), \"Max uses\" (empty = unlimited; \"Uses\" shows used / max, \"Paid\" how many were paid), \"Event restriction\" → \"Save Changes\".", "העיפרון בשורה: \"Valid until\" (ריק = \"No expiry\"), \"Max uses\" (ריק = ללא הגבלה; \"Uses\" מציג שימושים / מקסימום, \"Paid\" כמה שולמו), \"Event restriction\" ← \"Save Changes\"."),
+          t("To stop a coupon, switch off \"Active\" - immediate, and it can go back on any time.", "כדי לעצור קופון מכבים את \"Active\" - מיד, ואפשר להדליק שוב מתי שרוצים."),
+          t("The trash icon deletes it for good, usage counts included (past orders keep their discount). Switching off is almost always better.", "הפח מוחק לצמיתות, כולל ספירת השימושים (הזמנות קודמות שומרות את ההנחה). כמעט תמיד עדיף לכבות."),
+          t("Rows marked \"influencer\" belong to a partner - change them in the partner editor in [Partners](/partners) (admins); saving that partner switches the coupon back on.", "שורות עם \"influencer\" שייכות לשותף - משנים אותן בעורך השותף ב[שותפים](/partners) (מנהלים); שמירת השותף מדליקה את הקופון מחדש."),
+        ],
+      },
+    ],
+    links: [{ label: t("Coupons", "קופונים"), href: "/coupons" }],
+  },
+  {
     id: "forms",
+    nav: "/forms",
+    howTo: [
+      {
+        title: t("Build a new form", "בניית טופס חדש"),
+        steps: [
+          t("Open [Forms](/forms) and click \"New form\" - an empty draft opens in the builder.", "פותחים את [הטפסים](/forms) ולוחצים \"New form\" - טיוטה ריקה נפתחת בבונה."),
+          t("\"Form language\": \"English only\", \"עברית בלבד\" or \"Both - client can switch\" (then \"Opens in\"). Text boxes get EN / עב tabs; one language is enough.", "\"Form language\": \"English only\", \"עברית בלבד\" או \"Both - client can switch\" (ואז \"Opens in\"). לתיבות הטקסט יש לשוניות EN / עב; מספיקה שפה אחת."),
+          t("Fill \"Form title\" (\"Description\" and \"Thank-you message\" are optional). \"Add question\" → pick a type (Short text, Number, Yes / No, Star rating…), write it, mark \"Required\" if needed; choice questions need options.", "ממלאים \"Form title\" (\"Description\" ו-\"Thank-you message\" לא חובה). \"Add question\" ← בוחרים סוג (Short text, Number, Yes / No, Star rating…), כותבים, מסמנים \"Required\" לפי הצורך; לשאלות בחירה מוסיפים אפשרויות."),
+          t("Arrows reorder questions. \"Show only if\" shows a question after a given Yes/No answer - save first, a just-added question can't be a condition yet.", "החצים מסדרים שאלות. \"Show only if\" מציג שאלה אחרי תשובה מסוימת בשאלת Yes/No - שומרים קודם, שאלה שרק נוספה עוד לא יכולה להיות תנאי."),
+          t("Style it under \"Design\" (theme, \"Accent colour\", \"Logo\", \"Cover image\"), check the \"Preview\", and click \"Save\" (\"• unsaved changes\" shows until you do).", "מעצבים תחת \"Design\" (ערכת צבע, \"Accent colour\", \"Logo\", \"Cover image\"), בודקים את ה-\"Preview\" ולוחצים \"Save\" (\"• unsaved changes\" מופיע עד אז)."),
+        ],
+      },
+      {
+        title: t("Trip details, traveller count, Google review", "פרטי טיול, מספר נוסעים, ביקורת גוגל"),
+        steps: [
+          t("Details filled once per trip (escort, departure date): add a question and switch on \"Staff field\" - clients never see it.", "פרטים שממלאים פעם אחת לטיול (מלווה, תאריך יציאה): מוסיפים שאלה ומדליקים \"Staff field\" - הלקוחות לא רואים אותה."),
+          t("Group size: a \"Number\" question with \"Travellers count\" on - the trips report adds it up (one per form).", "גודל הקבוצה: שאלת \"Number\" עם \"Travellers count\" דלוק - דוח הטיולים מסכם אותה (אחת לטופס)."),
+          t("Google review prompt: \"Review link (optional)\" (or a Google button) and \"Min. average\", then mark the star questions that count with \"Google score\". Save.", "הפניה לביקורת בגוגל: \"Review link (optional)\" (או אחד מכפתורי Google) ו-\"Min. average\", ואז מסמנים \"Google score\" על שאלות הכוכבים שנספרות. שומרים."),
+        ],
+      },
+      {
+        title: t("Go live and share the link", "העלאה לאוויר ושיתוף הקישור"),
+        steps: [
+          t("Save, then change the status at the top from \"Draft\" to \"Live\" - it saves by itself and confirms the public link works. \"Closed\" stops new answers.", "שומרים, ואז מחליפים את הסטטוס למעלה מ-\"Draft\" ל-\"Live\" - נשמר לבד ומאשר שהקישור הציבורי עובד. \"Closed\" עוצר תשובות חדשות."),
+          t("\"Copy link\" copies the shared /f/ link (Live only); \"Open\" shows the client's page; the slug is under \"Public link\".", "\"Copy link\" מעתיק את קישור ה-/f/ המשותף (רק כש-Live); \"Open\" מציג את עמוד הלקוח; הכתובת תחת \"Public link\"."),
+          t("For an external forms operator, switch on \"Visible to forms operators (trip links, responses, report)\" and save. \"Duplicate\" in the row menu in [Forms](/forms) copies the form as a new draft.", "למפעיל טפסים חיצוני מדליקים \"Visible to forms operators (trip links, responses, report)\" ושומרים. \"Duplicate\" בתפריט השורה ב[טפסים](/forms) מעתיק את הטופס כטיוטה חדשה."),
+        ],
+      },
+      {
+        title: t("Create a trip link or send personal invites", "יצירת קישור טיול או שליחת הזמנות אישיות"),
+        steps: [
+          t("Click \"Send\" in the builder (or \"Send / invites\" in the row menu) - the form must be Live.", "לוחצים \"Send\" בבונה (או \"Send / invites\" בתפריט השורה) - הטופס חייב להיות Live."),
+          t("\"Trip link\" (only if the form has a \"Staff field\"): \"Trip code\" (letters + number, e.g. BBC 124), optional \"Travellers on the trip\", the staff answers → \"Create trip link & copy\". One link for the whole group; every answer carries the trip details.", "\"Trip link\" (רק אם יש בטופס \"Staff field\"): \"Trip code\" (אותיות + מספר, למשל BBC 124), אם רוצים \"Travellers on the trip\", תשובות הצוות ← \"Create trip link & copy\". קישור אחד לכל הקבוצה; כל תשובה נושאת את פרטי הטיול."),
+          t("Personal emailed links (staff only): paste \"Name, email@example.com\" one per line, pick \"Email language\" → \"Send … invites\". The table tracks \"Sent\" / \"Opened\" / \"Filled\" / \"Failed\"; the link icon copies, the circular arrow resends.", "קישורים אישיים במייל (צוות בלבד): מדביקים \"Name, email@example.com\" שורה לכל נמען, בוחרים \"Email language\" ← \"Send … invites\". הטבלה עוקבת \"Sent\" / \"Opened\" / \"Filled\" / \"Failed\"; אייקון הקישור מעתיק, החץ העגול שולח שוב."),
+        ],
+      },
+      {
+        title: t("Read the report and fix an answer", "קריאת הדוח ותיקון תשובה"),
+        steps: [
+          t("\"Trips report\" in the builder or row menu (or click the response count in [Forms](/forms)). Filter by \"Code letters\", \"Code number\", \"Escort\", \"Departure from\" or \"Year\".", "\"Trips report\" בבונה או בתפריט השורה (או לחיצה על מספר התשובות ב[טפסים](/forms)). מסננים לפי \"Code letters\", \"Code number\", \"Escort\", \"Departure from\" או \"Year\"."),
+          t("Click a trip for its per-question averages and responses; click the trip's travellers number to set the trip size.", "לחיצה על טיול מציגה ממוצע לכל שאלה ואת התשובות; לחיצה על מספר הנוסעים של הטיול קובעת את גודל הטיול."),
+          t("Click a response for all its answers. \"עריכה\" → fix → \"שמור\" corrects text, number, email, phone and date answers only - ratings and choices stay as the client gave them.", "לחיצה על תשובה מציגה את כל התשובות שבה. \"עריכה\" ← מתקנים ← \"שמור\" מתקן רק טקסט, מספר, מייל, טלפון ותאריך - דירוגים ובחירות נשארים כמו שהלקוח ענה."),
+        ],
+      },
+    ],
     title: t("Forms", "טפסים"),
     intro: t(
       "Google-Forms-style bilingual questionnaires: build in the dashboard, send invite links, clients answer on a public page.",
@@ -830,73 +1792,289 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     links: [{ label: t("Forms", "טפסים"), href: "/forms" }],
   },
   {
-    id: "website",
-    title: t("Website content & assets", "תוכן ונכסי האתר"),
+    id: "assets",
+    nav: "/assets",
+    title: t("Assets - the crest library", "Assets - ספריית הסמלים"),
     intro: t(
-      "Everything the site shows besides events: team and artist pages, category tiles, blog, and the shared media library.",
-      "כל מה שהאתר מציג חוץ מאירועים: עמודי קבוצות ואמנים, אריחי קטגוריות, בלוג, וספריית המדיה המשותפת.",
+      "The football crest library. The site, the team pages and the creative generator all take a team's crest from here, matched by the team's English name.",
+      "ספריית סמלי הכדורגל. האתר, עמודי הקבוצות ומחולל הקריאייטיב לוקחים מכאן את הסמל של קבוצה, לפי השם שלה באנגלית.",
     ),
-    points: [
-      t(
-        "Templates - artists, football teams, categories and blog posts share one editing pattern: hero image, atmosphere gallery, page content. Missing visuals show up in the gaps radar automatically.",
-        "תבניות — אמנים, קבוצות כדורגל, קטגוריות ופוסטים חולקים דפוס עריכה אחד: תמונה ראשית, גלריית אווירה, תוכן עמוד. חוסרים ויזואליים מופיעים ברדאר אוטומטית.",
-      ),
-      t(
-        "Assets - the football crest library used by creatives and team pages. Gap links arrive here with the team name pre-searched; one upload closes the gap.",
-        "Assets — ספריית סמלי הכדורגל שמשמשת קריאייטיבים ועמודי קבוצות. קישורי חוסרים מגיעים לכאן עם שם הקבוצה כבר בחיפוש; העלאה אחת סוגרת את החוסר.",
-      ),
-      t(
-        "Locations - cities with coordinates and IATA codes. This table powers automatic IATA resolution everywhere (wizard, factory, tours) - keep it growing.",
-        "לוקיישנים — ערים עם קואורדינטות וקודי IATA. הטבלה הזו מפעילה את פתרון ה־IATA האוטומטי בכל מקום (וויזרד, מפעל, סיבובים) — כדאי להמשיך להרחיב אותה.",
-      ),
-      t(
-        "Storage - a raw browser over the media buckets when you need a file URL directly.",
-        "Storage — דפדפן ישיר על דליי המדיה כשצריך URL של קובץ.",
-      ),
+    howTo: [
+      {
+        title: t("Upload a team crest", "העלאת סמל קבוצה"),
+        steps: [
+          t("Open [Assets](/assets) and search for the team first - its crest may already be there.", "פותחים את [Assets](/assets) ומחפשים קודם את הקבוצה - ייתכן שהסמל כבר קיים."),
+          t("In \"העלאת לוגו חדש\" pick the file under \"Logo file (PNG/SVG/WebP, max 2MB)\" - a transparent, tightly cropped PNG works best.", "ב\"העלאת לוגו חדש\" בוחרים קובץ תחת \"Logo file (PNG/SVG/WebP, max 2MB)\" - הכי טוב PNG שקוף וחתוך צמוד."),
+          t("\"Name (English)\" exactly as the team is written on the events (Real Madrid); the Hebrew name in \"שם (עברית, אופציונלי)\" lets a Hebrew search find it.", "\"Name (English)\" בדיוק כמו שהקבוצה כתובה באירועים (Real Madrid); השם בעברית ב\"שם (עברית, אופציונלי)\" מאפשר חיפוש בעברית."),
+          t("Click \"Upload logo\" - \"Logo added\" = live, and the site refreshes by itself. A red \"הלוגו לא הועלה\" says what to fix (size, file type, or that English name already exists); \"באג בצד השרת\" = tell the developer.", "לוחצים \"Upload logo\" - \"Logo added\" = באוויר, והאתר מתרענן לבד. \"הלוגו לא הועלה\" באדום אומר מה לתקן (גודל, סוג קובץ, או שהשם באנגלית כבר קיים); \"באג בצד השרת\" = מעדכנים את המפתח."),
+        ],
+      },
+      {
+        title: t("Find a crest, or close a missing-crest gap", "חיפוש סמל, או סגירת חוסר סמל"),
+        steps: [
+          t("Type part of the name in \"חפש לוגו (עברית או אנגלית)...\" - both names are searched.", "מקלידים חלק מהשם ב\"חפש לוגו (עברית או אנגלית)...\" - החיפוש עובר על שני השמות."),
+          t("From [Creative gaps](/tasks?tab=gaps), \"Do\" on a missing-crest row opens Assets with the team already searched.", "מ[חוסרי קריאייטיב](/tasks?tab=gaps), \"Do\" בשורת סמל חסר פותח את Assets עם הקבוצה כבר בחיפוש."),
+          t("Nothing found? Shorten to the core name (\"Tottenham\", not \"Tottenham Hotspur FC\") before uploading, so you don't add a second copy.", "לא נמצא? מקצרים לשם העיקרי (\"Tottenham\" ולא \"Tottenham Hotspur FC\") לפני שמעלים, כדי לא להוסיף עותק שני."),
+          t("The upload alone doesn't clear the gap - back in [Creative gaps](/tasks?tab=gaps), click \"Done\" on the row.", "ההעלאה לבד לא סוגרת את החוסר - חוזרים ל[חוסרי קריאייטיב](/tasks?tab=gaps) ולוחצים \"Done\" בשורה."),
+        ],
+      },
+      {
+        title: t("Rename or replace a crest", "שינוי שם או החלפה של סמל"),
+        steps: [
+          t("The pencil on a crest → \"Edit logo names\" → fix the English or Hebrew name → \"Save\".", "העיפרון על סמל ← \"Edit logo names\" ← מתקנים את השם באנגלית או בעברית ← \"Save\"."),
+          t("To replace the image: the trash icon → \"Delete\" (crest and file are gone for good), then upload the new file under the same English name.", "להחלפת תמונה: הפח ← \"Delete\" (הסמל והקובץ נמחקים לצמיתות), ואז מעלים את הקובץ החדש באותו שם באנגלית."),
+          t("A crest can also be uploaded from the team's page in [Football Teams](/templates/football) - \"Upload crest to library\" files it here.", "אפשר להעלות סמל גם מעמוד הקבוצה ב[קבוצות כדורגל](/templates/football) - \"Upload crest to library\" שומר אותו כאן."),
+        ],
+      },
+    ],
+    links: [{ label: t("Assets (crests)", "Assets (סמלים)"), href: "/assets" }],
+  },
+  {
+    id: "storage",
+    nav: "/storage",
+    title: t("Storage - raw files", "Storage - קבצים"),
+    intro: t(
+      "A raw file browser over the site's media buckets - to get a file's direct URL, or upload a file outside the regular forms.",
+      "דפדפן קבצים ישיר על דליי המדיה של האתר - כדי לקבל URL ישיר של קובץ, או להעלות קובץ מחוץ לטפסים הרגילים.",
+    ),
+    howTo: [
+      {
+        title: t("Find a file and copy its URL", "מציאת קובץ והעתקת ה-URL שלו"),
+        steps: [
+          t("Open [Storage](/storage) and click a bucket card. Images uploaded from Templates and the Homepage board are in [templates](/storage?bucket=templates); crests are in \"football-logos\".", "פותחים את [Storage](/storage) ולוחצים על כרטיס דלי. תמונות מהתבניות ומלוח עמוד הבית נמצאות ב-[templates](/storage?bucket=templates); הסמלים ב-\"football-logos\"."),
+          t("Click a folder to open it; the path above the list (or the back arrow) goes up.", "לחיצה על תיקייה פותחת אותה; הנתיב מעל הרשימה (או החץ אחורה) מעלה רמה."),
+          t("There is no search: files sort by name and form uploads start with a timestamp, so the newest are at the bottom.", "אין חיפוש: קבצים ממוינים לפי שם, והעלאות מטפסים מתחילות בחותמת זמן - החדשים בתחתית."),
+          t("Click the file name for the preview, then \"Copy URL\" (\"Open\" and \"Download\" are next to it).", "לחיצה על שם הקובץ פותחת תצוגה מקדימה, ואז \"Copy URL\" (\"Open\" ו-\"Download\" לידו)."),
+        ],
+      },
+      {
+        title: t("Upload, replace or delete a file", "העלאה, החלפה או מחיקה של קובץ"),
+        steps: [
+          t("Open the right bucket and folder (\"New Folder\" → \"Folder Name\" → \"Create Folder\" for a new one), click \"Upload Files\" and drag files in or click the box - several at once is fine.", "פותחים את הדלי והתיקייה הנכונים (\"New Folder\" ← \"Folder Name\" ← \"Create Folder\" לתיקייה חדשה), לוחצים \"Upload Files\" וגוררים קבצים או לוחצים על התיבה - אפשר כמה בבת אחת."),
+          t("Wait for \"Upload complete\". A same-named file in that folder makes the upload fail - rename and retry.", "מחכים ל-\"Upload complete\". קובץ באותו שם בתיקייה מכשיל את ההעלאה - משנים שם ומנסים שוב."),
+          t("Files can't be overwritten: upload the new version under a new name and paste its URL where the old one was used.", "אי אפשר לדרוס קובץ: מעלים גרסה חדשה בשם חדש ומדביקים את ה-URL שלה במקום הישן."),
+          t("Delete only a file nothing uses: trash icon → type \"delete this file\" → \"Delete\". It is permanent; a page still pointing at it shows a broken image.", "מוחקים רק קובץ שאף אחד לא משתמש בו: פח ← מקלידים \"delete this file\" ← \"Delete\". המחיקה סופית; עמוד שעדיין מפנה אליו יציג תמונה שבורה."),
+        ],
+      },
+    ],
+    links: [{ label: t("Storage", "Storage"), href: "/storage" }],
+  },
+  {
+    id: "locations",
+    nav: "/locations",
+    title: t("Locations - cities and hotels", "מיקומים - ערים ומלונות"),
+    intro: t(
+      "The cities events happen in, each with coordinates and an optional IATA code. The IATA drives flight pricing and the automatic lookup in the wizard and the factory (keep this table growing); \"טען מלונות\" loads a city's hotels before it goes on sale.",
+      "הערים שבהן יש אירועים, כל אחת עם קואורדינטות וקוד IATA לא חובה. ה-IATA מניע את תמחור הטיסות ואת הזיהוי האוטומטי בוויזרד ובמפעל (כדאי להמשיך להרחיב את הטבלה); \"טען מלונות\" טוען את המלונות של עיר לפני שהיא עולה למכירה.",
+    ),
+    howTo: [
+      {
+        title: t("Add a city", "הוספת עיר"),
+        steps: [
+          t("Open [Locations](/locations) and search \"Search locations...\" first (name or IATA) - it may already exist. Then \"Add Location\".", "פותחים את [המיקומים](/locations) ומחפשים קודם ב-\"Search locations...\" (שם או IATA) - ייתכן שהעיר קיימת. ואז \"Add Location\"."),
+          t("\"Location Name *\": the city as customers should see it (ליברפול). \"Latitude *\" / \"Longitude *\": the city centre (e.g. from Google Maps) - hotels load around this point.", "\"Location Name *\": העיר כמו שהלקוחות צריכים לראות (ליברפול). \"Latitude *\" / \"Longitude *\": מרכז העיר (למשל מגוגל מפות) - המלונות נטענים סביב הנקודה."),
+          t("\"City IATA Code\": the code flights are searched by (LON, BCN). Leave it empty for a city with no flights of its own, like Liverpool reached on a London flight.", "\"City IATA Code\": הקוד שלפיו מחפשים טיסות (LON, BCN). משאירים ריק לעיר בלי טיסות משלה, כמו ליברפול שמגיעים אליה בטיסה ללונדון."),
+          t("Optional \"Country Code\" (GB). Click \"Create Location\", then load its hotels.", "\"Country Code\" לא חובה (GB). לוחצים \"Create Location\" ואז טוענים מלונות."),
+        ],
+      },
+      {
+        title: t("Load a city's hotels (\"טען מלונות\")", "טעינת מלונות לעיר (\"טען מלונות\")"),
+        steps: [
+          t("On the city's card in [Locations](/locations), the bottom line says \"מלונות: לא נטען\", \"נטען חלקית\", or the hotel count and date.", "בכרטיס העיר ב[מיקומים](/locations), השורה התחתונה אומרת \"מלונות: לא נטען\", \"נטען חלקית\", או מספר המלונות והתאריך."),
+          t("Click \"טען מלונות\" and keep the tab open - about 12 hotels a step, 15-20 minutes for a whole city. \"עצירה\" stops; if it shows \"המשך טעינה\", click it to carry on.", "לוחצים \"טען מלונות\" ומשאירים את הלשונית פתוחה - כ-12 מלונות לצעד, 15-20 דקות לעיר שלמה. \"עצירה\" עוצר; אם מופיע \"המשך טעינה\", לוחצים כדי להמשיך."),
+          t("Done when the line shows a count and a date; \"רענון מלונות\" reloads later. The same button is on the Location and Lodging cards in the event editor.", "מסתיים כשהשורה מציגה מספר ותאריך; \"רענון מלונות\" טוען מחדש בהמשך. אותו כפתור נמצא בכרטיסי Location ו-Lodging בעורך האירוע."),
+        ],
+      },
+      {
+        title: t("Fix or remove a city", "תיקון או מחיקה של עיר"),
+        steps: [
+          t("The pencil on the city's card → fix → \"Update Location\". A new name shows on the site (customers filter by it).", "העיפרון בכרטיס העיר ← מתקנים ← \"Update Location\". שם חדש מופיע באתר (הלקוחות מסננים לפיו)."),
+          t("New coordinates are a new point for hotels - run \"טען מלונות\" again.", "קואורדינטות חדשות = נקודה חדשה למלונות - מריצים שוב \"טען מלונות\"."),
+          t("The trash icon deletes the city for good (\"This action cannot be undone\") - only for a duplicate or a mistake.", "הפח מוחק את העיר לצמיתות (\"This action cannot be undone\") - רק לכפילות או לטעות."),
+        ],
+      },
+    ],
+    links: [{ label: t("Locations", "מיקומים"), href: "/locations" }],
+  },
+  {
+    id: "templates",
+    nav: "/templates",
+    title: t("Templates - artist, team and blog pages", "תבניות - עמודי אמנים, קבוצות ובלוג"),
+    intro: t(
+      "The site's content pages outside events: artists, football teams and blog posts (categories have their own screen). Each page is edited in one form - text, hero image, blob card art and gallery; missing visuals show up in the gaps radar automatically.",
+      "עמודי התוכן של האתר מחוץ לאירועים: אמנים, קבוצות כדורגל ופוסטים בבלוג (לקטגוריות מסך משלהן). כל עמוד נערך בטופס אחד - טקסט, תמונה ראשית, ארט בלוב לכרטיס וגלריה; חוסרים ויזואליים מופיעים ברדאר אוטומטית.",
+    ),
+    howTo: [
+      {
+        title: t("Open and save a team or artist page", "פתיחה ושמירה של עמוד קבוצה או אמן"),
+        steps: [
+          t("Open [Templates](/templates) and pick \"Artists\" or \"Football Teams\" - or go straight to [Artists](/templates/artists) / [Football Teams](/templates/football).", "פותחים את [התבניות](/templates) ובוחרים \"Artists\" או \"Football Teams\" - או ישר ל[אמנים](/templates/artists) / [קבוצות כדורגל](/templates/football)."),
+          t("Search \"Search name, English, or slug…\" and click the pencil. On an existing page leave \"Slug (optional)\" alone - it's the page address.", "מחפשים ב-\"Search name, English, or slug…\" ולוחצים על העיפרון. בעמוד קיים לא נוגעים ב-\"Slug (optional)\" - זו כתובת העמוד."),
+          t("\"Save\" (on the form or the sticky bar); \"Active (visible on the site)\" controls whether it shows. Template saves don't refresh the site - click \"Revalidate live site\" on the list.", "\"Save\" (בטופס או בסרגל הצף); \"Active (visible on the site)\" קובע אם מוצג. שמירת תבנית לא מרעננת את האתר - לוחצים \"Revalidate live site\" ברשימה."),
+        ],
+      },
+      {
+        title: t("Hero image and blob card art", "תמונה ראשית וארט בלוב לכרטיס"),
+        steps: [
+          t("\"Hero image\": upload (the file field below it), paste a URL, or browse storage (folder icon); clear the URL to remove.", "\"Hero image\": העלאה (שדה הקובץ שמתחתיו), הדבקת URL, או דפדוף באחסון (אייקון התיקייה); ריקון ה-URL מסיר."),
+          t("\"Card art - cut-out + blob (optional)\" → \"Upload + cut out\" (the background is removed), then \"Blob colour\" and \"Background - blob / photo\"; fit with \"Cut-out zoom\", \"Cut-out position ↔ / ↕\" and \"Background zoom\".", "\"Card art - cut-out + blob (optional)\" ← \"Upload + cut out\" (הרקע מוסר), ואז \"Blob colour\" ו-\"Background - blob / photo\"; מתאימים עם \"Cut-out zoom\", \"Cut-out position ↔ / ↕\" ו-\"Background zoom\"."),
+          t("Save. A page with card art doesn't need a hero image too - the gaps radar accepts either. A new cut-out redraws every ad of that artist on the next creative run.", "שומרים. עמוד עם ארט לכרטיס לא צריך גם תמונה ראשית - הרדאר מקבל כל אחד מהם. cut-out חדש מצייר מחדש את כל המודעות של האמן בריצת הקריאייטיב הבאה."),
+        ],
+      },
+      {
+        title: t("Gallery, bio and videos", "גלריה, ביוגרפיה וסרטונים"),
+        steps: [
+          t("\"Bio\": plain paragraphs with a blank line between.", "\"Bio\": פסקאות פשוטות עם שורה ריקה ביניהן."),
+          t("\"Gallery images\": \"Add from storage\" (several), \"Upload + cut out\" or \"Add by URL\"; × on a photo removes it.", "\"Gallery images\": \"Add from storage\" (כמה), \"Upload + cut out\" או \"Add by URL\"; × על תמונה מסיר."),
+          t("\"Hero video (YouTube URL)\" loops inside the hero circle. \"Performance videos\" and \"Banners\" take one item per line: \"youtube_url | label\" and \"image_url | link_url | title\". Save, then \"Revalidate live site\".", "\"Hero video (YouTube URL)\" מתנגן בלופ בעיגול ההירו. \"Performance videos\" ו-\"Banners\" מקבלים פריט בשורה: \"youtube_url | label\" ו-\"image_url | link_url | title\". שומרים ואז \"Revalidate live site\"."),
+        ],
+      },
+      {
+        title: t("Add a new artist or team", "הוספת אמן או קבוצה חדשים"),
+        steps: [
+          t("Click [\"Add New Artist\"](/templates/artists/new) or [\"Add New Team\"](/templates/football/new).", "לוחצים [\"Add New Artist\"](/templates/artists/new) או [\"Add New Team\"](/templates/football/new)."),
+          t("\"Name (Hebrew)\" and \"Name English (events match key)\" - the English name must match how it's written on the events.", "\"Name (Hebrew)\" ו-\"Name English (events match key)\" - השם באנגלית חייב להתאים לכתיב באירועים."),
+          t("Saving a new one also creates its tag, an auto-tag rule and a category page under the artists/teams hub, and tags existing events - check [Tags & Rules](/event-tags) after.", "שמירה של חדש יוצרת גם תגית, כלל תיוג אוטומטי ועמוד קטגוריה תחת צומת האמנים/הקבוצות, ומתייגת אירועים קיימים - בודקים אחר כך ב[תגיות וחוקים](/event-tags)."),
+          t("A team: upload the crest in \"Crest - football logos library\" with \"Upload crest to library\" (transparent PNG, up to 2MB, English name first). For the homepage hero or rows, use [Homepage](/homepage).", "קבוצה: מעלים סמל ב-\"Crest - football logos library\" עם \"Upload crest to library\" (PNG שקוף, עד 2MB, קודם שם באנגלית). להירו או לשורות בדף הבית - [עמוד הבית](/homepage)."),
+        ],
+      },
+      {
+        title: t("Write a blog post", "כתיבת פוסט לבלוג"),
+        steps: [
+          t("Open [Blog](/templates/blog) → \"Add New Post\".", "פותחים את [הבלוג](/templates/blog) ← \"Add New Post\"."),
+          t("Have HTML? Paste into \"Paste article HTML (auto-fill)\" → \"Fill fields\" (title, SEO title, preview, body - not saved yet).", "יש HTML? מדביקים ב-\"Paste article HTML (auto-fill)\" ← \"Fill fields\" (כותרת, כותרת SEO, תקציר, גוף - עוד לא נשמר)."),
+          t("Check \"Title\", \"Author\", \"Preview text\" and the \"Body\" editor (its \"HTML\" tab takes raw HTML); add \"Hero image\" and optional post art.", "בודקים \"Title\", \"Author\", \"Preview text\" ואת עורך ה-\"Body\" (הלשונית \"HTML\" מקבלת HTML גולמי); מוסיפים \"Hero image\" וארט לא חובה."),
+          t("Keep \"Active (visible on the site)\" ticked to publish; \"Save\", then \"Revalidate live site\".", "משאירים \"Active (visible on the site)\" מסומן לפרסום; \"Save\" ואז \"Revalidate live site\"."),
+        ],
+      },
     ],
     links: [
-      { label: t("Templates", "תבניות"), href: "/templates/categories" },
-      { label: t("Assets (crests)", "Assets (סמלים)"), href: "/assets" },
-      { label: t("Locations", "לוקיישנים"), href: "/locations" },
-      { label: t("Storage", "Storage"), href: "/storage" },
+      { label: t("Templates", "תבניות"), href: "/templates" },
+      { label: t("Artists", "אמנים"), href: "/templates/artists" },
+      { label: t("Football teams", "קבוצות כדורגל"), href: "/templates/football" },
+      { label: t("Blog", "בלוג"), href: "/templates/blog" },
     ],
   },
   {
-    id: "admin",
-    title: t("Admin - users, audit, safety", "ניהול — משתמשים, ביקורת, בטיחות"),
+    id: "users",
+    nav: "/users",
+    title: t("Users & roles", "משתמשים ותפקידים"),
     adminOnly: true,
     intro: t(
-      "Management screens for admins: who can do what, and a full trail of every change.",
-      "מסכי ניהול למנהלים: מי יכול לעשות מה, ותיעוד מלא של כל שינוי.",
+      "Admins create and manage every login here, for staff and partners alike. There is no invite email and no \"forgot password\" link: an admin creates each account and resets passwords. An admin manages editors, agents, affiliates and forms operators; only a superadmin manages admin, superadmin and office_manager accounts.",
+      "כאן מנהלים יוצרים ומנהלים כל כניסה למערכת, גם של צוות וגם של שותפים. אין מייל הזמנה ואין קישור \"שכחתי סיסמה\": מנהל יוצר כל חשבון ומאפס סיסמאות. מנהל (admin) מנהל עורכים, סוכנים, משפיענים ומפעילי טפסים; רק superadmin מנהל חשבונות admin, superadmin ו-office_manager.",
     ),
+    howTo: [
+      {
+        title: t("Add a user", "הוספת משתמש"),
+        steps: [
+          t("Open [Users](/users) and click \"Add user\" (admins).", "פותחים את [המשתמשים](/users) ולוחצים \"Add user\" (מנהלים)."),
+          t("Fill in \"Email\" and a \"Temporary password\" (8+ characters) - a throwaway, never one the person uses elsewhere. The email can't be changed later.", "ממלאים \"Email\" ו-\"Temporary password\" (8 תווים ומעלה) - סיסמה זמנית, אף פעם לא סיסמה שהאדם משתמש בה במקום אחר. את המייל אי אפשר לשנות אחר כך."),
+          t("Add a \"Display name\" and pick the \"Role\": editor for catalog staff, forms_operator for someone who only works in Forms. For agent, affiliate or office_manager, pick the partner under \"Partner\" (required) and attach the signed contract under \"Contract\" if you have it.", "מוסיפים \"Display name\" ובוחרים \"Role\": editor לצוות הקטלוג, forms_operator למי שעובד רק בטפסים. ל-agent, affiliate או office_manager בוחרים שותף ב-\"Partner\" (חובה) ומצרפים חוזה חתום ב-\"Contract\" אם יש."),
+          t("Click \"Create user\" - the toast confirms the person \"can now sign in\".", "לוחצים \"Create user\" - ההודעה מאשרת שהאדם \"can now sign in\"."),
+          t("Give access privately. Anyone with a Google email can use \"Continue with Google\"; otherwise hand over the temporary password in person or by phone, never in a task thread or group chat.", "מעבירים את הגישה בפרטי. מי שיש לו מייל Google יכול להיכנס עם \"Continue with Google\"; אחרת מוסרים את הסיסמה הזמנית פנים אל פנים או בטלפון, אף פעם לא בפתיל משימה או בקבוצה."),
+        ],
+      },
+      {
+        title: t("Change a role or details", "שינוי תפקיד או פרטים"),
+        steps: [
+          t("In [Users](/users), open the ⋯ menu at the end of the person's row → \"Edit\" (admins).", "ב[משתמשים](/users) פותחים את תפריט ה-⋯ בסוף השורה של האדם ← \"Edit\" (מנהלים)."),
+          t("Change \"Role\", \"Display name\", \"Phone\" or the \"Partner\" link, then click \"Save changes\".", "משנים \"Role\", \"Display name\", \"Phone\" או את קישור ה-\"Partner\", ולוחצים \"Save changes\"."),
+          t("A new role takes effect the next time the person signs in - ask them to \"Log out\" and sign in again.", "תפקיד חדש נכנס לתוקף בכניסה הבאה של האדם - מבקשים ממנו \"Log out\" ולהיכנס שוב."),
+          t("Linking a partner to a staff user (\"Partner (optional - dual-role)\") adds \"מצב סוכן\" to their menu. A row with no ⋯ menu can only be managed by a superadmin; nobody can change their own role.", "קישור שותף למשתמש צוות (\"Partner (optional - dual-role)\") מוסיף לו \"מצב סוכן\" בתפריט. שורה בלי תפריט ⋯ מנוהלת רק על ידי superadmin; אף אחד לא משנה את התפקיד של עצמו."),
+        ],
+      },
+      {
+        title: t("Switch a user off (or back on)", "השבתת משתמש (או החזרה)"),
+        steps: [
+          t("In [Users](/users), turn off the \"Active\" switch on the person's row (admins). Users are never deleted.", "ב[משתמשים](/users) מכבים את מתג ה-\"Active\" בשורה של האדם (מנהלים). משתמשים אף פעם לא נמחקים."),
+          t("Sign-in is refused from then on, by password and by Google. Partners and forms operators are cut off at their next click.", "מאותו רגע הכניסה נחסמת, בסיסמה וב-Google. שותפים ומפעילי טפסים מנותקים כבר בלחיצה הבאה."),
+          t("A staff member (editor or admin) already signed in keeps working until they log out or the session expires - up to 7 days. If access must stop right now, tell the developer.", "איש צוות (editor או admin) שכבר מחובר ממשיך לעבוד עד שהוא מתנתק או שהחיבור פג - עד 7 ימים. אם הגישה חייבת להיפסק עכשיו, פונים למפתח."),
+          t("Switch it back on to restore access - role, partner link and history are kept. You can't switch off your own account.", "מדליקים שוב כדי להחזיר גישה - התפקיד, קישור השותף וההיסטוריה נשמרים. אי אפשר להשבית את החשבון של עצמכם."),
+        ],
+      },
+      {
+        title: t("Reset a password", "איפוס סיסמה"),
+        steps: [
+          t("In [Users](/users), the row's ⋯ menu → \"Reset password\" (admins).", "ב[משתמשים](/users), תפריט ה-⋯ בשורה ← \"Reset password\" (מנהלים)."),
+          t("Best: the person types the new password into \"New password\" themselves. Otherwise set a throwaway (8+ characters) - never ask for a password they use elsewhere.", "הכי טוב שהאדם יקליד בעצמו את הסיסמה החדשה ב-\"New password\". אחרת קובעים סיסמה זמנית (8 תווים ומעלה) - אף פעם לא מבקשים סיסמה שהוא משתמש בה במקום אחר."),
+          t("Click \"Reset password\". The old one stops working at once, and the [Audit Log](/audit-log) records \"password_reset\" without the password.", "לוחצים \"Reset password\". הסיסמה הישנה מפסיקה לעבוד מיד, ו[לוג הביקורת](/audit-log) רושם \"password_reset\" בלי הסיסמה עצמה."),
+          t("Staff can't change their own password, but a Google email can skip passwords with \"Continue with Google\". Partners change theirs in their portal profile (\"שינוי סיסמה\").", "לצוות אין מקום לשנות סיסמה בעצמו, אבל עם מייל Google אפשר לוותר על סיסמה עם \"Continue with Google\". שותפים משנים סיסמה בפרופיל שלהם בפורטל (\"שינוי סיסמה\")."),
+        ],
+      },
+    ],
     points: [
       t(
         "Roles: superadmin and admin manage everything including users; editor works the catalog and their own tasks; forms_operator sees only Forms; office_manager / agent / affiliate are portal-side partner roles and never see this dashboard.",
         "תפקידים: superadmin ו־admin מנהלים הכול כולל משתמשים; editor עובד על הקטלוג והמשימות שלו; forms_operator רואה רק טפסים; office_manager / agent / affiliate הם תפקידי פורטל ולא רואים את הדשבורד הזה.",
       ),
-      t(
-        "The audit log records every create/update/delete with who and what changed - the first stop when something looks wrong.",
-        "לוג הביקורת מתעד כל יצירה/עדכון/מחיקה עם מי ומה השתנה — התחנה הראשונה כשמשהו נראה לא נכון.",
-      ),
+    ],
+    rules: [
       t(
         "Database schema changes ship as migration files applied from the main branch only - never by hand, never from a feature branch. If you're not sure, ask before touching.",
         "שינויי סכמה עוברים כקבצי מיגרציה שמוחלים רק מה־branch הראשי — לעולם לא ידנית ולא מ־feature branch. לא בטוחים? שואלים לפני שנוגעים.",
       ),
     ],
-    links: [
-      { label: t("Users", "משתמשים"), href: "/users", adminOnly: true },
-      { label: t("Audit log", "לוג ביקורת"), href: "/audit-log", adminOnly: true },
+  },
+  {
+    id: "audit-log",
+    nav: "/audit-log",
+    title: t("Audit log - who changed what", "לוג ביקורת - מי שינה מה"),
+    adminOnly: true,
+    intro: t(
+      "A read-only record of what people did in the backoffice: who, when, from which IP and what changed, plus sign-ins and failed sign-ins. It shows only the newest 200 rows that match your filters, so filter before you scroll. Automatic changes such as the nightly price sync are not recorded here - those are on Price Changes.",
+      "תיעוד לקריאה בלבד של מה שאנשים עשו בבק-אופיס: מי, מתי, מאיזו כתובת IP ומה השתנה, וגם כניסות וכניסות שנכשלו. מוצגות רק 200 השורות האחרונות שמתאימות לסינון, אז קודם מסננים ואחר כך גוללים. שינויים אוטומטיים כמו סנכרון המחירים הלילי לא נרשמים כאן - הם במסך שינויי המחיר.",
+    ),
+    howTo: [
+      {
+        title: t("Find who changed an event", "לגלות מי שינה אירוע"),
+        steps: [
+          t("Open the event and note its number in the breadcrumbs (e.g. \"#1234\").", "פותחים את האירוע ורושמים את המספר שלו מפירורי הלחם (למשל \"#1234\")."),
+          t("Open [Audit Log](/audit-log), set \"Entity type\" to \"event\" and leave \"All actions\" (price-light and price-change decisions have their own action names that the Action list doesn't include).", "פותחים את [לוג הביקורת](/audit-log), בוחרים \"Entity type\" = \"event\" ומשאירים \"All actions\" (להחלטות רמזור ושינויי מחיר יש שמות פעולה משלהן שלא ברשימת ה-Action)."),
+          t("Set \"From\" / \"To\" around the day of the change and click \"Apply\". Dates are UTC days - widen the range by a day for an evening change.", "קובעים \"From\" / \"To\" סביב היום של השינוי ולוחצים \"Apply\". התאריכים הם ימי UTC - לשינוי בערב מרחיבים ביום."),
+          t("Look for \"event #1234\" in \"Entity\"; \"Actor\" shows who did it (\"-\" = no signed-in person). Click the row to see exactly what changed.", "מחפשים \"event #1234\" בעמודת \"Entity\"; \"Actor\" מראה מי עשה את זה (\"-\" = לא היה אדם מחובר). לוחצים על השורה כדי לראות מה בדיוק השתנה."),
+        ],
+      },
+      {
+        title: t("Find who changed a price", "לגלות מי שינה מחיר"),
+        steps: [
+          t("Filter the same way (\"event\", \"All actions\", dates, \"Apply\").", "מסננים באותה דרך (\"event\", \"All actions\", תאריכים, \"Apply\")."),
+          t("A hand edit in the event form is an \"update\" row - look inside for base_flight_price, base_hotel_price or a markup field (ticket_only_markup, event_additional_markup…).", "עריכה ידנית בטופס האירוע היא שורת \"update\" - מחפשים בפנים base_flight_price, base_hotel_price או שדה markup (ticket_only_markup, event_additional_markup…)."),
+          t("\"base_price.approve_review\" = someone clicked \"אשר עדכון\" in [Price Changes](/price-changes); \"base_price.resolve_review\" = \"עודכן באירוע\". Rows starting \"price_light.\" are price-light decisions (price_light.repriced = \"הוזל\", price_light.override = \"דריסה\").", "\"base_price.approve_review\" = מישהו לחץ \"אשר עדכון\" ב[שינויי המחיר](/price-changes); \"base_price.resolve_review\" = \"עודכן באירוע\". שורות שמתחילות ב-\"price_light.\" הן החלטות רמזור (price_light.repriced = \"הוזל\", price_light.override = \"דריסה\")."),
+          t("No matching row? Then the nightly sync changed it - look the event up on [Price Changes](/price-changes) (admins).", "אין שורה מתאימה? אז הסנכרון הלילי שינה את המחיר - מחפשים את האירוע ב[שינויי המחיר](/price-changes) (מנהלים)."),
+        ],
+      },
+      {
+        title: t("See what one person did, or why they can't sign in", "לראות מה אדם מסוים עשה, או למה הוא לא מצליח להיכנס"),
+        steps: [
+          t("Type part of their email into \"Actor email\", add dates if you like, and click \"Apply\". Sign-ins show as \"login\".", "מקלידים חלק מהמייל שלו ב-\"Actor email\", מוסיפים תאריכים אם רוצים, ולוחצים \"Apply\". כניסות מופיעות כ-\"login\"."),
+          t("Can't sign in? Set \"Action\" to \"login_failed\", click \"Apply\" and open their row.", "לא מצליח להיכנס? בוחרים \"Action\" = \"login_failed\", לוחצים \"Apply\" ופותחים את השורה שלו."),
+          t("The reason: \"inactive_account\" = switched off in [Users](/users), \"invalid_credentials\" = wrong password, \"no_profile\" / \"no_account\" = no user with that email.", "הסיבה: \"inactive_account\" = מושבת ב[משתמשים](/users), \"invalid_credentials\" = סיסמה שגויה, \"no_profile\" / \"no_account\" = אין משתמש עם המייל הזה."),
+        ],
+      },
+      {
+        title: t("Read the changes", "לקרוא את השינויים"),
+        steps: [
+          t("Click a row to open its details (click again to close). An edit lists only the fields that changed, each with \"from\" and \"to\".", "לחיצה על שורה פותחת את הפרטים (לחיצה נוספת סוגרת). עריכה מציגה רק את השדות שהשתנו, כל אחד עם \"from\" ו-\"to\"."),
+          t("A deleted event shows is_deleted with the date it was hidden - events are never really deleted.", "אירוע שנמחק מציג is_deleted עם התאריך שבו הוסתר - אירועים אף פעם לא נמחקים באמת."),
+          t("A bulk edit from the events table has no event number in \"Entity\" and shows only the new values - use the time and the person to work out what they edited.", "עריכה מרובה מטבלת האירועים מופיעה בלי מספר אירוע ב-\"Entity\" ומציגה רק את הערכים החדשים - לפי השעה ולפי מי שביצע מבינים מה הוא ערך."),
+        ],
+      },
     ],
   },
 ];
 
 export const GUIDE_UI: Record<string, L> = {
   subtitle: t(
-    "How the whole system fits together - every area, the central flows, and the rules that keep production safe. Buttons jump straight to the screen being explained.",
-    "איך כל המערכת מתחברת — כל אזור, הפלואים המרכזיים, והחוקים ששומרים על הפרודקשן. הכפתורים קופצים ישר למסך שמוסבר.",
+    "Every screen of the system, in the sidebar's order: what it is for, how to do each job step by step, and the rules that keep production safe. Every link opens the screen in a new tab, so this guide stays open beside it.",
+    "כל מסך במערכת, לפי הסדר של התפריט: למה הוא משמש, איך עושים כל פעולה צעד אחר צעד, והחוקים ששומרים על הפרודקשן. כל קישור פותח את המסך בלשונית חדשה, כך שהמדריך נשאר פתוח לצידו.",
   ),
   rules: t("Iron rules", "חוקי ברזל"),
   open: t("Open", "פתח"),
+  openScreen: t("Open the screen", "פתח את המסך"),
+  howItWorks: t("How it works", "איך זה עובד"),
+  searchPlaceholder: t("Search the guide - a screen, a button, a task…", "חיפוש במדריך - מסך, כפתור, פעולה…"),
+  noResults: t("Nothing in the guide matches that. Try another word, or English / Hebrew.", "אין במדריך תוצאה לחיפוש הזה. נסו מילה אחרת, או באנגלית / עברית."),
   adminBadge: t("Admins only", "מנהלים בלבד"),
-  onThisPage: t("On this page", "בעמוד הזה"),
+  onThisPage: t("Contents", "תוכן העניינים"),
 };
