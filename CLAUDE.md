@@ -484,6 +484,28 @@ these tables.
   averages and the review gate). `updateFormResponseAnswers` re-validates with the same
   field schema as the public submit, merges into `answers`, and writes an `audit_log` row
   (`update` / `form_response`, `changes` = before/after per field). No `edited_at` column.
+- **Delete, escorts, PDF (2026-09-30).** (a) The popup's **מחיקה** (staff AND `forms_operator`)
+  SOFT-deletes an irrelevant response: `form_responses.is_deleted` ("MM-DD-YYYY", migration
+  `20260930120000`), `deleteFormResponse` / `restoreFormResponse` (the toast's "ביטול"), audit
+  `delete` / `restore` with the answers in metadata. Every read skips it - report, `/forms`
+  count, xlsx - through `liveResponsesQuery` (`lib/forms/live-responses.ts`), which re-reads
+  unfiltered on 42703/PGRST204 so the forms area survives a deploy that beat its migration. The
+  invite is left alone. (b) **One filter rule** for the screen and the PDF, pure in
+  `lib/forms/report.ts` (`filterTrips`, `responsesOfTrips`, `summarizeTrips`,
+  `tripFiltersToQuery`/`FromQuery`; selftest `scripts/forms-report-selftest.ts`): code, escort
+  (part match, `escortKey` = trimmed / spaces collapsed / lower case), departure from / to, year,
+  one trip. (c) **Escorts** = the first short_text STAFF answer of a trip link.
+  `buildEscortRows` (tab "Escorts": trips, first/last departure, average, `trend` = latest rated
+  trip vs the flat average of their earlier ones) and `compareWithEscortPast` (an open trip vs
+  the same escort's EARLIER trips per question, plus every other response as the house average;
+  always over the unfiltered trips, so a 2026 filter still compares with 2025). "Questions" tab =
+  per-question averages, weakest first. (d) **PDF** = `/forms/[id]/pdf?<filters>`
+  (`app/forms/[id]/pdf`, OUTSIDE the `(dashboard)` group so no chrome prints; still `/forms/*`
+  for the operator's middleware confinement; loads through the same guarded actions). The
+  browser's print → "Save as PDF" makes the file (Hebrew/RTL render exactly; no PDF library):
+  page 1 = summary (+ the escort comparison when one trip is exported), then `break-before-page`
+  one sheet per response. `PrintBar` names the tab (= default file name) and opens the print
+  dialog once fonts and the logo loaded. Language: Hebrew unless the form is English-only.
 
 ### Cron Jobs (Vercel)
 

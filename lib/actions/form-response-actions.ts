@@ -3,12 +3,9 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/supabase-server";
-import {
-  requireFormVisible,
-  requireFormsAccess,
-  requireStaff,
-} from "@/lib/auth/guards";
+import { requireFormVisible, requireFormsAccess } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
+import { liveResponsesQuery, softDeleteStamp } from "@/lib/forms/live-responses";
 import { buildFieldSchema, isEmptyAnswer, validateAnswers } from "@/lib/forms/validation";
 import { fieldAdminLabel, strings } from "@/lib/forms/i18n";
 import { STAFF_EDITABLE_TYPES, resolveLang } from "@/types/form.types";
@@ -429,12 +426,15 @@ export async function getFormResponses(
   const actor = await requireFormsAccess();
   await requireFormVisible(actor, formId);
 
-  const { data, error } = await responsesTable()
-    .select(
-      "id,form_id,invite_id,answers,lang,submitted_at,form_invites(recipient_name,recipient_email)",
-    )
-    .eq("form_id", formId)
-    .order("submitted_at", { ascending: false });
+  const { data, error } = await liveResponsesQuery((filterDeleted) => {
+    let query = responsesTable()
+      .select(
+        "id,form_id,invite_id,answers,lang,submitted_at,form_invites(recipient_name,recipient_email)",
+      )
+      .eq("form_id", formId);
+    if (filterDeleted) query = query.is("is_deleted", null);
+    return query.order("submitted_at", { ascending: false });
+  });
 
   if (error) {
     console.error("getFormResponses failed:", JSON.stringify(error));
@@ -456,23 +456,87 @@ export async function getFormResponses(
   }));
 }
 
+export type RemoveResponseResult = { ok: true } | { ok: false; message: string };
+
+/**
+ * Staff/operator: take an irrelevant response (a test, a duplicate, a family
+ * that answered the wrong form) out of the trips report, its averages and the
+ * PDF. A SOFT delete - `restoreFormResponse` brings it back, and the audit row
+ * keeps its answers either way. The invite is left as it is: a trip link keeps
+ * taking answers regardless, and a personal link stays "filled".
+ */
 export async function deleteFormResponse(
   id: number,
   formId: number,
-): Promise<boolean> {
-  await requireStaff();
-  const { error } = await responsesTable().delete().eq("id", id);
+): Promise<RemoveResponseResult> {
+  const actor = await requireFormsAccess();
+  await requireFormVisible(actor, formId);
+
+  const { data, error } = await responsesTable()
+    .update({ is_deleted: softDeleteStamp() })
+    .eq("id", id)
+    .eq("form_id", formId)
+    .is("is_deleted", null)
+    .select("id,invite_id,answers,submitted_at")
+    .maybeSingle();
   if (error) {
     console.error("deleteFormResponse failed:", JSON.stringify(error));
-    throw error;
+    return {
+      ok: false,
+      message:
+        error.code === "42703" || error.code === "PGRST204"
+          ? "Deleting is not available yet - try again in a few minutes."
+          : "Deleting failed.",
+    };
   }
+  if (!data) return { ok: false, message: "Response not found (already deleted?)." };
+
   await logAudit({
     action: "delete",
     entityType: "form_response",
     entityId: id,
+    metadata: {
+      form_id: formId,
+      invite_id: data.invite_id,
+      submitted_at: data.submitted_at,
+      answers: data.answers,
+    },
   });
-  revalidatePath(`/forms/${formId}/responses`);
-  return true;
+  revalidatePath(`/forms/${formId}/report`);
+  revalidatePath("/forms");
+  return { ok: true };
+}
+
+/** Undo of `deleteFormResponse` - the response counts again everywhere. */
+export async function restoreFormResponse(
+  id: number,
+  formId: number,
+): Promise<RemoveResponseResult> {
+  const actor = await requireFormsAccess();
+  await requireFormVisible(actor, formId);
+
+  const { data, error } = await responsesTable()
+    .update({ is_deleted: null })
+    .eq("id", id)
+    .eq("form_id", formId)
+    .not("is_deleted", "is", null)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    console.error("restoreFormResponse failed:", JSON.stringify(error));
+    return { ok: false, message: "Restoring failed." };
+  }
+  if (!data) return { ok: false, message: "Response not found." };
+
+  await logAudit({
+    action: "restore",
+    entityType: "form_response",
+    entityId: id,
+    metadata: { form_id: formId },
+  });
+  revalidatePath(`/forms/${formId}/report`);
+  revalidatePath("/forms");
+  return { ok: true };
 }
 
 export type EditAnswersResult =

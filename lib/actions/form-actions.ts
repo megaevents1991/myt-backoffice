@@ -17,6 +17,7 @@ import type {
 } from "@/types/form.types";
 import { FORM_FIELD_TYPES } from "@/types/form.types";
 import { DEFAULT_ACCENT } from "@/lib/forms/brand";
+import { liveResponsesQuery } from "@/lib/forms/live-responses";
 
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
@@ -73,15 +74,19 @@ async function uniqueSlug(base: string, ignoreId?: number): Promise<string> {
 
 export async function getForms(): Promise<FormSummary[]> {
   const actor = await requireFormsAccess();
-  let query = formsTable()
-    .select(`${FORM_COLUMNS},form_fields(count),form_responses(count)`)
-    .is("is_deleted", null)
-    .order("created_at", { ascending: false });
-  // Operators see only forms explicitly opened to them.
-  if (actor.role === "forms_operator") {
-    query = query.eq("operator_visible", true);
-  }
-  const { data, error } = await query;
+  const { data, error } = await liveResponsesQuery((filterDeleted) => {
+    let query = formsTable()
+      .select(`${FORM_COLUMNS},form_fields(count),form_responses(count)`)
+      .is("is_deleted", null)
+      .order("created_at", { ascending: false });
+    // A response staff removed from the report does not count here either.
+    if (filterDeleted) query = query.is("form_responses.is_deleted", null);
+    // Operators see only forms explicitly opened to them.
+    if (actor.role === "forms_operator") {
+      query = query.eq("operator_visible", true);
+    }
+    return query;
+  });
 
   if (error) {
     console.error("getForms failed:", JSON.stringify(error));

@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase-server";
 import { requireFormVisible, requireFormsAccess } from "@/lib/auth/guards";
 import { fieldAdminLabel } from "@/lib/forms/i18n";
 import { buildTripReport } from "@/lib/forms/report";
+import { liveResponsesQuery } from "@/lib/forms/live-responses";
 import type { TripReport } from "@/lib/forms/report";
 import type { AnswerMap, FormField } from "@/types/form.types";
 
@@ -14,7 +15,7 @@ const table = (name: string) => (supabase as any).from(name);
 export type FormTripReport = {
   report: TripReport;
   /** Rating questions in form order, for the per-question columns. */
-  ratingFields: { id: number; label: string; reviewScore: boolean }[];
+  ratingFields: { id: number; label: string; reviewScore: boolean; max: number }[];
 };
 
 /**
@@ -36,10 +37,13 @@ export async function getFormTripReport(
     table("form_invites")
       .select("id,trip_code_prefix,trip_code_num,total_travelers,prefill,created_at")
       .eq("form_id", formId),
-    table("form_responses")
-      .select("invite_id,answers,submitted_at")
-      .eq("form_id", formId)
-      .order("submitted_at", { ascending: false }),
+    liveResponsesQuery((filterDeleted) => {
+      let query = table("form_responses")
+        .select("invite_id,answers,submitted_at")
+        .eq("form_id", formId);
+      if (filterDeleted) query = query.is("is_deleted", null);
+      return query.order("submitted_at", { ascending: false });
+    }),
   ]);
 
   for (const [name, res] of [
@@ -92,6 +96,7 @@ export async function getFormTripReport(
       id: field.id,
       label: fieldAdminLabel(field),
       reviewScore: field.config.review_score === true,
+      max: typeof field.config.max === "number" ? field.config.max : 5,
     })),
   };
 }

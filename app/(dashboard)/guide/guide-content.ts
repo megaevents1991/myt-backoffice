@@ -1771,6 +1771,23 @@ export const GUIDE_SECTIONS: GuideSection[] = [
           t("\"Trips report\" in the builder or row menu (or click the response count in [Forms](/forms)). Filter by \"Code letters\", \"Code number\", \"Escort\", \"Departure from\" or \"Year\".", "\"Trips report\" בבונה או בתפריט השורה (או לחיצה על מספר התשובות ב[טפסים](/forms)). מסננים לפי \"Code letters\", \"Code number\", \"Escort\", \"Departure from\" או \"Year\"."),
           t("Click a trip for its per-question averages and responses; click the trip's travellers number to set the trip size.", "לחיצה על טיול מציגה ממוצע לכל שאלה ואת התשובות; לחיצה על מספר הנוסעים של הטיול קובעת את גודל הטיול."),
           t("Click a response for all its answers. \"עריכה\" → fix → \"שמור\" corrects text, number, email, phone and date answers only - ratings and choices stay as the client gave them.", "לחיצה על תשובה מציגה את כל התשובות שבה. \"עריכה\" ← מתקנים ← \"שמור\" מתקן רק טקסט, מספר, מייל, טלפון ותאריך - דירוגים ובחירות נשארים כמו שהלקוח ענה."),
+          t("An irrelevant response (a test, a duplicate, the wrong form): open it → \"מחיקה\" → confirm. It leaves the report, the averages, the Excel and the PDF at once; \"ביטול\" in the message that pops up brings it back. Forms operators can do this too.", "תשובה לא רלוונטית (בדיקה, כפילות, טופס לא נכון): פותחים אותה ← \"מחיקה\" ← מאשרים. היא יוצאת מיד מהדוח, מהממוצעים, מהאקסל ומה-PDF; \"ביטול\" בהודעה שקופצת מחזיר אותה. גם מפעילי טפסים יכולים."),
+        ],
+      },
+      {
+        title: t("Compare escorts and trips", "השוואת מלווים וטיולים"),
+        steps: [
+          t("In the trips report, the \"Escort\" filter suggests every escort's name; \"Departure from\" / \"Departure to\" set a date range. The cards, the tabs and the PDF all follow the filters.", "בדוח הטיולים, מסנן \"Escort\" מציע את שמות כל המלווים; \"Departure from\" / \"Departure to\" קובעים טווח תאריכים. הכרטיסים, הלשוניות וה-PDF כולם הולכים לפי הסינון."),
+          t("\"Escorts\" tab: one row per escort - how many trips, first and last departure, responses, average, and \"Last trip vs before\" (their latest trip against their earlier ones). Click a row for the trips in date order and their per-question average against everyone; \"Show their trips\" filters the report to them.", "לשונית \"Escorts\": שורה לכל מלווה - כמה טיולים, יציאה ראשונה ואחרונה, תשובות, ממוצע, ו-\"Last trip vs before\" (הטיול האחרון מול הקודמים שלו). לחיצה על שורה מציגה את הטיולים לפי תאריך ואת הממוצע שלו לכל שאלה מול כולם; \"Show their trips\" מסנן את הדוח אליו."),
+          t("Open a trip in the \"Trips\" tab: when its escort led earlier trips, a table compares this trip with them per question (\"This trip\" / \"Earlier\" / \"Change\") and with all other trips.", "פותחים טיול בלשונית \"Trips\": אם המלווה שלו הוביל טיולים קודמים, טבלה משווה את הטיול הזה אליהם בכל שאלה (\"This trip\" / \"Earlier\" / \"Change\") ולכל שאר הטיולים."),
+          t("\"Questions\" tab: every star question over the filtered trips, weakest first.", "לשונית \"Questions\": כל שאלות הכוכבים על הטיולים המסוננים, מהחלשה לחזקה."),
+        ],
+      },
+      {
+        title: t("Export the feedback to PDF", "ייצוא המשובים ל-PDF"),
+        steps: [
+          t("\"Export PDF\" above the report exports what the filters show: page 1 is the summary (totals, average per question, the trips), then one page per family with all its answers. \"PDF of this trip\" inside an open trip exports that trip alone - with the comparison to the escort's earlier trips.", "\"Export PDF\" מעל הדוח מייצא את מה שהסינון מציג: עמוד 1 הוא הסיכום (סכומים, ממוצע לכל שאלה, הטיולים), ואחריו עמוד לכל משפחה עם כל התשובות שלה. \"PDF of this trip\" בתוך טיול פתוח מייצא רק את הטיול הזה - כולל ההשוואה לטיולים הקודמים של המלווה."),
+          t("A new tab opens with the print window: pick \"Save as PDF\" as the destination and save. \"הדפסה / שמירה כ-PDF\" at the top opens it again.", "נפתחת לשונית חדשה עם חלון ההדפסה: בוחרים יעד \"שמירה כ-PDF\" ושומרים. \"הדפסה / שמירה כ-PDF\" למעלה פותח אותו שוב."),
         ],
       },
     ],

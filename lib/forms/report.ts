@@ -99,7 +99,10 @@ function mean(values: number[]): number | null {
 }
 
 /** Answered numeric values for one field across a set of responses. */
-function fieldValues(fieldId: number, responses: ReportResponse[]): number[] {
+function fieldValues(
+  fieldId: number,
+  responses: Pick<ReportResponse, "answers">[],
+): number[] {
   const key = String(fieldId);
   return responses
     .map((r) => r.answers[key])
@@ -141,9 +144,12 @@ function travelerStats(
   };
 }
 
-function fieldStats(
-  ratingFields: FormField[],
-  responses: ReportResponse[],
+/** Only a rating field's id is read - the screen passes its slim field list. */
+type RatingRef = Pick<FormField, "id">;
+
+export function fieldStats(
+  ratingFields: RatingRef[],
+  responses: Pick<ReportResponse, "answers">[],
 ): { perField: FieldStat[]; overallAvg: number | null } {
   const perField = ratingFields.map((field) => {
     const values = fieldValues(field.id, responses);
@@ -305,5 +311,354 @@ export function sumTravelers(
     sizedTrips: sized.length,
     sizedReported,
     unsizedReported: reported - sizedReported,
+  };
+}
+
+/* ------------------------------------------------------------------------ */
+/* Filters, summaries and escort analytics - shared by the report screen and */
+/* the PDF export, so the two can never disagree about what a filter means.  */
+/* ------------------------------------------------------------------------ */
+
+/** What the report can be narrowed by. Every field is optional. */
+export type TripFilters = {
+  /** Trip code letters, prefix match ("BB" finds BBC-124). */
+  prefix?: string;
+  /** Trip code number, prefix match. */
+  num?: string;
+  /** Escort name, part match (spaces and case ignored). */
+  escort?: string;
+  /** Departure on or after, yyyy-mm-dd. */
+  fromDate?: string;
+  /** Departure on or before, yyyy-mm-dd. */
+  toDate?: string;
+  /** Departure year, "all" or unset = any. */
+  year?: string;
+  /** One trip only: its invite id, or "none" for the no-trip bucket. */
+  trip?: number | "none" | null;
+};
+
+const FILTER_KEYS = ["prefix", "num", "escort", "fromDate", "toDate", "year"] as const;
+
+/** Filters -> query string for the PDF link ("" when nothing is set). */
+export function tripFiltersToQuery(filters: TripFilters): string {
+  const params = new URLSearchParams();
+  for (const key of FILTER_KEYS) {
+    const value = filters[key]?.trim();
+    if (value && !(key === "year" && value === "all")) params.set(key, value);
+  }
+  if (filters.trip !== undefined && filters.trip !== null) {
+    params.set("trip", String(filters.trip));
+  }
+  return params.toString();
+}
+
+/** The PDF page's searchParams -> filters. Unknown or malformed values are dropped. */
+export function tripFiltersFromQuery(
+  query: Record<string, string | string[] | undefined>,
+): TripFilters {
+  const one = (key: string) => {
+    const value = query[key];
+    return (Array.isArray(value) ? value[0] : value)?.trim() || undefined;
+  };
+  const day = (key: string) => {
+    const value = one(key);
+    return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
+  };
+  const tripRaw = one("trip");
+  const tripId = tripRaw ? Number(tripRaw) : NaN;
+  const year = one("year");
+  return {
+    prefix: one("prefix"),
+    num: one("num"),
+    escort: one("escort"),
+    fromDate: day("fromDate"),
+    toDate: day("toDate"),
+    year: year && /^\d{4}$/.test(year) ? year : undefined,
+    trip:
+      tripRaw === "none"
+        ? "none"
+        : Number.isInteger(tripId) && tripId > 0
+          ? tripId
+          : null,
+  };
+}
+
+/** An escort's name as typed on different trip links: trimmed, spaces collapsed, lower case. */
+export function escortKey(name: string | null | undefined): string {
+  return (name ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function filterTrips(trips: TripRow[], filters: TripFilters): TripRow[] {
+  const prefix = (filters.prefix ?? "").trim().toUpperCase();
+  const num = (filters.num ?? "").trim();
+  const escort = escortKey(filters.escort);
+  const from = filters.fromDate ?? "";
+  const to = filters.toDate ?? "";
+  const year = filters.year && filters.year !== "all" ? filters.year : "";
+  const only = filters.trip ?? null;
+  return trips.filter((trip) => {
+    if (only !== null && (only === "none" ? trip.inviteId !== null : trip.inviteId !== only)) {
+      return false;
+    }
+    if (prefix && !(trip.prefix ?? "").toUpperCase().startsWith(prefix)) return false;
+    if (num && !(trip.num ?? "").startsWith(num)) return false;
+    if (escort && !escortKey(trip.escort).includes(escort)) return false;
+    // A trip without a departure only survives when no date/year filter is
+    // set - such a filter means "trips of that period".
+    if (from || to || year) {
+      if (!trip.departure) return false;
+      if (from && trip.departure < from) return false;
+      if (to && trip.departure > to) return false;
+      if (year && trip.departure.slice(0, 4) !== year) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * The responses a set of trip rows stands for. The "no trip" bucket row
+ * stands for every response that did not come through a trip link.
+ */
+export function responsesOfTrips<R extends Pick<ReportResponse, "invite_id">>(
+  responses: R[],
+  trips: Pick<TripRow, "inviteId">[],
+  allTrips: Pick<TripRow, "inviteId">[],
+): R[] {
+  const tripIds = new Set(
+    allTrips.map((trip) => trip.inviteId).filter((id): id is number => id !== null),
+  );
+  const chosen = new Set(trips.map((trip) => trip.inviteId));
+  const withBucket = chosen.has(null);
+  return responses.filter((response) =>
+    response.invite_id !== null && tripIds.has(response.invite_id)
+      ? chosen.has(response.invite_id)
+      : withBucket,
+  );
+}
+
+export type ReportSummary = {
+  /** Trip links among the rows (the "no trip" bucket is not a trip). */
+  tripCount: number;
+  responseCount: number;
+  travelers: TravelerTotals | null;
+  /** Flat mean over every rating answer of the scoped responses. */
+  overallAvg: number | null;
+  perField: FieldStat[];
+};
+
+/** The summary cards: `responses` must already be scoped to `trips`. */
+export function summarizeTrips(
+  trips: TripRow[],
+  responses: Pick<ReportResponse, "answers">[],
+  ratingFields: RatingRef[],
+): ReportSummary {
+  const { perField, overallAvg } = fieldStats(ratingFields, responses);
+  return {
+    tripCount: trips.filter((trip) => trip.inviteId !== null).length,
+    // The scoped list, not the rows' server counts - a response deleted a
+    // moment ago is already gone from it.
+    responseCount: responses.length,
+    travelers: sumTravelers(trips),
+    overallAvg,
+    perField,
+  };
+}
+
+/** A trip's place in time: its departure, else the day its link was made. */
+function tripDay(trip: Pick<TripRow, "departure" | "linkCreatedAt">): string {
+  return trip.departure ?? trip.linkCreatedAt?.slice(0, 10) ?? "";
+}
+
+/** Oldest first; two trips on one day keep the order their links were made. */
+function chronological(a: TripRow, b: TripRow): number {
+  const day = tripDay(a).localeCompare(tripDay(b));
+  if (day !== 0) return day;
+  return (a.linkCreatedAt ?? "").localeCompare(b.linkCreatedAt ?? "");
+}
+
+export type EscortTrip = {
+  inviteId: number;
+  code: string;
+  departure: string | null;
+  responseCount: number;
+  travelers: TravelerStat | null;
+  overallAvg: number | null;
+};
+
+export type EscortRow = {
+  /** `escortKey` of the name - one escort typed two ways is one row. */
+  key: string;
+  /** The name as typed on their latest trip. */
+  name: string;
+  /** Oldest first. */
+  trips: EscortTrip[];
+  responseCount: number;
+  travelers: TravelerTotals | null;
+  /** Flat mean over every rating answer on their trips. */
+  overallAvg: number | null;
+  perField: FieldStat[];
+  firstDeparture: string | null;
+  lastDeparture: string | null;
+  /**
+   * Their latest rated trip's average minus the flat average of their earlier
+   * trips - up = the last trip scored better than before. null until they
+   * have a rated trip AND a rated earlier one.
+   */
+  trend: number | null;
+};
+
+function escortTrip(trip: TripRow): EscortTrip {
+  return {
+    inviteId: trip.inviteId as number,
+    code: trip.code ?? "",
+    departure: trip.departure,
+    responseCount: trip.responseCount,
+    travelers: trip.travelers,
+    overallAvg: trip.overallAvg,
+  };
+}
+
+/** Trip links grouped by their escort's name, each group oldest first. */
+function tripsByEscort(trips: TripRow[]): Map<string, TripRow[]> {
+  const groups = new Map<string, TripRow[]>();
+  for (const trip of trips) {
+    if (trip.inviteId === null) continue;
+    const key = escortKey(trip.escort);
+    if (!key) continue;
+    const list = groups.get(key) ?? [];
+    list.push(trip);
+    groups.set(key, list);
+  }
+  for (const list of groups.values()) list.sort(chronological);
+  return groups;
+}
+
+/**
+ * One row per escort over the given (filtered) trips: how many trips, when,
+ * how many families answered and how they scored - busiest escort first.
+ */
+export function buildEscortRows(
+  trips: TripRow[],
+  responses: ReportResponse[],
+  ratingFields: RatingRef[],
+): EscortRow[] {
+  const rows: EscortRow[] = [];
+  for (const [key, own] of tripsByEscort(trips)) {
+    const ids = new Set(own.map((trip) => trip.inviteId));
+    const theirs = responses.filter((r) => r.invite_id !== null && ids.has(r.invite_id));
+    const { perField, overallAvg } = fieldStats(ratingFields, theirs);
+    const rated = own.filter((trip) => trip.overallAvg !== null);
+    const last = rated[rated.length - 1];
+    let trend: number | null = null;
+    if (last && rated.length > 1) {
+      const earlierIds = new Set(rated.slice(0, -1).map((trip) => trip.inviteId));
+      const earlier = fieldStats(
+        ratingFields,
+        theirs.filter((r) => earlierIds.has(r.invite_id)),
+      ).overallAvg;
+      trend = diff(last.overallAvg, earlier);
+    }
+    const departures = own
+      .map((trip) => trip.departure)
+      .filter((day): day is string => day !== null)
+      .sort();
+    rows.push({
+      key,
+      name: (own[own.length - 1].escort ?? "").trim(),
+      trips: own.map(escortTrip),
+      responseCount: own.reduce((sum, trip) => sum + trip.responseCount, 0),
+      travelers: sumTravelers(own),
+      overallAvg,
+      perField,
+      firstDeparture: departures[0] ?? null,
+      lastDeparture: departures[departures.length - 1] ?? null,
+      trend,
+    });
+  }
+  return rows.sort(
+    (a, b) => b.trips.length - a.trips.length || a.name.localeCompare(b.name, "he"),
+  );
+}
+
+export type FieldCompare = {
+  fieldId: number;
+  current: number | null;
+  currentCount: number;
+  /** The same escort's earlier trips. */
+  past: number | null;
+  pastCount: number;
+  /** current - past; null when either side has no answer. */
+  delta: number | null;
+  /** Every other response of this form, any escort - the house average. */
+  others: number | null;
+};
+
+export type TripComparison = {
+  escort: string;
+  /** The escort's trips before this one, oldest first. */
+  pastTrips: EscortTrip[];
+  pastResponses: number;
+  current: number | null;
+  past: number | null;
+  delta: number | null;
+  others: number | null;
+  perField: FieldCompare[];
+};
+
+function diff(a: number | null, b: number | null): number | null {
+  return a === null || b === null ? null : round2(a - b);
+}
+
+/**
+ * This trip against its escort's earlier trips (and against every other
+ * response of the form). `allTrips` should be the UNFILTERED list - a 2026
+ * filter still compares a 2026 trip with the escort's 2025 ones. null when
+ * the trip has no escort or the escort has no earlier trip.
+ */
+export function compareWithEscortPast(
+  trip: TripRow,
+  allTrips: TripRow[],
+  responses: ReportResponse[],
+  ratingFields: RatingRef[],
+): TripComparison | null {
+  if (trip.inviteId === null) return null;
+  const key = escortKey(trip.escort);
+  if (!key) return null;
+  const own = tripsByEscort(allTrips).get(key) ?? [];
+  const at = own.findIndex((t) => t.inviteId === trip.inviteId);
+  if (at <= 0) return null;
+  const past = own.slice(0, at);
+  const pastIds = new Set(past.map((t) => t.inviteId));
+
+  const current = fieldStats(
+    ratingFields,
+    responses.filter((r) => r.invite_id === trip.inviteId),
+  );
+  const pastResponses = responses.filter(
+    (r) => r.invite_id !== null && pastIds.has(r.invite_id),
+  );
+  const before = fieldStats(ratingFields, pastResponses);
+  const others = fieldStats(
+    ratingFields,
+    responses.filter((r) => r.invite_id !== trip.inviteId),
+  );
+
+  return {
+    escort: (trip.escort ?? "").trim(),
+    pastTrips: past.map(escortTrip),
+    pastResponses: pastResponses.length,
+    current: current.overallAvg,
+    past: before.overallAvg,
+    delta: diff(current.overallAvg, before.overallAvg),
+    others: others.overallAvg,
+    perField: ratingFields.map((field, i) => ({
+      fieldId: field.id,
+      current: current.perField[i].avg,
+      currentCount: current.perField[i].count,
+      past: before.perField[i].avg,
+      pastCount: before.perField[i].count,
+      delta: diff(current.perField[i].avg, before.perField[i].avg),
+      others: others.perField[i].avg,
+    })),
   };
 }

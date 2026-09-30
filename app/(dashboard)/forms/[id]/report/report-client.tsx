@@ -2,13 +2,28 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronDown, Loader2, Pencil, StickyNote, Star, Users, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  FileDown,
+  Loader2,
+  Pencil,
+  StickyNote,
+  Star,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToastAction } from "@/components/ui/toast";
+import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import {
   Select,
   SelectContent,
@@ -31,10 +46,27 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { adminLabel } from "@/lib/forms/i18n";
-import { updateFormResponseAnswers } from "@/lib/actions/form-response-actions";
+import {
+  deleteFormResponse,
+  restoreFormResponse,
+  updateFormResponseAnswers,
+} from "@/lib/actions/form-response-actions";
 import { setTripTotalTravelers } from "@/lib/actions/form-invite-actions";
-import { sumTravelers } from "@/lib/forms/report";
-import type { TravelerStat, TripReport, TripRow } from "@/lib/forms/report";
+import {
+  buildEscortRows,
+  compareWithEscortPast,
+  filterTrips,
+  responsesOfTrips,
+  summarizeTrips,
+  tripFiltersToQuery,
+} from "@/lib/forms/report";
+import type {
+  TravelerStat,
+  TripComparison,
+  TripFilters,
+  TripReport,
+  TripRow,
+} from "@/lib/forms/report";
 import { STAFF_EDITABLE_TYPES } from "@/types/form.types";
 import type {
   AnswerMap,
@@ -42,8 +74,15 @@ import type {
   FormField,
   FormResponseRow,
 } from "@/types/form.types";
+import { fmtAvg, fmtDate, fmtTravelers } from "@/lib/forms/format";
+import { AvgBadge, EscortsPanel, QuestionsPanel, TripComparisonBlock } from "./analytics";
+import type { RatingFieldInfo } from "./analytics";
 
-type RatingFieldInfo = { id: number; label: string; reviewScore: boolean };
+/** The PDF export of the given filters - summary page, then a page per family. */
+function pdfHref(formId: number, filters: TripFilters): string {
+  const query = tripFiltersToQuery(filters);
+  return `/forms/${formId}/pdf${query ? `?${query}` : ""}`;
+}
 
 type Props = {
   formId: number;
@@ -78,16 +117,6 @@ function answerOf(
   return value !== undefined && value !== null && value !== "" ? value : undefined;
 }
 
-/**
- * "15 / 17" - travellers the answers account for, of the trip's staff-set
- * size. With no size set, the reported number stands alone.
- */
-function fmtTravelers(stat: TravelerStat | null): string {
-  if (!stat) return "-";
-  if (stat.total !== null) return `${stat.reported} / ${stat.total}`;
-  return stat.forms > 0 ? String(stat.reported) : "-";
-}
-
 /** A trip row with its size replaced by one typed in this session. */
 function withTotal(
   stat: TravelerStat | null,
@@ -118,33 +147,6 @@ function formatAnswer(field: FormField, value: AnswerValue): string {
   return String(value);
 }
 
-const fmtDate = (iso: string | null) => {
-  if (!iso) return "-";
-  const [y, m, d] = iso.slice(0, 10).split("-");
-  return y && m && d ? `${d}.${m}.${y}` : iso;
-};
-
-const fmtAvg = (avg: number | null) => (avg === null ? "-" : avg.toFixed(2));
-
-function AvgBadge({ avg }: { avg: number | null }) {
-  if (avg === null) return <span className="text-muted-foreground">-</span>;
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
-        avg >= 4.5
-          ? "bg-emerald-500/15 text-emerald-600"
-          : avg >= 3.5
-            ? "bg-amber-500/15 text-amber-600"
-            : "bg-red-500/15 text-red-600",
-      )}
-    >
-      <Star className="h-3 w-3" fill="currentColor" />
-      {avg.toFixed(2)}
-    </span>
-  );
-}
-
 export function ReportClient({
   formId,
   report,
@@ -152,20 +154,28 @@ export function ReportClient({
   fields,
   responses,
 }: Props) {
+  const router = useRouter();
+  const { toast } = useToast();
   const [prefix, setPrefix] = useState("");
   const [num, setNum] = useState("");
   const [escort, setEscort] = useState("");
   const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [year, setYear] = useState("all");
+  const [tab, setTab] = useState("trips");
   const [openTrip, setOpenTrip] = useState<number | null | undefined>(undefined);
   const [viewingId, setViewingId] = useState<number | null>(null);
   // Answers corrected in the popup this session - shown at once, while
   // router.refresh() brings the recomputed report (traveller sums) behind it.
   const [edited, setEdited] = useState<Record<number, AnswerMap>>({});
+  // Responses deleted this session - gone from the lists at once, same idea.
+  const [removed, setRemoved] = useState<ReadonlySet<number>>(() => new Set());
   const rows = useMemo(
     () =>
-      responses.map((r) => (edited[r.id] ? { ...r, answers: edited[r.id] } : r)),
-    [responses, edited],
+      responses
+        .filter((r) => !removed.has(r.id))
+        .map((r) => (edited[r.id] ? { ...r, answers: edited[r.id] } : r)),
+    [responses, edited, removed],
   );
   const viewing =
     viewingId === null ? null : (rows.find((r) => r.id === viewingId) ?? null);
@@ -200,49 +210,82 @@ export function ReportClient({
     return [...years].sort().reverse();
   }, [report.trips]);
 
-  const trips = useMemo(() => {
-    const p = prefix.trim().toUpperCase();
-    const n = num.trim();
-    const e = escort.trim();
-    return allTrips.filter((trip) => {
-      if (p && !(trip.prefix ?? "").startsWith(p)) return false;
-      if (n && !(trip.num ?? "").startsWith(n)) return false;
-      if (e && !(trip.escort ?? "").includes(e)) return false;
-      // A trip without a departure only survives when no date/year filter is
-      // set - such a filter means "trips of that period".
-      if ((fromDate || year !== "all") && !trip.departure) return false;
-      if (fromDate && trip.departure && trip.departure < fromDate) return false;
-      if (year !== "all" && trip.departure && trip.departure.slice(0, 4) !== year)
-        return false;
-      return true;
-    });
-  }, [allTrips, prefix, num, escort, fromDate, year]);
+  // Escort names across every trip, for the escort filter's suggestions.
+  const escortNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const trip of report.trips) {
+      const name = trip.escort?.trim();
+      if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+    }
+    return [...names.values()].sort((a, b) => a.localeCompare(b, "he"));
+  }, [report.trips]);
+
+  // One filter rule for the screen and the PDF (lib/forms/report.ts).
+  const filters: TripFilters = { prefix, num, escort, fromDate, toDate, year };
+  const anyFilter = Boolean(prefix || num || escort || fromDate || toDate || year !== "all");
+  const trips = useMemo(
+    () => filterTrips(allTrips, { prefix, num, escort, fromDate, toDate, year }),
+    [allTrips, prefix, num, escort, fromDate, toDate, year],
+  );
+  const scoped = useMemo(
+    () => responsesOfTrips(rows, trips, allTrips),
+    [rows, trips, allTrips],
+  );
 
   // The summary reflects what is FILTERED, so a year filter = an annual report.
-  const filtered = useMemo(() => {
-    const tripRows = trips.filter((t) => t.inviteId !== null);
-    const count = trips.reduce((sum, t) => sum + t.responseCount, 0);
-    const travelers = sumTravelers(trips);
-    const weighted = trips
-      .filter((t) => t.overallAvg !== null && t.responseCount > 0)
-      .reduce(
-        (acc, t) => {
-          // Weight by answer volume via perField counts for a true flat mean.
-          const answers = t.perField.reduce((s, f) => s + f.count, 0);
-          return {
-            sum: acc.sum + (t.overallAvg as number) * answers,
-            n: acc.n + answers,
-          };
-        },
-        { sum: 0, n: 0 },
-      );
-    return {
-      tripCount: tripRows.length,
-      responseCount: count,
-      travelers,
-      overallAvg: weighted.n > 0 ? weighted.sum / weighted.n : null,
-    };
-  }, [trips]);
+  const filtered = useMemo(
+    () => summarizeTrips(trips, scoped, ratingFields),
+    [trips, scoped, ratingFields],
+  );
+  const escorts = useMemo(
+    () => buildEscortRows(trips, rows, ratingFields),
+    [trips, rows, ratingFields],
+  );
+
+  function clearFilters() {
+    setPrefix("");
+    setNum("");
+    setEscort("");
+    setFromDate("");
+    setToDate("");
+    setYear("all");
+  }
+
+  // A delete takes the response off the screen at once; the toast undoes it.
+  function onDeleted(id: number) {
+    setRemoved((prev) => new Set(prev).add(id));
+    setViewingId(null);
+    router.refresh();
+    toast({
+      title: "המשוב נמחק",
+      description: "הוא כבר לא נספר בדוח, בממוצעים וב-PDF.",
+      action: (
+        <ToastAction altText="ביטול המחיקה" onClick={() => undoDelete(id)}>
+          ביטול
+        </ToastAction>
+      ),
+    });
+  }
+
+  function undoDelete(id: number) {
+    restoreFormResponse(id, formId)
+      .then((result) => {
+        if (!result.ok) {
+          toast({ variant: "destructive", title: "השחזור נכשל", description: result.message });
+          return;
+        }
+        setRemoved((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+        router.refresh();
+      })
+      .catch((e) => {
+        console.error("restoreFormResponse threw:", e);
+        toast({ variant: "destructive", title: "השחזור נכשל" });
+      });
+  }
 
   // Card: coverage over SIZED trips only (see sumTravelers); travellers on
   // unsized trips are named in the hint instead of padding the ratio.
@@ -262,13 +305,10 @@ export function ReportClient({
     return { value: `${t.sizedReported} / ${t.total}`, hint: parts.join(" · ") };
   })();
 
-  const responsesOf = (tripInviteId: number | null) =>
-    rows.filter((r) =>
-      tripInviteId === null
-        ? r.invite_id === null ||
-          !report.trips.some((t) => t.inviteId === r.invite_id)
-        : r.invite_id === tripInviteId,
-    );
+  const responsesOf = (trip: TripRow) => responsesOfTrips(rows, [trip], allTrips);
+  // Only the open trip is compared - the rest never render the block.
+  const comparisonOf = (trip: TripRow): TripComparison | null =>
+    compareWithEscortPast(trip, allTrips, rows, ratingFields);
 
   return (
     <div className="space-y-6">
@@ -304,7 +344,7 @@ export function ReportClient({
       </div>
 
       {/* Filters */}
-      <div className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-5">
+      <div className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-3 lg:grid-cols-6">
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Code letters</Label>
           <Input dir="ltr" placeholder="BBC" value={prefix} onChange={(e) => setPrefix(e.target.value)} />
@@ -315,11 +355,26 @@ export function ReportClient({
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Escort</Label>
-          <Input dir="rtl" className="text-right" value={escort} onChange={(e) => setEscort(e.target.value)} />
+          <Input
+            dir="rtl"
+            className="text-right"
+            list="report-escorts"
+            value={escort}
+            onChange={(e) => setEscort(e.target.value)}
+          />
+          <datalist id="report-escorts">
+            {escortNames.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Departure from</Label>
           <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Departure to</Label>
+          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Year</Label>
@@ -339,69 +394,116 @@ export function ReportClient({
         </div>
       </div>
 
-      {/* Trips */}
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-8" />
-              <TableHead>Trip</TableHead>
-              <TableHead>Escort</TableHead>
-              <TableHead>Departure</TableHead>
-              <TableHead className="text-center">Responses</TableHead>
-              {showTravelers && (
-                <TableHead
-                  className="text-center"
-                  title="Travellers the answers account for / travellers on the trip. Click a trip's number to set its size."
-                >
-                  Travellers
-                </TableHead>
-              )}
-              <TableHead>Average</TableHead>
-              <TableHead>Last response</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {trips.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={showTravelers ? 8 : 7}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  No trips match the filters.
-                </TableCell>
-              </TableRow>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TabsList>
+            <TabsTrigger value="trips">Trips ({trips.length})</TabsTrigger>
+            <TabsTrigger value="escorts">Escorts ({escorts.length})</TabsTrigger>
+            <TabsTrigger value="questions">Questions</TabsTrigger>
+          </TabsList>
+          <div className="flex items-center gap-2">
+            {anyFilter && (
+              <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
+                Clear filters
+              </Button>
             )}
+            <Button asChild variant="outline" size="sm">
+              <a
+                href={pdfHref(formId, filters)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Page 1: the summary of what the filters show. Then one page per family."
+              >
+                <FileDown className="me-1.5 h-4 w-4" />
+                Export PDF
+              </a>
+            </Button>
+          </div>
+        </div>
 
-            {trips.map((trip) => (
-              <TripRows
-                key={trip.inviteId ?? "bucket"}
-                trip={trip}
-                ratingFields={ratingFields}
-                fields={fields}
-                travelerFieldId={report.travelerFieldId}
-                showTravelers={showTravelers}
-                formId={formId}
-                onSized={(inviteId, total) =>
-                  setSizes((prev) => ({ ...prev, [inviteId]: total }))
-                }
-                open={openTrip === trip.inviteId}
-                onToggle={() =>
-                  setOpenTrip(openTrip === trip.inviteId ? undefined : trip.inviteId)
-                }
-                responses={responsesOf(trip.inviteId)}
-                onView={(r) => setViewingId(r.id)}
-              />
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+        <TabsContent value="escorts" className="mt-0 rounded-lg border">
+          <EscortsPanel
+            escorts={escorts}
+            ratingFields={ratingFields}
+            housePerField={filtered.perField}
+            onFilterEscort={(name) => {
+              setEscort(name);
+              setTab("trips");
+            }}
+          />
+        </TabsContent>
+
+        <TabsContent value="questions" className="mt-0 rounded-lg border">
+          <QuestionsPanel ratingFields={ratingFields} perField={filtered.perField} />
+        </TabsContent>
+
+        {/* Trips */}
+        <TabsContent value="trips" className="mt-0 rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8" />
+                <TableHead>Trip</TableHead>
+                <TableHead>Escort</TableHead>
+                <TableHead>Departure</TableHead>
+                <TableHead className="text-center">Responses</TableHead>
+                {showTravelers && (
+                  <TableHead
+                    className="text-center"
+                    title="Travellers the answers account for / travellers on the trip. Click a trip's number to set its size."
+                  >
+                    Travellers
+                  </TableHead>
+                )}
+                <TableHead>Average</TableHead>
+                <TableHead>Last response</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {trips.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={showTravelers ? 8 : 7}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    No trips match the filters.
+                  </TableCell>
+                </TableRow>
+              )}
+  
+              {trips.map((trip) => (
+                <TripRows
+                  key={trip.inviteId ?? "bucket"}
+                  trip={trip}
+                  ratingFields={ratingFields}
+                  fields={fields}
+                  travelerFieldId={report.travelerFieldId}
+                  showTravelers={showTravelers}
+                  formId={formId}
+                  onSized={(inviteId, total) =>
+                    setSizes((prev) => ({ ...prev, [inviteId]: total }))
+                  }
+                  open={openTrip === trip.inviteId}
+                  onToggle={() =>
+                    setOpenTrip(openTrip === trip.inviteId ? undefined : trip.inviteId)
+                  }
+                  responses={responsesOf(trip)}
+                  comparison={openTrip === trip.inviteId ? comparisonOf(trip) : null}
+                  pdfUrl={pdfHref(formId, { trip: trip.inviteId ?? "none" })}
+                  onView={(r) => setViewingId(r.id)}
+                />
+              ))}
+            </TableBody>
+          </Table>
+        </TabsContent>
+      </Tabs>
 
       <ResponseDialog
         response={viewing}
         fields={fields}
         onClose={() => setViewingId(null)}
         onSaved={(id, answers) => setEdited((prev) => ({ ...prev, [id]: answers }))}
+        onDeleted={onDeleted}
       />
     </div>
   );
@@ -428,13 +530,17 @@ function ResponseDialog({
   fields,
   onClose,
   onSaved,
+  onDeleted,
 }: {
   response: FormResponseRow | null;
   fields: FormField[];
   onClose: () => void;
   onSaved: (responseId: number, answers: AnswerMap) => void;
+  /** An irrelevant response (a test, a duplicate) was taken out of the report. */
+  onDeleted: (responseId: number) => void;
 }) {
   const router = useRouter();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -468,6 +574,34 @@ function ResponseDialog({
   function close() {
     stopEdit();
     onClose();
+  }
+
+  async function remove() {
+    if (!response) return;
+    const sure = await confirm({
+      title: "למחוק את המשוב?",
+      description:
+        "המשוב יוצא מהדוח, מהממוצעים ומה-PDF. אפשר להחזיר אותו מיד, מההודעה שתופיע אחרי המחיקה.",
+      confirmLabel: "מחיקה",
+      cancelLabel: "ביטול",
+      destructive: true,
+    });
+    if (!sure) return;
+    setMessage(null);
+    startTransition(async () => {
+      try {
+        const result = await deleteFormResponse(response.id, response.form_id);
+        if (!result.ok) {
+          setMessage(result.message);
+          return;
+        }
+        stopEdit();
+        onDeleted(response.id);
+      } catch (e) {
+        console.error("deleteFormResponse threw:", e);
+        setMessage("Deleting failed.");
+      }
+    });
   }
 
   function save() {
@@ -518,14 +652,40 @@ function ResponseDialog({
                 {response && new Date(response.submitted_at).toLocaleString()}
               </span>
             </span>
-            {canEdit && !editing && (
-              <Button type="button" variant="outline" size="sm" onClick={startEdit}>
-                <Pencil className="me-1.5 h-3.5 w-3.5" />
-                עריכה
-              </Button>
+            {!editing && (
+              <span className="flex shrink-0 gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={remove}
+                  disabled={pending}
+                  title="המשוב לא רלוונטי (בדיקה, כפילות, טופס לא נכון) - מוציאים אותו מהדוח"
+                >
+                  {pending ? (
+                    <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="me-1.5 h-3.5 w-3.5" />
+                  )}
+                  מחיקה
+                </Button>
+                {canEdit && (
+                  <Button type="button" variant="outline" size="sm" onClick={startEdit}>
+                    <Pencil className="me-1.5 h-3.5 w-3.5" />
+                    עריכה
+                  </Button>
+                )}
+              </span>
             )}
           </DialogTitle>
         </DialogHeader>
+
+        {message && !editing && (
+          <p dir="rtl" className="text-right text-xs text-destructive">
+            {message}
+          </p>
+        )}
 
         {response && (
           <div dir="rtl" className="space-y-1.5">
@@ -797,6 +957,8 @@ function TripRows({
   open,
   onToggle,
   responses,
+  comparison,
+  pdfUrl,
   onView,
 }: {
   trip: TripRow;
@@ -809,6 +971,10 @@ function TripRows({
   open: boolean;
   onToggle: () => void;
   responses: FormResponseRow[];
+  /** This trip vs its escort's earlier trips - null when there are none. */
+  comparison: TripComparison | null;
+  /** This trip alone as a PDF. */
+  pdfUrl: string;
   onView: (response: FormResponseRow) => void;
 }) {
   return (
@@ -857,7 +1023,15 @@ function TripRows({
 
       {open && (
         <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableCell colSpan={showTravelers ? 8 : 7} className="p-4">
+          <TableCell colSpan={showTravelers ? 8 : 7} className="space-y-4 p-4">
+            <div className="flex justify-end">
+              <Button asChild variant="outline" size="sm" className="h-7">
+                <a href={pdfUrl} target="_blank" rel="noopener noreferrer">
+                  <FileDown className="me-1.5 h-3.5 w-3.5" />
+                  PDF of this trip
+                </a>
+              </Button>
+            </div>
             <div className="grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
               {/* Per-question averages */}
               <div>
@@ -950,6 +1124,9 @@ function TripRows({
                 )}
               </div>
             </div>
+            {comparison && (
+              <TripComparisonBlock comparison={comparison} ratingFields={ratingFields} />
+            )}
           </TableCell>
         </TableRow>
       )}
