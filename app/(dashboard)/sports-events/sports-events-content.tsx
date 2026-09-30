@@ -25,6 +25,8 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/auth-context";
+import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   getSports,
   getTournaments,
@@ -50,12 +52,149 @@ import {
   PaginationControls,
 } from "@/components/provider-browse";
 
+// Smart departure and return dates: 2 days before (never a Friday/Saturday -
+// moved back to Thursday), 1 day after (a Saturday moves to Sunday).
+function calculateSmartDates(eventDate: string) {
+  const event = new Date(eventDate);
 
+  const departure = new Date(event);
+  departure.setDate(event.getDate() - 2);
+  const departureDay = departure.getDay();
+  if (departureDay === 5) {
+    departure.setDate(departure.getDate() - 1); // Friday -> Thursday
+  } else if (departureDay === 6) {
+    departure.setDate(departure.getDate() - 2); // Saturday -> Thursday
+  }
 
+  const returnDate = new Date(event);
+  returnDate.setDate(event.getDate() + 1);
+  if (returnDate.getDay() === 6) {
+    returnDate.setDate(returnDate.getDate() + 1); // Saturday -> Sunday
+  }
+
+  return {
+    departure: departure.toISOString().split("T")[0],
+    return: returnDate.toISOString().split("T")[0],
+  };
+}
+
+/**
+ * The ONE XS2Event -> new-event draft behind both "Create Event" buttons: a row on
+ * /sports-events and the provider detail page (`[id]/page.tsx`). Fresh live tickets with
+ * stock >= 4 only, net EUR (stored in cents) converted to USD at today's rate, the nearest
+ * Location, the Hebrew name left empty for staff to translate, smart travel dates.
+ * `nearestLocation` is returned for the caller's toast (null = kept the venue coords).
+ */
+export async function buildEventFromSportsRow(event: XS2Event): Promise<{
+  eventData: Omit<Event, "id">;
+  nearestLocation: Awaited<ReturnType<typeof findNearestLocation>> | null;
+}> {
+  // Update exchange rates first
+  await exchangeRateClientService.updateAllExchangeRates();
+
+  // Get tickets for this specific event
+  const eventTickets = await getLiveTickets(event.event_id);
+
+  // Filter out tickets with stock < 4
+  const filteredEventTickets = eventTickets.filter((ticket) => ticket.stock >= 4);
+
+  // Convert XS2Tickets to EventTickets with EUR to USD conversion
+  const mappedTickets: EventTicket[] = await Promise.all(
+    filteredEventTickets.map(async (ticket) => {
+      // Get price in EUR (convert from cents to euros)
+      const priceInEUR = ticket.local_rates?.net_rate_eur
+        ? ticket.local_rates.net_rate_eur / 100
+        : 0;
+
+      // Convert EUR to USD
+      const priceInUSD = priceInEUR > 0
+        ? Math.round(await exchangeRateClientService.convertToUSD(priceInEUR, "EUR"))
+        : 0;
+
+      return {
+        id: ticket.ticket_id,
+        category: ticket.category_name || ticket.ticket_title,
+        price: priceInUSD, // Price converted to USD
+        description: ticket.description_supplier || ticket.ticket_title,
+        colorOnTheMap: "#3B82F6", // Default blue color
+        vendor: "XS2Events", // Optional vendor field, can be filled manually later
+        available: true,
+      };
+    }),
+  );
+
+  // Try to find the nearest location
+  let locationData: { latitude: number; longitude: number; name: string; city_iata: string; country_code?: string } = {
+    latitude: Number(event.latitude) || 0,
+    longitude: Number(event.longitude) || 0,
+    name: event.venue_name || event.city || "Unknown Venue",
+    city_iata: "", // This would need to be mapped separately
+    country_code: undefined,
+  };
+  let nearestLocation: Awaited<ReturnType<typeof findNearestLocation>> | null = null;
+
+  try {
+    // Only search for nearest location if we have valid coordinates
+    if (event.latitude && event.longitude) {
+      nearestLocation = await findNearestLocation(
+        Number(event.latitude),
+        Number(event.longitude),
+      );
+
+      if (nearestLocation) {
+        // Use the nearest location data instead
+        locationData = {
+          latitude: nearestLocation.latitude,
+          longitude: nearestLocation.longitude,
+          name: nearestLocation.name,
+          city_iata: nearestLocation.city_iata || "",
+          country_code: nearestLocation.country_code || undefined,
+        };
+      }
+    }
+  } catch (locationError) {
+    console.error("Failed to find nearest location:", locationError);
+    // Continue with original location data if nearest location search fails
+  }
+
+  // Create Event object from XS2Event data
+  const eventData: Omit<Event, "id"> = {
+    name: "", // TBD translate to hebrew first
+    name_english: event.event_name, // Fallback to same name if no translation
+    type: "sports_event_dynamic", // Set type for events created from sports events
+    date: new Date(event.date_start).toISOString().split("T")[0], // Convert to YYYY-MM-DD format
+    location: locationData,
+    map_image_url: `https://cdn.xs2event.com/venues/static/${event.venue_id}-legend.png`, // Auto-populated from venue_id
+    description:
+      event.event_description ||
+      `${event.event_name} at ${event.venue_name}`,
+    card_image_url: "", // Not available in XS2Event
+    tickets_and_rates: mappedTickets,
+    def_date_depart: "", // Will be calculated by smart dates
+    def_date_return: "", // Will be calculated by smart dates
+    usual_price: 0, // Would need to be set manually
+    base_flight_price: 0, // Would need to be set manually
+    base_hotel_price: 0, // Would need to be set manually
+    is_prioritized: false,
+    event_additional_markup: null,
+    is_deleted: "",
+    tags: "",
+  };
+
+  // Apply smart date calculation
+  const smartDates = calculateSmartDates(eventData.date);
+  eventData.def_date_depart = smartDates.departure;
+  eventData.def_date_return = smartDates.return;
+
+  return { eventData, nearestLocation };
+}
 
 export function SportsEventsContent() {
   const { toast } = useToast();
   const router = useRouter();
+  // The factory's intake is admin-only (createDraftBatch -> requireAdmin).
+  const { user } = useAuth();
+  const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
 
   // State management
   const [sports, setSports] = useState<XS2Sport[]>([]);
@@ -63,16 +202,18 @@ export function SportsEventsContent() {
   const [events, setEvents] = useState<XS2Event[]>([]);
 
   // Batch create (spec 2026-09-02 section 7): multi-select rows -> shared wizard.
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const toggleSelected = (id: string) =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+  // The selected ROWS are kept by id, not looked up in `events`: picking another
+  // tournament replaces `events`, and the batch must still hold every ticked row.
+  const [selectedRows, setSelectedRows] = useState<Map<string, XS2Event>>(new Map());
+  const toggleSelected = (row: XS2Event) =>
+    setSelectedRows((prev) => {
+      const next = new Map(prev);
+      if (next.has(row.event_id)) next.delete(row.event_id);
+      else next.set(row.event_id, row);
       return next;
     });
   const sendToFactory = async () => {
-    const rows = events.filter((e) => selectedIds.has(e.event_id));
+    const rows = Array.from(selectedRows.values());
     if (rows.length === 0) return;
     const result = await createDraftBatch({
       source: "sports",
@@ -83,11 +224,11 @@ export function SportsEventsContent() {
       toast({ variant: "destructive", title: "Factory intake failed" });
       return;
     }
-    setSelectedIds(new Set());
+    setSelectedRows(new Map());
     window.open("/factory", "_blank");
   };
   const openBatchCreate = () => {
-    const rows = events.filter((e) => selectedIds.has(e.event_id));
+    const rows = Array.from(selectedRows.values());
     if (rows.length === 0) return;
     try {
       window.localStorage.setItem(
@@ -430,110 +571,15 @@ export function SportsEventsContent() {
 
   const handleCreateEventFromList = async (event: XS2Event) => {
     try {
-      // Update exchange rates first
-      await exchangeRateClientService.updateAllExchangeRates();
-
-      // Get tickets for this specific event
-      const eventTickets = await getLiveTickets(event.event_id);
-
-      // Filter out tickets with stock < 4
-      const filteredEventTickets = eventTickets.filter(
-        (ticket) => ticket.stock >= 4
-      );
-
-      // Convert XS2Tickets to EventTickets with EUR to USD conversion
-      const mappedTickets: EventTicket[] = await Promise.all(
-        filteredEventTickets.map(async (ticket) => {
-          // Get price in EUR (convert from cents to euros)
-          const priceInEUR = ticket.local_rates?.net_rate_eur
-            ? ticket.local_rates.net_rate_eur / 100
-            : 0;
-          
-          // Convert EUR to USD
-          const priceInUSD = priceInEUR > 0 
-            ? Math.round(await exchangeRateClientService.convertToUSD(priceInEUR, 'EUR'))
-            : 0;
-
-          return {
-            id: ticket.ticket_id,
-            category: ticket.category_name || ticket.ticket_title,
-            price: priceInUSD, // Price converted to USD
-            description: ticket.description_supplier || ticket.ticket_title,
-            colorOnTheMap: "#3B82F6", // Default blue color
-            vendor: "XS2Events", // Optional vendor field, can be filled manually later
-            available: true
-          };
-        })
-      );
-
-      // Try to find the nearest location
-      let locationData: { latitude: number; longitude: number; name: string; city_iata: string; country_code?: string } = {
-        latitude: Number(event.latitude) || 0,
-        longitude: Number(event.longitude) || 0,
-        name: event.venue_name || event.city || "Unknown Venue",
-        city_iata: "", // This would need to be mapped separately
-        country_code: undefined,
-      };
-
-      try {
-        // Only search for nearest location if we have valid coordinates
-        if (event.latitude && event.longitude) {
-          const nearestLocation = await findNearestLocation(
-            Number(event.latitude),
-            Number(event.longitude)
-          );
-
-          if (nearestLocation) {
-            // Use the nearest location data instead
-            locationData = {
-              latitude: nearestLocation.latitude,
-              longitude: nearestLocation.longitude,
-              name: nearestLocation.name,
-              city_iata: nearestLocation.city_iata || "",
-              country_code: nearestLocation.country_code || undefined,
-            };
-
-            toast({
-              title: "Location Auto-filled",
-              description: `Found nearest location: ${
-                nearestLocation.name
-              } (${nearestLocation.distance?.toFixed(1)} km away)`,
-            });
-          }
-        }
-      } catch (locationError) {
-        console.error("Failed to find nearest location:", locationError);
-        // Continue with original location data if nearest location search fails
+      const { eventData, nearestLocation } = await buildEventFromSportsRow(event);
+      if (nearestLocation) {
+        toast({
+          title: "Location Auto-filled",
+          description: `Found nearest location: ${
+            nearestLocation.name
+          } (${nearestLocation.distance?.toFixed(1)} km away)`,
+        });
       }
-
-      // Create Event object from XS2Event data
-      const eventData: Omit<Event, "id"> = {
-        name: "", // TBD translate to hebrew first
-        name_english: event.event_name, // Fallback to same name if no translation
-        type: "sports_event_dynamic", // Set type for events created from sports events
-        date: new Date(event.date_start).toISOString().split("T")[0], // Convert to YYYY-MM-DD format
-        location: locationData,
-        map_image_url: `https://cdn.xs2event.com/venues/static/${event.venue_id}-legend.png`, // Auto-populated from venue_id
-        description:
-          event.event_description ||
-          `${event.event_name} at ${event.venue_name}`,
-        card_image_url: "", // Not available in XS2Event
-        tickets_and_rates: mappedTickets,
-        def_date_depart: "", // Will be calculated by smart dates
-        def_date_return: "", // Will be calculated by smart dates
-        usual_price: 0, // Would need to be set manually
-        base_flight_price: 0, // Would need to be set manually
-        base_hotel_price: 0, // Would need to be set manually
-        is_prioritized: false,
-        event_additional_markup: null,
-        is_deleted: "",
-        tags: "",
-      };
-
-      // Apply smart date calculation
-      const smartDates = calculateSmartDates(eventData.date);
-      eventData.def_date_depart = smartDates.departure;
-      eventData.def_date_return = smartDates.return;
 
       // Encode the event data and navigate to create event page
       const encodedData = encodeURIComponent(JSON.stringify(eventData));
@@ -546,39 +592,6 @@ export function SportsEventsContent() {
         description: "Failed to prepare event data. Please try again.",
       });
     }
-  };
-
-  // Helper function to calculate smart departure and return dates
-  const calculateSmartDates = (eventDate: string) => {
-    const event = new Date(eventDate);
-
-    // Calculate departure date (2 days before, but avoid Friday/Saturday)
-    const departure = new Date(event);
-    departure.setDate(event.getDate() - 2);
-
-    // If departure falls on Friday (5) or Saturday (6), move to Thursday
-    const departureDay = departure.getDay();
-    if (departureDay === 5) {
-      // Friday
-      departure.setDate(departure.getDate() - 1); // Move to Thursday
-    } else if (departureDay === 6) {
-      // Saturday
-      departure.setDate(departure.getDate() - 2); // Move to Thursday
-    }
-
-    // Calculate return date (1 day after, but if Saturday move to Sunday)
-    const returnDate = new Date(event);
-    returnDate.setDate(event.getDate() + 1);
-
-    // If return falls on Saturday (6), move to Sunday
-    if (returnDate.getDay() === 6) {
-      returnDate.setDate(returnDate.getDate() + 1); // Move to Sunday
-    }
-
-    return {
-      departure: departure.toISOString().split("T")[0],
-      return: returnDate.toISOString().split("T")[0],
-    };
   };
 
   const formatDate = (dateString: string | undefined) => {
@@ -873,8 +886,8 @@ export function SportsEventsContent() {
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Checkbox
-                          checked={selectedIds.has(event.event_id)}
-                          onCheckedChange={() => toggleSelected(event.event_id)}
+                          checked={selectedRows.has(event.event_id)}
+                          onCheckedChange={() => toggleSelected(event)}
                           aria-label={`Select ${event.event_name}`}
                         />
                       </div>
@@ -934,19 +947,21 @@ export function SportsEventsContent() {
                   ))}
                 </div>
 
-                {selectedIds.size > 0 && (
+                {selectedRows.size > 0 && (
                   <div className="sticky bottom-0 z-20 mt-3 flex items-center justify-between rounded-md border bg-background p-3 shadow">
-                    <span className="text-sm font-medium">{selectedIds.size} selected</span>
+                    <span className="text-sm font-medium">{selectedRows.size} selected</span>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>
+                      <Button variant="outline" size="sm" onClick={() => setSelectedRows(new Map())}>
                         Clear
                       </Button>
                       <Button size="sm" onClick={openBatchCreate}>
-                        Create {selectedIds.size} events
+                        Create {selectedRows.size} events
                       </Button>
-                      <Button size="sm" variant="secondary" onClick={sendToFactory}>
-                        Send to factory
-                      </Button>
+                      {isAdmin && (
+                        <Button size="sm" variant="secondary" onClick={sendToFactory}>
+                          Send to factory
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}

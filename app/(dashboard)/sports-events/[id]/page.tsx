@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getLiveTickets } from "@/lib/actions/sports-events-actions";
-import { findNearestLocation } from "@/lib/actions/location-actions";
 import { supabase } from "@/lib/supabase-client";
 import {
   XS2Event,
@@ -31,8 +30,8 @@ import {
   XS2Tournament,
   XS2Sport,
 } from "@/types/sports-events.types";
-import { Event, EventTicket } from "@/types/app.types";
 import { formatTicketNetPrice, formatTicketFaceValue } from "@/lib/utils";
+import { buildEventFromSportsRow } from "../sports-events-content";
 
 interface EventDetails extends XS2Event {
   tournament?: XS2Tournament;
@@ -186,8 +185,11 @@ export default function EventDetailsPage() {
     }
   };
 
+  // Same draft as a row's "Create Event" on /sports-events (buildEventFromSportsRow):
+  // tickets with stock >= 4, priced in USD, Hebrew name left empty. It used to map the
+  // net EUR straight into the price, keep every ticket and put the English name in `name`.
   const handleCreateEvent = async () => {
-    if (!event || !tickets) {
+    if (!event) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -196,121 +198,28 @@ export default function EventDetailsPage() {
       return;
     }
 
-    // Convert XS2Tickets to EventTickets (with actual prices in euros)
-    const eventTickets: EventTicket[] = tickets.map((ticket) => ({
-      id: ticket.ticket_id,
-      category: ticket.category_name || ticket.ticket_title,
-      price: ticket.local_rates?.net_rate_eur
-        ? ticket.local_rates.net_rate_eur / 100
-        : 0, // Convert from cents to euros
-      description: ticket.description_supplier || ticket.ticket_title,
-      colorOnTheMap: "#3B82F6", // Default blue color
-      vendor: "XS2Tickets", // Optional vendor field, can be filled manually later
-    }));
-
-    // Try to find the nearest location
-    let locationData: { latitude: number; longitude: number; name: string; city_iata: string; country_code?: string } = {
-      latitude: Number(event.latitude) || 0,
-      longitude: Number(event.longitude) || 0,
-      name: event.venue_name || event.city || "Unknown Venue",
-      city_iata: "", // This would need to be mapped separately
-    };
-
     try {
-      // Only search for nearest location if we have valid coordinates
-      if (event.latitude && event.longitude) {
-        const nearestLocation = await findNearestLocation(
-          Number(event.latitude),
-          Number(event.longitude)
-        );
-
-        if (nearestLocation) {
-          // Use the nearest location data instead
-          locationData = {
-            latitude: nearestLocation.latitude,
-            longitude: nearestLocation.longitude,
-            name: nearestLocation.name,
-            city_iata: nearestLocation.city_iata || "",
-            country_code: nearestLocation.country_code || undefined,
-          };
-
-          toast({
-            title: "Location Auto-filled",
-            description: `Found nearest location: ${
-              nearestLocation.name
-            } (${nearestLocation.distance?.toFixed(1)} km away)`,
-          });
-        }
+      const { eventData, nearestLocation } = await buildEventFromSportsRow(event);
+      if (nearestLocation) {
+        toast({
+          title: "Location Auto-filled",
+          description: `Found nearest location: ${
+            nearestLocation.name
+          } (${nearestLocation.distance?.toFixed(1)} km away)`,
+        });
       }
+
+      // Encode the event data and navigate to create event page
+      const encodedData = encodeURIComponent(JSON.stringify(eventData));
+      router.push(`/events/new?data=${encodedData}`);
     } catch (error) {
-      console.error("Failed to find nearest location:", error);
-      // Continue with original location data if nearest location search fails
+      console.error("Failed to create event from sports event:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to prepare event data. Please try again.",
+      });
     }
-
-    // Create Event object from XS2Event data
-    const eventData: Omit<Event, "id"> = {
-      name: event.event_name,
-      name_english: event.event_name, // Fallback to same name if no translation
-      date: new Date(event.date_start).toISOString().split("T")[0], // Convert to YYYY-MM-DD format
-      location: locationData,
-      map_image_url: `https://cdn.xs2event.com/venues/static/${event.venue_id}-legend.png`, // Auto-populated from venue_id
-      description:
-        event.event_description || `${event.event_name} at ${event.venue_name}`,
-      card_image_url: "", // Not available in XS2Event
-      tickets_and_rates: eventTickets,
-      def_date_depart: "", // Will be calculated by smart dates
-      def_date_return: "", // Will be calculated by smart dates
-      usual_price: 0, // Would need to be calculated or set manually
-      base_flight_price: 0, // Would need to be set manually
-      base_hotel_price: 0, // Would need to be set manually
-      is_prioritized: event.is_popular || false,
-      event_additional_markup: null,
-      is_deleted: "",
-      tags: "",
-      type: "sports_event_dynamic"
-    };
-
-    // Apply smart date calculation
-    const smartDates = calculateSmartDates(eventData.date);
-    eventData.def_date_depart = smartDates.departure;
-    eventData.def_date_return = smartDates.return;
-
-    // Encode the event data and navigate to create event page
-    const encodedData = encodeURIComponent(JSON.stringify(eventData));
-    router.push(`/events/new?data=${encodedData}`);
-  };
-
-  // Helper function to calculate smart departure and return dates
-  const calculateSmartDates = (eventDate: string) => {
-    const event = new Date(eventDate);
-
-    // Calculate departure date (2 days before, but avoid Friday/Saturday)
-    const departure = new Date(event);
-    departure.setDate(event.getDate() - 2);
-
-    // If departure falls on Friday (5) or Saturday (6), move to Thursday
-    const departureDay = departure.getDay();
-    if (departureDay === 5) {
-      // Friday
-      departure.setDate(departure.getDate() - 1); // Move to Thursday
-    } else if (departureDay === 6) {
-      // Saturday
-      departure.setDate(departure.getDate() - 2); // Move to Thursday
-    }
-
-    // Calculate return date (1 day after, but if Saturday move to Sunday)
-    const returnDate = new Date(event);
-    returnDate.setDate(event.getDate() + 1);
-
-    // If return falls on Saturday (6), move to Sunday
-    if (returnDate.getDay() === 6) {
-      returnDate.setDate(returnDate.getDate() + 1); // Move to Sunday
-    }
-
-    return {
-      departure: departure.toISOString().split("T")[0],
-      return: returnDate.toISOString().split("T")[0],
-    };
   };
 
   if (isLoadingEvent) {

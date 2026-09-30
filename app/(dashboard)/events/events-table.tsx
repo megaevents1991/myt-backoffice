@@ -15,8 +15,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table";
-import { searchFlightPrices } from "@/lib/actions/flight-actions";
-import { searchHotelPrices } from "@/lib/actions/hotel-actions";
+import { fetchPriceQuote, isValidIATACode } from "@/lib/actions/flight-actions";
+import { getFlightsByEventId } from "@/lib/actions/offline-flight-actions";
+import { getHotelsByEventId } from "@/lib/actions/offline-hotel-actions";
 import type { Event } from "@/types/app.types";
 import {
   getEvents,
@@ -95,6 +96,31 @@ const COMMON_TAGS = [
   "VIPevent",
   "VIPavailable",
 ];
+
+// The site sells an event unless `tags` is EXACTLY "Sold" (myt-main `isEventSoldOut`,
+// mirrored in lib/package-price.ts) - no trim, no list. "Hot, Sold" stays bookable there
+// (and even shows a SOLD OUT badge), so "Sold" is exclusive here: turning it on replaces
+// every other tag, and the "Hide sold events" filter reads the same exact rule.
+const SOLD_TAG = "Sold";
+const isSoldOut = (tags: string | null | undefined) => tags === SOLD_TAG;
+const splitTags = (tags: string | null | undefined) =>
+  (tags || "").split(",").map((t) => t.trim()).filter(Boolean);
+
+/**
+ * The tags string after turning `tag` on or off. Sold on = "Sold" alone; Sold off = the
+ * other tags as they are. Any other change also drops a stray "Sold" from a legacy mixed
+ * row ("Hot, Sold" is on sale) - unticking "Hot" must never leave a bare "Sold" behind,
+ * which would take the event off sale. Callers never change another tag on a sold-out
+ * event (the cell disables them, the bulk toggle skips those rows).
+ */
+function toggledTags(tags: string | null | undefined, tag: string, on: boolean): string {
+  if (tag === SOLD_TAG) {
+    return on ? SOLD_TAG : splitTags(tags).filter((t) => t !== SOLD_TAG).join(", ");
+  }
+  const rest = splitTags(tags).filter((t) => t !== SOLD_TAG);
+  if (!on) return rest.filter((t) => t !== tag).join(", ");
+  return (rest.includes(tag) ? rest : [...rest, tag]).join(", ");
+}
 type EventTypeBadgeVariant = "default" | "secondary" | "outline" | "destructive";
 
 function calculateSmartDates(eventDate: string) {
@@ -203,7 +229,7 @@ function UsualPriceCell({
         variant="ghost"
         size="icon"
         className="h-6 w-6 shrink-0"
-        title="Auto-calculate: flight + hotel + cheapest ticket + $175"
+        title="Re-quote the flight + hotel bases by the pricing rule, then usual price = flight + hotel + cheapest ticket + $175"
         disabled={calculating}
         onClick={handleClick}
       >
@@ -462,11 +488,26 @@ export function EventsTable() {
     }
   };
 
+  // The refresh icon re-quotes the bases through the ONE pricing rule
+  // (lib/services/price-quote.ts via /api/price-quote - the editor's "Search Flights" /
+  // "Search Hotels" path): cheapest direct +$100 (the connection past the $300 gap),
+  // cheapest 3★ PER PERSON +$120, rounded to tens. It used to write the raw market number
+  // (the legacy third-cheapest flight, the 2-adult ROOM total) straight into the bases.
+  // It quotes the same components the nightly base-price-sync does: nothing on a
+  // ticket-only event, no component linked to offline inventory (a fixed price is a
+  // decision, not a market read), no component whose base is 0 (no such component).
   const handleAutoCalculatePrice = async (eventId: number) => {
     const event = events.find((e) => e.id === eventId);
     if (!event) return;
+    if (isTicketOnlyEvent(event)) {
+      toast({
+        title: "Ticket-only event",
+        description: "No flight or hotel to quote - the bases stay 0.",
+      });
+      return;
+    }
 
-    const { def_date_depart, def_date_return, date, location, tickets_and_rates, skip_flight } = event;
+    const { def_date_depart, def_date_return, date, location, tickets_and_rates } = event;
     const smartDates = calculateSmartDates(date);
     const checkin = def_date_depart?.split("T")[0] || smartDates.startDate;
     const checkout = def_date_return?.split("T")[0] || smartDates.endDate;
@@ -476,37 +517,61 @@ export function EventsTable() {
     const ticketPrices = (tickets_and_rates ?? []).filter(t => t.available !== false).map(t => t.price).filter(p => p > 0);
     const minTicket = ticketPrices.length ? Math.min(...ticketPrices) : 0;
 
-    const [flightResult, hotelResult] = await Promise.all([
-      skip_flight || !cityIata
-        ? Promise.resolve(null)
-        : searchFlightPrices({ originLocationCode: "TLV", destinationLocationCode: cityIata, departureDate: checkin, returnDate: checkout, adults: 1, currencyCode: "USD" }),
-      lat && lon
-        ? searchHotelPrices({ lat, lon, checkin, checkout })
+    const [offlineFlights, offlineHotels] = await Promise.all([
+      getFlightsByEventId(eventId),
+      getHotelsByEventId(eventId),
+    ]);
+    const flightWhyNot =
+      offlineFlights.length > 0 ? "offline flight linked"
+      : !((event.base_flight_price || 0) > 0) ? "no flight component (base 0)"
+      : !cityIata || !isValidIATACode(cityIata) ? "no valid city IATA"
+      : null;
+    const hotelWhyNot =
+      offlineHotels.length > 0 ? "offline hotel linked"
+      : !((event.base_hotel_price || 0) > 0) ? "no hotel component (base 0)"
+      : !lat || !lon ? "no coordinates"
+      : null;
+
+    const [flightQuote, hotelQuote] = await Promise.all([
+      !flightWhyNot && cityIata
+        ? fetchPriceQuote({ kind: "flight", cityIata, departDate: checkin, returnDate: checkout })
+        : Promise.resolve(null),
+      !hotelWhyNot && lat && lon
+        ? fetchPriceQuote({ kind: "hotel", lat, lon, checkin, checkout })
         : Promise.resolve(null),
     ]);
 
-    const newFlightPrice = skip_flight
-      ? event.base_flight_price
-      : (flightResult?.cheapestPrice ? Math.round(flightResult.cheapestPrice) : event.base_flight_price);
-    const newHotelPrice = hotelResult?.cheapestPrice ? Math.round(hotelResult.cheapestPrice) : event.base_hotel_price;
+    // Only a quoted component is written; anything skipped or unquoted keeps its base.
+    const baseUpdates: Pick<Partial<Event>, "base_flight_price" | "base_hotel_price"> = {};
+    if (flightQuote) baseUpdates.base_flight_price = flightQuote.price;
+    if (hotelQuote) baseUpdates.base_hotel_price = hotelQuote.price;
+    const newFlightPrice = baseUpdates.base_flight_price ?? event.base_flight_price;
+    const newHotelPrice = baseUpdates.base_hotel_price ?? event.base_hotel_price;
     const newUsualPrice = newFlightPrice + newHotelPrice + minTicket + 175;
 
+    await updateEvent(eventId, { usual_price: newUsualPrice, ...baseUpdates });
     setEvents(prev => prev.map(e =>
-      e.id === eventId ? { ...e, usual_price: newUsualPrice, base_flight_price: newFlightPrice, base_hotel_price: newHotelPrice } : e
+      e.id === eventId ? { ...e, usual_price: newUsualPrice, ...baseUpdates } : e
     ));
-    await updateEvent(eventId, { usual_price: newUsualPrice, base_flight_price: newFlightPrice, base_hotel_price: newHotelPrice });
 
-    const parts = skip_flight
-      ? `hotel $${newHotelPrice} + ticket $${minTicket} + $175 margin`
-      : `flight $${newFlightPrice} + hotel $${newHotelPrice} + ticket $${minTicket} + $175 margin`;
-    toast({ title: `Usual price set to $${newUsualPrice}`, description: parts });
+    const flightLine = flightQuote
+      ? `Flight: ${flightQuote.detail}`
+      : `Flight kept $${newFlightPrice} (${flightWhyNot ?? "no quote found"})`;
+    const hotelLine = hotelQuote
+      ? `Hotel: ${hotelQuote.detail}`
+      : `Hotel kept $${newHotelPrice} (${hotelWhyNot ?? "no quote found"})`;
+    toast({
+      title: `Usual price set to $${newUsualPrice}`,
+      description: `${flightLine} · ${hotelLine} · ticket $${minTicket} + $175 margin`,
+    });
 
     return newUsualPrice;
   };
 
   const filteredEvents = events.filter((event) => {
     if (!showDeleted && event.is_deleted) return false;
-    if (hideSold && event.tags?.includes("Sold")) return false;
+    // The site's rule, exactly: "Hot, Sold" is still on sale there, so it stays visible here.
+    if (hideSold && isSoldOut(event.tags)) return false;
     if (hidePast) {
       const eventDate = new Date(event.date);
       const today = new Date();
@@ -611,35 +676,39 @@ export function EventsTable() {
 
   const handleBulkTagToggle = async (tag: string) => {
     if (selectedIds.length === 0) return;
+    const selected = events.filter((e) => selectedIds.includes(e.id));
+    // "Sold" is exclusive (see toggledTags): a sold-out event keeps its lone "Sold" through
+    // any other tag's toggle - adding or removing "Hot" on it would put it back on sale.
+    const targets = tag === SOLD_TAG ? selected : selected.filter((e) => !isSoldOut(e.tags));
+    const skipped = selected.length - targets.length;
+    if (targets.length === 0) {
+      toast({
+        title: "Nothing changed",
+        description: `Every selected event is sold out ("Sold") - turn Sold off first to tag it.`,
+      });
+      return;
+    }
     setBulkLoading(true);
     try {
-      // Determine if ALL selected events have this tag → remove it; otherwise add it
-      const allHaveTag = selectedIds.every((id) => {
-        const event = events.find((e) => e.id === id);
-        return event?.tags?.split(",").map((t) => t.trim()).includes(tag);
-      });
+      // Determine if ALL target events have this tag → remove it; otherwise add it.
+      // For "Sold", "have it" means the site's rule (exactly "Sold"), not a mixed list.
+      const allHaveTag = targets.every((e) =>
+        tag === SOLD_TAG ? isSoldOut(e.tags) : splitTags(e.tags).includes(tag),
+      );
+      const nextTags = new Map(targets.map((e) => [e.id, toggledTags(e.tags, tag, !allHaveTag)]));
       await Promise.all(
-        selectedIds.map((id) => {
-          const event = events.find((e) => e.id === id)!;
-          const current = (event.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
-          const newTags = allHaveTag
-            ? current.filter((t) => t !== tag)
-            : current.includes(tag) ? current : [...current, tag];
-          return updateEvent(id, { tags: newTags.join(", ") });
-        })
+        Array.from(nextTags, ([id, tags]) => updateEvent(id, { tags })),
       );
       setEvents((prev) =>
-        prev.map((e) => {
-          if (!selectedIds.includes(e.id)) return e;
-          const current = (e.tags || "").split(",").map((t) => t.trim()).filter(Boolean);
-          const newTags = allHaveTag
-            ? current.filter((t) => t !== tag)
-            : current.includes(tag) ? current : [...current, tag];
-          return { ...e, tags: newTags.join(", ") };
-        })
+        prev.map((e) => (nextTags.has(e.id) ? { ...e, tags: nextTags.get(e.id) ?? e.tags } : e))
       );
       setRowSelection({});
-      toast({ title: "Tags updated", description: `${selectedIds.length} event(s) updated.` });
+      toast({
+        title: "Tags updated",
+        description:
+          `${targets.length} event(s) updated.` +
+          (skipped > 0 ? ` ${skipped} sold-out event(s) left as "Sold".` : ""),
+      });
     } catch {
       toast({ variant: "destructive", title: "Error", description: "Bulk tag update failed." });
     } finally {
@@ -870,16 +939,15 @@ export function EventsTable() {
       },
       cell: ({ row }) => {
         const tagsString = (row.getValue("tags") as string) || "";
-        const currentTags = tagsString.split(",").map(t => t.trim()).filter(Boolean);
+        const currentTags = splitTags(tagsString);
+        // "Sold" is ticked only when the site reads the event as sold out (exactly "Sold");
+        // while it is, the other tags are locked - turn Sold off first.
+        const soldOut = isSoldOut(tagsString);
+        const isChecked = (tag: string) =>
+          tag === SOLD_TAG ? soldOut : currentTags.includes(tag);
 
         const toggleTag = (tag: string) => {
-          let newTags: string[];
-          if (currentTags.includes(tag)) {
-            newTags = currentTags.filter((t) => t !== tag);
-          } else {
-            newTags = [...currentTags, tag];
-          }
-          handleUpdateTags(row.original.id, newTags.join(", "));
+          handleUpdateTags(row.original.id, toggledTags(tagsString, tag, !isChecked(tag)));
         };
 
         return (
@@ -895,7 +963,8 @@ export function EventsTable() {
               {COMMON_TAGS.map((tag) => (
                 <DropdownMenuCheckboxItem
                   key={tag}
-                  checked={currentTags.includes(tag)}
+                  checked={isChecked(tag)}
+                  disabled={soldOut && tag !== SOLD_TAG}
                   onCheckedChange={() => toggleTag(tag)}
                 >
                   {tag}
