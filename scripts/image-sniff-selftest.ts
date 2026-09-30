@@ -1,5 +1,5 @@
 // scripts/image-sniff-selftest.ts - `npx tsx scripts/image-sniff-selftest.ts`
-import { sniffImageMime } from "../lib/images/sniff";
+import { sniffAttachmentMime, sniffImageMime } from "../lib/images/sniff";
 
 let failed = 0;
 function check(name: string, got: unknown, want: unknown) {
@@ -17,6 +17,14 @@ check("webp", sniffImageMime(bytes(0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x4
 check("html rejected", sniffImageMime(bytes(0x3c, 0x21, 0x44, 0x4f, 0x43, 0x54, 0x59, 0x50, 0x45, 0, 0, 0)), null);
 check("svg rejected", sniffImageMime(bytes(0x3c, 0x73, 0x76, 0x67, 0, 0, 0, 0, 0, 0, 0, 0)), null);
 check("too short", sniffImageMime(bytes(0x89, 0x50)), null);
+
+// Task attachments: the images above, plus a PDF.
+check("attachment: pdf", sniffAttachmentMime(bytes(0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0, 0, 0, 0)), "application/pdf");
+check("attachment: png still an image", sniffAttachmentMime(bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0)), "image/png");
+check("attachment: pdf is not an image", sniffImageMime(bytes(0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0, 0, 0, 0)), null);
+// A zip (docx / xlsx / anything) and an HTML page renamed .pdf must not pass.
+check("attachment: zip rejected", sniffAttachmentMime(bytes(0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0, 0, 0, 0, 0)), null);
+check("attachment: html rejected", sniffAttachmentMime(bytes(0x3c, 0x21, 0x44, 0x4f, 0x43, 0x54, 0x59, 0x50, 0x45, 0, 0, 0)), null);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

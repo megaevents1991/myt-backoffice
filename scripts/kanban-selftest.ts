@@ -43,6 +43,7 @@ function task(overrides: Partial<TaskWithNames>): TaskWithNames {
     parent_id: null,
     assignee_name: null,
     created_by_name: null,
+    assigned_by: null,
     site_url: null,
     comment_count: 0,
     unread_count: 0,

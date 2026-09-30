@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { FileText, ListTree, Paperclip, Plus, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -23,8 +24,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createTask, updateTask } from "@/lib/actions/task-actions";
+import { attachFilesToNewTask } from "@/lib/actions/task-comment-actions";
 import { listUsers } from "@/lib/actions/user-actions";
 import { TaskThread } from "@/components/task-thread";
+import {
+  ATTACHMENT_ACCEPT,
+  ATTACHMENT_MAX_BYTES,
+  MAX_ATTACHMENTS_PER_SEND,
+  isAttachableFile,
+  isImageMime,
+  uploadTaskFile,
+} from "@/lib/tasks/attachment-upload";
+import type { TaskMailOutcome } from "@/lib/services/task-notify";
+import type { TaskAttachment } from "@/types/task-comment.types";
 import { BOARD_META, CHANNEL_META, PHASES, defaultBoardFor } from "@/lib/task-boards";
 import { TASK_FIELDS, type EditableTaskField } from "@/lib/tasks/permissions";
 import { STAFF_ROLES, type UserProfile } from "@/types/auth.types";
@@ -68,8 +80,24 @@ export interface TaskEditorState {
   /** null = creating */
   task: TaskWithNames | null;
   prefill?: TaskPrefill;
-  /** New-task placement from the Roadmap / Marketing tabs ("+" in a phase or channel). */
+  /** New-task placement: the board lens on /tasks, or "+" in a Roadmap phase / Marketing channel. */
   defaults?: { board: TaskBoard; phase?: number | null; channel?: MktChannel | null };
+}
+
+/** A file picked in the New-task form - uploaded only once the task exists (it needs the id). */
+interface DraftFile {
+  id: string;
+  file: File;
+  /** Local blob URL for an image's thumbnail; null for a PDF. */
+  previewUrl: string | null;
+}
+
+/** A sub-task typed in the New-task form - created right after its parent. */
+interface DraftPart {
+  id: string;
+  title: string;
+  /** A staff id, or "unassigned". */
+  assignee: string;
 }
 
 /**
@@ -131,6 +159,109 @@ export function TaskEditor({
   const [saving, setSaving] = useState(false);
   const [staff, setStaff] = useState<UserProfile[]>([]);
 
+  // New task only (Dor, 30.09): files and sub-tasks can be added before the task exists.
+  // Both need the new task's id, so they are held here and written right after createTask.
+  const [files, setFiles] = useState<DraftFile[]>([]);
+  const [parts, setParts] = useState<DraftPart[]>([]);
+  const [partTitle, setPartTitle] = useState("");
+  const [partAssignee, setPartAssignee] = useState("unassigned");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Live thumbnail blob URLs, tracked outside state so the unmount cleanup sees them all.
+  const previewUrlsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const urls = previewUrlsRef.current;
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      urls.clear();
+    };
+  }, []);
+
+  const addFiles = (picked: File[]) => {
+    const room = MAX_ATTACHMENTS_PER_SEND - files.length;
+    const next: DraftFile[] = [];
+    for (const file of picked) {
+      if (!isAttachableFile(file)) {
+        toast({ variant: "destructive", title: `${file.name}: אפשר לצרף תמונה או PDF` });
+        continue;
+      }
+      if (!isImageMime(file.type) && file.size > ATTACHMENT_MAX_BYTES) {
+        toast({ variant: "destructive", title: `${file.name}: הקובץ גדול מ-2.5MB` });
+        continue;
+      }
+      if (next.length >= room) {
+        toast({ variant: "destructive", title: `עד ${MAX_ATTACHMENTS_PER_SEND} קבצים למשימה חדשה` });
+        break;
+      }
+      let previewUrl: string | null = null;
+      if (isImageMime(file.type)) {
+        previewUrl = URL.createObjectURL(file);
+        previewUrlsRef.current.add(previewUrl);
+      }
+      next.push({ id: crypto.randomUUID(), file, previewUrl });
+    }
+    if (next.length > 0) setFiles((prev) => [...prev, ...next]);
+  };
+
+  const removeFile = (id: string) =>
+    setFiles((prev) => {
+      const target = prev.find((draft) => draft.id === id);
+      if (target?.previewUrl) {
+        URL.revokeObjectURL(target.previewUrl);
+        previewUrlsRef.current.delete(target.previewUrl);
+      }
+      return prev.filter((draft) => draft.id !== id);
+    });
+
+  const addPart = () => {
+    const name = partTitle.trim();
+    if (!name) return;
+    setParts((prev) => [...prev, { id: crypto.randomUUID(), title: name, assignee: partAssignee }]);
+    setPartTitle("");
+  };
+
+  /** Everything the New-task form holds beyond the task's own fields. Returns what did NOT
+   *  go through - the task itself is already saved, so nothing here may throw past it. */
+  const saveExtras = async (newId: string): Promise<string[]> => {
+    const problems: string[] = [];
+    try {
+      if (files.length > 0) {
+        const uploaded: TaskAttachment[] = [];
+        for (const draft of files) {
+          try {
+            const result = await uploadTaskFile(newId, draft.file);
+            if (result.ok) uploaded.push(result.attachment);
+            else problems.push(`${draft.file.name}: ${result.error}`);
+          } catch (error) {
+            console.error("task-editor: upload failed", error);
+            problems.push(`${draft.file.name}: ההעלאה נכשלה`);
+          }
+        }
+        if (uploaded.length > 0) {
+          const attached = await attachFilesToNewTask(newId, uploaded);
+          if (!attached.ok) problems.push(attached.error);
+        }
+      }
+
+      // A part typed but not yet added with "הוסף" still counts - Create is the obvious next click.
+      const typed = partTitle.trim();
+      const allParts = typed ? [...parts, { id: "typed", title: typed, assignee: partAssignee }] : parts;
+      for (const part of allParts) {
+        const sub = await createTask({
+          title: part.title,
+          priority,
+          due_date: dueDate || null,
+          assignee_id: part.assignee === "unassigned" ? null : part.assignee,
+          parent_id: newId,
+        });
+        if (!sub.ok) problems.push(`תת-משימה "${part.title}": ${sub.error}`);
+      }
+    } catch (error) {
+      console.error("task-editor: extras failed", error);
+      problems.push("חלק מהקבצים או מתתי-המשימות לא נשמרו");
+    }
+    return problems;
+  };
+
   // A board switch drops the fields the OLD board owned - otherwise a task
   // moved from marketing to dev keeps a ghost channel/progress (or a dev task
   // keeps a phase after becoming a marketing one).
@@ -169,52 +300,64 @@ export function TaskEditor({
       // On an existing task, send only the fields THIS viewer may change - an
       // editor's patch never carries a key updateTask would reject (title,
       // board, assignee...), even though the (disabled) inputs still show them.
-      const result = task
-        ? await updateTask(task.id, {
-            ...(canEdit("title") ? { title } : {}),
-            ...(canEdit("description") ? { description: description || null } : {}),
-            ...(canEdit("priority") ? { priority } : {}),
-            ...(canEdit("assignee_id") ? { assignee_id: assigneeId } : {}),
-            ...(canEdit("due_date") ? { due_date: dueDate || null } : {}),
-            ...(canEdit("board") ? { board } : {}),
-            ...(canEdit("phase") ? { phase: effectivePhase } : {}),
-            ...(canEdit("channel") ? { channel: effectiveChannel } : {}),
-            ...(canEdit("progress") ? { progress: effectiveProgress } : {}),
-          })
-        : await createTask({
-            title,
-            description: description || null,
-            priority,
-            assignee_id: assigneeId,
-            due_date: dueDate || null,
-            source: prefill?.source ?? "manual",
-            source_ref: prefill?.source_ref ?? null,
-            board,
-            phase: effectivePhase,
-            channel: effectiveChannel,
-            progress: effectiveProgress,
-          });
-      if (!result.ok) {
-        toast({
-          variant: "destructive",
-          title: "Save failed",
-          description: result.error,
+      let mail: TaskMailOutcome | undefined;
+      // Files / sub-tasks of a NEW task that did not make it (the task itself did).
+      let problems: string[] = [];
+      if (task) {
+        const result = await updateTask(task.id, {
+          ...(canEdit("title") ? { title } : {}),
+          ...(canEdit("description") ? { description: description || null } : {}),
+          ...(canEdit("priority") ? { priority } : {}),
+          ...(canEdit("assignee_id") ? { assignee_id: assigneeId } : {}),
+          ...(canEdit("due_date") ? { due_date: dueDate || null } : {}),
+          ...(canEdit("board") ? { board } : {}),
+          ...(canEdit("phase") ? { phase: effectivePhase } : {}),
+          ...(canEdit("channel") ? { channel: effectiveChannel } : {}),
+          ...(canEdit("progress") ? { progress: effectiveProgress } : {}),
         });
-        return;
+        if (!result.ok) {
+          toast({ variant: "destructive", title: "Save failed", description: result.error });
+          return;
+        }
+        mail = result.mail;
+      } else {
+        const result = await createTask({
+          title,
+          description: description || null,
+          priority,
+          assignee_id: assigneeId,
+          due_date: dueDate || null,
+          source: prefill?.source ?? "manual",
+          source_ref: prefill?.source_ref ?? null,
+          board,
+          phase: effectivePhase,
+          channel: effectiveChannel,
+          progress: effectiveProgress,
+        });
+        if (!result.ok) {
+          toast({ variant: "destructive", title: "Save failed", description: result.error });
+          return;
+        }
+        mail = result.mail;
+        problems = await saveExtras(result.id);
       }
       // Say what actually happened to the assignment mail, not what should have.
-      const mailFailed = result.mail === "failed" || result.mail === "skipped";
+      const mailFailed = mail === "failed" || mail === "skipped";
+      const mailNote =
+        mail === "sent"
+          ? "An email went out to the assignee."
+          : mail === "failed"
+            ? "Saved, but the email to the assignee FAILED - tell them directly."
+            : mail === "skipped"
+              ? "Saved, but the assignee has no email address on file."
+              : undefined;
       toast({
-        variant: mailFailed ? "destructive" : undefined,
+        variant: mailFailed || problems.length > 0 ? "destructive" : undefined,
         title: task ? "Task updated" : "Task created",
         description:
-          result.mail === "sent"
-            ? "An email went out to the assignee."
-            : result.mail === "failed"
-              ? "Saved, but the email to the assignee FAILED - tell them directly."
-              : result.mail === "skipped"
-                ? "Saved, but the assignee has no email address on file."
-                : undefined,
+          problems.length > 0
+            ? [`המשימה נוצרה, אבל: ${problems.join(" · ")}`, mailNote].filter(Boolean).join(" ")
+            : mailNote,
       });
       onSaved();
     } finally {
@@ -224,13 +367,22 @@ export function TaskEditor({
 
   return (
     <Dialog open={state.open} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        className={cn("sm:max-w-md", task && "flex max-h-[85vh] flex-col overflow-y-auto sm:max-w-lg")}
-      >
+      <DialogContent className="flex max-h-[85vh] flex-col overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{task ? "Edit task" : "New task"}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div
+          className="space-y-4"
+          // A screenshot pasted anywhere in the New-task form becomes an attachment.
+          onPaste={(event) => {
+            if (task) return;
+            const pasted = Array.from(event.clipboardData.files);
+            if (pasted.length > 0) {
+              event.preventDefault();
+              addFiles(pasted);
+            }
+          }}
+        >
           <div className="space-y-2">
             <Label htmlFor="task-title">Title</Label>
             <Input
@@ -376,6 +528,157 @@ export function TaskEditor({
               <p className="text-xs text-muted-foreground">
                 Assigning someone else sends them an email with the task.
               </p>
+            </div>
+          )}
+          {/* An existing task attaches files in its thread (below) - a new one has no thread yet. */}
+          {!task && (
+            <div className="space-y-2">
+              <Label>Attachments</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ATTACHMENT_ACCEPT}
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  addFiles(Array.from(event.target.files ?? []));
+                  event.target.value = "";
+                }}
+              />
+              {files.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {files.map((draft) => (
+                    <div key={draft.id} className="relative h-16 w-16 overflow-hidden rounded border">
+                      {draft.previewUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={draft.previewUrl} alt={draft.file.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <div
+                          title={draft.file.name}
+                          className="flex h-full w-full flex-col items-center justify-center gap-0.5 bg-muted/40 px-1"
+                        >
+                          <FileText className="h-5 w-5 text-muted-foreground" />
+                          <span dir="auto" className="w-full truncate text-center text-[9px] text-muted-foreground">
+                            {draft.file.name}
+                          </span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${draft.file.name}`}
+                        className="absolute end-0 top-0 rounded-es bg-background/90 p-0.5 text-muted-foreground hover:text-foreground"
+                        onClick={() => removeFile(draft.id)}
+                        disabled={saving}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={saving || files.length >= MAX_ATTACHMENTS_PER_SEND}
+                >
+                  <Paperclip className="mr-1.5 h-4 w-4" />
+                  Attach file
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Image or PDF, up to 2.5MB. A screenshot can be pasted with Ctrl+V.
+                </span>
+              </div>
+            </div>
+          )}
+          {/* Same idea as the sub-tasks panel of an existing task (components/task-subtasks.tsx),
+              only these are drafts: each is created under the new task right after it. */}
+          {!task && (
+            <div className="rounded-md border bg-muted/30 p-3" dir="rtl">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
+                  <ListTree className="h-4 w-4 text-muted-foreground" />
+                  תתי-משימות
+                </span>
+                <span className="text-xs text-muted-foreground">כל חלק נפתח כמשימה משלו, מתחת למשימה הזו</span>
+              </div>
+              {parts.length > 0 && (
+                <ul className="mb-3 space-y-1.5">
+                  {parts.map((part) => (
+                    <li key={part.id} className="flex items-center gap-2 text-sm">
+                      <span className="min-w-0 flex-1 truncate" title={part.title}>
+                        {part.title}
+                      </span>
+                      {isManager && (
+                        <span
+                          className={cn(
+                            "shrink-0 text-xs",
+                            part.assignee === "unassigned" ? "text-muted-foreground" : "text-foreground",
+                          )}
+                        >
+                          {part.assignee === "unassigned"
+                            ? "לא משויך"
+                            : (staff.find((member) => member.id === part.assignee)?.display_name ??
+                              staff.find((member) => member.id === part.assignee)?.email ??
+                              "")}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`הסר את ${part.title}`}
+                        className="shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => setParts((prev) => prev.filter((item) => item.id !== part.id))}
+                        disabled={saving}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  value={partTitle}
+                  onChange={(event) => setPartTitle(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      addPart();
+                    }
+                  }}
+                  placeholder="חלק חדש במשימה…"
+                  className="h-8 min-w-[160px] flex-1 text-sm"
+                  disabled={saving}
+                />
+                {isManager && (
+                  <Select value={partAssignee} onValueChange={setPartAssignee} disabled={saving}>
+                    <SelectTrigger className="h-8 w-[150px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">לא משויך</SelectItem>
+                      {staff.map((member) => (
+                        <SelectItem key={member.id} value={member.id}>
+                          {member.display_name || member.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={addPart}
+                  disabled={saving || !partTitle.trim()}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span className="ms-1">הוסף</span>
+                </Button>
+              </div>
             </div>
           )}
           {prefill && (

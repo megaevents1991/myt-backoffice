@@ -285,6 +285,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >     parent in the table ("חלק מ:"), and the parent shows done/total (`subtaskProgress`, cancelled
 >     parts excluded). Panel: `components/task-subtasks.tsx`, in the expanded row and the dialog
 >     (TaskEditor's children slot). The parent is never auto-closed.
+>   - **New-task extras + owner filter (2026-09-30, Dor's six notes).** (a) The New-task form takes
+>     **files** (up to 5, images or a PDF - `sniffAttachmentMime`, 2.5MB; paste works) and **sub-task
+>     drafts**; both need the new id, so `TaskEditor.saveExtras` writes them right AFTER `createTask`:
+>     uploads via `lib/tasks/attachment-upload.ts` (shared with the thread composer), then
+>     `attachFilesToNewTask` puts them in the task's FIRST comment (creator only, empty thread only,
+>     NO mail - the assignment mail just went out), then one `createTask({ parent_id })` per part.
+>     A failure there never loses the task: the toast lists what did not go through. A thread shows a
+>     PDF as a named chip (new tab), not a thumbnail. (b) **Owner filter** replaces the "המשימות שלי"
+>     switch on the table and the Kanban (`lib/tasks/owner-filter.ts`, pure, in
+>     `scripts/task-thread-selftest.ts`): all / mine / "ששייכתי לאחרים" for everyone, plus per-person
+>     and "ללא שיוך" for admins, each with its open count. "Assigned by me" is
+>     `TaskWithNames.assigned_by` = the author of the newest `assignee` activity row that landed on
+>     the current owner, else `created_by` - NOT `created_by` alone, or a bulk-assigned rule task
+>     (no creator) would belong to nobody. (c) The board pills count OPEN tasks only. (d) "New task"
+>     under a board pill opens on that board. (e) Bulk-bar selects carry `text-foreground` (the bar is
+>     `bg-primary`; the inherited light text made their placeholders invisible).
 >   - **Pricing tab** (`?tab=pricing`, all staff, not admin-only like
 >     `/price-light`): every open pricing problem - red price lights and
 >     frozen `/price-changes` rows - in one list via

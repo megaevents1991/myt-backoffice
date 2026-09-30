@@ -1458,8 +1458,10 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Open [Tasks](/tasks) and click \"New task\".", "פותחים את [המשימות](/tasks) ולוחצים \"New task\"."),
           t("Fill in \"Title\" (required) and, if useful, \"Description\", \"Priority\" and \"Due date\".", "ממלאים \"Title\" (חובה) ולפי הצורך \"Description\", \"Priority\" ו-\"Due date\"."),
-          t("Pick the \"Board\": פיתוח, שיווק, תפעול or תמחור. Dev adds a \"Phase\" field; Marketing adds \"Channel\" and \"Progress\".", "בוחרים \"Board\": פיתוח, שיווק, תפעול או תמחור. פיתוח מוסיף שדה \"Phase\"; שיווק מוסיף \"Channel\" ו-\"Progress\"."),
+          t("Pick the \"Board\": פיתוח, שיווק, תפעול or תמחור. Dev adds a \"Phase\" field; Marketing adds \"Channel\" and \"Progress\". If a board pill is selected above the tabs, the form opens on that board - you can still change it.", "בוחרים \"Board\": פיתוח, שיווק, תפעול או תמחור. פיתוח מוסיף שדה \"Phase\"; שיווק מוסיף \"Channel\" ו-\"Progress\". אם נבחר תג לוח מעל הלשוניות, הטופס נפתח כבר על הלוח הזה - ואפשר לשנות."),
           t("Choose a person in \"Assign to\" (admins) - they get an email. A task an editor creates is always assigned to them.", "בוחרים אדם ב-\"Assign to\" (מנהלים) - הוא מקבל מייל. משימה שעורך יוצר תמיד משובצת אליו."),
+          t("Files: \"Attach file\" adds up to 5 images or PDFs (2.5MB each), or paste a screenshot with Ctrl+V. They appear as the first comment in the task's thread.", "קבצים: \"Attach file\" מוסיף עד 5 תמונות או קובצי PDF (עד 2.5MB כל אחד), או מדביקים צילום מסך עם Ctrl+V. הם מופיעים כתגובה הראשונה בפתיל המשימה."),
+          t("Splitting it right away: in \"תתי-משימות\" type each part, pick its owner (admins) and click \"הוסף\". Every part is created as its own task under the new one.", "לחלק כבר עכשיו: ב-\"תתי-משימות\" מקלידים כל חלק, בוחרים אחראי (מנהלים) ולוחצים \"הוסף\". כל חלק נוצר כמשימה משלו מתחת למשימה החדשה."),
           t("Click \"Create task\". The toast tells you whether the email to the assignee actually went out.", "לוחצים \"Create task\". ההודעה הקופצת אומרת אם המייל למשובץ באמת יצא."),
           t("Shortcut: in [Roadmap](/tasks?tab=roadmap) or [Marketing](/tasks?tab=marketing), the + next to a phase or channel opens the form with that phase or channel already set.", "קיצור דרך: ב-[Roadmap](/tasks?tab=roadmap) או ב-[Marketing](/tasks?tab=marketing), ה-+ ליד שלב או ערוץ פותח את הטופס כשהשלב או הערוץ כבר מוגדרים."),
         ],
@@ -1467,8 +1469,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       {
         title: t("Find your work and move it along", "למצוא את העבודה שלכם ולקדם אותה"),
         steps: [
-          t("The pills above the tabs (\"הכל\", \"פיתוח\", \"שיווק\", \"תפעול\", \"תמחור\") narrow both the table and the Kanban to one board, e.g. [the Pricing board](/tasks?board=pricing).", "התגים מעל הלשוניות (\"הכל\", \"פיתוח\", \"שיווק\", \"תפעול\", \"תמחור\") מצמצמים גם את הטבלה וגם את הקאנבן ללוח אחד, למשל [לוח התמחור](/tasks?board=pricing)."),
-          t("\"המשימות שלי\" shows only tasks assigned to you. It is on by default for editors and off for admins.", "\"המשימות שלי\" מציג רק משימות שמשובצות אליכם. כברירת מחדל הוא דלוק לעורכים וכבוי למנהלים."),
+          t("The pills above the tabs (\"הכל\", \"פיתוח\", \"שיווק\", \"תפעול\", \"תמחור\") narrow both the table and the Kanban to one board, e.g. [the Pricing board](/tasks?board=pricing). The number on each pill counts OPEN tasks only.", "התגים מעל הלשוניות (\"הכל\", \"פיתוח\", \"שיווק\", \"תפעול\", \"תמחור\") מצמצמים גם את הטבלה וגם את הקאנבן ללוח אחד, למשל [לוח התמחור](/tasks?board=pricing). המספר על כל תג סופר משימות פתוחות בלבד."),
+          t("The owner menu next to the search picks whose tasks you see: \"כל המשימות\", \"המשימות שלי\" (the default for editors) or \"ששייכתי לאחרים\" - tasks you handed to someone else. Admins also get \"לפי משתמש\": one person's tasks, or \"ללא שיוך\". Each line shows its open count.", "תפריט הבעלים ליד החיפוש קובע של מי המשימות שרואים: \"כל המשימות\", \"המשימות שלי\" (ברירת המחדל לעורכים) או \"ששייכתי לאחרים\" - משימות שהעברתם למישהו אחר. למנהלים יש גם \"לפי משתמש\": המשימות של אדם אחד, או \"ללא שיוך\". בכל שורה מופיע מספר הפתוחות."),
           t("Pick \"Open\", \"Done\" or \"All\", and use \"Search tasks...\" to find a task by its title.", "בוחרים \"Open\", \"Done\" או \"All\", ומחפשים משימה לפי כותרת ב-\"Search tasks...\"."),
           t("Change the row's \"Status\": \"To do\", \"In progress\", \"Paused\", \"Done\", \"Cancelled\". Editors can change it only on their own tasks.", "משנים את ה-\"Status\" בשורה: \"To do\", \"In progress\", \"Paused\", \"Done\", \"Cancelled\". עורכים יכולים לשנות רק במשימות שלהם."),
           t("A \"Do: …\" link under the title jumps to the exact control that fixes the problem. \"באתר\" opens the page on the site.", "קישור \"Do: …\" מתחת לכותרת קופץ לפקד המדויק שמתקן את הבעיה. \"באתר\" פותח את העמוד באתר."),
@@ -1480,7 +1482,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Click the task's row (or its speech-bubble button). The thread opens right under the row.", "לוחצים על שורת המשימה (או על כפתור בועת השיחה). הפתיל נפתח מיד מתחת לשורה."),
           t("Write in \"הוסף תגובה\". Type @ and pick a name to mention a teammate - they get the comment by email.", "כותבים ב-\"הוסף תגובה\". מקלידים @ ובוחרים שם כדי לתייג עמית - הוא מקבל את התגובה במייל."),
-          t("To add a screenshot, paste it with Ctrl+V, drag an image in, or use the paperclip. It is shrunk automatically.", "כדי להוסיף צילום מסך, מדביקים עם Ctrl+V, גוררים תמונה פנימה או לוחצים על אטב הנייר. התמונה מוקטנת אוטומטית."),
+          t("To add a screenshot, paste it with Ctrl+V, drag an image in, or use the paperclip. It is shrunk automatically. The paperclip also takes a PDF (up to 2.5MB).", "כדי להוסיף צילום מסך, מדביקים עם Ctrl+V, גוררים תמונה פנימה או לוחצים על אטב הנייר. התמונה מוקטנת אוטומטית. אטב הנייר מקבל גם PDF (עד 2.5MB)."),
           t("Click \"שלח\" or press Ctrl+Enter. The creator, the assignee and everyone already in the thread get an email.", "לוחצים \"שלח\" או Ctrl+Enter. יוצר המשימה, המשובץ וכל מי שכבר בפתיל מקבלים מייל."),
           t("A mint bubble with \"חדשה\" or \"N חדשות\" means comments you haven't read yet. Opening the thread clears it. Your own comment has a pencil (edit) and a bin (delete).", "בועה במנטה עם \"חדשה\" או \"N חדשות\" = תגובות שעוד לא קראתם. פתיחת הפתיל מנקה את הסימון. בתגובה שלכם יש עיפרון (עריכה) ופח (מחיקה)."),
         ],
@@ -1488,7 +1490,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       {
         title: t("Split work between people, or change many tasks at once", "לחלק עבודה בין כמה אנשים, או לשנות הרבה משימות בבת אחת"),
         steps: [
-          t("Open the general task: click its row, or open the dialog with the pencil (admins) or the eye icon.", "פותחים את המשימה הכללית: לוחצים על השורה, או פותחים את הדיאלוג בעיפרון (מנהלים) או באייקון העין."),
+          t("Open the general task: click its row, or open the dialog with the pencil (admins) or the eye icon. (A brand-new task can be split in the \"New task\" form itself.)", "פותחים את המשימה הכללית: לוחצים על השורה, או פותחים את הדיאלוג בעיפרון (מנהלים) או באייקון העין. (משימה חדשה אפשר לחלק כבר בטופס \"New task\".)"),
           t("In \"תתי-משימות\", type the part in \"חלק חדש במשימה…\", pick its owner (admins) and click \"הוסף\". Each part becomes a task of its own, shown under the parent, which counts how many are done.", "ב-\"תתי-משימות\" מקלידים את החלק ב-\"חלק חדש במשימה…\", בוחרים אחראי (מנהלים) ולוחצים \"הוסף\". כל חלק הופך למשימה בפני עצמה, שמוצגת מתחת למשימת האב, שסופרת כמה הושלמו."),
           t("Only an admin or the general task's owner or creator can split it, one level only.", "רק מנהל או האחראי/היוצר של המשימה הכללית יכולים לחלק אותה, ברמה אחת בלבד."),
           t("Many tasks at once (admins): tick their rows in the Tasks tab - a bar appears with \"N selected\".", "הרבה משימות בבת אחת (מנהלים): מסמנים את השורות בלשונית Tasks - מופיע סרגל עם \"N selected\"."),

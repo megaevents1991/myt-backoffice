@@ -4,9 +4,16 @@
 // the system's own activity rows, in one chronological list (spec §3).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Paperclip, Pencil, Trash2 } from "lucide-react";
+import { FileText, Paperclip, Pencil, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import {
+  ATTACHMENT_ACCEPT,
+  MAX_ATTACHMENTS_PER_SEND,
+  isAttachableFile,
+  isImageMime,
+  uploadTaskFile,
+} from "@/lib/tasks/attachment-upload";
 import { mentionsStillInBody } from "@/lib/tasks/mentions";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -23,7 +30,6 @@ import {
   listStaffForMentions,
   listTaskComments,
   markTaskRead,
-  uploadTaskAttachment,
 } from "@/lib/actions/task-comment-actions";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import type {
@@ -42,8 +48,6 @@ const ACTIVITY_LABEL: Record<ActivityField, string> = {
   board: "העביר לוח",
 };
 
-const MAX_ATTACHMENTS_PER_SEND = 5;
-const MAX_SHRUNK_WIDTH = 2000;
 const MAX_MENTION_RESULTS = 6;
 
 interface PendingUpload {
@@ -60,45 +64,6 @@ interface MentionTrigger {
   /** Index of the "@" in the textarea value. */
   start: number;
   query: string;
-}
-
-/** Draws the file to a canvas and re-encodes it - returns the original file
- *  untouched when it is already narrower than maxWidth. */
-async function shrinkToMaxWidth(
-  file: File,
-  maxWidth: number,
-): Promise<{ file: File; width: number; height: number }> {
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const el = new Image();
-    el.onload = () => resolve(el);
-    el.onerror = () => reject(new Error("image decode failed"));
-    el.src = dataUrl;
-  });
-
-  if (image.width <= maxWidth) {
-    return { file, width: image.width, height: image.height };
-  }
-
-  const scale = maxWidth / image.width;
-  const width = Math.round(image.width * scale);
-  const height = Math.round(image.height * scale);
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return { file, width: image.width, height: image.height };
-  ctx.drawImage(image, 0, 0, width, height);
-
-  const mime = file.type || "image/png";
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mime));
-  if (!blob) return { file, width: image.width, height: image.height };
-  return { file: new File([blob], file.name, { type: mime }), width, height };
 }
 
 /** Where in the text an "@" mention is being typed right now, or null. A
@@ -232,23 +197,18 @@ export function TaskThread({
 
   async function uploadFiles(files: File[]) {
     for (const file of files.slice(0, MAX_ATTACHMENTS_PER_SEND)) {
-      if (!file.type.startsWith("image/")) continue;
+      if (!isAttachableFile(file)) continue;
       const id = crypto.randomUUID();
       setPending((prev) => [...prev, { id, name: file.name }]);
       try {
-        const shrunk = await shrinkToMaxWidth(file, MAX_SHRUNK_WIDTH);
-        const form = new FormData();
-        form.set("file", shrunk.file);
-        form.set("width", String(shrunk.width));
-        form.set("height", String(shrunk.height));
-        const result = await uploadTaskAttachment(taskId, form);
+        const result = await uploadTaskFile(taskId, file);
         if (!result.ok) {
           toast({ title: result.error, variant: "destructive" });
           continue;
         }
         setAttachments((prev) => [
           ...prev,
-          { ...result.attachment, previewUrl: makePreviewUrl(shrunk.file) },
+          { ...result.attachment, previewUrl: makePreviewUrl(result.sent) },
         ]);
       } catch (error) {
         // A shrink/upload that throws (bad image, network, server action error) must not
@@ -548,25 +508,40 @@ export function TaskThread({
                     )}
                     {row.attachments.length > 0 && (
                       <div className="flex flex-wrap gap-2 pt-1">
-                        {row.attachments.map((attachment, index) => (
-                          <button
-                            key={attachment.path}
-                            type="button"
-                            className="overflow-hidden rounded border"
-                            onClick={() =>
-                              setLightbox({
-                                url: row.attachment_urls[index] ?? "",
-                                alt: attachment.name,
-                              })
-                            }
-                          >
-                            <img
-                              src={row.attachment_urls[index] || undefined}
-                              alt={attachment.name}
-                              className="h-20 w-20 object-cover"
-                            />
-                          </button>
-                        ))}
+                        {row.attachments.map((attachment, index) =>
+                          isImageMime(attachment.mime) ? (
+                            <button
+                              key={attachment.path}
+                              type="button"
+                              className="overflow-hidden rounded border"
+                              onClick={() =>
+                                setLightbox({
+                                  url: row.attachment_urls[index] ?? "",
+                                  alt: attachment.name,
+                                })
+                              }
+                            >
+                              <img
+                                src={row.attachment_urls[index] || undefined}
+                                alt={attachment.name}
+                                className="h-20 w-20 object-cover"
+                              />
+                            </button>
+                          ) : (
+                            // A PDF has no thumbnail - a named chip that opens it in a new tab.
+                            <a
+                              key={attachment.path}
+                              href={row.attachment_urls[index] || undefined}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={attachment.name}
+                              className="inline-flex h-20 max-w-[220px] items-center gap-2 rounded border bg-muted/40 px-3 text-sm hover:bg-muted"
+                            >
+                              <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
+                              <span dir="auto" className="truncate">{attachment.name}</span>
+                            </a>
+                          ),
+                        )}
                       </div>
                     )}
                   </>
@@ -586,7 +561,7 @@ export function TaskThread({
             dir="auto"
             rows={3}
             value={body}
-            placeholder="כתוב תגובה… (Ctrl+Enter לשליחה, @ לאזכור, אפשר להדביק צילום מסך)"
+            placeholder="כתוב תגובה… (Ctrl+Enter לשליחה, @ לאזכור, אפשר להדביק צילום מסך או לצרף PDF)"
             onChange={onBodyChange}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
@@ -622,7 +597,19 @@ export function TaskThread({
           <div className="flex flex-wrap gap-2">
             {attachments.map((attachment) => (
               <div key={attachment.path} className="group relative h-16 w-16 overflow-hidden rounded border">
-                <img src={attachment.previewUrl} alt={attachment.name} className="h-full w-full object-cover" />
+                {isImageMime(attachment.mime) ? (
+                  <img src={attachment.previewUrl} alt={attachment.name} className="h-full w-full object-cover" />
+                ) : (
+                  <div
+                    title={attachment.name}
+                    className="flex h-full w-full flex-col items-center justify-center gap-0.5 bg-muted/40 px-1"
+                  >
+                    <FileText className="h-5 w-5 text-muted-foreground" />
+                    <span dir="auto" className="w-full truncate text-center text-[9px] text-muted-foreground">
+                      {attachment.name}
+                    </span>
+                  </div>
+                )}
                 <button
                   type="button"
                   aria-label={`הסר את ${attachment.name}`}
@@ -648,7 +635,7 @@ export function TaskThread({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept={ATTACHMENT_ACCEPT}
             multiple
             className="hidden"
             onChange={onFileInput}
@@ -657,7 +644,8 @@ export function TaskThread({
             type="button"
             variant="outline"
             size="icon"
-            aria-label="צרף תמונה"
+            aria-label="צרף תמונה או PDF"
+            title="צרף תמונה או PDF"
             onClick={() => fileInputRef.current?.click()}
           >
             <Paperclip className="h-4 w-4" />

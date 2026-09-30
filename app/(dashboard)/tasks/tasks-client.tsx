@@ -25,12 +25,14 @@ import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -58,6 +60,7 @@ import {
   type DismissedGap,
 } from "@/lib/actions/creative-gap-actions";
 import { editableFields } from "@/lib/tasks/permissions";
+import { matchesOwner, type OwnerFilter } from "@/lib/tasks/owner-filter";
 import { BOARD_META } from "@/lib/task-boards";
 import { KanbanBoard } from "./kanban-board";
 import { PricingGapsTab } from "./pricing-gaps-tab";
@@ -97,6 +100,11 @@ const SOURCE_BADGE: Partial<Record<TaskSource, string>> = {
   price_review: "price",
 };
 
+/** Still work to do - "paused" included (OPEN_TASK_STATUSES). */
+function isOpen(task: TaskWithNames): boolean {
+  return (OPEN_TASK_STATUSES as readonly string[]).includes(task.status);
+}
+
 /** A gap → the task it becomes. The deep link, not the page: whoever picks
  *  this task up lands on the control that fixes it. */
 function gapPrefill(gap: GapItem): TaskPrefill {
@@ -133,10 +141,10 @@ export function TasksClient() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("open");
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
-  // The whole board is visible now (16.09) - "my tasks" is the one filter that
-  // keeps an editor's default view unchanged (on for them, off for admins,
-  // who assign work and need to see everyone's).
-  const [myTasksOnly, setMyTasksOnly] = useState(true);
+  // The whole board is visible (16.09) - the owner filter says whose tasks are on screen:
+  // mine (an editor's default), everyone's (an admin's default - they assign work), the ones
+  // I handed to someone else, or - admins - one person's (30.09).
+  const [owner, setOwner] = useState<OwnerFilter>("mine");
   const didInitFilter = useRef(false);
   const [editor, setEditor] = useState<TaskEditorState>({ open: false, task: null });
   const handledTaskRef = useRef<string | null>(null);
@@ -145,7 +153,7 @@ export function TasksClient() {
   useEffect(() => {
     if (!user || didInitFilter.current) return;
     didInitFilter.current = true;
-    setMyTasksOnly(!isManager);
+    setOwner(isManager ? "all" : "mine");
   }, [user, isManager]);
 
   const reload = useCallback(async () => {
@@ -201,13 +209,29 @@ export function TasksClient() {
     handledTaskRef.current = initialTaskId;
   }, [loading, tasks, initialTaskId]);
 
-  // The board-wide list, narrowed to "mine" first when that toggle is on -
-  // every other count/filter below reads from here so the tabs and the
-  // toggle never disagree about what's on screen.
+  // The board-wide list, narrowed by the owner filter first - every other count/filter
+  // below reads from here so the tabs and the filter never disagree about what's on screen.
   const scoped = useMemo(() => {
-    if (!myTasksOnly || !user) return tasks;
-    return tasks.filter((task) => task.assignee_id === user.id);
-  }, [tasks, myTasksOnly, user]);
+    if (owner === "all") return tasks;
+    return tasks.filter((task) => matchesOwner(task, owner, user?.id ?? null));
+  }, [tasks, owner, user]);
+
+  // What the owner filter offers, each with its OPEN count over the whole board - so an
+  // admin sees who is carrying what before picking a name.
+  const ownerOptions = useMemo(() => {
+    const me = user?.id ?? null;
+    const open = tasks.filter(isOpen);
+    const count = (filter: OwnerFilter) => open.filter((task) => matchesOwner(task, filter, me)).length;
+    return {
+      all: open.length,
+      mine: count("mine"),
+      delegated: count("delegated"),
+      unassigned: count("unassigned"),
+      people: (staff ?? [])
+        .filter((member) => member.id !== me)
+        .map((member) => ({ ...member, open: count(`user:${member.id}`) })),
+    };
+  }, [tasks, staff, user]);
 
   // The board lens (הכל / פיתוח / שיווק / תפעול) narrows BOTH the table and
   // the kanban - everything below (table view tabs + counts, and the
@@ -217,13 +241,15 @@ export function TasksClient() {
     [scoped, boardLens],
   );
 
-  // Counts for the lens buttons themselves - computed pre-lens (from `scoped`)
-  // so every button always shows how many tasks it would reveal.
+  // Counts for the lens buttons themselves - computed pre-lens (from `scoped`) so every
+  // button shows what it would reveal. OPEN tasks only (Dor, 30.09): a total that includes
+  // everything ever closed says nothing about the work that is left.
+  const scopedOpen = useMemo(() => scoped.filter(isOpen), [scoped]);
   const boardCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const task of scoped) counts.set(task.board, (counts.get(task.board) ?? 0) + 1);
+    for (const task of scopedOpen) counts.set(task.board, (counts.get(task.board) ?? 0) + 1);
     return counts;
-  }, [scoped]);
+  }, [scopedOpen]);
 
   const setBoardLens = useCallback(
     (board: (typeof TASK_BOARDS)[number] | "all") => {
@@ -599,6 +625,41 @@ export function TasksClient() {
     [isManager, user, onStatus, onDelete, threadTaskId, toggleThread, taskById, childrenOf],
   );
 
+  // Whose tasks are on screen - shared by the Tasks table and the Kanban. Everyone gets
+  // "mine" and "the ones I assigned to others"; the per-person list is the admins'
+  // (the staff list is admin-guarded, and it is their follow-up tool).
+  const withCount = (label: string, open: number) => (
+    <>
+      {label} <span className="tabular text-muted-foreground">· {open}</span>
+    </>
+  );
+  const ownerSelect = (
+    <Select value={owner} onValueChange={(value) => setOwner(value as OwnerFilter)}>
+      <SelectTrigger className="h-8 w-[210px]" dir="rtl" aria-label="של מי המשימות">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent dir="rtl">
+        <SelectItem value="all">{withCount("כל המשימות", ownerOptions.all)}</SelectItem>
+        <SelectItem value="mine">{withCount("המשימות שלי", ownerOptions.mine)}</SelectItem>
+        <SelectItem value="delegated">{withCount("ששייכתי לאחרים", ownerOptions.delegated)}</SelectItem>
+        {isManager && (
+          <>
+            <SelectSeparator />
+            <SelectGroup>
+              <SelectLabel>לפי משתמש</SelectLabel>
+              {ownerOptions.people.map((member) => (
+                <SelectItem key={member.id} value={`user:${member.id}`}>
+                  {withCount(member.name, member.open)}
+                </SelectItem>
+              ))}
+              <SelectItem value="unassigned">{withCount("ללא שיוך", ownerOptions.unassigned)}</SelectItem>
+            </SelectGroup>
+          </>
+        )}
+      </SelectContent>
+    </Select>
+  );
+
   // The sub-tasks panel for one task (none on a sub-task - one level only).
   const subtasksPanel = (task: TaskWithNames) =>
     task.parent_id ? null : (
@@ -629,7 +690,8 @@ export function TasksClient() {
           active={boardLens === "all"}
           onClick={() => setBoardLens("all")}
           label="הכל"
-          count={scoped.length}
+          count={scopedOpen.length}
+          title="משימות פתוחות"
         />
         {TASK_BOARDS.map((board) => (
           <FilterPill
@@ -638,6 +700,7 @@ export function TasksClient() {
             onClick={() => setBoardLens(board)}
             label={BOARD_META[board].label}
             count={boardCounts.get(board) ?? 0}
+            title="משימות פתוחות"
           />
         ))}
       </div>
@@ -669,7 +732,9 @@ export function TasksClient() {
                 }
                 disabled={bulkBusy}
               >
-                <SelectTrigger className="h-8 w-[160px]">
+                {/* text-foreground: the bar is bg-primary, and a trigger inherits its light text
+                    onto its own light background - the placeholder was invisible. */}
+                <SelectTrigger className="h-8 w-[160px] text-foreground">
                   <SelectValue placeholder="שייך ל…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -686,7 +751,7 @@ export function TasksClient() {
                 onValueChange={(value) => runBulk({ board: value as TaskBoard }, "הועברו")}
                 disabled={bulkBusy}
               >
-                <SelectTrigger className="h-8 w-[130px]">
+                <SelectTrigger className="h-8 w-[130px] text-foreground">
                   <SelectValue placeholder="ללוח…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -702,7 +767,7 @@ export function TasksClient() {
                 onValueChange={(value) => runBulk({ status: value as TaskStatus }, "עודכנו")}
                 disabled={bulkBusy}
               >
-                <SelectTrigger className="h-8 w-[130px]">
+                <SelectTrigger className="h-8 w-[130px] text-foreground">
                   <SelectValue placeholder="סטטוס…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -742,14 +807,20 @@ export function TasksClient() {
           ]}
           activeView={view}
           onViewChange={setView}
-          filters={
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Switch checked={myTasksOnly} onCheckedChange={setMyTasksOnly} />
-              המשימות שלי
-            </label>
-          }
+          filters={ownerSelect}
           rightActions={
-            <Button size="sm" onClick={() => setEditor({ open: true, task: null })}>
+            // A task opened while looking at one board starts on that board (still changeable
+            // in the form) - Dor, 30.09.
+            <Button
+              size="sm"
+              onClick={() =>
+                setEditor({
+                  open: true,
+                  task: null,
+                  defaults: boardLens === "all" ? undefined : { board: boardLens },
+                })
+              }
+            >
               <Plus className="mr-1.5 h-4 w-4" />
               New task
             </Button>
@@ -765,11 +836,8 @@ export function TasksClient() {
 
       <TabsContent value="kanban" className="mt-4 space-y-3">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          {/* Same switch (and state) as the Tasks tab - it filters this board too. */}
-          <label className="flex items-center gap-2 text-muted-foreground">
-            <Switch checked={myTasksOnly} onCheckedChange={setMyTasksOnly} />
-            המשימות שלי
-          </label>
+          {/* Same owner filter (and state) as the Tasks tab - it filters this board too. */}
+          {ownerSelect}
           <span className="text-muted-foreground">קיבוץ:</span>
           <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupBy)}>
             <SelectTrigger className="h-8 w-[140px]">
@@ -1123,18 +1191,22 @@ function FilterPill({
   label,
   count,
   severity,
+  title,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   count: number;
   severity?: "crit" | "warn";
+  /** What the number counts, when the label alone does not say. */
+  title?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      title={title}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",

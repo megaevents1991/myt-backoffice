@@ -14,3 +14,15 @@ export function sniffImageMime(bytes: Uint8Array): SniffedImage | null {
       at(8) === 0x57 && at(9) === 0x45 && at(10) === 0x42 && at(11) === 0x50) return "image/webp";
   return null;
 }
+
+/** What a task attachment may be: one of the images above, or a PDF ("%PDF-"). Office
+ *  files are zip containers - their bytes cannot be told from any other zip, so they stay out. */
+export type SniffedAttachment = SniffedImage | "application/pdf";
+
+export function sniffAttachmentMime(bytes: Uint8Array): SniffedAttachment | null {
+  const image = sniffImageMime(bytes);
+  if (image) return image;
+  if (bytes.length >= 5 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 &&
+      bytes[3] === 0x46 && bytes[4] === 0x2d) return "application/pdf";
+  return null;
+}

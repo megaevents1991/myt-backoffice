@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { diffActivities } from "../lib/services/task-activity";
 import { isValidTaskAttachmentPath } from "../lib/tasks/attachment-path";
 import { mentionsStillInBody } from "../lib/tasks/mentions";
+import { assignedByMap, matchesOwner, type AssigneeChangeRow } from "../lib/tasks/owner-filter";
 import {
   commentMailTargets,
   threadParticipants,
@@ -126,6 +127,47 @@ check("unread: comments stay with their own task",
     lastReadAt: new Map([["t1", at(5)]]),
   })],
   [["t2", 2]]);
+
+// --- owner-filter: who handed a task to its current owner, and whose tasks a filter shows ---
+const change = (task: string, author: string | null, to: string | null, day: number): AssigneeChangeRow => ({
+  task_id: task,
+  author_id: author,
+  created_at: at(day),
+  activity: { field: "assignee", to },
+});
+check("assigned by: the creator, when the form assigned it (no activity row)",
+  [...assignedByMap([{ id: "t1", assignee_id: "alon", created_by: "dor" }], [])], [["t1", "dor"]]);
+check("assigned by: whoever re-assigned it last, not the creator",
+  [...assignedByMap([{ id: "t1", assignee_id: "tom", created_by: "dor" }],
+    [change("t1", "rina", "alon", 1), change("t1", "liz", "tom", 2)])],
+  [["t1", "liz"]]);
+check("assigned by: a bulk-assigned rule task has no creator, the admin still owns the hand-off",
+  [...assignedByMap([{ id: "t1", assignee_id: "tom", created_by: null }], [change("t1", "alon", "tom", 1)])],
+  [["t1", "alon"]]);
+check("assigned by: a change to someone who no longer owns it does not count",
+  [...assignedByMap([{ id: "t1", assignee_id: "alon", created_by: "dor" }], [change("t1", "liz", "tom", 3)])],
+  [["t1", "dor"]]);
+check("assigned by: unassigned, and a rule's own assignee, are nobody's hand-off",
+  [...assignedByMap([
+    { id: "t1", assignee_id: null, created_by: "dor" },
+    { id: "t2", assignee_id: "tom", created_by: null },
+  ], [change("t1", "dor", null, 1)])],
+  []);
+
+const owned = (assignee: string | null, by: string | null) => ({ assignee_id: assignee, assigned_by: by });
+check("owner: all shows everything", matchesOwner(owned(null, null), "all", "dor"), true);
+check("owner: mine = assigned to me", [matchesOwner(owned("dor", "alon"), "mine", "dor"), matchesOwner(owned("alon", "dor"), "mine", "dor")], [true, false]);
+check("owner: delegated = I assigned it to someone else",
+  [
+    matchesOwner(owned("alon", "dor"), "delegated", "dor"),
+    matchesOwner(owned("dor", "dor"), "delegated", "dor"), // my own task is not "handed to others"
+    matchesOwner(owned("alon", "tom"), "delegated", "dor"), // someone else's hand-off
+    matchesOwner(owned(null, null), "delegated", "dor"),
+  ],
+  [true, false, false, false]);
+check("owner: one person's tasks", [matchesOwner(owned("alon", null), "user:alon", "dor"), matchesOwner(owned("tom", null), "user:alon", "dor")], [true, false]);
+check("owner: unassigned", [matchesOwner(owned(null, null), "unassigned", "dor"), matchesOwner(owned("alon", null), "unassigned", "dor")], [true, false]);
+check("owner: no session shows nothing of 'mine'", matchesOwner(owned(null, null), "mine", null), false);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

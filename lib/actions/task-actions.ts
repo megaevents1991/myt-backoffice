@@ -28,6 +28,7 @@ import { defaultBoardFor, validBoard, validChannel, validPhase, validProgress } 
 import { diffActivities, recordActivity } from "@/lib/services/task-activity";
 import { editableFields, type EditableTaskField } from "@/lib/tasks/permissions";
 import { unreadCounts, type ThreadCommentRow } from "@/lib/tasks/thread-watch";
+import { assignedByMap, type AssigneeChangeRow } from "@/lib/tasks/owner-filter";
 
 // Typed against types/database.types.ts (npm run db:types).
 const db = supabaseTyped;
@@ -118,6 +119,34 @@ async function commentRows(taskIds: string[]): Promise<ThreadCommentRow[]> {
   return out;
 }
 
+/** Every "assignee changed" activity row of these tasks - who handed each task to whom.
+ *  Same chunking as commentRows; a failed chunk is logged and its tasks fall back to
+ *  "assigned by whoever created it". */
+async function assigneeChangeRows(taskIds: string[]): Promise<AssigneeChangeRow[]> {
+  const out: AssigneeChangeRow[] = [];
+  for (let i = 0; i < taskIds.length; i += COMMENT_COUNT_CHUNK) {
+    const chunk = taskIds.slice(i, i + COMMENT_COUNT_CHUNK);
+    const { rows, error, truncated } = await fetchPaged<AssigneeChangeRow & { id: string }>(
+      () =>
+        db
+          .from("task_comments")
+          .select("id,task_id,author_id,created_at,activity")
+          .eq("kind", "activity")
+          .eq("activity->>field", "assignee")
+          .in("task_id", chunk)
+          .order("id", { ascending: true }),
+      COMMENT_ROWS_MAX,
+    );
+    if (error) {
+      console.error("tasks: assignee-change rows failed for a chunk", JSON.stringify(error));
+      continue;
+    }
+    if (truncated) console.error(`tasks: assignee-change rows truncated at ${COMMENT_ROWS_MAX} rows for a chunk`);
+    out.push(...rows);
+  }
+  return out;
+}
+
 /** When this person last opened each thread. A failed read (the table not migrated yet
  *  included) returns null = "unknown", which the caller shows as nothing unread - an empty
  *  map would read as "never opened anything" and light the whole board up. */
@@ -149,11 +178,14 @@ async function withNames(rows: Task[], userId: string): Promise<TaskWithNames[]>
         .filter((value): value is string => !!value),
     ),
   ];
-  const [comments, lastReadAt, siteUrls] = await Promise.all([
+  const [comments, lastReadAt, siteUrls, assigneeChanges] = await Promise.all([
     commentRows(rows.map((row) => row.id)),
     lastReadByTask(userId),
     siteUrlsForRefs(rows.map((row) => row.source_ref)),
+    // Only a task that HAS an owner can have been handed to someone.
+    assigneeChangeRows(rows.filter((row) => row.assignee_id).map((row) => row.id)),
   ]);
+  const assignedBy = assignedByMap(rows, assigneeChanges);
   const countOf = new Map<string, number>();
   for (const comment of comments) countOf.set(comment.task_id, (countOf.get(comment.task_id) ?? 0) + 1);
   const unreadOf = lastReadAt
@@ -165,6 +197,7 @@ async function withNames(rows: Task[], userId: string): Promise<TaskWithNames[]>
       ...row,
       assignee_name: null,
       created_by_name: null,
+      assigned_by: null,
       site_url: siteUrlOf(row.source_ref, siteUrls),
       comment_count: countOf.get(row.id) ?? 0,
       unread_count: unreadOf.get(row.id) ?? 0,
@@ -185,6 +218,7 @@ async function withNames(rows: Task[], userId: string): Promise<TaskWithNames[]>
     ...row,
     assignee_name: row.assignee_id ? (nameOf.get(row.assignee_id) ?? null) : null,
     created_by_name: row.created_by ? (nameOf.get(row.created_by) ?? null) : null,
+    assigned_by: assignedBy.get(row.id) ?? null,
     site_url: siteUrlOf(row.source_ref, siteUrls),
     comment_count: countOf.get(row.id) ?? 0,
     unread_count: unreadOf.get(row.id) ?? 0,
