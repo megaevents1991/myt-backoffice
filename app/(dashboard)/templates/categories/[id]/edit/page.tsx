@@ -57,6 +57,26 @@ type CategoryFormData = z.infer<typeof categoryFormSchema>;
 const parseMemberIds = (raw: string): string[] =>
   raw.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
 
+type ParentOption = { id: number; name: string; slug: string; parent_id: number | null };
+
+// The page path every save writes into link_url (category-actions syncLink):
+// /c/<ancestor slugs>/<slug>. "…" = a parent the list has not loaded (yet).
+const categoryPagePath = (slug: string, parentId: string | undefined, rows: ParentOption[]): string => {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const parts = [slug.trim() || "<slug>"];
+  let cur: number | null = parentId ? Number(parentId) : null;
+  if (cur != null && !byId.has(cur)) return `/c/…/${parts[0]}`;
+  const seen = new Set<number>();
+  while (cur != null && !seen.has(cur)) {
+    const p = byId.get(cur);
+    if (!p) break;
+    seen.add(cur);
+    parts.unshift(p.slug);
+    cur = p.parent_id;
+  }
+  return `/c/${parts.join("/")}`;
+};
+
 export default function EditCategoryPage({
   params,
 }: {
@@ -73,7 +93,7 @@ export default function EditCategoryPage({
   // CategoryTagsField).
   const [catTagIds, setCatTagIds] = useState<number[]>([]);
   // Parent options - self excluded; the server also refuses a cycle.
-  const [parentOptions, setParentOptions] = useState<{ id: number; name: string }[]>([]);
+  const [parentOptions, setParentOptions] = useState<ParentOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [artImageUrl, setArtImageUrl] = useState("");
   const [artColorIndex, setArtColorIndex] = useState(0);
@@ -107,7 +127,9 @@ export default function EditCategoryPage({
     getCategories()
       .then((rows) =>
         setParentOptions(
-          rows.filter((c) => c.id !== templateId).map((c) => ({ id: c.id, name: c.name }))
+          rows
+            .filter((c) => c.id !== templateId)
+            .map((c) => ({ id: c.id, name: c.name, slug: c.slug, parent_id: c.parent_id }))
         )
       )
       .catch((e) => console.error("Failed to load parent categories:", e));
@@ -154,6 +176,9 @@ export default function EditCategoryPage({
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId]);
+
+  // Re-renders on a parent change so the slug hint shows the new /c/ path.
+  const parentId = form.watch("parent_id");
 
   const isDirty =
     form.formState.isDirty ||
@@ -250,7 +275,9 @@ export default function EditCategoryPage({
               <FormItem>
                 <FormLabel>Slug</FormLabel>
                 <FormControl><Input {...field} /></FormControl>
-                <FormDescription>URL: /category/&lt;slug&gt;</FormDescription>
+                <FormDescription>
+                  URL: {categoryPagePath(field.value ?? "", parentId, parentOptions)}
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
@@ -309,7 +336,10 @@ export default function EditCategoryPage({
               <FormItem className="md:col-span-2">
                 <FormLabel>Override link (optional)</FormLabel>
                 <FormControl><Input {...field} /></FormControl>
-                <FormDescription>If set, the card links here instead of /category/&lt;slug&gt;.</FormDescription>
+                <FormDescription>
+                  A link outside /c/ sends the card there instead of its category page; a blank or
+                  /c/… link is reset to the category&apos;s own path on every save.
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )} />

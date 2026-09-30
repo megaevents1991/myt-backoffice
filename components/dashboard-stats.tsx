@@ -83,9 +83,11 @@ export function DashboardStats() {
     <div className="space-y-8">
       {/* Summary Cards */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
+        {/* Not revenue: getDashboardStats' `totalRevenue` is $175 (the site
+            markup) per traveller on every Paid booking - an estimated margin. */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+            <CardTitle className="text-sm font-medium">Est. Margin</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="font-display text-2xl font-bold tabular-nums tracking-tight">
@@ -97,7 +99,7 @@ export function DashboardStats() {
                     maximumFractionDigits: 2,
                   })}
             </div>
-            <p className="text-xs text-muted-foreground">From all reservations</p>
+            <p className="text-xs text-muted-foreground">$175 × travellers, Paid bookings</p>
           </CardContent>
         </Card>
 

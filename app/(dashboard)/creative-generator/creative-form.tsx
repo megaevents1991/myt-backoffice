@@ -180,6 +180,13 @@ export function CreativeForm({
     }
   };
 
+  // Arriving with ?eventId= (the gaps "Do" link) fills the form exactly as
+  // picking that event does - pre-selecting it alone left everything empty.
+  useEffect(() => {
+    if (presetEventId) void onEventChange(presetEventId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetEventId]);
+
   const dateText = useMemo(() => {
     if (!date) return "";
     const [y, m, d] = date.split("-");
