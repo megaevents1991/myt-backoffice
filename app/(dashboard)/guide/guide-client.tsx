@@ -294,6 +294,7 @@ function Contents({ groups, lang, compact }: { groups: GuideGroup[]; lang: Lang;
 export function GuideClient() {
   const [lang, setLang] = useState<Lang>("he");
   const [query, setQuery] = useState("");
+  const [langReady, setLangReady] = useState(false);
 
   // Remember the reader's language across visits.
   useEffect(() => {
@@ -303,7 +304,17 @@ export function GuideClient() {
     } catch {
       /* private mode etc. - default stands */
     }
+    setLangReady(true);
   }, []);
+
+  // Arriving from a screen's "Guide" button (/guide#nav-events): land on that
+  // screen once the stored language is on screen - switching to English after
+  // the browser's own jump moves every section below the top.
+  useEffect(() => {
+    if (!langReady) return;
+    const id = window.location.hash.slice(1);
+    if (id) document.getElementById(id)?.scrollIntoView({ block: "start" });
+  }, [langReady]);
 
   const pick = (value: Lang) => {
     setLang(value);

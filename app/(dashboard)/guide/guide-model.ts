@@ -4,11 +4,12 @@
 // none), inline links, and the text a search reads. No React, no DB.
 
 import { NAV_GROUPS, type NavItem } from "@/lib/nav";
+import { anchorFor, START } from "@/lib/guide-link";
 import { ADMIN_ROLES, type Role } from "@/types/auth.types";
 import type { GuideSection, L } from "./guide-content";
 
-/** The start-here group, before the sidebar's own groups. */
-export const START = "start";
+// Anchors live beside the top bar's "Guide" button (lib/guide-link.ts).
+export { anchorFor, START };
 
 /** Screens that need no guide section of their own (this page). */
 export const NO_SECTION_NEEDED = new Set(["/guide"]);
@@ -75,9 +76,6 @@ export type GuideItem = {
 };
 
 export type GuideGroup = { key: string; label: L; items: GuideItem[] };
-
-export const anchorFor = (href: string) =>
-  href === START ? "start" : `nav${href.replace(/[^a-z0-9]+/gi, "-")}`.replace(/-+$/, "");
 
 /**
  * The sidebar, with each screen carrying the guide sections written for it.

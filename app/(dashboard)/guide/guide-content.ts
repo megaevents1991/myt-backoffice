@@ -63,6 +63,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       {
         title: t("Use this guide", "להשתמש במדריך הזה"),
         steps: [
+          t("On any screen, \"Guide\" at the right of the top bar opens this guide in a new tab, right at the part about that screen - the screen stays open to work on.", "בכל מסך, \"Guide\" בצד ימין של הסרגל העליון פותח את המדריך הזה בלשונית חדשה, ישר בחלק של אותו מסך - המסך נשאר פתוח לעבודה."),
           t("The guide follows the sidebar: the same groups, the same screens, in the same order. Every screen's heading has \"Open the screen\", which opens it in a new tab.", "המדריך בנוי כמו התפריט: אותן קבוצות, אותם מסכים, באותו סדר. בכותרת של כל מסך יש \"פתח את המסך\", שפותח אותו בלשונית חדשה."),
           t("Every underlined link inside a step also opens in a new tab, so the guide stays open next to the screen you are working on.", "גם כל קישור עם קו תחתון בתוך צעד נפתח בלשונית חדשה, כך שהמדריך נשאר פתוח ליד המסך שעובדים עליו."),
           t("The search box reads Hebrew and English together - type a button's name (\"Save\", \"הוזל\") or a job (\"קופון\", \"מלונות\").", "תיבת החיפוש קוראת עברית ואנגלית יחד - מקלידים שם של כפתור (\"Save\", \"הוזל\") או פעולה (\"קופון\", \"מלונות\")."),

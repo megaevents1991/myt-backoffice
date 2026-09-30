@@ -210,7 +210,9 @@
   }
 
   [id^="fix-"]:target,
-  [id^="section-"]:target {
+  [id^="section-"]:target,
+  /* The top bar's "Guide" button lands on a screen's heading in /guide. */
+  section[id^="nav-"]:target > :first-child {
     border-radius: var(--radius);
     animation: deep-link-arrive 2s var(--ease-out) 1;
   }

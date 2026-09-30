@@ -327,7 +327,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   `guide-model.ts` groups them under the sidebar's own headings, so a new menu screen
 >   shows up by itself. `howTo` = numbered step-by-step recipes; any text may carry
 >   `[label](/path)` links, and EVERY guide link opens in a new tab. Search reads both
->   languages. `npx tsx scripts/guide-selftest.ts` fails when a menu screen has no
+>   languages. **Every screen's top bar has "Guide"** (`components/topbar.tsx`, 30.09): it opens
+>   `/guide#nav-<screen>` in a new tab - `guideLinkFor` in `lib/guide-link.ts` picks the most
+>   specific menu item covering the path (a sub-screen -> its parent, no match -> the guide's
+>   top); hidden on /guide and for `forms_operator`. `npx tsx scripts/guide-selftest.ts` fails when a menu screen has no
 >   section, a text lacks a language, or a link has no route - run it after adding a
 >   screen or a link.
 > - **Typed DB client (2026-09-16):** `supabaseTyped` (`lib/supabase-server.ts`) is the

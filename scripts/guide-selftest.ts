@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { NAV_GROUPS } from "../lib/nav";
+import { guideLinkFor } from "../lib/guide-link";
 import { GUIDE_SECTIONS } from "../app/(dashboard)/guide/guide-content";
 import {
   allTexts,
@@ -68,6 +69,25 @@ for (const s of GUIDE_SECTIONS) {
     if (h.steps.length === 0) fail(`section "${s.id}" recipe "${h.title.en}" has no steps`);
   }
 }
+
+// --- the top bar's "Guide" button lands on a rendered screen ------------------
+const rendered = new Set(buildGuide(GUIDE_SECTIONS).flatMap((g) => g.items.map((i) => i.anchor)));
+for (const group of NAV_GROUPS) {
+  for (const item of group.items) {
+    for (const href of [item.href, ...(item.items ?? []).map((sub) => sub.href)]) {
+      if (NO_SECTION_NEEDED.has(href)) continue;
+      const link = guideLinkFor(href);
+      const anchor = link.split("#")[1];
+      if (!anchor || !rendered.has(anchor)) fail(`Guide button on ${href} -> ${link}, which the guide does not render`);
+    }
+  }
+}
+assert.equal(guideLinkFor("/events/123"), "/guide#nav-events");
+assert.equal(guideLinkFor("/templates/categories/4/edit"), "/guide#nav-templates-categories");
+assert.equal(guideLinkFor("/templates/artists"), "/guide#nav-templates");
+assert.equal(guideLinkFor("/live-events"), "/guide#nav-sports-events");
+assert.equal(guideLinkFor("/eventsX"), "/guide");
+assert.equal(guideLinkFor("/"), "/guide");
 
 // --- every link lands on a route -------------------------------------------
 /** app/<route>/page.tsx, through route groups "(x)" and dynamic "[x]" folders. */
