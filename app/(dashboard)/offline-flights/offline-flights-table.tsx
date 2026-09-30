@@ -8,6 +8,7 @@ import { Layers } from "lucide-react";
 import { OfflineFlight } from "@/types/offline-flight.types";
 import { getOfflineFlights } from "@/lib/actions/offline-flight-actions";
 import { FlightsEditableTable } from "@/components/flights-editable-table";
+import { DataTableSkeleton } from "@/components/data-table";
 
 export function OfflineFlightsTable() {
   const [flights, setFlights] = useState<OfflineFlight[]>([]);
@@ -30,7 +31,7 @@ export function OfflineFlightsTable() {
   }, [fetchFlights]);
 
   if (isLoading) {
-    return <div>Loading flights...</div>;
+    return <DataTableSkeleton label="Loading flights" />;
   }
 
   return (

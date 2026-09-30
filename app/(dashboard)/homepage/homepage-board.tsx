@@ -691,7 +691,7 @@ function ItemStrip({
 
   return (
     <div className="px-3 py-3">
-      <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]" dir="rtl">
+      <div className="flex gap-3 overflow-x-auto pb-2" dir="rtl">
         {list.map((it, i) => {
           const c = candidates.get(candidateKey(it.kind, it.ref_id));
           return (

@@ -513,7 +513,9 @@ export function PriceLightClient() {
         accessorFn: (row) => [row.name, row.name_english].filter(Boolean).join(" "),
         header: "אירוע",
         cell: ({ row }) => (
-          <Link href={`/events/${row.original.event_id}`} className="block font-medium hover:underline">
+          // A floor on the width: squeezed by the columns beside it, the name broke one word
+          // per line and every row stood 145px tall.
+          <Link href={`/events/${row.original.event_id}`} className="block min-w-[11rem] font-medium hover:underline">
             <div>{row.original.name}</div>
             <div className="text-xs font-normal text-muted-foreground">
               {row.original.date}

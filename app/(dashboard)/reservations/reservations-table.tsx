@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
-import { DataTable } from "@/components/data-table";
+import { DataTable, DataTableSkeleton } from "@/components/data-table";
 import type { ReservationListRow } from "@/types/reservation.types";
 import {
   getReservations,
@@ -297,7 +297,8 @@ export function ReservationsTable() {
       header: "Phone",
       cell: ({ row }) => {
         const phone = row.getValue("main_contact_phone_number") as string;
-        return <div>{phone || "-"}</div>;
+        // One line: a number wrapped at its hyphens and made every row three lines tall.
+        return <div className="whitespace-nowrap tabular">{phone || "-"}</div>;
       },
     },
     {
@@ -323,7 +324,7 @@ export function ReservationsTable() {
       header: "Price",
       cell: ({ row }) => {
         const price = Number.parseFloat(row.getValue("user_shown_price"));
-        return <div>${price.toFixed(2)}</div>;
+        return <div className="whitespace-nowrap tabular">${price.toFixed(2)}</div>;
       },
     },
     {
@@ -341,7 +342,7 @@ export function ReservationsTable() {
       },
       cell: ({ row }) => {
         const date = new Date(row.getValue("created_at"));
-        return <div>{date.toLocaleDateString()}</div>;
+        return <div className="whitespace-nowrap tabular">{date.toLocaleDateString()}</div>;
       },
     },
     {
@@ -351,6 +352,9 @@ export function ReservationsTable() {
         const reservation = row.original;
         const input = (
           <Input
+            // A floor on the width: the table squeezed this box to 55px, too
+            // narrow to read its own placeholder.
+            className="h-8 min-w-[16ch]"
             defaultValue={reservation.comments || ""}
             placeholder="Add a comment"
             onBlur={(e) =>
@@ -384,7 +388,7 @@ export function ReservationsTable() {
         return (
           <Input
             type="number"
-            className="min-w-[10ch] no-spinner"
+            className="h-8 min-w-[10ch] no-spinner"
             defaultValue={reservation.accounting_number ?? undefined}
             placeholder="TBD"
             onChange={(e) => {
@@ -488,14 +492,14 @@ export function ReservationsTable() {
         const isDeleted = Boolean(reservation.is_deleted);
 
         return (
-          <div className="flex items-center gap-2">
-            <Link href={`/reservations/${reservation.id}`}>
-              <Button variant="ghost" size="icon">
+          <div className="flex items-center gap-0.5">
+            <Link href={`/reservations/${reservation.id}`} title="View reservation">
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="View reservation">
                 <Eye className="h-4 w-4" />
               </Button>
             </Link>
-            <Link href={`/reservations/${reservation.id}/edit`}>
-              <Button variant="ghost" size="icon">
+            <Link href={`/reservations/${reservation.id}/edit`} title="Edit reservation">
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit reservation">
                 <Edit className="h-4 w-4" />
               </Button>
             </Link>
@@ -503,7 +507,9 @@ export function ReservationsTable() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="text-destructive hover:text-destructive"
+                title="Delete reservation"
+                aria-label="Delete reservation"
+                className="h-8 w-8 text-destructive hover:text-destructive"
                 onClick={async () => {
                   if (
                     !(await confirm({
@@ -528,7 +534,7 @@ export function ReservationsTable() {
   ];
 
   if (loading) {
-    return <div>Loading reservations...</div>;
+    return <DataTableSkeleton rows={12} label="Loading reservations" />;
   }
 
   const visibleReservations = reservations

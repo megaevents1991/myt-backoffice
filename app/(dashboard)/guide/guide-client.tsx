@@ -406,7 +406,7 @@ export function GuideClient() {
       <div className="flex items-start gap-6">
         <nav
           dir={dir}
-          className="sticky top-20 hidden max-h-[calc(100vh-6rem)] w-56 shrink-0 overflow-y-auto xl:block"
+          className="scrollbar-rail sticky top-20 hidden max-h-[calc(100vh-6rem)] w-56 shrink-0 overflow-y-auto xl:block"
           aria-label={text(GUIDE_UI.onThisPage)}
         >
           <Contents groups={groups} lang={lang} />

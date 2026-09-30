@@ -142,6 +142,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   bulk bar, numbered pagination, `defaultSorting`) and **token search**
 >   (`lib/search.ts` `matchesSearch` - words in any order, diacritics-insensitive,
 >   guarded subsequence for nicknames: "barca" hits Barcelona).
+>   **Table chrome (2026-09-30):** a `DataTable` scrolls INSIDE its card from `md` up
+>   (`max-h: 100svh - 9rem`) with a sticky header, so the sideways bar is always in reach;
+>   a LAST column whose id is `"actions"` is pinned to the trailing edge (name a row-actions
+>   column `actions` and it never hides behind a sideways scroll); edge shadows say when
+>   columns are cut off; header sort buttons are normalized in one place (`HEADER_BUTTON`);
+>   a search resets to page 1 and the page index is clamped when rows shrink.
+>   `DataTableSkeleton` is the loading state for list screens. **Scrollbars** are themed in
+>   `app/globals.css`; add `scrollbar-rail` to a side rail (sidebar nav, guide contents,
+>   `EditorRail`) - its thumb shows on hover only.
 > - **Deep links:** `id="fix-*"` / `id="section-*"` anchors flash on arrival
 >   (`:target` keyframes in globals.css + `components/deep-link-scroll.tsx`).
 >   Event editor sections carry `data-editor-section` for the `EditorRail`.

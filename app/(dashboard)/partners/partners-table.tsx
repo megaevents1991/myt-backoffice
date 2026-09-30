@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { DataTable } from "@/components/data-table";
+import { DataTable, DataTableSkeleton } from "@/components/data-table";
 import {
   MARKETING_PARTNER_TYPES,
   PARTNER_TYPE_LABELS,
@@ -625,7 +625,7 @@ export function PartnersTable() {
   ];
 
   if (loading) {
-    return <div>Loading partners...</div>;
+    return <DataTableSkeleton label="Loading partners" />;
   }
 
   const onRefundTab = typeFilter === "customer_refund";

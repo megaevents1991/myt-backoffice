@@ -79,7 +79,7 @@ export function EditorRail({ className }: { className?: string }) {
     <nav
       aria-label="Sections"
       className={cn(
-        "sticky top-16 hidden max-h-[calc(100vh-6rem)] w-48 shrink-0 flex-col gap-0.5 overflow-y-auto xl:flex",
+        "scrollbar-rail sticky top-16 hidden max-h-[calc(100vh-6rem)] w-48 shrink-0 flex-col gap-0.5 overflow-y-auto xl:flex",
         className,
       )}
     >

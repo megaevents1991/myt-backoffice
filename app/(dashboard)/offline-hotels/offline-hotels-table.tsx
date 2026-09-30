@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { DataTableSkeleton } from "@/components/data-table";
 import { toast } from "react-hot-toast";
 import { useConfirm } from "@/components/confirm-provider";
 import { Edit, Trash2, Eye, RotateCcw } from "lucide-react";
@@ -105,7 +106,7 @@ export function OfflineHotelsTable() {
     });
   };
 
-  if (isLoading) return <div>Loading hotels...</div>;
+  if (isLoading) return <DataTableSkeleton label="Loading hotels" />;
 
   return (
     <div className="space-y-4">
@@ -121,10 +122,10 @@ export function OfflineHotelsTable() {
           Show deleted
         </label>
       </div>
-      <div className="rounded-md border">
+      <div className="overflow-hidden rounded-lg border bg-card">
         <Table>
-          <TableHeader>
-            <TableRow>
+          <TableHeader className="bg-muted/60">
+            <TableRow className="hover:bg-transparent">
               <TableHead>
                 <Checkbox
                   checked={hotels.length > 0 && selectedRows.size === hotels.length}

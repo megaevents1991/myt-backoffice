@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { DataTableSkeleton } from "@/components/data-table";
 import { toast } from "react-hot-toast";
 import { useConfirm } from "@/components/confirm-provider";
 import { Edit, Trash2, Search } from "lucide-react";
@@ -73,7 +74,7 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
     });
   };
 
-  if (isLoading) return <div>Loading…</div>;
+  if (isLoading) return <DataTableSkeleton />;
 
   return (
     <div className="space-y-3">
@@ -86,10 +87,10 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
           className="pl-8"
         />
       </div>
-      <div className="rounded-md border">
+      <div className="overflow-hidden rounded-lg border bg-card">
       <Table>
-        <TableHeader>
-          <TableRow>
+        <TableHeader className="bg-muted/60">
+          <TableRow className="hover:bg-transparent">
             <TableHead>Image</TableHead>
             <TableHead>Gallery</TableHead>
             <TableHead>Name</TableHead>

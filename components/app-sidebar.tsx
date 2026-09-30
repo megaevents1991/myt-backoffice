@@ -144,7 +144,9 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
         </button>
       </SidebarHeader>
 
-      <SidebarContent>
+      {/* No gap between groups: each group's own top padding is the separation,
+          which keeps the daily groups on screen without scrolling on a laptop. */}
+      <SidebarContent className="gap-0 pb-2">
         {groups.map((group) => (
           <NavGroupSection
             key={group.label}
@@ -156,7 +158,8 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
         ))}
       </SidebarContent>
 
-      <SidebarFooter>
+      {/* The rule gives the scrolling nav an edge to disappear under. */}
+      <SidebarFooter className="border-t border-sidebar-border">
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenu>
@@ -283,7 +286,8 @@ function NavGroupSection({
   const heading = (
     <SidebarGroupLabel
       asChild
-      className="cursor-pointer hover:text-sidebar-accent-foreground"
+      // h-7 (not the primitive's h-8) - the icon-mode pull-up has to match it.
+      className="h-7 cursor-pointer hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:-mt-7"
     >
       <button type="button" onClick={() => persist(!isOpen)}>
         {group.label}
@@ -303,7 +307,7 @@ function NavGroupSection({
   );
 
   return (
-    <SidebarGroup>
+    <SidebarGroup className="pb-0">
       {showPreview ? (
         <HoverCard openDelay={120} closeDelay={80}>
           <HoverCardTrigger asChild>{heading}</HoverCardTrigger>
@@ -346,7 +350,7 @@ function NavGroupSection({
 
       {isOpen && (
         <SidebarGroupContent>
-          <SidebarMenu>{group.items.map(renderItem)}</SidebarMenu>
+          <SidebarMenu className="gap-0.5">{group.items.map(renderItem)}</SidebarMenu>
         </SidebarGroupContent>
       )}
     </SidebarGroup>

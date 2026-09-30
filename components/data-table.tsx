@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   type ColumnDef,
   type ColumnFiltersState,
@@ -26,6 +26,7 @@ import {
   Inbox,
   Search,
   SlidersHorizontal,
+  X,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -47,6 +48,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /** A saved view - a named filter over the same rows, with its own count. */
 export interface DataTableView {
@@ -113,6 +115,130 @@ function pageWindow(current: number, total: number): (number | "gap")[] {
     out.push(page);
   });
   return out;
+}
+
+/**
+ * A sort button in a header cell is a stock ghost Button: its own padding
+ * pushed the label 16px in from the cells under it, and it set its own size and
+ * case, so sortable headers read "Name" beside plain ones reading "LOCATION".
+ * One rule here instead of a fix in every column definition. The checkbox in
+ * the select column is a button too - leave it alone.
+ */
+// Spelled out in full - Tailwind only generates classes it can read as literals.
+const HEADER_BUTTON =
+  "[&>button:not([role=checkbox])]:-ms-2 [&>button:not([role=checkbox])]:h-8 [&>button:not([role=checkbox])]:px-2 [&>button:not([role=checkbox])]:text-xs [&>button:not([role=checkbox])]:font-semibold [&>button:not([role=checkbox])]:uppercase [&>button:not([role=checkbox])]:tracking-wide";
+
+/**
+ * A last column with the id "actions" is pinned to the table's trailing edge, so
+ * a row's Edit / View / ⋯ never sits behind a sideways scroll. The pinned cell
+ * needs a solid fill to cover what scrolls under it, so each row tint (hover,
+ * selected, open) is mixed over the card instead of layered with alpha.
+ */
+const PINNED_COLUMN_ID = "actions";
+const PINNED_CELL =
+  "sticky end-0 z-[1] bg-card shadow-[inset_0_-1px_0_hsl(var(--border))] [tr:last-child>&]:shadow-none [tr:hover>&]:bg-[color:color-mix(in_srgb,hsl(var(--muted))_50%,hsl(var(--card)))] [tr[data-state=selected]>&]:bg-muted";
+const PINNED_CELL_OPEN = "bg-[color:color-mix(in_srgb,hsl(var(--muted))_40%,hsl(var(--card)))]";
+const PINNED_HEAD =
+  "sticky end-0 z-[1] bg-[color:color-mix(in_srgb,hsl(var(--muted))_60%,hsl(var(--card)))]";
+// The soft edge that says "columns continue under here" - only while some do.
+const PINNED_EDGE =
+  "before:pointer-events-none before:absolute before:inset-y-0 before:-start-4 before:w-4 before:bg-gradient-to-l before:from-black/10 before:to-transparent before:opacity-0 before:transition-opacity before:duration-200 before:content-[''] rtl:before:bg-gradient-to-r dark:before:from-black/50";
+
+interface ScrollEdges {
+  left: boolean;
+  right: boolean;
+  /** Thickness of the scroller's own bars, so a shadow never sits on one. */
+  barX: number;
+  barY: number;
+  rtl: boolean;
+}
+
+const NO_EDGES: ScrollEdges = { left: false, right: false, barX: 0, barY: 0, rtl: false };
+
+/**
+ * Which sides of a wide table still hide columns. The table scrolls inside its
+ * card, and a column cut off at the edge with no cue reads as "that is all".
+ */
+function useScrollEdges(tableRef: React.RefObject<HTMLTableElement | null>): ScrollEdges {
+  const [edges, setEdges] = useState(NO_EDGES);
+
+  useEffect(() => {
+    const table = tableRef.current;
+    const scroller = table?.parentElement;
+    if (!table || !scroller) return;
+
+    const measure = () => {
+      const max = scroller.scrollWidth - scroller.clientWidth;
+      // An RTL scroller counts scrollLeft down from 0, so only the distance matters.
+      const offset = Math.abs(scroller.scrollLeft);
+      const rtl = getComputedStyle(scroller).direction === "rtl";
+      const pastStart = max > 1 && offset > 1;
+      const beforeEnd = max > 1 && offset < max - 1;
+      const next: ScrollEdges = {
+        left: rtl ? beforeEnd : pastStart,
+        right: rtl ? pastStart : beforeEnd,
+        barX: scroller.offsetWidth - scroller.clientWidth,
+        barY: scroller.offsetHeight - scroller.clientHeight,
+        rtl,
+      };
+      setEdges((prev) =>
+        prev.left === next.left &&
+        prev.right === next.right &&
+        prev.barX === next.barX &&
+        prev.barY === next.barY &&
+        prev.rtl === next.rtl
+          ? prev
+          : next,
+      );
+    };
+
+    measure();
+    scroller.addEventListener("scroll", measure, { passive: true });
+    const observer = new ResizeObserver(measure);
+    observer.observe(scroller);
+    observer.observe(table);
+    return () => {
+      scroller.removeEventListener("scroll", measure);
+      observer.disconnect();
+    };
+  }, [tableRef]);
+
+  return edges;
+}
+
+/**
+ * The table's own outline while the first rows load, in place of a bare
+ * "Loading…" line that jumps into a full table when the data lands.
+ */
+export function DataTableSkeleton({
+  rows = 8,
+  label = "Loading",
+}: {
+  rows?: number;
+  /** Read out to screen readers - say what is loading. */
+  label?: string;
+}) {
+  return (
+    <div className="space-y-3" role="status">
+      <span className="sr-only">{label}…</span>
+      <Skeleton className="h-9 w-full sm:w-[300px]" />
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <div className="h-10 border-b bg-muted/60" />
+        {Array.from({ length: rows }, (_, index) => (
+          <div
+            key={index}
+            className="flex items-center gap-6 border-b px-3 py-3.5 last:border-b-0"
+          >
+            <Skeleton className="h-4 w-10 shrink-0" />
+            <Skeleton className="h-4 flex-1" />
+            <Skeleton className="h-4 w-24 shrink-0" />
+            <Skeleton className="hidden h-4 w-20 shrink-0 md:block" />
+            <Skeleton className="hidden h-4 w-28 shrink-0 lg:block" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function DataTable<TData, TValue>({
@@ -239,13 +365,32 @@ export function DataTable<TData, TValue>({
   const firstRow = filteredCount === 0 ? 0 : pageIndex * pageSize + 1;
   const lastRow = Math.min((pageIndex + 1) * pageSize, filteredCount);
   const searchValue = (table.getState().globalFilter as string) ?? "";
-  const setSearchValue = (value: string) => table.setGlobalFilter(value);
+  // A search typed on page 3 has to land on page 1 of what it found - the page
+  // index does not reset by itself (that would throw you back on every inline edit).
+  const setSearchValue = (value: string) => {
+    table.setGlobalFilter(value);
+    table.setPageIndex(0);
+  };
+  const searchRef = useRef<HTMLInputElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const edges = useScrollEdges(tableRef);
+  const visibleColumns = table.getVisibleLeafColumns();
+  const pinsActions = visibleColumns[visibleColumns.length - 1]?.id === PINNED_COLUMN_ID;
+  // Columns still hidden past the trailing edge (the left one in an RTL table).
+  const trailingHidden = edges.rtl ? edges.left : edges.right;
+
+  // Rows can also shrink from outside (a filter chip, a bulk delete): never sit
+  // on a page past the last one, which showed as an empty table with rows in it.
+  useEffect(() => {
+    if (pageCount > 0 && pageIndex > pageCount - 1) table.setPageIndex(pageCount - 1);
+  }, [pageCount, pageIndex, table]);
 
   return (
     <div className="relative space-y-3">
-      {/* Saved views - one click for the filters people actually re-apply. */}
+      {/* Saved views - one click for the filters people actually re-apply.
+          They wrap: a strip that scrolled sideways hid the last views. */}
       {views && views.length > 0 && (
-        <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-lg border bg-muted/60 p-1">
+        <div className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border bg-muted/60 p-1">
           {views.map((view) => {
             const isActive = view.id === activeView;
             return (
@@ -281,14 +426,39 @@ export function DataTable<TData, TValue>({
 
       <div className="flex flex-wrap items-center gap-2">
         {(searchColumn || searchColumns?.length) && (
-          <div className="relative w-full sm:w-[260px]">
+          <div className="relative w-full sm:w-[300px]">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              ref={searchRef}
               placeholder={searchPlaceholder}
+              // The placeholder is cut short on a long list of fields - the
+              // tooltip still says everything the box searches.
+              title={searchPlaceholder}
+              aria-label={searchPlaceholder}
               value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
-              className="h-9 w-full pl-8"
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && searchValue) setSearchValue("");
+              }}
+              className="h-9 w-full pl-8 pr-8"
             />
+            {searchValue && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => {
+                  setSearchValue("");
+                  searchRef.current?.focus();
+                }}
+                className={cn(
+                  "absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground",
+                  "transition-colors hover:bg-muted hover:text-foreground",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         )}
         {filters}
@@ -321,24 +491,39 @@ export function DataTable<TData, TValue>({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border bg-card">
-        <Table>
-          <TableHeader className="bg-muted/60">
+      {/* The table scrolls inside this card in both directions: on a long page
+          the header stays in view and the sideways bar stays within reach,
+          instead of sitting under row 50. Phones keep plain page scrolling. */}
+      <div className="relative overflow-hidden rounded-lg border bg-card">
+        <Table ref={tableRef} containerClassName="md:max-h-[calc(100svh-9rem)]">
+          {/* Solid card under the tint - rows scroll beneath a sticky header. */}
+          <TableHeader className="sticky top-0 z-10 bg-card [&_tr]:border-b-0">
             {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id} className="hover:bg-transparent">
-                {headerGroup.headers.map((header) => (
-                  <TableHead
-                    key={header.id}
-                    className={cn(
-                      "whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-muted-foreground",
-                      dense && "h-10 px-2",
-                    )}
-                  >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
-                ))}
+              <TableRow key={headerGroup.id} className="bg-muted/60 hover:bg-muted/60">
+                {headerGroup.headers.map((header) => {
+                  const sorted = header.column.getIsSorted();
+                  return (
+                    <TableHead
+                      key={header.id}
+                      aria-sort={
+                        sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined
+                      }
+                      className={cn(
+                        "h-10 whitespace-nowrap px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground",
+                        // A collapsed border does not travel with a sticky cell.
+                        "shadow-[inset_0_-1px_0_hsl(var(--border))]",
+                        "aria-[sort]:text-foreground",
+                        HEADER_BUTTON,
+                        dense && "px-2",
+                        pinsActions && header.column.id === PINNED_COLUMN_ID && PINNED_HEAD,
+                      )}
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </TableHead>
+                  );
+                })}
               </TableRow>
             ))}
           </TableHeader>
@@ -366,10 +551,18 @@ export function DataTable<TData, TValue>({
                       <TableCell
                         key={cell.id}
                         className={cn(
+                          "px-3 py-2.5",
                           dense && "p-2",
                           // Coarse pointers get taller rows - 32px icon buttons in
                           // a dense row are under the comfortable touch target.
                           "[@media(pointer:coarse)]:py-3",
+                          pinsActions &&
+                            cell.column.id === PINNED_COLUMN_ID && [
+                              PINNED_CELL,
+                              PINNED_EDGE,
+                              trailingHidden && "before:opacity-100",
+                              expandedRowId === row.id && PINNED_CELL_OPEN,
+                            ],
                         )}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -409,6 +602,28 @@ export function DataTable<TData, TValue>({
             )}
           </TableBody>
         </Table>
+        {/* More columns this way. The trailing side is left to the pinned
+            actions column when there is one - it draws its own edge. */}
+        {!(pinsActions && edges.rtl) && (
+          <div
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute top-0 z-20 w-6 bg-gradient-to-r from-black/10 to-transparent opacity-0 transition-opacity duration-200 dark:from-black/50",
+              edges.left && "opacity-100",
+            )}
+            style={{ left: edges.rtl ? edges.barX : 0, bottom: edges.barY }}
+          />
+        )}
+        {!(pinsActions && !edges.rtl) && (
+          <div
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute top-0 z-20 w-6 bg-gradient-to-l from-black/10 to-transparent opacity-0 transition-opacity duration-200 dark:from-black/50",
+              edges.right && "opacity-100",
+            )}
+            style={{ right: edges.rtl ? 0 : edges.barX, bottom: edges.barY }}
+          />
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">

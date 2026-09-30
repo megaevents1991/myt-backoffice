@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { DataTableSkeleton } from "@/components/data-table";
 import { toast } from "react-hot-toast";
 import { useConfirm } from "@/components/confirm-provider";
 import { CornerDownLeft, Edit, Plus, Search, Trash2 } from "lucide-react";
@@ -102,7 +103,7 @@ export function CategoriesTable() {
     });
   };
 
-  if (isLoading) return <div>Loading categories...</div>;
+  if (isLoading) return <DataTableSkeleton label="Loading categories" />;
 
   return (
     <div className="space-y-3">
@@ -115,10 +116,10 @@ export function CategoriesTable() {
           className="pl-8"
         />
       </div>
-      <div className="rounded-md border">
+      <div className="overflow-hidden rounded-lg border bg-card">
       <Table>
-        <TableHeader>
-          <TableRow>
+        <TableHeader className="bg-muted/60">
+          <TableRow className="hover:bg-transparent">
             <TableHead>Image</TableHead>
             <TableHead>ID</TableHead>
             <TableHead>Name</TableHead>

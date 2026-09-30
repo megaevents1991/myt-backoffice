@@ -14,7 +14,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DataTable } from "@/components/data-table";
+import { DataTable, DataTableSkeleton } from "@/components/data-table";
 import { fetchPriceQuote, isValidIATACode } from "@/lib/actions/flight-actions";
 import { getFlightsByEventId } from "@/lib/actions/offline-flight-actions";
 import { getHotelsByEventId } from "@/lib/actions/offline-hotel-actions";
@@ -222,7 +222,7 @@ function UsualPriceCell({
 
   return (
     <div className="flex items-center gap-1">
-      <span>
+      <span className="tabular">
         ${isNaN(price) ? "0.00" : price.toFixed(2)}
       </span>
       <Button
@@ -837,7 +837,11 @@ export function EventsTable() {
               return "default";
           }
         };
-        return <Badge variant={getTypeVariant(type)}>{getTypeLabel(type)}</Badge>;
+        return (
+          <Badge variant={getTypeVariant(type)} className="whitespace-nowrap">
+            {getTypeLabel(type)}
+          </Badge>
+        );
       },
     },
     {
@@ -855,14 +859,15 @@ export function EventsTable() {
       },
       cell: ({ row }) => {
         const date = new Date(row.getValue("date"));
-        return <div>{date.toLocaleDateString()}</div>;
+        return <div className="whitespace-nowrap tabular">{date.toLocaleDateString()}</div>;
       },
     },
     {
       accessorKey: "location.name",
       header: "Location",
       cell: ({ row }) => {
-        return <div>{getCompetitorEventLocation(row.original)}</div>;
+        // "לונדון, בריטניה" on one line - wrapped, it doubled the height of every row.
+        return <div className="whitespace-nowrap">{getCompetitorEventLocation(row.original)}</div>;
       },
     },
     {
@@ -1136,7 +1141,12 @@ export function EventsTable() {
           <AlertDialog>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label={`Actions for event ${event.id}`}
+                >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -1199,7 +1209,7 @@ export function EventsTable() {
   ];
 
   if (loading) {
-    return <div>Loading events...</div>;
+    return <DataTableSkeleton label="Loading events" />;
   }
 
   return (

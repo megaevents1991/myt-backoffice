@@ -199,6 +199,118 @@
 }
 
 /*
+ * Scrollbars - drawn from the palette instead of the OS default, which showed
+ * as a bright strip against the forest sidebar. Three sizes:
+ *   page   - the widest, so dragging it stays easy;
+ *   panels - every inner scroller (tables, dialogs, menus): slim;
+ *   rails  - `.scrollbar-rail` (sidebar nav, the guide's contents, the editor
+ *            rail): a hairline whose thumb shows only while the rail is hovered
+ *            or holds focus. Two rails side by side (sidebar + guide contents)
+ *            used to draw two bars next to each other.
+ * Blink/WebKit get exact sizes through the pseudo-elements; Firefox has none,
+ * so it gets the standard properties.
+ */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* The thumb is the 6px left inside a transparent border - a slim bar with a
+   full-width grab area. */
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: hsl(var(--foreground) / 0.22);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--foreground) / 0.42);
+}
+
+/* The page's own bar. Blink reads the viewport's scrollbar off <body>. */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 14px;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  border-width: 4px;
+}
+
+.scrollbar-rail::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollbar-rail::-webkit-scrollbar-thumb {
+  border-width: 2px;
+  background-color: transparent;
+}
+
+.scrollbar-rail:hover::-webkit-scrollbar-thumb,
+.scrollbar-rail:focus-within::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--foreground) / 0.22);
+}
+
+.scrollbar-rail:hover::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--foreground) / 0.42);
+}
+
+/* The sidebar is forest in both themes - its thumb reads from its own text. */
+[data-sidebar="content"]:hover::-webkit-scrollbar-thumb,
+[data-sidebar="content"]:focus-within::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--sidebar-foreground) / 0.28);
+}
+
+[data-sidebar="content"]:hover::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--sidebar-foreground) / 0.5);
+}
+
+@supports selector(::-webkit-scrollbar) {
+  /* The rail's 8px is always reserved and stands in for the groups' own end
+     padding, so nav items keep 8px on both sides and nothing shifts when a
+     group folds and the bar comes or goes. */
+  [data-sidebar="content"] {
+    scrollbar-gutter: stable;
+  }
+
+  [data-sidebar="content"] > [data-sidebar="group"] {
+    padding-inline-end: 0;
+  }
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--foreground) / 0.25) transparent;
+  }
+
+  html {
+    scrollbar-width: auto;
+  }
+
+  .scrollbar-rail {
+    scrollbar-color: transparent transparent;
+  }
+
+  .scrollbar-rail:hover,
+  .scrollbar-rail:focus-within {
+    scrollbar-color: hsl(var(--foreground) / 0.25) transparent;
+  }
+
+  [data-sidebar="content"]:hover,
+  [data-sidebar="content"]:focus-within {
+    scrollbar-color: hsl(var(--sidebar-foreground) / 0.3) transparent;
+  }
+}
+
+/*
  * Deep-link arrival. The creative-gaps "Do" button lands on the exact field
  * that fixes the gap (#fix-logo, #fix-image, #section-images...); without a
  * cue you arrive mid-form with no idea which control you were sent to.
