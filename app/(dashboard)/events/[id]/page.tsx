@@ -2518,20 +2518,29 @@ export default function EventPage({
                   }
                   const loc = locations.find((l) => l.id === Number(val));
                   if (!loc) return;
-                  setEvent((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          event_location: {
-                            name: loc.name,
-                            latitude: loc.latitude,
-                            longitude: loc.longitude,
-                            country_code: loc.country_code || null,
-                          },
-                          lodging_mode: prev.lodging_mode && prev.lodging_mode !== "flight_city" ? prev.lodging_mode : "choice_split",
-                        }
-                      : prev
-                  );
+                  setEvent((prev) => {
+                    if (!prev) return prev;
+                    const next = {
+                      ...prev,
+                      event_location: {
+                        name: loc.name,
+                        latitude: loc.latitude,
+                        longitude: loc.longitude,
+                        country_code: loc.country_code || null,
+                      },
+                    };
+                    // Only a real second city opens a lodging choice. Picking the flight
+                    // city itself used to switch the mode to split anyway, and Save then
+                    // refused it ("Lodging mode needs an Event city...").
+                    return {
+                      ...next,
+                      lodging_mode: !hasEventCity(next)
+                        ? "flight_city"
+                        : prev.lodging_mode && prev.lodging_mode !== "flight_city"
+                          ? prev.lodging_mode
+                          : "choice_split",
+                    };
+                  });
                 }}
               >
                 <option value="">{locationsLoading ? "Loading locations..." : "Pick a saved location…"}</option>
@@ -2592,6 +2601,17 @@ export default function EventPage({
                 />
               </div>
             </div>
+            {/* The options below open only for a real second city - say why when they
+                are hidden, instead of leaving an editor with nothing after the pick. */}
+            {!hasEventCity(event) && (
+              <p className={cn("text-sm", event.event_location?.name?.trim() ? "text-amber-700" : "text-muted-foreground")}>
+                {!event.event_location?.name?.trim()
+                  ? "Pick the city where the match/show is. The hotel-step options (what the site offers, default city, split nights, hotel warm-up) open once it is a different city from the flight city."
+                  : !event.location?.name?.trim()
+                    ? "Set the flight city in the Location card above first - these options compare the two cities."
+                    : `${event.event_location.name} is the flight city itself (${event.location.name}) - nothing to choose between. Pick the city where the match/show is (e.g. Liverpool for a London flight), or clear it.`}
+              </p>
+            )}
             {hasEventCity(event) && (
               <>
                 <HotelWarmButton
