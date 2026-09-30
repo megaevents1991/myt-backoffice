@@ -1294,8 +1294,8 @@ export function EventsTable() {
       <DataTable
         columns={columns}
         data={filteredEvents}
-        searchColumn="name"
-        searchPlaceholder="Search events..."
+        searchColumns={["id", "name"]}
+        searchPlaceholder="Search by name or ID..."
         defaultSorting={[{ id: "id", desc: true }]}
         enableRowSelection={true}
         rowSelection={rowSelection}
