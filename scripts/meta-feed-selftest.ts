@@ -5,8 +5,8 @@ import {
   campaignInputHash,
   creativeGap,
   creativeVersion,
+  creativeWorkOrder,
   expectedCampaignHash,
-  firstNeverRendered,
   resolveCreativeSubject,
   type CampaignEventRow,
   type PersonRow,
@@ -14,14 +14,17 @@ import {
 } from "../lib/creative/auto";
 import { activityIdsOf } from "../lib/feed/publish-meta-feed";
 
-/* creatives: an event that never got one goes before every re-render, date order kept */
-const order = firstNeverRendered([
-  { id: 1, campaign_image_url: "a.png" }, // soonest, price moved - re-render
+/* creatives: an event that never got one goes first (date order kept), then the least
+   recently drawn - a far-out event must not wait behind near ones whose price moves daily */
+const order = creativeWorkOrder([
+  { id: 1, campaign_image_url: "a.png", campaign_generated_at: "2026-10-01T04:16:00+00:00" }, // soonest, redrawn this morning
   { id: 2, campaign_image_url: null }, // new, far out
-  { id: 3, campaign_image_url: "c.png" },
+  { id: 3, campaign_image_url: "c.png", campaign_generated_at: "2026-08-16T12:11:00+00:00" }, // far out, drawn in August
   { id: 4 }, // new, never checked
+  { id: 5, campaign_image_url: "e.png", campaign_generated_at: "2026-10-01T04:16:00+00:00" }, // same stamp as 1 - date order kept
+  { id: 6, campaign_image_url: "f.png", campaign_generated_at: null }, // a picture with no stamp is the oldest
 ]).map((e) => e.id);
-assert.deepEqual(order, [2, 4, 1, 3]);
+assert.deepEqual(order, [2, 4, 6, 3, 1, 5]);
 
 /* feed file: the ids Meta will list */
 const csv = 'id,image_link,title\r\n1154,https://x/a.png,"אואזיס, מדריד"\r\n"717",https://x/b.png,ריאל\r\n';

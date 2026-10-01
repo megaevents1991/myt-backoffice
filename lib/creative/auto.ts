@@ -769,17 +769,33 @@ export async function generateCampaignForEvent(
 
 /** Every column the creative pipeline reads - the cron's scan and the single-event push. */
 export const CAMPAIGN_EVENT_COLUMNS =
-  "id,name,name_english,type,date,location,event_location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,art_image_url,card_image_url,campaign_input_hash,campaign_image_url";
+  "id,name,name_english,type,date,location,event_location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,art_image_url,card_image_url,campaign_input_hash,campaign_image_url,campaign_generated_at";
 
 /**
- * Work order for a run: events with no creative at all before everything
- * else, each group in the order given. Pure.
+ * Work order for a run: events with no creative at all first (in the order
+ * given), then the rest LEAST RECENTLY DRAWN first - a rotation, the order
+ * given breaking ties. Pure.
+ *
+ * By date alone the stale ones starved: a run draws ~21, and the near events'
+ * price (it is in the hash) moves every day, so every run redrew October -
+ * December and nothing dated later was reached. 2026-10-01: 245 of 450 stale,
+ * some pictures from 16.08, and the eleven Oasis Manchester ads still said
+ * "לונדון" a day after the place fix deployed.
  */
-export function firstNeverRendered<
-  T extends { campaign_image_url?: string | null },
+export function creativeWorkOrder<
+  T extends {
+    campaign_image_url?: string | null;
+    campaign_generated_at?: string | null;
+  },
 >(events: T[]): T[] {
+  const drawnAt = (event: T): number => {
+    const at = Date.parse(event.campaign_generated_at ?? "");
+    return Number.isFinite(at) ? at : 0;
+  };
   const never = events.filter((event) => !event.campaign_image_url);
-  const rendered = events.filter((event) => !!event.campaign_image_url);
+  const rendered = events
+    .filter((event) => !!event.campaign_image_url)
+    .sort((a, b) => drawnAt(a) - drawnAt(b));
   return [...never, ...rendered];
 }
 
@@ -830,14 +846,14 @@ export async function runCampaignCreatives(
     throw new Error("events query failed");
   }
 
-  // Events that never got a creative first, then the rest soonest first.
-  // The hash carries the package price, which moves several times a day on
-  // near events (supplier + base-price syncs) - scanned by date alone, every
-  // run spent its budget re-rendering those, and a new event dated a year out
-  // never got a creative, so the feed skipped it until someone ran "sync
-  // everything" (2026-09-29: 31 live events, Oasis / Harry Styles 2027 among
-  // them). A stable sort keeps date order inside each group.
-  const events = firstNeverRendered(
+  // Events that never got a creative first, then the rest least recently
+  // drawn first. The hash carries the package price, which moves several times
+  // a day on near events (supplier + base-price syncs) - scanned by date
+  // alone, every run spent its budget re-rendering those, and a new event
+  // dated a year out never got a creative, so the feed skipped it until
+  // someone ran "sync everything" (2026-09-29: 31 live events, Oasis / Harry
+  // Styles 2027 among them). See creativeWorkOrder for the stale ones.
+  const events = creativeWorkOrder(
     (data ?? []) as unknown as CampaignEventRow[],
   );
   const summary: CampaignRunSummary = {

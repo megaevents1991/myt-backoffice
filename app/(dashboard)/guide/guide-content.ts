@@ -1178,8 +1178,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       title: t("Creative → feed pipeline", "צינור קריאייטיב → פיד"),
       steps: [
         {
-          label: t("Creative cron (every 4h)", "cron קריאייטיבים (כל 4 שעות)"),
-          sub: t("generates ad images; skips priceless events", "מייצר תמונות מודעה; מדלג על אירועים בלי מחיר"),
+          label: t("Creative cron (every hour)", "cron קריאייטיבים (כל שעה)"),
+          sub: t("new events first, then the longest-waiting picture; skips priceless events", "קודם אירועים חדשים, אחר כך התמונה שמחכה הכי הרבה; מדלג על אירועים בלי מחיר"),
         },
         {
           label: t("campaign_image_url on the event", "campaign_image_url על האירוע"),
