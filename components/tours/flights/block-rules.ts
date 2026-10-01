@@ -113,7 +113,7 @@ export function missingForConfirmed(block: RuleBlock, input: TransitionInput = {
   return missing;
 }
 
-/** May this role move this block to `to`, with this input? The answer carries the Hebrew reason. */
+/** May this role move this block to `to`, with this input? A refusal carries the reason shown to the operator. */
 export function checkTransition(
   block: RuleBlock,
   to: BlockStatus,

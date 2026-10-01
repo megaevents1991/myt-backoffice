@@ -3,7 +3,7 @@
  * instructors, hotels, content pages, leads, company settings).
  *
  * Plain module on purpose - no "use client" and no "use server" - so the server
- * actions and the client components import the same types and Hebrew labels.
+ * actions and the client components import the same types and labels.
  */
 
 /** Every content / leads / settings action answers with this. Expected failures never throw. */
@@ -420,6 +420,10 @@ export interface CompanySettingsData {
   members: CompanyMemberRow[];
 }
 
+/**
+ * Names of the member roles that ROLE_LABELS (types/auth.types.ts) does not
+ * label yet. ROLE_LABELS is read first, so a role it names is named there only.
+ */
 export const COMPANY_ROLE_LABELS: Record<string, string> = {
   superadmin: "Superadmin",
   admin: "Admin",
@@ -428,27 +432,10 @@ export const COMPANY_ROLE_LABELS: Record<string, string> = {
   agent: "Agent",
   affiliate: "Affiliate",
   forms_operator: "Forms operator",
-  tours_agent: "Tours agent",
 };
 
 // ---------------------------------------------------------------- small helpers
-const pad2 = (n: number) => String(n).padStart(2, "0");
-
-/** dd.mm.yy, the date format of the tours screens. */
-export function formatDay(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${String(d.getFullYear()).slice(2)}`;
-}
-
-/** dd.mm.yy hh:mm in the viewer's timezone. */
-export function formatDayTime(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${formatDay(iso)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
+// Dates and times: lib/tours/format.ts (fmtDate, fmtInstant).
 
 /** Absolute address of a site asset: `/media/...` is served by the company's site. */
 export function siteAssetUrl(siteUrl: string | null | undefined, path: string | null | undefined): string | null {

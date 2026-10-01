@@ -115,7 +115,7 @@ export function ExceptionsSummary({ refreshKey }: { refreshKey: number }) {
                       count === 0 && "font-normal text-muted-foreground",
                     )}
                   >
-                    {count.toLocaleString("he-IL")}
+                    {count.toLocaleString("en-US")}
                   </span>
                 </Link>
               </li>

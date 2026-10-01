@@ -5,11 +5,13 @@ import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/page-header";
+import { StickySaveBar } from "@/components/sticky-save-bar";
 import { saveTourTerm } from "@/lib/actions/tours-content-actions";
-import { Field, ImageListEditor, NO_UPLOAD_NOTE, Pill, Section } from "@/components/tours/content/fields";
+import { Chip, Field, Section } from "@/components/tours/ui";
+import { ImageListEditor, NO_UPLOAD_NOTE } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
-import { BackLink, ContentSaveBar } from "@/components/tours/content/save-bar";
+import { BackLink, CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
 import { useContentForm } from "@/components/tours/content/use-content-form";
 import { termKindLabel, type TermEditorData, type TermForm } from "@/components/tours/content/shared";
 
@@ -29,7 +31,7 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
         title={saved.form.name}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <Pill tone={saved.form.isActive ? "on" : "off"}>{saved.form.isActive ? "Active" : "Inactive"}</Pill>
+            <Chip tone={saved.form.isActive ? "outline" : "danger"}>{saved.form.isActive ? "Active" : "Inactive"}</Chip>
             <span>Slug: {saved.slug}</span>
           </span>
         }
@@ -97,12 +99,15 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
         )}
       </Section>
 
-      <ContentSaveBar
+      <StickySaveBar
         isDirty={isDirty}
         isSaving={isSaving}
         onSave={() => void submit()}
         onDiscard={discard}
-        disabledReason={problem}
+        disabled={!!problem}
+        disabledReason={problem ?? undefined}
+        showDisabledReason
+        message={CONTENT_UNSAVED_NOTE}
       />
     </div>
   );

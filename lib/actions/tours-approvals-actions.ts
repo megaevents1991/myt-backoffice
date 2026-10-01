@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * The approvals area of a tours company (/tours/approvals, "אישורים וטיפול"):
+ * The approvals area of a tours company (/tours/approvals, "Approvals"):
  * everything that waits for a person. Approvals only a manager gives on flight
  * blocks, and data the import could not settle on its own.
  *
@@ -36,7 +36,6 @@ import {
 } from "@/lib/tours/deadlines";
 import { ALLOCATION_MAX_DAY_GAP, allocatedSeats, isManagerRole } from "@/components/tours/flights/block-rules";
 import {
-  dayDiff,
   doublePricePerPerson,
   effectiveRoute,
   readRoomPrices,
@@ -45,15 +44,11 @@ import {
 import { addTourBlockEvent, setTourBlockReviewed } from "@/lib/actions/tours-flight-actions";
 import { LIVE_BLOCK_STATUSES, type BlockStatus } from "@/types/tours.types";
 import type { Database } from "@/types/database.types";
-import { chunk, dbFail as databaseFail, fetchAll, plainFail as fail, UUID } from "@/lib/tours/action-kit";
+import { chunk, dbFail as databaseFail, fetchAll, plainFail as fail, UUID, type ActionResult } from "@/lib/tours/action-kit";
 
 const dbFail = (where: string, error: unknown) => databaseFail("tours-approvals-actions", where, error);
 
 // ------------------------------------------------------------------ shapes
-
-export type ApprovalsResult<T = null> =
-  | { success: true; data: T; warning?: string }
-  | { success: false; error: string };
 
 /** A cancellation deadline that is close enough to need a decision. */
 export interface CancelDecision {
@@ -499,8 +494,11 @@ function candidatesFor(
     const inDate = toDateOnly(block.inbound_departure_time);
     if (!outDate || !outArrival || !inDate) continue;
     // The same distances the allocation action measures - nothing is offered that it would refuse.
-    const gapOut = Math.min(dayDiff(outDate, departure.start_date), dayDiff(outArrival, departure.start_date));
-    const gapIn = dayDiff(inDate, departure.end_date);
+    const gapOut = Math.min(
+      Math.abs(daysBetween(outDate, departure.start_date)),
+      Math.abs(daysBetween(outArrival, departure.start_date)),
+    );
+    const gapIn = Math.abs(daysBetween(inDate, departure.end_date));
     if (gapOut > ALLOCATION_MAX_DAY_GAP || gapIn > ALLOCATION_MAX_DAY_GAP) continue;
     if (!checkBlockFitsDeparture(block, route, "both").ok) continue;
     const freeSeats = block.initial_quantity - allocatedSeats(state.allocationsByFlight.get(block.id) ?? []);
@@ -666,7 +664,7 @@ async function loadSeriesPrices(
 // ------------------------------------------------------------------ read
 
 /** Everything the approvals screen shows, except the data-problems summary (it has its own action). */
-export async function getApprovalsQueue(input: { reviewPage?: number } = {}): Promise<ApprovalsResult<ApprovalsData>> {
+export async function getApprovalsQueue(input: { reviewPage?: number } = {}): Promise<ActionResult<ApprovalsData>> {
   const { session, company } = await requireCompany("tours");
   if (!isManagerRole(session.role)) return fail(MANAGERS_ONLY);
 
@@ -809,7 +807,7 @@ export async function getApprovalsQueue(input: { reviewPage?: number } = {}): Pr
 }
 
 /** Another page of the review list - the rest of the screen stays as it is. */
-export async function getApprovalsReviewPage(page: number): Promise<ApprovalsResult<ReviewPage>> {
+export async function getApprovalsReviewPage(page: number): Promise<ActionResult<ReviewPage>> {
   const { session, company } = await requireCompany("tours");
   if (!isManagerRole(session.role)) return fail(MANAGERS_ONLY);
 
@@ -837,7 +835,7 @@ export async function getApprovalsReviewPage(page: number): Promise<ApprovalsRes
  * "סמן כנבדק" on many rows at once: the same mark setTourBlockReviewed gives one
  * row (who and when), in one statement, with one audit row that lists the blocks.
  */
-export async function markTourBlocksReviewed(flightIds: number[]): Promise<ApprovalsResult<{ done: number }>> {
+export async function markTourBlocksReviewed(flightIds: number[]): Promise<ActionResult<{ done: number }>> {
   const { session, company } = await requireCompany("tours");
   if (!isManagerRole(session.role)) return fail("Only the company manager can mark a row Reviewed");
 
@@ -880,7 +878,7 @@ export async function markTourBlocksReviewed(flightIds: number[]): Promise<Appro
  * and signed with the review mark, through the two existing actions - so the
  * event, the mark and both audit rows are exactly the ones the block card writes.
  */
-export async function keepTourBlock(flightId: number): Promise<ApprovalsResult> {
+export async function keepTourBlock(flightId: number): Promise<ActionResult<null>> {
   const { session, company } = await requireCompany("tours");
   if (!isManagerRole(session.role)) return fail("Only the company manager decides on a flight block the airline confirmed");
   if (typeof flightId !== "number" || !Number.isInteger(flightId) || flightId <= 0) return fail("Flight block not found");
@@ -915,7 +913,7 @@ export async function keepTourBlock(flightId: number): Promise<ApprovalsResult> 
  * `ref_code` changes; the text the import kept in `label` stays as the trace of
  * what the sheet said.
  */
-export async function setHotelOptionCatalogCode(optionId: string, hotelCode: string): Promise<ApprovalsResult> {
+export async function setHotelOptionCatalogCode(optionId: string, hotelCode: string): Promise<ActionResult<null>> {
   const { session, company } = await requireCompany("tours");
   if (!isManagerRole(session.role)) return fail(MANAGERS_ONLY);
   if (typeof optionId !== "string" || !UUID.test(optionId)) return fail("Hotel row not found");

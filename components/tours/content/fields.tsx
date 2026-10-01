@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * The list and image controls of the site-content editors: ordered lists of
+ * texts, images and gallery items, and a picture served by the company's site.
+ * Field, Section and Chip come from components/tours/ui.tsx.
+ */
 import { useId, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, ImageOff, Plus, Trash2 } from "lucide-react";
 
@@ -7,74 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { Field } from "@/components/tours/ui";
 import { siteAssetUrl, type GalleryItem } from "@/components/tours/content/shared";
-
-/** Label + control + hint, the one layout every content form uses. */
-export function Field({
-  label,
-  hint,
-  children,
-  className,
-  htmlFor,
-}: {
-  label: string;
-  hint?: ReactNode;
-  children: ReactNode;
-  className?: string;
-  htmlFor?: string;
-}) {
-  return (
-    <div className={cn("space-y-1.5", className)}>
-      <Label htmlFor={htmlFor}>{label}</Label>
-      {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
-  );
-}
-
-/** A section card of an editor tab. */
-export function Section({
-  title,
-  description,
-  children,
-  className,
-}: {
-  title?: string;
-  description?: ReactNode;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <section className={cn("space-y-4 rounded-lg border bg-card p-4", className)}>
-      {(title || description) && (
-        <div>
-          {title && <h2 className="text-base font-semibold">{title}</h2>}
-          {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
-        </div>
-      )}
-      {children}
-    </section>
-  );
-}
-
-/**
- * A status pill that is a <span> - the stock Badge is a <div>, which may not sit
- * inside the <p> that PageHeader wraps a description in.
- */
-export function Pill({ tone = "neutral", children }: { tone?: "on" | "off" | "neutral"; children: ReactNode }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
-        tone === "on" && "text-foreground",
-        tone === "off" && "border-transparent bg-destructive text-destructive-foreground",
-        tone === "neutral" && "border-transparent bg-secondary text-secondary-foreground",
-      )}
-    >
-      {children}
-    </span>
-  );
-}
 
 /** Move an item of a list one place up or down. */
 export function moved<T>(list: T[], index: number, delta: -1 | 1): T[] {

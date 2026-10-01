@@ -17,8 +17,8 @@ import {
   type CatalogHotel,
   type UnmatchedHotelOption,
 } from "@/lib/actions/tours-approvals-actions";
-import { formatDateShort } from "@/lib/tours/deadlines";
-import { Ltr, formatNumber } from "@/components/tours/flights/block-ui";
+import { formatDateShort, formatNumber } from "@/lib/tours/format";
+import { Ltr } from "@/components/tours/ui";
 import { ActionButton, OpenLink, QueueSection, departureHref, linkClass, type QueueControls } from "./queue-ui";
 
 export function UnmatchedHotels({ data, run, busy }: QueueControls & { data: ApprovalsData }) {

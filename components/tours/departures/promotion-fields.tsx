@@ -4,11 +4,11 @@
  * The fields of one promotion. Used by the card's promotions tab (add / edit)
  * and by the board's "add a promotion to the selected departures".
  */
+import { Field, selectClass } from "@/components/tours/ui";
 import { Input } from "@/components/ui/input";
+import { currencySymbol } from "@/lib/tours/format";
 import { PROMOTION_KINDS, PROMOTION_KIND_LABELS, type PromotionKind } from "@/types/tours.types";
-import { currencySymbol } from "./departure-utils";
 import type { PromotionInput } from "./types";
-import { Field, selectClass } from "./ui-bits";
 
 export interface PromotionDraft {
   kind: PromotionKind;

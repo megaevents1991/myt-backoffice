@@ -7,17 +7,21 @@
  */
 import { useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { Chip, Field, Ltr, Notice, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useActionToast } from "@/hooks/use-action-toast";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { addDays, fmtDateRange, fmtMoney, isDateOnly, nightsBetween } from "@/lib/tours/format";
 import { departureRouteLabel } from "@/lib/tours/routes";
 import { PRICE_MATRIX_ROWS } from "@/types/tours.types";
 import {
@@ -27,12 +31,7 @@ import {
   createDeparture,
 } from "@/lib/actions/tours-departure-actions";
 import {
-  addDays,
   departureCode,
-  fmtDateRange,
-  fmtMoney,
-  isIsoDate,
-  nightsBetween,
   parsePastedPrices,
   periodLabel,
   periodsOverlapping,
@@ -46,7 +45,6 @@ import {
   type PromotionDraft,
 } from "./promotion-fields";
 import type { BoardPackage, BoardPeriod, BoardRow, BoardSeries, BulkOutcome } from "./types";
-import { Chip, DialogActions, Field, Ltr, Notice, selectClass } from "./ui-bits";
 
 const SHORT_MATRIX_LABELS = ["Single", "Double", "Adult 3", "Child 2", "Child 3", "Child 4"];
 
@@ -97,9 +95,9 @@ export function BulkOutcomeDialog({
             )}
           </div>
         )}
-        <DialogActions>
+        <DialogFooter>
           <Button onClick={onClose}>Close</Button>
-        </DialogActions>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -131,6 +129,8 @@ export function NewDepartureDialog({
   const [end, setEnd] = useState("");
   const [season, setSeason] = useState("");
   const [saving, setSaving] = useState(false);
+  const run = useActionToast();
+  const { toast } = useToast();
   const packageName = useMemo(() => new Map(packages.map((p) => [p.id, p.name])), [packages]);
   const chosen = series.find((s) => s.id === seriesId);
   const nightsOf = (s: BoardSeries | undefined) => (s ? (s.default_nights ?? typicalNights.get(s.id) ?? null) : null);
@@ -138,28 +138,25 @@ export function NewDepartureDialog({
   const onStart = (value: string) => {
     setStart(value);
     const nights = nightsOf(chosen);
-    if (isIsoDate(value) && nights != null && (!end || end < value)) setEnd(addDays(value, nights));
+    if (isDateOnly(value) && nights != null && (!end || end < value)) setEnd(addDays(value, nights));
   };
   const onSeries = (id: string) => {
     setSeriesId(id);
     const nights = nightsOf(series.find((s) => s.id === id));
-    if (isIsoDate(start) && nights != null) setEnd(addDays(start, nights));
+    if (isDateOnly(start) && nights != null) setEnd(addDays(start, nights));
   };
 
-  const valid = Boolean(chosen && isIsoDate(start) && isIsoDate(end) && end >= start);
-  const code = chosen && isIsoDate(start) ? departureCode(chosen.code, start) : "";
+  const valid = Boolean(chosen && isDateOnly(start) && isDateOnly(end) && end >= start);
+  const code = chosen && isDateOnly(start) ? departureCode(chosen.code, start) : "";
   const holidays = valid ? periodsOverlapping(periods, start, end) : [];
 
   const submit = async () => {
     if (!chosen || !valid) return;
     setSaving(true);
-    const result = await createDeparture({ seriesId: chosen.id, start_date: start, end_date: end, season: season || null });
+    const result = await run(() => createDeparture({ seriesId: chosen.id, start_date: start, end_date: end, season: season || null }));
     setSaving(false);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
-    toast.success(`Departure ${result.data.code} created as a draft`);
+    if (!result.success) return;
+    toast({ title: `Departure ${result.data.code} created as a draft` });
     setStart("");
     setEnd("");
     setSeason("");
@@ -205,7 +202,7 @@ export function NewDepartureDialog({
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <span>
                 Code: <Ltr className="font-mono font-semibold">{code || "—"}</Ltr>
-                {isIsoDate(start) && <span className="text-muted-foreground"> ({seasonYearOf(start)})</span>}
+                {isDateOnly(start) && <span className="text-muted-foreground"> ({seasonYearOf(start)})</span>}
               </span>
               <span>
                 Route:{" "}
@@ -227,7 +224,7 @@ export function NewDepartureDialog({
             )}
           </div>
         )}
-        <DialogActions>
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
@@ -235,7 +232,7 @@ export function NewDepartureDialog({
             {saving && <Loader2 className="animate-spin" />}
             Create Departure
           </Button>
-        </DialogActions>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -256,6 +253,7 @@ export function PastePricesDialog({
 }) {
   const [textValue, setTextValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const run = useActionToast();
 
   const byCode = useMemo(() => {
     const map = new Map<string, BoardRow[]>();
@@ -288,12 +286,9 @@ export function PastePricesDialog({
 
   const apply = async () => {
     setSaving(true);
-    const result = await applyPastedPrices(valid.map((p) => ({ departureId: p.target!.id, prices: p.prices })));
+    const result = await run(() => applyPastedPrices(valid.map((p) => ({ departureId: p.target!.id, prices: p.prices }))));
     setSaving(false);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
+    if (!result.success) return;
     setTextValue("");
     onOpenChange(false);
     onApplied(result.data);
@@ -359,7 +354,7 @@ export function PastePricesDialog({
             </table>
           </div>
         )}
-        <DialogActions className="justify-between">
+        <DialogFooter className="sm:justify-between">
           <span className="text-sm text-muted-foreground">
             {preview.length > 0 ? `${valid.length} valid rows${invalid ? ` · ${invalid} with errors (won't be applied)` : ""}` : ""}
           </span>
@@ -372,7 +367,7 @@ export function PastePricesDialog({
               Apply {valid.length} Rows
             </Button>
           </span>
-        </DialogActions>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -395,6 +390,7 @@ export function CopyPricesDialog({
   const [sourceCode, setSourceCode] = useState("");
   const [includeOptions, setIncludeOptions] = useState(false);
   const [saving, setSaving] = useState(false);
+  const run = useActionToast();
 
   const candidates = useMemo(
     () => rows.filter((r) => !r.is_deleted && (Object.keys(r.prices).length > 0 || r.options.length > 0)),
@@ -408,16 +404,15 @@ export function CopyPricesDialog({
   const apply = async () => {
     if (!source) return;
     setSaving(true);
-    const result = await copyDeparturePrices(
-      source.id,
-      realTargets.map((t) => t.id),
-      { includeOptions: includeOptions && source.options.length > 0 },
+    const result = await run(() =>
+      copyDeparturePrices(
+        source.id,
+        realTargets.map((t) => t.id),
+        { includeOptions: includeOptions && source.options.length > 0 },
+      ),
     );
     setSaving(false);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
+    if (!result.success) return;
     onOpenChange(false);
     setSourceCode("");
     onApplied(result.data);
@@ -488,7 +483,7 @@ export function CopyPricesDialog({
             The currency of {currencyChanges} of the selected departures will change to <Ltr>{source.currency}</Ltr>.
           </Notice>
         )}
-        <DialogActions>
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
@@ -496,7 +491,7 @@ export function CopyPricesDialog({
             {saving && <Loader2 className="animate-spin" />}
             Copy to {realTargets.length} Departures
           </Button>
-        </DialogActions>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -517,22 +512,22 @@ export function BulkPromotionDialog({
   const [draft, setDraft] = useState<PromotionDraft>(emptyPromotionDraft);
   const [replace, setReplace] = useState(true);
   const [saving, setSaving] = useState(false);
+  const run = useActionToast();
   const currencies = Array.from(new Set(targets.map((t) => t.currency)));
   const error = promotionDraftError(draft);
   const mixedCurrency = currencies.length > 1 && draft.kind !== "percent_order" && draft.kind !== "gift";
 
   const apply = async () => {
     setSaving(true);
-    const result = await addPromotionToDepartures(
-      targets.map((t) => t.id),
-      draftToInput(draft),
-      replace,
+    const result = await run(() =>
+      addPromotionToDepartures(
+        targets.map((t) => t.id),
+        draftToInput(draft),
+        replace,
+      ),
     );
     setSaving(false);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
+    if (!result.success) return;
     onOpenChange(false);
     setDraft(emptyPromotionDraft());
     onApplied(result.data);
@@ -565,7 +560,7 @@ export function BulkPromotionDialog({
             The selected departures use different currencies ({currencies.join(", ")}). The amount applies in each departure&apos;s own currency.
           </Notice>
         )}
-        <DialogActions className="justify-between">
+        <DialogFooter className="sm:justify-between">
           <span className="text-sm text-destructive">{draft.value || draft.label ? error : ""}</span>
           <span className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
@@ -576,7 +571,7 @@ export function BulkPromotionDialog({
               Add Promotion
             </Button>
           </span>
-        </DialogActions>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

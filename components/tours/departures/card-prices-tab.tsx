@@ -11,25 +11,17 @@
  */
 import { useMemo, useState } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { Field, Ltr, Notice, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
+import { currencySymbol, fmtDate, fmtMoney, parsePrice } from "@/lib/tours/format";
 import { cardPrice, pricedRooms, type PriceMatrix } from "@/lib/tours/pricing";
 import { CURRENCIES, PRICE_MATRIX_ROWS } from "@/types/tours.types";
 import { saveDeparturePrices, saveVacationPricing, updateDeparture } from "@/lib/actions/tours-departure-actions";
-import {
-  activeFixedDiscount,
-  currencySymbol,
-  fmtDate,
-  fmtMoney,
-  isExpired,
-  parsePrice,
-  readRoomPrices,
-  vacationDoublePerPerson,
-} from "./departure-utils";
+import { activeFixedDiscount, isExpired, readRoomPrices, vacationDoublePerPerson } from "./departure-utils";
 import type { DepartureCardData, HotelOptionInput, TicketOptionInput } from "./types";
-import { Field, Ltr, Notice, selectClass } from "./ui-bits";
 
 const keyOf = (paxType: string, position: number) => `${paxType}:${position}`;
 
@@ -56,9 +48,10 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
   const [draft, setDraft] = useState<Record<string, string>>(stored);
   const [currency, setCurrency] = useState(d.currency);
   const [saving, setSaving] = useState(false);
+  const run = useActionToast();
   const readOnly = Boolean(d.is_deleted);
 
-  const parsed = PRICE_MATRIX_ROWS.map((r) => ({ row: r, value: parsePrice(draft[keyOf(r.paxType, r.position)] ?? "") }));
+  const parsed =PRICE_MATRIX_ROWS.map((r) => ({ row: r, value: parsePrice(draft[keyOf(r.paxType, r.position)] ?? "") }));
   const invalid = parsed.some((p) => p.value === undefined);
   const dirty =
     currency !== d.currency ||
@@ -78,18 +71,17 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
 
   const save = async () => {
     setSaving(true);
-    const result = await saveDeparturePrices(
-      d.id,
-      parsed.map((p) => ({ paxType: p.row.paxType, position: p.row.position, price: p.value ?? null })),
-      currency,
+    const result = await run(
+      () =>
+        saveDeparturePrices(
+          d.id,
+          parsed.map((p) => ({ paxType: p.row.paxType, position: p.row.position, price: p.value ?? null })),
+          currency,
+        ),
+      "Prices saved",
     );
     setSaving(false);
-    if (!result.success) {
-      toast.error(result.error, { duration: 7000 });
-      return;
-    }
-    toast.success("Prices saved");
-    await onSaved();
+    if (result.success) await onSaved();
   };
 
   return (
@@ -263,6 +255,7 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
   const [markupFixed, setMarkupFixed] = useState(initial.markup_fixed);
   const [currency, setCurrency] = useState(initial.currency);
   const [saving, setSaving] = useState(false);
+  const run = useActionToast();
   const readOnly = Boolean(d.is_deleted);
   const sym = currencySymbol(currency);
 
@@ -306,23 +299,19 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
       quad: num(h.quad),
     }));
     const ticketRows: TicketOptionInput[] = tickets.map((t) => ({ id: t.id, label: t.label.trim() || null, price: num(t.price) }));
-    const result = await saveVacationPricing(d.id, {
-      hotels: hotelRows,
-      tickets: ticketRows,
-      markup_percent: num(markupPercent),
-      markup_fixed: num(markupFixed),
-    });
-    if (result.success && currency !== d.currency) {
-      const currencyResult = await updateDeparture(d.id, { currency });
-      if (!currencyResult.success) toast.error(currencyResult.error);
-    }
+    const result = await run(
+      () =>
+        saveVacationPricing(d.id, {
+          hotels: hotelRows,
+          tickets: ticketRows,
+          markup_percent: num(markupPercent),
+          markup_fixed: num(markupFixed),
+        }),
+      "Prices saved",
+    );
+    if (result.success && currency !== d.currency) await run(() => updateDeparture(d.id, { currency }));
     setSaving(false);
-    if (!result.success) {
-      toast.error(result.error, { duration: 7000 });
-      return;
-    }
-    toast.success("Prices saved");
-    await onSaved();
+    if (result.success) await onSaved();
   };
 
   const priceInput = (value: string, onChange: (v: string) => void, label: string) => (

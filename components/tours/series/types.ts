@@ -5,13 +5,8 @@
 import type { BoardPackage, BoardPeriod, BoardSeries } from "@/components/tours/departures/types";
 
 export const SERIES_TERM_KINDS = ["audiences", "tags", "destinations"] as const;
+/** A subset of the content taxonomies (components/tours/content/shared.ts TERM_KINDS); labels from TERM_KIND_LABELS. */
 export type SeriesTermKind = (typeof SERIES_TERM_KINDS)[number];
-
-export const SERIES_TERM_KIND_LABELS: Record<SeriesTermKind, string> = {
-  audiences: "Audience",
-  tags: "Tags",
-  destinations: "Destinations",
-};
 
 export interface SeriesTerm {
   id: string;

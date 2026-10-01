@@ -12,46 +12,26 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Eye } from "lucide-react";
+import { Chip, Ltr, Notice, Section } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { afterUrlWrite } from "@/hooks/use-view-state";
 import { cn } from "@/lib/utils";
+import { currencySymbol, fmtDate, fmtDateRange, fmtDateTime, fmtInstant, fmtMoney, nightsBetween } from "@/lib/tours/format";
 import { cardPrice, pricedRooms, toPriceMatrix } from "@/lib/tours/pricing";
 import { ROUTE_TYPE_LABELS, departureRouteLabel, flightRouteLabel, routeType } from "@/lib/tours/routes";
 import { FLIGHT_MODE_LABELS, PRICE_MATRIX_ROWS, PROMOTION_KIND_LABELS, type FlightMode, type PromotionKind } from "@/types/tours.types";
 import { getDepartureView } from "@/lib/actions/tours-departure-actions";
 import type { CardTab } from "./board-row";
 import type { CardTarget } from "./departure-card";
-import {
-  activeFixedDiscount,
-  currencySymbol,
-  fmtDate,
-  fmtDateRange,
-  fmtDateTime,
-  fmtInstant,
-  fmtMoney,
-  isExpired,
-  nightsBetween,
-  periodLabel,
-  periodsOverlapping,
-  promotionSummary,
-} from "./departure-utils";
+import { activeFixedDiscount, isExpired, periodLabel, periodsOverlapping, promotionSummary } from "./departure-utils";
 import { LEGS_LABELS, type BoardPeriod, type DepartureViewData, type ViewFlight } from "./types";
-import { Chip, Ltr, Notice, SaleStatusBadge } from "./ui-bits";
-import { afterUrlWrite } from "./use-query-state";
+import { SaleStatusBadge } from "./ui-bits";
 
 /** The tabs a viewer has. The staff card's "sales" tab (who sold what, docket numbers) is not among them. */
 export const VIEW_TABS: readonly CardTab[] = ["general", "prices", "promotions", "flights"];
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="border-b py-4 last:border-b-0">
-      <h3 className="mb-3 text-sm font-semibold">{title}</h3>
-      {children}
-    </section>
-  );
-}
 
 /** A label with its value, for a grid of facts. An empty value prints a dash. */
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
@@ -82,7 +62,7 @@ function GeneralTab({ data }: { data: DepartureViewData }) {
   const type = routeType(d.arrival_airport, d.return_airport);
   const flightMode = FLIGHT_MODE_LABELS[d.flight_mode as FlightMode] ?? d.flight_mode;
   return (
-    <div>
+    <div className="space-y-4 py-4">
       <Section title="Dates and route">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
           <Fact label="Departure date">

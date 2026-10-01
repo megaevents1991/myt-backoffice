@@ -1,14 +1,13 @@
-import { notFound } from "next/navigation";
-import { TourBlockView } from "@/components/tours/flights/tour-block-view";
+import { notFound, redirect } from "next/navigation";
 
 /**
- * Block card of a tours company: the flight in both directions and the
- * operations panel. The panel's actions are company-scoped, so the id of a
- * flight of another company shows "not found".
+ * The card of a flight block is /offline-flights/[id], which shows the
+ * operations panel for a block of a tours company. This route only redirects
+ * there: the deadline tasks saved before the move link to /tours/flights/[id].
  */
 export default async function TourBlockPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const flightId = Number(id);
   if (!Number.isInteger(flightId) || flightId <= 0) notFound();
-  return <TourBlockView flightId={flightId} />;
+  redirect(`/offline-flights/${flightId}`);
 }

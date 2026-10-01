@@ -6,17 +6,17 @@
  * computed from, and keeps the original wording next to them.
  */
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "react-hot-toast";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
 import {
   listTourContracts,
   saveTourContract,
@@ -25,17 +25,8 @@ import {
 } from "@/lib/actions/tours-contract-actions";
 import { formatDateShort } from "@/lib/tours/deadlines";
 import { CURRENCIES } from "@/types/tours.types";
-import {
-  Field,
-  Ltr,
-  Notice,
-  RtlDialogContent,
-  RtlDialogFooter,
-  RtlDialogHeader,
-  Section,
-  formatMoney,
-  parseNumber,
-} from "@/components/tours/flights/block-ui";
+import { formatMoney, parseNumber } from "@/lib/tours/format";
+import { Field, Ltr, Notice, Section } from "@/components/tours/ui";
 import { COMMITMENT_UNIT_LABELS, CONTRACT_KIND_LABELS } from "@/components/tours/flights/block-contract-costs";
 
 /** The row that holds the original conditions document of the company (from the import). */
@@ -82,7 +73,7 @@ export function ContractsClient() {
 
       {error && (
         <div className="mb-4 space-y-2">
-          <Notice tone="danger">{error}</Notice>
+          <Notice tone="error">{error}</Notice>
           <Button size="sm" variant="outline" onClick={() => void load()}>
             ניסיון נוסף
           </Button>
@@ -98,7 +89,7 @@ export function ContractsClient() {
       ) : rows !== null ? (
         <div className="space-y-4">
           {contracts.length === 0 ? (
-            <Notice>עוד אין חוזים. הוסיפו את החוזה הראשון כדי שמועדי הבלוקים יחושבו ממנו.</Notice>
+            <Notice tone="muted">עוד אין חוזים. הוסיפו את החוזה הראשון כדי שמועדי הבלוקים יחושבו ממנו.</Notice>
           ) : (
             <div className="rounded-lg border bg-card">
               <Table look="list">
@@ -189,7 +180,7 @@ export function ContractsClient() {
                   {source.terms_text}
                 </div>
               ) : (
-                <Notice>המסמך ריק.</Notice>
+                <Notice tone="muted">המסמך ריק.</Notice>
               )}
             </Section>
           )}
@@ -238,6 +229,7 @@ function ContractDialog({
   const [active, setActive] = useState(contract?.is_active ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const isSource = contract?.name === SOURCE_TERMS_CONTRACT_NAME;
 
@@ -284,7 +276,7 @@ function ContractDialog({
         setError(res.error);
         return;
       }
-      toast.success(contract ? "החוזה עודכן" : "החוזה נוצר");
+      toast({ title: contract ? "החוזה עודכן" : "החוזה נוצר" });
       await onSaved();
     } catch (e) {
       console.error("contracts: save failed", e);
@@ -296,15 +288,15 @@ function ContractDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <RtlDialogContent className="sm:max-w-2xl">
-        <RtlDialogHeader>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
           <DialogTitle>{contract ? `עריכת חוזה: ${contract.name}` : "חוזה חדש"}</DialogTitle>
           <DialogDescription>
             {contract && contract.blocks_count > 0
               ? `${contract.blocks_count} בלוקים משויכים לחוזה. שינוי הימים לא מזיז את המועדים שלהם; בכל בלוק אפשר לחשב מחדש מהחוזה.`
               : "הימים הם ימים לפני יציאת הטיסה."}
           </DialogDescription>
-        </RtlDialogHeader>
+        </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -424,15 +416,15 @@ function ContractDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
-        <RtlDialogFooter>
-          <Button onClick={submit} disabled={saving || !name.trim()}>
-            {saving ? "שומר..." : "שמירה"}
-          </Button>
+        <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
             חזרה
           </Button>
-        </RtlDialogFooter>
-      </RtlDialogContent>
+          <Button onClick={submit} disabled={saving || !name.trim()}>
+            {saving ? "שומר..." : "שמירה"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

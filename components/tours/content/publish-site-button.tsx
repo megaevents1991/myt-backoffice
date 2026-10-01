@@ -2,13 +2,14 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { Loader2, Rocket } from "lucide-react";
-import { toast } from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/confirm-provider";
+import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
+import { fmtInstant } from "@/lib/tours/format";
 import { getSitePublishStatus, publishSite } from "@/lib/tours/site-publish";
-import { formatDayTime, type SitePublishStatus } from "@/components/tours/content/shared";
+import type { SitePublishStatus } from "@/components/tours/content/shared";
 
 /**
  * "Publish to site" for the active tours company. Self-contained: drop it in
@@ -24,6 +25,7 @@ import { formatDayTime, type SitePublishStatus } from "@/components/tours/conten
  */
 export function PublishSiteButton({ className }: { className?: string }) {
   const confirm = useConfirm();
+  const run = useActionToast();
   const [status, setStatus] = useState<SitePublishStatus | null>(null);
   // the active company has no site to publish (it does not sell tours) - show nothing
   const [unavailable, setUnavailable] = useState(false);
@@ -53,12 +55,10 @@ export function PublishSiteButton({ className }: { className?: string }) {
     });
     if (!ok) return;
     startTransition(async () => {
-      const result = await publishSite();
+      const result = await run(() => publishSite(), "The site build has started. Changes will appear in a few minutes.");
       if (result.success) {
         setStatus({ configured: true, last: result.data });
-        toast.success("The site build has started. Changes will appear in a few minutes.");
       } else {
-        toast.error(result.error, { duration: 7000 });
         // a failed call is recorded too - show it
         const fresh = await getSitePublishStatus();
         if (fresh.success) setStatus(fresh.data);
@@ -74,7 +74,7 @@ export function PublishSiteButton({ className }: { className?: string }) {
     : !status.configured
       ? "Site connection not set up"
       : last
-        ? `${last.ok ? "Last published" : "Last attempt failed"}: ${formatDayTime(last.at)}`
+        ? `${last.ok ? "Last published" : "Last attempt failed"}: ${fmtInstant(last.at)}`
         : "Not published from here yet";
 
   return (

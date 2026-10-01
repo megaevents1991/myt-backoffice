@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { ChevronDown, CopyPlus, Loader2, Plus, Trash2 } from "lucide-react";
-import { toast } from "react-hot-toast";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,9 +16,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useConfirm } from "@/components/confirm-provider";
+import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
 import { createTourItineraryVariant, deleteTourItineraryVariant } from "@/lib/actions/tours-content-actions";
-import { Field, ImageUrlField, RowControls, Section } from "@/components/tours/content/fields";
+import { Field, Section } from "@/components/tours/ui";
+import { ImageUrlField, RowControls } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import type { ItineraryDay, ItineraryVariant, PackageEditorData } from "@/components/tours/content/shared";
 
@@ -54,6 +55,7 @@ export function ItineraryEditor({
   onVariantsChanged,
 }: ItineraryEditorProps) {
   const confirm = useConfirm();
+  const run = useActionToast();
   const [activeKey, setActiveKey] = useState(variants[0]?.key ?? "main");
   const [openDay, setOpenDay] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -116,12 +118,8 @@ export function ItineraryEditor({
     if (!ok) return;
     const { id, key } = active;
     startTransition(async () => {
-      const result = await deleteTourItineraryVariant(packageId, id);
-      if (!result.success) {
-        toast.error(result.error, { duration: 7000 });
-        return;
-      }
-      toast.success("Variant deleted");
+      const result = await run(() => deleteTourItineraryVariant(packageId, id), "Variant deleted");
+      if (!result.success) return;
       setActiveKey("main");
       setOpenDay(null);
       onVariantsChanged(result.data, { deleted: key });
@@ -279,11 +277,11 @@ export function ItineraryEditor({
                       />
                     </Field>
                     <Field label="Title (the day's route)" className="md:col-span-2">
-                      <Input dir="rtl" value={day.title} onChange={(event) => patchDay(index, { title: event.target.value })} />
+                      <Input dir="auto" value={day.title} onChange={(event) => patchDay(index, { title: event.target.value })} />
                     </Field>
                     <Field label="Subtitle" className="md:col-span-3">
                       <Input
-                        dir="rtl"
+                        dir="auto"
                         value={day.subtitle}
                         onChange={(event) => patchDay(index, { subtitle: event.target.value })}
                       />
@@ -352,6 +350,7 @@ function NewVariantDialog({
   const [arrivalCity, setArrivalCity] = useState(first?.returnCity ?? "");
   const [returnCity, setReturnCity] = useState(first?.arrivalCity ?? "");
   const [isPending, startTransition] = useTransition();
+  const run = useActionToast();
 
   const cleanKey = key.trim().toLowerCase();
   const problem = !sourceId
@@ -367,18 +366,18 @@ function NewVariantDialog({
   const create = () => {
     if (problem) return;
     startTransition(async () => {
-      const result = await createTourItineraryVariant(packageId, {
-        sourceId,
-        key: cleanKey,
-        label: label.trim(),
-        arrivalCity,
-        returnCity,
-      });
-      if (!result.success) {
-        toast.error(result.error, { duration: 7000 });
-        return;
-      }
-      toast.success("Variant created. You can now edit its days.");
+      const result = await run(
+        () =>
+          createTourItineraryVariant(packageId, {
+            sourceId,
+            key: cleanKey,
+            label: label.trim(),
+            arrivalCity,
+            returnCity,
+          }),
+        "Variant created. You can now edit its days.",
+      );
+      if (!result.success) return;
       onCreated(result.data, cleanKey);
     });
   };

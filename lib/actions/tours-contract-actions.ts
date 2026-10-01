@@ -13,8 +13,7 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { isDateOnly } from "@/lib/tours/deadlines";
 import { CURRENCIES, type FlightContract } from "@/types/tours.types";
-import type { ToursResult } from "@/lib/actions/tours-flight-actions";
-import { dbFail as databaseFail, plainFail as fail } from "@/lib/tours/action-kit";
+import { dbFail as databaseFail, plainFail as fail, type ActionResult } from "@/lib/tours/action-kit";
 
 const dbFail = (where: string, error: unknown) => databaseFail("tours-contract-actions", where, error);
 
@@ -52,7 +51,7 @@ const isDays = (value: unknown): value is number =>
 const isAmount = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
 
 /** Every contract of the company, with how many blocks use it. */
-export async function listTourContracts(): Promise<ToursResult<TourContractRow[]>> {
+export async function listTourContracts(): Promise<ActionResult<TourContractRow[]>> {
   const { company } = await requireCompany("tours");
   const { data, error } = await supabaseTyped
     .from("flight_contracts")
@@ -83,7 +82,7 @@ export async function listTourContracts(): Promise<ToursResult<TourContractRow[]
 }
 
 /** Creates a contract, or updates one of this company. */
-export async function saveTourContract(input: TourContractInput): Promise<ToursResult<{ id: string }>> {
+export async function saveTourContract(input: TourContractInput): Promise<ActionResult<{ id: string }>> {
   const { company } = await requireCompany("tours");
 
   const name = input.name?.trim();

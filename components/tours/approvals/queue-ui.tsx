@@ -12,14 +12,19 @@ import { CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button, type ButtonProps } from "@/components/ui/button";
-import type { ActionAnswer } from "@/components/tours/flights/block-ui";
+import type { ActionResult } from "@/lib/tours/action-kit";
 
 /**
- * Runs one action of the queue. `key` names the button that was pressed, so it
- * alone shows the spinner while every action button of the screen is disabled.
- * Resolves true when the action succeeded; the screen has reloaded by then.
+ * Runs one action of the queue and reports it with the shared action toast.
+ * `key` names the button that was pressed, so it alone shows the spinner while
+ * every action button of the screen is disabled. Resolves true when the action
+ * succeeded; the screen has reloaded by then.
  */
-export type QueueRun = (key: string, action: () => Promise<ActionAnswer>, okMessage?: string) => Promise<boolean>;
+export type QueueRun = (
+  key: string,
+  action: () => Promise<ActionResult<unknown>>,
+  okMessage?: string,
+) => Promise<boolean>;
 
 export interface QueueControls {
   run: QueueRun;
@@ -29,7 +34,7 @@ export interface QueueControls {
 
 export const departureHref = (code: string, tab?: "prices" | "flights") =>
   `/tours/departures?code=${encodeURIComponent(code)}${tab ? `&tab=${tab}` : ""}`;
-export const blockHref = (id: number) => `/tours/flights/${id}`;
+export const blockHref = (id: number) => `/offline-flights/${id}`;
 
 export const linkClass =
   "font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm";
@@ -37,7 +42,7 @@ export const linkClass =
 export function CountBadge({ count, className }: { count: number; className?: string }) {
   return (
     <Badge variant={count > 0 ? "destructive" : "secondary"} className={cn("shrink-0 tabular-nums", className)}>
-      {count.toLocaleString("he-IL")}
+      {count.toLocaleString("en-US")}
     </Badge>
   );
 }
@@ -119,7 +124,7 @@ export function SubList({
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold">{title}</h3>
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums">
-              {count.toLocaleString("he-IL")}
+              {count.toLocaleString("en-US")}
             </span>
           </div>
           {hint && <p className="mt-0.5 max-w-[90ch] text-xs text-muted-foreground">{hint}</p>}
@@ -157,7 +162,7 @@ export function OpenLink({ href, children }: { href: string; children: ReactNode
   );
 }
 
-/** "בעוד 5 ימים" for a date that is today or later. */
+/** "in 5 days" for a date that is today or later. */
 export function inDays(days: number): string {
   if (days <= 0) return "today";
   if (days === 1) return "tomorrow";

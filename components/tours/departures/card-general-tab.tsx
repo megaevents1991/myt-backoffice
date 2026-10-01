@@ -7,24 +7,17 @@
  */
 import { useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { Field, Ltr, Notice, Section, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useActionToast } from "@/hooks/use-action-toast";
+import { isDateOnly, isoToJerusalemLocal, jerusalemLocalToIso, nightsBetween } from "@/lib/tours/format";
 import { ROUTE_TYPE_LABELS, routeType } from "@/lib/tours/routes";
 import { FLIGHT_MODES, FLIGHT_MODE_LABELS } from "@/types/tours.types";
 import { updateDeparture } from "@/lib/actions/tours-departure-actions";
-import {
-  departureCode,
-  effectiveRoute,
-  isIsoDate,
-  isoToJerusalemLocal,
-  jerusalemLocalToIso,
-  nightsBetween,
-  normalizeAirport,
-} from "./departure-utils";
+import { departureCode, effectiveRoute, normalizeAirport } from "./departure-utils";
 import type { DepartureCardData, DepartureGeneralInput } from "./types";
-import { Field, Ltr, Notice, selectClass } from "./ui-bits";
 
 interface Draft {
   start_date: string;
@@ -114,15 +107,6 @@ function changes(base: Draft, draft: Draft): DepartureGeneralInput {
   return out;
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="border-b py-4 last:border-b-0">
-      <h3 className="mb-3 text-sm font-semibold">{title}</h3>
-      {children}
-    </section>
-  );
-}
-
 function Check({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <label className="flex cursor-pointer items-center gap-2 text-sm">
@@ -144,6 +128,7 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
   const base = useMemo(() => toDraft(d), [d]);
   const [draft, setDraft] = useState<Draft>(base);
   const [saving, setSaving] = useState(false);
+  const run = useActionToast();
   const readOnly = Boolean(d.is_deleted);
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((prev) => ({ ...prev, [key]: value }));
 
@@ -154,28 +139,23 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
   const ret = normalizeAirport(draft.return_airport);
   const route = effectiveRoute({ arrival_airport: arrival ?? null, return_airport: ret ?? null }, series);
   const type = routeType(route.arrival_airport, route.return_airport);
-  const datesOk = isIsoDate(draft.start_date) && isIsoDate(draft.end_date) && draft.end_date >= draft.start_date;
+  const datesOk = isDateOnly(draft.start_date) && isDateOnly(draft.end_date) && draft.end_date >= draft.start_date;
   const problems: string[] = [];
   if (!datesOk) problems.push("The return date is before the departure date, or a date is missing");
   if (arrival === undefined || ret === undefined) problems.push("An airport code is three English letters");
 
-  const codeByDate = series && isIsoDate(draft.start_date) ? departureCode(series.code, draft.start_date) : null;
+  const codeByDate = series && isDateOnly(draft.start_date) ? departureCode(series.code, draft.start_date) : null;
 
   const save = async () => {
     setSaving(true);
-    const result = await updateDeparture(d.id, patch);
+    const result = await run(() => updateDeparture(d.id, patch), "Details saved");
     setSaving(false);
-    if (!result.success) {
-      toast.error(result.error, { duration: 7000 });
-      return;
-    }
-    toast.success("Details saved");
-    await onSaved();
+    if (result.success) await onSaved();
   };
 
   return (
-    <fieldset disabled={readOnly || saving} className="min-w-0">
-      {readOnly && <Notice tone="info" className="mt-2">This departure is deleted. Restore it to edit.</Notice>}
+    <fieldset disabled={readOnly || saving} className="min-w-0 space-y-4 pt-4">
+      {readOnly && <Notice tone="info">This departure is deleted. Restore it to edit.</Notice>}
 
       <Section title="Dates and Route">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -206,7 +186,7 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
             />
           </Field>
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {type ? `Route type: ${ROUTE_TYPE_LABELS[type]}.` : "The route is incomplete: it needs an arrival city and a return city, on the departure or the series."}
           {codeByDate && codeByDate !== d.code && (
             <>
@@ -216,7 +196,7 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
             </>
           )}
         </p>
-        <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <Field label="Itinerary version" hint="For a series whose direction flips between dates">
             <select className={`${selectClass} w-full`} value={draft.itinerary_id} onChange={(e) => set("itinerary_id", e.target.value)}>
               <option value="">Default - the tour page&apos;s main itinerary</option>
@@ -305,12 +285,12 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
             <Input dir="ltr" type="datetime-local" className="h-9" value={draft.meeting_at} onChange={(e) => set("meeting_at", e.target.value)} />
           </Field>
         </div>
-        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
           <Check label="Baggage included" checked={draft.baggage_included} onChange={(v) => set("baggage_included", v)} />
           <Check label="Meals included" checked={draft.meal_included} onChange={(v) => set("meal_included", v)} />
           <Check label="Transfers included" checked={draft.transfers_included} onChange={(v) => set("transfers_included", v)} />
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <Field label="Connection note, outbound" hint="Text shown to the customer">
             <Input dir="auto" className="h-9" value={draft.connection_out} onChange={(e) => set("connection_out", e.target.value)} />
           </Field>
@@ -336,7 +316,7 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
 
       {problems.length > 0 && <Notice tone="error">{problems.join(" · ")}</Notice>}
       {!readOnly && (
-        <div className="sticky bottom-0 z-10 -mx-6 mt-2 flex items-center justify-between gap-3 border-t bg-background px-6 py-3">
+        <div className="sticky bottom-0 z-10 -mx-6 flex items-center justify-between gap-3 border-t bg-background px-6 py-3">
           <span className="flex gap-2">
             <Button size="sm" disabled={!dirty || saving || problems.length > 0} onClick={save}>
               {saving && <Loader2 className="animate-spin" />}

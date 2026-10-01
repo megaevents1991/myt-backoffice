@@ -1,11 +1,8 @@
-import Link from "next/link";
-
 import { requireCompany } from "@/lib/company";
 import type { SessionPayload } from "@/lib/auth/session";
 import { isManagerRole } from "@/components/tours/flights/block-rules";
 import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { NotAToursCompany } from "@/components/tours/not-a-tours-company";
 import { ToursDashboard } from "@/components/tours/dashboard/tours-dashboard";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
 
@@ -24,7 +21,11 @@ export default async function ToursDashboardPage() {
   } catch (e) {
     // The active company does not sell tours (Mega Events) - say so, do not crash.
     // Anything else (no staff session) goes to the dashboard error boundary like on every guarded page.
-    if (e instanceof Error && e.message.includes("does not sell")) return <NotAToursCompany />;
+    if (e instanceof Error && e.message.includes("does not sell")) {
+      return (
+        <NotAToursCompany description="The tours dashboard opens only while the active company sells tours. If you have access to one, switch to it from the company switcher in the top bar." />
+      );
+    }
     throw e;
   }
 
@@ -36,27 +37,6 @@ export default async function ToursDashboardPage() {
         actions={<PublishSiteButton />}
       />
       <ToursDashboard isManager={isManagerRole(session.role)} />
-    </div>
-  );
-}
-
-function NotAToursCompany() {
-  return (
-    <div className="mx-auto max-w-md py-10">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">This screen belongs to a tours company</CardTitle>
-          <CardDescription>
-            The tours dashboard opens only while the active company sells tours. If you have access to one,
-            switch to it from the company switcher in the top bar.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button asChild>
-            <Link href="/dashboard">Back to Dashboard</Link>
-          </Button>
-        </CardContent>
-      </Card>
     </div>
   );
 }

@@ -14,8 +14,9 @@ import { requireCompany, type Company } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
-import { actionFail } from "@/lib/tours/action-kit";
-import type { SessionPayload } from "@/lib/auth/session";
+import { taskPeopleOf } from "@/lib/services/task-people";
+import { actionFail, fetchAll } from "@/lib/tours/action-kit";
+import { companyAudit } from "@/lib/tours/company-kit";
 import type { Json } from "@/types/database.types";
 import { LEAD_KIND_LABELS, type Lead } from "@/types/tours.types";
 import {
@@ -91,27 +92,17 @@ function filtered(company: Company, filters: Partial<LeadFilters>) {
   return query.order("created_at", { ascending: false });
 }
 
-/** Staff who can own a lead: the company's members, plus whoever is looking at the inbox. */
-async function assigneesOf(company: Company, session: SessionPayload): Promise<LeadAssignee[]> {
-  const { data, error } = await supabaseTyped
-    .from("company_members")
-    .select("user_id, role, user_profiles!inner(id, email, display_name, is_active)")
-    .eq("company_id", company.id)
-    .in("role", ["admin", "editor"]);
-  if (error) throw error;
-  const people = (data ?? [])
-    .map((m) => m.user_profiles as unknown as { id: string; email: string; display_name: string | null; is_active: boolean })
-    .filter((p) => p && p.is_active)
-    .map((p) => ({ id: p.id, name: p.display_name || p.email, email: p.email }));
-  if (!people.some((p) => p.id === session.sub)) {
-    const { data: me } = await supabaseTyped
-      .from("user_profiles")
-      .select("id, email, display_name")
-      .eq("id", session.sub)
-      .maybeSingle();
-    people.push({ id: session.sub, name: me?.display_name || session.email, email: session.email });
-  }
-  return people.sort((a, b) => a.name.localeCompare(b.name, "he"));
+/**
+ * Staff who can own a lead - the people the company's tasks can be given to
+ * (lib/services/task-people.ts): its active staff members plus every active
+ * superadmin, so whoever opens the inbox is on the list.
+ */
+async function assigneesOf(company: Company): Promise<LeadAssignee[]> {
+  const people = await taskPeopleOf(company);
+  if (!people) throw new Error("leads: the staff list could not be read");
+  return people
+    .map((p) => ({ id: p.id, name: p.display_name || p.email, email: p.email }))
+    .sort((a, b) => a.name.localeCompare(b.name, "he"));
 }
 
 /** Every lead of the company for the table, newest first (search, views and paging run in the table). */
@@ -131,12 +122,13 @@ export async function getLeadsMeta(): Promise<ActionResult<LeadsMeta>> {
   try {
     const { session, company } = await requireCompany("tours");
     const [assignees, kinds] = await Promise.all([
-      assigneesOf(company, session),
-      supabaseTyped.from("leads").select("kind").eq("company_id", company.id).range(0, 4999),
+      assigneesOf(company),
+      fetchAll((from, to) =>
+        supabaseTyped.from("leads").select("kind").eq("company_id", company.id).order("id").range(from, to),
+      ),
     ]);
-    if (kinds.error) throw kinds.error;
     const known = Object.keys(LEAD_KIND_LABELS);
-    const seen = [...new Set((kinds.data ?? []).map((r) => r.kind))].filter((k) => !known.includes(k));
+    const seen = [...new Set(kinds.map((r) => r.kind))].filter((k) => !known.includes(k));
     return { success: true, data: { assignees, kinds: [...known, ...seen.sort()], currentUserId: session.sub } };
   } catch (e) {
     return actionFail(e, SCOPE);
@@ -149,7 +141,7 @@ export async function updateLead(
   change: { status?: string; assignedTo?: string | null },
 ): Promise<ActionResult<LeadRow>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { company } = await requireCompany("tours");
     const { data: before, error } = await supabaseTyped
       .from("leads")
       .select("id, status, assigned_to")
@@ -168,7 +160,7 @@ export async function updateLead(
     }
     if (change.assignedTo !== undefined && change.assignedTo !== before.assigned_to) {
       if (change.assignedTo !== null) {
-        const allowed = await assigneesOf(company, session);
+        const allowed = await assigneesOf(company);
         if (!allowed.some((p) => p.id === change.assignedTo)) {
           return { success: false, error: "A lead can be assigned only to a member of the company's staff." };
         }
@@ -189,7 +181,7 @@ export async function updateLead(
         entityType: "lead",
         entityId: id,
         changes,
-        metadata: { company: company.slug },
+        metadata: companyAudit(company),
       });
       revalidatePath("/tours/leads");
     }
@@ -209,11 +201,11 @@ export async function updateLead(
 /** The leads of the open view (status, kind, search) as an .xlsx file (base64), newest first. */
 export async function exportLeads(filters: Partial<LeadFilters>): Promise<ActionResult<LeadsExport>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { company } = await requireCompany("tours");
     const { rows: found, error } = await fetchPaged<LeadColumns>(() => filtered(company, filters), EXPORT_LIMIT);
     if (error) throw new Error(`leads: ${error.message}`);
     const rows = found.map(toRow);
-    const names = new Map((await assigneesOf(company, session)).map((p) => [p.id, p.name]));
+    const names = new Map((await assigneesOf(company)).map((p) => [p.id, p.name]));
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Leads", { views: [{ state: "frozen", ySplit: 1 }] });

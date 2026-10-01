@@ -9,16 +9,12 @@ import { useState } from "react";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  setTourBlockReviewed,
-  transitionTourBlock,
-  type TourBlockData,
-} from "@/lib/actions/tours-flight-actions";
+import { setTourBlockReviewed, transitionTourBlock } from "@/lib/actions/tours-flight-actions";
 import {
   CONTRACT_DEADLINE_FIELDS,
   DEADLINE_LABELS,
@@ -41,26 +37,17 @@ import {
   type TransitionInput,
 } from "@/components/tours/flights/block-rules";
 import { BLOCK_STATUS_LABELS, type BlockStatus } from "@/types/tours.types";
-import {
-  BlockStatusBadge,
-  Field,
-  Ltr,
-  Notice,
-  RtlDialogContent,
-  RtlDialogFooter,
-  RtlDialogHeader,
-  Section,
-  formatMoney,
-  parseNumber,
-  type RunAction,
-} from "@/components/tours/flights/block-ui";
+import { formatMoney, parseNumber } from "@/lib/tours/format";
+import { Field, Ltr, Notice, Section } from "@/components/tours/ui";
+import { BlockStatusBadge } from "@/components/tours/flights/block-ui";
+import type { BlockSectionProps } from "@/components/tours/flights/tour-block-panel";
 
 /** The road a block normally travels. Declined and cancelled are exits from it. */
 const MAIN_PATH: BlockStage[] = ["draft", "approved", "requested", "confirmed", "operational", "ticketed"];
 
 const pathLabel = (stage: BlockStage) => (stage === "draft" ? DRAFT_LABEL : BLOCK_STATUS_LABELS[stage]);
 
-export function BlockLifecycleSection({ data, run }: { data: TourBlockData; run: RunAction }) {
+export function BlockLifecycleSection({ data, run }: BlockSectionProps) {
   const { block, isManager } = data;
   const stage = stageOf(block.block_status);
   const steps = nextStages(block.block_status);
@@ -110,7 +97,7 @@ export function BlockLifecycleSection({ data, run }: { data: TourBlockData; run:
         <BlockStatusBadge status={block.block_status} className="px-3 py-1 text-sm" />
       </div>
 
-      <ol className="mt-3 flex flex-wrap items-center gap-1.5 text-xs" aria-label="Flight block stages">
+      <ol className="flex flex-wrap items-center gap-1.5 text-xs" aria-label="Flight block stages">
         {MAIN_PATH.filter((s) => s !== "ticketed" || stage === "ticketed").map((s, i) => {
           const isCurrent = s === stage;
           const passed = reachedIndex > -1 && i < reachedIndex;
@@ -133,20 +120,18 @@ export function BlockLifecycleSection({ data, run }: { data: TourBlockData; run:
       </ol>
 
       {stage === "cancelled" && (
-        <div className="mt-3">
-          <Notice tone="danger">
-            <div className="font-medium">
-              Flight block cancelled{block.cancelled_at ? <> on <Ltr>{formatDateShort(block.cancelled_at)}</Ltr></> : null}
-            </div>
-            {block.cancel_reason && <div className="mt-0.5">{block.cancel_reason}</div>}
-            <div className="mt-0.5">
-              Cancellation fee: <Ltr>{formatMoney(block.cancellation_fee, block.cost_currency)}</Ltr>
-            </div>
-          </Notice>
-        </div>
+        <Notice tone="error">
+          <div className="font-medium">
+            Flight block cancelled{block.cancelled_at ? <> on <Ltr>{formatDateShort(block.cancelled_at)}</Ltr></> : null}
+          </div>
+          {block.cancel_reason && <div className="mt-0.5">{block.cancel_reason}</div>}
+          <div className="mt-0.5">
+            Cancellation fee: <Ltr>{formatMoney(block.cancellation_fee, block.cost_currency)}</Ltr>
+          </div>
+        </Notice>
       )}
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {steps.length === 0 ? (
           <span className="text-sm text-muted-foreground">No further step from this status.</span>
         ) : (
@@ -164,7 +149,7 @@ export function BlockLifecycleSection({ data, run }: { data: TourBlockData; run:
         )}
       </div>
       {blockedForViewer.length > 0 && (
-        <p className="mt-2 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {blockedForViewer.includes("approved") && "Approve to book is for the company manager only. "}
           {blockedForViewer.includes("cancelled") && "Only the company manager can cancel a flight block the airline already confirmed."}
         </p>
@@ -175,17 +160,7 @@ export function BlockLifecycleSection({ data, run }: { data: TourBlockData; run:
   );
 }
 
-function TransitionDialog({
-  data,
-  to,
-  run,
-  onClose,
-}: {
-  data: TourBlockData;
-  to: BlockStatus;
-  run: RunAction;
-  onClose: () => void;
-}) {
+function TransitionDialog({ data, to, run, onClose }: BlockSectionProps & { to: BlockStatus; onClose: () => void }) {
   const { block, contract } = data;
   const [date, setDate] = useState(data.today);
   const [note, setNote] = useState("");
@@ -222,23 +197,23 @@ function TransitionDialog({
 
   const submit = async () => {
     setSaving(true);
-    const ok = await run(
+    const res = await run(
       () => transitionTourBlock(block.id, to, { ...input, fee: feeValue ?? null }),
       `Flight block moved to "${BLOCK_STATUS_LABELS[to]}"`,
     );
     setSaving(false);
-    if (ok) onClose();
+    if (res.success) onClose();
   };
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <RtlDialogContent className="sm:max-w-lg">
-        <RtlDialogHeader>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
           <DialogTitle>{TRANSITION_ACTION_LABELS[to]}</DialogTitle>
           <DialogDescription>
             The flight block moves to &quot;{BLOCK_STATUS_LABELS[to]}&quot; and the step is recorded on the timeline.
           </DialogDescription>
-        </RtlDialogHeader>
+        </DialogHeader>
 
         <div className="grid gap-4">
           {to === "confirmed" && (
@@ -353,7 +328,10 @@ function TransitionDialog({
           {!check.ok && <p className="text-sm text-destructive">{check.error}</p>}
         </div>
 
-        <RtlDialogFooter>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Back
+          </Button>
           <Button
             onClick={submit}
             disabled={saving || !check.ok || !date}
@@ -361,11 +339,8 @@ function TransitionDialog({
           >
             {saving ? "Saving..." : TRANSITION_ACTION_LABELS[to]}
           </Button>
-          <Button variant="outline" onClick={onClose} disabled={saving}>
-            Back
-          </Button>
-        </RtlDialogFooter>
-      </RtlDialogContent>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

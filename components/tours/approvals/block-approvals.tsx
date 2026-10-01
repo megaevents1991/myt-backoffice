@@ -5,7 +5,7 @@
  * manager takes (functional spec 4.1).
  *   - a draft waits for the approval to order its dates;
  *   - a confirmed block whose cancellation date is close waits for "keep or cancel";
- *   - an upcoming live block waits for the manager's "נבדק" mark.
+ *   - an upcoming live block waits for the manager's "Reviewed" mark.
  * Every button runs the same lifecycle action the block card runs, so the
  * timeline and the audit trail read the same whichever screen was used.
  */
@@ -15,7 +15,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -27,26 +27,16 @@ import {
   type ApprovalBlock,
   type ApprovalsData,
 } from "@/lib/actions/tours-approvals-actions";
-import { DEADLINE_LABELS, formatDateShort } from "@/lib/tours/deadlines";
+import { DEADLINE_LABELS } from "@/lib/tours/deadlines";
+import { daysLeft, formatDateShort, formatMoney, formatNumber, parseNumber } from "@/lib/tours/format";
 import {
   CANCELLED_BY,
   CANCELLED_BY_LABELS,
   TRANSITION_ACTION_LABELS,
   type CancelledBy,
 } from "@/components/tours/flights/block-rules";
-import {
-  BlockStatusBadge,
-  DaysLeft,
-  Field,
-  Ltr,
-  Notice,
-  RtlDialogContent,
-  RtlDialogFooter,
-  RtlDialogHeader,
-  formatMoney,
-  formatNumber,
-  parseNumber,
-} from "@/components/tours/flights/block-ui";
+import { Field, Ltr, Notice } from "@/components/tours/ui";
+import { BlockStatusBadge, DaysLeft } from "@/components/tours/flights/block-ui";
 import {
   ActionButton,
   QueueSection,
@@ -160,7 +150,7 @@ function CutNote({ shown, total }: { shown: number; total: number }) {
   if (total <= shown) return null;
   return (
     <p className="px-4 pb-3 text-xs text-muted-foreground">
-      Showing the first {shown} of {total.toLocaleString("he-IL")}. The rest appear as these are handled; the full list
+      Showing the first {shown} of {total.toLocaleString("en-US")}. The rest appear as these are handled; the full list
       is in{" "}
       <Link href="/offline-flights" className={linkClass}>
         Offline Flights
@@ -220,7 +210,7 @@ function ReviewList({ data, run, busy, onReviewPage }: BlockApprovalsProps) {
           {data.otherUnreviewed > 0 && (
             <>
               {" "}
-              Another {data.otherUnreviewed.toLocaleString("he-IL")} unmarked rows belong to flight blocks that already
+              Another {data.otherUnreviewed.toLocaleString("en-US")} unmarked rows belong to flight blocks that already
               flew, were cancelled or declined, or are not confirmed yet, so they do not wait here (
               <Link href="/offline-flights" className={linkClass}>
                 all flight blocks
@@ -267,7 +257,7 @@ function ReviewList({ data, run, busy, onReviewPage }: BlockApprovalsProps) {
       />
       <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2.5 text-xs text-muted-foreground">
         <span className="tabular-nums">
-          Rows {first.toLocaleString("he-IL")}-{last.toLocaleString("he-IL")} of {review.total.toLocaleString("he-IL")}
+          Rows {first.toLocaleString("en-US")}-{last.toLocaleString("en-US")} of {review.total.toLocaleString("en-US")}
         </span>
         {pages > 1 && (
           <div className="flex items-center gap-2">
@@ -390,7 +380,7 @@ function BlockRow({
         daysLeft: block.cancelDecision.daysLeft,
       }
     : block.nearestDeadline;
-  const flyIn = daysUntil(today, block.outboundDate);
+  const flyIn = daysLeft(block.outboundDate, today);
 
   return (
     <TableRow data-block-id={block.id} data-state={selection?.selected.has(block.id) ? "selected" : undefined}>
@@ -486,14 +476,6 @@ function BlockRow({
   );
 }
 
-/** Whole days from `today` to `date`, both `yyyy-mm-dd`; null when a date is missing. */
-function daysUntil(today: string, date: string): number | null {
-  const from = Date.parse(`${today}T00:00:00Z`);
-  const to = Date.parse(`${date}T00:00:00Z`);
-  if (Number.isNaN(from) || Number.isNaN(to)) return null;
-  return Math.round((to - from) / 86_400_000);
-}
-
 // ------------------------------------------------------------------ cancel
 
 /** What the lifecycle asks for when a confirmed block is cancelled: who, when, why and the fee. */
@@ -534,14 +516,14 @@ function CancelBlockDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
-      <RtlDialogContent className="sm:max-w-lg">
-        <RtlDialogHeader>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
           <DialogTitle>Cancel Flight Block</DialogTitle>
           <DialogDescription>
             The flight block moves to &quot;Cancelled&quot;. The cancellation is recorded on its timeline and cannot
             be undone.
           </DialogDescription>
-        </RtlDialogHeader>
+        </DialogHeader>
 
         <div className="grid gap-4">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-muted/50 px-3 py-2 text-sm">
@@ -596,15 +578,15 @@ function CancelBlockDialog({
           {problem && <p className="text-sm text-muted-foreground">{problem}</p>}
         </div>
 
-        <RtlDialogFooter>
-          <Button type="button" variant="destructive" onClick={() => void submit()} disabled={!!problem || busy !== null}>
-            {saving ? "Cancelling..." : "Cancel Flight Block"}
-          </Button>
+        <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
             Back
           </Button>
-        </RtlDialogFooter>
-      </RtlDialogContent>
+          <Button type="button" variant="destructive" onClick={() => void submit()} disabled={!!problem || busy !== null}>
+            {saving ? "Cancelling..." : "Cancel Flight Block"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

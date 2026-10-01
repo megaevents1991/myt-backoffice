@@ -15,12 +15,12 @@
  * The actions answer "not found" for a flight of another company, so mounting it
  * with a foreign id shows an error and nothing else.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "react-hot-toast";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useActionToast, type ActionAnswer } from "@/hooks/use-action-toast";
 import { getTourBlock, type TourBlockData } from "@/lib/actions/tours-flight-actions";
-import { Notice, type RunAction } from "@/components/tours/flights/block-ui";
+import { Notice } from "@/components/tours/ui";
 import { BlockLifecycleSection } from "@/components/tours/flights/block-lifecycle-section";
 import { BlockDeadlinesSection, BlockSeatsSection } from "@/components/tours/flights/block-seats-deadlines";
 import { BlockContractSection, BlockCostsSection } from "@/components/tours/flights/block-contract-costs";
@@ -29,21 +29,21 @@ import { BlockAllocationsSection, BlockTimelineSection } from "@/components/tour
 export interface TourBlockPanelProps {
   /** public.flights.id of a block of the active company. */
   flightId: number;
-  /**
-   * Called after every load (the first one and after each change) with the fresh
-   * data - for a host page that shows something of the block itself, like its PNR.
-   */
-  onLoaded?: (data: TourBlockData) => void;
 }
 
-export function TourBlockPanel({ flightId, onLoaded }: TourBlockPanelProps) {
+/**
+ * What every section of the panel gets: the block, and `run` - the shared action
+ * toast (hooks/use-action-toast.ts), which also reloads the block after a success.
+ */
+export interface BlockSectionProps {
+  data: TourBlockData;
+  run: ReturnType<typeof useActionToast>;
+}
+
+export function TourBlockPanel({ flightId }: TourBlockPanelProps) {
   const [data, setData] = useState<TourBlockData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const onLoadedRef = useRef(onLoaded);
-  useEffect(() => {
-    onLoadedRef.current = onLoaded;
-  }, [onLoaded]);
 
   const load = useCallback(async () => {
     try {
@@ -51,7 +51,6 @@ export function TourBlockPanel({ flightId, onLoaded }: TourBlockPanelProps) {
       if (res.success) {
         setData(res.data);
         setError(null);
-        onLoadedRef.current?.(res.data);
       } else {
         setError(res.error);
       }
@@ -70,25 +69,14 @@ export function TourBlockPanel({ flightId, onLoaded }: TourBlockPanelProps) {
     void load();
   }, [load]);
 
-  const run: RunAction = useCallback(
-    async (action, okMessage) => {
-      try {
-        const res = await action();
-        if (!res.success) {
-          toast.error(res.error);
-          return false;
-        }
-        if (okMessage) toast.success(okMessage);
-        if (res.warning) toast(res.warning, { duration: 8000 });
-        await load();
-        return true;
-      } catch (e) {
-        console.error("TourBlockPanel: action failed", e);
-        toast.error("The action failed. Try again.");
-        return false;
-      }
+  const toastRun = useActionToast();
+  const run = useCallback(
+    async <A extends ActionAnswer>(action: () => Promise<A>, okMessage?: string): Promise<A> => {
+      const res = await toastRun(action, okMessage);
+      if (res.success) await load();
+      return res;
     },
-    [load],
+    [toastRun, load],
   );
 
   if (loading && !data) {
@@ -107,7 +95,7 @@ export function TourBlockPanel({ flightId, onLoaded }: TourBlockPanelProps) {
   if (!data) {
     return (
       <div className="space-y-3">
-        <Notice tone="danger">{error ?? "Flight block not found"}</Notice>
+        <Notice tone="error">{error ?? "Flight block not found"}</Notice>
         <Button size="sm" variant="outline" onClick={() => void load()}>
           Try Again
         </Button>
@@ -117,7 +105,7 @@ export function TourBlockPanel({ flightId, onLoaded }: TourBlockPanelProps) {
 
   return (
     <div className="space-y-4">
-      {error && <Notice tone="danger">{error}</Notice>}
+      {error && <Notice tone="error">{error}</Notice>}
       <BlockLifecycleSection data={data} run={run} />
       <div className="grid items-start gap-4 xl:grid-cols-2">
         <div className="space-y-4">

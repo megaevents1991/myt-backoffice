@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -26,9 +26,8 @@ import {
   removeTourBlockAllocation,
   type AllocatableDeparture,
   type TourBlockAllocation,
-  type TourBlockData,
 } from "@/lib/actions/tours-flight-actions";
-import { formatDateShort } from "@/lib/tours/deadlines";
+import { formatDateShort, formatMoney, parseNumber } from "@/lib/tours/format";
 import {
   ALLOCATION_LEGS,
   ALLOCATION_LEGS_LABELS,
@@ -36,29 +35,14 @@ import {
   type AllocationLegs,
 } from "@/components/tours/flights/block-rules";
 import { BLOCK_EVENT_LABELS, type BlockEventKind } from "@/types/tours.types";
-import {
-  Field,
-  Ltr,
-  Notice,
-  RtlDialogContent,
-  RtlDialogFooter,
-  RtlDialogHeader,
-  Section,
-  formatMoney,
-  parseNumber,
-  type RunAction,
-} from "@/components/tours/flights/block-ui";
-
-interface SectionProps {
-  data: TourBlockData;
-  run: RunAction;
-}
+import { Field, Ltr, Notice, Section } from "@/components/tours/ui";
+import type { BlockSectionProps } from "@/components/tours/flights/tour-block-panel";
 
 const departureHref = (code: string) => `/tours/departures?code=${encodeURIComponent(code)}`;
 
 // ------------------------------------------------------------------ allocations
 
-export function BlockAllocationsSection({ data, run }: SectionProps) {
+export function BlockAllocationsSection({ data, run }: BlockSectionProps) {
   const { block, allocations } = data;
   const confirm = useConfirm();
   const [open, setOpen] = useState(false);
@@ -92,7 +76,7 @@ export function BlockAllocationsSection({ data, run }: SectionProps) {
       }
     >
       {allocations.length === 0 ? (
-        <Notice>
+        <Notice tone="muted">
           {closed ? "The flight block is not allocated to any departure." : `The flight block is in the pool: ${free} seats left to allocate.`}
         </Notice>
       ) : (
@@ -159,7 +143,7 @@ export function BlockAllocationsSection({ data, run }: SectionProps) {
   );
 }
 
-function AllocateDialog({ data, run, onClose }: SectionProps & { onClose: () => void }) {
+function AllocateDialog({ data, run, onClose }: BlockSectionProps & { onClose: () => void }) {
   const { block } = data;
   const free = Math.max(0, block.initial_quantity - data.allocatedSeats);
   const [candidates, setCandidates] = useState<AllocatableDeparture[] | null>(null);
@@ -192,32 +176,32 @@ function AllocateDialog({ data, run, onClose }: SectionProps & { onClose: () => 
   const submit = async () => {
     if (!chosen || seatsValue === null) return;
     setSaving(true);
-    const ok = await run(
+    const res = await run(
       () => allocateTourBlock(block.id, { departureId: chosen.id, seats: seatsValue, legs }),
       existing ? `Allocation to ${chosen.code} updated` : `Flight block allocated to ${chosen.code}`,
     );
     setSaving(false);
-    if (ok) onClose();
+    if (res.success) onClose();
   };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <RtlDialogContent className="sm:max-w-lg">
-        <RtlDialogHeader>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
           <DialogTitle>Allocate to Departure</DialogTitle>
           <DialogDescription>
             Shows departures that start within two days of the flight date. The route is checked at both ends by city.
           </DialogDescription>
-        </RtlDialogHeader>
+        </DialogHeader>
 
         {loadError ? (
-          <Notice tone="danger">{loadError}</Notice>
+          <Notice tone="error">{loadError}</Notice>
         ) : candidates === null ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading departures...
           </div>
         ) : candidates.length === 0 ? (
-          <Notice>The company has no departure within two days of the flight dates.</Notice>
+          <Notice tone="muted">The company has no departure within two days of the flight dates.</Notice>
         ) : (
           <div className="grid gap-4">
             <Field label="Departure">
@@ -268,7 +252,7 @@ function AllocateDialog({ data, run, onClose }: SectionProps & { onClose: () => 
                 <div className="text-muted-foreground">
                   Departure {chosen.code} has {chosen.allocated_seats} live seats allocated today, {chosen.sold} sold.
                 </div>
-                {fit && !fit.ok && <Notice tone="danger">{fit.reason}</Notice>}
+                {fit && !fit.ok && <Notice tone="error">{fit.reason}</Notice>}
                 {existing && (
                   <Notice tone="warning">
                     This allocation already exists with {existing.seats} seats. Saving updates the count.
@@ -279,15 +263,15 @@ function AllocateDialog({ data, run, onClose }: SectionProps & { onClose: () => 
           </div>
         )}
 
-        <RtlDialogFooter>
-          <Button onClick={submit} disabled={saving || !chosen || seatsValue === null || (fit !== null && !fit.ok)}>
-            {saving ? "Saving..." : existing ? "Update Allocation" : "Allocate"}
-          </Button>
+        <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Back
           </Button>
-        </RtlDialogFooter>
-      </RtlDialogContent>
+          <Button onClick={submit} disabled={saving || !chosen || seatsValue === null || (fit !== null && !fit.ok)}>
+            {saving ? "Saving..." : existing ? "Update Allocation" : "Allocate"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -300,7 +284,7 @@ const MANUAL_KINDS: BlockEventKind[] = ["note", "quoted", "names_sent", "schedul
 const eventLabel = (kind: string): string =>
   kind in BLOCK_EVENT_LABELS ? BLOCK_EVENT_LABELS[kind as BlockEventKind] : kind;
 
-export function BlockTimelineSection({ data, run }: SectionProps) {
+export function BlockTimelineSection({ data, run }: BlockSectionProps) {
   const { block, events } = data;
   const [kind, setKind] = useState<BlockEventKind>("note");
   const [date, setDate] = useState(data.today);
@@ -315,7 +299,7 @@ export function BlockTimelineSection({ data, run }: SectionProps) {
   const add = async () => {
     if (!canSave) return;
     setSaving(true);
-    const ok = await run(
+    const res = await run(
       () =>
         addTourBlockEvent(block.id, {
           kind,
@@ -327,7 +311,7 @@ export function BlockTimelineSection({ data, run }: SectionProps) {
       "Added to the timeline",
     );
     setSaving(false);
-    if (ok) {
+    if (res.success) {
       setNote("");
       setAmount("");
       setKind("note");
@@ -390,11 +374,9 @@ export function BlockTimelineSection({ data, run }: SectionProps) {
       </div>
 
       {events.length === 0 ? (
-        <div className="mt-3">
-          <Notice>Nothing recorded for this flight block yet.</Notice>
-        </div>
+        <Notice tone="muted">Nothing recorded for this flight block yet.</Notice>
       ) : (
-        <ol className="mt-3 divide-y">
+        <ol className="divide-y">
           {events.map((e) => (
             <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 text-sm">
               <Ltr className="w-16 shrink-0 text-muted-foreground">{formatDateShort(e.happened_on)}</Ltr>

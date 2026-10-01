@@ -7,7 +7,6 @@
  */
 import { useState, useTransition } from "react";
 import { Loader2, UserMinus, UserPlus } from "lucide-react";
-import { toast } from "react-hot-toast";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,16 +14,20 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useConfirm } from "@/components/confirm-provider";
+import { useToast } from "@/hooks/use-toast";
+import { useActionToast } from "@/hooks/use-action-toast";
 import { addCompanyMember, removeCompanyMember } from "@/lib/actions/tours-members-actions";
-import { Section } from "@/components/tours/content/fields";
+import { Section } from "@/components/tours/ui";
 import { COMPANY_ROLE_LABELS, type CompanyMemberRow } from "@/components/tours/content/shared";
 import { ROLE_LABELS, type Role } from "@/types/auth.types";
 
-/** The Hebrew name of a member's role; roles added after COMPANY_ROLE_LABELS (tours_agent) come from ROLE_LABELS. */
-const roleName = (role: string): string => COMPANY_ROLE_LABELS[role] ?? ROLE_LABELS[role as Role]?.en ?? role;
+/** The display name of a member's role: ROLE_LABELS first, COMPANY_ROLE_LABELS for the roles it does not name. */
+const roleName = (role: string): string => ROLE_LABELS[role as Role]?.en ?? COMPANY_ROLE_LABELS[role] ?? role;
 
 export function CompanyMembers({ initial, companyName }: { initial: CompanyMemberRow[]; companyName: string }) {
   const confirm = useConfirm();
+  const { toast } = useToast();
+  const run = useActionToast();
   const [members, setMembers] = useState(initial);
   const [email, setEmail] = useState("");
   const [keepMegaEvents, setKeepMegaEvents] = useState(false);
@@ -33,15 +36,13 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
   const add = () => {
     if (!email.trim()) return;
     startTransition(async () => {
-      const result = await addCompanyMember(email, keepMegaEvents);
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
+      const result = await run(() => addCompanyMember(email, keepMegaEvents));
+      if (!result.success) return;
       setMembers(result.data.members);
       setEmail("");
       setKeepMegaEvents(false);
-      toast.success(result.data.note);
+      // the note says what the change means for the account - it comes with the answer
+      toast({ title: result.data.note });
     });
   };
 
@@ -55,13 +56,9 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
     });
     if (!ok) return;
     startTransition(async () => {
-      const result = await removeCompanyMember(member.userId);
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
+      const result = await run(() => removeCompanyMember(member.userId), `${member.name} was removed from ${companyName}`);
+      if (!result.success) return;
       setMembers(result.data);
-      toast.success(`${member.name} was removed from ${companyName}`);
     });
   };
 

@@ -11,19 +11,19 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ExternalLink, Loader2, Plus, Trash2 } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { ALLOCATION_LEGS } from "@/components/tours/flights/block-rules";
+import { Chip, Ltr, Notice, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConfirm } from "@/components/confirm-provider";
+import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
+import { fmtDateTime } from "@/lib/tours/format";
 import { checkBlockFitsDeparture, flightRouteLabel } from "@/lib/tours/routes";
 import { BLOCK_STATUS_LABELS, LIVE_BLOCK_STATUSES, type BlockStatus } from "@/types/tours.types";
 import { addFlightAllocation, listCandidateBlocks, removeFlightAllocation } from "@/lib/actions/tours-departure-actions";
-import { fmtDateTime, type RouteEnds } from "./departure-utils";
+import type { RouteEnds } from "./departure-utils";
 import { LEGS_LABELS, type AllocationLegs, type CandidateBlock, type CardFlight, type DepartureCardData } from "./types";
-import { Chip, Ltr, Notice, selectClass } from "./ui-bits";
-
-const LEGS: AllocationLegs[] = ["both", "outbound", "inbound"];
 
 function BlockStatusChip({ flight }: { flight: Pick<CardFlight, "block_status" | "is_deleted"> }) {
   const status = flight.block_status as BlockStatus | null;
@@ -123,7 +123,7 @@ function CandidateRow({
               setSeats(String(Math.max(freeSeats(block, next), 0)));
             }}
           >
-            {LEGS.map((l) => (
+            {ALLOCATION_LEGS.map((l) => (
               <option key={l} value={l}>
                 {LEGS_LABELS[l]}
               </option>
@@ -173,26 +173,19 @@ export function CardFlightsTab({
   const [removing, setRemoving] = useState<string | null>(null);
   const [showUnfit, setShowUnfit] = useState(false);
   const readOnly = Boolean(d.is_deleted);
+  const run = useActionToast();
 
   const loadCandidates = async () => {
     setLoading(true);
-    const result = await listCandidateBlocks(d.id);
+    const result = await run(() => listCandidateBlocks(d.id));
     setLoading(false);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
-    setCandidates(result.data);
+    if (result.success) setCandidates(result.data);
   };
 
   const add = async (block: CandidateBlock, seats: number, legs: AllocationLegs) => {
-    const result = await addFlightAllocation(d.id, block.id, seats, legs);
-    if (!result.success) {
-      toast.error(result.error, { duration: 8000 });
-      return;
-    }
-    if (result.warning) toast(`Block allocated. Note: ${result.warning}`, { duration: 8000 });
-    else toast.success("Block allocated to the departure");
+    // A warning (dates a day or two apart) comes back with the success and is shown under the message.
+    const result = await run(() => addFlightAllocation(d.id, block.id, seats, legs), "Block allocated to the departure");
+    if (!result.success) return;
     await Promise.all([onSaved(), loadCandidates()]);
   };
 
@@ -206,13 +199,9 @@ export function CardFlightsTab({
     });
     if (!agreed) return;
     setRemoving(allocationId);
-    const result = await removeFlightAllocation(allocationId);
+    const result = await run(() => removeFlightAllocation(allocationId), "Allocation removed");
     setRemoving(null);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
-    toast.success("Allocation removed");
+    if (!result.success) return;
     await Promise.all([onSaved(), candidates ? loadCandidates() : Promise.resolve()]);
   };
 

@@ -7,12 +7,13 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { toast } from "react-hot-toast";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useActionToast } from "@/hooks/use-action-toast";
+import { useToast } from "@/hooks/use-toast";
 import {
   getDeadlineTaskAssignees,
   getToursReports,
@@ -22,21 +23,16 @@ import {
   type ToursReportsData,
 } from "@/lib/actions/tours-reports-actions";
 import { formatDateShort } from "@/lib/tours/deadlines";
-import {
-  BlockStatusBadge,
-  DaysLeft,
-  Ltr,
-  Notice,
-  Section,
-  formatNumber,
-} from "@/components/tours/flights/block-ui";
+import { formatNumber } from "@/lib/tours/format";
+import { Ltr, Notice, Section } from "@/components/tours/ui";
+import { BlockStatusBadge, DaysLeft } from "@/components/tours/flights/block-ui";
 
 const MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
 const monthName = (month: string) => MONTHS[Number(month.slice(5, 7)) - 1] ?? month;
 
 const LOAD_FAILED = "טעינת הדוחות נכשלה. המסך זמין כשהחברה הפעילה מוכרת טיולים.";
 
-const blockHref = (id: number) => `/tours/flights/${id}`;
+const blockHref = (id: number) => `/offline-flights/${id}`;
 
 type RealizationTotals = Omit<RealizationRow, "month" | "airline_code">;
 
@@ -71,6 +67,8 @@ export function ReportsClient() {
   const [assignees, setAssignees] = useState<DeadlineTaskAssignee[]>([]);
   const [assigneeId, setAssigneeId] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const run = useActionToast();
+  const { toast } = useToast();
 
   const load = useCallback(async (year?: number) => {
     setLoading(true);
@@ -103,25 +101,17 @@ export function ReportsClient() {
 
   const createTasks = async () => {
     setSyncing(true);
-    try {
-      const res = await syncDeadlineTasks({ assigneeId: assigneeId || null });
-      if (!res.success) {
-        toast.error(res.error);
-        return;
-      }
+    const res = await run(() => syncDeadlineTasks({ assigneeId: assigneeId || null }));
+    if (res.success) {
       const { created, existing, skippedDone } = res.data;
       const parts = [
         created === 0 ? "לא נוצרו משימות חדשות" : created === 1 ? "נוצרה משימה אחת" : `נוצרו ${created} משימות`,
         existing > 0 ? `${existing} כבר קיימות` : null,
         skippedDone > 0 ? `${skippedDone} מועדים כבר בוצעו` : null,
       ].filter(Boolean);
-      toast.success(parts.join(" · "), { duration: 6000 });
-    } catch (e) {
-      console.error("reports: task sync failed", e);
-      toast.error("יצירת המשימות נכשלה. נסו שוב.");
-    } finally {
-      setSyncing(false);
+      toast({ title: parts.join(" · ") });
     }
+    setSyncing(false);
   };
 
   const totals = data ? totalsOf(data.realization) : null;
@@ -137,7 +127,7 @@ export function ReportsClient() {
 
       {error && (
         <div className="mb-4 space-y-2">
-          <Notice tone="danger">{error}</Notice>
+          <Notice tone="error">{error}</Notice>
           <Button size="sm" variant="outline" onClick={() => void load(data?.year)}>
             ניסיון נוסף
           </Button>
@@ -176,7 +166,7 @@ export function ReportsClient() {
             }
           >
             {data.realization.length === 0 ? (
-              <Notice>אין קבוצות טיסה בשנת {data.year}.</Notice>
+              <Notice tone="muted">אין קבוצות טיסה בשנת {data.year}.</Notice>
             ) : (
               <Table look="list" className={loading ? "opacity-60" : undefined}>
                 <TableHeader>
@@ -272,7 +262,7 @@ export function ReportsClient() {
             }
           >
             {data.deadlines.length === 0 ? (
-              <Notice>אין מועד של בלוק חי ב-30 הימים הקרובים.</Notice>
+              <Notice tone="muted">אין מועד של בלוק חי ב-30 הימים הקרובים.</Notice>
             ) : (
               <>
                 {soon > 0 && (
@@ -332,7 +322,7 @@ export function ReportsClient() {
             description="בלוקים עתידיים שלא בוטלו ולא נדחו ועוד לא משרתים אף יציאה, לפי תווית העונה."
           >
             {data.pool.length === 0 ? (
-              <Notice>כל הבלוקים העתידיים משויכים ליציאה.</Notice>
+              <Notice tone="muted">כל הבלוקים העתידיים משויכים ליציאה.</Notice>
             ) : (
               <div className="space-y-2">
                 {data.pool.map((group) => (

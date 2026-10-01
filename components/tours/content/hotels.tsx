@@ -2,30 +2,29 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Pencil, Star } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SearchInput } from "@/components/search-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { DataTable, SortableHeader } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
-import { useSessionState } from "@/hooks/use-view-state";
-import { matchesSearch } from "@/lib/search";
+import { StickySaveBar } from "@/components/sticky-save-bar";
 import { saveTourHotel } from "@/lib/actions/tours-content-actions";
+import { Field, Section } from "@/components/tours/ui";
 import {
-  Field,
   ImageListEditor,
   ImageUrlField,
   NO_UPLOAD_NOTE,
-  Section,
   SiteImage,
   StringListEditor,
 } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
-import { BackLink, ContentSaveBar, EmptyRows } from "@/components/tours/content/save-bar";
+import { BackLink, CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
 import { useContentForm } from "@/components/tours/content/use-content-form";
 import type { HotelEditorData, HotelForm, HotelListRow } from "@/components/tours/content/shared";
 
@@ -40,65 +39,79 @@ const Stars = ({ count }: { count: number | null }) =>
     <span className="text-muted-foreground">Not set</span>
   );
 
-/** The hotels the vacation packages offer. */
+/** The hotels the vacation packages offer, on the shared DataTable. */
 export function HotelsTable({ rows, siteUrl }: { rows: HotelListRow[]; siteUrl: string | null }) {
-  const [query, setQuery] = useSessionState("q", "");
-  const shown = useMemo(() => rows.filter((r) => matchesSearch(query, r.name, r.city, r.code)), [rows, query]);
+  const router = useRouter();
+
+  const columns = useMemo<ColumnDef<HotelListRow>[]>(
+    () => [
+      {
+        id: "image",
+        header: "Image",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <SiteImage siteUrl={siteUrl} path={row.original.image} className="h-10 w-14" alt={row.original.name} />
+        ),
+      },
+      {
+        accessorKey: "name",
+        header: ({ column }) => <SortableHeader label="Name" column={column} />,
+        cell: ({ row }) => (
+          <Link href={`/tours/hotels/${row.original.id}`} className="font-medium hover:underline">
+            {row.original.name}
+          </Link>
+        ),
+      },
+      {
+        accessorKey: "code",
+        header: ({ column }) => <SortableHeader label="Code" column={column} />,
+        cell: ({ row }) => (
+          <span dir="ltr" className="font-mono text-xs text-muted-foreground">
+            {row.original.code}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "city",
+        header: ({ column }) => <SortableHeader label="City" column={column} />,
+        cell: ({ row }) => row.original.city || <span className="text-muted-foreground">Not set</span>,
+      },
+      {
+        accessorKey: "stars",
+        header: ({ column }) => <SortableHeader label="Stars" column={column} />,
+        cell: ({ row }) => <Stars count={row.original.stars} />,
+      },
+      {
+        id: "actions",
+        header: "",
+        enableHiding: false,
+        cell: ({ row }) => (
+          <Button asChild variant="ghost" size="icon" className="h-8 w-8">
+            <Link href={`/tours/hotels/${row.original.id}`} aria-label={`Edit ${row.original.name}`} title="Edit">
+              <Pencil />
+            </Link>
+          </Button>
+        ),
+      },
+    ],
+    [siteUrl],
+  );
 
   return (
-    <div className="space-y-3">
-      <SearchInput value={query} onValueChange={setQuery} placeholder="Search by name, city or code" />
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <Table look="list">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[72px]">Image</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Code</TableHead>
-              <TableHead>City</TableHead>
-              <TableHead>Stars</TableHead>
-              <TableHead className="w-[60px]" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {shown.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell>
-                  <SiteImage siteUrl={siteUrl} path={row.image} className="h-10 w-14" alt={row.name} />
-                </TableCell>
-                <TableCell>
-                  <Link href={`/tours/hotels/${row.id}`} className="font-medium hover:underline">
-                    {row.name}
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <span dir="ltr" className="font-mono text-xs text-muted-foreground">
-                    {row.code}
-                  </span>
-                </TableCell>
-                <TableCell>{row.city || <span className="text-muted-foreground">Not set</span>}</TableCell>
-                <TableCell>
-                  <Stars count={row.stars} />
-                </TableCell>
-                <TableCell>
-                  <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                    <Link href={`/tours/hotels/${row.id}`} aria-label={`Edit ${row.name}`} title="Edit">
-                      <Pencil />
-                    </Link>
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {shown.length === 0 && (
-          <EmptyRows
-            title={rows.length === 0 ? "No hotels yet" : "No hotels match the search"}
-            description={rows.length === 0 ? "Hotels are created when the site's data is imported." : "Try a different search."}
-          />
-        )}
-      </div>
-    </div>
+    <DataTable
+      columns={columns}
+      data={rows}
+      searchColumns={["name", "city", "code"]}
+      searchPlaceholder="Search by name, city or code"
+      defaultPageSize={50}
+      getRowId={(row) => row.id}
+      onRowClick={(row) => router.push(`/tours/hotels/${row.id}`)}
+      stateKey="tours-hotels"
+      emptyState={{
+        title: "No hotels yet",
+        description: "Hotels are created when the site's data is imported.",
+      }}
+    />
   );
 }
 
@@ -190,12 +203,15 @@ export function HotelFormEditor({ initial }: { initial: HotelEditorData }) {
         />
       </Section>
 
-      <ContentSaveBar
+      <StickySaveBar
         isDirty={isDirty}
         isSaving={isSaving}
         onSave={() => void submit()}
         onDiscard={discard}
-        disabledReason={problem}
+        disabled={!!problem}
+        disabledReason={problem ?? undefined}
+        showDisabledReason
+        message={CONTENT_UNSAVED_NOTE}
       />
     </div>
   );

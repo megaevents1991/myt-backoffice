@@ -14,6 +14,7 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { notifyTasksAssigned, type TaskMailOutcome } from "@/lib/services/task-notify";
 import { PLAIN_TASK_BOARD } from "@/lib/services/task-company";
+import { taskPeopleOf } from "@/lib/services/task-people";
 import { tasksOf, type TaskResult } from "@/lib/tasks-scope";
 import { checkBlockFitsDeparture, departureRouteLabel, flightRouteLabel } from "@/lib/tours/routes";
 import {
@@ -27,11 +28,9 @@ import {
   type DeadlineField,
 } from "@/lib/tours/deadlines";
 import { stageLabel } from "@/components/tours/flights/block-rules";
-import { STAFF_ROLES, type Role } from "@/types/auth.types";
 import { LIVE_BLOCK_STATUSES } from "@/types/tours.types";
 import type { TaskSourceRef } from "@/types/task.types";
-import type { ToursResult } from "@/lib/actions/tours-flight-actions";
-import { dbFail as databaseFail, plainFail as fail } from "@/lib/tours/action-kit";
+import { dbFail as databaseFail, plainFail as fail, type ActionResult } from "@/lib/tours/action-kit";
 
 const dbFail = (where: string, error: unknown) => databaseFail("tours-reports-actions", where, error);
 
@@ -278,7 +277,7 @@ async function upcomingDeadlines(
 // ------------------------------------------------------------------ reports
 
 /** The three reports of /tours/reports. `year` filters the realisation table only. */
-export async function getToursReports(year?: number): Promise<ToursResult<ToursReportsData>> {
+export async function getToursReports(year?: number): Promise<ActionResult<ToursReportsData>> {
   const { company } = await requireCompany("tours");
   const today = todayIso();
 
@@ -370,33 +369,24 @@ export interface DeadlineTaskAssignee {
   name: string;
 }
 
-/** Staff the deadline tasks may be assigned to: active members of this company, and the caller. */
+/**
+ * Staff the deadline tasks may be assigned to: the people of the company's task
+ * board (taskPeopleOf, the rule the board's own pickers use), and the caller.
+ */
 async function loadAssignees(
-  companyId: string,
+  company: { id: string },
   caller: { sub: string; email: string },
 ): Promise<DeadlineTaskAssignee[]> {
-  const { data: members, error: membersError } = await supabaseTyped
-    .from("company_members")
-    .select("user_id")
-    .eq("company_id", companyId);
-  if (membersError) console.error("tours-reports-actions: members read failed", JSON.stringify(membersError));
-  const ids = [...new Set([caller.sub, ...(members ?? []).map((m) => m.user_id)])];
-  const { data: users, error: usersError } = await supabaseTyped
-    .from("user_profiles")
-    .select("id,display_name,email,role,is_active")
-    .in("id", ids);
-  if (usersError) console.error("tours-reports-actions: users read failed", JSON.stringify(usersError));
-  const staff = (users ?? [])
-    .filter((u) => u.is_active && STAFF_ROLES.includes(u.role as Role))
-    .map((u) => ({ id: u.id, name: u.display_name?.trim() || u.email }));
+  const people = (await taskPeopleOf(company)) ?? [];
+  const staff = people.map((p) => ({ id: p.id, name: p.display_name?.trim() || p.email }));
   if (!staff.some((u) => u.id === caller.sub)) staff.push({ id: caller.sub, name: caller.email });
   return staff.sort((a, b) => (a.id === caller.sub ? -1 : b.id === caller.sub ? 1 : a.name.localeCompare(b.name, "he")));
 }
 
 /** Who the deadline tasks can go to. The caller comes first (the default). */
-export async function getDeadlineTaskAssignees(): Promise<ToursResult<DeadlineTaskAssignee[]>> {
+export async function getDeadlineTaskAssignees(): Promise<ActionResult<DeadlineTaskAssignee[]>> {
   const { session, company } = await requireCompany("tours");
-  return { success: true, data: await loadAssignees(company.id, session) };
+  return { success: true, data: await loadAssignees(company, session) };
 }
 
 const taskKind = (field: DeadlineField) => `flight_deadline:${field}`;
@@ -413,11 +403,11 @@ const taskKind = (field: DeadlineField) => `flight_deadline:${field}`;
  */
 export async function syncDeadlineTasks(
   input: { assigneeId?: string | null } = {},
-): Promise<ToursResult<{ created: number; existing: number; skippedDone: number; mail?: TaskMailOutcome }>> {
+): Promise<ActionResult<{ created: number; existing: number; skippedDone: number; mail?: TaskMailOutcome }>> {
   const { session, company } = await requireCompany("tours");
   const today = todayIso();
 
-  const assignees = await loadAssignees(company.id, session);
+  const assignees = await loadAssignees(company, session);
   const assigneeId = input.assigneeId || session.sub;
   if (!assignees.some((a) => a.id === assigneeId)) return fail("אפשר לשייך רק לאיש צוות פעיל של החברה");
 
@@ -454,7 +444,7 @@ export async function syncDeadlineTasks(
       table: "flights",
       row_id: d.flight_id,
       label,
-      url: `/tours/flights/${d.flight_id}`,
+      url: `/offline-flights/${d.flight_id}`,
     };
     return {
       title: `${company.name}: מועד ${d.label} ב-${formatDateShort(d.date)} · ${label}`,
@@ -519,7 +509,7 @@ interface ProblemDeparture {
  * The lists of /tours/exceptions. `includePast` adds departures and flights whose
  * date already passed (off by default: nothing there can still be fixed for a customer).
  */
-export async function getDataProblems(includePast = false): Promise<ToursResult<DataProblems>> {
+export async function getDataProblems(includePast = false): Promise<ActionResult<DataProblems>> {
   const { company } = await requireCompany("tours");
   const today = todayIso();
   const past = includePast === true;

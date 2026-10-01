@@ -2,23 +2,23 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, Pencil } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SearchInput } from "@/components/search-input";
 import { Switch } from "@/components/ui/switch";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { DataTable, SortableHeader } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
-import { useSessionState } from "@/hooks/use-view-state";
-import { matchesSearch } from "@/lib/search";
+import { StickySaveBar } from "@/components/sticky-save-bar";
 import { saveTourCmsPage } from "@/lib/actions/tours-content-actions";
-import { Field, Pill, Section } from "@/components/tours/content/fields";
+import { Chip, Field, Section } from "@/components/tours/ui";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
-import { BackLink, ContentSaveBar, EmptyRows } from "@/components/tours/content/save-bar";
+import { BackLink, CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
 import { useContentForm } from "@/components/tours/content/use-content-form";
 import {
   cmsPageKindLabel,
@@ -28,65 +28,83 @@ import {
   type CmsPageListRow,
 } from "@/components/tours/content/shared";
 
-/** The free content pages of the site (about, FAQ, legal, contact) and its posts. */
+/** The free content pages of the site (about, FAQ, legal, contact) and its posts, on the shared DataTable. */
 export function CmsPagesTable({ rows }: { rows: CmsPageListRow[] }) {
-  const [query, setQuery] = useSessionState("q", "");
-  const shown = useMemo(() => rows.filter((r) => matchesSearch(query, r.title, r.path)), [rows, query]);
+  const router = useRouter();
+
+  const columns = useMemo<ColumnDef<CmsPageListRow>[]>(
+    () => [
+      {
+        accessorKey: "title",
+        header: ({ column }) => <SortableHeader label="Title" column={column} />,
+        cell: ({ row }) => (
+          <Link href={`/tours/pages/${row.original.id}`} className="font-medium hover:underline">
+            {row.original.title}
+          </Link>
+        ),
+      },
+      {
+        accessorKey: "path",
+        header: ({ column }) => <SortableHeader label="Path" column={column} />,
+        cell: ({ row }) => (
+          <span dir="ltr" className="inline-block text-xs text-muted-foreground">
+            {row.original.path}
+          </span>
+        ),
+      },
+      {
+        id: "type",
+        accessorFn: (row) => cmsPageKindLabel(row.kind),
+        header: ({ column }) => <SortableHeader label="Type" column={column} />,
+      },
+      {
+        id: "content",
+        accessorFn: (row) => row.hasContent,
+        header: "Content",
+        cell: ({ row }) =>
+          row.original.hasContent ? <Badge variant="outline">Has content</Badge> : <Badge variant="secondary">Empty</Badge>,
+      },
+      {
+        id: "status",
+        accessorFn: (row) => row.isActive,
+        header: "Status",
+        cell: ({ row }) => (
+          <Badge variant={row.original.isActive ? "outline" : "destructive"}>
+            {row.original.isActive ? "Active" : "Inactive"}
+          </Badge>
+        ),
+      },
+      {
+        id: "actions",
+        header: "",
+        enableHiding: false,
+        cell: ({ row }) => (
+          <Button asChild variant="ghost" size="icon" className="h-8 w-8">
+            <Link href={`/tours/pages/${row.original.id}`} aria-label={`Edit ${row.original.title}`} title="Edit">
+              <Pencil />
+            </Link>
+          </Button>
+        ),
+      },
+    ],
+    [],
+  );
 
   return (
-    <div className="space-y-3">
-      <SearchInput value={query} onValueChange={setQuery} placeholder="Search by title or path" />
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <Table look="list">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Title</TableHead>
-              <TableHead>Path</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Content</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="w-[60px]" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {shown.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell>
-                  <Link href={`/tours/pages/${row.id}`} className="font-medium hover:underline">
-                    {row.title}
-                  </Link>
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  <span dir="ltr" className="inline-block">
-                    {row.path}
-                  </span>
-                </TableCell>
-                <TableCell>{cmsPageKindLabel(row.kind)}</TableCell>
-                <TableCell>
-                  {row.hasContent ? <Badge variant="outline">Has content</Badge> : <Badge variant="secondary">Empty</Badge>}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={row.isActive ? "outline" : "destructive"}>{row.isActive ? "Active" : "Inactive"}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                    <Link href={`/tours/pages/${row.id}`} aria-label={`Edit ${row.title}`} title="Edit">
-                      <Pencil />
-                    </Link>
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {shown.length === 0 && (
-          <EmptyRows
-            title={rows.length === 0 ? "No content pages yet" : "No pages match the search"}
-            description={rows.length === 0 ? "Content pages are created when the site's data is imported." : "Try a different search."}
-          />
-        )}
-      </div>
-    </div>
+    <DataTable
+      columns={columns}
+      data={rows}
+      searchColumns={["title", "path"]}
+      searchPlaceholder="Search by title or path"
+      defaultPageSize={50}
+      getRowId={(row) => row.id}
+      onRowClick={(row) => router.push(`/tours/pages/${row.id}`)}
+      stateKey="tours-cms-pages"
+      emptyState={{
+        title: "No content pages yet",
+        description: "Content pages are created when the site's data is imported.",
+      }}
+    />
   );
 }
 
@@ -106,7 +124,7 @@ export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
         eyebrow={cmsPageKindLabel(saved.kind)}
         title={saved.form.title}
         description={
-          <Pill tone={saved.form.isActive ? "on" : "off"}>{saved.form.isActive ? "Active on site" : "Inactive"}</Pill>
+          <Chip tone={saved.form.isActive ? "outline" : "danger"}>{saved.form.isActive ? "Active on site" : "Inactive"}</Chip>
         }
         actions={
           <>
@@ -160,12 +178,15 @@ export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
         </Field>
       </Section>
 
-      <ContentSaveBar
+      <StickySaveBar
         isDirty={isDirty}
         isSaving={isSaving}
         onSave={() => void submit()}
         onDiscard={discard}
-        disabledReason={problem}
+        disabled={!!problem}
+        disabledReason={problem ?? undefined}
+        showDisabledReason
+        message={CONTENT_UNSAVED_NOTE}
       />
     </div>
   );

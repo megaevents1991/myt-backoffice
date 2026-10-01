@@ -13,8 +13,9 @@ import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { addFlightAllocation } from "@/lib/actions/tours-departure-actions";
 import type { ApprovalsData, BlockCandidate, DepartureWithoutBlock } from "@/lib/actions/tours-approvals-actions";
-import { daysBetween, formatDateShort } from "@/lib/tours/deadlines";
-import { BlockStatusBadge, Ltr } from "@/components/tours/flights/block-ui";
+import { daysBetween, formatDateShort } from "@/lib/tours/format";
+import { Ltr } from "@/components/tours/ui";
+import { BlockStatusBadge } from "@/components/tours/flights/block-ui";
 import {
   ActionButton,
   OpenLink,

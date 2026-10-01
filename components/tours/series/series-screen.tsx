@@ -9,15 +9,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarPlus, Pencil, Plus, RefreshCw, Shuffle } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { SearchInput } from "@/components/search-input";
+import { Chip, Ltr, Notice, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUrlState } from "@/hooks/use-view-state";
+import { matchesSearch } from "@/lib/search";
 import { cn } from "@/lib/utils";
+import { WEEKDAY_SHORT } from "@/lib/tours/format";
 import { ROUTE_TYPE_LABELS, routeType } from "@/lib/tours/routes";
 import { getSeriesScreen } from "@/lib/actions/tours-series-actions";
-import { WEEKDAY_SHORT } from "@/components/tours/departures/departure-utils";
-import { Chip, Ltr, Notice, selectClass } from "@/components/tours/departures/ui-bits";
 import { SeasonDialog } from "./season-dialog";
 import { SeriesForm } from "./series-form";
 import type { SeriesListRow, SeriesScreenData, SeriesTermKind } from "./types";
@@ -70,16 +71,15 @@ export function SeriesScreen() {
   const packageName = useMemo(() => new Map((data?.packages ?? []).map((p) => [p.id, p.name])), [data]);
   const termById = useMemo(() => new Map((data?.terms ?? []).map((t) => [t.id, t])), [data]);
 
-  const rows = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return (data?.series ?? []).filter((s) => {
-      if (activeOnly === "1" && !s.is_active) return false;
-      if (pageId && s.package_id !== pageId) return false;
-      if (!needle) return true;
-      const haystack = `${s.code} ${s.label ?? ""} ${s.package_id ? (packageName.get(s.package_id) ?? "") : ""}`.toLowerCase();
-      return haystack.includes(needle);
-    });
-  }, [data, query, activeOnly, pageId, packageName]);
+  const rows = useMemo(
+    () =>
+      (data?.series ?? []).filter((s) => {
+        if (activeOnly === "1" && !s.is_active) return false;
+        if (pageId && s.package_id !== pageId) return false;
+        return matchesSearch(query, s.code, s.label, s.package_id ? packageName.get(s.package_id) : null);
+      }),
+    [data, query, activeOnly, pageId, packageName],
+  );
 
   const usedPackages = useMemo(() => {
     const ids = new Set((data?.series ?? []).map((s) => s.package_id));
@@ -105,13 +105,13 @@ export function SeriesScreen() {
       />
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Input
+        <SearchInput
           dir="auto"
           aria-label="Search series"
           placeholder="Search by code, name or tour page"
-          className="h-9 w-64"
+          wrapperClassName="sm:w-64"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onValueChange={setQuery}
         />
         <select aria-label="Tour page" className={cn(selectClass, "max-w-64")} value={pageId} onChange={(e) => setPageId(e.target.value)}>
           <option value="">All tour pages</option>

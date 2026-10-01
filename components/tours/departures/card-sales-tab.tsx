@@ -16,8 +16,8 @@ import { listToursReservations } from "@/lib/actions/tours-reservation-actions";
 import { ReservationDialog } from "@/components/tours/reservations/reservation-dialog";
 import { ToursReservationsTable } from "@/components/tours/reservations/reservations-table";
 import type { ToursReservationRow } from "@/components/tours/reservations/types";
+import { Notice } from "@/components/tours/ui";
 import type { DepartureCardData } from "./types";
-import { Notice } from "./ui-bits";
 
 export function CardSalesTab({ data, onSaved }: { data: DepartureCardData; onSaved: () => Promise<void> }) {
   const d = data.departure;

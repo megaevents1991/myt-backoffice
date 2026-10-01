@@ -11,8 +11,7 @@ import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { isDateOnly, todayIso } from "@/lib/tours/deadlines";
 import { CURRENCIES, type CompanyExchangeRate, type TourCurrency } from "@/types/tours.types";
-import type { ToursResult } from "@/lib/actions/tours-flight-actions";
-import { dbFail as databaseFail, plainFail as fail } from "@/lib/tours/action-kit";
+import { dbFail as databaseFail, plainFail as fail, type ActionResult } from "@/lib/tours/action-kit";
 
 const dbFail = (where: string, error: unknown) => databaseFail("tours-rates-actions", where, error);
 
@@ -41,7 +40,7 @@ export interface TourRatesData {
 
 const HISTORY_MAX = 300;
 
-export async function getTourRates(): Promise<ToursResult<TourRatesData>> {
+export async function getTourRates(): Promise<ActionResult<TourRatesData>> {
   const { company } = await requireCompany("tours");
   const today = todayIso();
 
@@ -111,7 +110,7 @@ export async function saveTourRate(input: {
   currency: string;
   rate: number;
   date?: string | null;
-}): Promise<ToursResult> {
+}): Promise<ActionResult<null>> {
   const { session, company } = await requireCompany("tours");
   if (!(CURRENCIES as readonly string[]).includes(input.currency)) return fail("מטבע לא מוכר");
   if (typeof input.rate !== "number" || !Number.isFinite(input.rate) || input.rate <= 0) {

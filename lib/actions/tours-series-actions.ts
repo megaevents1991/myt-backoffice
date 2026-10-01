@@ -15,14 +15,8 @@ import { requireCompany } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { toursDb } from "@/lib/tours/db";
 import { CURRENCIES } from "@/types/tours.types";
-import {
-  departureCode,
-  isIsoDate,
-  nightsBetween,
-  normalizeAirport,
-  seasonYearOf,
-  todayIso,
-} from "@/components/tours/departures/departure-utils";
+import { isDateOnly, nightsBetween, todayIso } from "@/lib/tours/format";
+import { departureCode, normalizeAirport, seasonYearOf } from "@/components/tours/departures/departure-utils";
 import type { ActionResult, BoardPackage, BoardPeriod, BoardSeries } from "@/components/tours/departures/types";
 import {
   SERIES_TERM_KINDS,
@@ -326,7 +320,7 @@ export async function createSeasonDepartures(input: SeasonCreateInput): Promise<
     if (items.length === 0) throw new UserError("No departures selected to create");
     if (items.length > MAX_SEASON_ITEMS) throw new UserError(`You can create up to ${MAX_SEASON_ITEMS} departures at a time`);
     for (const item of items) {
-      if (!isIsoDate(item.start_date) || !isIsoDate(item.end_date) || item.end_date < item.start_date) {
+      if (!isDateOnly(item.start_date) || !isDateOnly(item.end_date) || item.end_date < item.start_date) {
         throw new UserError("Invalid date on one of the departures");
       }
       if ((nightsBetween(item.start_date, item.end_date) ?? 0) > 60) throw new UserError("A trip of more than 60 nights - check the number of nights");

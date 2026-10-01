@@ -53,16 +53,12 @@ import {
   type FlightContract,
 } from "@/types/tours.types";
 import type { Database } from "@/types/database.types";
-import { dbFail as databaseFail, plainFail as fail } from "@/lib/tours/action-kit";
+import { dbFail as databaseFail, plainFail as fail, type ActionResult } from "@/lib/tours/action-kit";
 
 const dbFail = (where: string, error: unknown) => databaseFail("tours-flight-actions", where, error);
 
 type FlightRow = Database["public"]["Tables"]["flights"]["Row"];
 type FlightUpdate = Database["public"]["Tables"]["flights"]["Update"];
-
-export type ToursResult<T = null> =
-  | { success: true; data: T; warning?: string }
-  | { success: false; error: string };
 
 // One literal (not concatenated) so the typed client can parse the column list.
 const BLOCK_COLUMNS =
@@ -314,7 +310,7 @@ const asLegs = (value: string): AllocationLegs =>
 // ------------------------------------------------------------------ read
 
 /** Everything the block panel shows. */
-export async function getTourBlock(flightId: number): Promise<ToursResult<TourBlockData>> {
+export async function getTourBlock(flightId: number): Promise<ActionResult<TourBlockData>> {
   const { session, company } = await requireCompany("tours");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
@@ -419,7 +415,7 @@ export async function transitionTourBlock(
   flightId: number,
   to: BlockStatus,
   input: TransitionInput = {},
-): Promise<ToursResult<{ status: BlockStatus }>> {
+): Promise<ActionResult<{ status: BlockStatus }>> {
   const { session, company } = await requireCompany("tours");
   if (!(BLOCK_STATUSES as readonly string[]).includes(to)) return fail("Unknown status");
   const block = await loadBlock(company.id, flightId);
@@ -501,7 +497,7 @@ export async function transitionTourBlock(
 }
 
 /** The "נבדק" mark: a manager went over this row. Separate from the status. */
-export async function setTourBlockReviewed(flightId: number, reviewed: boolean): Promise<ToursResult> {
+export async function setTourBlockReviewed(flightId: number, reviewed: boolean): Promise<ActionResult<null>> {
   const { session, company } = await requireCompany("tours");
   if (!isManagerRole(session.role)) return fail("Only the company manager can mark a row Reviewed");
   const block = await loadBlock(company.id, flightId);
@@ -531,7 +527,7 @@ export async function setTourBlockReviewed(flightId: number, reviewed: boolean):
 export async function updateTourBlockSeats(
   flightId: number,
   input: { quantity: number; date?: string | null; reason: string; cleaned?: boolean },
-): Promise<ToursResult<{ seats: number }>> {
+): Promise<ActionResult<{ seats: number }>> {
   const { session, company } = await requireCompany("tours");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
@@ -595,7 +591,7 @@ export async function updateTourBlockDeadline(
   flightId: number,
   field: DeadlineField,
   value: string | null,
-): Promise<ToursResult> {
+): Promise<ActionResult<null>> {
   const { company } = await requireCompany("tours");
   if (!(DEADLINE_FIELDS as readonly string[]).includes(field)) return fail("Unknown field");
   if (value !== null && !isDateOnly(value)) return fail("Invalid date");
@@ -624,7 +620,7 @@ export async function updateTourBlockDeadline(
 export async function recomputeTourBlockDeadlines(
   flightId: number,
   fields: ContractDeadlineField[],
-): Promise<ToursResult<{ updated: ContractDeadlineField[] }>> {
+): Promise<ActionResult<{ updated: ContractDeadlineField[] }>> {
   const { company } = await requireCompany("tours");
   const wanted = [...new Set(fields ?? [])];
   if (wanted.length === 0) return fail("Pick at least one deadline to compute");
@@ -655,7 +651,7 @@ export async function recomputeTourBlockDeadlines(
 export async function recordTourBlockDeposit(
   flightId: number,
   input: { amount: number; currency: string; date?: string | null; note?: string | null },
-): Promise<ToursResult> {
+): Promise<ActionResult<null>> {
   const { session, company } = await requireCompany("tours");
   if (typeof input.amount !== "number" || !Number.isFinite(input.amount) || input.amount <= 0) {
     return fail("The deposit amount must be above zero");
@@ -690,7 +686,7 @@ export async function recordTourBlockDeposit(
 // ------------------------------------------------------------------ contract and costs
 
 /** Gives the block a contract of this company. Deadlines are NOT touched (a hand edit survives a contract change). */
-export async function setTourBlockContract(flightId: number, contractId: string | null): Promise<ToursResult> {
+export async function setTourBlockContract(flightId: number, contractId: string | null): Promise<ActionResult<null>> {
   const { company } = await requireCompany("tours");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
@@ -732,7 +728,7 @@ const money = (value: unknown): number | null | undefined => {
 export async function updateTourBlockCosts(
   flightId: number,
   input: { cost_price: number | null; cost_child_price: number | null; cost_tax: number | null; cost_currency: string | null },
-): Promise<ToursResult> {
+): Promise<ActionResult<null>> {
   const { company } = await requireCompany("tours");
   const adult = money(input.cost_price);
   const child = money(input.cost_child_price);
@@ -777,7 +773,7 @@ export async function updateTourBlockCosts(
  * two days of the outbound flight (or end within two days of the return flight,
  * for a departure that takes only the way back).
  */
-export async function listAllocatableDepartures(flightId: number): Promise<ToursResult<AllocatableDeparture[]>> {
+export async function listAllocatableDepartures(flightId: number): Promise<ActionResult<AllocatableDeparture[]>> {
   const { company } = await requireCompany("tours");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
@@ -864,7 +860,7 @@ export async function listAllocatableDepartures(flightId: number): Promise<Tours
 export async function allocateTourBlock(
   flightId: number,
   input: { departureId: string; seats: number; legs?: AllocationLegs },
-): Promise<ToursResult> {
+): Promise<ActionResult<null>> {
   const { company } = await requireCompany("tours");
   const legs = input.legs ?? "both";
   if (!ALLOCATION_LEGS.includes(legs)) return fail("Unknown direction");
@@ -939,7 +935,7 @@ export async function allocateTourBlock(
 }
 
 /** Removes one allocation of this block (the seats go back to the pool). */
-export async function removeTourBlockAllocation(flightId: number, allocationId: string): Promise<ToursResult> {
+export async function removeTourBlockAllocation(flightId: number, allocationId: string): Promise<ActionResult<null>> {
   const { company } = await requireCompany("tours");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
@@ -971,7 +967,7 @@ export async function removeTourBlockAllocation(flightId: number, allocationId: 
 export async function addTourBlockEvent(
   flightId: number,
   input: { kind?: BlockEventKind; note: string; date?: string | null; amount?: number | null; currency?: string | null },
-): Promise<ToursResult> {
+): Promise<ActionResult<null>> {
   const { session, company } = await requireCompany("tours");
   const kind = input.kind ?? "note";
   if (!MANUAL_EVENT_KINDS.includes(kind)) return fail("Unknown event type");

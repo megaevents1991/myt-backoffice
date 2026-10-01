@@ -7,18 +7,21 @@
  */
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { TERM_KIND_LABELS } from "@/components/tours/content/shared";
+import { Field, Ltr, Notice, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
+import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
+import { WEEKDAY_LABELS } from "@/lib/tours/format";
 import { ROUTE_TYPE_LABELS, routeType } from "@/lib/tours/routes";
 import { CURRENCIES } from "@/types/tours.types";
 import { saveSeries } from "@/lib/actions/tours-series-actions";
-import { WEEKDAY_LABELS, normalizeAirport } from "@/components/tours/departures/departure-utils";
+import { normalizeAirport } from "@/components/tours/departures/departure-utils";
 import type { BoardPackage } from "@/components/tours/departures/types";
-import { Field, Ltr, Notice, Toggle, selectClass } from "@/components/tours/departures/ui-bits";
-import { SERIES_TERM_KINDS, SERIES_TERM_KIND_LABELS, type SeriesListRow, type SeriesTerm } from "./types";
+import { SERIES_TERM_KINDS, type SeriesInput, type SeriesListRow, type SeriesTerm } from "./types";
 
 interface Draft {
   code: string;
@@ -90,6 +93,7 @@ export function SeriesForm({
   const editing = target && target !== "new" ? target : null;
   const [draft, setDraft] = useState<Draft>(() => toDraft(editing));
   const [saving, setSaving] = useState(false);
+  const run = useActionToast();
   const targetKey = target === "new" ? "new" : (target?.id ?? "");
 
   useEffect(() => {
@@ -113,7 +117,7 @@ export function SeriesForm({
 
   const submit = async () => {
     setSaving(true);
-    const result = await saveSeries(editing?.id ?? null, {
+    const input: SeriesInput = {
       code: draft.code,
       label: draft.label.trim() || null,
       package_id: draft.package_id || null,
@@ -129,13 +133,10 @@ export function SeriesForm({
       senior_discount: numOrNull(draft.senior_discount),
       is_active: draft.is_active,
       termIds: draft.termIds,
-    });
+    };
+    const result = await run(() => saveSeries(editing?.id ?? null, input), editing ? "Series saved" : "Series created");
     setSaving(false);
-    if (!result.success) {
-      toast.error(result.error, { duration: 7000 });
-      return;
-    }
-    toast.success(editing ? "Series saved" : "Series created");
+    if (!result.success) return;
     onSaved();
     onClose();
   };
@@ -252,7 +253,7 @@ export function SeriesForm({
             const options = terms.filter((t) => t.kind === kind);
             return (
               <section key={kind}>
-                <h3 className="mb-2 text-sm font-semibold">{SERIES_TERM_KIND_LABELS[kind]}</h3>
+                <h3 className="mb-2 text-sm font-semibold">{TERM_KIND_LABELS[kind]}</h3>
                 {options.length === 0 ? (
                   <p className="text-xs text-muted-foreground">No values of this kind yet. Add them on the Categories &amp; Tags screen.</p>
                 ) : (
@@ -281,7 +282,7 @@ export function SeriesForm({
           })}
 
           <label className="flex items-center gap-2 text-sm">
-            <Toggle checked={draft.is_active} onChange={(v) => set("is_active", v)} label="Active series" />
+            <Switch checked={draft.is_active} onCheckedChange={(v) => set("is_active", v)} aria-label="Active series" />
             Active series
             <span className="text-xs text-muted-foreground">An inactive series isn&apos;t offered when creating a new departure</span>
           </label>

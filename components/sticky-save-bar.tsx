@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +27,14 @@ type StickySaveBarProps = {
   disabled?: boolean;
   /** Tooltip shown on the Save button while `disabled`. */
   disabledReason?: string;
+  /** The note beside the buttons. */
+  message?: ReactNode;
+  /**
+   * While `disabled`, also print `disabledReason` in place of `message`, in the
+   * error colour - for a reason the user has to read, not hover for (the
+   * tours content editors).
+   */
+  showDisabledReason?: boolean;
 };
 
 /**
@@ -42,8 +51,11 @@ export function StickySaveBar({
   savingLabel = "Saving...",
   disabled = false,
   disabledReason,
+  message = "You have unsaved changes",
+  showDisabledReason = false,
 }: StickySaveBarProps) {
   const visible = isDirty || isSaving;
+  const reasonInBar = showDisabledReason && disabled && !!disabledReason;
 
   const saveButton = (
     <Button type="button" onClick={onSave} disabled={disabled || isSaving}>
@@ -74,8 +86,8 @@ export function StickySaveBar({
       )}
     >
       <div className="flex items-center justify-between gap-4 px-6 py-3">
-        <span className="text-sm text-muted-foreground">
-          You have unsaved changes
+        <span className={cn("text-sm text-muted-foreground", reasonInBar && "text-destructive")}>
+          {reasonInBar ? disabledReason : message}
         </span>
         <div className="flex items-center gap-2">
           <Button

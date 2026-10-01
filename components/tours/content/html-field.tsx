@@ -129,7 +129,10 @@ export function HtmlField({ label, value, onChange, siteUrl, rows = 10, hint, cl
       </div>
 
       {visual ? (
-        <div dir="rtl">
+        // RichBodyEditor carries its own Visual / HTML tabs; the switch above is the
+        // one this field shows (its HTML side has the preview), so those tabs are hidden.
+        // Its editing area sets dir="auto", so Hebrew and English both read right.
+        <div className="[&_[role=tablist]]:hidden">
           <RichBodyEditor value={value} onChange={onChange} />
         </div>
       ) : (

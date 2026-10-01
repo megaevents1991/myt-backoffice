@@ -9,23 +9,20 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { CalendarDays, Clock, Loader2, Shuffle, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Chip, Ltr, Toggle } from "@/components/tours/ui";
+import { currencySymbol, fmtDateRange, fmtMoney, nightsBetween, parsePrice } from "@/lib/tours/format";
 import { ROUTE_TYPE_LABELS, departureRouteLabel, routeType } from "@/lib/tours/routes";
 import { BLOCK_STATUS_LABELS, type BlockStatus, type SaleStatus } from "@/types/tours.types";
 import {
   activeFixedDiscount,
-  currencySymbol,
   doublePricePerPerson,
   effectiveRoute,
-  fmtDateRange,
-  fmtMoney,
   isExpired,
-  nightsBetween,
-  parsePrice,
   promotionSummary,
   suggestedSaleStatus,
 } from "./departure-utils";
 import type { BoardRow, BoardSeries } from "./types";
-import { Chip, Ltr, SaleStatusBadge, SaleStatusSelect, Toggle } from "./ui-bits";
+import { SaleStatusBadge, SaleStatusSelect } from "./ui-bits";
 import { SALE_STATUS_LABELS } from "@/types/tours.types";
 
 export type CardTab = "general" | "prices" | "promotions" | "flights" | "sales";

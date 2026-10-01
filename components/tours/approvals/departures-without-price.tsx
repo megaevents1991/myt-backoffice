@@ -15,9 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useConfirm } from "@/components/confirm-provider";
 import { saveDeparturePrices, setDeparturesPublished } from "@/lib/actions/tours-departure-actions";
 import type { ApprovalsData, DepartureWithoutPrice } from "@/lib/actions/tours-approvals-actions";
-import { daysBetween, formatDateShort } from "@/lib/tours/deadlines";
-import { currencySymbol, fmtMoney, parsePrice } from "@/components/tours/departures/departure-utils";
-import { Ltr } from "@/components/tours/flights/block-ui";
+import { currencySymbol, daysBetween, fmtMoney, formatDateShort, parsePrice } from "@/lib/tours/format";
+import { Ltr } from "@/components/tours/ui";
 import {
   ActionButton,
   OpenLink,

@@ -3,15 +3,15 @@
 /**
  * Seats and deadlines of a flight block.
  *
- * Seats: one action, "עדכון מושבים" - the contract's wording and the nearest
+ * Seats: one action, "Update Seats" - the contract's wording and the nearest
  * deadline sit beside the form, so the operator sees whether a reduction costs money.
- * Deadlines: each one is edited in place; "חשב מחדש מהחוזה" writes only the
+ * Deadlines: each one is edited in place; "Recompute from Contract" writes only the
  * deadlines the operator ticks, so a hand-typed date is never lost by accident.
  */
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,25 +34,10 @@ import {
   type DeadlineField,
 } from "@/lib/tours/deadlines";
 import { CURRENCIES } from "@/types/tours.types";
-import {
-  DaysLeft,
-  Field,
-  Ltr,
-  Notice,
-  RtlDialogContent,
-  RtlDialogFooter,
-  RtlDialogHeader,
-  Section,
-  Stat,
-  formatMoney,
-  parseNumber,
-  type RunAction,
-} from "@/components/tours/flights/block-ui";
-
-interface SectionProps {
-  data: TourBlockData;
-  run: RunAction;
-}
+import { formatMoney, parseNumber } from "@/lib/tours/format";
+import { Field, Ltr, Notice, Section, Stat } from "@/components/tours/ui";
+import { DaysLeft } from "@/components/tours/flights/block-ui";
+import type { BlockSectionProps } from "@/components/tours/flights/tour-block-panel";
 
 /** The wording to show beside a seat change: the block's contract, else the company's source document. */
 function termsOf(data: TourBlockData): { title: string; text: string } | null {
@@ -75,7 +60,7 @@ function nextDeadline(data: TourBlockData): { field: DeadlineField; date: string
 
 // ------------------------------------------------------------------ seats
 
-export function BlockSeatsSection({ data, run }: SectionProps) {
+export function BlockSeatsSection({ data, run }: BlockSectionProps) {
   const { block } = data;
   const [open, setOpen] = useState(false);
   const original = block.original_quantity ?? block.initial_quantity;
@@ -98,16 +83,14 @@ export function BlockSeatsSection({ data, run }: SectionProps) {
         <Stat label="Left" value={free} tone={free < 0 ? "danger" : "default"} />
       </div>
       {free < 0 && (
-        <div className="mt-2">
-          <Notice tone="danger">More seats are allocated than the flight block holds. Reduce an allocation or update the seat count.</Notice>
-        </div>
+        <Notice tone="error">More seats are allocated than the flight block holds. Reduce an allocation or update the seat count.</Notice>
       )}
       {open && <SeatsDialog data={data} run={run} onClose={() => setOpen(false)} />}
     </Section>
   );
 }
 
-function SeatsDialog({ data, run, onClose }: SectionProps & { onClose: () => void }) {
+function SeatsDialog({ data, run, onClose }: BlockSectionProps & { onClose: () => void }) {
   const { block } = data;
   const [quantity, setQuantity] = useState(String(block.initial_quantity));
   const [date, setDate] = useState(data.today);
@@ -130,24 +113,24 @@ function SeatsDialog({ data, run, onClose }: SectionProps & { onClose: () => voi
   const submit = async () => {
     if (value === null) return;
     setSaving(true);
-    const ok = await run(
+    const res = await run(
       () => updateTourBlockSeats(block.id, { quantity: value, date, reason, cleaned: reducing && cleaned }),
       `Flight block updated to ${value} seats`,
     );
     setSaving(false);
-    if (ok) onClose();
+    if (res.success) onClose();
   };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <RtlDialogContent className="sm:max-w-3xl">
-        <RtlDialogHeader>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
           <DialogTitle>Update Seats</DialogTitle>
           <DialogDescription>
             The flight block holds {block.initial_quantity} seats today, {data.allocatedSeats} of them allocated to
             departures.
           </DialogDescription>
-        </RtlDialogHeader>
+        </DialogHeader>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="grid content-start gap-4">
@@ -212,22 +195,22 @@ function SeatsDialog({ data, run, onClose }: SectionProps & { onClose: () => voi
           </div>
         </div>
 
-        <RtlDialogFooter>
-          <Button onClick={submit} disabled={saving || problem !== null || !date}>
-            {saving ? "Saving..." : "Update Seats"}
-          </Button>
+        <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Back
           </Button>
-        </RtlDialogFooter>
-      </RtlDialogContent>
+          <Button onClick={submit} disabled={saving || problem !== null || !date}>
+            {saving ? "Saving..." : "Update Seats"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }
 
 // ------------------------------------------------------------------ deadlines
 
-export function BlockDeadlinesSection({ data, run }: SectionProps) {
+export function BlockDeadlinesSection({ data, run }: BlockSectionProps) {
   const { block } = data;
   const [recomputeOpen, setRecomputeOpen] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
@@ -259,7 +242,7 @@ export function BlockDeadlinesSection({ data, run }: SectionProps) {
         ))}
       </ul>
 
-      <div className="mt-3 border-t pt-3 text-sm">
+      <div className="border-t pt-3 text-sm">
         <div className="mb-1 font-medium">Deposits paid</div>
         {deposits.length === 0 ? (
           <span className="text-muted-foreground">No deposit recorded.</span>
@@ -287,24 +270,24 @@ function DeadlineRow({
   data,
   run,
   done,
-}: SectionProps & { field: DeadlineField; done: boolean }) {
+}: BlockSectionProps & { field: DeadlineField; done: boolean }) {
   const saved = toDateOnly(data.block[field]) ?? "";
   const [value, setValue] = useState(saved);
   const [saving, setSaving] = useState(false);
   // A reload (after any action) brings the stored value back into the field.
   useEffect(() => setValue(saved), [saved]);
-  // An empty field next to a stored date is a half-typed date, not a request to clear ("נקה" does that).
+  // An empty field next to a stored date is a half-typed date, not a request to clear ("Clear" does that).
   const dirty = value !== saved && value !== "";
 
   const commit = async (next: string) => {
     if (next === saved) return;
     setSaving(true);
-    const ok = await run(
+    const res = await run(
       () => updateTourBlockDeadline(data.block.id, field, next === "" ? null : next),
       `${DEADLINE_LABELS[field]} updated`,
     );
     setSaving(false);
-    if (!ok) setValue(saved);
+    if (!res.success) setValue(saved);
   };
 
   return (
@@ -361,7 +344,7 @@ function DeadlineRow({
   );
 }
 
-function RecomputeDialog({ data, run, onClose }: SectionProps & { onClose: () => void }) {
+function RecomputeDialog({ data, run, onClose }: BlockSectionProps & { onClose: () => void }) {
   const { block, contract } = data;
   const computed = computeDeadlines(block.outbound_departure_time, contract);
   // Ticked by default: only what the block does not have. Replacing a date is the operator's call.
@@ -375,22 +358,22 @@ function RecomputeDialog({ data, run, onClose }: SectionProps & { onClose: () =>
 
   const submit = async () => {
     setSaving(true);
-    const ok = await run(() => recomputeTourBlockDeadlines(block.id, picked), "Deadlines recomputed from the contract");
+    const res = await run(() => recomputeTourBlockDeadlines(block.id, picked), "Deadlines recomputed from the contract");
     setSaving(false);
-    if (ok) onClose();
+    if (res.success) onClose();
   };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <RtlDialogContent className="sm:max-w-xl">
-        <RtlDialogHeader>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
           <DialogTitle>Recompute Deadlines from Contract</DialogTitle>
           <DialogDescription>
             {contract
               ? `Based on "${contract.name}" and the flight date. Only the deadlines you tick are updated.`
               : "The flight block has no contract. Pick one in the \"Contract\" section, then recompute."}
           </DialogDescription>
-        </RtlDialogHeader>
+        </DialogHeader>
 
         {contract && (
           <ul className="divide-y rounded-md border">
@@ -426,22 +409,22 @@ function RecomputeDialog({ data, run, onClose }: SectionProps & { onClose: () =>
           </ul>
         )}
 
-        <RtlDialogFooter>
-          <Button onClick={submit} disabled={saving || !contract || picked.length === 0}>
-            {saving ? "Computing..." : "Update Ticked Deadlines"}
-          </Button>
+        <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Back
           </Button>
-        </RtlDialogFooter>
-      </RtlDialogContent>
+          <Button onClick={submit} disabled={saving || !contract || picked.length === 0}>
+            {saving ? "Computing..." : "Update Ticked Deadlines"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }
 
 const DEPOSIT_CURRENCIES = [...CURRENCIES, "ILS"];
 
-function DepositDialog({ data, run, onClose }: SectionProps & { onClose: () => void }) {
+function DepositDialog({ data, run, onClose }: BlockSectionProps & { onClose: () => void }) {
   const { block } = data;
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState(block.cost_currency ?? "USD");
@@ -455,21 +438,21 @@ function DepositDialog({ data, run, onClose }: SectionProps & { onClose: () => v
   const submit = async () => {
     if (!valid) return;
     setSaving(true);
-    const ok = await run(
+    const res = await run(
       () => recordTourBlockDeposit(block.id, { amount: parsed, currency, date, note }),
       "Deposit recorded",
     );
     setSaving(false);
-    if (ok) onClose();
+    if (res.success) onClose();
   };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <RtlDialogContent className="sm:max-w-md">
-        <RtlDialogHeader>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
           <DialogTitle>Record Deposit</DialogTitle>
           <DialogDescription>A deposit paid to the airline is recorded as an event on the timeline of the flight block.</DialogDescription>
-        </RtlDialogHeader>
+        </DialogHeader>
         <div className="grid gap-4">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Amount" htmlFor="deposit-amount">
@@ -503,15 +486,15 @@ function DepositDialog({ data, run, onClose }: SectionProps & { onClose: () => v
             <Input id="deposit-note" dir="auto" value={note} onChange={(e) => setNote(e.target.value)} />
           </Field>
         </div>
-        <RtlDialogFooter>
-          <Button onClick={submit} disabled={saving || !valid || !date}>
-            {saving ? "Saving..." : "Record Deposit"}
-          </Button>
+        <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Back
           </Button>
-        </RtlDialogFooter>
-      </RtlDialogContent>
+          <Button onClick={submit} disabled={saving || !valid || !date}>
+            {saving ? "Saving..." : "Record Deposit"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

@@ -16,27 +16,20 @@
 import { requireCompany } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
-import type { Json } from "@/types/database.types";
+import { actionFail } from "@/lib/tours/action-kit";
+import {
+  LAST_SITE_PUBLISH_KEY,
+  SITE_DEPLOY_HOOK_KEY,
+  asObject,
+  companyAudit,
+  publishRecordOf,
+  type JsonObject,
+} from "@/lib/tours/company-kit";
 import type { ActionResult, SitePublishRecord, SitePublishStatus } from "@/components/tours/content/shared";
 
-type JsonObject = { [key: string]: Json | undefined };
-
-const HOOK_KEY = "site_deploy_hook";
-const LAST_KEY = "last_site_publish";
 const TIMEOUT_MS = 20_000;
 
-const asObject = (value: Json | null | undefined): JsonObject =>
-  value && typeof value === "object" && !Array.isArray(value) ? value : {};
-
-function failure(e: unknown, fallback: string): { success: false; error: string } {
-  const message = e instanceof Error ? e.message : String(e);
-  if (message.startsWith("Forbidden: the active company")) {
-    return { success: false, error: "Publish Site is available only in a company that sells tours. Switch companies in the top bar." };
-  }
-  if (message === "Unauthorized") return { success: false, error: "You don't have permission to do this" };
-  console.error(`${fallback}:`, message);
-  return { success: false, error: fallback };
-}
+const failure = (e: unknown, fallback: string) => actionFail(e, "site-publish", fallback);
 
 async function featuresOf(companyId: string): Promise<JsonObject> {
   const { data, error } = await supabaseTyped.from("companies").select("features").eq("id", companyId).single();
@@ -44,20 +37,8 @@ async function featuresOf(companyId: string): Promise<JsonObject> {
   return asObject(data.features);
 }
 
-function toRecord(value: Json | undefined): SitePublishRecord | null {
-  const o = asObject(value);
-  if (typeof o.at !== "string") return null;
-  return {
-    at: o.at,
-    by: typeof o.by === "string" ? o.by : "",
-    status: typeof o.status === "number" ? o.status : null,
-    ok: o.ok === true,
-    ...(typeof o.error === "string" ? { error: o.error } : {}),
-  };
-}
-
 function hookOf(features: JsonObject): string | null {
-  const value = features[HOOK_KEY];
+  const value = features[SITE_DEPLOY_HOOK_KEY];
   if (typeof value !== "string" || !value.trim()) return null;
   try {
     const url = new URL(value.trim());
@@ -72,7 +53,7 @@ export async function getSitePublishStatus(): Promise<ActionResult<SitePublishSt
   try {
     const { company } = await requireCompany("tours");
     const features = await featuresOf(company.id);
-    return { success: true, data: { configured: hookOf(features) !== null, last: toRecord(features[LAST_KEY]) } };
+    return { success: true, data: { configured: hookOf(features) !== null, last: publishRecordOf(features[LAST_SITE_PUBLISH_KEY]) } };
   } catch (e) {
     return failure(e, "Failed to load the publish status");
   }
@@ -120,7 +101,7 @@ export async function publishSite(): Promise<ActionResult<SitePublishRecord>> {
     const features = await featuresOf(company.id);
     const { error } = await supabaseTyped
       .from("companies")
-      .update({ features: { ...features, [LAST_KEY]: { ...record, by_id: session.sub } } })
+      .update({ features: { ...features, [LAST_SITE_PUBLISH_KEY]: { ...record, by_id: session.sub } } })
       .eq("id", company.id);
     if (error) throw error;
 
@@ -128,7 +109,7 @@ export async function publishSite(): Promise<ActionResult<SitePublishRecord>> {
       action: "publish",
       entityType: "company_site",
       entityId: company.id,
-      metadata: { company: company.slug, status, ok: record.ok },
+      metadata: { ...companyAudit(company), status, ok: record.ok },
     });
 
     if (problem) return { success: false, error: `The site build did not start: ${problem}` };

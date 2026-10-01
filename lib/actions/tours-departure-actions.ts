@@ -43,24 +43,20 @@ import {
   type PromotionKind,
   type SaleStatus,
 } from "@/types/tours.types";
+import { ALLOCATION_LEGS } from "@/components/tours/flights/block-rules";
+import { addDays, daysBetween, fmtDate, isDateOnly, nightsBetween, todayIso } from "@/lib/tours/format";
 import {
   NO_LIVE_FLIGHT_WARNING,
   activeFixedDiscount,
-  addDays,
-  dayDiff,
   departureCode,
   doublePricePerPerson,
   effectiveRoute,
-  fmtDate,
-  isIsoDate,
-  nightsBetween,
   normalizeAirport,
   promotionConflict,
   promotionSummary,
   publishBlockers,
   readRoomPrices,
   seasonYearOf,
-  todayIso,
 } from "@/components/tours/departures/departure-utils";
 import type {
   ActionResult,
@@ -899,7 +895,7 @@ export async function updateDeparture(id: string, input: DepartureGeneralInput):
     if (has("start_date") || has("end_date")) {
       const start = input.start_date ?? core.start_date;
       const end = input.end_date ?? core.end_date;
-      if (!isIsoDate(start) || !isIsoDate(end)) throw new UserError("Invalid date");
+      if (!isDateOnly(start) || !isDateOnly(end)) throw new UserError("Invalid date");
       if (end < start) throw new UserError("The return date is before the departure date");
       patch.start_date = start;
       patch.end_date = end;
@@ -1507,7 +1503,7 @@ function cleanPromotion(input: PromotionInput) {
   }
   let validUntil: string | null = null;
   if (input.valid_until) {
-    if (!isIsoDate(input.valid_until)) throw new UserError("Invalid expiry date");
+    if (!isDateOnly(input.valid_until)) throw new UserError("Invalid expiry date");
     validUntil = input.valid_until;
   }
   return {
@@ -1743,7 +1739,6 @@ export async function addPromotionToDepartures(
 }
 
 // ---------------------------------------------------------------- flight allocations
-const LEGS: AllocationLegs[] = ["both", "outbound", "inbound"];
 /** A block is offered for a departure when a leg flies within this many days of the trip's dates. */
 const ALLOCATION_DAY_WINDOW = 2;
 
@@ -1806,7 +1801,7 @@ export async function addFlightAllocation(
     const { company } = await requireCompany("tours");
     const core = await loadCore(company.id, departureId);
     if (core.is_deleted) throw new UserError("The departure is deleted");
-    if (!LEGS.includes(legs)) throw new UserError("Invalid direction");
+    if (!ALLOCATION_LEGS.includes(legs)) throw new UserError("Invalid direction");
     if (!Number.isInteger(seats) || seats < 1 || seats > 1000) throw new UserError("The number of seats must be a whole number greater than zero");
     if (!Number.isInteger(flightId)) throw new UserError("Block not found");
 
@@ -1842,8 +1837,8 @@ export async function addFlightAllocation(
     const warnings: string[] = [];
     if (takesOut) {
       const diff = Math.min(
-        dayDiff(block.outbound_departure_time.slice(0, 10), core.start_date),
-        dayDiff(block.outbound_arrival_time.slice(0, 10), core.start_date),
+        Math.abs(daysBetween(block.outbound_departure_time.slice(0, 10), core.start_date)),
+        Math.abs(daysBetween(block.outbound_arrival_time.slice(0, 10), core.start_date)),
       );
       if (diff > ALLOCATION_DAY_WINDOW) {
         throw new UserError(`The outbound flight is on ${fmtDate(block.outbound_departure_time)} and the departure starts on ${fmtDate(core.start_date)} - more than two days apart`);
@@ -1851,7 +1846,7 @@ export async function addFlightAllocation(
       if (diff > 0) warnings.push(`The outbound flight is on ${fmtDate(block.outbound_departure_time)}, the departure starts on ${fmtDate(core.start_date)}`);
     }
     if (takesIn) {
-      const diff = dayDiff(block.inbound_departure_time.slice(0, 10), core.end_date);
+      const diff = Math.abs(daysBetween(block.inbound_departure_time.slice(0, 10), core.end_date));
       if (diff > ALLOCATION_DAY_WINDOW) {
         throw new UserError(`The return flight is on ${fmtDate(block.inbound_departure_time)} and the departure ends on ${fmtDate(core.end_date)} - more than two days apart`);
       }
@@ -1931,7 +1926,7 @@ export async function createDeparture(input: {
   try {
     const { company } = await requireCompany("tours");
     if (!UUID.test(input.seriesId ?? "")) throw new UserError("Select a series");
-    if (!isIsoDate(input.start_date) || !isIsoDate(input.end_date)) throw new UserError("Select a departure date and a return date");
+    if (!isDateOnly(input.start_date) || !isDateOnly(input.end_date)) throw new UserError("Select a departure date and a return date");
     if (input.end_date < input.start_date) throw new UserError("The return date is before the departure date");
     if ((nightsBetween(input.start_date, input.end_date) ?? 0) > 60) throw new UserError("A trip of more than 60 nights - check the dates");
 

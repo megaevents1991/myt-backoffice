@@ -9,12 +9,17 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, RotateCcw, Trash2 } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { Chip, Ltr, Notice } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfirm } from "@/components/confirm-provider";
+import { useActionToast, type ActionAnswer } from "@/hooks/use-action-toast";
+import { useToast } from "@/hooks/use-toast";
+import { afterUrlWrite } from "@/hooks/use-view-state";
+import { fmtDate, fmtDateRange, nightsBetween } from "@/lib/tours/format";
 import { toPriceMatrix } from "@/lib/tours/pricing";
 import { ROUTE_TYPE_LABELS, departureRouteLabel, routeType } from "@/lib/tours/routes";
 import { SALE_STATUS_LABELS, type SaleStatus } from "@/types/tours.types";
@@ -31,19 +36,9 @@ import { CardGeneralTab } from "./card-general-tab";
 import { CardPricesTab } from "./card-prices-tab";
 import { CardPromotionsTab } from "./card-promotions-tab";
 import { CardSalesTab } from "./card-sales-tab";
-import {
-  effectiveRoute,
-  fmtDate,
-  fmtDateRange,
-  nightsBetween,
-  periodLabel,
-  periodsOverlapping,
-  publishBlockers,
-  suggestedSaleStatus,
-} from "./departure-utils";
+import { effectiveRoute, periodLabel, periodsOverlapping, publishBlockers, suggestedSaleStatus } from "./departure-utils";
 import type { BoardPeriod, DepartureCardData } from "./types";
-import { Chip, Ltr, Notice, SaleStatusSelect, Toggle } from "./ui-bits";
-import { afterUrlWrite } from "./use-query-state";
+import { SaleStatusSelect } from "./ui-bits";
 
 export interface CardTarget {
   id?: string;
@@ -71,6 +66,8 @@ export function DepartureCard({
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const confirm = useConfirm();
+  const runAction = useActionToast();
+  const { toast } = useToast();
   const targetId = target?.id;
   const targetCode = target?.code;
 
@@ -78,18 +75,17 @@ export function DepartureCard({
     if (!quiet) setLoading(true);
     // Opening the card writes `?code=` first; let the router settle before queueing the action.
     await afterUrlWrite();
-    const result = await getDepartureCard(ref);
+    // A first load shows its failure in the sheet; a quiet reload keeps the card and reports it in a toast.
+    const result = quiet ? await runAction(() => getDepartureCard(ref)) : await getDepartureCard(ref);
     if (result.success) {
       setData(result.data);
       setError(null);
     } else if (!quiet) {
       setData(null);
       setError(result.error);
-    } else {
-      toast.error(result.error);
     }
     setLoading(false);
-  }, []);
+  }, [runAction]);
 
   useEffect(() => {
     if (!targetId && !targetCode) {
@@ -134,15 +130,12 @@ export function DepartureCard({
     };
   }, [data, periods]);
 
-  const run = async (work: () => Promise<{ success: boolean; error?: string }>, done?: string) => {
+  /** Run a card action with the shared toast, then reload the card. */
+  const run = async (work: () => Promise<ActionAnswer>, done?: string) => {
     setBusy(true);
-    const result = await work();
+    const result = await runAction(work, done);
     setBusy(false);
-    if (!result.success) {
-      toast.error(result.error ?? "Action failed");
-      return false;
-    }
-    if (done) toast.success(done);
+    if (!result.success) return false;
     await refresh();
     return true;
   };
@@ -150,20 +143,17 @@ export function DepartureCard({
   const togglePublished = async (next: boolean) => {
     if (!data) return;
     setBusy(true);
-    const result = await setDeparturesPublished([data.departure.id], next);
+    const result = await runAction(() => setDeparturesPublished([data.departure.id], next));
     setBusy(false);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
+    if (!result.success) return;
     const skipped = result.data.skipped[0];
     if (skipped) {
-      toast.error(`Can't publish: ${skipped.reason}`, { duration: 7000 });
+      toast({ variant: "destructive", title: "Can't publish", description: skipped.reason, duration: 7000 });
       return;
     }
     const warning = result.data.warnings[0];
-    if (warning) toast(`Published. ${warning.reason}`, { duration: 7000 });
-    else toast.success(next ? "Departure published" : "Departure unpublished");
+    if (warning) toast({ title: "Published", description: warning.reason, duration: 7000 });
+    else toast({ title: next ? "Departure published" : "Departure unpublished" });
     await refresh();
   };
 
@@ -246,11 +236,12 @@ export function DepartureCard({
               )}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1">
                 <span className="flex items-center gap-2 text-sm">
-                  <Toggle
+                  <Switch
                     checked={d.is_published}
                     disabled={busy || Boolean(d.is_deleted)}
-                    label={d.is_published ? "Published on the site" : "Not published"}
-                    onChange={togglePublished}
+                    aria-label={d.is_published ? "Published on the site" : "Not published"}
+                    title={d.is_published ? "Published on the site" : "Not published"}
+                    onCheckedChange={togglePublished}
                   />
                   {d.is_published ? "Published on the site" : "Draft, not published"}
                 </span>

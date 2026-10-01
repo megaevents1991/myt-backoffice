@@ -21,12 +21,12 @@ import {
   type DepartureProblem,
 } from "@/lib/actions/tours-reports-actions";
 import { formatDateShort } from "@/lib/tours/deadlines";
-import { Ltr, Notice } from "@/components/tours/flights/block-ui";
+import { Ltr, Notice } from "@/components/tours/ui";
 
 const LOAD_FAILED = "טעינת הנתונים נכשלה. המסך זמין כשהחברה הפעילה מוכרת טיולים.";
 
 const departureHref = (code: string) => `/tours/departures?code=${encodeURIComponent(code)}`;
-const blockHref = (id: number) => `/tours/flights/${id}`;
+const blockHref = (id: number) => `/offline-flights/${id}`;
 
 const linkClass = "text-primary underline-offset-4 hover:underline";
 
@@ -88,7 +88,7 @@ export function ExceptionsClient() {
 
       {error && (
         <div className="mb-4">
-          <Notice tone="danger">{error}</Notice>
+          <Notice tone="error">{error}</Notice>
         </div>
       )}
 
@@ -100,7 +100,7 @@ export function ExceptionsClient() {
         </div>
       ) : data !== null ? (
         <div className={loading ? "space-y-3 opacity-60" : "space-y-3"}>
-          {total === 0 && <Notice>לא נמצאו בעיות. הנתונים עקביים.</Notice>}
+          {total === 0 && <Notice tone="muted">לא נמצאו בעיות. הנתונים עקביים.</Notice>}
 
           <ProblemList
             title="יציאות מפורסמות בלי טיסה חיה"

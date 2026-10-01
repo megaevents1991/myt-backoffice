@@ -1,31 +1,31 @@
 "use client";
 
 /**
- * /tours/approvals ("אישורים וטיפול") - the manager's morning queue of a tours
+ * /tours/approvals ("Approvals") - the manager's morning queue of a tours
  * company: what only a manager approves, and what the import left for a person
  * to settle. Every row is handled in place or is one click from where it is
  * fixed, and leaves the list once handled.
  *
  * The page guards the route on the server; this component loads the queue
  * through its own server action (which checks the role again), runs every
- * action through one `run` and reloads after each, so the counts are always
- * what the database holds.
+ * action through one `run` (the shared action toast) and reloads after each, so
+ * the counts are always what the database holds.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, RefreshCw } from "lucide-react";
-import { toast } from "react-hot-toast";
 
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useActionToast } from "@/hooks/use-action-toast";
 import {
   getApprovalsQueue,
   getApprovalsReviewPage,
   type ApprovalsData,
 } from "@/lib/actions/tours-approvals-actions";
-import { formatDateShort } from "@/lib/tours/deadlines";
-import { Notice } from "@/components/tours/flights/block-ui";
+import { formatDateShort } from "@/lib/tours/format";
+import { Notice } from "@/components/tours/ui";
 import { BlockApprovals } from "./block-approvals";
 import { DeparturesWithoutBlock } from "./departures-without-block";
 import { DeparturesWithoutPrice } from "./departures-without-price";
@@ -84,29 +84,21 @@ export function ApprovalsScreen({ companyName }: { companyName: string }) {
     setBusy(null);
   }, []);
 
+  const toastRun = useActionToast();
   const run: QueueRun = useCallback(
     async (key, action, okMessage) => {
       if (!begin(key)) return false;
       try {
-        const res = await action();
-        if (!res.success) {
-          toast.error(res.error, { duration: 7000 });
-          return false;
-        }
-        if (okMessage) toast.success(okMessage);
-        if (res.warning) toast(res.warning, { duration: 8000 });
+        const res = await toastRun(action, okMessage);
+        if (!res.success) return false;
         await load();
         setChanges((n) => n + 1);
         return true;
-      } catch (e) {
-        console.error("approvals: action failed", e);
-        toast.error("The action failed. Try again.");
-        return false;
       } finally {
         end();
       }
     },
-    [begin, end, load],
+    [begin, end, load, toastRun],
   );
 
   const refresh = useCallback(async () => {
@@ -123,20 +115,15 @@ export function ApprovalsScreen({ companyName }: { companyName: string }) {
   const showReviewPage = useCallback(async (page: number) => {
     if (!begin("review:page")) return;
     try {
-      const res = await getApprovalsReviewPage(page);
+      const res = await toastRun(() => getApprovalsReviewPage(page));
       if (res.success) {
         reviewPage.current = res.data.page;
         setData((prev) => (prev ? { ...prev, review: res.data } : prev));
-      } else {
-        toast.error(res.error);
       }
-    } catch (e) {
-      console.error("approvals: review page failed", e);
-      toast.error(LOAD_FAILED);
     } finally {
       end();
     }
-  }, [begin, end]);
+  }, [begin, end, toastRun]);
 
   return (
     <div>
@@ -154,7 +141,7 @@ export function ApprovalsScreen({ companyName }: { companyName: string }) {
       {error && (
         <div className="mb-4 flex flex-wrap items-center gap-3" role="alert">
           <div className="min-w-0 flex-1">
-            <Notice tone="danger">{error}</Notice>
+            <Notice tone="error">{error}</Notice>
           </div>
           {data === null && (
             <Button type="button" size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
@@ -206,7 +193,7 @@ function Summary({ data }: { data: ApprovalsData }) {
           <CheckCircle2 className="h-7 w-7 text-emerald-600" aria-hidden />
         ) : (
           <span className="font-display text-3xl font-bold tabular-nums leading-none tracking-tight">
-            {total.toLocaleString("he-IL")}
+            {total.toLocaleString("en-US")}
           </span>
         )}
         <div>
@@ -229,7 +216,7 @@ function Summary({ data }: { data: ApprovalsData }) {
           >
             {s.label}
             <span className={cn("tabular-nums", s.count > 0 ? "font-semibold" : "font-normal")}>
-              {s.count.toLocaleString("he-IL")}
+              {s.count.toLocaleString("en-US")}
             </span>
           </button>
         ))}

@@ -11,28 +11,18 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { Chip, Field, Ltr, Notice, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useActionToast } from "@/hooks/use-action-toast";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { WEEKDAY_LABELS, addDays, fmtDate, fmtDateRange, isDateOnly, nightsBetween, weekdayOf } from "@/lib/tours/format";
 import { departureRouteLabel } from "@/lib/tours/routes";
 import { createSeasonDepartures, getSeasonContext } from "@/lib/actions/tours-series-actions";
-import {
-  WEEKDAY_LABELS,
-  addDays,
-  departureCode,
-  fmtDate,
-  fmtDateRange,
-  isIsoDate,
-  nightsBetween,
-  periodLabel,
-  periodsOverlapping,
-  seasonYearOf,
-  weekdayOf,
-} from "@/components/tours/departures/departure-utils";
+import { departureCode, periodLabel, periodsOverlapping, seasonYearOf } from "@/components/tours/departures/departure-utils";
 import type { BoardPeriod } from "@/components/tours/departures/types";
-import { Chip, DialogActions, Field, Ltr, Notice, selectClass } from "@/components/tours/departures/ui-bits";
 import type { SeasonContext, SeasonCreateResult, SeriesListRow } from "./types";
 
 const MAX_PROPOSALS = 120;
@@ -77,6 +67,8 @@ export function SeasonDialog({
   const [unticked, setUnticked] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<SeasonCreateResult | null>(null);
+  const run = useActionToast();
+  const { toast } = useToast();
   const seriesId = series?.id;
 
   useEffect(() => {
@@ -111,7 +103,7 @@ export function SeasonDialog({
 
   const nightsNumber = Number(nights);
   const nightsOk = nights.trim() !== "" && Number.isInteger(nightsNumber) && nightsNumber >= 0 && nightsNumber <= 60;
-  const rangeOk = isIsoDate(from) && isIsoDate(to) && to >= from;
+  const rangeOk = isDateOnly(from) && isDateOnly(to) && to >= from;
   const taken = useMemo(() => new Set(context?.takenCodes ?? []), [context]);
 
   const proposals = useMemo(() => {
@@ -142,20 +134,19 @@ export function SeasonDialog({
   const create = async () => {
     if (!series) return;
     setSaving(true);
-    const res = await createSeasonDepartures({
-      seriesId: series.id,
-      items: chosen.map((p) => ({ start_date: p.start, end_date: p.end })),
-      season: season || null,
-      copyFromDepartureId: sourceId || null,
-      copyPrices: Boolean(sourceId) && copyPrices,
-      copyPromotions: Boolean(sourceId) && copyPromotions,
-    });
+    const res = await run(() =>
+      createSeasonDepartures({
+        seriesId: series.id,
+        items: chosen.map((p) => ({ start_date: p.start, end_date: p.end })),
+        season: season || null,
+        copyFromDepartureId: sourceId || null,
+        copyPrices: Boolean(sourceId) && copyPrices,
+        copyPromotions: Boolean(sourceId) && copyPromotions,
+      }),
+    );
     setSaving(false);
-    if (!res.success) {
-      toast.error(res.error, { duration: 7000 });
-      return;
-    }
-    toast.success(`Created ${res.data.created.length} departures as drafts`);
+    if (!res.success) return;
+    toast({ title: `Created ${res.data.created.length} departures as drafts` });
     setResult(res.data);
     onCreated();
   };
@@ -192,7 +183,7 @@ export function SeasonDialog({
                 ))}
               </Notice>
             )}
-            <DialogActions>
+            <DialogFooter>
               <Button variant="outline" onClick={onClose}>
                 Close
               </Button>
@@ -201,7 +192,7 @@ export function SeasonDialog({
                   <Link href={`/tours/departures?series=${series.code}&year=${createdYear}`}>Open in Tours</Link>
                 </Button>
               )}
-            </DialogActions>
+            </DialogFooter>
           </div>
         ) : loadError ? (
           <Notice tone="error">{loadError}</Notice>
@@ -348,7 +339,7 @@ export function SeasonDialog({
               <p className="text-xs text-warning">Showing the first {MAX_PROPOSALS} proposals (up to {fmtDate(proposals[proposals.length - 1].start)}). Narrow the range.</p>
             )}
 
-            <DialogActions className="justify-between">
+            <DialogFooter className="sm:justify-between">
               <span className="text-sm text-muted-foreground">
                 {proposals.length > 0 && `${chosen.length} selected to create · ${proposals.filter((p) => p.exists).length} already exist`}
               </span>
@@ -361,7 +352,7 @@ export function SeasonDialog({
                   Create {chosen.length} Departures
                 </Button>
               </span>
-            </DialogActions>
+            </DialogFooter>
           </>
         )}
       </DialogContent>

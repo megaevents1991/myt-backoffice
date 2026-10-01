@@ -6,16 +6,17 @@
  * the season duplication.
  */
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "react-hot-toast";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useConfirm } from "@/components/confirm-provider";
+import { useActionToast } from "@/hooks/use-action-toast";
+import { useToast } from "@/hooks/use-toast";
 import {
   deleteCalendarPeriod,
   listCalendarPeriods,
@@ -24,14 +25,7 @@ import {
 } from "@/lib/actions/tours-calendar-actions";
 import { formatDateShort } from "@/lib/tours/deadlines";
 import { CALENDAR_KINDS, CALENDAR_KIND_LABELS, type CalendarKind } from "@/types/tours.types";
-import {
-  Field,
-  Ltr,
-  Notice,
-  RtlDialogContent,
-  RtlDialogFooter,
-  RtlDialogHeader,
-} from "@/components/tours/flights/block-ui";
+import { Field, Ltr, Notice } from "@/components/tours/ui";
 
 const LOAD_FAILED = "טעינת הלוח נכשלה. המסך זמין כשהחברה הפעילה מוכרת טיולים.";
 
@@ -40,6 +34,7 @@ const kindLabel = (kind: string) =>
 
 export function CalendarClient() {
   const confirm = useConfirm();
+  const run = useActionToast();
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [periods, setPeriods] = useState<CalendarPeriodRow[] | null>(null);
   const [years, setYears] = useState<number[]>([]);
@@ -82,20 +77,9 @@ export function CalendarClient() {
     });
     if (!ok) return;
     setDeleting(period.id);
-    try {
-      const res = await deleteCalendarPeriod(period.id);
-      if (res.success) {
-        toast.success("התקופה נמחקה");
-        await load(year);
-      } else {
-        toast.error(res.error);
-      }
-    } catch (e) {
-      console.error("calendar: delete failed", e);
-      toast.error("המחיקה נכשלה. נסו שוב.");
-    } finally {
-      setDeleting(null);
-    }
+    const res = await run(() => deleteCalendarPeriod(period.id), "התקופה נמחקה");
+    if (res.success) await load(year);
+    setDeleting(null);
   };
 
   return (
@@ -124,7 +108,7 @@ export function CalendarClient() {
 
       {error && (
         <div className="mb-4 space-y-2">
-          <Notice tone="danger">{error}</Notice>
+          <Notice tone="error">{error}</Notice>
           <Button size="sm" variant="outline" onClick={() => void load(year)}>
             ניסיון נוסף
           </Button>
@@ -138,7 +122,7 @@ export function CalendarClient() {
           <Skeleton className="h-10 w-full" />
         </div>
       ) : periods !== null && periods.length === 0 ? (
-        <Notice>אין תקופות לשנת {year}. הוסיפו את החגים והחופשות של השנה.</Notice>
+        <Notice tone="muted">אין תקופות לשנת {year}. הוסיפו את החגים והחופשות של השנה.</Notice>
       ) : periods !== null ? (
         <div className="rounded-lg border bg-card">
           <Table look="list">
@@ -234,6 +218,7 @@ function PeriodDialog({
   const [note, setNote] = useState(period?.note ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const yearValue = Number(year);
 
@@ -255,7 +240,7 @@ function PeriodDialog({
         setError(res.error);
         return;
       }
-      toast.success(period ? "התקופה עודכנה" : "התקופה נוספה");
+      toast({ title: period ? "התקופה עודכנה" : "התקופה נוספה" });
       await onSaved(yearValue);
     } catch (e) {
       console.error("calendar: save failed", e);
@@ -267,13 +252,13 @@ function PeriodDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <RtlDialogContent className="sm:max-w-lg">
-        <RtlDialogHeader>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
           <DialogTitle>{period ? `עריכת תקופה: ${period.name}` : "תקופה חדשה"}</DialogTitle>
           <DialogDescription>
             לחג של יום אחד מספיק המועד. לתקופה (חופשה, חול המועד) הזינו תחילה וסוף.
           </DialogDescription>
-        </RtlDialogHeader>
+        </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
@@ -315,15 +300,15 @@ function PeriodDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
-        <RtlDialogFooter>
-          <Button onClick={submit} disabled={saving || !name.trim() || !Number.isInteger(yearValue)}>
-            {saving ? "שומר..." : "שמירה"}
-          </Button>
+        <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
             חזרה
           </Button>
-        </RtlDialogFooter>
-      </RtlDialogContent>
+          <Button onClick={submit} disabled={saving || !name.trim() || !Number.isInteger(yearValue)}>
+            {saving ? "שומר..." : "שמירה"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

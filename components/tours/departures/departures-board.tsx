@@ -34,9 +34,10 @@ import {
   Tag,
   X,
 } from "lucide-react";
-import { toast } from "react-hot-toast";
 import { PageHeader } from "@/components/page-header";
+import { SearchInput } from "@/components/search-input";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
+import { Chip, Ltr, Notice, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -44,9 +45,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useSessionState } from "@/hooks/use-view-state";
+import { useActionToast } from "@/hooks/use-action-toast";
+import { useToast } from "@/hooks/use-toast";
+import { afterUrlWrite, useQueryState, useSessionState } from "@/hooks/use-view-state";
+import { downloadBase64 } from "@/lib/download";
+import { nightsBetween, todayIso } from "@/lib/tours/format";
 import { cn } from "@/lib/utils";
 import { SALE_STATUSES, SALE_STATUS_LABELS, type SaleStatus } from "@/types/tours.types";
 import {
@@ -68,10 +72,8 @@ import {
 import { BoardRowView, type CardTab } from "./board-row";
 import { DepartureCard, type CardTarget } from "./departure-card";
 import { DepartureViewCard, VIEW_TABS } from "./departure-view-card";
-import { doublePricePerPerson, nightsBetween, periodLabel, periodsOverlapping, todayIso } from "./departure-utils";
+import { doublePricePerPerson, periodLabel, periodsOverlapping } from "./departure-utils";
 import type { BoardData, BoardRow, BulkOutcome } from "./types";
-import { Chip, Ltr, Notice, selectClass } from "./ui-bits";
-import { afterUrlWrite, useQueryState } from "./use-query-state";
 
 const CARD_TABS: readonly CardTab[] = ["general", "prices", "promotions", "flights", "sales"];
 /** Everything the board keeps in the query string: the filters, and the open card (`code`, `tab`). */
@@ -113,17 +115,6 @@ const th =
 const sortRows = (rows: BoardRow[]): BoardRow[] =>
   [...rows].sort((a, b) => a.start_date.localeCompare(b.start_date) || a.code.localeCompare(b.code));
 
-function downloadBase64(filename: string, base64: string) {
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-  const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 function FilterToggle({ label, active, onChange, tone }: { label: string; active: boolean; onChange: (next: boolean) => void; tone?: "bad" }) {
   return (
     <button
@@ -147,6 +138,8 @@ function FilterToggle({ label, active, onChange, tone }: { label: string; active
 export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly?: boolean } = {}) {
   const thisYear = useMemo(() => Number(todayIso().slice(0, 4)), []);
   const today = useMemo(() => todayIso(), []);
+  const run = useActionToast();
+  const { toast } = useToast();
 
   // ---- data
   const [data, setData] = useState<BoardData | null>(null);
@@ -321,11 +314,8 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
   /** Swap in the stored state of some departures (after a card edit or a bulk action). */
   const refreshRows = useCallback(async (ids: string[]) => {
     if (ids.length === 0) return;
-    const result = await getBoardRows(ids);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
+    const result = await run(() => getBoardRows(ids));
+    if (!result.success) return;
     const fresh = new Map(result.data.map((r) => [r.id, r]));
     setRows((prev) => {
       const known = new Set(prev.map((r) => r.id));
@@ -333,7 +323,7 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
       const added = result.data.filter((r) => !known.has(r.id));
       return added.length ? sortRows([...merged, ...added]) : merged;
     });
-  }, []);
+  }, [run]);
 
   const onSelect = useCallback((id: string, checked: boolean) => {
     setSelected((prev) => {
@@ -360,51 +350,38 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
   const onPublish = useCallback(
     async (row: BoardRow, next: boolean) => {
       markBusy(row.id, true);
-      const result = await setDeparturesPublished([row.id], next);
+      const result = await run(() => setDeparturesPublished([row.id], next));
       markBusy(row.id, false);
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
+      if (!result.success) return;
       const skipped = result.data.skipped[0];
       if (skipped) {
-        toast.error(`Can't publish ${row.code}: ${skipped.reason}`, { duration: 7000 });
+        toast({ variant: "destructive", title: `Can't publish ${row.code}`, description: skipped.reason, duration: 7000 });
         return;
       }
       patchRow(row.id, { is_published: next });
       const warning = result.data.warnings[0];
-      if (warning) toast(`${row.code} published. ${warning.reason}`, { duration: 7000 });
-      else toast.success(next ? `${row.code} published` : `${row.code} unpublished`);
+      if (warning) toast({ title: `${row.code} published`, description: warning.reason, duration: 7000 });
+      else toast({ title: next ? `${row.code} published` : `${row.code} unpublished` });
     },
-    [markBusy, patchRow],
+    [markBusy, patchRow, run, toast],
   );
 
   const onSaleStatus = useCallback(
     async (row: BoardRow, next: SaleStatus) => {
       patchRow(row.id, { sale_status: next });
-      const result = await updateDeparture(row.id, { sale_status: next });
-      if (!result.success) {
-        patchRow(row.id, { sale_status: row.sale_status });
-        toast.error(result.error);
-        return;
-      }
-      toast.success(`${row.code}: ${SALE_STATUS_LABELS[next]}`);
+      const result = await run(() => updateDeparture(row.id, { sale_status: next }), `${row.code}: ${SALE_STATUS_LABELS[next]}`);
+      if (!result.success) patchRow(row.id, { sale_status: row.sale_status });
     },
-    [patchRow],
+    [patchRow, run],
   );
 
   const onLabels = useCallback(
     async (row: BoardRow, labels: string[]) => {
       patchRow(row.id, { date_labels: labels });
-      const result = await updateDeparture(row.id, { date_labels: labels });
-      if (!result.success) {
-        patchRow(row.id, { date_labels: row.date_labels });
-        toast.error(result.error);
-        return;
-      }
-      toast.success(`${row.code}: date tags updated`);
+      const result = await run(() => updateDeparture(row.id, { date_labels: labels }), `${row.code}: date tags updated`);
+      if (!result.success) patchRow(row.id, { date_labels: row.date_labels });
     },
-    [patchRow],
+    [patchRow, run],
   );
 
   const onDoublePrice = useCallback(
@@ -425,14 +402,15 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
       else prices["adult:2"] = price;
       patchRow(row.id, { prices });
       const result = await saveDeparturePrices(row.id, [{ paxType: "adult", position: 2, price }]);
+      // A plain toast, not useActionToast: Enter has already moved on, so the error must say which row it was.
       if (!result.success) {
         patchRow(row.id, { prices: row.prices });
-        toast.error(`${row.code}: ${result.error}`, { duration: 7000 });
+        toast({ variant: "destructive", title: "Error", description: `${row.code}: ${result.error}`, duration: 7000 });
         return;
       }
-      toast.success(`${row.code}: price updated`);
+      toast({ title: `${row.code}: price updated` });
     },
-    [patchRow],
+    [patchRow, toast],
   );
 
   const onCardChanged = useCallback((id: string) => void refreshRows([id]), [refreshRows]);
@@ -441,37 +419,32 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
   const finishBulk = async (title: string, result: BulkOutcome) => {
     await refreshRows(result.done);
     if (result.skipped.length || result.warnings.length) setOutcome({ title, outcome: result });
-    else toast.success(`${title}: ${result.done.length} departures`);
+    else toast({ title: `${title}: ${result.done.length} departures` });
     if (result.skipped.length === 0) setSelected(new Set());
   };
 
   const bulkPublish = async (next: boolean) => {
     setBulkBusy(true);
-    const result = await setDeparturesPublished(selectedRows.map((r) => r.id), next);
+    const result = await run(() => setDeparturesPublished(selectedRows.map((r) => r.id), next));
     setBulkBusy(false);
-    if (!result.success) toast.error(result.error);
-    else await finishBulk(next ? "Publish" : "Unpublish", result.data);
+    if (result.success) await finishBulk(next ? "Publish" : "Unpublish", result.data);
   };
 
   const bulkStatus = async (next: string) => {
     if (!next) return;
     setBulkBusy(true);
-    const result = await setDeparturesSaleStatus(selectedRows.map((r) => r.id), next);
+    const result = await run(() => setDeparturesSaleStatus(selectedRows.map((r) => r.id), next));
     setBulkBusy(false);
-    if (!result.success) toast.error(result.error);
-    else await finishBulk(`Sale status "${SALE_STATUS_LABELS[next as SaleStatus]}"`, result.data);
+    if (result.success) await finishBulk(`Sale status "${SALE_STATUS_LABELS[next as SaleStatus]}"`, result.data);
   };
 
   const exportView = async () => {
     setExporting(true);
-    const result = await exportDeparturesXlsx(filtered.map((r) => r.id));
+    const result = await run(() => exportDeparturesXlsx(filtered.map((r) => r.id)));
     setExporting(false);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
-    downloadBase64(result.data.filename, result.data.base64);
-    toast.success(`Exported ${filtered.length} departures`);
+    if (!result.success) return;
+    downloadBase64(result.data.base64, result.data.filename);
+    toast({ title: `Exported ${filtered.length} departures` });
   };
 
   const toggleGroup = (seriesId: string) =>
@@ -541,13 +514,14 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
 
       {/* filters */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Input
+        <SearchInput
           dir="ltr"
           aria-label="Search by code"
           placeholder="Search code"
-          className="h-9 w-32 font-mono placeholder:font-sans"
+          wrapperClassName="w-40 sm:w-40"
+          className="font-mono placeholder:font-sans"
           value={query}
-          onChange={(e) => setParams({ q: e.target.value })}
+          onValueChange={(q) => setParams({ q })}
         />
         <select aria-label="Year" className={selectClass} value={yearParam} onChange={(e) => setParams({ year: e.target.value })}>
           <option value="">

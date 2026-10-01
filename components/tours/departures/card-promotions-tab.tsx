@@ -8,13 +8,16 @@
  */
 import { useState } from "react";
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { Chip, Notice } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { useConfirm } from "@/components/confirm-provider";
+import { useActionToast } from "@/hooks/use-action-toast";
+import { fmtDate } from "@/lib/tours/format";
 import { cn } from "@/lib/utils";
 import { PROMOTION_KIND_LABELS, type PromotionKind } from "@/types/tours.types";
 import { deletePromotion, savePromotion, setPromotionActive } from "@/lib/actions/tours-departure-actions";
-import { fmtDate, isExpired, promotionSummary } from "./departure-utils";
+import { isExpired, promotionSummary } from "./departure-utils";
 import {
   PromotionFields,
   draftToInput,
@@ -23,7 +26,6 @@ import {
   type PromotionDraft,
 } from "./promotion-fields";
 import type { CardPromotion, DepartureCardData } from "./types";
-import { Chip, Notice, Toggle } from "./ui-bits";
 
 const toDraft = (p: CardPromotion): PromotionDraft => ({
   kind: p.kind as PromotionKind,
@@ -41,6 +43,7 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<PromotionDraft>(emptyPromotionDraft);
   const [busy, setBusy] = useState<string | null>(null);
+  const run = useActionToast();
   const readOnly = Boolean(d.is_deleted);
   const error = promotionDraftError(draft);
 
@@ -51,27 +54,21 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
 
   const submit = async () => {
     setBusy("form");
-    const result = await savePromotion(d.id, editing === "new" ? null : editing, draftToInput(draft));
+    const result = await run(
+      () => savePromotion(d.id, editing === "new" ? null : editing, draftToInput(draft)),
+      editing === "new" ? "Promotion added" : "Promotion updated",
+    );
     setBusy(null);
-    if (!result.success) {
-      toast.error(result.error, { duration: 8000 });
-      return;
-    }
-    toast.success(editing === "new" ? "Promotion added" : "Promotion updated");
+    if (!result.success) return;
     setEditing(null);
     await onSaved();
   };
 
   const toggle = async (p: CardPromotion, next: boolean) => {
     setBusy(p.id);
-    const result = await setPromotionActive(p.id, next);
+    const result = await run(() => setPromotionActive(p.id, next), next ? "Promotion switched on" : "Promotion switched off");
     setBusy(null);
-    if (!result.success) {
-      toast.error(result.error, { duration: 8000 });
-      return;
-    }
-    toast.success(next ? "Promotion switched on" : "Promotion switched off");
-    await onSaved();
+    if (result.success) await onSaved();
   };
 
   const remove = async (p: CardPromotion) => {
@@ -84,14 +81,9 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
     });
     if (!agreed) return;
     setBusy(p.id);
-    const result = await deletePromotion(p.id);
+    const result = await run(() => deletePromotion(p.id), "Promotion deleted");
     setBusy(null);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
-    toast.success("Promotion deleted");
-    await onSaved();
+    if (result.success) await onSaved();
   };
 
   const form = (
@@ -147,12 +139,12 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
                 ) : busy === p.id ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Toggle
-                    size="sm"
+                  <Switch
                     checked={p.is_active}
                     disabled={readOnly}
-                    label={p.is_active ? "Active - click to switch off" : "Off - click to switch on"}
-                    onChange={(next) => toggle(p, next)}
+                    aria-label={p.is_active ? "Active - click to switch off" : "Off - click to switch on"}
+                    title={p.is_active ? "Active - click to switch off" : "Off - click to switch on"}
+                    onCheckedChange={(next) => toggle(p, next)}
                   />
                 )}
                 <div className="min-w-0 flex-1">

@@ -12,8 +12,7 @@ import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { isDateOnly } from "@/lib/tours/deadlines";
 import { CALENDAR_KINDS, type CalendarPeriod } from "@/types/tours.types";
-import type { ToursResult } from "@/lib/actions/tours-flight-actions";
-import { dbFail as databaseFail, plainFail as fail } from "@/lib/tours/action-kit";
+import { dbFail as databaseFail, plainFail as fail, type ActionResult } from "@/lib/tours/action-kit";
 
 const dbFail = (where: string, error: unknown) => databaseFail("tours-calendar-actions", where, error);
 
@@ -40,7 +39,7 @@ const ROWS_MAX = 5000;
 /** The periods of one year (the company's and the global ones) and every year that has any. */
 export async function listCalendarPeriods(
   year: number,
-): Promise<ToursResult<{ periods: CalendarPeriodRow[]; years: number[] }>> {
+): Promise<ActionResult<{ periods: CalendarPeriodRow[]; years: number[] }>> {
   const { session, company } = await requireCompany("tours");
   if (!Number.isInteger(year)) return fail("שנה לא תקינה");
   const scope = `company_id.eq.${company.id},company_id.is.null`;
@@ -65,7 +64,7 @@ export async function listCalendarPeriods(
 }
 
 /** Adds a period to the company's calendar, or edits one. */
-export async function saveCalendarPeriod(input: CalendarPeriodInput): Promise<ToursResult<{ id: string }>> {
+export async function saveCalendarPeriod(input: CalendarPeriodInput): Promise<ActionResult<{ id: string }>> {
   const { session, company } = await requireCompany("tours");
 
   const name = input.name?.trim();
@@ -134,7 +133,7 @@ export async function saveCalendarPeriod(input: CalendarPeriodInput): Promise<To
 }
 
 /** Removes a period. The table keeps no history, so this is a real delete (the screen confirms first). */
-export async function deleteCalendarPeriod(id: string): Promise<ToursResult> {
+export async function deleteCalendarPeriod(id: string): Promise<ActionResult<null>> {
   const { session, company } = await requireCompany("tours");
   if (typeof id !== "string" || !id) return fail("התקופה לא נמצאה");
 

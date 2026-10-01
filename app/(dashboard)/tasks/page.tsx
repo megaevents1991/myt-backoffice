@@ -17,21 +17,12 @@ export default async function TasksPage() {
     // height on a laptop - what each tab holds is in the Guide. `mb-0` because the
     // wrapper's own gap already separates the heading from the board pills.
     <div className="space-y-4">
-      {plainBoard ? (
-        <div dir="rtl">
-          <PageHeader
-            title="משימות"
-            description={`לוח המשימות של ${company.name} - מנהל משייך, וכל אחד עובד על הרשימה שלו.`}
-            className="mb-0"
-          />
-        </div>
-      ) : (
-        <PageHeader
-          title="Tasks"
-          description="The team's work queue - admins assign, everyone works their own list."
-          className="mb-0"
-        />
-      )}
+      {/* One heading for every company: a tours company gets the plain board below. */}
+      <PageHeader
+        title="Tasks"
+        description="The team's work queue - admins assign, everyone works their own list."
+        className="mb-0"
+      />
       <Suspense fallback={<Skeleton className="h-64 w-full" />}>
         <TasksClient plainBoard={plainBoard} />
       </Suspense>

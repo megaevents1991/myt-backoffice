@@ -2,8 +2,9 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "react-hot-toast";
 
+import { useActionToast } from "@/hooks/use-action-toast";
+import { CONTENT_SAVED_NOTE } from "@/components/tours/content/save-bar";
 import type { ActionResult } from "@/components/tours/content/shared";
 
 /**
@@ -17,6 +18,7 @@ export function useContentForm<F extends object, D extends { form: F }>(
   save: (form: F) => Promise<ActionResult<D>>,
 ) {
   const router = useRouter();
+  const run = useActionToast();
   const [saved, setSaved] = useState(initial);
   const [form, setForm] = useState<F>(initial.form);
   const [isSaving, setIsSaving] = useState(false);
@@ -30,22 +32,13 @@ export function useContentForm<F extends object, D extends { form: F }>(
   const submit = useCallback(async () => {
     if (isSaving) return;
     setIsSaving(true);
-    try {
-      const result = await save(form);
-      if (!result.success) {
-        toast.error(result.error, { duration: 7000 });
-        return;
-      }
-      setSaved(result.data);
-      setForm(result.data.form);
-      toast.success("Saved. Click Publish Site to show the change on the site.");
-      router.refresh();
-    } catch {
-      toast.error("Save failed. Check your connection and try again.");
-    } finally {
-      setIsSaving(false);
-    }
-  }, [form, isSaving, router, save]);
+    const result = await run(() => save(form), CONTENT_SAVED_NOTE);
+    setIsSaving(false);
+    if (!result.success) return;
+    setSaved(result.data);
+    setForm(result.data.form);
+    router.refresh();
+  }, [form, isSaving, router, run, save]);
 
   const discard = useCallback(() => setForm(saved.form), [saved.form]);
 

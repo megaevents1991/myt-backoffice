@@ -6,15 +6,16 @@
  * rate is missing the screen says so, and the last rate entered stays in force.
  */
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "react-hot-toast";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useActionToast } from "@/hooks/use-action-toast";
 import { getTourRates, saveTourRate, type TourRateStatus, type TourRatesData } from "@/lib/actions/tours-rates-actions";
 import { formatDateShort } from "@/lib/tours/deadlines";
-import { Field, Ltr, Notice, Section, parseNumber } from "@/components/tours/flights/block-ui";
+import { parseNumber } from "@/lib/tours/format";
+import { Field, Ltr, Notice, Section } from "@/components/tours/ui";
 
 const CURRENCY_NAMES: Record<string, string> = { USD: "דולר", EUR: "אירו", GBP: "לירה שטרלינג" };
 
@@ -54,7 +55,7 @@ export function RatesClient() {
 
       {error && (
         <div className="mb-4 space-y-2">
-          <Notice tone="danger">{error}</Notice>
+          <Notice tone="error">{error}</Notice>
           <Button size="sm" variant="outline" onClick={() => void load()}>
             ניסיון נוסף
           </Button>
@@ -90,7 +91,7 @@ export function RatesClient() {
             description={data.historyTruncated ? `מוצגות ${data.history.length} ההזנות האחרונות.` : undefined}
           >
             {data.history.length === 0 ? (
-              <Notice>עוד לא הוזן שער.</Notice>
+              <Notice tone="muted">עוד לא הוזן שער.</Notice>
             ) : (
               <Table look="list">
                 <TableHeader>
@@ -137,6 +138,7 @@ function RateCard({
 }) {
   const [value, setValue] = useState(status.today === null ? "" : rateText(status.today));
   const [saving, setSaving] = useState(false);
+  const run = useActionToast();
   useEffect(() => setValue(status.today === null ? "" : rateText(status.today)), [status.today]);
 
   const parsed = parseNumber(value);
@@ -146,20 +148,12 @@ function RateCard({
   const save = async () => {
     if (!valid) return;
     setSaving(true);
-    try {
-      const res = await saveTourRate({ currency: status.currency, rate: parsed, date: today });
-      if (res.success) {
-        toast.success(`שער ${status.currency} להיום נשמר`);
-        await onSaved();
-      } else {
-        toast.error(res.error);
-      }
-    } catch (e) {
-      console.error("rates: save failed", e);
-      toast.error("השמירה נכשלה. נסו שוב.");
-    } finally {
-      setSaving(false);
-    }
+    const res = await run(
+      () => saveTourRate({ currency: status.currency, rate: parsed, date: today }),
+      `שער ${status.currency} להיום נשמר`,
+    );
+    if (res.success) await onSaved();
+    setSaving(false);
   };
 
   return (

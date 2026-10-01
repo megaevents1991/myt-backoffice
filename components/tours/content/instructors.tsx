@@ -2,104 +2,117 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Pencil } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SearchInput } from "@/components/search-input";
 import { Switch } from "@/components/ui/switch";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { DataTable, SortableHeader } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
+import { StickySaveBar } from "@/components/sticky-save-bar";
 import { useSessionState } from "@/hooks/use-view-state";
-import { matchesSearch } from "@/lib/search";
 import { saveTourInstructor } from "@/lib/actions/tours-content-actions";
-import {
-  Field,
-  GalleryItemsEditor,
-  ImageUrlField,
-  NO_UPLOAD_NOTE,
-  Pill,
-  Section,
-  SiteImage,
-} from "@/components/tours/content/fields";
+import { Chip, Field, Section } from "@/components/tours/ui";
+import { GalleryItemsEditor, ImageUrlField, NO_UPLOAD_NOTE, SiteImage } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
-import { BackLink, ContentSaveBar, EmptyRows } from "@/components/tours/content/save-bar";
+import { BackLink, CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
 import { useContentForm } from "@/components/tours/content/use-content-form";
 import type { InstructorEditorData, InstructorForm, InstructorListRow } from "@/components/tours/content/shared";
 
-/** The group instructors shown on the site, in site order. */
+type View = "all" | "active";
+const isView = (value: unknown): value is View => value === "all" || value === "active";
+
+/** The group instructors shown on the site, in site order, on the shared DataTable. */
 export function InstructorsTable({ rows, siteUrl }: { rows: InstructorListRow[]; siteUrl: string | null }) {
-  const [query, setQuery] = useSessionState("q", "");
-  const [onlyActive, setOnlyActive] = useSessionState("active", false);
-  const shown = useMemo(
-    () => rows.filter((r) => (onlyActive ? r.isActive : true)).filter((r) => matchesSearch(query, r.name, r.regions, r.slug)),
-    [rows, query, onlyActive],
+  const router = useRouter();
+  const [view, setView] = useSessionState<View>("view", "all", isView);
+  const active = useMemo(() => rows.filter((r) => r.isActive), [rows]);
+
+  const columns = useMemo<ColumnDef<InstructorListRow>[]>(
+    () => [
+      {
+        accessorKey: "position",
+        header: ({ column }) => <SortableHeader label="Position" column={column} />,
+        cell: ({ row }) => <span className="text-muted-foreground">{row.original.position}</span>,
+      },
+      {
+        id: "image",
+        header: "Image",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <SiteImage siteUrl={siteUrl} path={row.original.image} className="h-10 w-10 rounded-full" alt={row.original.name} />
+        ),
+      },
+      {
+        accessorKey: "name",
+        header: ({ column }) => <SortableHeader label="Name" column={column} />,
+        cell: ({ row }) => (
+          <Link href={`/tours/instructors/${row.original.id}`} className="font-medium hover:underline">
+            {row.original.name}
+          </Link>
+        ),
+      },
+      {
+        accessorKey: "regions",
+        header: "Destinations",
+        cell: ({ row }) => (
+          <div className="max-w-[420px] truncate text-muted-foreground" title={row.original.regions ?? undefined}>
+            {row.original.regions}
+          </div>
+        ),
+      },
+      {
+        id: "status",
+        accessorFn: (row) => row.isActive,
+        header: "Status",
+        cell: ({ row }) => (
+          <Badge variant={row.original.isActive ? "outline" : "destructive"}>
+            {row.original.isActive ? "Active" : "Inactive"}
+          </Badge>
+        ),
+      },
+      {
+        id: "actions",
+        header: "",
+        enableHiding: false,
+        cell: ({ row }) => (
+          <Button asChild variant="ghost" size="icon" className="h-8 w-8">
+            <Link href={`/tours/instructors/${row.original.id}`} aria-label={`Edit ${row.original.name}`} title="Edit">
+              <Pencil />
+            </Link>
+          </Button>
+        ),
+      },
+    ],
+    [siteUrl],
   );
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-4">
-        <SearchInput value={query} onValueChange={setQuery} placeholder="Search by name or destinations" />
-        <label className="flex items-center gap-2 text-sm">
-          <Switch checked={onlyActive} onCheckedChange={setOnlyActive} />
-          Active only
-        </label>
-        <span className="text-sm text-muted-foreground">
-          {shown.length} of {rows.length}
-        </span>
-      </div>
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <Table look="list">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[70px]">Position</TableHead>
-              <TableHead className="w-[64px]">Image</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Destinations</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="w-[60px]" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {shown.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className="text-muted-foreground">{row.position}</TableCell>
-                <TableCell>
-                  <SiteImage siteUrl={siteUrl} path={row.image} className="h-10 w-10 rounded-full" alt={row.name} />
-                </TableCell>
-                <TableCell>
-                  <Link href={`/tours/instructors/${row.id}`} className="font-medium hover:underline">
-                    {row.name}
-                  </Link>
-                </TableCell>
-                <TableCell className="max-w-[420px] truncate text-muted-foreground" title={row.regions ?? undefined}>
-                  {row.regions}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={row.isActive ? "outline" : "destructive"}>{row.isActive ? "Active" : "Inactive"}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                    <Link href={`/tours/instructors/${row.id}`} aria-label={`Edit ${row.name}`} title="Edit">
-                      <Pencil />
-                    </Link>
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {shown.length === 0 && (
-          <EmptyRows
-            title={rows.length === 0 ? "No group leaders yet" : "No group leaders match the filter"}
-            description={rows.length === 0 ? "Group leaders are created when the site's data is imported." : "Try a different search."}
-          />
-        )}
-      </div>
-    </div>
+    <DataTable
+      columns={columns}
+      data={view === "active" ? active : rows}
+      searchColumns={["name", "regions"]}
+      searchPlaceholder="Search by name or destinations"
+      defaultPageSize={50}
+      getRowId={(row) => row.id}
+      views={[
+        { id: "all", label: "All", count: rows.length },
+        { id: "active", label: "Active", count: active.length },
+      ]}
+      activeView={view}
+      onViewChange={(id) => setView(id as View)}
+      onRowClick={(row) => router.push(`/tours/instructors/${row.id}`)}
+      stateKey="tours-instructors"
+      emptyState={{
+        title: rows.length === 0 ? "No group leaders yet" : "No group leaders match the filter",
+        description: rows.length === 0 ? "Group leaders are created when the site's data is imported." : "Try a different search.",
+      }}
+    />
   );
 }
 
@@ -119,7 +132,7 @@ export function InstructorFormEditor({ initial }: { initial: InstructorEditorDat
         title={saved.form.name}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <Pill tone={saved.form.isActive ? "on" : "off"}>{saved.form.isActive ? "Active" : "Inactive"}</Pill>
+            <Chip tone={saved.form.isActive ? "outline" : "danger"}>{saved.form.isActive ? "Active" : "Inactive"}</Chip>
             <span>Slug: {saved.slug}</span>
           </span>
         }
@@ -178,12 +191,15 @@ export function InstructorFormEditor({ initial }: { initial: InstructorEditorDat
         />
       </Section>
 
-      <ContentSaveBar
+      <StickySaveBar
         isDirty={isDirty}
         isSaving={isSaving}
         onSave={() => void submit()}
         onDiscard={discard}
-        disabledReason={problem}
+        disabled={!!problem}
+        disabledReason={problem ?? undefined}
+        showDisabledReason
+        message={CONTENT_UNSAVED_NOTE}
       />
     </div>
   );

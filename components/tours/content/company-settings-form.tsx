@@ -3,29 +3,28 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, CircleSlash } from "lucide-react";
-import { toast } from "react-hot-toast";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { StickySaveBar } from "@/components/sticky-save-bar";
+import { useActionToast } from "@/hooks/use-action-toast";
+import { fmtInstant } from "@/lib/tours/format";
 import { saveCompanySettings } from "@/lib/actions/tours-settings-actions";
-import { Field, Section, SiteImage } from "@/components/tours/content/fields";
-import { ContentSaveBar } from "@/components/tours/content/save-bar";
+import { Field, Section } from "@/components/tours/ui";
+import { SiteImage } from "@/components/tours/content/fields";
+import { CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
 import { CompanyMembers } from "@/components/tours/content/company-members";
-import {
-  formatDayTime,
-  type CompanySettingsData,
-  type CompanySettingsForm,
-  type DeployHookChange,
-} from "@/components/tours/content/shared";
+import type { CompanySettingsData, CompanySettingsForm, DeployHookChange } from "@/components/tours/content/shared";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "ILS"];
 
 /** Settings of the active company. The deploy hook is write-only: it can be replaced or removed, never read back. */
 export function CompanySettingsFormEditor({ initial }: { initial: CompanySettingsData }) {
   const router = useRouter();
+  const run = useActionToast();
   const [saved, setSaved] = useState(initial);
   const [form, setForm] = useState<CompanySettingsForm>(initial.form);
   const [hookUrl, setHookUrl] = useState("");
@@ -53,17 +52,13 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
         ? { action: "clear" }
         : { action: "keep" };
     setIsSaving(true);
-    const result = await saveCompanySettings(form, hook).catch(() => null);
+    const result = await run(() => saveCompanySettings(form, hook), "Settings saved");
     setIsSaving(false);
-    if (!result || !result.success) {
-      toast.error(result ? result.error : "Save failed. Check your connection and try again.", { duration: 7000 });
-      return;
-    }
+    if (!result.success) return;
     setSaved(result.data);
     setForm(result.data.form);
     setHookUrl("");
     setClearHook(false);
-    toast.success("Settings saved");
     router.refresh();
   };
 
@@ -133,7 +128,7 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
               <Input dir="ltr" className="font-mono text-xs" value={form.brand.logo} onChange={(e) => setIn("brand", "logo", e.target.value)} />
             </div>
           </Field>
-          <Field label="Primary color" hint="In #RRGGBB format">
+          <Field label="Primary color" hint="In #RRGGBB format" htmlFor="brand-primary-color">
             <div className="flex items-center gap-3">
               <input
                 type="color"
@@ -143,6 +138,7 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
                 onChange={(e) => setIn("brand", "primaryColor", e.target.value)}
               />
               <Input
+                id="brand-primary-color"
                 dir="ltr"
                 className="font-mono"
                 placeholder="#60356C"
@@ -197,7 +193,7 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
           )}
           <span className="text-muted-foreground">
             {last
-              ? `${last.ok ? "Last published" : "Last attempt failed"}: ${formatDayTime(last.at)} · ${last.by}${last.status ? ` · HTTP ${last.status}` : ""}`
+              ? `${last.ok ? "Last published" : "Last attempt failed"}: ${fmtInstant(last.at)} · ${last.by}${last.status ? ` · HTTP ${last.status}` : ""}`
               : "The site has not been published from the backoffice yet."}
           </span>
         </div>
@@ -233,7 +229,16 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
 
       <CompanyMembers initial={saved.members} companyName={saved.form.name} />
 
-      <ContentSaveBar isDirty={isDirty} isSaving={isSaving} onSave={() => void save()} onDiscard={discard} disabledReason={problem} />
+      <StickySaveBar
+        isDirty={isDirty}
+        isSaving={isSaving}
+        onSave={() => void save()}
+        onDiscard={discard}
+        disabled={!!problem}
+        disabledReason={problem ?? undefined}
+        showDisabledReason
+        message={CONTENT_UNSAVED_NOTE}
+      />
     </div>
   );
 }

@@ -22,45 +22,25 @@
  */
 import { revalidatePath } from "next/cache";
 
-import { requireCompany, type Company } from "@/lib/company";
+import { requireCompany } from "@/lib/company";
 import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { TOURS_AGENT_ROLE } from "@/types/auth.types";
-import type { SessionPayload } from "@/lib/auth/session";
 import type { ActionResult, CompanyMemberRow } from "@/components/tours/content/shared";
+import { isManagerRole } from "@/components/tours/flights/block-rules";
 import { actionFail } from "@/lib/tours/action-kit";
+import { companyAudit, companyMembersOf } from "@/lib/tours/company-kit";
 
 const failure = (e: unknown, fallback: string) => actionFail(e, "tours-members-actions", fallback);
 
 const ASSIGNABLE_ROLES = ["admin", "editor", TOURS_AGENT_ROLE];
 
 const NOT_ADMIN = { success: false as const, error: "Only company admins can manage members" };
-const isAdmin = (session: SessionPayload): boolean => session.role === "superadmin" || session.role === "admin";
-
-async function membersOf(company: Company): Promise<CompanyMemberRow[]> {
-  const { data, error } = await supabaseTyped
-    .from("company_members")
-    .select("user_id, role, user_profiles!inner(email, display_name, is_active)")
-    .eq("company_id", company.id);
-  if (error) throw error;
-  return (data ?? [])
-    .map((m) => {
-      const profile = m.user_profiles as unknown as { email: string; display_name: string | null; is_active: boolean };
-      return {
-        userId: m.user_id,
-        name: profile.display_name || profile.email,
-        email: profile.email,
-        role: m.role,
-        isActive: profile.is_active,
-      };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, "he"));
-}
 
 export interface AddMemberResult {
   members: CompanyMemberRow[];
-  /** What the change means for the account, in Hebrew, for the toast. */
+  /** What the change means for the account, for the toast. */
   note: string;
 }
 
@@ -76,7 +56,7 @@ export async function addCompanyMember(
 ): Promise<ActionResult<AddMemberResult>> {
   try {
     const { session, company } = await requireCompany("tours");
-    if (!isAdmin(session)) return NOT_ADMIN;
+    if (!isManagerRole(session.role)) return NOT_ADMIN;
 
     const wanted = email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wanted)) return { success: false, error: "Invalid email address" };
@@ -139,14 +119,14 @@ export async function addCompanyMember(
         },
       },
       metadata: {
-        company: company.slug,
+        ...companyAudit(company),
         email: profile.email,
         role: profile.role,
         keepMegaEvents: unassigned && !isToursAgent ? keepMegaEvents : null,
       },
     });
     revalidatePath("/tours/settings");
-    return { success: true, data: { members: await membersOf(company), note } };
+    return { success: true, data: { members: await companyMembersOf(company), note } };
   } catch (e) {
     return failure(e, "Failed to add the user");
   }
@@ -156,7 +136,7 @@ export async function addCompanyMember(
 export async function removeCompanyMember(userId: string): Promise<ActionResult<CompanyMemberRow[]>> {
   try {
     const { session, company } = await requireCompany("tours");
-    if (!isAdmin(session)) return NOT_ADMIN;
+    if (!isManagerRole(session.role)) return NOT_ADMIN;
     if (userId === session.sub) return { success: false, error: "You cannot remove yourself from the company." };
 
     const { data: existing, error: existingError } = await supabaseTyped
@@ -198,10 +178,10 @@ export async function removeCompanyMember(userId: string): Promise<ActionResult<
       entityType: "company_member",
       entityId: userId,
       changes: { companies: { from: companyIds, to: companyIds.filter((id) => id !== company.id) } },
-      metadata: { company: company.slug },
+      metadata: companyAudit(company),
     });
     revalidatePath("/tours/settings");
-    return { success: true, data: await membersOf(company) };
+    return { success: true, data: await companyMembersOf(company) };
   } catch (e) {
     return failure(e, "Failed to remove the user");
   }

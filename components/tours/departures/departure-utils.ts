@@ -4,111 +4,16 @@
  * (lib/actions/tours-departure-actions.ts, tours-series-actions.ts) and the
  * client components import the same functions, so a rule (what blocks a
  * publish, how a code is built, which holiday a date touches) has one home.
+ * Dates, times and money are formatted by lib/tours/format.ts.
  */
 import type { PriceMatrix } from "@/lib/tours/pricing";
+import { currencySymbol, fmtDate, fmtDateRange, fmtMoney, parsePrice, todayIso } from "@/lib/tours/format";
 import {
   EXCLUSIVE_PROMOTION_KINDS,
   PROMOTION_KIND_LABELS,
   type PromotionKind,
   type SaleStatus,
 } from "@/types/tours.types";
-
-// ---------------------------------------------------------------- dates
-const DAY_MS = 86_400_000;
-
-/** A `YYYY-MM-DD` string as a UTC midnight timestamp. Date maths never touches the local zone. */
-const utc = (iso: string): number => Date.parse(`${iso.slice(0, 10)}T00:00:00Z`);
-
-export const isIsoDate = (value: unknown): value is string =>
-  typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(utc(value));
-
-/** `2026-10-14` -> `14.10.26` */
-export function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const [y, m, d] = iso.slice(0, 10).split("-");
-  return `${d}.${m}.${y.slice(2)}`;
-}
-
-/** `14.10.26 - 20.10.26` */
-export const fmtDateRange = (start: string | null | undefined, end: string | null | undefined): string =>
-  `${fmtDate(start)} - ${fmtDate(end)}`;
-
-/** `2026-10-14T10:10:00` (a block's local wall time) -> `14.10.26 10:10` */
-export function fmtDateTime(value: string | null | undefined): string {
-  if (!value) return "";
-  const time = value.slice(11, 16);
-  return time ? `${fmtDate(value)} ${time}` : fmtDate(value);
-}
-
-export function addDays(iso: string, days: number): string {
-  return new Date(utc(iso) + days * DAY_MS).toISOString().slice(0, 10);
-}
-
-export function nightsBetween(start: string | null | undefined, end: string | null | undefined): number | null {
-  if (!start || !end) return null;
-  const nights = Math.round((utc(end) - utc(start)) / DAY_MS);
-  return Number.isFinite(nights) ? nights : null;
-}
-
-/** Days between two dates, ignoring the time part. */
-export const dayDiff = (a: string, b: string): number => Math.abs(Math.round((utc(a) - utc(b)) / DAY_MS));
-
-/** 0 = Sunday ... 6 = Saturday, the convention of tours.series.arrival_weekday. */
-export const weekdayOf = (iso: string): number => new Date(utc(iso)).getUTCDay();
-
-export const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
-export const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-
-/** Today in Israel as `YYYY-MM-DD` - the date a soft delete is stamped with. */
-export function todayIso(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(now);
-}
-
-/** Wall-clock parts of an instant in Israel. */
-function jerusalemParts(date: Date): Record<string, number> {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Jerusalem",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const out: Record<string, number> = {};
-  for (const p of parts) if (p.type !== "literal") out[p.type] = Number(p.value);
-  return out;
-}
-
-const pad = (n: number): string => String(n).padStart(2, "0");
-
-/** A stored instant -> the value of a `datetime-local` input, in Israel time. */
-export function isoToJerusalemLocal(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  const p = jerusalemParts(date);
-  return `${p.year}-${pad(p.month)}-${pad(p.day)}T${pad(p.hour)}:${pad(p.minute)}`;
-}
-
-/** The value of a `datetime-local` input, read as Israel time -> an ISO instant (null when empty or invalid). */
-export function jerusalemLocalToIso(local: string | null | undefined): string | null {
-  if (!local) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(local);
-  if (!match) return null;
-  const [y, mo, d, h, mi] = match.slice(1).map(Number);
-  const wanted = Date.UTC(y, mo - 1, d, h, mi);
-  // Start from "as if UTC", measure how far Israel is from UTC at that moment, correct once.
-  const p = jerusalemParts(new Date(wanted));
-  const shown = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
-  return new Date(wanted - (shown - wanted)).toISOString();
-}
-
-/** `14.10.26 07:30` for a stored instant, in Israel time. */
-export function fmtInstant(iso: string | null | undefined): string {
-  const local = isoToJerusalemLocal(iso);
-  return local ? fmtDateTime(local) : "";
-}
 
 // ---------------------------------------------------------------- codes
 /**
@@ -141,26 +46,6 @@ export function effectiveRoute(departure: RouteEnds, series: RouteEnds | null | 
     arrival_airport: departure.arrival_airport ?? series?.arrival_airport ?? null,
     return_airport: departure.return_airport ?? series?.return_airport ?? null,
   };
-}
-
-// ---------------------------------------------------------------- money
-const CURRENCY_SYMBOLS: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", ILS: "₪" };
-export const currencySymbol = (currency: string | null | undefined): string =>
-  CURRENCY_SYMBOLS[currency ?? ""] ?? currency ?? "";
-
-export function fmtMoney(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) return "";
-  return Number.isInteger(value) ? value.toLocaleString("en-US") : value.toLocaleString("en-US", { maximumFractionDigits: 2 });
-}
-
-/** A typed or pasted price: `2,145`, ` 2145 `, `$2145` -> 2145. Empty -> null. Anything else -> undefined. */
-export function parsePrice(raw: string | number | null | undefined): number | null | undefined {
-  if (raw == null) return null;
-  if (typeof raw === "number") return Number.isFinite(raw) && raw >= 0 ? raw : undefined;
-  const cleaned = raw.replace(/[\s,$€£₪]/g, "");
-  if (cleaned === "" || cleaned === "-") return null;
-  if (!/^\d+(\.\d+)?$/.test(cleaned)) return undefined;
-  return Number(cleaned);
 }
 
 // ---------------------------------------------------------------- promotions

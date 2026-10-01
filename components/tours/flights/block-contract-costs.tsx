@@ -13,27 +13,11 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  setTourBlockContract,
-  updateTourBlockCosts,
-  type TourBlockData,
-} from "@/lib/actions/tours-flight-actions";
+import { setTourBlockContract, updateTourBlockCosts } from "@/lib/actions/tours-flight-actions";
 import { CURRENCIES } from "@/types/tours.types";
-import {
-  Field,
-  Ltr,
-  Notice,
-  Section,
-  Stat,
-  formatMoney,
-  parseNumber,
-  type RunAction,
-} from "@/components/tours/flights/block-ui";
-
-interface SectionProps {
-  data: TourBlockData;
-  run: RunAction;
-}
+import { formatMoney, parseNumber } from "@/lib/tours/format";
+import { Field, Ltr, Notice, Section, Stat } from "@/components/tours/ui";
+import type { BlockSectionProps } from "@/components/tours/flights/tour-block-panel";
 
 export const CONTRACT_KIND_LABELS: Record<string, string> = {
   series_contract: "Series contract",
@@ -50,7 +34,7 @@ const NO_CONTRACT = "__none__";
 
 const daysText = (days: number | null) => (days === null ? "Not set" : `${days} days before departure`);
 
-export function BlockContractSection({ data, run }: SectionProps) {
+export function BlockContractSection({ data, run }: BlockSectionProps) {
   const { block, contract } = data;
   const [saving, setSaving] = useState(false);
 
@@ -89,7 +73,7 @@ export function BlockContractSection({ data, run }: SectionProps) {
       </Field>
 
       {contract ? (
-        <div className="mt-3 grid gap-3 text-sm">
+        <div className="grid gap-3 text-sm">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5">
             <dt className="text-muted-foreground">Type</dt>
             <dd>{CONTRACT_KIND_LABELS[contract.kind] ?? contract.kind}</dd>
@@ -146,9 +130,10 @@ export function BlockContractSection({ data, run }: SectionProps) {
           </div>
         </div>
       ) : (
-        <div className="mt-3">
-          <Notice>The flight block has no contract. Without one it cannot be marked &quot;Confirmed by airline&quot;, and there are no deadlines to compute.</Notice>
-        </div>
+        <Notice tone="muted">
+          The flight block has no contract. Without one it cannot be marked &quot;Confirmed by airline&quot;, and there are
+          no deadlines to compute.
+        </Notice>
       )}
     </Section>
   );
@@ -156,7 +141,7 @@ export function BlockContractSection({ data, run }: SectionProps) {
 
 const text = (value: number | null) => (value === null ? "" : String(value));
 
-export function BlockCostsSection({ data, run }: SectionProps) {
+export function BlockCostsSection({ data, run }: BlockSectionProps) {
   const { block } = data;
   const [adult, setAdult] = useState(text(block.cost_price));
   const [child, setChild] = useState(text(block.cost_child_price));
@@ -233,14 +218,14 @@ export function BlockCostsSection({ data, run }: SectionProps) {
         </Field>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={save} disabled={!dirty || invalid || saving}>
           {saving ? "Saving..." : "Save Costs"}
         </Button>
         {invalid && <span className="text-sm text-destructive">A cost must be a number, 0 or more</span>}
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <Stat label="Adult Total" value={<Ltr>{formatMoney(adultTotal, shownCurrency)}</Ltr>} />
         <Stat label="Child Total" value={<Ltr>{formatMoney(childTotal, shownCurrency)}</Ltr>} />
         <Stat

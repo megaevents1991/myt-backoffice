@@ -1,9 +1,5 @@
-import { DataTableSkeleton } from "@/components/data-table";
+import { FormSkeleton } from "@/components/tours/content/form-skeleton";
 
 export default function Loading() {
-  return (
-    <div>
-      <DataTableSkeleton label="Loading content page" />
-    </div>
-  );
+  return <FormSkeleton label="Loading content page" />;
 }

@@ -56,17 +56,14 @@ import {
   type TermKind,
   type TermListRow,
 } from "@/components/tours/content/shared";
-import { actionFail } from "@/lib/tours/action-kit";
+import { UUID, actionFail, fetchAll } from "@/lib/tours/action-kit";
+import { asObject, companyAudit, invalidInput, type JsonObject } from "@/lib/tours/company-kit";
 
 const failure = (e: unknown, fallback: string) => actionFail(e, "tours-content-actions", fallback);
 
 type Tours = Database["tours"]["Tables"];
-type JsonObject = { [key: string]: Json | undefined };
 
 // ---------------------------------------------------------------- helpers
-const asObject = (value: Json | null | undefined): JsonObject =>
-  value && typeof value === "object" && !Array.isArray(value) ? value : {};
-
 const asStrings = (value: Json | undefined): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 
@@ -79,7 +76,7 @@ const orNull = (value: string): string | null => (value.trim() === "" ? null : v
 const today = (): string => new Date().toISOString().slice(0, 10);
 
 /** An id that is not a uuid cannot match a row - answer "not found" instead of a database error. */
-const isUuid = (value: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+const isUuid = (value: string): boolean => UUID.test(value);
 
 /** A long value in the audit trail says what changed, not the whole document. */
 function brief(value: unknown): unknown {
@@ -119,11 +116,6 @@ class RowPatch {
     return { ...this.columns, data: { ...asObject(currentData), ...this.data } };
   }
 }
-
-const invalid = (error: z.ZodError): { success: false; error: string } => ({
-  success: false,
-  error: error.issues[0]?.message ?? "The data entered is invalid",
-});
 
 const ENTITIES: Record<string, string> = {
   "&nbsp;": " ",
@@ -366,14 +358,31 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
       .select("term_id, terms!inner(company_id, kind)")
       .eq("package_id", id)
       .eq("terms.company_id", company.id),
-    db.from("terms").select("id, kind, name, is_active").eq("company_id", company.id).order("position").order("name"),
+    fetchAll((from, to) =>
+      db
+        .from("terms")
+        .select("id, kind, name, is_active")
+        .eq("company_id", company.id)
+        .order("position")
+        .order("name")
+        .order("id")
+        .range(from, to),
+    ),
     db.from("series").select("code").eq("company_id", company.id).eq("package_id", id).order("code"),
-    db.from("departures").select("itinerary_id").eq("company_id", company.id).eq("package_id", id).range(0, 4999),
+    fetchAll((from, to) =>
+      db
+        .from("departures")
+        .select("itinerary_id")
+        .eq("company_id", company.id)
+        .eq("package_id", id)
+        .order("id")
+        .range(from, to),
+    ),
   ]);
-  for (const res of [itineraries, links, terms, series, departures]) if (res.error) throw res.error;
+  for (const res of [itineraries, links, series]) if (res.error) throw res.error;
 
   const usage = new Map<string, number>();
-  for (const d of departures.data ?? []) {
+  for (const d of departures) {
     if (d.itinerary_id) usage.set(d.itinerary_id, (usage.get(d.itinerary_id) ?? 0) + 1);
   }
   const variants = (itineraries.data ?? [])
@@ -391,11 +400,11 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
     id: pkg.id,
     form: toPackageForm(pkg, termIds),
     hasContent: asObject(pkg.data).stub !== true,
-    slugLocked: (departures.data ?? []).length > 0,
-    departures: (departures.data ?? []).length,
+    slugLocked: departures.length > 0,
+    departures: departures.length,
     seriesCodes: (series.data ?? []).map((s) => s.code),
     itineraries: variants,
-    terms: (terms.data ?? []).map((t) => ({ id: t.id, kind: t.kind, name: t.name, isActive: t.is_active })),
+    terms: terms.map((t) => ({ id: t.id, kind: t.kind, name: t.name, isActive: t.is_active })),
     siteUrl: company.siteUrl,
   };
 }
@@ -406,39 +415,44 @@ export async function listTourPackages(): Promise<ActionResult<PackageList>> {
     const { company } = await requireCompany("tours");
     const db = toursDb();
     const [packages, series, departures] = await Promise.all([
-      db
-        .from("packages")
-        .select("id, slug, name, subtitle, kind, brand, card_image, is_active, stub:data->stub")
-        .eq("company_id", company.id)
-        .is("is_deleted", null)
-        .order("name")
-        .range(0, 1999),
-      db.from("series").select("package_id, code").eq("company_id", company.id).order("code").range(0, 4999),
-      db
-        .from("departures")
-        .select("package_id")
-        .eq("company_id", company.id)
-        .eq("is_published", true)
-        .is("is_deleted", null)
-        .gte("start_date", today())
-        .range(0, 9999),
+      fetchAll((from, to) =>
+        db
+          .from("packages")
+          .select("id, slug, name, subtitle, kind, brand, card_image, is_active, stub:data->stub")
+          .eq("company_id", company.id)
+          .is("is_deleted", null)
+          .order("name")
+          .order("id")
+          .range(from, to),
+      ),
+      fetchAll((from, to) =>
+        db.from("series").select("package_id, code").eq("company_id", company.id).order("code").order("id").range(from, to),
+      ),
+      fetchAll((from, to) =>
+        db
+          .from("departures")
+          .select("package_id")
+          .eq("company_id", company.id)
+          .eq("is_published", true)
+          .is("is_deleted", null)
+          .gte("start_date", today())
+          .order("id")
+          .range(from, to),
+      ),
     ]);
-    if (packages.error) throw packages.error;
-    if (series.error) throw series.error;
-    if (departures.error) throw departures.error;
 
     const codes = new Map<string, string[]>();
-    for (const s of series.data ?? []) {
+    for (const s of series) {
       if (!s.package_id) continue;
       codes.set(s.package_id, [...(codes.get(s.package_id) ?? []), s.code]);
     }
     const future = new Map<string, number>();
-    for (const d of departures.data ?? []) future.set(d.package_id, (future.get(d.package_id) ?? 0) + 1);
+    for (const d of departures) future.set(d.package_id, (future.get(d.package_id) ?? 0) + 1);
 
     type Row = Pick<TourPackage, "id" | "slug" | "name" | "subtitle" | "kind" | "brand" | "card_image" | "is_active"> & {
       stub: Json;
     };
-    const rows = ((packages.data ?? []) as unknown as Row[]).map((p) => ({
+    const rows = (packages as unknown as Row[]).map((p) => ({
       id: p.id,
       slug: p.slug,
       name: p.name,
@@ -521,7 +535,7 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
   try {
     const { company } = await requireCompany("tours");
     const parsed = packageSchema.safeParse(form);
-    if (!parsed.success) return invalid(parsed.error);
+    if (!parsed.success) return invalidInput(parsed.error);
     const input = parsed.data;
     const db = toursDb();
 
@@ -601,13 +615,14 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
     syncDerivedLabels(data, patch, before, { days: input.days, nights: input.nights, countries, seasons });
 
     // --- attached terms (every kind but the page's own "packages" term)
-    const [{ data: links, error: linksError }, { data: terms, error: termsError }] = await Promise.all([
+    const [{ data: links, error: linksError }, terms] = await Promise.all([
       db.from("package_terms").select("term_id").eq("package_id", id),
-      db.from("terms").select("id, kind, legacy_id").eq("company_id", company.id),
+      fetchAll((from, to) =>
+        db.from("terms").select("id, kind, legacy_id").eq("company_id", company.id).order("id").range(from, to),
+      ),
     ]);
     if (linksError) throw linksError;
-    if (termsError) throw termsError;
-    const termById = new Map((terms ?? []).map((t) => [t.id, t]));
+    const termById = new Map(terms.map((t) => [t.id, t]));
     const editable = (termId: string) => {
       const term = termById.get(termId);
       return !!term && term.kind !== "packages";
@@ -694,7 +709,7 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
         entityType: "tours_package",
         entityId: id,
         changes: patch.changes,
-        metadata: { company: company.slug, slug: before.slug },
+        metadata: { ...companyAudit(company), slug: before.slug },
       });
       revalidatePath("/tours/packages");
       revalidatePath(`/tours/packages/${id}`);
@@ -750,7 +765,7 @@ export async function deleteTourPackage(id: string): Promise<ActionResult> {
       action: "delete",
       entityType: "tours_package",
       entityId: id,
-      metadata: { company: company.slug, slug: pkg.slug, name: pkg.name },
+      metadata: { ...companyAudit(company), slug: pkg.slug, name: pkg.name },
     });
     revalidatePath("/tours/packages");
     return { success: true, data: undefined };
@@ -791,7 +806,7 @@ export async function saveTourItinerary(
   try {
     const { company } = await requireCompany("tours");
     const parsed = itinerarySchema.safeParse(form);
-    if (!parsed.success) return invalid(parsed.error);
+    if (!parsed.success) return invalidInput(parsed.error);
     const input = parsed.data;
     const db = toursDb();
     const pkg = await packageOf(company, packageId);
@@ -827,7 +842,7 @@ export async function saveTourItinerary(
         entityType: "tours_itinerary",
         entityId: created.id,
         changes: { key: "main", days: input.days.length },
-        metadata: { company: company.slug, package: pkg.slug },
+        metadata: { ...companyAudit(company), package: pkg.slug },
       });
     } else {
       const patch = new RowPatch();
@@ -847,7 +862,7 @@ export async function saveTourItinerary(
           entityType: "tours_itinerary",
           entityId: before.id,
           changes: patch.changes,
-          metadata: { company: company.slug, package: pkg.slug, key: before.key },
+          metadata: { ...companyAudit(company), package: pkg.slug, key: before.key },
         });
       }
     }
@@ -868,7 +883,7 @@ export async function createTourItineraryVariant(
   try {
     const { company } = await requireCompany("tours");
     const parsed = variantSchema.safeParse(form);
-    if (!parsed.success) return invalid(parsed.error);
+    if (!parsed.success) return invalidInput(parsed.error);
     const input = parsed.data;
     if (input.key === "main") return { success: false, error: "The ID main is reserved for the main itinerary" };
     const db = toursDb();
@@ -906,7 +921,7 @@ export async function createTourItineraryVariant(
       entityType: "tours_itinerary",
       entityId: created.id,
       changes: { key: input.key, label: input.label, copied_from: source.key },
-      metadata: { company: company.slug, package: pkg.slug },
+      metadata: { ...companyAudit(company), package: pkg.slug },
     });
     revalidatePath(`/tours/packages/${packageId}`);
     const fresh = await loadPackageEditor(company, packageId);
@@ -956,7 +971,7 @@ export async function deleteTourItineraryVariant(
       action: "delete",
       entityType: "tours_itinerary",
       entityId: itineraryId,
-      metadata: { company: company.slug, package_id: packageId, key: row.key, label: row.label },
+      metadata: { ...companyAudit(company), package_id: packageId, key: row.key, label: row.label },
     });
     revalidatePath(`/tours/packages/${packageId}`);
     const fresh = await loadPackageEditor(company, packageId);
@@ -973,27 +988,32 @@ export async function listTourTerms(): Promise<ActionResult<TermListRow[]>> {
     const { company } = await requireCompany("tours");
     const db = toursDb();
     const [terms, links] = await Promise.all([
-      db
-        .from("terms")
-        .select("id, kind, slug, name, position, is_active, hero_images")
-        .eq("company_id", company.id)
-        .order("position")
-        .order("name")
-        .range(0, 4999),
-      db
-        .from("package_terms")
-        .select("term_id, packages!inner(company_id, is_deleted)")
-        .eq("packages.company_id", company.id)
-        .is("packages.is_deleted", null)
-        .range(0, 9999),
+      fetchAll((from, to) =>
+        db
+          .from("terms")
+          .select("id, kind, slug, name, position, is_active, hero_images")
+          .eq("company_id", company.id)
+          .order("position")
+          .order("name")
+          .order("id")
+          .range(from, to),
+      ),
+      fetchAll((from, to) =>
+        db
+          .from("package_terms")
+          .select("term_id, packages!inner(company_id, is_deleted)")
+          .eq("packages.company_id", company.id)
+          .is("packages.is_deleted", null)
+          .order("package_id")
+          .order("term_id")
+          .range(from, to),
+      ),
     ]);
-    if (terms.error) throw terms.error;
-    if (links.error) throw links.error;
     const pages = new Map<string, number>();
-    for (const l of links.data ?? []) pages.set(l.term_id, (pages.get(l.term_id) ?? 0) + 1);
+    for (const l of links) pages.set(l.term_id, (pages.get(l.term_id) ?? 0) + 1);
     return {
       success: true,
-      data: (terms.data ?? []).map((t) => ({
+      data: terms.map((t) => ({
         id: t.id,
         kind: t.kind,
         slug: t.slug,
@@ -1059,7 +1079,7 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
   try {
     const { company } = await requireCompany("tours");
     const parsed = termSchema.safeParse(form);
-    if (!parsed.success) return invalid(parsed.error);
+    if (!parsed.success) return invalidInput(parsed.error);
     const input = parsed.data;
     const loaded = await loadTerm(company, id);
     if (!loaded) return { success: false, error: "Category or tag not found" };
@@ -1087,7 +1107,7 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
         entityType: "tours_term",
         entityId: id,
         changes: patch.changes,
-        metadata: { company: company.slug, kind: before.kind, slug: before.slug },
+        metadata: { ...companyAudit(company), kind: before.kind, slug: before.slug },
       });
       revalidatePath("/tours/terms");
       revalidatePath(`/tours/terms/${id}`);
@@ -1133,18 +1153,20 @@ const instructorEditor = (company: Company, row: TourInstructor): InstructorEdit
 export async function listTourInstructors(): Promise<ActionResult<InstructorList>> {
   try {
     const { company } = await requireCompany("tours");
-    const { data, error } = await toursDb()
-      .from("instructors")
-      .select("id, slug, name, image, regions, position, is_active")
-      .eq("company_id", company.id)
-      .order("position")
-      .order("name")
-      .range(0, 1999);
-    if (error) throw error;
+    const data = await fetchAll((from, to) =>
+      toursDb()
+        .from("instructors")
+        .select("id, slug, name, image, regions, position, is_active")
+        .eq("company_id", company.id)
+        .order("position")
+        .order("name")
+        .order("id")
+        .range(from, to),
+    );
     return {
       success: true,
       data: {
-        rows: (data ?? []).map((r) => ({
+        rows: data.map((r) => ({
           id: r.id,
           slug: r.slug,
           name: r.name,
@@ -1191,7 +1213,7 @@ export async function saveTourInstructor(
   try {
     const { company } = await requireCompany("tours");
     const parsed = instructorSchema.safeParse(form);
-    if (!parsed.success) return invalid(parsed.error);
+    if (!parsed.success) return invalidInput(parsed.error);
     const input = parsed.data;
     const before = await instructorRow(company, id);
     if (!before) return { success: false, error: "Group leader not found" };
@@ -1219,7 +1241,7 @@ export async function saveTourInstructor(
         entityType: "tours_instructor",
         entityId: id,
         changes: patch.changes,
-        metadata: { company: company.slug, slug: before.slug },
+        metadata: { ...companyAudit(company), slug: before.slug },
       });
       revalidatePath("/tours/instructors");
       revalidatePath(`/tours/instructors/${id}`);
@@ -1270,15 +1292,17 @@ async function hotelEditor(company: Company, row: TourHotel): Promise<HotelEdito
 export async function listTourHotels(): Promise<ActionResult<HotelList>> {
   try {
     const { company } = await requireCompany("tours");
-    const { data, error } = await toursDb()
-      .from("hotels")
-      .select("id, code, name, city, stars, image, position")
-      .eq("company_id", company.id)
-      .order("position")
-      .order("name")
-      .range(0, 1999);
-    if (error) throw error;
-    return { success: true, data: { rows: data ?? [], siteUrl: company.siteUrl } };
+    const rows = await fetchAll((from, to) =>
+      toursDb()
+        .from("hotels")
+        .select("id, code, name, city, stars, image, position")
+        .eq("company_id", company.id)
+        .order("position")
+        .order("name")
+        .order("id")
+        .range(from, to),
+    );
+    return { success: true, data: { rows, siteUrl: company.siteUrl } };
   } catch (e) {
     return failure(e, "Failed to load hotels");
   }
@@ -1299,7 +1323,7 @@ export async function saveTourHotel(id: string, form: HotelForm): Promise<Action
   try {
     const { company } = await requireCompany("tours");
     const parsed = hotelSchema.safeParse(form);
-    if (!parsed.success) return invalid(parsed.error);
+    if (!parsed.success) return invalidInput(parsed.error);
     const input = parsed.data;
     const db = toursDb();
     const before = await hotelRow(company, id);
@@ -1349,7 +1373,7 @@ export async function saveTourHotel(id: string, form: HotelForm): Promise<Action
         entityType: "tours_hotel",
         entityId: id,
         changes: patch.changes,
-        metadata: { company: company.slug, code: before.code },
+        metadata: { ...companyAudit(company), code: before.code },
       });
       revalidatePath("/tours/hotels");
       revalidatePath(`/tours/hotels/${id}`);
@@ -1404,28 +1428,32 @@ export async function listTourCmsPages(): Promise<ActionResult<CmsPageListRow[]>
     const { company } = await requireCompany("tours");
     const db = toursDb();
     const [pages, empty] = await Promise.all([
-      db
-        .from("cms_pages")
-        .select("id, kind, path, title, position, is_active")
-        .eq("company_id", company.id)
-        .in("kind", [...CMS_PAGE_KINDS])
-        .order("kind")
-        .order("position")
-        .range(0, 1999),
-      db
-        .from("cms_pages")
-        .select("id")
-        .eq("company_id", company.id)
-        .in("kind", [...CMS_PAGE_KINDS])
-        .or("content_html.is.null,content_html.eq.")
-        .range(0, 1999),
+      fetchAll((from, to) =>
+        db
+          .from("cms_pages")
+          .select("id, kind, path, title, position, is_active")
+          .eq("company_id", company.id)
+          .in("kind", [...CMS_PAGE_KINDS])
+          .order("kind")
+          .order("position")
+          .order("id")
+          .range(from, to),
+      ),
+      fetchAll((from, to) =>
+        db
+          .from("cms_pages")
+          .select("id")
+          .eq("company_id", company.id)
+          .in("kind", [...CMS_PAGE_KINDS])
+          .or("content_html.is.null,content_html.eq.")
+          .order("id")
+          .range(from, to),
+      ),
     ]);
-    if (pages.error) throw pages.error;
-    if (empty.error) throw empty.error;
-    const noContent = new Set((empty.data ?? []).map((r) => r.id));
+    const noContent = new Set(empty.map((r) => r.id));
     return {
       success: true,
-      data: (pages.data ?? []).map((r) => ({
+      data: pages.map((r) => ({
         id: r.id,
         kind: r.kind,
         path: r.path,
@@ -1455,7 +1483,7 @@ export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<Ac
   try {
     const { company } = await requireCompany("tours");
     const parsed = cmsPageSchema.safeParse(form);
-    if (!parsed.success) return invalid(parsed.error);
+    if (!parsed.success) return invalidInput(parsed.error);
     const input = parsed.data;
     const before = await cmsPageRow(company, id);
     if (!before) return { success: false, error: "Page not found" };
@@ -1485,7 +1513,7 @@ export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<Ac
         entityType: "tours_cms_page",
         entityId: id,
         changes: patch.changes,
-        metadata: { company: company.slug, path: before.path },
+        metadata: { ...companyAudit(company), path: before.path },
       });
       revalidatePath("/tours/pages");
       revalidatePath(`/tours/pages/${id}`);

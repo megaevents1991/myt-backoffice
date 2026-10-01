@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink, Info, Plus, Trash2 } from "lucide-react";
-import { toast } from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,24 +12,25 @@ import { Switch } from "@/components/ui/switch";
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/page-header";
+import { StickySaveBar } from "@/components/sticky-save-bar";
 import { UrlTabs } from "@/components/url-tabs";
 import { useConfirm } from "@/components/confirm-provider";
+import { useToast } from "@/hooks/use-toast";
+import { useActionToast } from "@/hooks/use-action-toast";
 import { deleteTourPackage, saveTourItinerary, saveTourPackage } from "@/lib/actions/tours-content-actions";
+import { Chip, Field, Section } from "@/components/tours/ui";
 import {
-  Field,
   ImageListEditor,
   ImageUrlField,
   NO_UPLOAD_NOTE,
-  Pill,
   RowControls,
-  Section,
   StringListEditor,
   moved,
 } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { ItineraryEditor } from "@/components/tours/content/itinerary-editor";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
-import { BackLink, ContentSaveBar } from "@/components/tours/content/save-bar";
+import { BackLink, CONTENT_SAVED_NOTE, CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
 import {
   PACKAGE_BRANDS,
   PACKAGE_BRAND_COLORS,
@@ -75,6 +75,8 @@ const numberOrNull = (value: string): number | null => {
 export function PackageEditor({ initial }: { initial: PackageEditorData }) {
   const router = useRouter();
   const confirm = useConfirm();
+  const { toast } = useToast();
+  const run = useActionToast();
   const [saved, setSaved] = useState(initial);
   const [form, setForm] = useState<PackageForm>(initial.form);
   const [variants, setVariants] = useState<ItineraryVariant[]>(initial.itineraries);
@@ -138,9 +140,10 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
       );
     }
     setIsSaving(false);
-    if (failed) toast.error(failed, { duration: 7000 });
+    // the page and its variants are several actions: one toast for the whole save
+    if (failed) toast({ variant: "destructive", title: "Error", description: failed });
     else {
-      toast.success("Saved. Click Publish Site to show the change on the site.");
+      toast({ title: CONTENT_SAVED_NOTE });
       router.refresh();
     }
   };
@@ -160,13 +163,9 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
     });
     if (!ok) return;
     setIsDeleting(true);
-    const result = await deleteTourPackage(saved.id);
+    const result = await run(() => deleteTourPackage(saved.id), "Page deleted");
     setIsDeleting(false);
-    if (!result.success) {
-      toast.error(result.error, { duration: 7000 });
-      return;
-    }
-    toast.success("Page deleted");
+    if (!result.success) return;
     router.push("/tours/packages");
     router.refresh();
   };
@@ -185,8 +184,8 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
         title={saved.form.name}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <Pill tone={saved.form.isActive ? "on" : "off"}>{saved.form.isActive ? "Active on site" : "Inactive"}</Pill>
-            {!saved.hasContent && <Pill>No content</Pill>}
+            <Chip tone={saved.form.isActive ? "outline" : "danger"}>{saved.form.isActive ? "Active on site" : "Inactive"}</Chip>
+            {!saved.hasContent && <Chip>No content</Chip>}
             {saved.seriesCodes.length > 0 && (
               <span>
                 Series:{" "}
@@ -552,7 +551,16 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
         </TabsContent>
       </UrlTabs>
 
-      <ContentSaveBar isDirty={isDirty} isSaving={isSaving} onSave={() => void save()} onDiscard={discard} disabledReason={problem} />
+      <StickySaveBar
+        isDirty={isDirty}
+        isSaving={isSaving}
+        onSave={() => void save()}
+        onDiscard={discard}
+        disabled={!!problem}
+        disabledReason={problem ?? undefined}
+        showDisabledReason
+        message={CONTENT_UNSAVED_NOTE}
+      />
     </div>
   );
 }

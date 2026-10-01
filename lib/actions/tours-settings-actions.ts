@@ -14,33 +14,35 @@ import { z } from "zod";
 import { requireCompany, type Company } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
-import type { SessionPayload } from "@/lib/auth/session";
 import type { Database, Json } from "@/types/database.types";
 import type {
   ActionResult,
-  CompanyMemberRow,
   CompanySettingsData,
   CompanySettingsForm,
   DeployHookChange,
-  SitePublishRecord,
 } from "@/components/tours/content/shared";
+import { isManagerRole } from "@/components/tours/flights/block-rules";
 import { actionFail } from "@/lib/tours/action-kit";
+import {
+  LAST_SITE_PUBLISH_KEY,
+  SITE_DEPLOY_HOOK_KEY,
+  asObject,
+  companyAudit,
+  companyMembersOf,
+  invalidInput,
+  publishRecordOf,
+  type JsonObject,
+} from "@/lib/tours/company-kit";
 
 const failure = (e: unknown, fallback: string) => actionFail(e, "tours-settings-actions", fallback);
 
 type CompanyRow = Database["public"]["Tables"]["companies"]["Row"];
-type JsonObject = { [key: string]: Json | undefined };
 
-const HOOK_KEY = "site_deploy_hook";
-const LAST_KEY = "last_site_publish";
 const SETTINGS_CURRENCIES = ["USD", "EUR", "GBP", "ILS"] as const;
 
-const asObject = (value: Json | null | undefined): JsonObject =>
-  value && typeof value === "object" && !Array.isArray(value) ? value : {};
 const text = (value: Json | undefined): string => (typeof value === "string" ? value : "");
 
 const NOT_ADMIN = { success: false as const, error: "Settings are open to company admins only" };
-const isAdmin = (session: SessionPayload): boolean => session.role === "superadmin" || session.role === "admin";
 
 const optionalEmail = z
   .string()
@@ -104,42 +106,10 @@ function merged(current: JsonObject, values: Record<string, Json | undefined>): 
   return next;
 }
 
-function toRecord(value: Json | undefined): SitePublishRecord | null {
-  const o = asObject(value);
-  if (typeof o.at !== "string") return null;
-  return {
-    at: o.at,
-    by: text(o.by),
-    status: typeof o.status === "number" ? o.status : null,
-    ok: o.ok === true,
-    ...(typeof o.error === "string" ? { error: o.error } : {}),
-  };
-}
-
-async function membersOf(company: Company): Promise<CompanyMemberRow[]> {
-  const { data, error } = await supabaseTyped
-    .from("company_members")
-    .select("user_id, role, user_profiles!inner(email, display_name, is_active)")
-    .eq("company_id", company.id);
-  if (error) throw error;
-  return (data ?? [])
-    .map((m) => {
-      const profile = m.user_profiles as unknown as { email: string; display_name: string | null; is_active: boolean };
-      return {
-        userId: m.user_id,
-        name: profile.display_name || profile.email,
-        email: profile.email,
-        role: m.role,
-        isActive: profile.is_active,
-      };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, "he"));
-}
-
 async function load(company: Company): Promise<{ row: CompanyRow; settings: CompanySettingsData }> {
   const [{ data: row, error }, members] = await Promise.all([
     supabaseTyped.from("companies").select("*").eq("id", company.id).single(),
-    membersOf(company),
+    companyMembersOf(company),
   ]);
   if (error) throw error;
   const contact = asObject(row.contact);
@@ -169,8 +139,8 @@ async function load(company: Company): Promise<{ row: CompanyRow; settings: Comp
         analytics: { gtm: text(analytics.gtm), pixel: text(analytics.pixel) },
       },
       // only whether one is stored - the URL itself is a secret and stays on the server
-      deployHookSet: typeof features[HOOK_KEY] === "string" && features[HOOK_KEY] !== "",
-      lastPublish: toRecord(features[LAST_KEY]),
+      deployHookSet: typeof features[SITE_DEPLOY_HOOK_KEY] === "string" && features[SITE_DEPLOY_HOOK_KEY] !== "",
+      lastPublish: publishRecordOf(features[LAST_SITE_PUBLISH_KEY]),
       members,
     },
   };
@@ -179,7 +149,7 @@ async function load(company: Company): Promise<{ row: CompanyRow; settings: Comp
 export async function getCompanySettings(): Promise<ActionResult<CompanySettingsData>> {
   try {
     const { session, company } = await requireCompany("tours");
-    if (!isAdmin(session)) return NOT_ADMIN;
+    if (!isManagerRole(session.role)) return NOT_ADMIN;
     return { success: true, data: (await load(company)).settings };
   } catch (e) {
     return failure(e, "Failed to load settings");
@@ -192,11 +162,9 @@ export async function saveCompanySettings(
 ): Promise<ActionResult<CompanySettingsData>> {
   try {
     const { session, company } = await requireCompany("tours");
-    if (!isAdmin(session)) return NOT_ADMIN;
+    if (!isManagerRole(session.role)) return NOT_ADMIN;
     const parsed = settingsSchema.safeParse(form);
-    if (!parsed.success) {
-      return { success: false, error: parsed.error.issues[0]?.message ?? "The data entered is invalid" };
-    }
+    if (!parsed.success) return invalidInput(parsed.error);
     const input = parsed.data;
     const { row: before } = await load(company);
 
@@ -212,11 +180,11 @@ export async function saveCompanySettings(
     if (hook.action === "set") {
       const url = validHook(hook.url);
       if (!url) return { success: false, error: "The deploy hook must be a full https URL" };
-      nextFeatures = { ...features, [HOOK_KEY]: url };
-      hookChange = features[HOOK_KEY] ? "replaced" : "set";
-    } else if (hook.action === "clear" && features[HOOK_KEY] !== undefined) {
+      nextFeatures = { ...features, [SITE_DEPLOY_HOOK_KEY]: url };
+      hookChange = features[SITE_DEPLOY_HOOK_KEY] ? "replaced" : "set";
+    } else if (hook.action === "clear" && features[SITE_DEPLOY_HOOK_KEY] !== undefined) {
       nextFeatures = { ...features };
-      delete nextFeatures[HOOK_KEY];
+      delete nextFeatures[SITE_DEPLOY_HOOK_KEY];
       hookChange = "cleared";
     }
 
@@ -248,7 +216,7 @@ export async function saveCompanySettings(
       if (JSON.stringify(before[key]) === JSON.stringify(next[key])) continue;
       update[key] = next[key];
       // the hook URL never reaches the audit trail
-      if (key === "features") changes.site_deploy_hook = { from: features[HOOK_KEY] ? "set" : "unset", to: hookChange };
+      if (key === "features") changes.site_deploy_hook = { from: features[SITE_DEPLOY_HOOK_KEY] ? "set" : "unset", to: hookChange };
       else changes[key] = { from: before[key], to: next[key] };
     }
 
@@ -263,7 +231,7 @@ export async function saveCompanySettings(
         entityType: "company",
         entityId: company.id,
         changes,
-        metadata: { company: company.slug },
+        metadata: companyAudit(company),
       });
       // the company name and site address show in the top bar and in every tours screen
       revalidatePath("/", "layout");
