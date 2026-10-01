@@ -6,7 +6,9 @@
 import assert from "node:assert/strict";
 import {
   FEED_QUIET_DAYS,
+  MANUAL_MATCH_DAYS,
   STALE_FEED_MARK,
+  adoptsManualRow,
   feedQuietWarning,
   mirrorSummary,
 } from "../lib/services/google-reviews-sync";
@@ -60,6 +62,31 @@ check("a feed whose newest review is weeks old is called out, with the date", ()
 check("no reviews at all, or an unreadable date, is not a staleness claim", () => {
   assert.equal(feedQuietWarning(null, now), null);
   assert.equal(feedQuietWarning("not a date", now), null);
+});
+
+// A hand-entered row (2026-10-01) and the same review arriving later with Google's id.
+const manual = {
+  review_key: "manual:0123456789abcdef",
+  author_name: "Liron Altman",
+  rating: 5,
+  published_at: "2026-09-24T12:00:00Z", // "לפני שבוע"
+};
+const fromSource = { author_name: "Liron Altman", rating: 5, published_at: "2026-09-21T08:14:03Z" };
+
+check("a source's review adopts the hand-entered row of the same author and rating", () => {
+  assert.equal(adoptsManualRow(fromSource, manual), true);
+  assert.equal(adoptsManualRow({ ...fromSource, author_name: " Liron Altman " }, manual), true);
+});
+
+check("another author, another rating or a date too far apart is another review", () => {
+  assert.equal(adoptsManualRow({ ...fromSource, author_name: "Liron A." }, manual), false);
+  assert.equal(adoptsManualRow({ ...fromSource, rating: 4 }, manual), false);
+  const far = new Date(Date.parse(manual.published_at) + (MANUAL_MATCH_DAYS + 1) * 864e5).toISOString();
+  assert.equal(adoptsManualRow({ ...fromSource, published_at: far }, manual), false);
+});
+
+check("only a manual: row is ever matched this loosely", () => {
+  assert.equal(adoptsManualRow(fromSource, { ...manual, review_key: "Ci9DQUlRQUNvZENodHlj" }), false);
 });
 
 console.log(`\ngoogle-reviews selftest: ${checks} checks passed`);

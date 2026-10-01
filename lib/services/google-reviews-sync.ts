@@ -73,6 +73,8 @@ export interface GoogleReviewsSyncResult {
   inserted: number;
   updated: number;
   skippedDuplicates: number;
+  /** Hand-entered `manual:` rows that took the source's real review id this run. */
+  adopted: number;
 }
 
 // google_reviews / google_review_sources postdate types/database.types.ts;
@@ -221,16 +223,51 @@ export async function fetchElfsightFeed(placeId: string): Promise<ElfsightReview
 }
 
 /**
- * Upserts a batch of mapped rows. A row whose key is new but whose
- * (author, publish day) already exists - the seed used a different id
- * encoding - is the same review: only its avatar URL is refreshed.
+ * Hand-entered reviews (2026-10-01: the eight the frozen Elfsight feed never delivered,
+ * read off the Google Maps page) carry a `manual:` key - Google's own review id could
+ * not be carried over - and a date known only as "N days / weeks ago".
  */
-export async function upsertReviews(
-  rows: GoogleReviewRow[],
-): Promise<{ inserted: number; updated: number; skippedDuplicates: number }> {
+export const MANUAL_KEY_PREFIX = "manual:";
+/** How far a hand-entered date may sit from the real one ("לפני 3 שבועות" spans a week). */
+export const MANUAL_MATCH_DAYS = 10;
+
+type ReviewIdentity = Pick<GoogleReviewRow, "author_name" | "rating" | "published_at">;
+
+/**
+ * A source's review is the same review as a hand-entered row: same author, same rating,
+ * published within MANUAL_MATCH_DAYS. Only `manual:` rows are ever matched this loosely.
+ */
+export function adoptsManualRow(
+  incoming: ReviewIdentity,
+  manual: ReviewIdentity & { review_key: string },
+): boolean {
+  if (!manual.review_key.startsWith(MANUAL_KEY_PREFIX)) return false;
+  if (manual.author_name.trim() !== incoming.author_name.trim()) return false;
+  if (Number(manual.rating) !== Number(incoming.rating)) return false;
+  const gap = Math.abs(
+    new Date(manual.published_at).getTime() - new Date(incoming.published_at).getTime(),
+  );
+  return Number.isFinite(gap) && gap <= MANUAL_MATCH_DAYS * 864e5;
+}
+
+/**
+ * Upserts a batch of mapped rows. A row whose key is new:
+ * - matches a hand-entered `manual:` row (adoptsManualRow) -> that row takes the real key
+ *   and the source's exact date, text and reply;
+ * - else has the same (author, publish day) as a mirrored row - the seed used a different
+ *   id encoding - and is the same review: only its avatar URL is refreshed;
+ * - else is inserted.
+ */
+export async function upsertReviews(rows: GoogleReviewRow[]): Promise<{
+  inserted: number;
+  updated: number;
+  skippedDuplicates: number;
+  adopted: number;
+}> {
   let inserted = 0;
   let updated = 0;
   let skippedDuplicates = 0;
+  let adopted = 0;
   const now = new Date().toISOString();
 
   for (const row of rows) {
@@ -258,6 +295,40 @@ export async function upsertReviews(
         .eq("review_key", row.review_key);
       if (error) throw new Error(`google_reviews update: ${error.message}`);
       updated += 1;
+      continue;
+    }
+
+    const { data: manualRows, error: manualErr } = await db
+      .from("google_reviews")
+      .select("review_key,author_name,rating,published_at")
+      .eq("place_id", row.place_id)
+      .eq("author_name", row.author_name)
+      .like("review_key", `${MANUAL_KEY_PREFIX}%`);
+    if (manualErr) throw new Error(`google_reviews manual lookup: ${manualErr.message}`);
+    const manual = ((manualRows ?? []) as (ReviewIdentity & { review_key: string })[]).filter(
+      (m) => adoptsManualRow(row, m),
+    );
+    if (manual.length === 1) {
+      const { error } = await db
+        .from("google_reviews")
+        .update({
+          review_key: row.review_key,
+          author_photo_url: row.author_photo_url,
+          author_url: row.author_url,
+          rating: row.rating,
+          text: row.text,
+          text_html: row.text_html,
+          language: row.language,
+          published_at: row.published_at,
+          review_url: row.review_url,
+          reply_text: row.reply_text,
+          reply_at: row.reply_at,
+          images: row.images,
+          updated_at: now,
+        })
+        .eq("review_key", manual[0].review_key);
+      if (error) throw new Error(`google_reviews adopt: ${error.message}`);
+      adopted += 1;
       continue;
     }
 
@@ -301,7 +372,7 @@ export async function upsertReviews(
     inserted += 1;
   }
 
-  return { inserted, updated, skippedDuplicates };
+  return { inserted, updated, skippedDuplicates, adopted };
 }
 
 interface FetchedSnapshot {

@@ -73,8 +73,11 @@ no access to it) and an unofficial endpoint - it can freeze or close again at an
 **Done the same day (not part of this plan):** the five newest reviews were read by hand from the
 public Google Maps page and inserted (76 rows); the profile summary was set to 84 / 5.0; the cron
 takes its summary from the mirror and never lowers a stored count; a feed whose newest review is
-21+ days old lights the dashboard banner. **Eight reviews (roughly 05.09 - 26.09) are still
-missing**, and the five inserted ones carry day-precision dates. The first API run fixes both.
+21+ days old lights the dashboard banner. That evening the other **eight** (10.09 - 27.09) were
+read from Dor's signed-in Chrome and inserted with `manual:` keys (the extension blocks review
+ids) - the mirror holds all **84**. Their dates are "N days / weeks ago" only; the sync already
+adopts a `manual:` row when a source brings the same author + rating within 10 days
+(`adoptsManualRow`), so the first API run gives them real ids and exact dates.
 
 ## Goal
 
@@ -243,7 +246,8 @@ time is Google's approval.
 
 ## Acceptance - how we know it works
 
-- A dry run reports: 76 adopted (or 71 + 5), 8 new, 0 ambiguous, 0 removed.
+- A dry run reports: 84 matched (76 by id or author+rating, 8 `manual:` rows adopted), 0 new
+  beyond what Google added since, 0 ambiguous, 0 removed.
 - After the real run: mirror rows = Google's `totalReviewCount`; the five hand-inserted rows carry
   exact timestamps; the homepage shows the count Google shows.
 - A new review (or an owner reply) appears on the homepage within two minutes with push on, within
