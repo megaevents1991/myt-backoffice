@@ -48,18 +48,24 @@ drop function if exists public.reprovision_all_companies();
 drop function if exists public.provision_company(text);
 
 -- 4. flights -------------------------------------------------------------
--- Statuses that did not exist before would violate the old check: fold them back.
-update public.flights set block_status = null
-where block_status in ('approved','requested','declined','operational','cancelled');
-
--- Blocks owned by another company did not exist before either. Refuse to go on
--- while there are any, so they are never silently merged into Mega Events.
+-- Blocks owned by another company did not exist before. Refuse to go on while
+-- there are any, so they are never silently merged into Mega Events. Checked
+-- first, before any row is touched.
 do $$
 begin
   if exists (select 1 from public.flights where company_id <> 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f601') then
     raise exception 'flights rows of another company exist - delete or export them first';
   end if;
 end $$;
+
+-- Statuses that did not exist before would violate the old check: fold them back.
+update public.flights set block_status = null
+where block_status in ('approved','requested','declined','operational','cancelled');
+
+-- The views of the tours schema read the columns dropped below, and the schema
+-- itself goes only in section 2: drop the views first.
+drop view if exists tours.flight_realization;
+drop view if exists tours.departure_stats;
 
 alter table public.flights drop constraint if exists flights_block_status_check;
 alter table public.flights add constraint flights_block_status_check
