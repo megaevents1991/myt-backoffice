@@ -7,10 +7,760 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "12.2.3 (519615d)"
+  c_megafamily: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      cars: {
+        Row: {
+          code: string | null
+          company_id: string | null
+          content_html: string | null
+          data: Json | null
+          id: string | null
+          image: string | null
+          legacy_id: number | null
+          max_people: number | null
+          name: string | null
+          slug: string | null
+        }
+        Insert: {
+          code?: string | null
+          company_id?: string | null
+          content_html?: string | null
+          data?: Json | null
+          id?: string | null
+          image?: string | null
+          legacy_id?: number | null
+          max_people?: number | null
+          name?: string | null
+          slug?: string | null
+        }
+        Update: {
+          code?: string | null
+          company_id?: string | null
+          content_html?: string | null
+          data?: Json | null
+          id?: string | null
+          image?: string | null
+          legacy_id?: number | null
+          max_people?: number | null
+          name?: string | null
+          slug?: string | null
+        }
+        Relationships: []
+      }
+      cms_pages: {
+        Row: {
+          blocks: Json | null
+          company_id: string | null
+          content_html: string | null
+          data: Json | null
+          id: string | null
+          is_active: boolean | null
+          kind: string | null
+          legacy_id: number | null
+          path: string | null
+          seo: Json | null
+          title: string | null
+        }
+        Insert: {
+          blocks?: Json | null
+          company_id?: string | null
+          content_html?: string | null
+          data?: Json | null
+          id?: string | null
+          is_active?: boolean | null
+          kind?: string | null
+          legacy_id?: number | null
+          path?: string | null
+          seo?: Json | null
+          title?: string | null
+        }
+        Update: {
+          blocks?: Json | null
+          company_id?: string | null
+          content_html?: string | null
+          data?: Json | null
+          id?: string | null
+          is_active?: boolean | null
+          kind?: string | null
+          legacy_id?: number | null
+          path?: string | null
+          seo?: Json | null
+          title?: string | null
+        }
+        Relationships: []
+      }
+      departure_flights: {
+        Row: {
+          airline_code: string | null
+          block_status: string | null
+          departure_id: string | null
+          flight_id: number | null
+          inbound_airline_code: string | null
+          inbound_arrival_airport: string | null
+          inbound_arrival_time: string | null
+          inbound_check_bags_included: boolean | null
+          inbound_departure_airport: string | null
+          inbound_departure_time: string | null
+          inbound_flight_number: string | null
+          inbound_stop_airport: string | null
+          inbound_stop_duration: string | null
+          legs: string | null
+          metadata_logo: string | null
+          metadata_name: string | null
+          outbound_arrival_airport: string | null
+          outbound_arrival_time: string | null
+          outbound_check_bags_included: boolean | null
+          outbound_departure_airport: string | null
+          outbound_departure_time: string | null
+          outbound_flight_number: string | null
+          outbound_stop_airport: string | null
+          outbound_stop_duration: string | null
+          stops: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flight_allocations_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      departure_options: {
+        Row: {
+          board: string | null
+          departure_id: string | null
+          id: string | null
+          kind: string | null
+          label: string | null
+          max_people: number | null
+          nights: number | null
+          position: number | null
+          price: number | null
+          price_unit: string | null
+          ref_code: string | null
+          room_prices: Json | null
+          stay_order: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departure_options_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      departure_prices: {
+        Row: {
+          departure_id: string | null
+          pax_type: string | null
+          price: number | null
+          room_position: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departure_prices_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      departures: {
+        Row: {
+          arrival_airport: string | null
+          baggage_included: boolean | null
+          card_badge: string | null
+          child_max_age: number | null
+          code: string | null
+          connection_back: string | null
+          connection_out: string | null
+          currency: string | null
+          data: Json | null
+          date_labels: string[] | null
+          end_date: string | null
+          flight_mode: string | null
+          flight_price: number | null
+          id: string | null
+          itinerary_id: string | null
+          legacy_product_id: number | null
+          markup_fixed: number | null
+          markup_percent: number | null
+          meal_included: boolean | null
+          meeting_at: string | null
+          package_id: string | null
+          return_airport: string | null
+          sale_status: string | null
+          season: string | null
+          season_year: number | null
+          senior_discount: number | null
+          senior_min_age: number | null
+          series_id: string | null
+          site_id: number | null
+          start_date: string | null
+          transfers_included: boolean | null
+        }
+        Insert: {
+          arrival_airport?: string | null
+          baggage_included?: boolean | null
+          card_badge?: string | null
+          child_max_age?: number | null
+          code?: string | null
+          connection_back?: string | null
+          connection_out?: string | null
+          currency?: string | null
+          data?: Json | null
+          date_labels?: string[] | null
+          end_date?: string | null
+          flight_mode?: string | null
+          flight_price?: number | null
+          id?: string | null
+          itinerary_id?: string | null
+          legacy_product_id?: number | null
+          markup_fixed?: number | null
+          markup_percent?: number | null
+          meal_included?: boolean | null
+          meeting_at?: string | null
+          package_id?: string | null
+          return_airport?: string | null
+          sale_status?: string | null
+          season?: string | null
+          season_year?: number | null
+          senior_discount?: number | null
+          senior_min_age?: number | null
+          series_id?: string | null
+          site_id?: number | null
+          start_date?: string | null
+          transfers_included?: boolean | null
+        }
+        Update: {
+          arrival_airport?: string | null
+          baggage_included?: boolean | null
+          card_badge?: string | null
+          child_max_age?: number | null
+          code?: string | null
+          connection_back?: string | null
+          connection_out?: string | null
+          currency?: string | null
+          data?: Json | null
+          date_labels?: string[] | null
+          end_date?: string | null
+          flight_mode?: string | null
+          flight_price?: number | null
+          id?: string | null
+          itinerary_id?: string | null
+          legacy_product_id?: number | null
+          markup_fixed?: number | null
+          markup_percent?: number | null
+          meal_included?: boolean | null
+          meeting_at?: string | null
+          package_id?: string | null
+          return_airport?: string | null
+          sale_status?: string | null
+          season?: string | null
+          season_year?: number | null
+          senior_discount?: number | null
+          senior_min_age?: number | null
+          series_id?: string | null
+          site_id?: number | null
+          start_date?: string | null
+          transfers_included?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departures_itinerary_id_fkey"
+            columns: ["itinerary_id"]
+            isOneToOne: false
+            referencedRelation: "package_itineraries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "departures_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "departures_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hotels: {
+        Row: {
+          amenities: string[] | null
+          city: string | null
+          code: string | null
+          company_id: string | null
+          content_html: string | null
+          data: Json | null
+          excerpt: string | null
+          gallery: Json | null
+          id: string | null
+          image: string | null
+          legacy_id: number | null
+          name: string | null
+          slug: string | null
+          stars: number | null
+        }
+        Insert: {
+          amenities?: string[] | null
+          city?: string | null
+          code?: string | null
+          company_id?: string | null
+          content_html?: string | null
+          data?: Json | null
+          excerpt?: string | null
+          gallery?: Json | null
+          id?: string | null
+          image?: string | null
+          legacy_id?: number | null
+          name?: string | null
+          slug?: string | null
+          stars?: number | null
+        }
+        Update: {
+          amenities?: string[] | null
+          city?: string | null
+          code?: string | null
+          company_id?: string | null
+          content_html?: string | null
+          data?: Json | null
+          excerpt?: string | null
+          gallery?: Json | null
+          id?: string | null
+          image?: string | null
+          legacy_id?: number | null
+          name?: string | null
+          slug?: string | null
+          stars?: number | null
+        }
+        Relationships: []
+      }
+      instructors: {
+        Row: {
+          company_id: string | null
+          content_html: string | null
+          data: Json | null
+          excerpt: string | null
+          gallery: Json | null
+          id: string | null
+          image: string | null
+          is_active: boolean | null
+          legacy_id: number | null
+          name: string | null
+          position: number | null
+          regions: string | null
+          slug: string | null
+        }
+        Insert: {
+          company_id?: string | null
+          content_html?: string | null
+          data?: Json | null
+          excerpt?: string | null
+          gallery?: Json | null
+          id?: string | null
+          image?: string | null
+          is_active?: boolean | null
+          legacy_id?: number | null
+          name?: string | null
+          position?: number | null
+          regions?: string | null
+          slug?: string | null
+        }
+        Update: {
+          company_id?: string | null
+          content_html?: string | null
+          data?: Json | null
+          excerpt?: string | null
+          gallery?: Json | null
+          id?: string | null
+          image?: string | null
+          is_active?: boolean | null
+          legacy_id?: number | null
+          name?: string | null
+          position?: number | null
+          regions?: string | null
+          slug?: string | null
+        }
+        Relationships: []
+      }
+      package_itineraries: {
+        Row: {
+          arrival_city: string | null
+          company_id: string | null
+          days: Json | null
+          id: string | null
+          key: string | null
+          label: string | null
+          package_id: string | null
+          return_city: string | null
+        }
+        Insert: {
+          arrival_city?: string | null
+          company_id?: string | null
+          days?: Json | null
+          id?: string | null
+          key?: string | null
+          label?: string | null
+          package_id?: string | null
+          return_city?: string | null
+        }
+        Update: {
+          arrival_city?: string | null
+          company_id?: string | null
+          days?: Json | null
+          id?: string | null
+          key?: string | null
+          label?: string | null
+          package_id?: string | null
+          return_city?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "package_itineraries_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      package_terms: {
+        Row: {
+          package_id: string | null
+          term_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "package_terms_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "package_terms_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: false
+            referencedRelation: "terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      packages: {
+        Row: {
+          attractions: string[] | null
+          brand: string | null
+          cancellation_html: string | null
+          card_image: string | null
+          company_id: string | null
+          countries: string | null
+          created_at: string | null
+          data: Json | null
+          days: number | null
+          description_html: string | null
+          extra_info_html: string | null
+          extra_sections: Json | null
+          faq: Json | null
+          gallery: string[] | null
+          hero_image: string | null
+          hotels: Json | null
+          id: string | null
+          included: string[] | null
+          is_active: boolean | null
+          is_deleted: string | null
+          kind: string | null
+          legacy_id: number | null
+          name: string | null
+          nights: number | null
+          not_included: string[] | null
+          seasons: string[] | null
+          seo: Json | null
+          slug: string | null
+          subtitle: string | null
+          terms_html: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          attractions?: string[] | null
+          brand?: string | null
+          cancellation_html?: string | null
+          card_image?: string | null
+          company_id?: string | null
+          countries?: string | null
+          created_at?: string | null
+          data?: Json | null
+          days?: number | null
+          description_html?: string | null
+          extra_info_html?: string | null
+          extra_sections?: Json | null
+          faq?: Json | null
+          gallery?: string[] | null
+          hero_image?: string | null
+          hotels?: Json | null
+          id?: string | null
+          included?: string[] | null
+          is_active?: boolean | null
+          is_deleted?: string | null
+          kind?: string | null
+          legacy_id?: number | null
+          name?: string | null
+          nights?: number | null
+          not_included?: string[] | null
+          seasons?: string[] | null
+          seo?: Json | null
+          slug?: string | null
+          subtitle?: string | null
+          terms_html?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          attractions?: string[] | null
+          brand?: string | null
+          cancellation_html?: string | null
+          card_image?: string | null
+          company_id?: string | null
+          countries?: string | null
+          created_at?: string | null
+          data?: Json | null
+          days?: number | null
+          description_html?: string | null
+          extra_info_html?: string | null
+          extra_sections?: Json | null
+          faq?: Json | null
+          gallery?: string[] | null
+          hero_image?: string | null
+          hotels?: Json | null
+          id?: string | null
+          included?: string[] | null
+          is_active?: boolean | null
+          is_deleted?: string | null
+          kind?: string | null
+          legacy_id?: number | null
+          name?: string | null
+          nights?: number | null
+          not_included?: string[] | null
+          seasons?: string[] | null
+          seo?: Json | null
+          slug?: string | null
+          subtitle?: string | null
+          terms_html?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      promotions: {
+        Row: {
+          departure_id: string | null
+          id: string | null
+          kind: string | null
+          label: string | null
+          series_id: string | null
+          show_on_card: boolean | null
+          valid_until: string | null
+          value: number | null
+        }
+        Insert: {
+          departure_id?: string | null
+          id?: string | null
+          kind?: string | null
+          label?: string | null
+          series_id?: string | null
+          show_on_card?: boolean | null
+          valid_until?: string | null
+          value?: number | null
+        }
+        Update: {
+          departure_id?: string | null
+          id?: string | null
+          kind?: string | null
+          label?: string | null
+          series_id?: string | null
+          show_on_card?: boolean | null
+          valid_until?: string | null
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promotions_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promotions_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      series: {
+        Row: {
+          arrival_airport: string | null
+          arrival_weekday: number | null
+          child_max_age: number | null
+          code: string | null
+          company_id: string | null
+          default_capacity: number | null
+          default_currency: string | null
+          default_nights: number | null
+          id: string | null
+          is_active: boolean | null
+          label: string | null
+          package_id: string | null
+          return_airport: string | null
+          return_weekday: number | null
+          senior_discount: number | null
+          senior_min_age: number | null
+        }
+        Insert: {
+          arrival_airport?: string | null
+          arrival_weekday?: number | null
+          child_max_age?: number | null
+          code?: string | null
+          company_id?: string | null
+          default_capacity?: number | null
+          default_currency?: string | null
+          default_nights?: number | null
+          id?: string | null
+          is_active?: boolean | null
+          label?: string | null
+          package_id?: string | null
+          return_airport?: string | null
+          return_weekday?: number | null
+          senior_discount?: number | null
+          senior_min_age?: number | null
+        }
+        Update: {
+          arrival_airport?: string | null
+          arrival_weekday?: number | null
+          child_max_age?: number | null
+          code?: string | null
+          company_id?: string | null
+          default_capacity?: number | null
+          default_currency?: string | null
+          default_nights?: number | null
+          id?: string | null
+          is_active?: boolean | null
+          label?: string | null
+          package_id?: string | null
+          return_airport?: string | null
+          return_weekday?: number | null
+          senior_discount?: number | null
+          senior_min_age?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "series_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      series_terms: {
+        Row: {
+          series_id: string | null
+          term_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "series_terms_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "series_terms_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: false
+            referencedRelation: "terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      terms: {
+        Row: {
+          company_id: string | null
+          data: Json | null
+          description_html: string | null
+          hero_images: string[] | null
+          id: string | null
+          is_active: boolean | null
+          kind: string | null
+          legacy_id: number | null
+          name: string | null
+          position: number | null
+          slug: string | null
+        }
+        Insert: {
+          company_id?: string | null
+          data?: Json | null
+          description_html?: string | null
+          hero_images?: string[] | null
+          id?: string | null
+          is_active?: boolean | null
+          kind?: string | null
+          legacy_id?: number | null
+          name?: string | null
+          position?: number | null
+          slug?: string | null
+        }
+        Update: {
+          company_id?: string | null
+          data?: Json | null
+          description_html?: string | null
+          hero_images?: string[] | null
+          id?: string | null
+          is_active?: boolean | null
+          kind?: string | null
+          legacy_id?: number | null
+          name?: string | null
+          position?: number | null
+          slug?: string | null
+        }
+        Relationships: []
+      }
+    }
+    Functions: {
+      submit_lead: {
+        Args: {
+          p_email: string
+          p_kind: string
+          p_message: string
+          p_name: string
+          p_payload?: Json
+          p_phone: string
+          p_source_path?: string
+          p_utm?: Json
+        }
+        Returns: string
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   graphql_public: {
     Tables: {
@@ -73,6 +823,36 @@ export type Database = {
             referencedColumns: ["partner_tracking_code"]
           },
         ]
+      }
+      agent_instructions: {
+        Row: {
+          active: boolean
+          agent_key: string
+          created_at: string
+          created_by: string | null
+          deactivated_at: string | null
+          id: string
+          text: string
+        }
+        Insert: {
+          active?: boolean
+          agent_key: string
+          created_at?: string
+          created_by?: string | null
+          deactivated_at?: string | null
+          id?: string
+          text: string
+        }
+        Update: {
+          active?: boolean
+          agent_key?: string
+          created_at?: string
+          created_by?: string | null
+          deactivated_at?: string | null
+          id?: string
+          text?: string
+        }
+        Relationships: []
       }
       artists: {
         Row: {
@@ -332,6 +1112,50 @@ export type Database = {
         }
         Relationships: []
       }
+      calendar_periods: {
+        Row: {
+          company_id: string | null
+          end_date: string | null
+          holiday_date: string | null
+          id: string
+          kind: string
+          name: string
+          note: string | null
+          start_date: string | null
+          year: number
+        }
+        Insert: {
+          company_id?: string | null
+          end_date?: string | null
+          holiday_date?: string | null
+          id?: string
+          kind?: string
+          name: string
+          note?: string | null
+          start_date?: string | null
+          year: number
+        }
+        Update: {
+          company_id?: string | null
+          end_date?: string | null
+          holiday_date?: string | null
+          id?: string
+          kind?: string
+          name?: string
+          note?: string | null
+          start_date?: string | null
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_periods_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cancellation_requests: {
         Row: {
           created_at: string
@@ -493,6 +1317,166 @@ export type Database = {
           },
         ]
       }
+      companies: {
+        Row: {
+          analytics: Json
+          brand: Json
+          contact: Json
+          created_at: string
+          default_currency: string
+          email_config: Json
+          features: Json
+          id: string
+          is_active: boolean
+          legal_name: string | null
+          locale: string
+          name: string
+          payment_config: Json
+          product_types: string[]
+          revalidate_url: string | null
+          schema_name: string
+          site_url: string | null
+          slug: string
+        }
+        Insert: {
+          analytics?: Json
+          brand?: Json
+          contact?: Json
+          created_at?: string
+          default_currency?: string
+          email_config?: Json
+          features?: Json
+          id?: string
+          is_active?: boolean
+          legal_name?: string | null
+          locale?: string
+          name: string
+          payment_config?: Json
+          product_types?: string[]
+          revalidate_url?: string | null
+          schema_name: string
+          site_url?: string | null
+          slug: string
+        }
+        Update: {
+          analytics?: Json
+          brand?: Json
+          contact?: Json
+          created_at?: string
+          default_currency?: string
+          email_config?: Json
+          features?: Json
+          id?: string
+          is_active?: boolean
+          legal_name?: string | null
+          locale?: string
+          name?: string
+          payment_config?: Json
+          product_types?: string[]
+          revalidate_url?: string | null
+          schema_name?: string
+          site_url?: string | null
+          slug?: string
+        }
+        Relationships: []
+      }
+      company_domains: {
+        Row: {
+          company_id: string
+          domain: string
+          is_primary: boolean
+        }
+        Insert: {
+          company_id: string
+          domain: string
+          is_primary?: boolean
+        }
+        Update: {
+          company_id?: string
+          domain?: string
+          is_primary?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_domains_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_exchange_rates: {
+        Row: {
+          company_id: string
+          created_at: string
+          currency: string
+          entered_by: string | null
+          rate_date: string
+          rate_to_ils: number
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          currency: string
+          entered_by?: string | null
+          rate_date: string
+          rate_to_ils: number
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          currency?: string
+          entered_by?: string | null
+          rate_date?: string
+          rate_to_ils?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_exchange_rates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_members: {
+        Row: {
+          company_id: string
+          created_at: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       competitor_crawl_runs: {
         Row: {
           browser_mode: string | null
@@ -534,6 +1518,72 @@ export type Database = {
           trigger?: string
         }
         Relationships: []
+      }
+      competitor_listing_corrections: {
+        Row: {
+          competitor: string
+          created_at: string
+          created_by: string | null
+          event_id: number | null
+          field: string
+          id: number
+          listing_id: number
+          note: string
+          original: Json | null
+          reason: string | null
+          revoked_at: string | null
+          revoked_by: string | null
+          source: string | null
+          value: Json | null
+        }
+        Insert: {
+          competitor: string
+          created_at?: string
+          created_by?: string | null
+          event_id?: number | null
+          field: string
+          id?: never
+          listing_id: number
+          note: string
+          original?: Json | null
+          reason?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          source?: string | null
+          value?: Json | null
+        }
+        Update: {
+          competitor?: string
+          created_at?: string
+          created_by?: string | null
+          event_id?: number | null
+          field?: string
+          id?: never
+          listing_id?: number
+          note?: string
+          original?: Json | null
+          reason?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          source?: string | null
+          value?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "competitor_listing_corrections_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "competitor_listing_corrections_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "competitor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       competitor_listings: {
         Row: {
@@ -1069,6 +2119,7 @@ export type Database = {
           def_date_return: string
           description: string
           event_additional_markup: number | null
+          event_location: Json | null
           id: number
           is_deleted: string | null
           is_prioritized: boolean | null
@@ -1081,18 +2132,23 @@ export type Database = {
           light_ticket: string | null
           location: Json | null
           locked_flight_id: number | null
+          lodging_default: string
+          lodging_mode: string
+          lodging_note: string | null
           map_image_url: string | null
           markup_flight: number | null
           markup_hotel: number | null
           markup_ticket: number | null
           name: string
           name_english: string | null
+          package_mode: string
           price_drop_from: number | null
           price_drop_until: string | null
           price_drop_usd: number | null
           skip_flight: boolean | null
           skip_flight_markup: number | null
           skip_hotel_markup: number | null
+          split_default_nights: number
           tags: string | null
           ticket_only_markup: number | null
           tickets_and_rates: Json[]
@@ -1124,6 +2180,7 @@ export type Database = {
           def_date_return: string
           description: string
           event_additional_markup?: number | null
+          event_location?: Json | null
           id?: number
           is_deleted?: string | null
           is_prioritized?: boolean | null
@@ -1136,18 +2193,23 @@ export type Database = {
           light_ticket?: string | null
           location?: Json | null
           locked_flight_id?: number | null
+          lodging_default?: string
+          lodging_mode?: string
+          lodging_note?: string | null
           map_image_url?: string | null
           markup_flight?: number | null
           markup_hotel?: number | null
           markup_ticket?: number | null
           name: string
           name_english?: string | null
+          package_mode?: string
           price_drop_from?: number | null
           price_drop_until?: string | null
           price_drop_usd?: number | null
           skip_flight?: boolean | null
           skip_flight_markup?: number | null
           skip_hotel_markup?: number | null
+          split_default_nights?: number
           tags?: string | null
           ticket_only_markup?: number | null
           tickets_and_rates: Json[]
@@ -1179,6 +2241,7 @@ export type Database = {
           def_date_return?: string
           description?: string
           event_additional_markup?: number | null
+          event_location?: Json | null
           id?: number
           is_deleted?: string | null
           is_prioritized?: boolean | null
@@ -1191,18 +2254,23 @@ export type Database = {
           light_ticket?: string | null
           location?: Json | null
           locked_flight_id?: number | null
+          lodging_default?: string
+          lodging_mode?: string
+          lodging_note?: string | null
           map_image_url?: string | null
           markup_flight?: number | null
           markup_hotel?: number | null
           markup_ticket?: number | null
           name?: string
           name_english?: string | null
+          package_mode?: string
           price_drop_from?: number | null
           price_drop_until?: string | null
           price_drop_usd?: number | null
           skip_flight?: boolean | null
           skip_flight_markup?: number | null
           skip_hotel_markup?: number | null
+          split_default_nights?: number
           tags?: string | null
           ticket_only_markup?: number | null
           tickets_and_rates?: Json[]
@@ -1216,6 +2284,168 @@ export type Database = {
             columns: ["locked_flight_id"]
             isOneToOne: false
             referencedRelation: "flights"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flight_block_events: {
+        Row: {
+          amount: number | null
+          created_at: string
+          created_by: string | null
+          currency: string | null
+          flight_id: number
+          happened_on: string
+          id: string
+          kind: string
+          note: string | null
+          seats_after: number | null
+        }
+        Insert: {
+          amount?: number | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string | null
+          flight_id: number
+          happened_on?: string
+          id?: string
+          kind: string
+          note?: string | null
+          seats_after?: number | null
+        }
+        Update: {
+          amount?: number | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string | null
+          flight_id?: number
+          happened_on?: string
+          id?: string
+          kind?: string
+          note?: string | null
+          seats_after?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flight_block_events_flight_id_fkey"
+            columns: ["flight_id"]
+            isOneToOne: false
+            referencedRelation: "flights"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flight_contract_rules: {
+        Row: {
+          contract_id: string
+          days_before_from: number
+          days_before_to: number
+          deposit_per_pax: number | null
+          fee_kind: string | null
+          fee_value: number | null
+          free_reduction_pct: number
+          id: string
+          note: string | null
+        }
+        Insert: {
+          contract_id: string
+          days_before_from: number
+          days_before_to: number
+          deposit_per_pax?: number | null
+          fee_kind?: string | null
+          fee_value?: number | null
+          free_reduction_pct?: number
+          id?: string
+          note?: string | null
+        }
+        Update: {
+          contract_id?: string
+          days_before_from?: number
+          days_before_to?: number
+          deposit_per_pax?: number | null
+          fee_kind?: string | null
+          fee_value?: number | null
+          free_reduction_pct?: number
+          id?: string
+          note?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flight_contract_rules_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "flight_contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flight_contracts: {
+        Row: {
+          airline_group: string | null
+          commitment_amount: number | null
+          commitment_unit: string | null
+          company_id: string
+          created_at: string
+          currency: string
+          cxx1_days_before: number
+          cxx2_days_before: number
+          id: string
+          is_active: boolean
+          kind: string
+          name: string
+          name_change_fee: number | null
+          names_days_before: number | null
+          terms_text: string | null
+          ticketing_days_before: number | null
+          valid_from: string | null
+          valid_to: string | null
+        }
+        Insert: {
+          airline_group?: string | null
+          commitment_amount?: number | null
+          commitment_unit?: string | null
+          company_id: string
+          created_at?: string
+          currency?: string
+          cxx1_days_before?: number
+          cxx2_days_before?: number
+          id?: string
+          is_active?: boolean
+          kind?: string
+          name: string
+          name_change_fee?: number | null
+          names_days_before?: number | null
+          terms_text?: string | null
+          ticketing_days_before?: number | null
+          valid_from?: string | null
+          valid_to?: string | null
+        }
+        Update: {
+          airline_group?: string | null
+          commitment_amount?: number | null
+          commitment_unit?: string | null
+          company_id?: string
+          created_at?: string
+          currency?: string
+          cxx1_days_before?: number
+          cxx2_days_before?: number
+          id?: string
+          is_active?: boolean
+          kind?: string
+          name?: string
+          name_change_fee?: number | null
+          names_days_before?: number | null
+          terms_text?: string | null
+          ticketing_days_before?: number | null
+          valid_from?: string | null
+          valid_to?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flight_contracts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -1266,15 +2496,25 @@ export type Database = {
           block_status: string | null
           cabin_bag_kg: number | null
           cabin_class: string | null
+          cancel_reason: string | null
+          cancellation_fee: number | null
+          cancelled_at: string | null
           checked_bag_kg: number | null
+          company_id: string
           consumed_quantity: number
+          contract_id: string | null
+          cost_child_price: number | null
           cost_currency: string | null
           cost_price: number | null
+          cost_tax: number | null
           duration: string
           event_ids: number[]
+          first_cancellation_date: string | null
           group_code: string | null
           handled_by: string | null
           id: number
+          import_ref: string | null
+          inbound_airline_code: string | null
           inbound_arrival_airport: string
           inbound_arrival_time: string
           inbound_cabin_bags_included: boolean
@@ -1291,8 +2531,10 @@ export type Database = {
           metadata_iata: string
           metadata_logo: string
           metadata_name: string
+          names_deadline: string | null
           notes: string | null
           option_expiry: string | null
+          original_quantity: number | null
           outbound_arrival_airport: string
           outbound_arrival_time: string
           outbound_cabin_bags_included: boolean
@@ -1306,6 +2548,10 @@ export type Database = {
           payment_deadline: string | null
           pnr: string | null
           price: number
+          requested_at: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          season_label: string | null
           series_id: string | null
           series_name: string | null
           stops: number
@@ -1318,15 +2564,25 @@ export type Database = {
           block_status?: string | null
           cabin_bag_kg?: number | null
           cabin_class?: string | null
+          cancel_reason?: string | null
+          cancellation_fee?: number | null
+          cancelled_at?: string | null
           checked_bag_kg?: number | null
+          company_id?: string
           consumed_quantity?: number
+          contract_id?: string | null
+          cost_child_price?: number | null
           cost_currency?: string | null
           cost_price?: number | null
+          cost_tax?: number | null
           duration: string
           event_ids?: number[]
+          first_cancellation_date?: string | null
           group_code?: string | null
           handled_by?: string | null
           id?: number
+          import_ref?: string | null
+          inbound_airline_code?: string | null
           inbound_arrival_airport: string
           inbound_arrival_time: string
           inbound_cabin_bags_included: boolean
@@ -1343,8 +2599,10 @@ export type Database = {
           metadata_iata: string
           metadata_logo: string
           metadata_name: string
+          names_deadline?: string | null
           notes?: string | null
           option_expiry?: string | null
+          original_quantity?: number | null
           outbound_arrival_airport: string
           outbound_arrival_time: string
           outbound_cabin_bags_included: boolean
@@ -1358,6 +2616,10 @@ export type Database = {
           payment_deadline?: string | null
           pnr?: string | null
           price: number
+          requested_at?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          season_label?: string | null
           series_id?: string | null
           series_name?: string | null
           stops: number
@@ -1370,15 +2632,25 @@ export type Database = {
           block_status?: string | null
           cabin_bag_kg?: number | null
           cabin_class?: string | null
+          cancel_reason?: string | null
+          cancellation_fee?: number | null
+          cancelled_at?: string | null
           checked_bag_kg?: number | null
+          company_id?: string
           consumed_quantity?: number
+          contract_id?: string | null
+          cost_child_price?: number | null
           cost_currency?: string | null
           cost_price?: number | null
+          cost_tax?: number | null
           duration?: string
           event_ids?: number[]
+          first_cancellation_date?: string | null
           group_code?: string | null
           handled_by?: string | null
           id?: number
+          import_ref?: string | null
+          inbound_airline_code?: string | null
           inbound_arrival_airport?: string
           inbound_arrival_time?: string
           inbound_cabin_bags_included?: boolean
@@ -1395,8 +2667,10 @@ export type Database = {
           metadata_iata?: string
           metadata_logo?: string
           metadata_name?: string
+          names_deadline?: string | null
           notes?: string | null
           option_expiry?: string | null
+          original_quantity?: number | null
           outbound_arrival_airport?: string
           outbound_arrival_time?: string
           outbound_cabin_bags_included?: boolean
@@ -1410,13 +2684,32 @@ export type Database = {
           payment_deadline?: string | null
           pnr?: string | null
           price?: number
+          requested_at?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          season_label?: string | null
           series_id?: string | null
           series_name?: string | null
           stops?: number
           supplier?: string | null
           ticketing_deadline?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "flights_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flights_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "flight_contracts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       football_logos: {
         Row: {
@@ -1609,6 +2902,7 @@ export type Database = {
           event_id: number | null
           form_id: number
           id: number
+          is_deleted: string | null
           label: string | null
           lang: string
           multi_use: boolean
@@ -1631,6 +2925,7 @@ export type Database = {
           event_id?: number | null
           form_id: number
           id?: never
+          is_deleted?: string | null
           label?: string | null
           lang?: string
           multi_use?: boolean
@@ -1653,6 +2948,7 @@ export type Database = {
           event_id?: number | null
           form_id?: number
           id?: never
+          is_deleted?: string | null
           label?: string | null
           lang?: string
           multi_use?: boolean
@@ -1687,6 +2983,7 @@ export type Database = {
           id: number
           invite_id: number | null
           ip: string | null
+          is_deleted: string | null
           lang: string
           submitted_at: string
           user_agent: string | null
@@ -1697,6 +2994,7 @@ export type Database = {
           id?: never
           invite_id?: number | null
           ip?: string | null
+          is_deleted?: string | null
           lang?: string
           submitted_at?: string
           user_agent?: string | null
@@ -1707,6 +3005,7 @@ export type Database = {
           id?: never
           invite_id?: number | null
           ip?: string | null
+          is_deleted?: string | null
           lang?: string
           submitted_at?: string
           user_agent?: string | null
@@ -1930,22 +3229,79 @@ export type Database = {
       }
       homepage_sections: {
         Row: {
+          config: Json
           is_visible: boolean
           key: string
+          page: string
           position: number
+          title: string | null
+          type: string
           updated_at: string
         }
         Insert: {
+          config?: Json
           is_visible?: boolean
           key: string
+          page?: string
           position?: number
+          title?: string | null
+          type?: string
           updated_at?: string
         }
         Update: {
+          config?: Json
           is_visible?: boolean
           key?: string
+          page?: string
           position?: number
+          title?: string | null
+          type?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      hotel_warm_areas: {
+        Row: {
+          created_at: string
+          error: string | null
+          existing: number
+          found: number
+          id: number
+          latitude: number
+          loaded: number
+          longitude: number
+          name: string | null
+          radius: number
+          remaining: number
+          warmed_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          existing?: number
+          found?: number
+          id?: number
+          latitude: number
+          loaded?: number
+          longitude: number
+          name?: string | null
+          radius?: number
+          remaining?: number
+          warmed_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          existing?: number
+          found?: number
+          id?: number
+          latitude?: number
+          loaded?: number
+          longitude?: number
+          name?: string | null
+          radius?: number
+          remaining?: number
+          warmed_at?: string | null
         }
         Relationships: []
       }
@@ -2008,6 +3364,62 @@ export type Database = {
           star_rating?: number
         }
         Relationships: []
+      }
+      leads: {
+        Row: {
+          assigned_to: string | null
+          company_id: string
+          created_at: string
+          email: string | null
+          id: string
+          kind: string
+          message: string | null
+          name: string | null
+          payload: Json
+          phone: string | null
+          source_path: string | null
+          status: string
+          utm: Json
+        }
+        Insert: {
+          assigned_to?: string | null
+          company_id: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          kind: string
+          message?: string | null
+          name?: string | null
+          payload?: Json
+          phone?: string | null
+          source_path?: string | null
+          status?: string
+          utm?: Json
+        }
+        Update: {
+          assigned_to?: string | null
+          company_id?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          kind?: string
+          message?: string | null
+          name?: string | null
+          payload?: Json
+          phone?: string | null
+          source_path?: string | null
+          status?: string
+          utm?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       live_events: {
         Row: {
@@ -2593,6 +4005,7 @@ export type Database = {
           flight_order_info: Json
           gtmIdnts: Json | null
           hotel_order_info: Json
+          hotel_segments: Json | null
           id: number
           is_deleted: string | null
           main_contact_email: string
@@ -2635,6 +4048,7 @@ export type Database = {
           flight_order_info: Json
           gtmIdnts?: Json | null
           hotel_order_info: Json
+          hotel_segments?: Json | null
           id?: number
           is_deleted?: string | null
           main_contact_email: string
@@ -2677,6 +4091,7 @@ export type Database = {
           flight_order_info?: Json
           gtmIdnts?: Json | null
           hotel_order_info?: Json
+          hotel_segments?: Json | null
           id?: number
           is_deleted?: string | null
           main_contact_email?: string
@@ -2994,13 +4409,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "tasks_parent_id_fkey"
-            columns: ["parent_id"]
-            isOneToOne: false
-            referencedRelation: "tasks"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "tasks_assignee_id_fkey"
             columns: ["assignee_id"]
             isOneToOne: false
@@ -3012,6 +4420,13 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
             referencedColumns: ["id"]
           },
         ]
@@ -3208,6 +4623,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      venue_maps: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          source_url: string
+          supplier_categories: Json
+          svg_url: string | null
+          updated_at: string
+          zones: Json
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          source_url: string
+          supplier_categories?: Json
+          svg_url?: string | null
+          updated_at?: string
+          zones?: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          source_url?: string
+          supplier_categories?: Json
+          svg_url?: string | null
+          updated_at?: string
+          zones?: Json
+        }
+        Relationships: []
       }
       xs2e_events: {
         Row: {
@@ -3563,6 +5011,8 @@ export type Database = {
           url: string
         }[]
       }
+      provision_company: { Args: { p_slug: string }; Returns: undefined }
+      reprovision_all_companies: { Args: never; Returns: undefined }
       tracking_code_is_real_partner: {
         Args: { p_code: string }
         Returns: boolean
@@ -3570,6 +5020,1012 @@ export type Database = {
     }
     Enums: {
       price: "NUMERIC(10, 2)"
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+  tours: {
+    Tables: {
+      cars: {
+        Row: {
+          code: string
+          company_id: string
+          content_html: string | null
+          data: Json
+          id: string
+          image: string | null
+          legacy_id: number | null
+          max_people: number | null
+          name: string
+          slug: string
+        }
+        Insert: {
+          code: string
+          company_id: string
+          content_html?: string | null
+          data?: Json
+          id?: string
+          image?: string | null
+          legacy_id?: number | null
+          max_people?: number | null
+          name: string
+          slug: string
+        }
+        Update: {
+          code?: string
+          company_id?: string
+          content_html?: string | null
+          data?: Json
+          id?: string
+          image?: string | null
+          legacy_id?: number | null
+          max_people?: number | null
+          name?: string
+          slug?: string
+        }
+        Relationships: []
+      }
+      cms_pages: {
+        Row: {
+          blocks: Json
+          company_id: string
+          content_html: string | null
+          data: Json
+          id: string
+          is_active: boolean
+          kind: string
+          legacy_id: number | null
+          path: string
+          seo: Json
+          title: string
+        }
+        Insert: {
+          blocks?: Json
+          company_id: string
+          content_html?: string | null
+          data?: Json
+          id?: string
+          is_active?: boolean
+          kind?: string
+          legacy_id?: number | null
+          path: string
+          seo?: Json
+          title: string
+        }
+        Update: {
+          blocks?: Json
+          company_id?: string
+          content_html?: string | null
+          data?: Json
+          id?: string
+          is_active?: boolean
+          kind?: string
+          legacy_id?: number | null
+          path?: string
+          seo?: Json
+          title?: string
+        }
+        Relationships: []
+      }
+      costing_lines: {
+        Row: {
+          component: string
+          costing_id: string
+          currency: string
+          description: string | null
+          id: string
+          pax_type: string
+          quantity: number
+          source_ref: string | null
+          supplier: string | null
+          unit: string
+          unit_cost: number
+        }
+        Insert: {
+          component: string
+          costing_id: string
+          currency: string
+          description?: string | null
+          id?: string
+          pax_type?: string
+          quantity?: number
+          source_ref?: string | null
+          supplier?: string | null
+          unit: string
+          unit_cost: number
+        }
+        Update: {
+          component?: string
+          costing_id?: string
+          currency?: string
+          description?: string | null
+          id?: string
+          pax_type?: string
+          quantity?: number
+          source_ref?: string | null
+          supplier?: string | null
+          unit?: string
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "costing_lines_costing_id_fkey"
+            columns: ["costing_id"]
+            isOneToOne: false
+            referencedRelation: "costings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      costings: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          assumptions: Json
+          company_id: string
+          created_at: string
+          created_by: string | null
+          departure_id: string | null
+          id: string
+          result: Json | null
+          season_year: number | null
+          series_id: string | null
+          status: string
+          version: number
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          assumptions?: Json
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          departure_id?: string | null
+          id?: string
+          result?: Json | null
+          season_year?: number | null
+          series_id?: string | null
+          status?: string
+          version?: number
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          assumptions?: Json
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          departure_id?: string | null
+          id?: string
+          result?: Json | null
+          season_year?: number | null
+          series_id?: string | null
+          status?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "costings_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "costings_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      departure_options: {
+        Row: {
+          board: string | null
+          company_id: string
+          cost: number | null
+          cost_currency: string | null
+          departure_id: string
+          id: string
+          kind: string
+          label: string | null
+          max_people: number | null
+          nights: number | null
+          position: number
+          price: number | null
+          price_unit: string
+          ref_code: string | null
+          room_prices: Json | null
+          stay_order: number | null
+        }
+        Insert: {
+          board?: string | null
+          company_id: string
+          cost?: number | null
+          cost_currency?: string | null
+          departure_id: string
+          id?: string
+          kind: string
+          label?: string | null
+          max_people?: number | null
+          nights?: number | null
+          position?: number
+          price?: number | null
+          price_unit?: string
+          ref_code?: string | null
+          room_prices?: Json | null
+          stay_order?: number | null
+        }
+        Update: {
+          board?: string | null
+          company_id?: string
+          cost?: number | null
+          cost_currency?: string | null
+          departure_id?: string
+          id?: string
+          kind?: string
+          label?: string | null
+          max_people?: number | null
+          nights?: number | null
+          position?: number
+          price?: number | null
+          price_unit?: string
+          ref_code?: string | null
+          room_prices?: Json | null
+          stay_order?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departure_options_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      departure_prices: {
+        Row: {
+          company_id: string
+          departure_id: string
+          pax_type: string
+          price: number
+          room_position: number
+        }
+        Insert: {
+          company_id: string
+          departure_id: string
+          pax_type: string
+          price: number
+          room_position: number
+        }
+        Update: {
+          company_id?: string
+          departure_id?: string
+          pax_type?: string
+          price?: number
+          room_position?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departure_prices_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      departure_sales_entries: {
+        Row: {
+          company_id: string
+          created_at: string
+          departure_id: string
+          docket_no: string | null
+          entered_by: string | null
+          flight_id: number | null
+          id: string
+          note: string | null
+          pax: number
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          departure_id: string
+          docket_no?: string | null
+          entered_by?: string | null
+          flight_id?: number | null
+          id?: string
+          note?: string | null
+          pax: number
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          departure_id?: string
+          docket_no?: string | null
+          entered_by?: string | null
+          flight_id?: number | null
+          id?: string
+          note?: string | null
+          pax?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departure_sales_entries_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      departures: {
+        Row: {
+          arrival_airport: string | null
+          baggage_included: boolean
+          capacity: number | null
+          card_badge: string | null
+          child_max_age: number | null
+          code: string
+          company_id: string
+          connection_back: string | null
+          connection_out: string | null
+          costing_id: string | null
+          created_at: string
+          currency: string
+          data: Json
+          date_labels: string[]
+          docket_no: string | null
+          end_date: string
+          flight_mode: string
+          flight_price: number
+          id: string
+          is_deleted: string | null
+          is_published: boolean
+          itinerary_id: string | null
+          legacy_product_id: number | null
+          markup_fixed: number | null
+          markup_percent: number | null
+          meal_included: boolean
+          meeting_at: string | null
+          notes: string | null
+          package_id: string
+          price_source: string
+          return_airport: string | null
+          sale_status: string
+          season: string | null
+          season_year: number
+          senior_discount: number | null
+          senior_min_age: number | null
+          series_id: string
+          site_id: number
+          start_date: string
+          transfers_included: boolean
+          updated_at: string
+        }
+        Insert: {
+          arrival_airport?: string | null
+          baggage_included?: boolean
+          capacity?: number | null
+          card_badge?: string | null
+          child_max_age?: number | null
+          code: string
+          company_id: string
+          connection_back?: string | null
+          connection_out?: string | null
+          costing_id?: string | null
+          created_at?: string
+          currency?: string
+          data?: Json
+          date_labels?: string[]
+          docket_no?: string | null
+          end_date: string
+          flight_mode?: string
+          flight_price?: number
+          id?: string
+          is_deleted?: string | null
+          is_published?: boolean
+          itinerary_id?: string | null
+          legacy_product_id?: number | null
+          markup_fixed?: number | null
+          markup_percent?: number | null
+          meal_included?: boolean
+          meeting_at?: string | null
+          notes?: string | null
+          package_id: string
+          price_source?: string
+          return_airport?: string | null
+          sale_status?: string
+          season?: string | null
+          season_year: number
+          senior_discount?: number | null
+          senior_min_age?: number | null
+          series_id: string
+          site_id?: number
+          start_date: string
+          transfers_included?: boolean
+          updated_at?: string
+        }
+        Update: {
+          arrival_airport?: string | null
+          baggage_included?: boolean
+          capacity?: number | null
+          card_badge?: string | null
+          child_max_age?: number | null
+          code?: string
+          company_id?: string
+          connection_back?: string | null
+          connection_out?: string | null
+          costing_id?: string | null
+          created_at?: string
+          currency?: string
+          data?: Json
+          date_labels?: string[]
+          docket_no?: string | null
+          end_date?: string
+          flight_mode?: string
+          flight_price?: number
+          id?: string
+          is_deleted?: string | null
+          is_published?: boolean
+          itinerary_id?: string | null
+          legacy_product_id?: number | null
+          markup_fixed?: number | null
+          markup_percent?: number | null
+          meal_included?: boolean
+          meeting_at?: string | null
+          notes?: string | null
+          package_id?: string
+          price_source?: string
+          return_airport?: string | null
+          sale_status?: string
+          season?: string | null
+          season_year?: number
+          senior_discount?: number | null
+          senior_min_age?: number | null
+          series_id?: string
+          site_id?: number
+          start_date?: string
+          transfers_included?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departures_itinerary_id_fkey"
+            columns: ["itinerary_id"]
+            isOneToOne: false
+            referencedRelation: "package_itineraries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "departures_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "departures_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flight_allocations: {
+        Row: {
+          company_id: string
+          created_at: string
+          departure_id: string
+          flight_id: number
+          id: string
+          legs: string
+          seats: number
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          departure_id: string
+          flight_id: number
+          id?: string
+          legs?: string
+          seats?: number
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          departure_id?: string
+          flight_id?: number
+          id?: string
+          legs?: string
+          seats?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flight_allocations_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hotels: {
+        Row: {
+          amenities: string[]
+          city: string | null
+          code: string
+          company_id: string
+          content_html: string | null
+          data: Json
+          excerpt: string | null
+          gallery: Json
+          id: string
+          image: string | null
+          legacy_id: number | null
+          name: string
+          slug: string
+          stars: number | null
+        }
+        Insert: {
+          amenities?: string[]
+          city?: string | null
+          code: string
+          company_id: string
+          content_html?: string | null
+          data?: Json
+          excerpt?: string | null
+          gallery?: Json
+          id?: string
+          image?: string | null
+          legacy_id?: number | null
+          name: string
+          slug: string
+          stars?: number | null
+        }
+        Update: {
+          amenities?: string[]
+          city?: string | null
+          code?: string
+          company_id?: string
+          content_html?: string | null
+          data?: Json
+          excerpt?: string | null
+          gallery?: Json
+          id?: string
+          image?: string | null
+          legacy_id?: number | null
+          name?: string
+          slug?: string
+          stars?: number | null
+        }
+        Relationships: []
+      }
+      instructors: {
+        Row: {
+          company_id: string
+          content_html: string | null
+          data: Json
+          excerpt: string | null
+          gallery: Json
+          id: string
+          image: string | null
+          is_active: boolean
+          legacy_id: number | null
+          name: string
+          position: number
+          regions: string | null
+          slug: string
+        }
+        Insert: {
+          company_id: string
+          content_html?: string | null
+          data?: Json
+          excerpt?: string | null
+          gallery?: Json
+          id?: string
+          image?: string | null
+          is_active?: boolean
+          legacy_id?: number | null
+          name: string
+          position?: number
+          regions?: string | null
+          slug: string
+        }
+        Update: {
+          company_id?: string
+          content_html?: string | null
+          data?: Json
+          excerpt?: string | null
+          gallery?: Json
+          id?: string
+          image?: string | null
+          is_active?: boolean
+          legacy_id?: number | null
+          name?: string
+          position?: number
+          regions?: string | null
+          slug?: string
+        }
+        Relationships: []
+      }
+      package_itineraries: {
+        Row: {
+          arrival_city: string | null
+          company_id: string
+          days: Json
+          id: string
+          key: string
+          label: string | null
+          package_id: string
+          return_city: string | null
+        }
+        Insert: {
+          arrival_city?: string | null
+          company_id: string
+          days?: Json
+          id?: string
+          key?: string
+          label?: string | null
+          package_id: string
+          return_city?: string | null
+        }
+        Update: {
+          arrival_city?: string | null
+          company_id?: string
+          days?: Json
+          id?: string
+          key?: string
+          label?: string | null
+          package_id?: string
+          return_city?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "package_itineraries_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      package_terms: {
+        Row: {
+          package_id: string
+          term_id: string
+        }
+        Insert: {
+          package_id: string
+          term_id: string
+        }
+        Update: {
+          package_id?: string
+          term_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "package_terms_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "package_terms_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: false
+            referencedRelation: "terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      packages: {
+        Row: {
+          attractions: string[]
+          brand: string
+          cancellation_html: string | null
+          card_image: string | null
+          company_id: string
+          countries: string | null
+          created_at: string
+          data: Json
+          days: number | null
+          description_html: string | null
+          extra_info_html: string | null
+          extra_sections: Json
+          faq: Json
+          gallery: string[]
+          hero_image: string | null
+          hotels: Json
+          id: string
+          included: string[]
+          is_active: boolean
+          is_deleted: string | null
+          kind: string
+          legacy_id: number | null
+          name: string
+          nights: number | null
+          not_included: string[]
+          seasons: string[]
+          seo: Json
+          slug: string
+          subtitle: string | null
+          terms_html: string | null
+          updated_at: string
+        }
+        Insert: {
+          attractions?: string[]
+          brand?: string
+          cancellation_html?: string | null
+          card_image?: string | null
+          company_id: string
+          countries?: string | null
+          created_at?: string
+          data?: Json
+          days?: number | null
+          description_html?: string | null
+          extra_info_html?: string | null
+          extra_sections?: Json
+          faq?: Json
+          gallery?: string[]
+          hero_image?: string | null
+          hotels?: Json
+          id?: string
+          included?: string[]
+          is_active?: boolean
+          is_deleted?: string | null
+          kind?: string
+          legacy_id?: number | null
+          name: string
+          nights?: number | null
+          not_included?: string[]
+          seasons?: string[]
+          seo?: Json
+          slug: string
+          subtitle?: string | null
+          terms_html?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attractions?: string[]
+          brand?: string
+          cancellation_html?: string | null
+          card_image?: string | null
+          company_id?: string
+          countries?: string | null
+          created_at?: string
+          data?: Json
+          days?: number | null
+          description_html?: string | null
+          extra_info_html?: string | null
+          extra_sections?: Json
+          faq?: Json
+          gallery?: string[]
+          hero_image?: string | null
+          hotels?: Json
+          id?: string
+          included?: string[]
+          is_active?: boolean
+          is_deleted?: string | null
+          kind?: string
+          legacy_id?: number | null
+          name?: string
+          nights?: number | null
+          not_included?: string[]
+          seasons?: string[]
+          seo?: Json
+          slug?: string
+          subtitle?: string | null
+          terms_html?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      promotions: {
+        Row: {
+          company_id: string
+          departure_id: string | null
+          id: string
+          is_active: boolean
+          kind: string
+          label: string | null
+          series_id: string | null
+          show_on_card: boolean
+          valid_until: string | null
+          value: number | null
+        }
+        Insert: {
+          company_id: string
+          departure_id?: string | null
+          id?: string
+          is_active?: boolean
+          kind: string
+          label?: string | null
+          series_id?: string | null
+          show_on_card?: boolean
+          valid_until?: string | null
+          value?: number | null
+        }
+        Update: {
+          company_id?: string
+          departure_id?: string | null
+          id?: string
+          is_active?: boolean
+          kind?: string
+          label?: string | null
+          series_id?: string | null
+          show_on_card?: boolean
+          valid_until?: string | null
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promotions_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promotions_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      series: {
+        Row: {
+          arrival_airport: string | null
+          arrival_weekday: number | null
+          child_max_age: number
+          code: string
+          company_id: string
+          default_capacity: number | null
+          default_currency: string
+          default_nights: number | null
+          id: string
+          is_active: boolean
+          label: string | null
+          package_id: string | null
+          return_airport: string | null
+          return_weekday: number | null
+          senior_discount: number | null
+          senior_min_age: number | null
+        }
+        Insert: {
+          arrival_airport?: string | null
+          arrival_weekday?: number | null
+          child_max_age?: number
+          code: string
+          company_id: string
+          default_capacity?: number | null
+          default_currency?: string
+          default_nights?: number | null
+          id?: string
+          is_active?: boolean
+          label?: string | null
+          package_id?: string | null
+          return_airport?: string | null
+          return_weekday?: number | null
+          senior_discount?: number | null
+          senior_min_age?: number | null
+        }
+        Update: {
+          arrival_airport?: string | null
+          arrival_weekday?: number | null
+          child_max_age?: number
+          code?: string
+          company_id?: string
+          default_capacity?: number | null
+          default_currency?: string
+          default_nights?: number | null
+          id?: string
+          is_active?: boolean
+          label?: string | null
+          package_id?: string | null
+          return_airport?: string | null
+          return_weekday?: number | null
+          senior_discount?: number | null
+          senior_min_age?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "series_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      series_terms: {
+        Row: {
+          series_id: string
+          term_id: string
+        }
+        Insert: {
+          series_id: string
+          term_id: string
+        }
+        Update: {
+          series_id?: string
+          term_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "series_terms_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "series_terms_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: false
+            referencedRelation: "terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      terms: {
+        Row: {
+          company_id: string
+          data: Json
+          description_html: string | null
+          hero_images: string[]
+          id: string
+          is_active: boolean
+          kind: string
+          legacy_id: number | null
+          name: string
+          position: number
+          slug: string
+        }
+        Insert: {
+          company_id: string
+          data?: Json
+          description_html?: string | null
+          hero_images?: string[]
+          id?: string
+          is_active?: boolean
+          kind: string
+          legacy_id?: number | null
+          name: string
+          position?: number
+          slug: string
+        }
+        Update: {
+          company_id?: string
+          data?: Json
+          description_html?: string | null
+          hero_images?: string[]
+          id?: string
+          is_active?: boolean
+          kind?: string
+          legacy_id?: number | null
+          name?: string
+          position?: number
+          slug?: string
+        }
+        Relationships: []
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3585,12 +6041,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3614,11 +6070,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3639,11 +6095,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3664,11 +6120,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3681,11 +6137,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never) = never,
+    : never = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3695,6 +6151,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  c_megafamily: {
+    Enums: {},
+  },
   graphql_public: {
     Enums: {},
   },
@@ -3703,4 +6162,8 @@ export const Constants = {
       price: ["NUMERIC(10, 2)"],
     },
   },
+  tours: {
+    Enums: {},
+  },
 } as const
+
