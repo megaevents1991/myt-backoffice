@@ -24,6 +24,7 @@
 // NOTHING - not even log rows - so it is safe to run against prod from a
 // preview deploy (it also does not advance the rotation).
 import { supabase } from "@/lib/supabase-server";
+import { megaEventsFlights } from "@/lib/flights-scope";
 import { orderForRotation } from "@/lib/services/base-price-rotation";
 import { appOrigin, sendMail } from "@/lib/email";
 import {
@@ -95,7 +96,10 @@ function isoDaysFromNow(days: number): string {
 async function offlineLinkedEventIds(
   table: "flights" | "offline_hotels",
 ): Promise<Set<number>> {
-  const { data, error } = await db.from(table).select("event_ids");
+  // `flights` is shared between companies: only Mega Events flights link events.
+  const { data, error } = await (table === "flights"
+    ? megaEventsFlights().select("event_ids")
+    : db.from("offline_hotels").select("event_ids"));
   if (error) {
     console.error(`base-price-sync: ${table} exclusion load failed`, JSON.stringify(error));
     return new Set();

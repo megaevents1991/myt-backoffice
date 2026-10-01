@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import {
-  getOfflineFlights,
+  getCompanyFlights,
   createOfflineFlight,
 } from "@/lib/actions/offline-flight-actions";
 import { guardAdminRoute } from "@/lib/auth/guards";
 import type { OfflineFlight } from "@/types/offline-flight.types"; // Correct import
 
 export async function GET() {
-  const denied = await guardAdminRoute();
+  const denied = await guardAdminRoute({ anyCompany: true });
   if (denied) return denied;
   try {
-    const flights = await getOfflineFlights();
+    // The Offline Flights list of the ACTIVE company.
+    const flights = await getCompanyFlights();
     return NextResponse.json(flights);
   } catch (error) {
     console.error("API GET /offline-flights Error:", error);
@@ -20,7 +21,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const denied = await guardAdminRoute();
+  const denied = await guardAdminRoute({ anyCompany: true });
   if (denied) return denied;
   try {
     const body = await request.json();

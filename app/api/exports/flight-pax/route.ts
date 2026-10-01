@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { guardAdminRoute } from "@/lib/auth/guards";
+import { getActiveCompany } from "@/lib/company";
+import { flightRouteLabel } from "@/lib/tours/routes";
 import {
   buildManifestWorkbook,
   type ManifestRow,
@@ -9,18 +11,21 @@ import { getReservationsForFlight } from "@/lib/actions/reservation-actions";
 import type { PaxInfo } from "@/types/reservation.types";
 
 export async function GET(request: Request) {
-  const denied = await guardAdminRoute();
+  const denied = await guardAdminRoute({ anyCompany: true });
   if (denied) return denied;
 
   try {
-    const flights = await loadFlightsForExport(request.url);
+    // Same scope as the inventory export: the ACTIVE company's flights only.
+    const company = await getActiveCompany();
+    const flights = await loadFlightsForExport(request.url, company);
     const rows: ManifestRow[] = [];
 
     for (const flight of flights) {
       // Already excludes Cancelled/Lost, so released bookings never reach the
       // manifest and we never ticket a passenger who did not pay.
       const reservations = await getReservationsForFlight(flight.id);
-      const route = `${flight.outbound_departure_airport}-${flight.outbound_arrival_airport}`;
+      // Both legs: the return can leave from another city than the arrival.
+      const route = flightRouteLabel(flight);
 
       for (const reservation of reservations) {
         // The main contact flies too - they are a passenger, not just a payer.

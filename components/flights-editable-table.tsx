@@ -64,23 +64,25 @@ import {
 } from "@/lib/actions/offline-flight-bulk-actions";
 import { getActiveEvents } from "@/lib/actions/event-actions";
 import {
-  DEFAULT_VISIBLE_COLUMNS,
-  FLIGHT_FIELDS,
-  FLIGHT_FIELD_BY_KEY,
-  FLIGHT_FIELD_GROUPS,
+  blockStatusOptions,
+  flightFieldSet,
   formatFlightValue,
   fromInputValue,
   toInputValue,
   type FlightField,
+  type FlightFieldKey,
 } from "@/components/flight-field-groups";
-import type { FlightWritableColumn } from "@/lib/actions/offline-flight-columns";
+import { flightRouteLabel } from "@/lib/tours/routes";
 import { FlightAllocationsPanel } from "@/components/flight-allocations-panel";
 import { useTablePreferences } from "@/hooks/use-table-preferences";
 import { useSessionState } from "@/hooks/use-view-state";
 
 // Preferences are stored per staff account (see useTablePreferences), so the
-// same column choice follows you between machines.
+// same column choice follows you between machines. A tours company has its own
+// key (and its own remembered filters): its columns and statuses are different,
+// and a Mega Events filter must not follow you into another company's list.
 const TABLE_KEY = "offline-flights";
+const TOURS_TABLE_KEY = "offline-flights:tours";
 const DEADLINE_WARNING_DAYS = 7;
 
 export type FlightsEditableTableProps = {
@@ -93,6 +95,14 @@ export type FlightsEditableTableProps = {
   /** Rendered in the toolbar; used by the event page to add its own actions. */
   toolbarExtra?: React.ReactNode;
   onChanged?: () => void;
+  /**
+   * The active company sells tours (group flight blocks): the block status is
+   * the full lifecycle in Hebrew, the operations columns are offered, and the
+   * event features (event filter, event links, seat allocations per event, the
+   * ticketing manifest) are not - they exist for Mega Events only. Omitted =
+   * Mega Events, exactly as before.
+   */
+  tours?: boolean;
 };
 
 type Filters = {
@@ -131,6 +141,10 @@ function daysUntil(date: string | null | undefined): number | null {
  */
 function deadlineWarning(flight: OfflineFlight): string | null {
   if (flight.block_status === "ticketed") return null;
+  // A block that was cancelled or declined holds no seats to lose.
+  if (flight.block_status === "cancelled" || flight.block_status === "declined") {
+    return null;
+  }
   const checks: [string, number | null][] = [
     ["Ticketing deadline", daysUntil(flight.ticketing_deadline)],
     ["Option expiry", daysUntil(flight.option_expiry)],
@@ -148,19 +162,30 @@ export function FlightsEditableTable({
   eventId,
   toolbarExtra,
   onChanged,
+  tours = false,
 }: FlightsEditableTableProps) {
+  const fieldSet = flightFieldSet(tours);
+  const statusOptions = blockStatusOptions(tours);
   const [flights, setFlights] = useState<OfflineFlight[]>(flightsProp);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [drawerFlight, setDrawerFlight] = useState<OfflineFlight | null>(null);
   const [editing, setEditing] = useState<{ id: number; key: string } | null>(null);
   const [columnPrefs, setColumnPrefs] = useTablePreferences<{
-    visibleColumns: FlightWritableColumn[];
-  }>(TABLE_KEY, { visibleColumns: DEFAULT_VISIBLE_COLUMNS });
+    visibleColumns: FlightFieldKey[];
+  }>(tours ? TOURS_TABLE_KEY : TABLE_KEY, {
+    visibleColumns: fieldSet.defaultVisible,
+  });
   // Remembered for the browser tab, per screen (hooks/use-view-state.ts) - a refresh used
   // to clear the filters and fold the panel. The columns are a per-account preference above.
-  const [filters, setFilters] = useSessionState<Filters>("flights:filters", EMPTY_FILTERS);
-  const [showFilters, setShowFilters] = useSessionState("flights:showFilters", false);
+  const [filters, setFilters] = useSessionState<Filters>(
+    tours ? "flights:tours:filters" : "flights:filters",
+    EMPTY_FILTERS,
+  );
+  const [showFilters, setShowFilters] = useSessionState(
+    tours ? "flights:tours:showFilters" : "flights:showFilters",
+    false,
+  );
   const [events, setEvents] = useState<Pick<Event, "id" | "name" | "date">[]>([]);
   const [bulkField, setBulkField] = useState<string>("");
   const [bulkValue, setBulkValue] = useState<string>("");
@@ -173,25 +198,26 @@ export function FlightsEditableTable({
   useEffect(() => setFlights(flightsProp), [flightsProp]);
 
   useEffect(() => {
-    if (eventId) return;
+    // Events are a Mega Events product - a tours company has no event filter.
+    if (eventId || tours) return;
     getActiveEvents()
       .then((data) =>
         setEvents(data.map((e) => ({ id: e.id, name: e.name, date: e.date }))),
       )
       .catch((error) => console.error("Failed to load events:", error));
-  }, [eventId]);
+  }, [eventId, tours]);
 
   // Guards against a stale stored key (a column that was renamed or dropped)
   // silently blanking a table cell.
   const visibleColumns = useMemo(
     () =>
-      (columnPrefs.visibleColumns ?? DEFAULT_VISIBLE_COLUMNS).filter((key) =>
-        FLIGHT_FIELD_BY_KEY.has(key),
+      (columnPrefs.visibleColumns ?? fieldSet.defaultVisible).filter((key) =>
+        fieldSet.byKey.has(key),
       ),
-    [columnPrefs.visibleColumns],
+    [columnPrefs.visibleColumns, fieldSet],
   );
 
-  const toggleColumn = (key: FlightWritableColumn) => {
+  const toggleColumn = (key: FlightFieldKey) => {
     setColumnPrefs({
       visibleColumns: visibleColumns.includes(key)
         ? visibleColumns.filter((c) => c !== key)
@@ -294,10 +320,13 @@ export function FlightsEditableTable({
   const visibleFields = useMemo(
     () =>
       visibleColumns
-        .map((key) => FLIGHT_FIELD_BY_KEY.get(key))
+        .map((key) => fieldSet.byKey.get(key))
         .filter((f): f is FlightField => Boolean(f)),
-    [visibleColumns],
+    [visibleColumns, fieldSet],
   );
+
+  // chevron (events only) + checkbox + ID + route + ORG/TAKEN/AVAILABLE + status + actions
+  const fixedColumnCount = tours ? 8 : 9;
 
   // Filter options come from the flights you can actually see. A series whose
   // every flight was deleted must not linger in the dropdown - picking it would
@@ -372,6 +401,14 @@ export function FlightsEditableTable({
   ) => {
     const raw = (flight as unknown as Record<string, unknown>)[field.key];
 
+    if (field.readOnly) {
+      return (
+        <span className="text-muted-foreground">
+          {formatFlightValue(field, raw)}
+        </span>
+      );
+    }
+
     if (field.type === "boolean") {
       return (
         <Checkbox
@@ -399,7 +436,7 @@ export function FlightsEditableTable({
           <SelectContent>
             {(field.options ?? []).map((option) => (
               <SelectItem key={option} value={option}>
-                {option}
+                {field.optionLabels?.[option] ?? option}
               </SelectItem>
             ))}
           </SelectContent>
@@ -408,7 +445,7 @@ export function FlightsEditableTable({
     }
 
     const inputType =
-      field.type === "number" || field.type === "money"
+      field.type === "number" || field.type === "money" || field.type === "amount"
         ? "number"
         : field.type === "date"
           ? "date"
@@ -421,7 +458,7 @@ export function FlightsEditableTable({
         autoFocus
         className="h-8"
         type={inputType}
-        step={field.type === "money" ? "0.01" : undefined}
+        step={field.type === "money" || field.type === "amount" ? "0.01" : undefined}
         defaultValue={toInputValue(field, raw)}
         onKeyDown={(event) => {
           if (event.key === "Escape") onDone();
@@ -448,7 +485,7 @@ export function FlightsEditableTable({
     );
   };
 
-  const bulkFieldDef = bulkField ? FLIGHT_FIELD_BY_KEY.get(bulkField) : undefined;
+  const bulkFieldDef = bulkField ? fieldSet.byKey.get(bulkField) : undefined;
 
   return (
     <div className="space-y-4">
@@ -471,12 +508,12 @@ export function FlightsEditableTable({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="max-h-96 w-64 overflow-y-auto">
-            {FLIGHT_FIELD_GROUPS.map((group) => (
+            {fieldSet.groups.map((group) => (
               <div key={group}>
                 <DropdownMenuLabel className="text-xs uppercase text-muted-foreground">
                   {group}
                 </DropdownMenuLabel>
-                {FLIGHT_FIELDS.filter((field) => field.group === group).map((field) => (
+                {fieldSet.fields.filter((field) => field.group === group).map((field) => (
                   <DropdownMenuCheckboxItem
                     key={field.key}
                     checked={visibleColumns.includes(field.key)}
@@ -498,12 +535,15 @@ export function FlightsEditableTable({
             Export inventory
           </a>
         </Button>
-        <Button variant="outline" size="sm" asChild>
-          <a href={exportHref("/api/exports/flight-pax")}>
-            <Download className="mr-2 h-4 w-4" />
-            Export for ticketing
-          </a>
-        </Button>
+        {/* The manifest is built from event reservations - Mega Events only. */}
+        {!tours && (
+          <Button variant="outline" size="sm" asChild>
+            <a href={exportHref("/api/exports/flight-pax")}>
+              <Download className="mr-2 h-4 w-4" />
+              Export for ticketing
+            </a>
+          </Button>
+        )}
 
         <span className="text-sm text-muted-foreground">
           {filtered.length} of {flights.length}
@@ -570,12 +610,14 @@ export function FlightsEditableTable({
               onChange={(e) => setFilters({ ...filters, blockStatus: e.target.value })}
             >
               <option value="">All</option>
-              <option value="option">option</option>
-              <option value="confirmed">confirmed</option>
-              <option value="ticketed">ticketed</option>
+              {statusOptions.map((status) => (
+                <option key={status.value} value={status.value}>
+                  {status.label}
+                </option>
+              ))}
             </select>
           </label>
-          {!eventId && (
+          {!eventId && !tours && (
             <label className="text-xs">
               Event
               <select
@@ -623,7 +665,9 @@ export function FlightsEditableTable({
               }}
             >
               <option value="">Choose…</option>
-              {FLIGHT_FIELDS.filter((f) => f.bulkEditable && f.key !== "price").map(
+              {fieldSet.fields.filter(
+                (f) => f.bulkEditable && !f.readOnly && f.key !== "price",
+              ).map(
                 (field) => (
                   <option key={field.key} value={field.key}>
                     {field.label}
@@ -645,7 +689,7 @@ export function FlightsEditableTable({
                     <option value="">Choose…</option>
                     {(bulkFieldDef.options ?? []).map((option) => (
                       <option key={option} value={option}>
-                        {option}
+                        {bulkFieldDef.optionLabels?.[option] ?? option}
                       </option>
                     ))}
                   </select>
@@ -663,7 +707,9 @@ export function FlightsEditableTable({
                   <Input
                     className="mt-1 h-9 w-40"
                     type={
-                      bulkFieldDef.type === "number" || bulkFieldDef.type === "money"
+                      bulkFieldDef.type === "number" ||
+                      bulkFieldDef.type === "money" ||
+                      bulkFieldDef.type === "amount"
                         ? "number"
                         : bulkFieldDef.type === "date"
                           ? "date"
@@ -731,6 +777,10 @@ export function FlightsEditableTable({
             Apply price
           </Button>
 
+          {/* Linking to an event is a Mega Events feature: a group block of a
+              tours company never carries an event id. */}
+          {!tours && (
+          <>
           <span className="mx-1 h-8 w-px bg-border" />
 
           {!eventId && (
@@ -782,6 +832,8 @@ export function FlightsEditableTable({
           >
             Unlink event
           </Button>
+          </>
+          )}
 
           <span className="mx-1 h-8 w-px bg-border" />
 
@@ -818,7 +870,7 @@ export function FlightsEditableTable({
         <Table look="list">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-8" />
+              {!tours && <TableHead className="w-8" />}
               <TableHead className="w-8">
                 <Checkbox
                   checked={
@@ -833,6 +885,7 @@ export function FlightsEditableTable({
                 />
               </TableHead>
               <TableHead>ID</TableHead>
+              <TableHead>Route</TableHead>
               {visibleFields.map((field) => (
                 <TableHead key={field.key}>{field.label}</TableHead>
               ))}
@@ -852,21 +905,24 @@ export function FlightsEditableTable({
                 return (
                   <Fragment key={flight.id}>
                     <TableRow data-state={selectedRows.has(flight.id) && "selected"}>
-                      <TableCell className="p-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          title="Seat allocations"
-                          onClick={() => setExpandedId(isExpanded ? null : flight.id)}
-                        >
-                          {isExpanded ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </TableCell>
+                      {/* Seat allocations per EVENT - Mega Events only. */}
+                      {!tours && (
+                        <TableCell className="p-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            title="Seat allocations"
+                            onClick={() => setExpandedId(isExpanded ? null : flight.id)}
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Checkbox
                           checked={selectedRows.has(flight.id)}
@@ -897,6 +953,11 @@ export function FlightsEditableTable({
                           />
                         )}
                       </TableCell>
+                      {/* Both legs, never the outbound alone: the return can
+                          leave from another city than the one it landed in. */}
+                      <TableCell className="whitespace-nowrap">
+                        <span dir="ltr">{flightRouteLabel(flight)}</span>
+                      </TableCell>
 
                       {visibleFields.map((field) => {
                         const isEditing =
@@ -907,8 +968,9 @@ export function FlightsEditableTable({
                         return (
                           <TableCell
                             key={field.key}
-                            className="cursor-pointer"
+                            className={field.readOnly ? undefined : "cursor-pointer"}
                             onClick={() =>
+                              !field.readOnly &&
                               !isEditing &&
                               setEditing({ id: flight.id, key: field.key })
                             }
@@ -981,9 +1043,9 @@ export function FlightsEditableTable({
                         </div>
                       </TableCell>
                     </TableRow>
-                    {isExpanded && (
+                    {!tours && isExpanded && (
                       <TableRow>
-                        <TableCell colSpan={visibleFields.length + 8} className="bg-muted/40">
+                        <TableCell colSpan={visibleFields.length + fixedColumnCount} className="bg-muted/40">
                           <FlightAllocationsPanel
                             flightId={flight.id}
                             highlightEventId={eventId}
@@ -998,7 +1060,7 @@ export function FlightsEditableTable({
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={visibleFields.length + 8}
+                  colSpan={visibleFields.length + fixedColumnCount}
                   className="h-24 text-center"
                 >
                   No flights found.
@@ -1022,19 +1084,18 @@ export function FlightsEditableTable({
                   {drawerFlight.outbound_flight_number}
                 </SheetTitle>
                 <SheetDescription>
-                  {drawerFlight.outbound_departure_airport} →{" "}
-                  {drawerFlight.outbound_arrival_airport} ·{" "}
+                  <span dir="ltr">{flightRouteLabel(drawerFlight)}</span> ·{" "}
                   {drawerFlight.outbound_departure_time.slice(0, 10)}
                 </SheetDescription>
               </SheetHeader>
               <div className="mt-4 space-y-6">
-                {FLIGHT_FIELD_GROUPS.map((group) => (
+                {fieldSet.groups.map((group) => (
                   <div key={group}>
                     <h4 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
                       {group}
                     </h4>
                     <div className="grid grid-cols-2 gap-3">
-                      {FLIGHT_FIELDS.filter((field) => field.group === group).map(
+                      {fieldSet.fields.filter((field) => field.group === group).map(
                         (field) => (
                           <label key={field.key} className="text-xs">
                             {field.label}

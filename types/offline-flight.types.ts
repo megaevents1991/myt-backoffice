@@ -1,5 +1,23 @@
+import type { BlockStatus } from "./tours.types";
+
+/**
+ * The three block statuses a company of product type "events" (Mega Events)
+ * uses. A tours company uses the whole lifecycle - BLOCK_STATUSES in
+ * types/tours.types.ts.
+ */
+export const EVENTS_BLOCK_STATUSES = [
+  "option",
+  "confirmed",
+  "ticketed",
+] as const satisfies readonly BlockStatus[];
+
 export interface OfflineFlight {
   id: number; // INTEGER PRIMARY KEY AUTOINCREMENT
+  /**
+   * Owner of the row. Set by the server (lib/flights-scope.ts) and never
+   * written from a form: every read and write of `flights` is filtered by it.
+   */
+  company_id?: string; // uuid NOT NULL DEFAULT Mega Events
   initial_quantity: number; // INTEGER NOT NULL
   consumed_quantity: number; // INTEGER NOT NULL DEFAULT 0
   is_deleted: boolean | null; // BOOLEAN NOT NULL DEFAULT FALSE
@@ -54,7 +72,7 @@ export interface OfflineFlight {
   cabin_bag_kg?: number | null;
   cabin_class?: string | null;
   aircraft_type?: string | null;
-  block_status?: "option" | "confirmed" | "ticketed" | null;
+  block_status?: BlockStatus | null;
 
   // --- misc
   notes?: string | null;
@@ -69,6 +87,22 @@ export interface OfflineFlight {
   outbound_stop_duration?: string | null; // INTERVAL, rendered "HH:MM:SS"
   inbound_stop_airport?: string | null;
   inbound_stop_duration?: string | null;
+
+  // --- group-block operations. Used by a tours company only; always null on
+  //     Mega Events rows (migration 20261001100300_flights_company_and_ops).
+  original_quantity?: number | null; // seats first ordered; initial_quantity = seats held now
+  cost_child_price?: number | null; // NUMERIC(10,2) - CHD fare (cost_price = ADT)
+  cost_tax?: number | null; // NUMERIC(10,2)
+  inbound_airline_code?: string | null; // VARCHAR(3) - open-jaw flown back by another carrier
+  contract_id?: string | null; // uuid -> flight_contracts
+  season_label?: string | null; // pool label before the block is assigned to a departure
+  requested_at?: string | null; // DATE
+  first_cancellation_date?: string | null; // DATE - CXX 1 (last_cancellation_date = CXX 2)
+  names_deadline?: string | null; // DATE
+  cancelled_at?: string | null; // DATE
+  cancel_reason?: string | null;
+  cancellation_fee?: number | null; // NUMERIC(10,2)
+  reviewed_at?: string | null; // TIMESTAMPTZ - "a manager went over this row"
 }
 
 /** One flight↔event seat quota. Consumed seats are never stored here - they

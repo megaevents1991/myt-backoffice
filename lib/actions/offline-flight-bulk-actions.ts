@@ -1,11 +1,18 @@
 "use server";
 
 import { requireStaff } from "@/lib/auth/guards";
-import { supabase } from "@/lib/supabase-server";
+import { requireCompany } from "@/lib/company";
+import {
+  flightsOf,
+  megaEventsFlights,
+  sellsEvents,
+  sellsTours,
+} from "@/lib/flights-scope";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
 import {
   pickFlightColumns,
+  withoutLifecycleStatus,
   assertFlightValues,
 } from "./offline-flight-columns";
 import {
@@ -14,10 +21,10 @@ import {
 } from "./offline-flight-event-sync";
 import type { OfflineFlight } from "@/types/offline-flight.types";
 
-// The `flights` table is not in db.schema.sql so Supabase's generated types
-// don't include it - all .from("flights") calls are cast to bypass `never`.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const flightsTable = () => (supabase as any).from("flights");
+// `flights` is shared by every company, so nothing here touches the table
+// directly (lib/flights-scope.ts). The bulk edits work in the ACTIVE company:
+// an id of another company in `ids` matches no row and is skipped. Linking to
+// an event is a Mega Events feature and stays on Mega Events flights.
 
 export type PriceAdjustment = {
   mode: "set" | "delta" | "percent";
@@ -47,20 +54,21 @@ export async function bulkUpdateOfflineFlights(
   ids: number[],
   patch: Record<string, unknown>,
 ): Promise<number> {
-  await requireStaff();
+  const { company } = await requireCompany();
   assertIds(ids);
-  const row = pickFlightColumns(patch);
+  const mode = { tours: sellsTours(company) };
+  const row = withoutLifecycleStatus(pickFlightColumns(patch, mode), mode);
   // event_ids is set through bulkSetEventLink, which merges instead of replacing.
   delete row.event_ids;
   if (Object.keys(row).length === 0) throw new Error("Nothing to update");
-  assertFlightValues(row);
+  assertFlightValues(row, mode);
 
   // A bulk "Price" set reprices the linked events like a single edit does -
   // only on the flights whose price actually moves, so read those first.
   const setsPrice = row.price !== undefined;
   const oldPrice = new Map<number, number>();
   if (setsPrice) {
-    const { data: before, error: beforeError } = await flightsTable()
+    const { data: before, error: beforeError } = await flightsOf(company)
       .select("id, price")
       .in("id", ids);
     if (beforeError) throw beforeError;
@@ -69,7 +77,7 @@ export async function bulkUpdateOfflineFlights(
     }
   }
 
-  const { data, error } = await flightsTable()
+  const { data, error } = await flightsOf(company)
     .update(row)
     .in("id", ids)
     .select(PUSH_COLUMNS);
@@ -82,7 +90,7 @@ export async function bulkUpdateOfflineFlights(
     changes: row,
     metadata: { ids, count: ids.length, bulk: true },
   });
-  if (setsPrice) {
+  if (setsPrice && sellsEvents(company)) {
     await pushFlightsToEvents(
       ((data ?? []) as FlightForPush[])
         .filter((f) => oldPrice.get(f.id) !== Math.round(Number(f.price)))
@@ -99,13 +107,13 @@ export async function bulkAdjustPrice(
   ids: number[],
   adj: PriceAdjustment,
 ): Promise<number> {
-  await requireStaff();
+  const { company } = await requireCompany();
   assertIds(ids);
   if (!Number.isFinite(adj.value)) throw new Error("Invalid price value");
 
   // Ordered so "two selected flights share an event" resolves the same way
   // every time (pushFlightsToEvents: the later flight wins).
-  const { data, error } = await flightsTable()
+  const { data, error } = await flightsOf(company)
     .select(PUSH_COLUMNS)
     .in("id", ids)
     .order("id", { ascending: true });
@@ -127,7 +135,7 @@ export async function bulkAdjustPrice(
         throw new Error(`Flight ${row.id}: adjusted price would be negative`);
       }
       touchedEvents.push(...(row.event_ids ?? []));
-      const { error: upErr } = await flightsTable()
+      const { error: upErr } = await flightsOf(company)
         .update({ price: next })
         .eq("id", row.id);
       if (upErr) throw upErr;
@@ -146,11 +154,13 @@ export async function bulkAdjustPrice(
   });
   // Linked events follow the new price, like a single-flight price edit.
   // `repriced` fills in completion order - put it back in id order first.
-  await pushFlightsToEvents(
-    repriced
-      .sort((a, b) => a.id - b.id)
-      .map((row) => ({ flight: row, repriced: row.event_ids ?? [] })),
-  );
+  if (sellsEvents(company)) {
+    await pushFlightsToEvents(
+      repriced
+        .sort((a, b) => a.id - b.id)
+        .map((row) => ({ flight: row, repriced: row.event_ids ?? [] })),
+    );
+  }
   await revalidateFlights(touchedEvents);
   return rows.length;
 }
@@ -165,9 +175,11 @@ export async function bulkSetEventLink(
   if (!Number.isInteger(eventId) || eventId <= 0)
     throw new Error("Invalid event id");
 
+  // Keyed by an event, so Mega Events flights only: a group block of a tours
+  // company must never carry an event id (the customer site sells by it).
   // Ordered: when several selected flights newly take this event, the last
   // one (highest id) sets its price and dates - see pushFlightsToEvents.
-  const { data, error } = await flightsTable()
+  const { data, error } = await megaEventsFlights()
     .select(PUSH_COLUMNS)
     .in("id", ids)
     .order("id", { ascending: true });
@@ -184,7 +196,7 @@ export async function bulkSetEventLink(
             : [...existing, eventId]
           : existing.filter((id) => id !== eventId);
       if (next.length === existing.length && op === "add") return;
-      const { error: upErr } = await flightsTable()
+      const { error: upErr } = await megaEventsFlights()
         .update({ event_ids: next })
         .eq("id", row.id);
       if (upErr) throw upErr;
@@ -215,9 +227,9 @@ async function bulkSetDeleted(
   ids: number[],
   isDeleted: boolean,
 ): Promise<number> {
-  await requireStaff();
+  const { company } = await requireCompany();
   assertIds(ids);
-  const { data, error } = await flightsTable()
+  const { data, error } = await flightsOf(company)
     .update({ is_deleted: isDeleted })
     .in("id", ids)
     .select("id, event_ids");
@@ -256,16 +268,29 @@ export async function createOfflineFlightSeries(
   seriesName: string,
   drafts: SeriesFlightDraft[],
 ): Promise<{ series_id: string; created: number }> {
-  await requireStaff();
+  const { company } = await requireCompany();
   if (!seriesName.trim()) throw new Error("Series name is required");
   if (drafts.length === 0) throw new Error("No flights to create");
   if (drafts.length > 200)
     throw new Error("A series is limited to 200 flights");
 
+  const mode = { tours: sellsTours(company) };
+  const linksEvents = sellsEvents(company);
   const series_id = crypto.randomUUID();
   const rows = drafts.map((draft) => {
-    const row = pickFlightColumns(draft as unknown as Record<string, unknown>);
-    assertFlightValues(row);
+    const row = pickFlightColumns(
+      draft as unknown as Record<string, unknown>,
+      mode,
+    );
+    assertFlightValues(row, mode);
+    // Same rule as createOfflineFlight: only an events company links events.
+    if (
+      !linksEvents &&
+      Array.isArray(row.event_ids) &&
+      row.event_ids.length > 0
+    ) {
+      throw new Error(`Flights of ${company.name} cannot be linked to events`);
+    }
     return {
       ...row,
       series_id,
@@ -275,7 +300,7 @@ export async function createOfflineFlightSeries(
     };
   });
 
-  const { data, error } = await flightsTable()
+  const { data, error } = await flightsOf(company)
     .insert(rows)
     .select(PUSH_COLUMNS);
   if (error) throw error;
@@ -289,12 +314,14 @@ export async function createOfflineFlightSeries(
   // Every event on a new flight is newly linked (price + default dates), as
   // in createOfflineFlight. An event two flights of the series share takes
   // the later one - the same as creating the flights one by one.
-  await pushFlightsToEvents(
-    ((data ?? []) as FlightForPush[]).map((f) => ({
-      flight: f,
-      added: f.event_ids ?? [],
-    })),
-  );
+  if (linksEvents) {
+    await pushFlightsToEvents(
+      ((data ?? []) as FlightForPush[]).map((f) => ({
+        flight: f,
+        added: f.event_ids ?? [],
+      })),
+    );
+  }
   await revalidateFlights(
     ((data ?? []) as FlightIdEvents[]).flatMap((f) => f.event_ids ?? []),
   );

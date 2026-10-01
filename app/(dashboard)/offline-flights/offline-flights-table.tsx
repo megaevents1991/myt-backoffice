@@ -6,17 +6,24 @@ import { Button } from "@/components/ui/button";
 import { toast } from "react-hot-toast";
 import { Layers } from "lucide-react";
 import { OfflineFlight } from "@/types/offline-flight.types";
-import { getOfflineFlights } from "@/lib/actions/offline-flight-actions";
+import { getCompanyFlights } from "@/lib/actions/offline-flight-actions";
 import { FlightsEditableTable } from "@/components/flights-editable-table";
 import { DataTableSkeleton } from "@/components/data-table";
 
-export function OfflineFlightsTable() {
+/**
+ * `tours` comes from the server (the active company, see page.tsx). The rows
+ * themselves are scoped on the server by getCompanyFlights - this flag only
+ * decides which columns and statuses the table offers.
+ */
+export function OfflineFlightsTable({ tours = false }: { tours?: boolean }) {
   const [flights, setFlights] = useState<OfflineFlight[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchFlights = useCallback(async () => {
     try {
-      const data = await getOfflineFlights();
+      // The ACTIVE company's flights (getOfflineFlights is the Mega Events
+      // list the event page links from).
+      const data = await getCompanyFlights();
       setFlights(data);
     } catch (error) {
       console.error("Failed to fetch flights:", error);
@@ -38,6 +45,7 @@ export function OfflineFlightsTable() {
     <FlightsEditableTable
       flights={flights}
       onChanged={fetchFlights}
+      tours={tours}
       toolbarExtra={
         <Button variant="secondary" size="sm" asChild>
           <Link href="/offline-flights/series/new">

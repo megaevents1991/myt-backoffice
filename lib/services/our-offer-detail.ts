@@ -13,6 +13,7 @@
 // demand are both fine.
 import { supabase } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
+import { megaEventsFlights } from "@/lib/flights-scope";
 import { fetchFlightOffers, getStopsCount, isUSADestination, type AmadeusOffer } from "@/lib/services/flight-search";
 import { pickFlightPrice, QUOTE_HOTEL_ADULTS } from "@/lib/services/price-quote";
 import { airlineFromCode, boardFrom } from "@/lib/services/offer-detail";
@@ -118,9 +119,10 @@ interface OfflineFlightRow {
 
 async function describeOfflineFlight(event: OurOfferEvent): Promise<OurOfferSnapshot["flight"] | undefined> {
   const cols = "id,price,stops,airline_code,metadata_name,outbound_departure_time,outbound_arrival_time,outbound_check_bags_included,inbound_departure_time,inbound_arrival_time";
+  // Keyed by an event, so Mega Events flights only (flights is shared between companies).
   const query = event.locked_flight_id
-    ? db.from("flights").select(cols).eq("id", event.locked_flight_id)
-    : db.from("flights").select(cols).contains("event_ids", [event.id]).or("is_deleted.is.null,is_deleted.eq.false");
+    ? megaEventsFlights().select(cols).eq("id", event.locked_flight_id)
+    : megaEventsFlights().select(cols).contains("event_ids", [event.id]).or("is_deleted.is.null,is_deleted.eq.false");
   const { data, error } = await query.order("price", { ascending: true }).limit(1);
   if (error) throw new Error(`offline flight read failed: ${error.message}`);
   const row = ((data ?? []) as OfflineFlightRow[])[0];

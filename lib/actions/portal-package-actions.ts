@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requirePartner } from "@/lib/auth/guards";
 import { mintPartnerHandoffToken } from "@/lib/auth/partner-handoff";
 import { supabase } from "@/lib/supabase-server";
+import { megaEventsFlights } from "@/lib/flights-scope";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { MEGA_EVENTS_CREATOR } from "@/lib/portal-labels";
 import { partnerLink, PUBLIC_SITE_URL } from "@/lib/site";
@@ -193,9 +194,9 @@ async function lockedFlightSoldOutSet(
   lockedIds: number[],
 ): Promise<Set<number>> {
   if (lockedIds.length === 0) return new Set();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("flights")
+  // Mega Events flights only: a locked id that belongs to another company is
+  // not found, so the package reads as sold out instead of selling its seats.
+  const { data, error } = await megaEventsFlights()
     .select("id, initial_quantity, consumed_quantity, is_deleted")
     .in("id", lockedIds);
   if (error) {
@@ -682,8 +683,7 @@ export async function getPackageBuilderInventory(
   const today = nowIso.slice(0, 10);
 
   const [flightsRes, hotelsRes] = await Promise.all([
-    supabase
-      .from("flights")
+    megaEventsFlights()
       .select(FLIGHT_COLUMNS)
       .contains("event_ids", [id])
       .eq("is_deleted", false)
@@ -1529,8 +1529,7 @@ async function buildPackageRowCore(
       );
   }
   if (input.flight.mode === "offline") {
-    const { data: flightRow, error: flightError } = await supabase
-      .from("flights")
+    const { data: flightRow, error: flightError } = await megaEventsFlights()
       .select(`${FLIGHT_COLUMNS}, event_ids, is_deleted`)
       .eq("id", input.flight.flightId)
       .maybeSingle();

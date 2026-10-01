@@ -2,12 +2,16 @@
 
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
+import { megaEventsFlights } from "@/lib/flights-scope";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
 import type { FlightAllocationRow } from "@/types/offline-flight.types";
 
-// Neither `flights` nor the phase-B allocation table/view are in the generated
-// Supabase types, so these calls are cast to bypass `never` inference.
+// The phase-B allocation table/view are read through the untyped client, so
+// these calls are cast to bypass `never` inference.
+// Event allocations are a Mega Events feature: the flight is always read
+// through megaEventsFlights(), so a block of another company is "not found"
+// and nothing below can read or write an allocation for it.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = () => supabase as any;
 
@@ -24,8 +28,7 @@ async function loadFlightState(flightId: number): Promise<{
   allocations: Map<number, number>;
   consumed: Map<number, number>;
 }> {
-  const { data: flight, error: flightError } = await db()
-    .from("flights")
+  const { data: flight, error: flightError } = await megaEventsFlights()
     .select("initial_quantity, event_ids")
     .eq("id", flightId)
     .single();
@@ -163,6 +166,14 @@ export async function removeFlightAllocation(
   eventId: number,
 ): Promise<void> {
   await requireStaff();
+  // Same door as setFlightAllocation: only a Mega Events flight has allocations.
+  const { data: flight, error: flightError } = await megaEventsFlights()
+    .select("id")
+    .eq("id", flightId)
+    .maybeSingle();
+  if (flightError) throw flightError;
+  if (!flight) throw new Error("Flight not found");
+
   const { error } = await db()
     .from("flight_event_allocations")
     .delete()

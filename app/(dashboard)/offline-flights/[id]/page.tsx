@@ -10,6 +10,16 @@ import { LogoImage } from "@/components/logo-image";
 import { ReservationsForInventory } from "@/components/reservations-for-inventory";
 import { FlightPassengerManifest } from "@/components/offline-flights/flight-passenger-manifest";
 import { intervalToHhMm } from "@/lib/flight-stops";
+import { getActiveCompany } from "@/lib/company";
+import { sellsEvents, sellsTours } from "@/lib/flights-scope";
+import { flightRouteLabel } from "@/lib/tours/routes";
+import {
+  TOURS_FIELD_GROUP,
+  flightFieldSet,
+  formatFlightValue,
+} from "@/components/flight-field-groups";
+import { BLOCK_STATUS_LABELS } from "@/types/tours.types";
+import { TourBlockPanel } from "@/components/tours/flights/tour-block-panel";
 
 /** "Direct", or the airport the leg connects through and how long it sits there. */
 function describeLegStops(
@@ -79,17 +89,33 @@ export default async function OfflineFlightDetailsPage({
     notFound();
   }
 
-  let flight = await getOfflineFlight(flightIdAsNumber);
+  // Scoped to the ACTIVE company: the id of another company's flight is a
+  // not-found here, exactly like an id that does not exist.
+  const company = await getActiveCompany();
+  const found = await getOfflineFlight(flightIdAsNumber);
 
-  if (!flight) {
+  if (!found) {
     notFound();
   }
 
-  // Self-heal stored consumed_quantity from active reservations before render
-  await reconcileFlightInventory(flightIdAsNumber);
-  flight = await getOfflineFlight(flightIdAsNumber);
+  // Reservations are event orders. Only a company that sells events recounts
+  // its sold seats from them and lists them; a group block of a tours company
+  // keeps the count its own module wrote.
+  const eventsCompany = sellsEvents(company);
+  const tours = sellsTours(company);
+  let flight = found;
+  if (eventsCompany) {
+    // Self-heal stored consumed_quantity from active reservations before render
+    await reconcileFlightInventory(flightIdAsNumber);
+    flight = (await getOfflineFlight(flightIdAsNumber)) ?? found;
+  }
 
-  const reservations = await getReservationsForFlight(flightIdAsNumber);
+  const reservations = eventsCompany
+    ? await getReservationsForFlight(flightIdAsNumber)
+    : [];
+  const toursFields = tours
+    ? flightFieldSet(true).fields.filter((f) => f.group === TOURS_FIELD_GROUP)
+    : [];
 
   return (
     <div className="container mx-auto py-10 max-w-4xl">
@@ -139,6 +165,25 @@ export default async function OfflineFlightDetailsPage({
                 label="Airline Code"
                 value={flight.airline_code}
               />
+              {tours && (
+                <>
+                  {/* Both legs: a group can fly home from another city. */}
+                  <FlightDetailItem
+                    label="Route"
+                    value={<span dir="ltr">{flightRouteLabel(flight)}</span>}
+                  />
+                  <FlightDetailItem
+                    label="סטטוס בלוק"
+                    value={
+                      flight.block_status
+                        ? (BLOCK_STATUS_LABELS[flight.block_status] ??
+                          flight.block_status)
+                        : null
+                    }
+                  />
+                  <FlightDetailItem label="Series" value={flight.series_name} />
+                </>
+              )}
               <FlightDetailItem
                 label="Price"
                 value={`$${Number(flight.price).toFixed(2)}`}
@@ -310,13 +355,51 @@ export default async function OfflineFlightDetailsPage({
                 </div>
               )}
             </div>
+            {tours && (
+              <>
+                <Separator className="my-2" />
+                <div className="px-4 py-3 sm:px-6 bg-muted" dir="rtl">
+                  <h4 className="text-lg font-semibold">{TOURS_FIELD_GROUP}</h4>
+                </div>
+                <div className="px-6" dir="rtl">
+                  {toursFields.map((field) => {
+                    const value = (flight as unknown as Record<string, unknown>)[
+                      field.key
+                    ];
+                    return (
+                      <FlightDetailItem
+                        key={field.key}
+                        label={field.label}
+                        value={
+                          value == null || value === "" ? null : (
+                            <span dir="ltr">{formatFlightValue(field, value)}</span>
+                          )
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </dl>
         </div>
       </div>
 
-      <ReservationsForInventory reservations={reservations} />
+      {/* A group block of a tours company: lifecycle, seats, deadlines,
+          contract, costs, allocations to departures and the timeline. */}
+      {tours && (
+        <div className="mt-6">
+          <TourBlockPanel flightId={flight.id} />
+        </div>
+      )}
 
-      <FlightPassengerManifest reservations={reservations} />
+      {eventsCompany && (
+        <>
+          <ReservationsForInventory reservations={reservations} />
+
+          <FlightPassengerManifest reservations={reservations} />
+        </>
+      )}
     </div>
   );
 }

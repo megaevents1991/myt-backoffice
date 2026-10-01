@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,11 @@ import {
   createOfflineFlightSeries,
   type SeriesFlightDraft,
 } from "@/lib/actions/offline-flight-bulk-actions";
-import { getRelevantEventsForFlight } from "@/lib/actions/offline-flight-actions";
+import {
+  getFlightCompanyMode,
+  getRelevantEventsForFlight,
+} from "@/lib/actions/offline-flight-actions";
+import { blockStatusOptions } from "@/components/flight-field-groups";
 import { toStopoverColumns } from "@/lib/flight-stops";
 
 type RelevantEvent = { id: number; name: string; date: string };
@@ -164,6 +168,15 @@ export default function NewOfflineFlightSeriesPage() {
     icaoCode: string;
   } | null>(null);
   const [isPending, startTransition] = useTransition();
+  // Mega Events until the server says otherwise - the form then looks exactly
+  // as it always did. The server validates the status on save either way.
+  const [isTours, setIsTours] = useState(false);
+
+  useEffect(() => {
+    getFlightCompanyMode()
+      .then((mode) => setIsTours(mode.tours))
+      .catch((error) => console.error("Failed to load the company mode:", error));
+  }, []);
 
   const set = <K extends keyof Template>(key: K, value: Template[K]) =>
     setTemplate((prev) => ({ ...prev, [key]: value }));
@@ -481,9 +494,21 @@ export default function NewOfflineFlightSeriesPage() {
                 value={template.block_status}
                 onChange={(e) => set("block_status", e.target.value)}
               >
-                <option value="confirmed">confirmed</option>
-                <option value="option">option</option>
-                <option value="ticketed">ticketed</option>
+                {/* Mega Events keeps its three statuses (confirmed first,
+                    the default); a tours company gets the whole lifecycle
+                    in Hebrew. */}
+                {(isTours
+                  ? blockStatusOptions(true)
+                  : [
+                      { value: "confirmed", label: "confirmed" },
+                      { value: "option", label: "option" },
+                      { value: "ticketed", label: "ticketed" },
+                    ]
+                ).map((status) => (
+                  <option key={status.value} value={status.value}>
+                    {status.label}
+                  </option>
+                ))}
               </select>
             </div>
 

@@ -1,4 +1,8 @@
-import type { OfflineFlight } from "@/types/offline-flight.types";
+import {
+  EVENTS_BLOCK_STATUSES,
+  type OfflineFlight,
+} from "@/types/offline-flight.types";
+import { BLOCK_STATUSES } from "@/types/tours.types";
 
 // Every column a client is allowed to write. `id`, `consumed_quantity`,
 // `is_deleted` and `series_id` are deliberately absent: they are set by the
@@ -27,7 +31,42 @@ export const FLIGHT_WRITABLE_COLUMNS = [
 
 export type FlightWritableColumn = (typeof FLIGHT_WRITABLE_COLUMNS)[number];
 
+// The group-block operations columns. Writable only while the active company
+// sells tours - a Mega Events write that names one of them drops it, so these
+// stay null on Mega Events rows. `company_id`, `contract_id`, `reviewed_at`,
+// `reviewed_by` and `import_ref` are absent on purpose: the server or a
+// dedicated action sets them, never a form payload.
+export const FLIGHT_TOURS_WRITABLE_COLUMNS = [
+  "original_quantity", "cost_child_price", "cost_tax", "inbound_airline_code",
+  "season_label", "requested_at", "first_cancellation_date", "names_deadline",
+  "cancelled_at", "cancel_reason", "cancellation_fee",
+] as const satisfies readonly (keyof OfflineFlight)[];
+
+export type FlightToursWritableColumn =
+  (typeof FLIGHT_TOURS_WRITABLE_COLUMNS)[number];
+
+/** What the active company is allowed to write. Default = Mega Events. */
+export type FlightWriteMode = { tours?: boolean };
+
 const WRITABLE = new Set<string>(FLIGHT_WRITABLE_COLUMNS);
+const TOURS_WRITABLE = new Set<string>(FLIGHT_TOURS_WRITABLE_COLUMNS);
+
+/**
+ * The status of a group block of a tours company moves only through its
+ * lifecycle actions (lib/actions/tours-flight-actions.ts): they check the
+ * allowed transition and the owner's approval and write the timeline. The
+ * generic edit form and the bulk edit therefore never change it on an existing
+ * block - the key is dropped from their patch. Mega Events is untouched.
+ */
+export function withoutLifecycleStatus(
+  patch: Record<string, unknown>,
+  { tours = false }: FlightWriteMode = {},
+): Record<string, unknown> {
+  if (!tours || !("block_status" in patch)) return patch;
+  const { block_status: _lifecycle, ...rest } = patch;
+  void _lifecycle;
+  return rest;
+}
 
 /**
  * Drops every key that is not an allowed column. Undefined values are skipped
@@ -35,10 +74,14 @@ const WRITABLE = new Set<string>(FLIGHT_WRITABLE_COLUMNS);
  */
 export function pickFlightColumns(
   input: Record<string, unknown>,
+  { tours = false }: FlightWriteMode = {},
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
-    if (WRITABLE.has(key) && value !== undefined) out[key] = value;
+    if (value === undefined) continue;
+    if (WRITABLE.has(key) || (tours && TOURS_WRITABLE.has(key))) {
+      out[key] = value;
+    }
   }
   return out;
 }
@@ -47,8 +90,17 @@ export function pickFlightColumns(
  * Numeric/positive guards for the money and inventory columns. Throws so the
  * action fails loudly instead of writing a NaN price.
  */
-export function assertFlightValues(row: Record<string, unknown>): void {
-  for (const key of ["price", "cost_price"] as const) {
+export function assertFlightValues(
+  row: Record<string, unknown>,
+  { tours = false }: FlightWriteMode = {},
+): void {
+  for (const key of [
+    "price",
+    "cost_price",
+    "cost_child_price",
+    "cost_tax",
+    "cancellation_fee",
+  ] as const) {
     if (row[key] == null) continue;
     const n = Number(row[key]);
     if (!Number.isFinite(n) || n < 0) {
@@ -60,11 +112,22 @@ export function assertFlightValues(row: Record<string, unknown>): void {
     "stops",
     "checked_bag_kg",
     "cabin_bag_kg",
+    "original_quantity",
   ] as const) {
     if (row[key] == null) continue;
     const n = Number(row[key]);
     if (!Number.isInteger(n) || n < 0) {
       throw new Error(`${key} must be a non-negative integer`);
+    }
+  }
+  // The lifecycle of a group block (approved, requested, operational, ...)
+  // belongs to a tours company. A Mega Events flight keeps its three statuses.
+  if (row.block_status != null) {
+    const allowed: readonly string[] = tours
+      ? BLOCK_STATUSES
+      : EVENTS_BLOCK_STATUSES;
+    if (!allowed.includes(String(row.block_status))) {
+      throw new Error(`block_status "${String(row.block_status)}" is not allowed here`);
     }
   }
 }

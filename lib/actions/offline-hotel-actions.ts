@@ -11,10 +11,12 @@ import { getOfflineRoomCapacity } from "@/lib/offlineRoomCapacity";
 import { replaceOfflineHotelRooms } from "./offline-hotel-room-actions";
 import type { NewOfflineHotelRoom } from "../../types/offline-hotel.types";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
+import { megaEventsFlights } from "@/lib/flights-scope";
 
 // offline_hotels is not in Supabase generated types - cast to bypass never inference
 const hotelsTable = () => (supabase as any).from("offline_hotels");
-const flightsTable = () => (supabase as any).from("flights");
+// `flights` is shared between companies; offline hotels are a Mega Events
+// feature, so every flight lookup here goes through megaEventsFlights().
 
 export type HotelSearchResult = {
   hid: number;
@@ -167,7 +169,7 @@ export async function updateOfflineHotel(
         // Flight wins over hotel for def dates - only set hotel dates on newly-linked events without a flight
         let hasFlight = true;
         if (isNewlyAdded) {
-          const { data: flightsForEvent } = await flightsTable()
+          const { data: flightsForEvent } = await megaEventsFlights()
             .select("id")
             .contains("event_ids", [eventId])
             .eq("is_deleted", false)
@@ -430,7 +432,7 @@ export async function getRelevantFlightsForHotel(
   >[]
 > {
   await requireStaff();
-  const { data, error } = await flightsTable()
+  const { data, error } = await megaEventsFlights()
     .select(
       "id, airline_code, metadata_name, outbound_departure_airport, outbound_arrival_airport, outbound_departure_time, inbound_arrival_time, price",
     )

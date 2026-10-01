@@ -2,6 +2,8 @@
 
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
+import { megaEventsFlights } from "@/lib/flights-scope";
+import { flightRouteLabel } from "@/lib/tours/routes";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
 import type { OfflineFlight } from "@/types/offline-flight.types";
@@ -19,10 +21,10 @@ export async function getLockableFlights(
   eventId: number,
 ): Promise<LockableFlight[]> {
   await requireStaff();
-  const { data: flights, error } = await db()
-    .from("flights")
+  // The lock is a Mega Events feature: only Mega Events flights are lockable.
+  const { data: flights, error } = await megaEventsFlights()
     .select(
-      "id, airline_code, outbound_flight_number, outbound_departure_airport, outbound_arrival_airport, outbound_departure_time, inbound_departure_time",
+      "id, airline_code, outbound_flight_number, outbound_departure_airport, outbound_arrival_airport, inbound_departure_airport, inbound_arrival_airport, outbound_departure_time, inbound_departure_time",
     )
     .contains("event_ids", [eventId])
     .eq("is_deleted", false)
@@ -43,7 +45,8 @@ export async function getLockableFlights(
 
   return ((flights ?? []) as OfflineFlight[]).map((f) => ({
     id: f.id,
-    label: `${f.airline_code} ${f.outbound_flight_number} · ${f.outbound_departure_airport}→${f.outbound_arrival_airport} · ${f.outbound_departure_time.slice(0, 10)} → ${f.inbound_departure_time.slice(0, 10)}`,
+    // Both legs, never the outbound alone: a flight can come home from another city.
+    label: `${f.airline_code} ${f.outbound_flight_number} · ${flightRouteLabel(f)} · ${f.outbound_departure_time.slice(0, 10)} → ${f.inbound_departure_time.slice(0, 10)}`,
     allocated_seats: allocated.get(f.id) ?? null,
   }));
 }
@@ -65,8 +68,7 @@ export async function lockEventFlight(
   if (!Number.isInteger(flightId) || flightId <= 0)
     throw new Error("Invalid flight id");
 
-  const { data: flight, error: flightError } = await db()
-    .from("flights")
+  const { data: flight, error: flightError } = await megaEventsFlights()
     .select(
       "id, event_ids, is_deleted, outbound_departure_time, inbound_departure_time",
     )

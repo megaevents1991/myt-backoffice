@@ -2,6 +2,7 @@
 
 import { requireStaff, requireSuperadmin } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
+import { megaEventsFlights } from "@/lib/flights-scope";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { getAgentLabelsForReservations } from "@/lib/portal-attribution";
 import type {
@@ -409,16 +410,14 @@ async function releaseOfflineInventory(reservation: Reservation) {
       | undefined;
     const numOfTravelers = flightInfo?.numOfTravelers || 0;
     if (offlineFlightId && numOfTravelers > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: flightRow } = await (supabase as any)
-        .from("flights")
+      // Reservations are Mega Events orders: only a Mega Events flight gets
+      // its seats back. A block of another company is never read or written.
+      const { data: flightRow } = await megaEventsFlights()
         .select("consumed_quantity")
         .eq("id", offlineFlightId)
-        .single();
+        .maybeSingle();
       if (flightRow) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: flErr } = await (supabase as any)
-          .from("flights")
+        const { error: flErr } = await megaEventsFlights()
           .update({
             consumed_quantity: Math.max(
               0,
@@ -535,6 +534,11 @@ export async function getReservationsForHotel(
 // Recomputes consumed_quantity for an offline flight from active reservations.
 // Each reservation counts its `flight_order_info.numOfTravelers` (default 1).
 // Idempotent - safe to run on every page view.
+// MEGA EVENTS FLIGHTS ONLY: reservations are event orders. A group block of a
+// tours company has no reservations here (its sold count comes from the tours
+// module), so recomputing it from this table would write 0 over the real
+// number. Both the read and the write are scoped; for any other company's
+// flight this is a no-op.
 export async function reconcileFlightInventory(
   flightId: number,
 ): Promise<number> {
@@ -554,16 +558,12 @@ export async function reconcileFlightInventory(
     consumed += typeof n === "number" && n > 0 ? n : 0;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: current } = await (supabase as any)
-    .from("flights")
+  const { data: current } = await megaEventsFlights()
     .select("consumed_quantity")
     .eq("id", flightId)
-    .single();
+    .maybeSingle();
   if (current && current.consumed_quantity !== consumed) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: upErr } = await (supabase as any)
-      .from("flights")
+    const { error: upErr } = await megaEventsFlights()
       .update({ consumed_quantity: consumed })
       .eq("id", flightId);
     if (upErr) throw upErr;

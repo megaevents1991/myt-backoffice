@@ -1,9 +1,15 @@
-import type { FlightWritableColumn } from "@/lib/actions/offline-flight-columns";
+import type {
+  FlightToursWritableColumn,
+  FlightWritableColumn,
+} from "@/lib/actions/offline-flight-columns";
+import { EVENTS_BLOCK_STATUSES } from "@/types/offline-flight.types";
+import { BLOCK_STATUSES, BLOCK_STATUS_LABELS } from "@/types/tours.types";
 
 export type FlightFieldType =
   | "text"
   | "number"
-  | "money"
+  | "money" // USD, shown with a $ sign
+  | "amount" // a sum in the block's own cost currency - no sign
   | "date"
   | "datetime"
   | "boolean"
@@ -11,13 +17,25 @@ export type FlightFieldType =
   | "duration"
   | "select";
 
+/** Shown in the tours group, set by the server or by a dedicated action only. */
+export type FlightReadOnlyColumn = "contract_id" | "reviewed_at";
+
+export type FlightFieldKey =
+  | FlightWritableColumn
+  | FlightToursWritableColumn
+  | FlightReadOnlyColumn;
+
 export type FlightField = {
-  key: FlightWritableColumn;
+  key: FlightFieldKey;
   label: string;
   group: string;
   type: FlightFieldType;
   options?: string[]; // only for type "select"
+  /** What the list and the selects show for an option; the stored value stays the key. */
+  optionLabels?: Record<string, string>;
   bulkEditable: boolean; // false for per-flight identity fields like flight number
+  /** Shown, never edited from the table (no inline editor, no bulk set). */
+  readOnly?: boolean;
 };
 
 export const FLIGHT_FIELD_GROUPS = [
@@ -81,7 +99,7 @@ export const FLIGHT_FIELDS: FlightField[] = [
   { key: "cabin_bag_kg", label: "Cabin bag kg", group: "Operations", type: "number", bulkEditable: true },
   { key: "cabin_class", label: "Cabin class", group: "Operations", type: "select", options: ["economy", "premium", "business"], bulkEditable: true },
   { key: "aircraft_type", label: "Aircraft", group: "Operations", type: "text", bulkEditable: true },
-  { key: "block_status", label: "Block status", group: "Operations", type: "select", options: ["option", "confirmed", "ticketed"], bulkEditable: true },
+  { key: "block_status", label: "Block status", group: "Operations", type: "select", options: [...EVENTS_BLOCK_STATUSES], bulkEditable: true },
 
   { key: "notes", label: "Notes", group: "Misc", type: "text", bulkEditable: true },
   { key: "handled_by", label: "Handled by", group: "Misc", type: "text", bulkEditable: true },
@@ -94,7 +112,7 @@ export const FLIGHT_FIELD_BY_KEY = new Map<string, FlightField>(
 
 // What the list shows before the user touches the column picker - the columns
 // the old table displayed, plus block status.
-export const DEFAULT_VISIBLE_COLUMNS: FlightWritableColumn[] = [
+export const DEFAULT_VISIBLE_COLUMNS: FlightFieldKey[] = [
   "airline_code",
   "outbound_flight_number",
   "outbound_departure_airport",
@@ -105,15 +123,115 @@ export const DEFAULT_VISIBLE_COLUMNS: FlightWritableColumn[] = [
   "block_status",
 ];
 
+// ---------------------------------------------------------------- tours
+// Everything below exists only while the active company sells tours (group
+// flight blocks). Mega Events keeps FLIGHT_FIELD_GROUPS / FLIGHT_FIELDS /
+// DEFAULT_VISIBLE_COLUMNS above exactly as they are.
+
+export const TOURS_FIELD_GROUP = "תפעול קבוצות";
+
+const TOURS_FIELDS: FlightField[] = [
+  { key: "season_label", label: "עונה / מאגר", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: true },
+  { key: "original_quantity", label: "הזמנה מקורית (מושבים)", group: TOURS_FIELD_GROUP, type: "number", bulkEditable: true },
+  { key: "cost_child_price", label: "מחיר ילד (CHD)", group: TOURS_FIELD_GROUP, type: "amount", bulkEditable: true },
+  { key: "cost_tax", label: "מסים (TAX)", group: TOURS_FIELD_GROUP, type: "amount", bulkEditable: true },
+  { key: "inbound_airline_code", label: "חברת תעופה בחזור", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: true },
+  { key: "contract_id", label: "חוזה", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: false, readOnly: true },
+  { key: "requested_at", label: "תאריך בקשה (RQ)", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
+  { key: "first_cancellation_date", label: "ביטול ראשון (CXX 1)", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
+  { key: "names_deadline", label: "מועד שמות", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
+  { key: "cancelled_at", label: "תאריך ביטול", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
+  { key: "cancel_reason", label: "סיבת ביטול", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: true },
+  { key: "cancellation_fee", label: "דמי ביטול", group: TOURS_FIELD_GROUP, type: "amount", bulkEditable: true },
+  { key: "reviewed_at", label: "נבדק בתאריך", group: TOURS_FIELD_GROUP, type: "datetime", bulkEditable: false, readOnly: true },
+];
+
+/**
+ * The whole block lifecycle, with the Hebrew wording of types/tours.types.ts.
+ * Shown and filtered here, never edited: a status change is a step of the
+ * lifecycle (allowed transitions, the owner's approval, the timeline entry),
+ * so it happens in the block panel - lib/actions/tours-flight-actions.ts.
+ */
+const TOURS_BLOCK_STATUS_FIELD: FlightField = {
+  key: "block_status",
+  label: "סטטוס בלוק",
+  group: "Operations",
+  type: "select",
+  options: [...BLOCK_STATUSES],
+  optionLabels: BLOCK_STATUS_LABELS,
+  bulkEditable: false,
+  readOnly: true,
+};
+
+const TOURS_DEFAULT_VISIBLE_COLUMNS: FlightFieldKey[] = [
+  "airline_code",
+  "outbound_flight_number",
+  "outbound_departure_time",
+  "inbound_departure_time",
+  "series_name",
+  "season_label",
+  "block_status",
+];
+
+export type FlightFieldSet = {
+  groups: readonly string[];
+  fields: FlightField[];
+  byKey: Map<string, FlightField>;
+  defaultVisible: FlightFieldKey[];
+};
+
+const EVENTS_FIELD_SET: FlightFieldSet = {
+  groups: FLIGHT_FIELD_GROUPS,
+  fields: FLIGHT_FIELDS,
+  byKey: FLIGHT_FIELD_BY_KEY,
+  defaultVisible: DEFAULT_VISIBLE_COLUMNS,
+};
+
+const toursFields: FlightField[] = [
+  ...FLIGHT_FIELDS.map((field) =>
+    field.key === "block_status" ? TOURS_BLOCK_STATUS_FIELD : field,
+  ),
+  ...TOURS_FIELDS,
+];
+
+const TOURS_FIELD_SET: FlightFieldSet = {
+  groups: [...FLIGHT_FIELD_GROUPS, TOURS_FIELD_GROUP],
+  fields: toursFields,
+  byKey: new Map(toursFields.map((field) => [field.key, field])),
+  defaultVisible: TOURS_DEFAULT_VISIBLE_COLUMNS,
+};
+
+/**
+ * The columns a flights table works with. `tours` = the active company sells
+ * tours: the block status is the full lifecycle in Hebrew and the operations
+ * group is added. Anything else gets the Mega Events set, unchanged.
+ */
+export function flightFieldSet(tours: boolean): FlightFieldSet {
+  return tours ? TOURS_FIELD_SET : EVENTS_FIELD_SET;
+}
+
+/** The block statuses a filter or a select offers, with what to show for each. */
+export function blockStatusOptions(
+  tours: boolean,
+): { value: string; label: string }[] {
+  return tours
+    ? BLOCK_STATUSES.map((value) => ({ value, label: BLOCK_STATUS_LABELS[value] }))
+    : EVENTS_BLOCK_STATUSES.map((value) => ({ value, label: value }));
+}
+
 export function formatFlightValue(field: FlightField, value: unknown): string {
   if (value == null || value === "") return "-";
   switch (field.type) {
     case "money":
       return `$${Number(value).toFixed(2)}`;
+    case "amount":
+      return Number(value).toFixed(2);
     case "boolean":
       return value ? "Yes" : "No";
     case "datetime":
       return new Date(String(value)).toLocaleString();
+    case "select":
+      return field.optionLabels?.[String(value)] ?? String(value);
     default:
       return String(value);
   }
@@ -134,6 +252,7 @@ export function fromInputValue(field: FlightField, raw: string): unknown {
     case "number":
       return Number.parseInt(raw, 10);
     case "money":
+    case "amount":
       return Number(raw);
     case "datetime":
       return raw.length === 16 ? `${raw}:00` : raw;
