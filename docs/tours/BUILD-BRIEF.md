@@ -67,7 +67,8 @@ The exact columns are in `types/database.types.ts` (generated) and in `supabase/
 
 ## Definition of done (every workstream)
 
-1. `npx tsc --noEmit -p .` adds **no new errors**. The baseline is 22 pre-existing errors in 13 files, listed in `C:/Users/doraz/myt-db-backups/tsc-baseline-files.txt`. Run it once near the end (it takes about 3 minutes) and compare.
+1. `npx tsc --noEmit -p .` adds **no new errors**. The baseline is 15 pre-existing errors in 10 source files, listed in `C:/Users/doraz/myt-db-backups/tsc-baseline-src.txt` (ignore anything under `.next/`). Run it once near the end (it takes about 3 minutes) and compare:
+   `npx tsc --noEmit -p . 2>&1 | grep "error TS" | grep -v "^.next/"`
 2. Every screen you built was opened with `bo-shot.js` in company `mega-family`: status 200, no console errors, and you looked at the screenshot.
 3. At least one mutation per screen was exercised end to end and the row was checked in the database with psql.
 4. Your report lists: files created and changed, what was verified and how, anything not finished, anything you need from another workstream or from the schema.
