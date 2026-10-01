@@ -4,6 +4,7 @@ import { requireAdmin, requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import {
   DEFAULT_PLACE_ID,
+  STALE_FEED_MARK,
   syncGoogleReviews,
   type GoogleReviewsSyncResult,
 } from "@/lib/services/google-reviews-sync";
@@ -62,6 +63,10 @@ export async function getGoogleReviewsHealth(): Promise<GoogleReviewsHealth> {
   let problem: string | null = null;
   if (!data) {
     problem = "No reviews source row - the mirror was never seeded.";
+  } else if (syncError?.includes(STALE_FEED_MARK)) {
+    // The run itself worked - its SOURCE has shown nothing new for weeks (2026-10: the
+    // Elfsight feed sat at 71 reviews while Google had 84, and every run said "synced").
+    problem = `The cron runs, but its source is stale: ${syncError}.`;
   } else if (syncError) {
     problem = `Last sync failed: ${syncError}`;
   } else if (!syncedAt) {

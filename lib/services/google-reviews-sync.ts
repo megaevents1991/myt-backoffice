@@ -68,6 +68,8 @@ export interface GoogleReviewsSyncResult {
   rating: number | null;
   reviewCount: number | null;
   fetched: number;
+  /** Publish time of the newest review the source returned - how fresh the SOURCE is. */
+  feedNewestAt: string | null;
   inserted: number;
   updated: number;
   skippedDuplicates: number;
@@ -343,6 +345,60 @@ async function fetchFromElfsight(placeId: string): Promise<FetchedSnapshot> {
   };
 }
 
+/** The Elfsight feed showing nothing newer than this is reported as "looks frozen". */
+export const FEED_QUIET_DAYS = 21;
+
+/**
+ * The profile summary when the source has none of its own (the Elfsight feed), read
+ * off the MIRROR instead of the feed. The feed froze at 71 reviews on 2026-09-04 while
+ * Google went on to 84, and the summary - derived from the feed's own length - said 71
+ * every morning with no error. The mirror only accumulates, and the stored count is
+ * never lowered: a number someone corrected against Google must survive a stale feed.
+ */
+export function mirrorSummary(
+  ratings: number[],
+  storedCount: number | null,
+): { rating: number | null; reviewCount: number | null } {
+  const valid = ratings.filter((r) => Number.isFinite(r));
+  const reviewCount = Math.max(valid.length, storedCount ?? 0);
+  return {
+    rating: valid.length
+      ? Math.round((valid.reduce((s, r) => s + r, 0) / valid.length) * 10) / 10
+      : null,
+    reviewCount: reviewCount > 0 ? reviewCount : null,
+  };
+}
+
+/** How a stored `sync_error` says "the run worked, the SOURCE is stale" (the banner words it apart). */
+export const STALE_FEED_MARK = "feed looks frozen";
+
+/** Why a feed whose newest review is this old deserves a look - null while it is fresh. */
+export function feedQuietWarning(newestIso: string | null, now: Date): string | null {
+  if (!newestIso) return null;
+  const days = Math.floor((now.getTime() - new Date(newestIso).getTime()) / 864e5);
+  if (!Number.isFinite(days) || days < FEED_QUIET_DAYS) return null;
+  return `${STALE_FEED_MARK}: its newest review is from ${newestIso.slice(0, 10)} (${days} days ago) - compare with the Google profile`;
+}
+
+async function summaryFromMirror(placeId: string) {
+  // Well under PostgREST's 1000-row page (84 reviews in 2026-10).
+  const { data: rows, error } = await db
+    .from("google_reviews")
+    .select("rating")
+    .eq("place_id", placeId);
+  if (error) throw new Error(`google_reviews summary: ${error.message}`);
+  const { data: stored, error: storedErr } = await db
+    .from("google_review_sources")
+    .select("review_count")
+    .eq("place_id", placeId)
+    .maybeSingle();
+  if (storedErr) throw new Error(`google_review_sources read: ${storedErr.message}`);
+  return mirrorSummary(
+    ((rows ?? []) as { rating: number }[]).map((r) => Number(r.rating)),
+    stored?.review_count ?? null,
+  );
+}
+
 export async function syncGoogleReviews(): Promise<GoogleReviewsSyncResult> {
   const apiKey = process.env.NEXT_SECRET_GOOGLE_PLACES_API_KEY;
   const placeId = process.env.NEXT_SECRET_GOOGLE_PLACE_ID || DEFAULT_PLACE_ID;
@@ -370,13 +426,27 @@ export async function syncGoogleReviews(): Promise<GoogleReviewsSyncResult> {
 
   const counts = await upsertReviews(snapshot.rows);
 
+  // Places knows the profile's own rating and count. The Elfsight feed knows neither -
+  // its summary comes from the mirror, and a feed that went quiet is said out loud
+  // (the dashboard banner reads `sync_error`) instead of passing as "synced".
+  const now = new Date();
+  const feedNewestAt = snapshot.rows.reduce<string | null>(
+    (newest, r) => (newest === null || r.published_at > newest ? r.published_at : newest),
+    null,
+  );
+  const profile =
+    source === "elfsight"
+      ? await summaryFromMirror(placeId)
+      : { rating: snapshot.rating, reviewCount: snapshot.reviewCount };
+  const quiet = source === "elfsight" ? feedQuietWarning(feedNewestAt, now) : null;
+
   // Only overwrite summary fields the source actually knows.
   const summary: Record<string, unknown> = {
-    synced_at: new Date().toISOString(),
-    sync_error: null,
+    synced_at: now.toISOString(),
+    sync_error: quiet ? `[${source}] ${quiet}` : null,
   };
-  if (snapshot.rating != null) summary.rating = snapshot.rating;
-  if (snapshot.reviewCount != null) summary.review_count = snapshot.reviewCount;
+  if (profile.rating != null) summary.rating = profile.rating;
+  if (profile.reviewCount != null) summary.review_count = profile.reviewCount;
   if (snapshot.displayName) summary.display_name = snapshot.displayName;
   if (snapshot.mapsUrl) summary.maps_url = snapshot.mapsUrl;
 
@@ -389,9 +459,10 @@ export async function syncGoogleReviews(): Promise<GoogleReviewsSyncResult> {
   return {
     placeId,
     source,
-    rating: snapshot.rating,
-    reviewCount: snapshot.reviewCount,
+    rating: profile.rating,
+    reviewCount: profile.reviewCount,
     fetched: snapshot.rows.length,
+    feedNewestAt,
     ...counts,
   };
 }
