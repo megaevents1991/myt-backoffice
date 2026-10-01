@@ -24,6 +24,7 @@ import {
 } from "@/lib/actions/tours-reports-actions";
 import { formatDateShort } from "@/lib/tours/deadlines";
 import { formatNumber } from "@/lib/tours/format";
+import { blockHref, linkClass } from "@/lib/tours/links";
 import { Ltr, Notice, Section } from "@/components/tours/ui";
 import { BlockStatusBadge, DaysLeft } from "@/components/tours/flights/block-ui";
 
@@ -31,8 +32,6 @@ const MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", 
 const monthName = (month: string) => MONTHS[Number(month.slice(5, 7)) - 1] ?? month;
 
 const LOAD_FAILED = "טעינת הדוחות נכשלה. המסך זמין כשהחברה הפעילה מוכרת טיולים.";
-
-const blockHref = (id: number) => `/offline-flights/${id}`;
 
 type RealizationTotals = Omit<RealizationRow, "month" | "airline_code">;
 
@@ -294,7 +293,7 @@ export function ReportsClient() {
                           <DaysLeft days={d.days_left} done={d.done} />
                         </TableCell>
                         <TableCell>
-                          <Link href={blockHref(d.flight_id)} className="text-primary underline-offset-4 hover:underline">
+                          <Link href={blockHref(d.flight_id)} className={linkClass}>
                             <Ltr>
                               {d.airline_code} {d.route}
                             </Ltr>
@@ -352,7 +351,7 @@ export function ReportsClient() {
                           {group.blocks.map((b) => (
                             <TableRow key={b.id}>
                               <TableCell>
-                                <Link href={blockHref(b.id)} className="text-primary underline-offset-4 hover:underline">
+                                <Link href={blockHref(b.id)} className={linkClass}>
                                   <Ltr>
                                     {b.airline_code} {b.route}
                                   </Ltr>

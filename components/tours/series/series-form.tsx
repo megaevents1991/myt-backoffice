@@ -5,17 +5,17 @@
  * sells on, the route pattern (airport + weekday at each end), the defaults new
  * departures start from, age rules and the audience / tag / destination terms.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { TERM_KIND_LABELS } from "@/components/tours/content/shared";
-import { Field, Ltr, Notice, selectClass } from "@/components/tours/ui";
+import { CurrencySelect, Field, Ltr, Notice, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
-import { WEEKDAY_LABELS } from "@/lib/tours/format";
+import { WEEKDAY_LABELS, inputNumber, inputValue } from "@/lib/tours/format";
 import { ROUTE_TYPE_LABELS, routeType } from "@/lib/tours/routes";
 import { CURRENCIES } from "@/types/tours.types";
 import { saveSeries } from "@/lib/actions/tours-series-actions";
@@ -41,27 +41,23 @@ interface Draft {
   termIds: string[];
 }
 
-const s = (v: string | number | null | undefined): string => (v == null ? "" : String(v));
-
 const toDraft = (row: SeriesListRow | null): Draft => ({
   code: row?.code ?? "",
-  label: s(row?.label),
-  package_id: s(row?.package_id),
-  arrival_airport: s(row?.arrival_airport),
-  arrival_weekday: s(row?.arrival_weekday),
-  return_airport: s(row?.return_airport),
-  return_weekday: s(row?.return_weekday),
-  default_nights: s(row?.default_nights),
-  default_capacity: s(row ? row.default_capacity : 45),
+  label: inputValue(row?.label),
+  package_id: inputValue(row?.package_id),
+  arrival_airport: inputValue(row?.arrival_airport),
+  arrival_weekday: inputValue(row?.arrival_weekday),
+  return_airport: inputValue(row?.return_airport),
+  return_weekday: inputValue(row?.return_weekday),
+  default_nights: inputValue(row?.default_nights),
+  default_capacity: inputValue(row ? row.default_capacity : 45),
   default_currency: row?.default_currency ?? "USD",
-  child_max_age: s(row ? row.child_max_age : 16),
-  senior_min_age: s(row ? row.senior_min_age : 65),
-  senior_discount: s(row ? row.senior_discount : 25),
+  child_max_age: inputValue(row ? row.child_max_age : 16),
+  senior_min_age: inputValue(row ? row.senior_min_age : 65),
+  senior_discount: inputValue(row ? row.senior_discount : 25),
   is_active: row?.is_active ?? true,
   termIds: row?.termIds ?? [],
 });
-
-const numOrNull = (v: string): number | null => (v.trim() === "" ? null : Number(v));
 
 function WeekdaySelect({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
   return (
@@ -94,6 +90,7 @@ export function SeriesForm({
   const [draft, setDraft] = useState<Draft>(() => toDraft(editing));
   const [saving, setSaving] = useState(false);
   const run = useActionToast();
+  const currencyId = useId();
   const targetKey = target === "new" ? "new" : (target?.id ?? "");
 
   useEffect(() => {
@@ -122,15 +119,15 @@ export function SeriesForm({
       label: draft.label.trim() || null,
       package_id: draft.package_id || null,
       arrival_airport: draft.arrival_airport.trim() || null,
-      arrival_weekday: numOrNull(draft.arrival_weekday),
+      arrival_weekday: inputNumber(draft.arrival_weekday),
       return_airport: draft.return_airport.trim() || null,
-      return_weekday: numOrNull(draft.return_weekday),
-      default_nights: numOrNull(draft.default_nights),
-      default_capacity: numOrNull(draft.default_capacity),
+      return_weekday: inputNumber(draft.return_weekday),
+      default_nights: inputNumber(draft.default_nights),
+      default_capacity: inputNumber(draft.default_capacity),
       default_currency: draft.default_currency,
-      child_max_age: numOrNull(draft.child_max_age) ?? 16,
-      senior_min_age: numOrNull(draft.senior_min_age),
-      senior_discount: numOrNull(draft.senior_discount),
+      child_max_age: inputNumber(draft.child_max_age) ?? 16,
+      senior_min_age: inputNumber(draft.senior_min_age),
+      senior_discount: inputNumber(draft.senior_discount),
       is_active: draft.is_active,
       termIds: draft.termIds,
     };
@@ -228,14 +225,15 @@ export function SeriesForm({
               <Field label="Capacity">
                 <Input dir="ltr" inputMode="numeric" className="h-9" value={draft.default_capacity} onChange={(e) => set("default_capacity", e.target.value)} />
               </Field>
-              <Field label="Currency">
-                <select dir="ltr" className={`${selectClass} w-full`} value={draft.default_currency} onChange={(e) => set("default_currency", e.target.value)}>
-                  {CURRENCIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+              <Field label="Currency" htmlFor={currencyId}>
+                <CurrencySelect
+                  id={currencyId}
+                  className="w-full"
+                  value={draft.default_currency}
+                  onChange={(c) => set("default_currency", c)}
+                  currencies={CURRENCIES}
+                  disabled={saving}
+                />
               </Field>
               <Field label="Child up to age">
                 <Input dir="ltr" inputMode="numeric" className="h-9" value={draft.child_max_age} onChange={(e) => set("child_max_age", e.target.value)} />

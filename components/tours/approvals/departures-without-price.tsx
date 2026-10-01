@@ -15,17 +15,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useConfirm } from "@/components/confirm-provider";
 import { saveDeparturePrices, setDeparturesPublished } from "@/lib/actions/tours-departure-actions";
 import type { ApprovalsData, DepartureWithoutPrice } from "@/lib/actions/tours-approvals-actions";
-import { currencySymbol, daysBetween, fmtMoney, formatDateShort, parsePrice } from "@/lib/tours/format";
+import { daysBetween, fmtPrice, formatDateShort, parsePrice } from "@/lib/tours/format";
+import { departureHref, linkClass } from "@/lib/tours/links";
 import { Ltr } from "@/components/tours/ui";
-import {
-  ActionButton,
-  OpenLink,
-  QueueSection,
-  departureHref,
-  inDays,
-  linkClass,
-  type QueueControls,
-} from "./queue-ui";
+import { daysLeftText } from "@/components/tours/flights/block-ui";
+import { ActionButton, OpenLink, QueueSection, type QueueControls } from "./queue-ui";
 
 export function DeparturesWithoutPrice({ data, run, busy }: QueueControls & { data: ApprovalsData }) {
   const rows = data.departuresWithoutPrice;
@@ -36,13 +30,13 @@ export function DeparturesWithoutPrice({ data, run, busy }: QueueControls & { da
       count={rows.length}
       description="Upcoming departures shown on the site with no price for an adult in a double room - the price the tour card and every room combination are built from. Enter the per-person double-room price here, or take the departure off the site until its price list is settled. The other price rows are filled in on the departure card."
     >
-      <Table>
+      <Table look="list">
         <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="h-9 px-3 text-xs">Departure</TableHead>
-            <TableHead className="h-9 px-3 text-xs">Dates</TableHead>
-            <TableHead className="h-9 px-3 text-xs">Price per Person, Double Room</TableHead>
-            <TableHead className="h-9 px-3 text-xs">
+          <TableRow>
+            <TableHead>Departure</TableHead>
+            <TableHead>Dates</TableHead>
+            <TableHead>Price per Person, Double Room</TableHead>
+            <TableHead>
               <span className="sr-only">Actions</span>
             </TableHead>
           </TableRow>
@@ -57,14 +51,11 @@ export function DeparturesWithoutPrice({ data, run, busy }: QueueControls & { da
   );
 }
 
-const cell = "px-3 py-2 align-top";
-
 function PriceRow({ row, today, run, busy }: QueueControls & { row: DepartureWithoutPrice; today: string }) {
   const confirm = useConfirm();
   const [text, setText] = useState("");
   const price = parsePrice(text);
   const valid = typeof price === "number" && price > 0;
-  const symbol = currencySymbol(row.currency);
   const isVacation = row.packageKind === "vacation";
   const saveKey = `price:${row.id}`;
   const unpublishKey = `unpublish:${row.id}`;
@@ -104,19 +95,19 @@ function PriceRow({ row, today, run, busy }: QueueControls & { row: DepartureWit
 
   return (
     <TableRow data-departure={row.code}>
-      <TableCell className={cell}>
+      <TableCell>
         <Link href={departureHref(row.code, "prices")} className={linkClass} title="Open the departure card">
           <Ltr className="font-mono">{row.code}</Ltr>
         </Link>
         {row.packageName && <span className="ms-2 text-sm">{row.packageName}</span>}
       </TableCell>
-      <TableCell className={`${cell} whitespace-nowrap`}>
+      <TableCell className="whitespace-nowrap">
         <Ltr>
           {formatDateShort(row.startDate)} - {formatDateShort(row.endDate)}
         </Ltr>
-        <div className="mt-0.5 text-xs text-muted-foreground">{inDays(daysBetween(today, row.startDate))}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{daysLeftText(daysBetween(today, row.startDate))}</div>
       </TableCell>
-      <TableCell className={cell}>
+      <TableCell>
         {isVacation ? (
           <p className="max-w-[44ch] text-sm text-muted-foreground">
             A vacation package is priced by hotel and ticket. A hotel with a double-room price is missing - add it on the
@@ -152,8 +143,8 @@ function PriceRow({ row, today, run, busy }: QueueControls & { row: DepartureWit
                   Other departures in the series:{" "}
                   <Ltr>
                     {row.seriesPrices.min === row.seriesPrices.max
-                      ? `${symbol}${fmtMoney(row.seriesPrices.min)}`
-                      : `${symbol}${fmtMoney(row.seriesPrices.min)} - ${symbol}${fmtMoney(row.seriesPrices.max)}`}
+                      ? fmtPrice(row.seriesPrices.min, row.currency)
+                      : `${fmtPrice(row.seriesPrices.min, row.currency)} - ${fmtPrice(row.seriesPrices.max, row.currency)}`}
                   </Ltr>
                 </>
               ) : (
@@ -163,7 +154,7 @@ function PriceRow({ row, today, run, busy }: QueueControls & { row: DepartureWit
           </>
         )}
       </TableCell>
-      <TableCell className={cell}>
+      <TableCell>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {!isVacation && (
             <ActionButton actionKey={saveKey} busy={busy} disabled={!valid} onClick={save}>

@@ -8,15 +8,17 @@
  * It loads on its own (getDataProblems reads every departure and block of the
  * company), so the queue above never waits for it.
  */
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useActionData } from "@/hooks/use-action-data";
 import { getDataProblems, type DataProblems } from "@/lib/actions/tours-reports-actions";
-import { CountBadge } from "./queue-ui";
+import { formatNumber } from "@/lib/tours/format";
+import { LoadError } from "@/components/tours/ui";
+import { QueueSection } from "./queue-ui";
 
 type ProblemKey = Exclude<keyof DataProblems, "today" | "includePast">;
 
@@ -34,64 +36,40 @@ const KINDS: { key: ProblemKey; label: string }[] = [
 const HREF = "/tours/exceptions";
 
 export function ExceptionsSummary({ refreshKey }: { refreshKey: number }) {
-  const [data, setData] = useState<DataProblems | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    let alive = true;
-    getDataProblems(false)
-      .then((res) => {
-        if (!alive) return;
-        if (res.success) {
-          setData(res.data);
-          setError(null);
-        } else {
-          setError(res.error);
-        }
-      })
-      .catch((e) => {
+  // Counts again after every change on the screen (refreshKey); a failed recount keeps the last counts.
+  const { data, error, reload } = useActionData(
+    () =>
+      getDataProblems(false).catch((e) => {
         console.error("approvals: data problems load failed", e);
-        if (alive) setError("Couldn't load the data problems.");
-      });
-    return () => {
-      alive = false;
-    };
-  }, [refreshKey, attempt]);
+        return { success: false as const, error: "Couldn't load the data problems." };
+      }),
+    [refreshKey],
+  );
 
-  const total = data ? KINDS.reduce((sum, kind) => sum + data[kind.key].length, 0) : 0;
+  const total = data ? KINDS.reduce((sum, kind) => sum + data[kind.key].length, 0) : null;
 
   return (
-    <section id="exceptions" className="scroll-mt-20 rounded-lg border bg-card shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 py-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <h2 className="font-display text-base font-semibold">Data problems</h2>
-            {data && <CountBadge count={total} />}
-          </div>
-          <p className="mt-1 max-w-[90ch] text-xs text-muted-foreground">
-            Mismatches between departures, prices and flight blocks, in departures and flights still ahead. The full
-            lists, with a link on every row, are on the Data problems screen. Some rows also appear above, where you
-            can handle them in place.
-          </p>
-        </div>
+    <QueueSection
+      id="exceptions"
+      title="Data problems"
+      count={total}
+      alwaysOpen
+      description="Mismatches between departures, prices and flight blocks, in departures and flights still ahead. The full lists, with a link on every row, are on the Data problems screen. Some rows also appear above, where you can handle them in place."
+      actions={
         <Button asChild size="sm" variant="outline">
           <Link href={HREF}>
             Open Data Problems
             <ChevronRight aria-hidden />
           </Link>
         </Button>
-      </div>
-
+      }
+    >
       {error && !data ? (
-        <div className="flex flex-wrap items-center gap-3 border-t px-4 py-3 text-sm text-destructive" role="alert">
-          <span>{error}</span>
-          <Button type="button" size="sm" variant="outline" onClick={() => setAttempt((n) => n + 1)}>
-            Try Again
-          </Button>
+        <div className="p-4">
+          <LoadError message={error} onRetry={() => void reload()} />
         </div>
       ) : !data ? (
-        <div className="grid gap-px border-t bg-border sm:grid-cols-2 xl:grid-cols-4" aria-busy="true" aria-label="Loading">
+        <div className="grid gap-px bg-border sm:grid-cols-2 xl:grid-cols-4" aria-busy="true" aria-label="Loading">
           {KINDS.map((kind) => (
             <div key={kind.key} className="bg-card px-4 py-2.5">
               <Skeleton className="h-5 w-full" />
@@ -99,7 +77,7 @@ export function ExceptionsSummary({ refreshKey }: { refreshKey: number }) {
           ))}
         </div>
       ) : (
-        <ul className="grid gap-px border-t bg-border sm:grid-cols-2 xl:grid-cols-4">
+        <ul className="grid gap-px bg-border sm:grid-cols-2 xl:grid-cols-4">
           {KINDS.map((kind) => {
             const count = data[kind.key].length;
             return (
@@ -115,7 +93,7 @@ export function ExceptionsSummary({ refreshKey }: { refreshKey: number }) {
                       count === 0 && "font-normal text-muted-foreground",
                     )}
                   >
-                    {count.toLocaleString("en-US")}
+                    {formatNumber(count)}
                   </span>
                 </Link>
               </li>
@@ -125,6 +103,6 @@ export function ExceptionsSummary({ refreshKey }: { refreshKey: number }) {
           <li aria-hidden className="hidden bg-card sm:block" />
         </ul>
       )}
-    </section>
+    </QueueSection>
   );
 }

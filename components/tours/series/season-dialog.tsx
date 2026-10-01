@@ -11,19 +11,20 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { Chip, Field, Ltr, Notice, selectClass } from "@/components/tours/ui";
+import { CheckField, Chip, EmptyLine, Field, Ltr, Notice, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useActionToast } from "@/hooks/use-action-toast";
-import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { WEEKDAY_LABELS, addDays, fmtDate, fmtDateRange, isDateOnly, nightsBetween, weekdayOf } from "@/lib/tours/format";
+import { EMPTY, WEEKDAY_LABELS, addDays, fmtDate, fmtDateRange, isDateOnly, nightsBetween, weekdayOf } from "@/lib/tours/format";
 import { departureRouteLabel } from "@/lib/tours/routes";
 import { createSeasonDepartures, getSeasonContext } from "@/lib/actions/tours-series-actions";
 import { departureCode, periodLabel, periodsOverlapping, seasonYearOf } from "@/components/tours/departures/departure-utils";
 import type { BoardPeriod } from "@/components/tours/departures/types";
-import type { SeasonContext, SeasonCreateResult, SeriesListRow } from "./types";
+import { type SeasonContext, type SeasonCreateResult, type SeriesListRow } from "./types";
+import { seriesBoardHref } from "@/lib/tours/links";
 
 const MAX_PROPOSALS = 120;
 
@@ -68,7 +69,6 @@ export function SeasonDialog({
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<SeasonCreateResult | null>(null);
   const run = useActionToast();
-  const { toast } = useToast();
   const seriesId = series?.id;
 
   useEffect(() => {
@@ -134,19 +134,20 @@ export function SeasonDialog({
   const create = async () => {
     if (!series) return;
     setSaving(true);
-    const res = await run(() =>
-      createSeasonDepartures({
-        seriesId: series.id,
-        items: chosen.map((p) => ({ start_date: p.start, end_date: p.end })),
-        season: season || null,
-        copyFromDepartureId: sourceId || null,
-        copyPrices: Boolean(sourceId) && copyPrices,
-        copyPromotions: Boolean(sourceId) && copyPromotions,
-      }),
+    const res = await run(
+      () =>
+        createSeasonDepartures({
+          seriesId: series.id,
+          items: chosen.map((p) => ({ start_date: p.start, end_date: p.end })),
+          season: season || null,
+          copyFromDepartureId: sourceId || null,
+          copyPrices: Boolean(sourceId) && copyPrices,
+          copyPromotions: Boolean(sourceId) && copyPromotions,
+        }),
+      (answer) => `Created ${answer.data.created.length} departures as drafts`,
     );
     setSaving(false);
     if (!res.success) return;
-    toast({ title: `Created ${res.data.created.length} departures as drafts` });
     setResult(res.data);
     onCreated();
   };
@@ -171,7 +172,7 @@ export function SeasonDialog({
           <div className="space-y-3">
             <Notice tone="success">
               Created {result.created.length} departures:{" "}
-              <Ltr className="font-mono">{result.created.map((c) => c.code).join(", ") || "—"}</Ltr>
+              <Ltr className="font-mono">{result.created.map((c) => c.code).join(", ") || EMPTY}</Ltr>
             </Notice>
             {result.skipped.length > 0 && (
               <Notice tone="warning">
@@ -189,7 +190,7 @@ export function SeasonDialog({
               </Button>
               {series && createdYear && (
                 <Button asChild>
-                  <Link href={`/tours/departures?series=${series.code}&year=${createdYear}`}>Open in Tours</Link>
+                  <Link href={seriesBoardHref(series.code, createdYear)}>Open in Tours</Link>
                 </Button>
               )}
             </DialogFooter>
@@ -226,7 +227,7 @@ export function SeasonDialog({
             <p className="text-xs text-muted-foreground">
               Route from the series: <Ltr className="font-mono text-foreground">{route || "Not set"}</Ltr> · Currency{" "}
               <Ltr className="text-foreground">{source && copyPrices ? source.currency : series.default_currency}</Ltr> · Capacity{" "}
-              {series.default_capacity ?? "—"}
+              {series.default_capacity ?? EMPTY}
               {nights === "" && " · Enter the number of nights to get proposals"}
             </p>
 
@@ -243,45 +244,38 @@ export function SeasonDialog({
                 </select>
               </Field>
               <div className="flex flex-col justify-end gap-1.5 pb-1 text-sm">
-                <label className={cn("flex items-center gap-2", sourceId ? "cursor-pointer" : "opacity-50")}>
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-[hsl(var(--primary))]"
-                    disabled={!sourceId}
-                    checked={copyPrices}
-                    onChange={(e) => setCopyPrices(e.target.checked)}
-                  />
-                  Prices and currency
-                </label>
-                <label className={cn("flex items-center gap-2", sourceId ? "cursor-pointer" : "opacity-50")}>
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-[hsl(var(--primary))]"
-                    disabled={!sourceId}
-                    checked={copyPromotions}
-                    onChange={(e) => setCopyPromotions(e.target.checked)}
-                  />
-                  Active promotions
-                </label>
+                <CheckField
+                  label="Prices and currency"
+                  className={cn(!sourceId && "[&_label]:opacity-50")}
+                  disabled={!sourceId}
+                  checked={copyPrices}
+                  onCheckedChange={setCopyPrices}
+                />
+                <CheckField
+                  label="Active promotions"
+                  className={cn(!sourceId && "[&_label]:opacity-50")}
+                  disabled={!sourceId}
+                  checked={copyPromotions}
+                  onCheckedChange={setCopyPromotions}
+                />
               </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-auto rounded-md border" data-testid="season-proposals">
               {proposals.length === 0 ? (
-                <p className="p-8 text-center text-sm text-muted-foreground">
+                // The list's own border frames it, so the empty line drops its dashed one.
+                <EmptyLine className="rounded-none border-0 p-8">
                   {rangeOk && nightsOk ? "That weekday doesn't fall in the selected range." : "Choose a date range and number of nights to get proposals."}
-                </p>
+                </EmptyLine>
               ) : (
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-muted text-xs text-muted-foreground">
                     <tr>
                       <th className="w-9 px-2 py-1.5">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
+                        <Checkbox
                           aria-label="Select all proposals"
                           checked={chosen.length > 0 && chosen.length === proposals.filter((p) => !p.exists).length}
-                          onChange={(e) => setUnticked(e.target.checked ? new Set() : new Set(proposals.map((p) => p.key)))}
+                          onCheckedChange={(on) => setUnticked(on === true ? new Set() : new Set(proposals.map((p) => p.key)))}
                         />
                       </th>
                       <th className="px-2 py-1.5 text-start font-semibold">Code</th>
@@ -294,16 +288,14 @@ export function SeasonDialog({
                     {proposals.map((p) => (
                       <tr key={p.key} data-proposal={p.code} className={cn("border-t", p.exists && "bg-muted/40 text-muted-foreground")}>
                         <td className="px-2 py-1.5 text-center">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
+                          <Checkbox
                             aria-label={`Create ${p.code}`}
                             disabled={p.exists}
                             checked={!p.exists && !unticked.has(p.key)}
-                            onChange={(e) =>
+                            onCheckedChange={(on) =>
                               setUnticked((prev) => {
                                 const next = new Set(prev);
-                                if (e.target.checked) next.delete(p.key);
+                                if (on === true) next.delete(p.key);
                                 else next.add(p.key);
                                 return next;
                               })
@@ -323,7 +315,7 @@ export function SeasonDialog({
                         <td className="px-2 py-1.5">
                           <span className="flex flex-wrap gap-1">
                             {p.holidays.map((h) => (
-                              <Chip key={h.id} className="border-warning/40 bg-warning-muted text-warning" title={periodLabel(h)}>
+                              <Chip key={h.id} tone="warning" title={periodLabel(h)}>
                                 {h.name}
                               </Chip>
                             ))}

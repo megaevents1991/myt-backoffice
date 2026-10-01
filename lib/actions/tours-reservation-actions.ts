@@ -19,11 +19,14 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { toursDb } from "@/lib/tours/db";
 import { addDays, todayIso } from "@/lib/tours/deadlines";
 import { actionFail, actionOk, chunk, UserError, UUID, type ActionResult } from "@/lib/tours/action-kit";
+import { companyAudit } from "@/lib/tours/company-kit";
 import { departureSiteId } from "@/types/tours.types";
-import type {
-  ReservationDeparture,
-  ReservationInput,
-  ToursReservationRow,
+import {
+  MAX_TRAVELERS,
+  TRAVELERS_RULE,
+  type ReservationDeparture,
+  type ReservationInput,
+  type ToursReservationRow,
 } from "@/components/tours/reservations/types";
 
 const SCOPE = "tours-reservation-actions";
@@ -115,7 +118,8 @@ export async function listToursReservations(departureId?: string): Promise<Actio
         .eq("company_id", company.id)
         .is("is_deleted", null);
       if (departureId) query = query.eq("departure_id", departureId);
-      return query.order("created_at", { ascending: false });
+      // id breaks ties, so paging never skips a row
+      return query.order("created_at", { ascending: false }).order("id", { ascending: false });
     }, ROWS_MAX);
     if (error) throw new Error(`departure_sales_entries: ${error.message}`);
     return actionOk(await toRows(company.id, rows));
@@ -172,10 +176,8 @@ export async function createToursReservation(input: ReservationInput): Promise<A
   try {
     const { session, company } = await requireCompany("tours");
     if (!UUID.test(input.departureId)) throw new UserError("Choose a departure.");
-    const pax = Math.trunc(Number(input.pax));
-    if (!Number.isFinite(pax) || pax === 0 || Math.abs(pax) > 99) {
-      throw new UserError("Travelers must be a whole number from 1 to 99.");
-    }
+    const pax = Number(input.pax);
+    if (!Number.isInteger(pax) || pax === 0 || Math.abs(pax) > MAX_TRAVELERS) throw new UserError(TRAVELERS_RULE);
     const email = clean(input.customerEmail, 200);
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new UserError("The e-mail address is not valid.");
 
@@ -236,7 +238,7 @@ export async function createToursReservation(input: ReservationInput): Promise<A
       entityType: "tours_reservation",
       entityId: created.id,
       changes: created,
-      metadata: { company_id: company.id, departure_id: departure.id, departure_code: departure.code, lead_id: leadId },
+      metadata: { ...companyAudit(company), departure_id: departure.id, departure_code: departure.code, lead_id: leadId },
     });
     revalidatePath("/tours/reservations");
     const [row] = await toRows(company.id, [created as EntryRow]);
@@ -265,7 +267,7 @@ export async function deleteToursReservation(id: string): Promise<ActionResult> 
       entityType: "tours_reservation",
       entityId: id,
       changes: data[0],
-      metadata: { company_id: company.id, departure_id: data[0].departure_id, soft: true },
+      metadata: { ...companyAudit(company), departure_id: data[0].departure_id, soft: true },
     });
     revalidatePath("/tours/reservations");
     return actionOk(undefined);

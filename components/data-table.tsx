@@ -237,10 +237,6 @@ function useScrollEdges(tableRef: React.RefObject<HTMLTableElement | null>): Scr
   return edges;
 }
 
-/**
- * The table's own outline while the first rows load, in place of a bare
- * "Loading…" line that jumps into a full table when the data lands.
- */
 /** The empty state of a list - the one DataTable draws, for lists that are not a DataTable. */
 export function EmptyState({
   title,
@@ -277,6 +273,10 @@ export function SortableHeader({
   );
 }
 
+/**
+ * The table's own outline while the first rows load, in place of a bare
+ * "Loading…" line that jumps into a full table when the data lands.
+ */
 export function DataTableSkeleton({
   rows = 8,
   label = "Loading",

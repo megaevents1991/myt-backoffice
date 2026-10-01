@@ -18,14 +18,15 @@ import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
 import {
   getApprovalsQueue,
   getApprovalsReviewPage,
   type ApprovalsData,
 } from "@/lib/actions/tours-approvals-actions";
-import { formatDateShort } from "@/lib/tours/format";
-import { Notice } from "@/components/tours/ui";
+import { formatDateShort, formatNumber } from "@/lib/tours/format";
+import { LoadError, Notice } from "@/components/tours/ui";
 import { BlockApprovals } from "./block-approvals";
 import { DeparturesWithoutBlock } from "./departures-without-block";
 import { DeparturesWithoutPrice } from "./departures-without-price";
@@ -36,41 +37,25 @@ import type { QueueRun } from "./queue-ui";
 const LOAD_FAILED = "Couldn't load the data. Refresh the page, and if it happens again, contact support.";
 
 export function ApprovalsScreen({ companyName }: { companyName: string }) {
-  const [data, setData] = useState<ApprovalsData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   /** Bumped after every change, so the data-problems summary counts again. */
   const [changes, setChanges] = useState(0);
   const busyRef = useRef<string | null>(null);
+  /** The page of the review list on screen - a reload of the queue reads that page again. */
   const reviewPage = useRef(1);
-  /** Only the newest load may write its answer. */
-  const loadSeq = useRef(0);
 
-  const load = useCallback(async () => {
-    const seq = ++loadSeq.current;
-    setLoading(true);
-    try {
-      const res = await getApprovalsQueue({ reviewPage: reviewPage.current });
-      if (seq !== loadSeq.current) return;
-      if (res.success) {
-        setData(res.data);
-        reviewPage.current = res.data.review.page;
-        setError(null);
-      } else {
-        setError(res.error);
-      }
-    } catch (e) {
-      console.error("approvals: load failed", e);
-      if (seq === loadSeq.current) setError(LOAD_FAILED);
-    } finally {
-      if (seq === loadSeq.current) setLoading(false);
-    }
-  }, []);
-
+  // useActionData drops the answer of an older load, so a slow load never overwrites a newer one.
+  const { data, error, loading, reload, setData } = useActionData(
+    () =>
+      getApprovalsQueue({ reviewPage: reviewPage.current }).catch((e) => {
+        console.error("approvals: load failed", e);
+        return { success: false as const, error: LOAD_FAILED };
+      }),
+    [],
+  );
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (data) reviewPage.current = data.review.page;
+  }, [data]);
 
   // One action at a time: the ref refuses a second press before React has re-rendered the buttons as disabled.
   const begin = useCallback((key: string): boolean => {
@@ -91,39 +76,36 @@ export function ApprovalsScreen({ companyName }: { companyName: string }) {
       try {
         const res = await toastRun(action, okMessage);
         if (!res.success) return false;
-        await load();
+        await reload();
         setChanges((n) => n + 1);
         return true;
       } finally {
         end();
       }
     },
-    [begin, end, load, toastRun],
+    [begin, end, reload, toastRun],
   );
 
   const refresh = useCallback(async () => {
     if (!begin("refresh")) return;
     try {
-      await load();
+      await reload();
       setChanges((n) => n + 1);
     } finally {
       end();
     }
-  }, [begin, end, load]);
+  }, [begin, end, reload]);
 
   /** Another page of the review list: only that list is read again. */
   const showReviewPage = useCallback(async (page: number) => {
     if (!begin("review:page")) return;
     try {
       const res = await toastRun(() => getApprovalsReviewPage(page));
-      if (res.success) {
-        reviewPage.current = res.data.page;
-        setData((prev) => (prev ? { ...prev, review: res.data } : prev));
-      }
+      if (res.success) setData((prev) => (prev ? { ...prev, review: res.data } : prev));
     } finally {
       end();
     }
-  }, [begin, end, toastRun]);
+  }, [begin, end, toastRun, setData]);
 
   return (
     <div>
@@ -131,25 +113,22 @@ export function ApprovalsScreen({ companyName }: { companyName: string }) {
         title="Approvals"
         description="Decisions only a manager makes, and data the import could not settle on its own. Handle a row in place and it leaves the list."
         actions={
-          <Button type="button" size="sm" variant="outline" onClick={() => void refresh()} disabled={busy !== null || loading}>
+          <Button type="button" variant="outline" onClick={() => void refresh()} disabled={busy !== null || loading}>
             <RefreshCw className={cn(loading && data !== null && "animate-spin")} aria-hidden />
             Refresh
           </Button>
         }
       />
 
-      {error && (
-        <div className="mb-4 flex flex-wrap items-center gap-3" role="alert">
-          <div className="min-w-0 flex-1">
+      {error &&
+        (data === null ? (
+          <LoadError message={error} onRetry={() => void reload()} className="mb-4" />
+        ) : (
+          // A failed reload: the last queue stays on screen under the message.
+          <div className="mb-4" role="alert">
             <Notice tone="error">{error}</Notice>
           </div>
-          {data === null && (
-            <Button type="button" size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
-              Try Again
-            </Button>
-          )}
-        </div>
-      )}
+        ))}
 
       {data === null ? (
         error ? null : (
@@ -193,7 +172,7 @@ function Summary({ data }: { data: ApprovalsData }) {
           <CheckCircle2 className="h-7 w-7 text-emerald-600" aria-hidden />
         ) : (
           <span className="font-display text-3xl font-bold tabular-nums leading-none tracking-tight">
-            {total.toLocaleString("en-US")}
+            {formatNumber(total)}
           </span>
         )}
         <div>
@@ -216,7 +195,7 @@ function Summary({ data }: { data: ApprovalsData }) {
           >
             {s.label}
             <span className={cn("tabular-nums", s.count > 0 ? "font-semibold" : "font-normal")}>
-              {s.count.toLocaleString("en-US")}
+              {formatNumber(s.count)}
             </span>
           </button>
         ))}

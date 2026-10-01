@@ -28,7 +28,7 @@ import {
   Eye,
   Loader2,
   MoreHorizontal,
-  Plus,
+  PlusCircle,
   RefreshCw,
   SlidersHorizontal,
   Tag,
@@ -70,10 +70,12 @@ import {
   PastePricesDialog,
 } from "./board-dialogs";
 import { BoardRowView, type CardTab } from "./board-row";
-import { DepartureCard, type CardTarget } from "./departure-card";
+import { DepartureCard } from "./departure-card";
+import type { CardTarget } from "./departure-sheet";
 import { DepartureViewCard, VIEW_TABS } from "./departure-view-card";
 import { doublePricePerPerson, periodLabel, periodsOverlapping } from "./departure-utils";
 import type { BoardData, BoardRow, BulkOutcome } from "./types";
+import { STICKY_TH, usePublishToast } from "./ui-bits";
 
 const CARD_TABS: readonly CardTab[] = ["general", "prices", "promotions", "flights", "sales"];
 /** Everything the board keeps in the query string: the filters, and the open card (`code`, `tab`). */
@@ -109,8 +111,7 @@ const COLUMN_COUNT = 15;
 /** Without the checkbox, the publish toggle and the docket. */
 const READ_ONLY_COLUMN_COUNT = 12;
 
-const th =
-  "sticky top-0 z-10 h-9 whitespace-nowrap bg-muted px-1.5 text-start text-xs font-semibold text-muted-foreground shadow-[inset_0_-1px_0_hsl(var(--border))]";
+const th = `${STICKY_TH} px-1.5`;
 
 const sortRows = (rows: BoardRow[]): BoardRow[] =>
   [...rows].sort((a, b) => a.start_date.localeCompare(b.start_date) || a.code.localeCompare(b.code));
@@ -139,6 +140,7 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
   const thisYear = useMemo(() => Number(todayIso().slice(0, 4)), []);
   const today = useMemo(() => todayIso(), []);
   const run = useActionToast();
+  const publishToast = usePublishToast();
   const { toast } = useToast();
 
   // ---- data
@@ -352,18 +354,9 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
       markBusy(row.id, true);
       const result = await run(() => setDeparturesPublished([row.id], next));
       markBusy(row.id, false);
-      if (!result.success) return;
-      const skipped = result.data.skipped[0];
-      if (skipped) {
-        toast({ variant: "destructive", title: `Can't publish ${row.code}`, description: skipped.reason, duration: 7000 });
-        return;
-      }
-      patchRow(row.id, { is_published: next });
-      const warning = result.data.warnings[0];
-      if (warning) toast({ title: `${row.code} published`, description: warning.reason, duration: 7000 });
-      else toast({ title: next ? `${row.code} published` : `${row.code} unpublished` });
+      if (result.success && publishToast(result.data, next, row.code)) patchRow(row.id, { is_published: next });
     },
-    [markBusy, patchRow, run, toast],
+    [markBusy, patchRow, run, publishToast],
   );
 
   const onSaleStatus = useCallback(
@@ -440,11 +433,9 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
 
   const exportView = async () => {
     setExporting(true);
-    const result = await run(() => exportDeparturesXlsx(filtered.map((r) => r.id)));
+    const result = await run(() => exportDeparturesXlsx(filtered.map((r) => r.id)), () => `Exported ${filtered.length} departures`);
     setExporting(false);
-    if (!result.success) return;
-    downloadBase64(result.data.base64, result.data.filename);
-    toast({ title: `Exported ${filtered.length} departures` });
+    if (result.success) downloadBase64(result.data.base64, result.data.filename);
   };
 
   const toggleGroup = (seriesId: string) =>
@@ -481,7 +472,7 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
             <PublishSiteButton />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" aria-label="More actions">
+                <Button variant="outline" aria-label="More actions">
                   {exporting ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
                   More
                 </Button>
@@ -503,9 +494,9 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button size="sm" onClick={() => setDialog("new")} disabled={!data}>
-              <Plus />
-              New Departure
+            <Button onClick={() => setDialog("new")} disabled={!data}>
+              <PlusCircle />
+              Add Departure
             </Button>
           </>
           )

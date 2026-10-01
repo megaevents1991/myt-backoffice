@@ -2,8 +2,7 @@ import { requireCompany, type Company } from "@/lib/company";
 import type { SessionPayload } from "@/lib/auth/session";
 import { isManagerRole } from "@/components/tours/flights/block-rules";
 import { ApprovalsScreen } from "@/components/tours/approvals/approvals-screen";
-import { ManagersOnly } from "@/components/tours/approvals/notices";
-import { NotAToursCompany } from "@/components/tours/not-a-tours-company";
+import { AccessNotice, NotAToursCompany } from "@/components/tours/not-a-tours-company";
 
 // Per request always: the guard reads cookies, and its refusal is caught below -
 // a build-time prerender must never bake one of the two notices in.
@@ -25,12 +24,22 @@ export default async function TourApprovalsPage() {
     // Anything else (no staff session) goes to the dashboard error boundary like on every guarded page.
     if (e instanceof Error && e.message.includes("does not sell")) {
       return (
-        <NotAToursCompany description="Approvals are available only when the active company sells tours. If you have access to such a company, switch to it from the company picker in the top bar." />
+        <NotAToursCompany description="Approvals are available only when the active company sells tours." />
       );
     }
     throw e;
   }
-  if (!isManagerRole(session.role)) return <ManagersOnly />;
+  if (!isManagerRole(session.role)) {
+    // A staff member of the company who is not its manager.
+    return (
+      <AccessNotice
+        title="Managers only"
+        description="This screen gathers the approvals and decisions only the company manager makes. Day-to-day work goes on from the Tours board and Offline Flights."
+        backHref="/tours"
+        backLabel="Back to Overview"
+      />
+    );
+  }
 
   return <ApprovalsScreen companyName={company.name} />;
 }

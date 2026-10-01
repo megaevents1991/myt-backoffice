@@ -15,4 +15,3 @@ import { supabaseTyped } from "@/lib/supabase-server";
 
 export const toursDb = () => supabaseTyped.schema("tours");
 
-export { TOURS_PAGE_SIZE } from "@/lib/tours/action-kit";

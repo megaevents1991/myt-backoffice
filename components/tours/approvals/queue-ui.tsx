@@ -3,16 +3,16 @@
 /**
  * Building blocks of the approvals screen (/tours/approvals): the frame of a
  * section, the heading of a list inside it, and the contract every row uses to
- * run its action.
+ * run its action. Links to a departure or a block come from lib/tours/links.ts,
+ * the count pill and the "nothing here" line from components/tours/ui.tsx.
  */
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import type { ActionResult } from "@/lib/tours/action-kit";
+import { CountBadge, EmptyLine } from "@/components/tours/ui";
 
 /**
  * Runs one action of the queue and reports it with the shared action toast.
@@ -32,59 +32,66 @@ export interface QueueControls {
   busy: string | null;
 }
 
-export const departureHref = (code: string, tab?: "prices" | "flights") =>
-  `/tours/departures?code=${encodeURIComponent(code)}${tab ? `&tab=${tab}` : ""}`;
-export const blockHref = (id: number) => `/offline-flights/${id}`;
-
-export const linkClass =
-  "font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm";
-
-export function CountBadge({ count, className }: { count: number; className?: string }) {
+/**
+ * The quiet one line of a section or a list with nothing to handle: the shared
+ * EmptyLine, led by a check mark and the title. The title keeps its heading
+ * role (a real <h2>/<h3> may not sit inside EmptyLine's <p>).
+ */
+function NothingToHandle({ title, level, text }: { title: string; level: 2 | 3; text: string }) {
   return (
-    <Badge variant={count > 0 ? "destructive" : "secondary"} className={cn("shrink-0 tabular-nums", className)}>
-      {count.toLocaleString("en-US")}
-    </Badge>
+    <EmptyLine className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2.5 text-start">
+      <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+      <span role="heading" aria-level={level} className="font-medium text-foreground/80">
+        {title}
+      </span>
+      <span>{text}</span>
+    </EmptyLine>
   );
 }
 
 /**
  * One section of the queue. With nothing to handle it folds into a single quiet
- * line, so the eye lands only on the sections that hold work.
+ * line, so the eye lands only on the sections that hold work - unless
+ * `alwaysOpen`, for a summary whose zeros are the news themselves.
  */
 export function QueueSection({
   id,
   title,
   description,
   count,
+  actions,
+  alwaysOpen = false,
   children,
 }: {
   id: string;
   title: string;
   /** What puts a row here and what handling it means, in a sentence or two. */
   description: ReactNode;
-  count: number;
+  /** Rows waiting; null while still unknown (no badge, never folded). */
+  count: number | null;
+  /** Buttons on the end of the heading, e.g. a link to the full screen. */
+  actions?: ReactNode;
+  alwaysOpen?: boolean;
   children: ReactNode;
 }) {
-  if (count === 0) {
+  if (count === 0 && !alwaysOpen) {
     return (
-      <section
-        id={id}
-        className="flex scroll-mt-20 flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-dashed px-4 py-2.5 text-sm text-muted-foreground"
-      >
-        <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
-        <h2 className="font-medium text-foreground/80">{title}</h2>
-        <span>Nothing to handle</span>
+      <section id={id} className="scroll-mt-20">
+        <NothingToHandle title={title} level={2} text="Nothing to handle" />
       </section>
     );
   }
   return (
     <section id={id} className="scroll-mt-20 rounded-lg border bg-card shadow-sm">
-      <div className="border-b px-4 py-3">
-        <div className="flex items-center gap-2.5">
-          <h2 className="font-display text-base font-semibold">{title}</h2>
-          <CountBadge count={count} />
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2.5">
+            <h2 className="font-display text-base font-semibold">{title}</h2>
+            {count !== null && <CountBadge count={count} />}
+          </div>
+          <p className="mt-1 max-w-[90ch] text-xs text-muted-foreground">{description}</p>
         </div>
-        <p className="mt-1 max-w-[90ch] text-xs text-muted-foreground">{description}</p>
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
       {children}
     </section>
@@ -110,10 +117,8 @@ export function SubList({
 }) {
   if (count === 0) {
     return (
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-4 py-2.5 text-sm text-muted-foreground last:border-b-0">
-        <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
-        <h3 className="font-medium text-foreground/80">{title}</h3>
-        <span>{emptyText}</span>
+      <div className="border-b px-4 py-3 last:border-b-0">
+        <NothingToHandle title={title} level={3} text={emptyText} />
       </div>
     );
   }
@@ -123,9 +128,7 @@ export function SubList({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold">{title}</h3>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums">
-              {count.toLocaleString("en-US")}
-            </span>
+            <CountBadge count={count} />
           </div>
           {hint && <p className="mt-0.5 max-w-[90ch] text-xs text-muted-foreground">{hint}</p>}
         </div>
@@ -160,11 +163,4 @@ export function OpenLink({ href, children }: { href: string; children: ReactNode
       <Link href={href}>{children}</Link>
     </Button>
   );
-}
-
-/** "in 5 days" for a date that is today or later. */
-export function inDays(days: number): string {
-  if (days <= 0) return "today";
-  if (days === 1) return "tomorrow";
-  return `in ${days} days`;
 }

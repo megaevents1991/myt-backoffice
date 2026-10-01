@@ -23,6 +23,7 @@ import type {
 } from "@/components/tours/content/shared";
 import { isManagerRole } from "@/components/tours/flights/block-rules";
 import { actionFail } from "@/lib/tours/action-kit";
+import { ALL_CURRENCIES } from "@/lib/tours/format";
 import {
   LAST_SITE_PUBLISH_KEY,
   SITE_DEPLOY_HOOK_KEY,
@@ -37,8 +38,6 @@ import {
 const failure = (e: unknown, fallback: string) => actionFail(e, "tours-settings-actions", fallback);
 
 type CompanyRow = Database["public"]["Tables"]["companies"]["Row"];
-
-const SETTINGS_CURRENCIES = ["USD", "EUR", "GBP", "ILS"] as const;
 
 const text = (value: Json | undefined): string => (typeof value === "string" ? value : "");
 
@@ -60,7 +59,7 @@ const settingsSchema = z.object({
   name: z.string().trim().min(1, "Company name is required").max(200),
   legalName: short,
   siteUrl: optionalUrl,
-  defaultCurrency: z.enum(SETTINGS_CURRENCIES, { errorMap: () => ({ message: "Unknown currency" }) }),
+  defaultCurrency: z.enum(ALL_CURRENCIES, { errorMap: () => ({ message: "Unknown currency" }) }),
   contact: z.object({
     phone: short,
     whatsapp: short,

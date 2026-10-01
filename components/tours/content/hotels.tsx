@@ -4,9 +4,8 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil, Star } from "lucide-react";
+import { Star } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,13 +14,8 @@ import { PageHeader } from "@/components/page-header";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import { saveTourHotel } from "@/lib/actions/tours-content-actions";
 import { Field, Section } from "@/components/tours/ui";
-import {
-  ImageListEditor,
-  ImageUrlField,
-  NO_UPLOAD_NOTE,
-  SiteImage,
-  StringListEditor,
-} from "@/components/tours/content/fields";
+import { editColumn, imageColumn } from "@/components/tours/content/columns";
+import { ImageListEditor, ImageUrlField, NO_UPLOAD_NOTE, StringListEditor } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
 import { BackLink, CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
@@ -45,14 +39,11 @@ export function HotelsTable({ rows, siteUrl }: { rows: HotelListRow[]; siteUrl: 
 
   const columns = useMemo<ColumnDef<HotelListRow>[]>(
     () => [
-      {
-        id: "image",
-        header: "Image",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <SiteImage siteUrl={siteUrl} path={row.original.image} className="h-10 w-14" alt={row.original.name} />
-        ),
-      },
+      imageColumn<HotelListRow>(
+        siteUrl,
+        (row) => row.image,
+        (row) => row.name,
+      ),
       {
         accessorKey: "name",
         header: ({ column }) => <SortableHeader label="Name" column={column} />,
@@ -81,18 +72,10 @@ export function HotelsTable({ rows, siteUrl }: { rows: HotelListRow[]; siteUrl: 
         header: ({ column }) => <SortableHeader label="Stars" column={column} />,
         cell: ({ row }) => <Stars count={row.original.stars} />,
       },
-      {
-        id: "actions",
-        header: "",
-        enableHiding: false,
-        cell: ({ row }) => (
-          <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-            <Link href={`/tours/hotels/${row.original.id}`} aria-label={`Edit ${row.original.name}`} title="Edit">
-              <Pencil />
-            </Link>
-          </Button>
-        ),
-      },
+      editColumn(
+        (row) => `/tours/hotels/${row.id}`,
+        (row) => row.name,
+      ),
     ],
     [siteUrl],
   );
@@ -154,12 +137,12 @@ export function HotelFormEditor({ initial }: { initial: HotelEditorData }) {
           <Field label="City" className="md:col-span-2">
             <Input dir="auto" value={form.city} onChange={(e) => set("city", e.target.value)} />
           </Field>
-          <Field label="Stars">
+          <Field label="Stars" htmlFor="hotel-stars">
             <Select
               value={form.stars ? String(form.stars) : "none"}
               onValueChange={(value) => set("stars", value === "none" ? null : Number(value))}
             >
-              <SelectTrigger>
+              <SelectTrigger id="hotel-stars">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

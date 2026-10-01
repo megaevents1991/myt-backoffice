@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { CalendarDays, ClipboardList, Inbox, Map as MapIcon, Plane } from "lucide-react";
 
-import { useToast } from "@/hooks/use-toast";
+import { useActionData } from "@/hooks/use-action-data";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { TopListCard } from "@/components/dashboard/top-list-card";
 import { TrendChart } from "@/components/dashboard/trend-chart";
 import { MyTasksWidget } from "@/components/my-tasks-widget";
+import { LoadError } from "@/components/tours/ui";
 import { NeedsAttention } from "@/components/tours/dashboard/needs-attention";
 import {
   getToursDashboard,
@@ -25,26 +25,15 @@ const pax = (tally: Tally | undefined) => `PAX: ${tally ? n(tally.travelers) : "
  * tours, reservations and site leads.
  */
 export function ToursDashboard({ isManager }: { isManager: boolean }) {
-  const [data, setData] = useState<Data | null>(null);
-  const { toast } = useToast();
-
-  useEffect(() => {
-    getToursDashboard().then((result) => {
-      if (result.success) setData(result.data);
-      else
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: `Failed to load the dashboard: ${result.error}`,
-        });
-    });
-  }, [toast]);
+  const { data, error, loading, reload } = useActionData(() => getToursDashboard(), []);
 
   const v = (pick: (d: Data) => number) => (data ? n(pick(data)) : "...");
-  const loading = data === null;
+  // Without numbers the cards keep their placeholders - a failed load must not read as zeros or empty lists.
+  const pending = data === null;
 
   return (
     <>
+      {error && !loading && <LoadError message={error} onRetry={() => void reload()} />}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
         <StatCard
           label="Tours on Sale"
@@ -117,10 +106,10 @@ export function ToursDashboard({ isManager }: { isManager: boolean }) {
           <TopListCard
             title="Top Tours (Reservations, 30d)"
             items={data?.topToursByReservations ?? []}
-            loading={loading}
+            loading={pending}
           />
-          <TopListCard title="Top Tours (Leads, 30d)" items={data?.topToursByLeads ?? []} loading={loading} />
-          <TopListCard title="Leads by Type (30d)" items={data?.leadsByType ?? []} loading={loading} />
+          <TopListCard title="Top Tours (Leads, 30d)" items={data?.topToursByLeads ?? []} loading={pending} />
+          <TopListCard title="Leads by Type (30d)" items={data?.leadsByType ?? []} loading={pending} />
         </div>
       </div>
 

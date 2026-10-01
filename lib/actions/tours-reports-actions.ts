@@ -12,11 +12,13 @@ import { supabaseTyped } from "@/lib/supabase-server";
 import { toursDb } from "@/lib/tours/db";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
+import { companyAudit } from "@/lib/tours/company-kit";
 import { notifyTasksAssigned, type TaskMailOutcome } from "@/lib/services/task-notify";
 import { PLAIN_TASK_BOARD } from "@/lib/services/task-company";
 import { taskPeopleOf } from "@/lib/services/task-people";
 import { tasksOf, type TaskResult } from "@/lib/tasks-scope";
 import { checkBlockFitsDeparture, departureRouteLabel, flightRouteLabel } from "@/lib/tours/routes";
+import { blockHref } from "@/lib/tours/links";
 import {
   DEADLINE_FIELDS,
   DEADLINE_LABELS,
@@ -444,15 +446,19 @@ export async function syncDeadlineTasks(
       table: "flights",
       row_id: d.flight_id,
       label,
-      url: `/offline-flights/${d.flight_id}`,
+      url: blockHref(d.flight_id),
     };
+    // English, like the task board that shows it and the deadline labels inside it.
+    // `source_ref` above is what finds an existing task, so changing this wording
+    // never opens a second task for the same deadline.
+    const when = d.days_left <= 0 ? "today" : d.days_left === 1 ? "tomorrow" : `in ${d.days_left} days`;
     return {
-      title: `${company.name}: מועד ${d.label} ב-${formatDateShort(d.date)} · ${label}`,
+      title: `${company.name}: ${d.label} on ${formatDateShort(d.date)} · ${label}`,
       description: [
-        `מועד ${d.label} של קבוצת הטיסה חל ב-${formatDateShort(d.date)} (בעוד ${d.days_left} ימים).`,
-        `טיסה: ${d.airline_code} ${d.route}, יציאה ${formatDateShort(d.outbound_date)}, ${d.seats} מושבים.`,
+        `${d.label} of the flight block: ${formatDateShort(d.date)} (${when}).`,
+        `Flight: ${d.airline_code} ${d.route}, departing ${formatDateShort(d.outbound_date)}, ${d.seats} seats.`,
         d.pnr ? `PNR: ${d.pnr}` : null,
-        d.season_label ? `תווית: ${d.season_label}` : null,
+        d.season_label ? `Season: ${d.season_label}` : null,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -477,7 +483,7 @@ export async function syncDeadlineTasks(
     entityType: "task",
     entityId: null,
     changes: { created: created.map((t) => t.id), assignee_id: assigneeId },
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
 
   // Same as the task board: handing tasks to someone else mails them once, with the list.

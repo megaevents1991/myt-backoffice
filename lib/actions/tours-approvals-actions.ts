@@ -22,6 +22,7 @@ import { requireCompany } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { toursDb } from "@/lib/tours/db";
 import { logAudit } from "@/lib/audit";
+import { companyAudit } from "@/lib/tours/company-kit";
 import { toPriceMatrix } from "@/lib/tours/pricing";
 import { checkBlockFitsDeparture, departureRouteLabel, flightRouteLabel } from "@/lib/tours/routes";
 import {
@@ -863,7 +864,7 @@ export async function markTourBlocksReviewed(flightIds: number[]): Promise<Actio
     action: "tours.flight.reviewed",
     entityType: "flight",
     entityId: done.length === 1 ? done[0] : null,
-    metadata: { company_id: company.id, ids: done, count: done.length, bulk: done.length > 1, source: "approvals" },
+    metadata: { ...companyAudit(company), ids: done, count: done.length, bulk: done.length > 1, source: "approvals" },
   });
   return {
     success: true,
@@ -962,7 +963,7 @@ export async function setHotelOptionCatalogCode(optionId: string, hotelCode: str
     entityType: "tours_departure_options",
     entityId: departure.id,
     changes: { option_id: option.id, ref_code: { from: option.ref_code, to: code }, label: option.label },
-    metadata: { company_id: company.id, code: departure.code, hotel: hotelRes.data.name, source: "approvals" },
+    metadata: { ...companyAudit(company), code: departure.code, hotel: hotelRes.data.name, source: "approvals" },
   });
   return { success: true, data: null };
 }

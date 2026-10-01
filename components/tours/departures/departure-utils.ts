@@ -7,7 +7,7 @@
  * Dates, times and money are formatted by lib/tours/format.ts.
  */
 import type { PriceMatrix } from "@/lib/tours/pricing";
-import { currencySymbol, fmtDate, fmtDateRange, fmtMoney, parsePrice, todayIso } from "@/lib/tours/format";
+import { fmtDate, fmtDateRange, fmtPrice, formatNumber, parsePrice, todayIso } from "@/lib/tours/format";
 import {
   EXCLUSIVE_PROMOTION_KINDS,
   PROMOTION_KIND_LABELS,
@@ -72,19 +72,18 @@ export function activeFixedDiscount(promotions: PromotionLike[]): number {
 export const isExpired = (validUntil: string | null | undefined, today: string = todayIso()): boolean =>
   Boolean(validUntil) && String(validUntil).slice(0, 10) < today;
 
-/** One short line for a promotion: `-80$ לנוסע`, `10% מההזמנה`, `מתנה: מזוודה`. */
+/** One short line for a promotion: `$80 per traveler`, `10% off the order`, `Gift: a suitcase`. */
 export function promotionSummary(p: PromotionLike, currency: string | null | undefined): string {
-  const sym = currencySymbol(currency);
-  const value = p.value == null ? "" : fmtMoney(Number(p.value));
+  const amount = p.value == null ? null : Number(p.value);
   switch (p.kind as PromotionKind) {
     case "percent_order":
-      return `${value}% off the order`;
+      return `${formatNumber(amount)}% off the order`;
     case "fixed_per_pax":
-      return `${value}${sym} per traveler`;
+      return `${fmtPrice(amount, currency)} per traveler`;
     case "fixed_per_order":
-      return `${value}${sym} per order`;
+      return `${fmtPrice(amount, currency)} per order`;
     case "named_per_pax":
-      return `${p.label ?? "Discount"}: ${value}${sym} per traveler`;
+      return `${p.label ?? "Discount"}: ${fmtPrice(amount, currency)} per traveler`;
     case "gift":
       return `Gift: ${p.label ?? ""}`.trim();
     default:

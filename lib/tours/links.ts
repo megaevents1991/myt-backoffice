@@ -4,6 +4,10 @@
 export const departureHref = (code: string, tab?: "prices" | "flights") =>
   `/tours/departures?code=${encodeURIComponent(code)}${tab ? `&tab=${tab}` : ""}`;
 
+/** The Tours board filtered to one series, in one season year or all of them. */
+export const seriesBoardHref = (seriesCode: string, year: number | "all") =>
+  `/tours/departures?series=${encodeURIComponent(seriesCode)}&year=${year}`;
+
 /** A flight block's card: the shared flight screen, which shows the block panel for a tours company. */
 export const blockHref = (id: number) => `/offline-flights/${id}`;
 

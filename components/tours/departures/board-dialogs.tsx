@@ -7,7 +7,7 @@
  */
 import { useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { Chip, Field, Ltr, Notice, selectClass } from "@/components/tours/ui";
+import { CheckField, Chip, Field, Ltr, Notice, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,9 +19,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useActionToast } from "@/hooks/use-action-toast";
-import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { addDays, fmtDateRange, fmtMoney, isDateOnly, nightsBetween } from "@/lib/tours/format";
+import { EMPTY, addDays, fmtDateRange, fmtPrice, isDateOnly, nightsBetween } from "@/lib/tours/format";
 import { departureRouteLabel } from "@/lib/tours/routes";
 import { PRICE_MATRIX_ROWS } from "@/types/tours.types";
 import {
@@ -130,7 +129,6 @@ export function NewDepartureDialog({
   const [season, setSeason] = useState("");
   const [saving, setSaving] = useState(false);
   const run = useActionToast();
-  const { toast } = useToast();
   const packageName = useMemo(() => new Map(packages.map((p) => [p.id, p.name])), [packages]);
   const chosen = series.find((s) => s.id === seriesId);
   const nightsOf = (s: BoardSeries | undefined) => (s ? (s.default_nights ?? typicalNights.get(s.id) ?? null) : null);
@@ -153,10 +151,12 @@ export function NewDepartureDialog({
   const submit = async () => {
     if (!chosen || !valid) return;
     setSaving(true);
-    const result = await run(() => createDeparture({ seriesId: chosen.id, start_date: start, end_date: end, season: season || null }));
+    const result = await run(
+      () => createDeparture({ seriesId: chosen.id, start_date: start, end_date: end, season: season || null }),
+      (answer) => `Departure ${answer.data.code} created as a draft`,
+    );
     setSaving(false);
     if (!result.success) return;
-    toast({ title: `Departure ${result.data.code} created as a draft` });
     setStart("");
     setEnd("");
     setSeason("");
@@ -201,7 +201,7 @@ export function NewDepartureDialog({
           <div className="rounded-md border bg-muted/40 p-3 text-sm">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <span>
-                Code: <Ltr className="font-mono font-semibold">{code || "—"}</Ltr>
+                Code: <Ltr className="font-mono font-semibold">{code || EMPTY}</Ltr>
                 {isDateOnly(start) && <span className="text-muted-foreground"> ({seasonYearOf(start)})</span>}
               </span>
               <span>
@@ -216,7 +216,7 @@ export function NewDepartureDialog({
             {holidays.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1">
                 {holidays.map((h) => (
-                  <Chip key={h.id} className="border-warning/40 bg-warning-muted text-warning">
+                  <Chip key={h.id} tone="warning">
                     {periodLabel(h)}
                   </Chip>
                 ))}
@@ -330,18 +330,22 @@ export function PastePricesDialog({
                 {preview.map((p) => (
                   <tr key={`${p.line}-${p.code}`} className={cn("border-t", p.error && "bg-destructive/5")}>
                     <td className="px-2 py-1 font-mono font-semibold">
-                      <Ltr>{p.code || "—"}</Ltr>
+                      <Ltr>{p.code || EMPTY}</Ltr>
                     </td>
                     {PRICE_MATRIX_ROWS.map((m, i) => {
                       const before = p.target?.prices[`${m.paxType}:${m.position}`] ?? null;
                       const after = p.prices[i];
                       const changed = p.target != null && before !== after;
+                      // A row with no match has no currency yet: its prices print as plain numbers.
+                      const currency = p.target?.currency;
                       return (
                         <td key={m.sheetKey} className="px-2 py-1 text-end tabular-nums">
                           <Ltr>
-                            {changed && before != null && <span className="me-1 text-muted-foreground line-through">{fmtMoney(before)}</span>}
+                            {changed && before != null && (
+                              <span className="me-1 text-muted-foreground line-through">{fmtPrice(before, currency)}</span>
+                            )}
                             <span className={cn(changed && (after == null ? "font-semibold text-destructive" : "font-semibold text-success"))}>
-                              {after == null ? (changed ? "Remove" : "—") : fmtMoney(after)}
+                              {after == null ? (changed ? "Remove" : EMPTY) : fmtPrice(after, currency)}
                             </span>
                           </Ltr>
                         </td>
@@ -458,7 +462,7 @@ export function CopyPricesDialog({
                 {PRICE_MATRIX_ROWS.map((m) => (
                   <div key={m.sheetKey} className="flex justify-between gap-2">
                     <span className="text-muted-foreground">{m.label}</span>
-                    <Ltr className="font-semibold tabular-nums">{fmtMoney(source.prices[`${m.paxType}:${m.position}`]) || "—"}</Ltr>
+                    <Ltr className="font-semibold tabular-nums">{fmtPrice(source.prices[`${m.paxType}:${m.position}`], source.currency)}</Ltr>
                   </div>
                 ))}
               </div>
@@ -466,15 +470,12 @@ export function CopyPricesDialog({
               <p className="text-xs text-muted-foreground">This departure has no price matrix (vacation package).</p>
             )}
             {source.options.length > 0 && (
-              <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-[hsl(var(--primary))]"
-                  checked={includeOptions}
-                  onChange={(e) => setIncludeOptions(e.target.checked)}
-                />
-                Also copy hotels, tickets and markup (replaces those of the target departures)
-              </label>
+              <CheckField
+                className="mt-3"
+                checked={includeOptions}
+                onCheckedChange={setIncludeOptions}
+                label="Also copy hotels, tickets and markup (replaces those of the target departures)"
+              />
             )}
           </div>
         )}
@@ -541,20 +542,12 @@ export function BulkPromotionDialog({
           <DialogDescription>The promotion is added to each selected departure.</DialogDescription>
         </DialogHeader>
         <PromotionFields draft={draft} onChange={setDraft} currency={currencies.length === 1 ? currencies[0] : null} />
-        <label className="flex cursor-pointer items-start gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4 accent-[hsl(var(--primary))]"
-            checked={replace}
-            onChange={(e) => setReplace(e.target.checked)}
-          />
-          <span>
-            Replace an active promotion of the same kind
-            <span className="block text-xs text-muted-foreground">
-              The existing one is switched off and the new one takes its place. Unchecked, a departure that already has an active promotion of this kind is skipped.
-            </span>
-          </span>
-        </label>
+        <CheckField
+          checked={replace}
+          onCheckedChange={setReplace}
+          label="Replace an active promotion of the same kind"
+          hint="The existing one is switched off and the new one takes its place. Unchecked, a departure that already has an active promotion of this kind is skipped."
+        />
         {mixedCurrency && (
           <Notice tone="warning">
             The selected departures use different currencies ({currencies.join(", ")}). The amount applies in each departure&apos;s own currency.

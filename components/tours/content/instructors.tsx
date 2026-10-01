@@ -4,10 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,8 +13,9 @@ import { PageHeader } from "@/components/page-header";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import { useSessionState } from "@/hooks/use-view-state";
 import { saveTourInstructor } from "@/lib/actions/tours-content-actions";
-import { Chip, Field, Section } from "@/components/tours/ui";
-import { GalleryItemsEditor, ImageUrlField, NO_UPLOAD_NOTE, SiteImage } from "@/components/tours/content/fields";
+import { ActiveChip, Field, Section } from "@/components/tours/ui";
+import { activeColumn, editColumn, imageColumn } from "@/components/tours/content/columns";
+import { GalleryItemsEditor, ImageUrlField, NO_UPLOAD_NOTE } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
 import { BackLink, CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
@@ -40,16 +38,17 @@ export function InstructorsTable({ rows, siteUrl }: { rows: InstructorListRow[];
         header: ({ column }) => <SortableHeader label="Position" column={column} />,
         cell: ({ row }) => <span className="text-muted-foreground">{row.original.position}</span>,
       },
+      imageColumn<InstructorListRow>(
+        siteUrl,
+        (row) => row.image,
+        (row) => row.name,
+        "h-10 w-10 rounded-full",
+      ),
       {
-        id: "image",
-        header: "Image",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <SiteImage siteUrl={siteUrl} path={row.original.image} className="h-10 w-10 rounded-full" alt={row.original.name} />
-        ),
-      },
-      {
-        accessorKey: "name",
+        // The search reads the slug too; the sort is by name only.
+        id: "name",
+        accessorFn: (row) => `${row.name} ${row.slug}`,
+        sortingFn: (a, b) => a.original.name.localeCompare(b.original.name),
         header: ({ column }) => <SortableHeader label="Name" column={column} />,
         cell: ({ row }) => (
           <Link href={`/tours/instructors/${row.original.id}`} className="font-medium hover:underline">
@@ -66,28 +65,11 @@ export function InstructorsTable({ rows, siteUrl }: { rows: InstructorListRow[];
           </div>
         ),
       },
-      {
-        id: "status",
-        accessorFn: (row) => row.isActive,
-        header: "Status",
-        cell: ({ row }) => (
-          <Badge variant={row.original.isActive ? "outline" : "destructive"}>
-            {row.original.isActive ? "Active" : "Inactive"}
-          </Badge>
-        ),
-      },
-      {
-        id: "actions",
-        header: "",
-        enableHiding: false,
-        cell: ({ row }) => (
-          <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-            <Link href={`/tours/instructors/${row.original.id}`} aria-label={`Edit ${row.original.name}`} title="Edit">
-              <Pencil />
-            </Link>
-          </Button>
-        ),
-      },
+      activeColumn(),
+      editColumn(
+        (row) => `/tours/instructors/${row.id}`,
+        (row) => row.name,
+      ),
     ],
     [siteUrl],
   );
@@ -132,7 +114,7 @@ export function InstructorFormEditor({ initial }: { initial: InstructorEditorDat
         title={saved.form.name}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <Chip tone={saved.form.isActive ? "outline" : "danger"}>{saved.form.isActive ? "Active" : "Inactive"}</Chip>
+            <ActiveChip active={saved.form.isActive} />
             <span>Slug: {saved.slug}</span>
           </span>
         }

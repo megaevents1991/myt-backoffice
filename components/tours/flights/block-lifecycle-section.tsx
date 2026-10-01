@@ -37,7 +37,7 @@ import {
   type TransitionInput,
 } from "@/components/tours/flights/block-rules";
 import { BLOCK_STATUS_LABELS, type BlockStatus } from "@/types/tours.types";
-import { formatMoney, parseNumber } from "@/lib/tours/format";
+import { fmtPrice, parseNumber } from "@/lib/tours/format";
 import { Field, Ltr, Notice, Section } from "@/components/tours/ui";
 import { BlockStatusBadge } from "@/components/tours/flights/block-ui";
 import type { BlockSectionProps } from "@/components/tours/flights/tour-block-panel";
@@ -126,7 +126,7 @@ export function BlockLifecycleSection({ data, run }: BlockSectionProps) {
           </div>
           {block.cancel_reason && <div className="mt-0.5">{block.cancel_reason}</div>}
           <div className="mt-0.5">
-            Cancellation fee: <Ltr>{formatMoney(block.cancellation_fee, block.cost_currency)}</Ltr>
+            Cancellation fee: <Ltr>{fmtPrice(block.cancellation_fee, block.cost_currency)}</Ltr>
           </div>
         </Notice>
       )}
@@ -281,9 +281,9 @@ function TransitionDialog({ data, to, run, onClose }: BlockSectionProps & { to: 
 
           {to === "cancelled" && (
             <>
-              <Field label="Cancelled By">
+              <Field label="Cancelled By" htmlFor="transition-cancelled-by">
                 <Select value={cancelledBy} onValueChange={(v) => setCancelledBy(v as CancelledBy)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="transition-cancelled-by">
                     <SelectValue placeholder="Select" />
                   </SelectTrigger>
                   <SelectContent>

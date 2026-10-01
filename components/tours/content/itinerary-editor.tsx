@@ -19,7 +19,7 @@ import { useConfirm } from "@/components/confirm-provider";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
 import { createTourItineraryVariant, deleteTourItineraryVariant } from "@/lib/actions/tours-content-actions";
-import { Field, Section } from "@/components/tours/ui";
+import { EmptyLine, Field, Section } from "@/components/tours/ui";
 import { ImageUrlField, RowControls } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import type { ItineraryDay, ItineraryVariant, PackageEditorData } from "@/components/tours/content/shared";
@@ -229,11 +229,7 @@ export function ItineraryEditor({
       </Section>
 
       <div className="space-y-2">
-        {active.days.length === 0 && (
-          <p className="rounded-lg border border-dashed bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-            This itinerary has no days yet. Add the first day.
-          </p>
-        )}
+        {active.days.length === 0 && <EmptyLine>This itinerary has no days yet. Add the first day.</EmptyLine>}
         {active.days.map((day, index) => {
           const open = openDay === index;
           return (
@@ -392,7 +388,7 @@ function NewVariantDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Copy from" className="sm:col-span-2">
+          <Field label="Copy from" htmlFor="variant-source" className="sm:col-span-2">
             <Select
               value={sourceId}
               onValueChange={(id) => {
@@ -404,7 +400,7 @@ function NewVariantDialog({
                 }
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger id="variant-source">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

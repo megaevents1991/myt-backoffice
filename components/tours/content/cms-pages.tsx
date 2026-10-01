@@ -4,10 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ExternalLink, Pencil } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,10 +12,11 @@ import { DataTable, SortableHeader } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import { saveTourCmsPage } from "@/lib/actions/tours-content-actions";
-import { Chip, Field, Section } from "@/components/tours/ui";
+import { ActiveChip, Field, Section } from "@/components/tours/ui";
+import { activeColumn, contentColumn, editColumn } from "@/components/tours/content/columns";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
-import { BackLink, CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
+import { BackLink, CONTENT_UNSAVED_NOTE, ViewOnSiteButton } from "@/components/tours/content/save-bar";
 import { useContentForm } from "@/components/tours/content/use-content-form";
 import {
   cmsPageKindLabel,
@@ -57,35 +55,12 @@ export function CmsPagesTable({ rows }: { rows: CmsPageListRow[] }) {
         accessorFn: (row) => cmsPageKindLabel(row.kind),
         header: ({ column }) => <SortableHeader label="Type" column={column} />,
       },
-      {
-        id: "content",
-        accessorFn: (row) => row.hasContent,
-        header: "Content",
-        cell: ({ row }) =>
-          row.original.hasContent ? <Badge variant="outline">Has content</Badge> : <Badge variant="secondary">Empty</Badge>,
-      },
-      {
-        id: "status",
-        accessorFn: (row) => row.isActive,
-        header: "Status",
-        cell: ({ row }) => (
-          <Badge variant={row.original.isActive ? "outline" : "destructive"}>
-            {row.original.isActive ? "Active" : "Inactive"}
-          </Badge>
-        ),
-      },
-      {
-        id: "actions",
-        header: "",
-        enableHiding: false,
-        cell: ({ row }) => (
-          <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-            <Link href={`/tours/pages/${row.original.id}`} aria-label={`Edit ${row.original.title}`} title="Edit">
-              <Pencil />
-            </Link>
-          </Button>
-        ),
-      },
+      contentColumn(),
+      activeColumn(),
+      editColumn(
+        (row) => `/tours/pages/${row.id}`,
+        (row) => row.title,
+      ),
     ],
     [],
   );
@@ -123,19 +98,10 @@ export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
       <PageHeader
         eyebrow={cmsPageKindLabel(saved.kind)}
         title={saved.form.title}
-        description={
-          <Chip tone={saved.form.isActive ? "outline" : "danger"}>{saved.form.isActive ? "Active on site" : "Inactive"}</Chip>
-        }
+        description={<ActiveChip active={saved.form.isActive} />}
         actions={
           <>
-            {liveUrl && (
-              <Button asChild variant="ghost">
-                <a href={liveUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink />
-                  View on Site
-                </a>
-              </Button>
-            )}
+            <ViewOnSiteButton href={liveUrl} />
             <PublishSiteButton />
           </>
         }

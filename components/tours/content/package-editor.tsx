@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, Info, Plus, Trash2 } from "lucide-react";
+import { Info, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,7 +18,7 @@ import { useConfirm } from "@/components/confirm-provider";
 import { useToast } from "@/hooks/use-toast";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { deleteTourPackage, saveTourItinerary, saveTourPackage } from "@/lib/actions/tours-content-actions";
-import { Chip, Field, Section } from "@/components/tours/ui";
+import { ActiveChip, Chip, EmptyLine, Field, Section } from "@/components/tours/ui";
 import {
   ImageListEditor,
   ImageUrlField,
@@ -30,7 +30,12 @@ import {
 import { HtmlField } from "@/components/tours/content/html-field";
 import { ItineraryEditor } from "@/components/tours/content/itinerary-editor";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
-import { BackLink, CONTENT_SAVED_NOTE, CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
+import {
+  BackLink,
+  CONTENT_SAVED_NOTE,
+  CONTENT_UNSAVED_NOTE,
+  ViewOnSiteButton,
+} from "@/components/tours/content/save-bar";
 import {
   PACKAGE_BRANDS,
   PACKAGE_BRAND_COLORS,
@@ -184,7 +189,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
         title={saved.form.name}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <Chip tone={saved.form.isActive ? "outline" : "danger"}>{saved.form.isActive ? "Active on site" : "Inactive"}</Chip>
+            <ActiveChip active={saved.form.isActive} />
             {!saved.hasContent && <Chip>No content</Chip>}
             {saved.seriesCodes.length > 0 && (
               <span>
@@ -199,14 +204,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
         }
         actions={
           <>
-            {liveUrl && (
-              <Button asChild variant="ghost">
-                <a href={liveUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink />
-                  View on Site
-                </a>
-              </Button>
-            )}
+            <ViewOnSiteButton href={liveUrl} />
             <PublishSiteButton />
           </>
         }
@@ -261,9 +259,9 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                   onChange={(e) => set("slug", e.target.value)}
                 />
               </Field>
-              <Field label="Type">
+              <Field label="Type" htmlFor="pkg-kind">
                 <Select value={form.kind} onValueChange={(value) => set("kind", value)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="pkg-kind">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -275,9 +273,9 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Card color on site">
+              <Field label="Card color on site" htmlFor="pkg-brand">
                 <Select value={form.brand} onValueChange={(value) => set("brand", value)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="pkg-brand">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -458,11 +456,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
 
         {/* ------------------------------------------------------------ faq */}
         <TabsContent value="faq" className="space-y-3">
-          {form.faq.length === 0 && (
-            <p className="rounded-lg border border-dashed bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-              This page has no FAQ yet.
-            </p>
-          )}
+          {form.faq.length === 0 && <EmptyLine>This page has no FAQ yet.</EmptyLine>}
           {form.faq.map((item, index) => (
             <Section key={index}>
               <div className="flex items-start gap-2">

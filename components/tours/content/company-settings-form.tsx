@@ -7,19 +7,16 @@ import { CheckCircle2, CircleSlash } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import { useActionToast } from "@/hooks/use-action-toast";
-import { fmtInstant } from "@/lib/tours/format";
+import { ALL_CURRENCIES, fmtInstant } from "@/lib/tours/format";
 import { saveCompanySettings } from "@/lib/actions/tours-settings-actions";
-import { Field, Section } from "@/components/tours/ui";
+import { CurrencySelect, Field, Section } from "@/components/tours/ui";
 import { SiteImage } from "@/components/tours/content/fields";
 import { CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
 import { CompanyMembers } from "@/components/tours/content/company-members";
 import type { CompanySettingsData, CompanySettingsForm, DeployHookChange } from "@/components/tours/content/shared";
-
-const CURRENCIES = ["USD", "EUR", "GBP", "ILS"];
 
 /** Settings of the active company. The deploy hook is write-only: it can be replaced or removed, never read back. */
 export function CompanySettingsFormEditor({ initial }: { initial: CompanySettingsData }) {
@@ -83,19 +80,15 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
           <Field label="Site URL" hint="Images on the content pages (/media/...) load from this address">
             <Input dir="ltr" placeholder="https://" value={form.siteUrl} onChange={(e) => set("siteUrl", e.target.value)} />
           </Field>
-          <Field label="Default currency">
-            <Select value={form.defaultCurrency} onValueChange={(value) => set("defaultCurrency", value)}>
-              <SelectTrigger dir="ltr">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[...new Set([...CURRENCIES, form.defaultCurrency])].map((currency) => (
-                  <SelectItem key={currency} value={currency}>
-                    {currency}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <Field label="Default currency" htmlFor="company-currency">
+            <CurrencySelect
+              id="company-currency"
+              className="h-10 w-full"
+              value={form.defaultCurrency}
+              onChange={(value) => set("defaultCurrency", value)}
+              // a stored currency outside the list still shows (saving asks for one of the list)
+              currencies={[...new Set([...ALL_CURRENCIES, form.defaultCurrency])]}
+            />
           </Field>
         </div>
       </Section>

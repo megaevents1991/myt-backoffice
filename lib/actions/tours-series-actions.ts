@@ -30,19 +30,13 @@ import {
   type SeriesTerm,
   type SeriesTermKind,
 } from "@/components/tours/series/types";
-import { actionFail, actionOk as ok, chunk, fetchAll, must, UserError, UUID } from "@/lib/tours/action-kit";
+import { actionFail, actionOk as ok, chunk, fetchAll, intOrNull, must, UserError, UUID } from "@/lib/tours/action-kit";
+import { companyAudit } from "@/lib/tours/company-kit";
 
 const fail = (e: unknown) => actionFail(e, "tours-series-actions");
 
 const SERIES_SELECT =
   "id, code, label, package_id, arrival_airport, arrival_weekday, return_airport, return_weekday, default_nights, default_capacity, default_currency, child_max_age, senior_min_age, senior_discount, is_active";
-
-const intIn = (value: unknown, min: number, max: number, label: string): number | null => {
-  if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
-  if (!Number.isInteger(n) || n < min || n > max) throw new UserError(`${label}: invalid value`);
-  return n;
-};
 
 // ---------------------------------------------------------------- list
 export async function getSeriesScreen(): Promise<ActionResult<SeriesScreenData>> {
@@ -146,7 +140,7 @@ export async function saveSeries(id: string | null, input: SeriesInput): Promise
     const ret = normalizeAirport(input.return_airport);
     if (arrival === undefined || ret === undefined) throw new UserError("An airport code is three letters A-Z (e.g. LHR)");
     if (!(CURRENCIES as readonly string[]).includes(input.default_currency)) throw new UserError("Unsupported currency");
-    const childMaxAge = intIn(input.child_max_age, 0, 25, "Maximum child age");
+    const childMaxAge = intOrNull(input.child_max_age, 0, 25, "Maximum child age");
     if (childMaxAge === null) throw new UserError("Maximum child age is required (default 16)");
     const discount = input.senior_discount === null || input.senior_discount === undefined ? null : Number(input.senior_discount);
     if (discount !== null && (!Number.isFinite(discount) || discount < 0 || discount > 100_000)) {
@@ -182,14 +176,14 @@ export async function saveSeries(id: string | null, input: SeriesInput): Promise
       label: (input.label ?? "").trim().slice(0, 120) || null,
       package_id: packageId,
       arrival_airport: arrival,
-      arrival_weekday: intIn(input.arrival_weekday, 0, 6, "Arrival day"),
+      arrival_weekday: intOrNull(input.arrival_weekday, 0, 6, "Arrival day"),
       return_airport: ret,
-      return_weekday: intIn(input.return_weekday, 0, 6, "Return day"),
-      default_nights: intIn(input.default_nights, 0, 60, "Nights"),
-      default_capacity: intIn(input.default_capacity, 0, 2000, "Capacity"),
+      return_weekday: intOrNull(input.return_weekday, 0, 6, "Return day"),
+      default_nights: intOrNull(input.default_nights, 0, 60, "Nights"),
+      default_capacity: intOrNull(input.default_capacity, 0, 2000, "Capacity"),
       default_currency: input.default_currency,
       child_max_age: childMaxAge,
-      senior_min_age: intIn(input.senior_min_age, 40, 120, "Minimum senior age"),
+      senior_min_age: intOrNull(input.senior_min_age, 40, 120, "Minimum senior age"),
       senior_discount: discount,
       is_active: Boolean(input.is_active),
     };
@@ -241,7 +235,7 @@ export async function saveSeries(id: string | null, input: SeriesInput): Promise
       entityType: "tours_series",
       entityId: savedId,
       changes: { ...row, terms_added: toAdd, terms_removed: toRemove },
-      metadata: { company_id: company.id, code },
+      metadata: { ...companyAudit(company), code },
     });
     return ok({ id: savedId });
   } catch (e) {
@@ -466,7 +460,7 @@ export async function createSeasonDepartures(input: SeasonCreateInput): Promise<
       entityType: "tours_departure",
       entityId: null,
       metadata: {
-        company_id: company.id,
+        ...companyAudit(company),
         series_id: series.id,
         series_code: series.code,
         season_duplication: true,

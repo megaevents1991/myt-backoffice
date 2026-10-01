@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   recomputeTourBlockDeadlines,
@@ -33,9 +32,8 @@ import {
   type ContractDeadlineField,
   type DeadlineField,
 } from "@/lib/tours/deadlines";
-import { CURRENCIES } from "@/types/tours.types";
-import { formatMoney, parseNumber } from "@/lib/tours/format";
-import { Field, Ltr, Notice, Section, Stat } from "@/components/tours/ui";
+import { fmtPrice, parseNumber } from "@/lib/tours/format";
+import { CurrencySelect, Field, Ltr, Notice, Section, Stat } from "@/components/tours/ui";
 import { DaysLeft } from "@/components/tours/flights/block-ui";
 import type { BlockSectionProps } from "@/components/tours/flights/tour-block-panel";
 
@@ -251,7 +249,7 @@ export function BlockDeadlinesSection({ data, run }: BlockSectionProps) {
             {deposits.map((d) => (
               <li key={d.id} className="flex flex-wrap items-center gap-2">
                 <Ltr>{formatDateShort(d.happened_on)}</Ltr>
-                <Ltr className="font-medium">{formatMoney(d.amount, d.currency)}</Ltr>
+                <Ltr className="font-medium">{fmtPrice(d.amount, d.currency)}</Ltr>
                 {d.note && <span className="text-muted-foreground">{d.note}</span>}
               </li>
             ))}
@@ -422,8 +420,6 @@ function RecomputeDialog({ data, run, onClose }: BlockSectionProps & { onClose: 
   );
 }
 
-const DEPOSIT_CURRENCIES = [...CURRENCIES, "ILS"];
-
 function DepositDialog({ data, run, onClose }: BlockSectionProps & { onClose: () => void }) {
   const { block } = data;
   const [amount, setAmount] = useState("");
@@ -464,19 +460,9 @@ function DepositDialog({ data, run, onClose }: BlockSectionProps & { onClose: ()
                 onChange={(e) => setAmount(e.target.value)}
               />
             </Field>
-            <Field label="Currency">
-              <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DEPOSIT_CURRENCIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <Field label="Currency" htmlFor="deposit-currency">
+              {/* Every currency: a deposit may be paid in shekels too (the action takes the same list). */}
+              <CurrencySelect id="deposit-currency" value={currency} onChange={setCurrency} className="w-full" />
             </Field>
           </div>
           <Field label="Payment Date" htmlFor="deposit-date">

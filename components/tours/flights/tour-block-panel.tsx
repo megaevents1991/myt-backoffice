@@ -15,12 +15,12 @@
  * The actions answer "not found" for a flight of another company, so mounting it
  * with a foreign id shows an error and nothing else.
  */
-import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useCallback } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast, type ActionAnswer, type OkMessage } from "@/hooks/use-action-toast";
 import { getTourBlock, type TourBlockData } from "@/lib/actions/tours-flight-actions";
-import { Notice } from "@/components/tours/ui";
+import { LoadError, Notice } from "@/components/tours/ui";
 import { BlockLifecycleSection } from "@/components/tours/flights/block-lifecycle-section";
 import { BlockDeadlinesSection, BlockSeatsSection } from "@/components/tours/flights/block-seats-deadlines";
 import { BlockContractSection, BlockCostsSection } from "@/components/tours/flights/block-contract-costs";
@@ -40,43 +40,28 @@ export interface BlockSectionProps {
   run: ReturnType<typeof useActionToast>;
 }
 
+const LOAD_FAILED = "Couldn't load the flight block. Check that the active company owns it and try again.";
+
 export function TourBlockPanel({ flightId }: TourBlockPanelProps) {
-  const [data, setData] = useState<TourBlockData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    try {
-      const res = await getTourBlock(flightId);
-      if (res.success) {
-        setData(res.data);
-        setError(null);
-      } else {
-        setError(res.error);
-      }
-    } catch (e) {
-      console.error("TourBlockPanel: load failed", e);
-      setError("Couldn't load the flight block. Check that the active company owns it and try again.");
-    } finally {
-      setLoading(false);
-    }
-  }, [flightId]);
-
-  useEffect(() => {
-    setLoading(true);
-    setData(null);
-    setError(null);
-    void load();
-  }, [load]);
+  const { data: loaded, error, loading, reload } = useActionData(
+    () =>
+      getTourBlock(flightId).catch((e) => {
+        console.error("TourBlockPanel: load failed", e);
+        return { success: false as const, error: LOAD_FAILED };
+      }),
+    [flightId],
+  );
+  // The hook keeps the last data while it loads another block; never show one block under another's id.
+  const data = loaded?.block.id === flightId ? loaded : null;
 
   const toastRun = useActionToast();
   const run = useCallback(
     async <A extends ActionAnswer>(action: () => Promise<A>, okMessage?: OkMessage<A>): Promise<A> => {
       const res = await toastRun(action, okMessage);
-      if (res.success) await load();
+      if (res.success) await reload({ quiet: true });
       return res;
     },
-    [toastRun, load],
+    [toastRun, reload],
   );
 
   if (loading && !data) {
@@ -92,16 +77,7 @@ export function TourBlockPanel({ flightId }: TourBlockPanelProps) {
     );
   }
 
-  if (!data) {
-    return (
-      <div className="space-y-3">
-        <Notice tone="error">{error ?? "Flight block not found"}</Notice>
-        <Button size="sm" variant="outline" onClick={() => void load()}>
-          Try Again
-        </Button>
-      </div>
-    );
-  }
+  if (!data) return <LoadError message={error ?? "Flight block not found"} onRetry={() => void reload()} />;
 
   return (
     <div className="space-y-4">

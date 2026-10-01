@@ -15,7 +15,9 @@ import { requireCompany } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { toursDb } from "@/lib/tours/db";
 import { logAudit } from "@/lib/audit";
+import { companyAudit } from "@/lib/tours/company-kit";
 import { checkBlockFitsDeparture, departureRouteLabel } from "@/lib/tours/routes";
+import { ALL_CURRENCIES } from "@/lib/tours/format";
 import {
   CONTRACT_DEADLINE_FIELDS,
   DEADLINE_FIELDS,
@@ -176,7 +178,8 @@ const CANCELLED_BY_DATA_TEXT: Record<CancelledBy, string> = { airline: "חברת
 const EVENTS_MAX = 500;
 /** Timeline kinds an operator may add by hand (the rest are written by the lifecycle actions). */
 const MANUAL_EVENT_KINDS: readonly BlockEventKind[] = ["note", "quoted", "names_sent", "schedule_change"];
-const EVENT_CURRENCIES: readonly string[] = [...CURRENCIES, "ILS"];
+/** Deposits and timeline amounts: every currency of the deposit picker (costs take CURRENCIES only). */
+const EVENT_CURRENCIES: readonly string[] = ALL_CURRENCIES;
 
 const validId = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value > 0;
@@ -490,7 +493,7 @@ export async function transitionTourBlock(
     entityType: "flight",
     entityId: block.id,
     changes: { from: stageOf(block.block_status), to, patch },
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
 
   return { success: true, data: { status: to }, ...(warnings.length ? { warning: warnings.join(" ") } : {}) };
@@ -513,7 +516,7 @@ export async function setTourBlockReviewed(flightId: number, reviewed: boolean):
     action: reviewed ? "tours.flight.reviewed" : "tours.flight.unreviewed",
     entityType: "flight",
     entityId: block.id,
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
   return { success: true, data: null };
 }
@@ -579,7 +582,7 @@ export async function updateTourBlockSeats(
     entityType: "flight",
     entityId: block.id,
     changes: { initial_quantity: { from: block.initial_quantity, to: quantity }, reason },
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
   return { success: true, data: { seats: quantity }, ...(eventWritten ? {} : { warning: EVENT_NOT_WRITTEN }) };
 }
@@ -608,7 +611,7 @@ export async function updateTourBlockDeadline(
     entityType: "flight",
     entityId: block.id,
     changes: { [field]: { from: block[field], to: value } },
-    metadata: { company_id: company.id, label: DEADLINE_LABELS[field] },
+    metadata: { ...companyAudit(company), label: DEADLINE_LABELS[field] },
   });
   return { success: true, data: null };
 }
@@ -642,7 +645,7 @@ export async function recomputeTourBlockDeadlines(
     entityType: "flight",
     entityId: block.id,
     changes: Object.fromEntries(updatedFields.map((f) => [f, { from: block[f], to: patch[f] }])),
-    metadata: { company_id: company.id, contract_id: contract.id },
+    metadata: { ...companyAudit(company), contract_id: contract.id },
   });
   return { success: true, data: { updated: updatedFields } };
 }
@@ -678,7 +681,7 @@ export async function recordTourBlockDeposit(
     entityType: "flight",
     entityId: block.id,
     changes: { amount: input.amount, currency: input.currency, date },
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
   return { success: true, data: null };
 }
@@ -714,7 +717,7 @@ export async function setTourBlockContract(flightId: number, contractId: string 
     entityType: "flight",
     entityId: block.id,
     changes: { contract_id: { from: block.contract_id, to: contractId } },
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
   return { success: true, data: null };
 }
@@ -761,7 +764,7 @@ export async function updateTourBlockCosts(
       },
       to: patch,
     },
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
   return { success: true, data: null };
 }
@@ -925,7 +928,7 @@ export async function allocateTourBlock(
     entityType: "flight",
     entityId: block.id,
     changes: { departure: departure.code, seats: input.seats, legs, previous_seats: existing?.seats ?? null },
-    metadata: { company_id: company.id, departure_id: departure.id },
+    metadata: { ...companyAudit(company), departure_id: departure.id },
   });
   return {
     success: true,
@@ -956,7 +959,7 @@ export async function removeTourBlockAllocation(flightId: number, allocationId: 
     entityType: "flight",
     entityId: block.id,
     changes: removed[0],
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
   return { success: true, data: null };
 }
@@ -998,7 +1001,7 @@ export async function addTourBlockEvent(
     entityType: "flight",
     entityId: block.id,
     changes: { kind, note, date, amount, currency },
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
   return { success: true, data: null };
 }

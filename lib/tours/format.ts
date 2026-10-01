@@ -51,16 +51,18 @@ export const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thur
 export const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 /** Wall-clock parts of an instant in Israel. */
+const JERUSALEM_PARTS = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Jerusalem",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 function jerusalemParts(date: Date): Record<string, number> {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Jerusalem",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
+  const parts = JERUSALEM_PARTS.formatToParts(date);
   const out: Record<string, number> = {};
   for (const p of parts) if (p.type !== "literal") out[p.type] = Number(p.value);
   return out;
@@ -129,8 +131,6 @@ export function fmtPrice(value: number | null | undefined, currency: string | nu
   return currency ? `${NUMBER.format(value)} ${currency}` : NUMBER.format(value);
 }
 
-/** The same as fmtPrice - kept for the callers that already use the name. */
-export const formatMoney = fmtPrice;
 
 /** A typed number field: "" -> null, a number -> itself, anything else -> undefined (invalid). */
 export function parseNumber(text: string): number | null | undefined {
@@ -149,3 +149,14 @@ export function parsePrice(raw: string | number | null | undefined): number | nu
   if (!/^\d+(\.\d+)?$/.test(cleaned)) return undefined;
   return Number(cleaned);
 }
+
+// ---------------------------------------------------------------- form drafts
+/** A stored value as the text of an input: null and undefined -> "", anything else -> its string. */
+export const inputValue = (value: string | number | null | undefined): string => (value == null ? "" : String(value));
+
+/**
+ * The text of a number input as an action takes it: blank -> null, anything
+ * else -> Number(text). Junk becomes NaN, which the server action refuses
+ * with the field's name.
+ */
+export const inputNumber = (text: string): number | null => (text.trim() === "" ? null : Number(text));

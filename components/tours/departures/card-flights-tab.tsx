@@ -11,35 +11,24 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ExternalLink, Loader2, Plus, Trash2 } from "lucide-react";
+import { BlockStatusBadge } from "@/components/tours/flights/block-ui";
 import { ALLOCATION_LEGS } from "@/components/tours/flights/block-rules";
-import { Chip, Ltr, Notice, selectClass } from "@/components/tours/ui";
+import { Chip, EmptyLine, Ltr, Notice, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConfirm } from "@/components/confirm-provider";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
 import { fmtDateTime } from "@/lib/tours/format";
+import { blockHref } from "@/lib/tours/links";
 import { checkBlockFitsDeparture, flightRouteLabel } from "@/lib/tours/routes";
-import { BLOCK_STATUS_LABELS, LIVE_BLOCK_STATUSES, type BlockStatus } from "@/types/tours.types";
 import { addFlightAllocation, listCandidateBlocks, removeFlightAllocation } from "@/lib/actions/tours-departure-actions";
 import type { RouteEnds } from "./departure-utils";
 import { LEGS_LABELS, type AllocationLegs, type CandidateBlock, type CardFlight, type DepartureCardData } from "./types";
 
-function BlockStatusChip({ flight }: { flight: Pick<CardFlight, "block_status" | "is_deleted"> }) {
-  const status = flight.block_status as BlockStatus | null;
-  const live = !flight.is_deleted && status != null && LIVE_BLOCK_STATUSES.includes(status);
-  const dead = flight.is_deleted || status === "cancelled" || status === "declined";
-  return (
-    <Chip
-      className={cn(
-        live && "border-success/30 bg-success-muted text-success",
-        dead && "border-destructive/30 bg-destructive/10 text-destructive",
-        !live && !dead && "border-warning/40 bg-warning-muted text-warning",
-      )}
-    >
-      {flight.is_deleted ? "Deleted" : status ? BLOCK_STATUS_LABELS[status] : "Draft"}
-    </Chip>
-  );
+/** The status badge every tours screen shows for a block; a deleted block says so instead. */
+function BlockState({ flight }: { flight: Pick<CardFlight, "block_status" | "is_deleted"> }) {
+  return flight.is_deleted ? <Chip tone="error">Deleted</Chip> : <BlockStatusBadge status={flight.block_status} />;
 }
 
 function FlightLines({ flight }: { flight: CardFlight }) {
@@ -94,7 +83,7 @@ function CandidateRow({
   return (
     <tr className={cn("border-t align-top", !fit.ok && "bg-destructive/5")} data-flight-id={block.id}>
       <td className="px-2 py-2">
-        <BlockStatusChip flight={block} />
+        <BlockState flight={block} />
         <div className="mt-1 text-xs text-muted-foreground">
           <Ltr>#{block.id}</Ltr>
         </div>
@@ -218,7 +207,7 @@ export function CardFlightsTab({
       )}
 
       {data.allocations.length === 0 ? (
-        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No blocks allocated to this departure.</p>
+        <EmptyLine>No blocks allocated to this departure.</EmptyLine>
       ) : (
         <ul className="space-y-2">
           {data.allocations.map((a) => {
@@ -228,7 +217,7 @@ export function CardFlightsTab({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <Ltr className="font-mono text-sm font-semibold">{flightRouteLabel(a.flight)}</Ltr>
-                    <BlockStatusChip flight={a.flight} />
+                    <BlockState flight={a.flight} />
                     {a.legs !== "both" && <Chip>{LEGS_LABELS[a.legs]}</Chip>}
                   </div>
                   <FlightLines flight={a.flight} />
@@ -241,7 +230,7 @@ export function CardFlightsTab({
                 </div>
                 <div className="flex items-center gap-1">
                   <Button variant="ghost" size="sm" className="h-8" asChild>
-                    <Link href={`/offline-flights/${a.flight.id}`} target="_blank" title="Open the block card in a new tab">
+                    <Link href={blockHref(a.flight.id)} target="_blank" title="Open the block card in a new tab">
                       <ExternalLink />
                       Block <Ltr>#{a.flight.id}</Ltr>
                     </Link>
@@ -279,9 +268,7 @@ export function CardFlightsTab({
           </div>
 
           {candidates && fitting.length === 0 && (
-            <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
-              No free block matches the route and dates of this departure.
-            </p>
+            <EmptyLine>No free block matches the route and dates of this departure.</EmptyLine>
           )}
           {candidates && fitting.length > 0 && (
             <div className="overflow-x-auto rounded-md border">

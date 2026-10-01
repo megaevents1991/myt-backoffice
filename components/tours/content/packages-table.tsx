@@ -4,13 +4,11 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { DataTable, SortableHeader } from "@/components/data-table";
 import { useSessionState } from "@/hooks/use-view-state";
-import { SiteImage } from "@/components/tours/content/fields";
+import { activeColumn, contentColumn, editColumn, imageColumn } from "@/components/tours/content/columns";
 import {
   PACKAGE_BRAND_COLORS,
   packageKindLabel,
@@ -43,14 +41,11 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
 
   const columns = useMemo<ColumnDef<PackageListRow>[]>(
     () => [
-      {
-        id: "image",
-        header: "Image",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <SiteImage siteUrl={siteUrl} path={row.original.cardImage} className="h-10 w-14" alt={row.original.name} />
-        ),
-      },
+      imageColumn<PackageListRow>(
+        siteUrl,
+        (row) => row.cardImage,
+        (row) => row.name,
+      ),
       {
         // The search reads the subtitle and the slug too; the sort is by name only.
         id: "name",
@@ -105,35 +100,12 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
             <span className="text-muted-foreground">0</span>
           ),
       },
-      {
-        id: "content",
-        accessorFn: (row) => row.hasContent,
-        header: "Content",
-        cell: ({ row }) =>
-          row.original.hasContent ? <Badge variant="outline">Has content</Badge> : <Badge variant="secondary">No content</Badge>,
-      },
-      {
-        id: "status",
-        accessorFn: (row) => row.isActive,
-        header: "Status",
-        cell: ({ row }) => (
-          <Badge variant={row.original.isActive ? "outline" : "destructive"}>
-            {row.original.isActive ? "Active" : "Inactive"}
-          </Badge>
-        ),
-      },
-      {
-        id: "actions",
-        header: "",
-        enableHiding: false,
-        cell: ({ row }) => (
-          <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-            <Link href={`/tours/packages/${row.original.id}`} aria-label={`Edit ${row.original.name}`} title="Edit">
-              <Pencil />
-            </Link>
-          </Button>
-        ),
-      },
+      contentColumn(),
+      activeColumn(),
+      editColumn(
+        (row) => `/tours/packages/${row.id}`,
+        (row) => row.name,
+      ),
     ],
     [siteUrl],
   );

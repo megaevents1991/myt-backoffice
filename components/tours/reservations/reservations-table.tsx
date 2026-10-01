@@ -9,8 +9,9 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { DataTable, SortableHeader } from "@/components/data-table";
 import { useConfirm } from "@/components/confirm-provider";
-import { useToast } from "@/hooks/use-toast";
-import { fmtInstant, formatDateShort } from "@/lib/tours/format";
+import { useActionToast } from "@/hooks/use-action-toast";
+import { EMPTY, fmtInstant, formatDateShort } from "@/lib/tours/format";
+import { departureHref, linkClass } from "@/lib/tours/links";
 import { deleteToursReservation } from "@/lib/actions/tours-reservation-actions";
 import type { ToursReservationRow } from "@/components/tours/reservations/types";
 
@@ -32,7 +33,7 @@ interface ToursReservationsTableProps {
  */
 export function ToursReservationsTable({ rows, onDeleted, oneDeparture, readOnly }: ToursReservationsTableProps) {
   const confirm = useConfirm();
-  const { toast } = useToast();
+  const run = useActionToast();
   const [view, setView] = useState<View>("all");
   const [removing, setRemoving] = useState<string | null>(null);
   // The columns are memoized; the delete button must still call the latest callback.
@@ -48,14 +49,9 @@ export function ToursReservationsTable({ rows, onDeleted, oneDeparture, readOnly
     });
     if (!agreed) return;
     setRemoving(row.id);
-    const result = await deleteToursReservation(row.id);
+    const result = await run(() => deleteToursReservation(row.id), "Reservation deleted");
     setRemoving(null);
-    if (!result.success) {
-      toast({ variant: "destructive", title: "Error", description: result.error });
-      return;
-    }
-    toast({ title: "Reservation deleted" });
-    onDeletedRef.current(row.id);
+    if (result.success) onDeletedRef.current(row.id);
   };
 
   const columns = useMemo<ColumnDef<ToursReservationRow>[]>(() => {
@@ -68,27 +64,24 @@ export function ToursReservationsTable({ rows, onDeleted, oneDeparture, readOnly
       {
         accessorKey: "customerName",
         header: "Customer",
-        cell: ({ row }) => <div dir="auto">{row.original.customerName || "-"}</div>,
+        cell: ({ row }) => <div dir="auto">{row.original.customerName || EMPTY}</div>,
       },
       {
         accessorKey: "customerPhone",
         header: "Phone",
-        cell: ({ row }) => <div className="whitespace-nowrap tabular">{row.original.customerPhone || "-"}</div>,
+        cell: ({ row }) => <div className="whitespace-nowrap tabular">{row.original.customerPhone || EMPTY}</div>,
       },
-      { accessorKey: "customerEmail", header: "Email", cell: ({ row }) => row.original.customerEmail || "-" },
+      { accessorKey: "customerEmail", header: "Email", cell: ({ row }) => row.original.customerEmail || EMPTY },
       !oneDeparture && {
         accessorKey: "tourName",
         header: ({ column }) => <SortableHeader label="Tour" column={column} />,
-        cell: ({ row }) => <div dir="auto">{row.original.tourName || "-"}</div>,
+        cell: ({ row }) => <div dir="auto">{row.original.tourName || EMPTY}</div>,
       },
       !oneDeparture && {
         accessorKey: "departureCode",
         header: ({ column }) => <SortableHeader label="Departure" column={column} />,
         cell: ({ row }) => (
-          <Link
-            href={`/tours/departures?code=${encodeURIComponent(row.original.departureCode)}`}
-            className="whitespace-nowrap font-medium text-primary hover:underline"
-          >
+          <Link href={departureHref(row.original.departureCode)} className={cn(linkClass, "whitespace-nowrap")}>
             {row.original.departureCode}
             {row.original.departureDate && (
               <span className="ms-1.5 font-normal text-muted-foreground tabular">
@@ -107,6 +100,7 @@ export function ToursReservationsTable({ rows, onDeleted, oneDeparture, readOnly
           </div>
         ),
       },
+      // "TBD" until accounting gives the number - the Mega Events reservations show the same.
       { accessorKey: "docketNo", header: "Docket", cell: ({ row }) => <div className="tabular">{row.original.docketNo || "TBD"}</div> },
       {
         accessorKey: "note",
@@ -117,7 +111,7 @@ export function ToursReservationsTable({ rows, onDeleted, oneDeparture, readOnly
           </div>
         ),
       },
-      { accessorKey: "enteredBy", header: "Entered By", cell: ({ row }) => row.original.enteredBy || "-" },
+      { accessorKey: "enteredBy", header: "Entered By", cell: ({ row }) => row.original.enteredBy || EMPTY },
       !readOnly && {
         id: "actions",
         header: "",
@@ -143,12 +137,20 @@ export function ToursReservationsTable({ rows, onDeleted, oneDeparture, readOnly
   const bookings = rows.filter((r) => r.pax > 0);
   const cancellations = rows.filter((r) => r.pax < 0);
   const shown = view === "bookings" ? bookings : view === "cancellations" ? cancellations : rows;
+  // A departure's card remembers its search for that departure only (every row of the card carries it).
+  // The key also remounts the table, so moving to another departure reads that departure's search.
+  const stateKey = oneDeparture ? `tours-reservations-card:${rows[0]?.departureId ?? ""}` : "tours-reservations";
 
   return (
     <DataTable
+      key={stateKey}
       columns={columns}
       data={shown}
-      searchColumns={["customerName", "customerPhone", "customerEmail", "docketNo", "departureCode", "tourName", "note"]}
+      searchColumns={
+        oneDeparture
+          ? ["customerName", "customerPhone", "customerEmail", "docketNo", "note"]
+          : ["customerName", "customerPhone", "customerEmail", "docketNo", "departureCode", "tourName", "note"]
+      }
       searchPlaceholder={oneDeparture ? "Search by customer, phone or docket..." : "Search by customer, phone, docket or tour..."}
       defaultPageSize={oneDeparture ? 10 : 50}
       pageSizeOptions={[10, 25, 50, 100]}
@@ -162,7 +164,7 @@ export function ToursReservationsTable({ rows, onDeleted, oneDeparture, readOnly
       ]}
       activeView={view}
       onViewChange={(id) => setView(id as View)}
-      stateKey={oneDeparture ? "tours-reservations-card" : "tours-reservations"}
+      stateKey={stateKey}
       emptyState={{
         title: "No reservations yet",
         description: oneDeparture

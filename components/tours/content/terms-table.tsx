@@ -4,12 +4,10 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { DataTable, SortableHeader } from "@/components/data-table";
 import { useSessionState } from "@/hooks/use-view-state";
+import { activeColumn, editColumn } from "@/components/tours/content/columns";
 import { TERM_KINDS, TERM_KIND_LABELS, type TermKind, type TermListRow } from "@/components/tours/content/shared";
 
 const isKind = (value: unknown): value is TermKind => TERM_KINDS.includes(value as TermKind);
@@ -57,28 +55,11 @@ export function TermsTable({ rows }: { rows: TermListRow[] }) {
         cell: ({ row }) =>
           row.original.heroImages > 0 ? row.original.heroImages : <span className="text-muted-foreground">0</span>,
       },
-      {
-        id: "status",
-        accessorFn: (row) => row.isActive,
-        header: "Status",
-        cell: ({ row }) => (
-          <Badge variant={row.original.isActive ? "outline" : "destructive"}>
-            {row.original.isActive ? "Active" : "Inactive"}
-          </Badge>
-        ),
-      },
-      {
-        id: "actions",
-        header: "",
-        enableHiding: false,
-        cell: ({ row }) => (
-          <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-            <Link href={`/tours/terms/${row.original.id}`} aria-label={`Edit ${row.original.name}`} title="Edit">
-              <Pencil />
-            </Link>
-          </Button>
-        ),
-      },
+      activeColumn(),
+      editColumn(
+        (row) => `/tours/terms/${row.id}`,
+        (row) => row.name,
+      ),
     ],
     [],
   );

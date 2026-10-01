@@ -7,33 +7,35 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarPlus, Pencil, Plus, RefreshCw, Shuffle } from "lucide-react";
+import { CalendarPlus, Pencil, PlusCircle, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { SearchInput } from "@/components/search-input";
-import { Chip, Ltr, Notice, selectClass } from "@/components/tours/ui";
+import { OpenJawMark, STICKY_TH } from "@/components/tours/departures/ui-bits";
+import { CheckField, Chip, Ltr, Notice, selectClass, type ChipTone } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUrlState } from "@/hooks/use-view-state";
 import { matchesSearch } from "@/lib/search";
 import { cn } from "@/lib/utils";
-import { WEEKDAY_SHORT } from "@/lib/tours/format";
-import { ROUTE_TYPE_LABELS, routeType } from "@/lib/tours/routes";
+import { EMPTY, WEEKDAY_SHORT, fmtPrice } from "@/lib/tours/format";
+import { routeType } from "@/lib/tours/routes";
 import { getSeriesScreen } from "@/lib/actions/tours-series-actions";
 import { SeasonDialog } from "./season-dialog";
 import { SeriesForm } from "./series-form";
-import type { SeriesListRow, SeriesScreenData, SeriesTermKind } from "./types";
+import { type SeriesListRow, type SeriesScreenData, type SeriesTermKind } from "./types";
+import { seriesBoardHref } from "@/lib/tours/links";
 
-const th = "sticky top-0 z-10 h-9 whitespace-nowrap bg-muted px-2 text-start text-xs font-semibold text-muted-foreground shadow-[inset_0_-1px_0_hsl(var(--border))]";
+const th = `${STICKY_TH} px-2`;
 const td = "px-2 py-2 align-middle";
 
-const TERM_STYLES: Record<SeriesTermKind, string> = {
-  audiences: "border-info/30 bg-info-muted text-info",
-  tags: "",
-  destinations: "border-success/30 bg-success-muted text-success",
+const TERM_TONES: Record<SeriesTermKind, ChipTone> = {
+  audiences: "info",
+  tags: "muted",
+  destinations: "success",
 };
 
 function End({ airport, weekday }: { airport: string | null; weekday: number | null }) {
-  if (!airport && weekday == null) return <span className="text-muted-foreground">—</span>;
+  if (!airport && weekday == null) return <span className="text-muted-foreground">{EMPTY}</span>;
   return (
     <span className="whitespace-nowrap">
       <Ltr className="font-mono text-xs font-semibold">{airport ?? "?"}</Ltr>
@@ -93,12 +95,12 @@ export function SeriesScreen() {
         description="A series is the repeating pattern of a tour: code, tour page, arrival city and day, return city and day, and the defaults for a new departure. Season duplication starts here."
         actions={
           <>
-            <Button variant="outline" size="sm" asChild>
+            <Button variant="outline" asChild>
               <Link href="/tours/departures">Tours</Link>
             </Button>
-            <Button size="sm" onClick={() => setEditing("new")} disabled={!data}>
-              <Plus />
-              New Series
+            <Button onClick={() => setEditing("new")} disabled={!data}>
+              <PlusCircle />
+              Add Series
             </Button>
           </>
         }
@@ -121,15 +123,7 @@ export function SeriesScreen() {
             </option>
           ))}
         </select>
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="h-4 w-4 accent-[hsl(var(--primary))]"
-            checked={activeOnly === "1"}
-            onChange={(e) => setActiveOnly(e.target.checked ? "1" : "")}
-          />
-          Active only
-        </label>
+        <CheckField label="Active only" checked={activeOnly === "1"} onCheckedChange={(on) => setActiveOnly(on ? "1" : "")} />
         <span className="text-sm text-muted-foreground">
           {loading && !data ? "Loading…" : `${rows.length} of ${data?.series.length ?? 0} series`}
         </span>
@@ -204,18 +198,10 @@ export function SeriesScreen() {
                       </td>
                       <td className={cn(td, "whitespace-nowrap")}>
                         <End airport={s.return_airport} weekday={s.return_weekday} />
-                        {type === "open_jaw" && (
-                          <span
-                            title={ROUTE_TYPE_LABELS.open_jaw}
-                            aria-label={ROUTE_TYPE_LABELS.open_jaw}
-                            className="ms-1 inline-flex h-[18px] w-[18px] items-center justify-center rounded-full border border-info/30 bg-info-muted align-middle text-info"
-                          >
-                            <Shuffle className="h-3 w-3" />
-                          </span>
-                        )}
+                        {type === "open_jaw" && <OpenJawMark />}
                       </td>
-                      <td className={cn(td, "text-center tabular-nums")}>{s.default_nights ?? "—"}</td>
-                      <td className={cn(td, "text-center tabular-nums")}>{s.default_capacity ?? "—"}</td>
+                      <td className={cn(td, "text-center tabular-nums")}>{s.default_nights ?? EMPTY}</td>
+                      <td className={cn(td, "text-center tabular-nums")}>{s.default_capacity ?? EMPTY}</td>
                       <td className={cn(td, "text-center text-xs")}>
                         <Ltr>{s.default_currency}</Ltr>
                       </td>
@@ -223,14 +209,15 @@ export function SeriesScreen() {
                         <span title="Child up to age">Child up to {s.child_max_age}</span>
                         {s.senior_min_age != null && (
                           <span className="block text-muted-foreground" title="Senior from age, and senior discount">
-                            Senior {s.senior_min_age}+{s.senior_discount != null ? ` · discount ${s.senior_discount}` : ""}
+                            Senior {s.senior_min_age}+
+                            {s.senior_discount != null ? ` · discount ${fmtPrice(s.senior_discount, s.default_currency)}` : ""}
                           </span>
                         )}
                       </td>
                       <td className={cn(td, "min-w-64")}>
                         <span className="flex flex-wrap gap-1">
                           {terms.map((t) => (
-                            <Chip key={t.id} className={TERM_STYLES[t.kind]}>
+                            <Chip key={t.id} tone={TERM_TONES[t.kind]}>
                               {t.name}
                             </Chip>
                           ))}
@@ -239,7 +226,7 @@ export function SeriesScreen() {
                       <td className={cn(td, "whitespace-nowrap text-center")} onClick={(e) => e.stopPropagation()}>
                         {s.departures > 0 ? (
                           <Link
-                            href={`/tours/departures?series=${s.code}&year=all`}
+                            href={seriesBoardHref(s.code, "all")}
                             className="font-semibold tabular-nums underline-offset-2 hover:underline"
                             title="Open this series' departures in Tours"
                           >

@@ -14,7 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -26,27 +25,34 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useToast } from "@/hooks/use-toast";
-import { formatDateShort } from "@/lib/tours/deadlines";
+import { useActionData } from "@/hooks/use-action-data";
+import { useActionToast } from "@/hooks/use-action-toast";
+import { formatDateShort } from "@/lib/tours/format";
 import {
   createToursReservation,
   listReservationDepartures,
 } from "@/lib/actions/tours-reservation-actions";
-import type {
-  ReservationDeparture,
-  ReservationPrefill,
-  ToursReservationRow,
+import { Field } from "@/components/tours/ui";
+import {
+  MAX_TRAVELERS,
+  TRAVELERS_RULE,
+  type ReservationDeparture,
+  type ReservationPrefill,
+  type ToursReservationRow,
 } from "@/components/tours/reservations/types";
 
 interface ReservationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Locks the dialog to one departure (the departure card). */
-  departure?: { id: string; code: string; startDate: string | null; tourName: string | null };
+  departure?: { id: string; code: string; startDate: string | null; tourName: string | null; docketNo?: string | null };
   /** A lead the reservation is made from. */
   prefill?: ReservationPrefill;
   onCreated?: (row: ToursReservationRow) => void;
 }
+
+/** The picker's answer while it has nothing to load: the dialog is closed, or locked to one departure. */
+const NO_DEPARTURES = { success: true as const, data: [] as ReservationDeparture[] };
 
 const travelersLabel = (count: number) => `${count} ${count === 1 ? "traveler" : "travelers"}`;
 
@@ -59,8 +65,17 @@ const departureLabel = (d: { code: string; startDate: string | null; tourName: s
  * Reservations screen, the departure card and a lead.
  */
 export function ReservationDialog({ open, onOpenChange, departure, prefill, onCreated }: ReservationDialogProps) {
-  const { toast } = useToast();
-  const [departures, setDepartures] = useState<ReservationDeparture[] | null>(null);
+  const run = useActionToast();
+  const locked = Boolean(departure);
+  // The picker's departures, loaded on every open when the departure is not fixed.
+  const {
+    data: departures,
+    error: departuresError,
+    loading: departuresLoading,
+  } = useActionData<ReservationDeparture[]>(
+    () => (open && !locked ? listReservationDepartures() : Promise.resolve(NO_DEPARTURES)),
+    [open, locked],
+  );
   const [pickerOpen, setPickerOpen] = useState(false);
   const [departureId, setDepartureId] = useState<string>(departure?.id ?? "");
   const [kind, setKind] = useState<"booking" | "cancellation">("booking");
@@ -82,31 +97,17 @@ export function ReservationDialog({ open, onOpenChange, departure, prefill, onCr
     setCustomerName(prefill?.customerName ?? "");
     setCustomerPhone(prefill?.customerPhone ?? "");
     setCustomerEmail(prefill?.customerEmail ?? "");
-    setDocketNo("");
+    setDocketNo(departure?.docketNo ?? "");
     setNote(prefill?.note ?? "");
     setError(null);
   }, [open, departure?.id, prefill]);
 
-  // The picker's departures, loaded once per open when the departure is not fixed.
+  // A lead sent from a departure's page picks that departure once the list is in.
   useEffect(() => {
-    if (!open || departure) return;
-    let cancelled = false;
-    listReservationDepartures().then((result) => {
-      if (cancelled) return;
-      if (!result.success) {
-        setError(result.error);
-        setDepartures([]);
-        return;
-      }
-      setDepartures(result.data);
-      // A lead sent from a departure's page picks that departure.
-      const fromLead = prefill?.siteId ? result.data.find((d) => d.siteId === prefill.siteId) : undefined;
-      if (fromLead) setDepartureId(fromLead.id);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, departure, prefill?.siteId]);
+    if (!open || locked || !prefill?.siteId) return;
+    const fromLead = departures?.find((d) => d.siteId === prefill.siteId);
+    if (fromLead) setDepartureId(fromLead.id);
+  }, [open, locked, departures, prefill?.siteId]);
 
   const chosen = useMemo(
     () => (departure ? departure : departures?.find((d) => d.id === departureId)),
@@ -117,29 +118,30 @@ export function ReservationDialog({ open, onOpenChange, departure, prefill, onCr
     setError(null);
     const count = Number(travelers);
     if (!departureId) return setError("Choose a departure.");
-    if (!Number.isInteger(count) || count < 1 || count > 99) {
-      return setError("Travelers must be a whole number from 1 to 99.");
-    }
+    if (!Number.isInteger(count) || count < 1 || count > MAX_TRAVELERS) return setError(TRAVELERS_RULE);
     setSaving(true);
-    const result = await createToursReservation({
-      departureId,
-      pax: kind === "booking" ? count : -count,
-      customerName,
-      customerPhone,
-      customerEmail,
-      docketNo,
-      note,
-      leadId: prefill?.leadId ?? null,
-    });
+    const result = await run(
+      () =>
+        createToursReservation({
+          departureId,
+          pax: kind === "booking" ? count : -count,
+          customerName,
+          customerPhone,
+          customerEmail,
+          docketNo,
+          note,
+          leadId: prefill?.leadId ?? null,
+        }),
+      ({ data: row }) =>
+        `${kind === "booking" ? "Reservation added" : "Cancellation added"}: ${travelersLabel(Math.abs(row.pax))} · ${departureLabel(chosen ?? { code: row.departureCode, startDate: row.departureDate, tourName: row.tourName })}`,
+    );
     setSaving(false);
-    if (!result.success) return setError(result.error);
-    toast({
-      title: kind === "booking" ? "Reservation added" : "Cancellation added",
-      description: `${travelersLabel(Math.abs(result.data.pax))} · ${departureLabel(chosen ?? { code: result.data.departureCode, startDate: result.data.departureDate, tourName: result.data.tourName })}`,
-    });
+    if (!result.success) return;
     onCreated?.(result.data);
     onOpenChange(false);
   };
+
+  const shownError = error ?? departuresError;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -152,8 +154,7 @@ export function ReservationDialog({ open, onOpenChange, departure, prefill, onCr
         </DialogHeader>
 
         <div className="grid gap-4">
-          <div className="grid gap-1.5">
-            <Label>Departure</Label>
+          <Field label="Departure" htmlFor="reservation-departure">
             {departure ? (
               <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm" dir="auto">
                 {departureLabel(departure)}
@@ -162,16 +163,17 @@ export function ReservationDialog({ open, onOpenChange, departure, prefill, onCr
               <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
                 <PopoverTrigger asChild>
                   <Button
+                    id="reservation-departure"
                     variant="outline"
                     role="combobox"
                     aria-expanded={pickerOpen}
                     className="w-full justify-between font-normal"
-                    disabled={departures === null}
+                    disabled={departuresLoading}
                   >
                     <span className="truncate" dir="auto">
-                      {departures === null ? "Loading departures…" : chosen ? departureLabel(chosen) : "Choose a departure"}
+                      {departuresLoading ? "Loading departures…" : chosen ? departureLabel(chosen) : "Choose a departure"}
                     </span>
-                    {departures === null ? (
+                    {departuresLoading ? (
                       <Loader2 className="h-4 w-4 shrink-0 animate-spin opacity-60" />
                     ) : (
                       <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-60" />
@@ -208,12 +210,13 @@ export function ReservationDialog({ open, onOpenChange, departure, prefill, onCr
                 </PopoverContent>
               </Popover>
             )}
-          </div>
+          </Field>
 
           <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
-            <div className="grid gap-1.5">
-              <Label>Type</Label>
+            <Field label="Type" htmlFor="reservation-type">
               <ToggleGroup
+                id="reservation-type"
+                aria-label="Type"
                 type="single"
                 variant="outline"
                 value={kind}
@@ -223,24 +226,23 @@ export function ReservationDialog({ open, onOpenChange, departure, prefill, onCr
                 <ToggleGroupItem value="booking">Booking</ToggleGroupItem>
                 <ToggleGroupItem value="cancellation">Cancellation</ToggleGroupItem>
               </ToggleGroup>
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="reservation-travelers">Travelers</Label>
+            </Field>
+            <Field label="Travelers" htmlFor="reservation-travelers">
               <Input
                 id="reservation-travelers"
                 type="number"
                 inputMode="numeric"
                 min={1}
-                max={99}
+                max={MAX_TRAVELERS}
+                step={1}
                 value={travelers}
                 onChange={(e) => setTravelers(e.target.value)}
               />
-            </div>
+            </Field>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-1.5">
-              <Label htmlFor="reservation-name">Customer</Label>
+            <Field label="Customer" htmlFor="reservation-name">
               <Input
                 id="reservation-name"
                 dir="auto"
@@ -248,9 +250,8 @@ export function ReservationDialog({ open, onOpenChange, departure, prefill, onCr
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
               />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="reservation-phone">Phone</Label>
+            </Field>
+            <Field label="Phone" htmlFor="reservation-phone">
               <Input
                 id="reservation-phone"
                 type="tel"
@@ -258,9 +259,8 @@ export function ReservationDialog({ open, onOpenChange, departure, prefill, onCr
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
               />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="reservation-email">Email</Label>
+            </Field>
+            <Field label="Email" htmlFor="reservation-email">
               <Input
                 id="reservation-email"
                 type="email"
@@ -268,20 +268,18 @@ export function ReservationDialog({ open, onOpenChange, departure, prefill, onCr
                 value={customerEmail}
                 onChange={(e) => setCustomerEmail(e.target.value)}
               />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="reservation-docket">Docket</Label>
+            </Field>
+            <Field label="Docket" htmlFor="reservation-docket">
               <Input
                 id="reservation-docket"
                 placeholder="Accounting number"
                 value={docketNo}
                 onChange={(e) => setDocketNo(e.target.value)}
               />
-            </div>
+            </Field>
           </div>
 
-          <div className="grid gap-1.5">
-            <Label htmlFor="reservation-note">Note</Label>
+          <Field label="Note" htmlFor="reservation-note">
             <Textarea
               id="reservation-note"
               dir="auto"
@@ -289,11 +287,11 @@ export function ReservationDialog({ open, onOpenChange, departure, prefill, onCr
               value={note}
               onChange={(e) => setNote(e.target.value)}
             />
-          </div>
+          </Field>
 
-          {error && (
+          {shownError && (
             <p role="alert" className="text-sm text-destructive">
-              {error}
+              {shownError}
             </p>
           )}
         </div>

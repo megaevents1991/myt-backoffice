@@ -2,7 +2,7 @@ import { Suspense } from "react";
 
 import { getTourPackage } from "@/lib/actions/tours-content-actions";
 import { PackageEditor } from "@/components/tours/content/package-editor";
-import { LoadError } from "@/components/tours/content/save-bar";
+import { PageLoadError } from "@/components/tours/content/save-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +10,7 @@ export default async function TourPackagePage({ params }: { params: Promise<{ id
   const { id } = await params;
   const result = await getTourPackage(id);
   if (!result.success) {
-    return <LoadError message={result.error} backHref="/tours/packages" backLabel="Back to Tour Pages" />;
+    return <PageLoadError message={result.error} backHref="/tours/packages" backLabel="Back to Tour Pages" />;
   }
   return (
     <Suspense>

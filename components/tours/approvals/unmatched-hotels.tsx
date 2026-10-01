@@ -18,8 +18,9 @@ import {
   type UnmatchedHotelOption,
 } from "@/lib/actions/tours-approvals-actions";
 import { formatDateShort, formatNumber } from "@/lib/tours/format";
+import { departureHref, linkClass } from "@/lib/tours/links";
 import { Ltr } from "@/components/tours/ui";
-import { ActionButton, OpenLink, QueueSection, departureHref, linkClass, type QueueControls } from "./queue-ui";
+import { ActionButton, OpenLink, QueueSection, type QueueControls } from "./queue-ui";
 
 export function UnmatchedHotels({ data, run, busy }: QueueControls & { data: ApprovalsData }) {
   const rows = data.unmatchedHotels;
@@ -30,14 +31,14 @@ export function UnmatchedHotels({ data, run, busy }: QueueControls & { data: App
       count={rows.length}
       description="Hotel rows on vacation-package departures whose sheet code matches no hotel in the hotel catalog, so the site does not know which hotel to show. Pick the right hotel from the catalog and save; a hotel missing from the catalog is added first on the Hotels screen."
     >
-      <Table>
+      <Table look="list">
         <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="h-9 px-3 text-xs">Departure</TableHead>
-            <TableHead className="h-9 px-3 text-xs">Sheet Code</TableHead>
-            <TableHead className="h-9 px-3 text-xs">Room Prices</TableHead>
-            <TableHead className="h-9 px-3 text-xs">Catalog Hotel</TableHead>
-            <TableHead className="h-9 px-3 text-xs">
+          <TableRow>
+            <TableHead>Departure</TableHead>
+            <TableHead>Sheet Code</TableHead>
+            <TableHead>Room Prices</TableHead>
+            <TableHead>Catalog Hotel</TableHead>
+            <TableHead>
               <span className="sr-only">Actions</span>
             </TableHead>
           </TableRow>
@@ -60,8 +61,6 @@ export function UnmatchedHotels({ data, run, busy }: QueueControls & { data: App
   );
 }
 
-const cell = "px-3 py-2 align-top";
-
 function HotelRow({
   row,
   catalog,
@@ -80,7 +79,7 @@ function HotelRow({
 
   return (
     <TableRow data-option-id={row.optionId}>
-      <TableCell className={cell}>
+      <TableCell>
         <Link href={departureHref(row.departureCode, "prices")} className={linkClass} title="Open the departure card">
           <Ltr className="font-mono">{row.departureCode}</Ltr>
         </Link>
@@ -93,7 +92,7 @@ function HotelRow({
           {row.isPast ? "Already returned" : row.isPublished ? "Published" : "Not published"}
         </div>
       </TableCell>
-      <TableCell className={cell}>
+      <TableCell>
         {sheetCode ? <Ltr className="font-mono text-[0.9em]">{sheetCode}</Ltr> : <span className="text-muted-foreground">No code</span>}
         <div className="mt-0.5 text-xs text-muted-foreground">
           Hotel {row.position} of the departure
@@ -101,7 +100,7 @@ function HotelRow({
           {row.nights !== null && <> · {row.nights} nights</>}
         </div>
       </TableCell>
-      <TableCell className={`${cell} whitespace-nowrap`}>
+      <TableCell className="whitespace-nowrap">
         {prices.length > 0 ? (
           <>
             {prices.join(" · ")}
@@ -111,7 +110,7 @@ function HotelRow({
           <span className="text-muted-foreground">No prices</span>
         )}
       </TableCell>
-      <TableCell className={`${cell} w-[22rem] max-w-[22rem]`}>
+      <TableCell className="w-[22rem] max-w-[22rem]">
         <Select value={code} onValueChange={setCode} disabled={busy !== null || catalog.length === 0}>
           <SelectTrigger className="h-9" aria-label={`Catalog hotel for ${sheetCode ?? row.departureCode}`}>
             <SelectValue placeholder="Pick a catalog hotel" />
@@ -132,7 +131,7 @@ function HotelRow({
           </div>
         )}
       </TableCell>
-      <TableCell className={cell}>
+      <TableCell>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <ActionButton
             actionKey={key}

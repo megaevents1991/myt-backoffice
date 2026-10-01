@@ -15,8 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { setTourBlockContract, updateTourBlockCosts } from "@/lib/actions/tours-flight-actions";
 import { CURRENCIES } from "@/types/tours.types";
-import { formatMoney, parseNumber } from "@/lib/tours/format";
-import { Field, Ltr, Notice, Section, Stat } from "@/components/tours/ui";
+import { fmtPrice, parseNumber } from "@/lib/tours/format";
+import { CurrencySelect, Fact, FactList, Field, Ltr, Notice, Section, Stat } from "@/components/tours/ui";
 import type { BlockSectionProps } from "@/components/tours/flights/tour-block-panel";
 
 export const CONTRACT_KIND_LABELS: Record<string, string> = {
@@ -54,9 +54,9 @@ export function BlockContractSection({ data, run }: BlockSectionProps) {
         </Button>
       }
     >
-      <Field label="Flight Block Contract">
+      <Field label="Flight Block Contract" htmlFor="block-contract">
         <Select value={block.contract_id ?? NO_CONTRACT} onValueChange={change} disabled={saving}>
-          <SelectTrigger>
+          <SelectTrigger id="block-contract">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -74,39 +74,28 @@ export function BlockContractSection({ data, run }: BlockSectionProps) {
 
       {contract ? (
         <div className="grid gap-3 text-sm">
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-            <dt className="text-muted-foreground">Type</dt>
-            <dd>{CONTRACT_KIND_LABELS[contract.kind] ?? contract.kind}</dd>
-            <dt className="text-muted-foreground">First cancellation date</dt>
-            <dd>{daysText(contract.cxx1_days_before)}</dd>
-            <dt className="text-muted-foreground">Last cancellation date</dt>
-            <dd>{daysText(contract.cxx2_days_before)}</dd>
-            <dt className="text-muted-foreground">Names due</dt>
-            <dd>{daysText(contract.names_days_before)}</dd>
-            <dt className="text-muted-foreground">Ticketing due</dt>
-            <dd>{daysText(contract.ticketing_days_before)}</dd>
+          <FactList>
+            <Fact label="Type">{CONTRACT_KIND_LABELS[contract.kind] ?? contract.kind}</Fact>
+            <Fact label="First cancellation date">{daysText(contract.cxx1_days_before)}</Fact>
+            <Fact label="Last cancellation date">{daysText(contract.cxx2_days_before)}</Fact>
+            <Fact label="Names due">{daysText(contract.names_days_before)}</Fact>
+            <Fact label="Ticketing due">{daysText(contract.ticketing_days_before)}</Fact>
             {contract.commitment_amount !== null && (
-              <>
-                <dt className="text-muted-foreground">Commitment</dt>
-                <dd>
-                  <Ltr>
-                    {contract.commitment_unit === "pct_of_fare"
-                      ? `${contract.commitment_amount}%`
-                      : formatMoney(contract.commitment_amount, contract.currency)}
-                  </Ltr>{" "}
-                  {contract.commitment_unit ? (COMMITMENT_UNIT_LABELS[contract.commitment_unit] ?? "") : ""}
-                </dd>
-              </>
+              <Fact label="Commitment">
+                <Ltr>
+                  {contract.commitment_unit === "pct_of_fare"
+                    ? `${contract.commitment_amount}%`
+                    : fmtPrice(contract.commitment_amount, contract.currency)}
+                </Ltr>{" "}
+                {contract.commitment_unit ? (COMMITMENT_UNIT_LABELS[contract.commitment_unit] ?? "") : ""}
+              </Fact>
             )}
             {contract.name_change_fee !== null && (
-              <>
-                <dt className="text-muted-foreground">Name change</dt>
-                <dd>
-                  <Ltr>{formatMoney(contract.name_change_fee, contract.currency)}</Ltr>
-                </dd>
-              </>
+              <Fact label="Name change">
+                <Ltr>{fmtPrice(contract.name_change_fee, contract.currency)}</Ltr>
+              </Fact>
             )}
-          </dl>
+          </FactList>
           <div>
             <div className="mb-1 font-medium">Original terms</div>
             {contract.terms_text?.trim() ? (
@@ -202,19 +191,9 @@ export function BlockCostsSection({ data, run }: BlockSectionProps) {
         <Field label="Tax" htmlFor="cost-tax">
           <Input id="cost-tax" dir="ltr" inputMode="decimal" value={tax} onChange={(e) => setTax(e.target.value)} />
         </Field>
-        <Field label="Currency">
-          <Select value={currency} onValueChange={setCurrency}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent>
-              {CURRENCIES.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <Field label="Currency" htmlFor="cost-currency">
+          {/* The costs accept the contract currencies only (no ILS) - the action checks the same list. */}
+          <CurrencySelect id="cost-currency" value={currency} onChange={setCurrency} currencies={CURRENCIES} className="w-full" />
         </Field>
       </div>
 
@@ -226,16 +205,16 @@ export function BlockCostsSection({ data, run }: BlockSectionProps) {
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <Stat label="Adult Total" value={<Ltr>{formatMoney(adultTotal, shownCurrency)}</Ltr>} />
-        <Stat label="Child Total" value={<Ltr>{formatMoney(childTotal, shownCurrency)}</Ltr>} />
+        <Stat label="Adult Total" value={<Ltr>{fmtPrice(adultTotal, shownCurrency)}</Ltr>} />
+        <Stat label="Child Total" value={<Ltr>{fmtPrice(childTotal, shownCurrency)}</Ltr>} />
         <Stat
           label="Potential"
-          value={<Ltr>{formatMoney(adultTotal === null ? null : adultTotal * original, shownCurrency)}</Ltr>}
+          value={<Ltr>{fmtPrice(adultTotal === null ? null : adultTotal * original, shownCurrency)}</Ltr>}
           hint={`${original} seats in the original booking`}
         />
         <Stat
           label="Actual"
-          value={<Ltr>{formatMoney(adultTotal === null ? null : adultTotal * block.initial_quantity, shownCurrency)}</Ltr>}
+          value={<Ltr>{fmtPrice(adultTotal === null ? null : adultTotal * block.initial_quantity, shownCurrency)}</Ltr>}
           hint={`${block.initial_quantity} seats today`}
         />
       </div>

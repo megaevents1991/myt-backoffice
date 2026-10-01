@@ -1,14 +1,17 @@
 "use client";
 
 /**
- * The pieces around a site-content editor: its link back to the list, the
- * screen shown when its data could not be loaded, and the two notes of its
- * save cycle. The save bar itself is components/sticky-save-bar.tsx, the one
- * the Mega Events editors use.
+ * The pieces around a site-content editor: its link back to the list, its
+ * "View on Site" button, the screen shown when its data could not be loaded,
+ * and the two notes of its save cycle. The save bar itself is
+ * components/sticky-save-bar.tsx, the one the Mega Events editors use.
  */
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { ArrowLeft, ExternalLink } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { LoadError } from "@/components/tours/ui";
 
 /** The note of the save bar while a content editor has unsaved changes. */
 export const CONTENT_UNSAVED_NOTE = "You have unsaved changes. They reach the site only after you save and publish.";
@@ -26,19 +29,30 @@ export function BackLink({ href, children }: { href: string; children: ReactNode
   );
 }
 
-/** What a screen shows when its data could not be loaded. */
-export function LoadError({ message, backHref, backLabel }: { message: string; backHref?: string; backLabel?: string }) {
+/** "View on Site" in an editor's header, while the page is live on the site (no address, no button). */
+export function ViewOnSiteButton({ href }: { href: string | null }) {
+  if (!href) return null;
   return (
-    <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6" role="alert">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
-        <div className="space-y-2">
-          <p className="font-medium">{message}</p>
-          {/* a refusal (wrong company, no permission, no such row) is not fixed by a refresh */}
-          {/failed/i.test(message) && <p className="text-sm text-muted-foreground">Refresh the page to try again.</p>}
-          {backHref && <BackLink href={backHref}>{backLabel ?? "Back to list"}</BackLink>}
-        </div>
-      </div>
-    </div>
+    <Button asChild variant="ghost">
+      <a href={href} target="_blank" rel="noreferrer">
+        <ExternalLink />
+        View on Site
+      </a>
+    </Button>
+  );
+}
+
+/**
+ * What a server-rendered content page shows when its data could not be
+ * loaded: the shared LoadError, with a hint to refresh (a server page has no
+ * retry button) and a link back to the list.
+ */
+export function PageLoadError({ message, backHref, backLabel }: { message: string; backHref?: string; backLabel?: string }) {
+  return (
+    <LoadError message={message}>
+      {/* a refusal (wrong company, no permission, no such row) is not fixed by a refresh */}
+      {/failed/i.test(message) && <p className="text-sm text-muted-foreground">Refresh the page to try again.</p>}
+      {backHref && <BackLink href={backHref}>{backLabel ?? "Back to list"}</BackLink>}
+    </LoadError>
   );
 }

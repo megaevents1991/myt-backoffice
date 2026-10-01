@@ -7,13 +7,13 @@
  * server action; this tab only repeats its message.
  */
 import { useState } from "react";
-import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
-import { Chip, Notice } from "@/components/tours/ui";
+import { Loader2, Pencil, PlusCircle, Trash2 } from "lucide-react";
+import { Chip, EmptyLine, Notice } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useConfirm } from "@/components/confirm-provider";
 import { useActionToast } from "@/hooks/use-action-toast";
-import { fmtDate } from "@/lib/tours/format";
+import { fmtDate, inputValue } from "@/lib/tours/format";
 import { cn } from "@/lib/utils";
 import { PROMOTION_KIND_LABELS, type PromotionKind } from "@/types/tours.types";
 import { deletePromotion, savePromotion, setPromotionActive } from "@/lib/actions/tours-departure-actions";
@@ -29,7 +29,7 @@ import type { CardPromotion, DepartureCardData } from "./types";
 
 const toDraft = (p: CardPromotion): PromotionDraft => ({
   kind: p.kind as PromotionKind,
-  value: p.value == null ? "" : String(p.value),
+  value: inputValue(p.value),
   label: p.label ?? "",
   valid_until: p.valid_until ?? "",
   show_on_card: p.show_on_card,
@@ -112,8 +112,8 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
         </p>
         {!readOnly && editing !== "new" && (
           <Button size="sm" variant="outline" onClick={() => open(null)}>
-            <Plus />
-            New Promotion
+            <PlusCircle />
+            Add Promotion
           </Button>
         )}
       </div>
@@ -121,7 +121,7 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
       {editing === "new" && form}
 
       {data.promotions.length === 0 && editing !== "new" ? (
-        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No promotions on this departure.</p>
+        <EmptyLine>No promotions on this departure.</EmptyLine>
       ) : (
         <ul className="space-y-2">
           {data.promotions.map((p) => {
@@ -135,7 +135,7 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
                 className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2", !p.is_active && "bg-muted/40 text-muted-foreground")}
               >
                 {fromSeries ? (
-                  <Chip className="border-info/30 bg-info-muted text-info">From series</Chip>
+                  <Chip tone="info">From series</Chip>
                 ) : busy === p.id ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -156,7 +156,7 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
                   </p>
                 </div>
                 {expired && p.is_active && (
-                  <Chip className="border-warning/40 bg-warning-muted text-warning" title="The site keeps showing an active promotion after its expiry date. Switch it off to stop it.">
+                  <Chip tone="warning" title="The site keeps showing an active promotion after its expiry date. Switch it off to stop it.">
                     Expired, still active
                   </Chip>
                 )}

@@ -4,9 +4,9 @@
  * The fields of one promotion. Used by the card's promotions tab (add / edit)
  * and by the board's "add a promotion to the selected departures".
  */
-import { Field, selectClass } from "@/components/tours/ui";
+import { CheckField, Field, selectClass } from "@/components/tours/ui";
 import { Input } from "@/components/ui/input";
-import { currencySymbol } from "@/lib/tours/format";
+import { currencySymbol, inputNumber } from "@/lib/tours/format";
 import { PROMOTION_KINDS, PROMOTION_KIND_LABELS, type PromotionKind } from "@/types/tours.types";
 import type { PromotionInput } from "./types";
 
@@ -30,7 +30,7 @@ export const emptyPromotionDraft = (): PromotionDraft => ({
 
 export const draftToInput = (d: PromotionDraft): PromotionInput => ({
   kind: d.kind,
-  value: d.value.trim() === "" ? null : Number(d.value),
+  value: inputNumber(d.value),
   label: d.label.trim() || null,
   valid_until: d.valid_until || null,
   show_on_card: d.show_on_card,
@@ -107,24 +107,8 @@ export function PromotionFields({
         />
       </Field>
       <div className="flex flex-col justify-end gap-2 pb-1 text-sm">
-        <label className="flex cursor-pointer items-center gap-2">
-          <input
-            type="checkbox"
-            className="h-4 w-4 accent-[hsl(var(--primary))]"
-            checked={draft.show_on_card}
-            onChange={(e) => set("show_on_card", e.target.checked)}
-          />
-          Show on the date card
-        </label>
-        <label className="flex cursor-pointer items-center gap-2">
-          <input
-            type="checkbox"
-            className="h-4 w-4 accent-[hsl(var(--primary))]"
-            checked={draft.is_active}
-            onChange={(e) => set("is_active", e.target.checked)}
-          />
-          Active
-        </label>
+        <CheckField label="Show on the date card" checked={draft.show_on_card} onCheckedChange={(v) => set("show_on_card", v)} />
+        <CheckField label="Active" checked={draft.is_active} onCheckedChange={(v) => set("is_active", v)} />
       </div>
     </div>
   );

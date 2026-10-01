@@ -83,7 +83,8 @@ import type {
   ViewHotelOption,
   ViewTicketOption,
 } from "@/components/tours/departures/types";
-import { actionFail, actionOk as ok, chunk, fetchAll, must, mustRow, UserError, UUID } from "@/lib/tours/action-kit";
+import { actionFail, actionOk as ok, chunk, fetchAll, intOrNull, must, mustRow, UserError, UUID } from "@/lib/tours/action-kit";
+import { companyAudit } from "@/lib/tours/company-kit";
 
 const fail = (e: unknown) => actionFail(e, "tours-departure-actions");
 
@@ -866,13 +867,7 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
 }
 
 // ---------------------------------------------------------------- general fields
-const intOrNull = (value: unknown, min: number, max: number, label: string): number | null => {
-  if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
-  if (!Number.isInteger(n) || n < min || n > max) throw new UserError(`${label}: invalid value`);
-  return n;
-};
-
+// Whole numbers go through intOrNull (lib/tours/action-kit.ts); this is its decimal twin.
 const numOrNull = (value: unknown, min: number, max: number, label: string): number | null => {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
@@ -983,7 +978,7 @@ export async function updateDeparture(id: string, input: DepartureGeneralInput):
       entityType: "tours_departure",
       entityId: id,
       changes: patch,
-      metadata: { company_id: company.id, code: core.code },
+      metadata: { ...companyAudit(company), code: core.code },
     });
     return ok(undefined);
   } catch (e) {
@@ -1045,7 +1040,7 @@ export async function setDeparturesPublished(ids: string[], published: boolean):
         entityId: outcome.done.length === 1 ? outcome.done[0] : null,
         changes: { is_published: published },
         metadata: {
-          company_id: company.id,
+          ...companyAudit(company),
           ids: outcome.done,
           codes: cores.filter((c) => doneSet.has(c.id)).map((c) => c.code),
           count: outcome.done.length,
@@ -1084,7 +1079,7 @@ export async function setDeparturesSaleStatus(ids: string[], status: string): Pr
         entityType: "tours_departure",
         entityId: done.length === 1 ? done[0] : null,
         changes: { sale_status: status },
-        metadata: { company_id: company.id, ids: done, count: done.length, bulk: done.length > 1 },
+        metadata: { ...companyAudit(company), ids: done, count: done.length, bulk: done.length > 1 },
       });
     }
     return ok({ done, skipped: [], warnings: [] });
@@ -1194,7 +1189,7 @@ export async function saveDeparturePrices(
       entityType: "tours_departure_prices",
       entityId: id,
       changes: { cells: clean, ...(currency !== undefined && currency !== core.currency ? { currency } : {}) },
-      metadata: { company_id: company.id, code: core.code },
+      metadata: { ...companyAudit(company), code: core.code },
     });
     return ok(undefined);
   } catch (e) {
@@ -1250,7 +1245,7 @@ export async function applyPastedPrices(
         action: "update",
         entityType: "tours_departure_prices",
         entityId: null,
-        metadata: { company_id: company.id, ids: outcome.done, count: outcome.done.length, bulk: true, source: "paste" },
+        metadata: { ...companyAudit(company), ids: outcome.done, count: outcome.done.length, bulk: true, source: "paste" },
       });
     }
     return ok(outcome);
@@ -1364,7 +1359,7 @@ export async function copyDeparturePrices(
         entityType: "tours_departure_prices",
         entityId: null,
         metadata: {
-          company_id: company.id,
+          ...companyAudit(company),
           copied_from: sourceId,
           copied_from_code: source.code,
           ids: outcome.done,
@@ -1478,7 +1473,7 @@ export async function saveVacationPricing(id: string, input: VacationPricingInpu
       entityType: "tours_departure_options",
       entityId: id,
       changes: { hotels, tickets, markup_percent: markupPercent, markup_fixed: markupFixed },
-      metadata: { company_id: company.id, code: core.code, removed: removed.length },
+      metadata: { ...companyAudit(company), code: core.code, removed: removed.length },
     });
     return ok(undefined);
   } catch (e) {
@@ -1574,7 +1569,7 @@ export async function savePromotion(
       entityType: "tours_promotion",
       entityId: id,
       changes: row,
-      metadata: { company_id: company.id, departure_id: departureId, code: core.code },
+      metadata: { ...companyAudit(company), departure_id: departureId, code: core.code },
     });
     return ok({ id: id as string });
   } catch (e) {
@@ -1610,7 +1605,7 @@ export async function setPromotionActive(promotionId: string, active: boolean): 
       entityType: "tours_promotion",
       entityId: promotionId,
       changes: { is_active: active },
-      metadata: { company_id: company.id, departure_id: promo.departure_id },
+      metadata: { ...companyAudit(company), departure_id: promo.departure_id },
     });
     return ok(undefined);
   } catch (e) {
@@ -1637,7 +1632,7 @@ export async function deletePromotion(promotionId: string): Promise<ActionResult
       entityType: "tours_promotion",
       entityId: promotionId,
       changes: removed[0],
-      metadata: { company_id: company.id, departure_id: removed[0].departure_id },
+      metadata: { ...companyAudit(company), departure_id: removed[0].departure_id },
     });
     return ok(undefined);
   } catch (e) {
@@ -1724,7 +1719,7 @@ export async function addPromotionToDepartures(
         entityId: null,
         changes: row,
         metadata: {
-          company_id: company.id,
+          ...companyAudit(company),
           departure_ids: outcome.done,
           count: outcome.done.length,
           deactivated: toDeactivate,
@@ -1877,7 +1872,7 @@ export async function addFlightAllocation(
       entityType: "tours_flight_allocation",
       entityId: inserted.id,
       changes: { flight_id: flightId, departure_id: departureId, seats, legs },
-      metadata: { company_id: company.id, code: core.code },
+      metadata: { ...companyAudit(company), code: core.code },
     });
     return ok({ id: inserted.id }, warnings.length ? warnings.join(". ") : undefined);
   } catch (e) {
@@ -1903,7 +1898,7 @@ export async function removeFlightAllocation(allocationId: string): Promise<Acti
       entityType: "tours_flight_allocation",
       entityId: allocationId,
       changes: removed[0],
-      metadata: { company_id: company.id },
+      metadata: companyAudit(company),
     });
     return ok(undefined);
   } catch (e) {
@@ -1985,7 +1980,7 @@ export async function createDeparture(input: {
       entityType: "tours_departure",
       entityId: inserted.id,
       changes: { code, series_id: series.id, start_date: input.start_date, end_date: input.end_date },
-      metadata: { company_id: company.id },
+      metadata: companyAudit(company),
     });
     return ok(inserted);
   } catch (e) {
@@ -2006,7 +2001,7 @@ export async function softDeleteDeparture(id: string): Promise<ActionResult<unde
       entityType: "tours_departure",
       entityId: id,
       changes: patch,
-      metadata: { company_id: company.id, code: core.code, was_published: core.is_published },
+      metadata: { ...companyAudit(company), code: core.code, was_published: core.is_published },
     });
     return ok(undefined);
   } catch (e) {
@@ -2026,7 +2021,7 @@ export async function restoreDeparture(id: string): Promise<ActionResult<undefin
       entityType: "tours_departure",
       entityId: id,
       changes: { is_deleted: null },
-      metadata: { company_id: company.id, code: core.code, restored: true },
+      metadata: { ...companyAudit(company), code: core.code, restored: true },
     });
     return ok(undefined);
   } catch (e) {
@@ -2127,7 +2122,7 @@ export async function exportDeparturesXlsx(ids: string[]): Promise<ActionResult<
       action: "export",
       entityType: "tours_departure",
       entityId: null,
-      metadata: { company_id: company.id, count: rows.length },
+      metadata: { ...companyAudit(company), count: rows.length },
     });
     return ok({
       filename: `departures-${company.slug}-${todayIso()}.xlsx`,

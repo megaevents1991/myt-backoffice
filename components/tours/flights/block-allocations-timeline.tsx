@@ -27,7 +27,8 @@ import {
   type AllocatableDeparture,
   type TourBlockAllocation,
 } from "@/lib/actions/tours-flight-actions";
-import { formatDateShort, formatMoney, parseNumber } from "@/lib/tours/format";
+import { formatDateShort, fmtPrice, parseNumber } from "@/lib/tours/format";
+import { departureHref, linkClass } from "@/lib/tours/links";
 import {
   ALLOCATION_LEGS,
   ALLOCATION_LEGS_LABELS,
@@ -37,8 +38,6 @@ import {
 import { BLOCK_EVENT_LABELS, type BlockEventKind } from "@/types/tours.types";
 import { Field, Ltr, Notice, Section } from "@/components/tours/ui";
 import type { BlockSectionProps } from "@/components/tours/flights/tour-block-panel";
-
-const departureHref = (code: string) => `/tours/departures?code=${encodeURIComponent(code)}`;
 
 // ------------------------------------------------------------------ allocations
 
@@ -80,7 +79,7 @@ export function BlockAllocationsSection({ data, run }: BlockSectionProps) {
           {closed ? "The flight block is not allocated to any departure." : `The flight block is in the pool: ${free} seats left to allocate.`}
         </Notice>
       ) : (
-        <Table>
+        <Table look="list">
           <TableHeader>
             <TableRow>
               <TableHead>Departure</TableHead>
@@ -96,7 +95,7 @@ export function BlockAllocationsSection({ data, run }: BlockSectionProps) {
             {allocations.map((a) => (
               <TableRow key={a.id}>
                 <TableCell>
-                  <Link href={departureHref(a.code)} className="font-medium text-primary underline-offset-4 hover:underline">
+                  <Link href={departureHref(a.code)} className={linkClass}>
                     <Ltr>{a.code}</Ltr>
                   </Link>
                   {!a.is_published && <span className="ms-2 text-xs text-muted-foreground">Not published</span>}
@@ -204,9 +203,9 @@ function AllocateDialog({ data, run, onClose }: BlockSectionProps & { onClose: (
           <Notice tone="muted">The company has no departure within two days of the flight dates.</Notice>
         ) : (
           <div className="grid gap-4">
-            <Field label="Departure">
+            <Field label="Departure" htmlFor="allocate-departure">
               <Select value={departureId} onValueChange={setDepartureId}>
-                <SelectTrigger>
+                <SelectTrigger id="allocate-departure">
                   <SelectValue placeholder="Select a departure" />
                 </SelectTrigger>
                 <SelectContent>
@@ -223,9 +222,9 @@ function AllocateDialog({ data, run, onClose }: BlockSectionProps & { onClose: (
               </Select>
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Direction">
+              <Field label="Direction" htmlFor="allocate-legs">
                 <Select value={legs} onValueChange={(v) => setLegs(v as AllocationLegs)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="allocate-legs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -321,9 +320,9 @@ export function BlockTimelineSection({ data, run }: BlockSectionProps) {
   return (
     <Section title="Timeline" description="Everything that happened to the flight block, newest first.">
       <div className="grid gap-3 rounded-md border bg-muted/30 p-3 md:grid-cols-[10rem_10rem_1fr_auto] md:items-end">
-        <Field label="Type">
+        <Field label="Type" htmlFor="event-kind">
           <Select value={kind} onValueChange={(v) => setKind(v as BlockEventKind)}>
-            <SelectTrigger className="bg-background">
+            <SelectTrigger id="event-kind" className="bg-background">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -384,7 +383,7 @@ export function BlockTimelineSection({ data, run }: BlockSectionProps) {
               {e.seats_after !== null && (
                 <span className="rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums">{e.seats_after} seats</span>
               )}
-              {e.amount !== null && <Ltr className="font-medium">{formatMoney(e.amount, e.currency)}</Ltr>}
+              {e.amount !== null && <Ltr className="font-medium">{fmtPrice(e.amount, e.currency)}</Ltr>}
               {e.note && (
                 <span className="min-w-0 break-words" dir="auto">
                   {e.note}

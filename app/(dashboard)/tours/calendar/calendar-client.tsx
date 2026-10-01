@@ -252,7 +252,8 @@ function PeriodDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      {/* Portaled out of the page's dir="rtl", so the Hebrew dialog sets its own direction. */}
+      <DialogContent dir="rtl" className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{period ? `עריכת תקופה: ${period.name}` : "תקופה חדשה"}</DialogTitle>
           <DialogDescription>
@@ -269,9 +270,9 @@ function PeriodDialog({
               <Input id="period-year" dir="ltr" inputMode="numeric" value={year} onChange={(e) => setYear(e.target.value)} />
             </Field>
           </div>
-          <Field label="סוג">
+          <Field label="סוג" htmlFor="period-kind">
             <Select dir="rtl" value={kind} onValueChange={setKind}>
-              <SelectTrigger>
+              <SelectTrigger id="period-kind">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

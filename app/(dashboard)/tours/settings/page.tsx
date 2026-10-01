@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/page-header";
 import { getCompanySettings } from "@/lib/actions/tours-settings-actions";
 import { CompanySettingsFormEditor } from "@/components/tours/content/company-settings-form";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
-import { LoadError } from "@/components/tours/content/save-bar";
+import { PageLoadError } from "@/components/tours/content/save-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ export default async function TourCompanySettingsPage() {
       {result.success ? (
         <CompanySettingsFormEditor key={result.data.slug} initial={result.data} />
       ) : (
-        <LoadError message={result.error} />
+        <PageLoadError message={result.error} />
       )}
     </div>
   );

@@ -14,10 +14,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useConfirm } from "@/components/confirm-provider";
-import { useToast } from "@/hooks/use-toast";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { addCompanyMember, removeCompanyMember } from "@/lib/actions/tours-members-actions";
-import { Section } from "@/components/tours/ui";
+import { EmptyLine, Section } from "@/components/tours/ui";
 import { COMPANY_ROLE_LABELS, type CompanyMemberRow } from "@/components/tours/content/shared";
 import { ROLE_LABELS, type Role } from "@/types/auth.types";
 
@@ -26,7 +25,6 @@ const roleName = (role: string): string => ROLE_LABELS[role as Role]?.en ?? COMP
 
 export function CompanyMembers({ initial, companyName }: { initial: CompanyMemberRow[]; companyName: string }) {
   const confirm = useConfirm();
-  const { toast } = useToast();
   const run = useActionToast();
   const [members, setMembers] = useState(initial);
   const [email, setEmail] = useState("");
@@ -36,13 +34,15 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
   const add = () => {
     if (!email.trim()) return;
     startTransition(async () => {
-      const result = await run(() => addCompanyMember(email, keepMegaEvents));
+      // the note says what the change means for the account - it comes with the answer
+      const result = await run(
+        () => addCompanyMember(email, keepMegaEvents),
+        (answer) => answer.data.note,
+      );
       if (!result.success) return;
       setMembers(result.data.members);
       setEmail("");
       setKeepMegaEvents(false);
-      // the note says what the change means for the account - it comes with the answer
-      toast({ title: result.data.note });
     });
   };
 
@@ -68,7 +68,7 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
       description="Members see this company and work in it. A tours agent sees only the departures board, read-only. The account itself (name, password, role, deactivation) is managed on the Users screen. Superadmins see every company and are not listed here."
     >
       {members.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No users are assigned to this company yet.</p>
+        <EmptyLine>No users are assigned to this company yet.</EmptyLine>
       ) : (
         <div className="overflow-hidden rounded-md border">
           <Table look="list">

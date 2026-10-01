@@ -5,6 +5,7 @@
  * Plain module on purpose - no "use client" and no "use server" - so the server
  * actions and the client components import the same types and labels.
  */
+import { matchesSearch } from "@/lib/search";
 
 /** Every content / leads / settings action answers with this. Expected failures never throw. */
 export type { ActionResult } from "@/lib/tours/action-kit";
@@ -325,15 +326,13 @@ export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
 };
 export const leadStatusLabel = (status: string): string => LEAD_STATUS_LABELS[status as LeadStatus] ?? status;
 
+/** What the inbox narrows its list by - the export reads the same rows. Empty = no filter. */
 export interface LeadFilters {
   kind: string;
   status: string;
-  /** yyyy-mm-dd, inclusive. Empty = no bound. */
-  from: string;
-  to: string;
+  /** The search box, matched by leadMatches. */
   q: string;
 }
-export const EMPTY_LEAD_FILTERS: LeadFilters = { kind: "", status: "", from: "", to: "", q: "" };
 
 export interface LeadRow {
   id: string;
@@ -349,6 +348,24 @@ export interface LeadRow {
   payload: Record<string, unknown>;
   utm: Record<string, unknown>;
 }
+
+/** A site path as people read it: Hebrew slugs decoded. */
+export function readablePath(path: string | null): string {
+  if (!path) return "";
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * Does a lead match the inbox search? The screen and the Excel export use this
+ * one rule, so the file holds the rows the screen shows. The page is matched as
+ * people read it (readablePath), so a Hebrew word finds a Hebrew slug.
+ */
+export const leadMatches = (lead: LeadRow, q: string): boolean =>
+  matchesSearch(q, lead.name, lead.phone, lead.email, lead.message, readablePath(lead.sourcePath));
 
 export interface LeadAssignee {
   id: string;

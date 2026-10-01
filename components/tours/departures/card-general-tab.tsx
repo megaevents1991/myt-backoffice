@@ -7,12 +7,19 @@
  */
 import { useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { Field, Ltr, Notice, Section, selectClass } from "@/components/tours/ui";
+import { CheckField, Field, Ltr, Notice, Section, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useActionToast } from "@/hooks/use-action-toast";
-import { isDateOnly, isoToJerusalemLocal, jerusalemLocalToIso, nightsBetween } from "@/lib/tours/format";
+import {
+  inputNumber,
+  inputValue,
+  isDateOnly,
+  isoToJerusalemLocal,
+  jerusalemLocalToIso,
+  nightsBetween,
+} from "@/lib/tours/format";
 import { ROUTE_TYPE_LABELS, routeType } from "@/lib/tours/routes";
 import { FLIGHT_MODES, FLIGHT_MODE_LABELS } from "@/types/tours.types";
 import { updateDeparture } from "@/lib/actions/tours-departure-actions";
@@ -44,36 +51,33 @@ interface Draft {
   notes: string;
 }
 
-const str = (v: string | number | null | undefined): string => (v == null ? "" : String(v));
-
 function toDraft(d: DepartureCardData["departure"]): Draft {
   return {
     start_date: d.start_date,
     end_date: d.end_date,
-    arrival_airport: str(d.arrival_airport),
-    return_airport: str(d.return_airport),
-    season: str(d.season),
-    card_badge: str(d.card_badge),
+    arrival_airport: inputValue(d.arrival_airport),
+    return_airport: inputValue(d.return_airport),
+    season: inputValue(d.season),
+    card_badge: inputValue(d.card_badge),
     date_labels: d.date_labels.join(", "),
-    itinerary_id: str(d.itinerary_id),
-    child_max_age: str(d.child_max_age),
-    senior_min_age: str(d.senior_min_age),
-    senior_discount: str(d.senior_discount),
+    itinerary_id: inputValue(d.itinerary_id),
+    child_max_age: inputValue(d.child_max_age),
+    senior_min_age: inputValue(d.senior_min_age),
+    senior_discount: inputValue(d.senior_discount),
     meeting_at: isoToJerusalemLocal(d.meeting_at),
     baggage_included: d.baggage_included,
     meal_included: d.meal_included,
     transfers_included: d.transfers_included,
-    connection_out: str(d.connection_out),
-    connection_back: str(d.connection_back),
+    connection_out: inputValue(d.connection_out),
+    connection_back: inputValue(d.connection_back),
     flight_mode: d.flight_mode,
-    flight_price: str(d.flight_price),
-    docket_no: str(d.docket_no),
-    capacity: str(d.capacity),
-    notes: str(d.notes),
+    flight_price: inputValue(d.flight_price),
+    docket_no: inputValue(d.docket_no),
+    capacity: inputValue(d.capacity),
+    notes: inputValue(d.notes),
   };
 }
 
-const numOrNull = (v: string): number | null => (v.trim() === "" ? null : Number(v));
 const textOrNull = (v: string): string | null => (v.trim() === "" ? null : v.trim());
 const labelsOf = (v: string): string[] => Array.from(new Set(v.split(",").map((l) => l.trim()).filter(Boolean)));
 
@@ -90,9 +94,9 @@ function changes(base: Draft, draft: Draft): DepartureGeneralInput {
   if (draft.card_badge !== base.card_badge) out.card_badge = textOrNull(draft.card_badge);
   if (draft.date_labels !== base.date_labels) out.date_labels = labelsOf(draft.date_labels);
   if (draft.itinerary_id !== base.itinerary_id) out.itinerary_id = draft.itinerary_id || null;
-  if (draft.child_max_age !== base.child_max_age) out.child_max_age = numOrNull(draft.child_max_age);
-  if (draft.senior_min_age !== base.senior_min_age) out.senior_min_age = numOrNull(draft.senior_min_age);
-  if (draft.senior_discount !== base.senior_discount) out.senior_discount = numOrNull(draft.senior_discount);
+  if (draft.child_max_age !== base.child_max_age) out.child_max_age = inputNumber(draft.child_max_age);
+  if (draft.senior_min_age !== base.senior_min_age) out.senior_min_age = inputNumber(draft.senior_min_age);
+  if (draft.senior_discount !== base.senior_discount) out.senior_discount = inputNumber(draft.senior_discount);
   if (draft.meeting_at !== base.meeting_at) out.meeting_at = jerusalemLocalToIso(draft.meeting_at);
   if (draft.baggage_included !== base.baggage_included) out.baggage_included = draft.baggage_included;
   if (draft.meal_included !== base.meal_included) out.meal_included = draft.meal_included;
@@ -100,26 +104,11 @@ function changes(base: Draft, draft: Draft): DepartureGeneralInput {
   if (draft.connection_out !== base.connection_out) out.connection_out = textOrNull(draft.connection_out);
   if (draft.connection_back !== base.connection_back) out.connection_back = textOrNull(draft.connection_back);
   if (draft.flight_mode !== base.flight_mode) out.flight_mode = draft.flight_mode;
-  if (draft.flight_price !== base.flight_price) out.flight_price = numOrNull(draft.flight_price) ?? 0;
+  if (draft.flight_price !== base.flight_price) out.flight_price = inputNumber(draft.flight_price) ?? 0;
   if (draft.docket_no !== base.docket_no) out.docket_no = textOrNull(draft.docket_no);
-  if (draft.capacity !== base.capacity) out.capacity = numOrNull(draft.capacity);
+  if (draft.capacity !== base.capacity) out.capacity = inputNumber(draft.capacity);
   if (draft.notes !== base.notes) out.notes = textOrNull(draft.notes);
   return out;
-}
-
-function Check({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <label className="flex cursor-pointer items-center gap-2 text-sm">
-      <input
-        type="checkbox"
-        className="h-4 w-4 accent-[hsl(var(--primary))]"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      {label}
-    </label>
-  );
 }
 
 export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onSaved: () => Promise<void> }) {
@@ -233,7 +222,7 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
               inputMode="numeric"
               className="h-9"
               value={draft.child_max_age}
-              placeholder={str(series?.child_max_age ?? 16)}
+              placeholder={inputValue(series?.child_max_age ?? 16)}
               onChange={(e) => set("child_max_age", e.target.value)}
             />
           </Field>
@@ -243,7 +232,7 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
               inputMode="numeric"
               className="h-9"
               value={draft.senior_min_age}
-              placeholder={str(series?.senior_min_age)}
+              placeholder={inputValue(series?.senior_min_age)}
               onChange={(e) => set("senior_min_age", e.target.value)}
             />
           </Field>
@@ -253,7 +242,7 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
               inputMode="decimal"
               className="h-9"
               value={draft.senior_discount}
-              placeholder={str(series?.senior_discount)}
+              placeholder={inputValue(series?.senior_discount)}
               onChange={(e) => set("senior_discount", e.target.value)}
             />
           </Field>
@@ -286,9 +275,9 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
           </Field>
         </div>
         <div className="flex flex-wrap gap-x-6 gap-y-2">
-          <Check label="Baggage included" checked={draft.baggage_included} onChange={(v) => set("baggage_included", v)} />
-          <Check label="Meals included" checked={draft.meal_included} onChange={(v) => set("meal_included", v)} />
-          <Check label="Transfers included" checked={draft.transfers_included} onChange={(v) => set("transfers_included", v)} />
+          <CheckField label="Baggage included" checked={draft.baggage_included} onCheckedChange={(v) => set("baggage_included", v)} />
+          <CheckField label="Meals included" checked={draft.meal_included} onCheckedChange={(v) => set("meal_included", v)} />
+          <CheckField label="Transfers included" checked={draft.transfers_included} onCheckedChange={(v) => set("transfers_included", v)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Connection note, outbound" hint="Text shown to the customer">

@@ -21,14 +21,10 @@ import {
   type DepartureProblem,
 } from "@/lib/actions/tours-reports-actions";
 import { formatDateShort } from "@/lib/tours/deadlines";
+import { blockHref, departureHref, linkClass } from "@/lib/tours/links";
 import { Ltr, Notice } from "@/components/tours/ui";
 
 const LOAD_FAILED = "טעינת הנתונים נכשלה. המסך זמין כשהחברה הפעילה מוכרת טיולים.";
-
-const departureHref = (code: string) => `/tours/departures?code=${encodeURIComponent(code)}`;
-const blockHref = (id: number) => `/offline-flights/${id}`;
-
-const linkClass = "text-primary underline-offset-4 hover:underline";
 
 export function ExceptionsClient() {
   const [data, setData] = useState<DataProblems | null>(null);
@@ -206,7 +202,7 @@ function DepartureTable({ rows }: { rows: DepartureProblem[] }) {
         {rows.map((r) => (
           <TableRow key={r.departure_id}>
             <TableCell>
-              <Link href={departureHref(r.code)} className={`font-medium ${linkClass}`}>
+              <Link href={departureHref(r.code)} className={linkClass}>
                 <Ltr>{r.code}</Ltr>
               </Link>
             </TableCell>
@@ -242,7 +238,7 @@ function AllocationTable({ rows }: { rows: AllocationProblem[] }) {
         {rows.map((r) => (
           <TableRow key={r.allocation_id}>
             <TableCell>
-              <Link href={departureHref(r.departure_code)} className={`font-medium ${linkClass}`}>
+              <Link href={departureHref(r.departure_code)} className={linkClass}>
                 <Ltr>{r.departure_code}</Ltr>
               </Link>{" "}
               <Ltr className="text-xs text-muted-foreground">{formatDateShort(r.departure_date)}</Ltr>
@@ -277,7 +273,7 @@ function BlockTable({ rows }: { rows: BlockProblem[] }) {
         {rows.map((r) => (
           <TableRow key={r.flight_id}>
             <TableCell>
-              <Link href={blockHref(r.flight_id)} className={`font-medium ${linkClass}`}>
+              <Link href={blockHref(r.flight_id)} className={linkClass}>
                 <Ltr>
                   {r.airline_code} {r.route}
                 </Ltr>

@@ -7,11 +7,11 @@
  * untouched rows stay identical between renders.
  */
 import { memo, useEffect, useRef, useState } from "react";
-import { CalendarDays, Clock, Loader2, Shuffle, TriangleAlert } from "lucide-react";
+import { CalendarDays, Clock, Loader2, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Chip, Ltr, Toggle } from "@/components/tours/ui";
-import { currencySymbol, fmtDateRange, fmtMoney, nightsBetween, parsePrice } from "@/lib/tours/format";
-import { ROUTE_TYPE_LABELS, departureRouteLabel, routeType } from "@/lib/tours/routes";
+import { fmtDateRange, fmtPrice, nightsBetween, parsePrice } from "@/lib/tours/format";
+import { departureRouteLabel, routeType } from "@/lib/tours/routes";
 import { BLOCK_STATUS_LABELS, type BlockStatus, type SaleStatus } from "@/types/tours.types";
 import {
   activeFixedDiscount,
@@ -22,7 +22,7 @@ import {
   suggestedSaleStatus,
 } from "./departure-utils";
 import type { BoardRow, BoardSeries } from "./types";
-import { SaleStatusBadge, SaleStatusSelect } from "./ui-bits";
+import { OpenJawMark, SaleStatusBadge, SaleStatusSelect } from "./ui-bits";
 import { SALE_STATUS_LABELS } from "@/types/tours.types";
 
 export type CardTab = "general" | "prices" | "promotions" | "flights" | "sales";
@@ -192,7 +192,6 @@ function BoardRowImpl({
   // A read-only viewer gets the finished price from the server (it has no options or markup to derive it from).
   const { price: double, derived } = row.doublePrice ?? doublePricePerPerson(row);
   const discount = activeFixedDiscount(row.promotions);
-  const sym = currencySymbol(row.currency);
 
   const liveFlights = row.flights.filter((f) => f.isLive);
   const noLiveFlight = row.stats.liveBlocks === 0;
@@ -253,7 +252,11 @@ function BoardRowImpl({
         >
           <Ltr>{row.code}</Ltr>
         </button>
-        {deleted && <Chip className="ms-1 border-destructive/30 bg-destructive/10 text-destructive">Deleted</Chip>}
+        {deleted && (
+          <Chip tone="error" className="ms-1">
+            Deleted
+          </Chip>
+        )}
       </td>
 
       <td className={cn(cell, "whitespace-nowrap tabular-nums")}>
@@ -278,15 +281,7 @@ function BoardRowImpl({
         ) : (
           <span className="text-xs text-destructive">No route</span>
         )}
-        {type === "open_jaw" && (
-          <span
-            title={ROUTE_TYPE_LABELS.open_jaw}
-            aria-label={ROUTE_TYPE_LABELS.open_jaw}
-            className="ms-1 inline-flex h-[18px] w-[18px] items-center justify-center rounded-full border border-info/30 bg-info-muted align-middle text-info"
-          >
-            <Shuffle className="h-3 w-3" />
-          </span>
-        )}
+        {type === "open_jaw" && <OpenJawMark />}
       </td>
 
       <td className={cn(cell, "whitespace-nowrap")}>{row.season ?? ""}</td>
@@ -316,10 +311,7 @@ function BoardRowImpl({
         ) : row.date_labels.length || row.card_badge ? (
           <span className="flex flex-wrap gap-1">
             {row.card_badge && (
-              <Chip
-                className="border-destructive/30 bg-destructive/10 text-destructive"
-                title={readOnly ? "Card badge on the site" : "Card badge - edited in the departure card"}
-              >
+              <Chip tone="error" title={readOnly ? "Card badge on the site" : "Card badge - edited in the departure card"}>
                 {row.card_badge}
               </Chip>
             )}
@@ -365,15 +357,9 @@ function BoardRowImpl({
           <span className="inline-flex flex-col items-end leading-tight">
             <Ltr className={cn("font-medium", discount > 0 && "text-muted-foreground line-through decoration-1", derived && "italic")}>
               {derived ? "~" : ""}
-              {fmtMoney(double)}
-              {sym}
+              {fmtPrice(double, row.currency)}
             </Ltr>
-            {discount > 0 && (
-              <Ltr className="font-semibold text-success">
-                {fmtMoney(double - discount)}
-                {sym}
-              </Ltr>
-            )}
+            {discount > 0 && <Ltr className="font-semibold text-success">{fmtPrice(double - discount, row.currency)}</Ltr>}
           </span>
         )}
       </td>

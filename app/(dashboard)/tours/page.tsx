@@ -23,7 +23,7 @@ export default async function ToursDashboardPage() {
     // Anything else (no staff session) goes to the dashboard error boundary like on every guarded page.
     if (e instanceof Error && e.message.includes("does not sell")) {
       return (
-        <NotAToursCompany description="The tours dashboard opens only while the active company sells tours. If you have access to one, switch to it from the company switcher in the top bar." />
+        <NotAToursCompany description="The tours dashboard opens only while the active company sells tours." />
       );
     }
     throw e;

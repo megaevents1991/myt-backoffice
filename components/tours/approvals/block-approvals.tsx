@@ -28,7 +28,8 @@ import {
   type ApprovalsData,
 } from "@/lib/actions/tours-approvals-actions";
 import { DEADLINE_LABELS } from "@/lib/tours/deadlines";
-import { daysLeft, formatDateShort, formatMoney, formatNumber, parseNumber } from "@/lib/tours/format";
+import { daysLeft, fmtPrice, formatDateShort, formatNumber, parseNumber } from "@/lib/tours/format";
+import { blockHref, linkClass } from "@/lib/tours/links";
 import {
   CANCELLED_BY,
   CANCELLED_BY_LABELS,
@@ -36,16 +37,8 @@ import {
   type CancelledBy,
 } from "@/components/tours/flights/block-rules";
 import { Field, Ltr, Notice } from "@/components/tours/ui";
-import { BlockStatusBadge, DaysLeft } from "@/components/tours/flights/block-ui";
-import {
-  ActionButton,
-  QueueSection,
-  SubList,
-  blockHref,
-  inDays,
-  linkClass,
-  type QueueControls,
-} from "./queue-ui";
+import { BlockStatusBadge, DaysLeft, daysLeftText } from "@/components/tours/flights/block-ui";
+import { ActionButton, QueueSection, SubList, type QueueControls } from "./queue-ui";
 
 interface BlockApprovalsProps extends QueueControls {
   data: ApprovalsData;
@@ -150,7 +143,7 @@ function CutNote({ shown, total }: { shown: number; total: number }) {
   if (total <= shown) return null;
   return (
     <p className="px-4 pb-3 text-xs text-muted-foreground">
-      Showing the first {shown} of {total.toLocaleString("en-US")}. The rest appear as these are handled; the full list
+      Showing the first {shown} of {formatNumber(total)}. The rest appear as these are handled; the full list
       is in{" "}
       <Link href="/offline-flights" className={linkClass}>
         Offline Flights
@@ -210,7 +203,7 @@ function ReviewList({ data, run, busy, onReviewPage }: BlockApprovalsProps) {
           {data.otherUnreviewed > 0 && (
             <>
               {" "}
-              Another {data.otherUnreviewed.toLocaleString("en-US")} unmarked rows belong to flight blocks that already
+              Another {formatNumber(data.otherUnreviewed)} unmarked rows belong to flight blocks that already
               flew, were cancelled or declined, or are not confirmed yet, so they do not wait here (
               <Link href="/offline-flights" className={linkClass}>
                 all flight blocks
@@ -257,7 +250,7 @@ function ReviewList({ data, run, busy, onReviewPage }: BlockApprovalsProps) {
       />
       <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2.5 text-xs text-muted-foreground">
         <span className="tabular-nums">
-          Rows {first.toLocaleString("en-US")}-{last.toLocaleString("en-US")} of {review.total.toLocaleString("en-US")}
+          Rows {formatNumber(first)}-{formatNumber(last)} of {formatNumber(review.total)}
         </span>
         {pages > 1 && (
           <div className="flex items-center gap-2">
@@ -304,7 +297,6 @@ interface Selection {
   disabled: boolean;
 }
 
-const cell = "px-3 py-2 align-top";
 const sub = "mt-0.5 text-xs text-muted-foreground";
 
 /** Rows of flight blocks with what a manager decides by: who flies, where, when, how many seats, at what cost, and the closest date. */
@@ -320,11 +312,11 @@ function BlockTable({
   selection?: Selection;
 }) {
   return (
-    <Table>
+    <Table look="list">
       <TableHeader>
-        <TableRow className="hover:bg-transparent">
+        <TableRow>
           {selection && (
-            <TableHead className="w-10 px-3">
+            <TableHead className="w-10">
               <Checkbox
                 aria-label="Select all rows on this page"
                 checked={selection.allSelected ? true : selection.someSelected ? "indeterminate" : false}
@@ -333,13 +325,13 @@ function BlockTable({
               />
             </TableHead>
           )}
-          <TableHead className="h-9 px-3 text-xs">Flight Block</TableHead>
-          <TableHead className="h-9 px-3 text-xs">Route & Flights</TableHead>
-          <TableHead className="h-9 px-3 text-xs">Dates</TableHead>
-          <TableHead className="h-9 px-3 text-xs">Seats</TableHead>
-          <TableHead className="h-9 px-3 text-xs">Cost per Seat</TableHead>
-          <TableHead className="h-9 px-3 text-xs">Next Deadline</TableHead>
-          <TableHead className="h-9 px-3 text-xs">
+          <TableHead>Flight Block</TableHead>
+          <TableHead>Route & Flights</TableHead>
+          <TableHead>Dates</TableHead>
+          <TableHead>Seats</TableHead>
+          <TableHead>Cost per Seat</TableHead>
+          <TableHead>Next Deadline</TableHead>
+          <TableHead>
             <span className="sr-only">Actions</span>
           </TableHead>
         </TableRow>
@@ -385,7 +377,7 @@ function BlockRow({
   return (
     <TableRow data-block-id={block.id} data-state={selection?.selected.has(block.id) ? "selected" : undefined}>
       {selection && (
-        <TableCell className={`${cell} w-10`}>
+        <TableCell className="w-10">
           <Checkbox
             aria-label={`Select ${name}`}
             checked={selection.selected.has(block.id)}
@@ -394,7 +386,7 @@ function BlockRow({
           />
         </TableCell>
       )}
-      <TableCell className={cell}>
+      <TableCell>
         <Link href={blockHref(block.id)} className={linkClass} title="Open the flight block card">
           <span dir="auto">{name}</span>
         </Link>
@@ -409,7 +401,7 @@ function BlockRow({
           {!block.hasContract && block.status !== null && <span className="text-amber-700 dark:text-amber-400">No contract</span>}
         </div>
       </TableCell>
-      <TableCell className={cell}>
+      <TableCell>
         <Ltr className="font-medium">{block.route}</Ltr>
         {flights && (
           <div className={sub}>
@@ -417,13 +409,13 @@ function BlockRow({
           </div>
         )}
       </TableCell>
-      <TableCell className={`${cell} whitespace-nowrap`}>
+      <TableCell className="whitespace-nowrap">
         <Ltr>
           {formatDateShort(block.outboundDate)} - {formatDateShort(block.inboundDate)}
         </Ltr>
-        {flyIn !== null && <div className={sub}>Flies {inDays(flyIn)}</div>}
+        {flyIn !== null && <div className={sub}>Flies {daysLeftText(Math.max(0, flyIn)).toLowerCase()}</div>}
       </TableCell>
-      <TableCell className={cell}>
+      <TableCell>
         <span className="font-medium tabular-nums">{block.seats}</span>
         {block.originalSeats !== null && (
           <span className="text-xs text-muted-foreground"> of {block.originalSeats} originally</span>
@@ -443,12 +435,12 @@ function BlockRow({
           )}
         </div>
       </TableCell>
-      <TableCell className={`${cell} whitespace-nowrap`}>
+      <TableCell className="whitespace-nowrap">
         {block.costPrice === null ? (
           <span className="text-muted-foreground">Not entered</span>
         ) : (
           <>
-            <Ltr className="font-medium">{formatMoney(block.costPrice, block.costCurrency)}</Ltr>
+            <Ltr className="font-medium">{fmtPrice(block.costPrice, block.costCurrency)}</Ltr>
             {block.costTax !== null && block.costTax > 0 && (
               <div className={sub}>
                 plus tax <Ltr>{formatNumber(block.costTax)}</Ltr>
@@ -457,7 +449,7 @@ function BlockRow({
           </>
         )}
       </TableCell>
-      <TableCell className={`${cell} whitespace-nowrap`}>
+      <TableCell className="whitespace-nowrap">
         {deadline ? (
           <>
             <span>{deadline.label}</span> <Ltr>{formatDateShort(deadline.date)}</Ltr>
@@ -469,7 +461,7 @@ function BlockRow({
           <span className="text-xs text-muted-foreground">No open deadline</span>
         )}
       </TableCell>
-      <TableCell className={cell}>
+      <TableCell>
         <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>
       </TableCell>
     </TableRow>
@@ -542,9 +534,9 @@ function CancelBlockDialog({
               this flight block and will be left without a live flight: <Ltr>{block.allocatedTo.join(", ")}</Ltr>
             </Notice>
           )}
-          <Field label="Cancelled By">
+          <Field label="Cancelled By" htmlFor="approvals-cancel-by">
             <Select value={cancelledBy} onValueChange={(v) => setCancelledBy(v as CancelledBy)}>
-              <SelectTrigger>
+              <SelectTrigger id="approvals-cancel-by">
                 <SelectValue placeholder="Select" />
               </SelectTrigger>
               <SelectContent>

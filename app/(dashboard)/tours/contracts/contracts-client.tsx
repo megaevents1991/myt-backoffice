@@ -25,7 +25,7 @@ import {
 } from "@/lib/actions/tours-contract-actions";
 import { formatDateShort } from "@/lib/tours/deadlines";
 import { CURRENCIES } from "@/types/tours.types";
-import { formatMoney, parseNumber } from "@/lib/tours/format";
+import { fmtPrice, parseNumber } from "@/lib/tours/format";
 import { Field, Ltr, Notice, Section } from "@/components/tours/ui";
 import { COMMITMENT_UNIT_LABELS, CONTRACT_KIND_LABELS } from "@/components/tours/flights/block-contract-costs";
 
@@ -137,14 +137,14 @@ export function ContractsClient() {
                             <Ltr>
                               {c.commitment_unit === "pct_of_fare"
                                 ? `${c.commitment_amount}%`
-                                : formatMoney(c.commitment_amount, c.currency)}
+                                : fmtPrice(c.commitment_amount, c.currency)}
                             </Ltr>{" "}
                             {c.commitment_unit ? (COMMITMENT_UNIT_LABELS[c.commitment_unit] ?? "") : ""}
                           </>
                         )}
                       </TableCell>
                       <TableCell>
-                        {c.name_change_fee === null ? "-" : <Ltr>{formatMoney(c.name_change_fee, c.currency)}</Ltr>}
+                        {c.name_change_fee === null ? "-" : <Ltr>{fmtPrice(c.name_change_fee, c.currency)}</Ltr>}
                       </TableCell>
                       <TableCell className="tabular-nums">{c.blocks_count}</TableCell>
                       <TableCell>
@@ -288,7 +288,8 @@ function ContractDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      {/* Portaled out of the page's dir="rtl", so the Hebrew dialog sets its own direction. */}
+      <DialogContent dir="rtl" className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{contract ? `עריכת חוזה: ${contract.name}` : "חוזה חדש"}</DialogTitle>
           <DialogDescription>
@@ -311,9 +312,9 @@ function ContractDialog({
                 onChange={(e) => setAirlineGroup(e.target.value)}
               />
             </Field>
-            <Field label="סוג">
+            <Field label="סוג" htmlFor="contract-kind">
               <Select dir="rtl" value={kind} onValueChange={setKind}>
-                <SelectTrigger>
+                <SelectTrigger id="contract-kind">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -325,9 +326,9 @@ function ContractDialog({
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="מטבע">
+            <Field label="מטבע" htmlFor="contract-currency">
               <Select dir="rtl" value={currency} onValueChange={setCurrency}>
-                <SelectTrigger>
+                <SelectTrigger id="contract-currency">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -378,9 +379,9 @@ function ContractDialog({
                 onChange={(e) => setCommitment(e.target.value)}
               />
             </Field>
-            <Field label="יחידת ההתחייבות">
+            <Field label="יחידת ההתחייבות" htmlFor="contract-unit">
               <Select dir="rtl" value={unit} onValueChange={setUnit}>
-                <SelectTrigger>
+                <SelectTrigger id="contract-unit">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

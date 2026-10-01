@@ -14,18 +14,10 @@ import { Input } from "@/components/ui/input";
 import { addFlightAllocation } from "@/lib/actions/tours-departure-actions";
 import type { ApprovalsData, BlockCandidate, DepartureWithoutBlock } from "@/lib/actions/tours-approvals-actions";
 import { daysBetween, formatDateShort } from "@/lib/tours/format";
+import { blockHref, departureHref, linkClass } from "@/lib/tours/links";
 import { Ltr } from "@/components/tours/ui";
-import { BlockStatusBadge } from "@/components/tours/flights/block-ui";
-import {
-  ActionButton,
-  OpenLink,
-  QueueSection,
-  blockHref,
-  departureHref,
-  inDays,
-  linkClass,
-  type QueueControls,
-} from "./queue-ui";
+import { BlockStatusBadge, daysLeftText } from "@/components/tours/flights/block-ui";
+import { ActionButton, OpenLink, QueueSection, type QueueControls } from "./queue-ui";
 
 export function DeparturesWithoutBlock({ data, run, busy }: QueueControls & { data: ApprovalsData }) {
   const rows = data.departuresWithoutBlock;
@@ -65,7 +57,7 @@ function DepartureItem({
             {formatDateShort(departure.startDate)} - {formatDateShort(departure.endDate)}
           </Ltr>
           {" · "}
-          {inDays(daysBetween(today, departure.startDate))}
+          {daysLeftText(daysBetween(today, departure.startDate))}
         </div>
         <div className="mt-0.5 text-xs text-muted-foreground">
           Route <Ltr className="font-medium text-foreground/80">{departure.route || "not set"}</Ltr>

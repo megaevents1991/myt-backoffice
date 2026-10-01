@@ -10,13 +10,11 @@ import { useCallback, useEffect, useState } from "react";
 import { PlusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTableSkeleton } from "@/components/data-table";
-import { StatCard } from "@/components/dashboard/stat-card";
-import { cn } from "@/lib/utils";
 import { listToursReservations } from "@/lib/actions/tours-reservation-actions";
 import { ReservationDialog } from "@/components/tours/reservations/reservation-dialog";
 import { ToursReservationsTable } from "@/components/tours/reservations/reservations-table";
 import type { ToursReservationRow } from "@/components/tours/reservations/types";
-import { Notice } from "@/components/tours/ui";
+import { Notice, Stat } from "@/components/tours/ui";
 import type { DepartureCardData } from "./types";
 
 export function CardSalesTab({ data, onSaved }: { data: DepartureCardData; onSaved: () => Promise<void> }) {
@@ -50,16 +48,9 @@ export function CardSalesTab({ data, onSaved }: { data: DepartureCardData; onSav
   return (
     <div className="space-y-4 py-4">
       <div className="grid grid-cols-3 gap-3">
-        <StatCard label="Allocated" value={<span className={cn(allocated === 0 && "text-muted-foreground")}>{allocated}</span>} />
-        <StatCard label="Sold" value={sold} />
-        <StatCard
-          label="Left"
-          value={
-            <span className={cn(remaining < 0 && "text-destructive", remaining >= 0 && allocated === 0 && "text-muted-foreground")}>
-              {remaining}
-            </span>
-          }
-        />
+        <Stat label="Allocated" value={allocated} tone={allocated === 0 ? "muted" : "default"} />
+        <Stat label="Sold" value={sold} />
+        <Stat label="Left" value={remaining} tone={remaining < 0 ? "danger" : allocated === 0 ? "muted" : "default"} />
       </div>
       {remaining < 0 && (
         <Notice tone="error">
@@ -92,6 +83,7 @@ export function CardSalesTab({ data, onSaved }: { data: DepartureCardData; onSav
           code: d.code,
           startDate: d.start_date,
           tourName: data.package?.name ?? null,
+          docketNo: d.docket_no,
         }}
         onCreated={() => void changed()}
       />

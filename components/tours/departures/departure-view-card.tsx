@@ -8,52 +8,34 @@
  * It is a component of its own on purpose. The staff card is built from
  * editors; this one only prints DepartureViewData, a shape that has no field
  * for cost, PNR, docket, notes or block status (types.ts), so there is nothing
- * here to hide. The agents portal of the next phase can mount it as is.
+ * here to hide. The sheet, the load and the top of the header are the staff
+ * card's (departure-sheet.tsx). The agents portal of the next phase can mount
+ * it as is.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Eye } from "lucide-react";
-import { Chip, Ltr, Notice, Section } from "@/components/tours/ui";
-import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Chip, EmptyLine, Fact, FactList, Ltr, Notice, Section, Stat } from "@/components/tours/ui";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { afterUrlWrite } from "@/hooks/use-view-state";
 import { cn } from "@/lib/utils";
-import { currencySymbol, fmtDate, fmtDateRange, fmtDateTime, fmtInstant, fmtMoney, nightsBetween } from "@/lib/tours/format";
+import { EMPTY, fmtDate, fmtDateTime, fmtInstant, fmtPrice, nightsBetween } from "@/lib/tours/format";
 import { cardPrice, pricedRooms, toPriceMatrix } from "@/lib/tours/pricing";
-import { ROUTE_TYPE_LABELS, departureRouteLabel, flightRouteLabel, routeType } from "@/lib/tours/routes";
+import { ROUTE_TYPE_LABELS, flightRouteLabel, routeType } from "@/lib/tours/routes";
 import { FLIGHT_MODE_LABELS, PRICE_MATRIX_ROWS, PROMOTION_KIND_LABELS, type FlightMode, type PromotionKind } from "@/types/tours.types";
 import { getDepartureView } from "@/lib/actions/tours-departure-actions";
 import type { CardTab } from "./board-row";
-import type { CardTarget } from "./departure-card";
-import { activeFixedDiscount, isExpired, periodLabel, periodsOverlapping, promotionSummary } from "./departure-utils";
+import { DepartureSheet, DepartureSheetHeader, type CardTarget } from "./departure-sheet";
+import { activeFixedDiscount, isExpired, promotionSummary } from "./departure-utils";
 import { LEGS_LABELS, type BoardPeriod, type DepartureViewData, type ViewFlight } from "./types";
 import { SaleStatusBadge } from "./ui-bits";
 
 /** The tabs a viewer has. The staff card's "sales" tab (who sold what, docket numbers) is not among them. */
 export const VIEW_TABS: readonly CardTab[] = ["general", "prices", "promotions", "flights"];
 
-/** A label with its value, for a grid of facts. An empty value prints a dash. */
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
-  const empty = children == null || children === "" || children === false;
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className={cn("mt-0.5 text-sm", empty && "text-muted-foreground")}>{empty ? "—" : children}</dd>
-    </div>
-  );
-}
-
 const yesNo = (value: boolean): string => (value ? "Included" : "Not included");
 
 function Money({ value, currency, className }: { value: number | null | undefined; currency: string; className?: string }) {
-  if (value == null) return <span className="text-muted-foreground">—</span>;
-  return (
-    <Ltr className={cn("tabular-nums", className)}>
-      {fmtMoney(value)}
-      {currencySymbol(currency)}
-    </Ltr>
-  );
+  if (value == null) return <span className="text-muted-foreground">{EMPTY}</span>;
+  return <Ltr className={cn("tabular-nums", className)}>{fmtPrice(value, currency)}</Ltr>;
 }
 
 // ---------------------------------------------------------------- tabs
@@ -64,7 +46,7 @@ function GeneralTab({ data }: { data: DepartureViewData }) {
   return (
     <div className="space-y-4 py-4">
       <Section title="Dates and route">
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+        <FactList>
           <Fact label="Departure date">
             <Ltr className="tabular-nums">{fmtDate(d.start_date)}</Ltr>
           </Fact>
@@ -80,16 +62,16 @@ function GeneralTab({ data }: { data: DepartureViewData }) {
             {data.itinerary
               ? `${data.itinerary.label ?? "Alternative version"}${
                   data.itinerary.arrival_city || data.itinerary.return_city
-                    ? ` (\u2068${data.itinerary.arrival_city ?? "?"}\u2069 → \u2068${data.itinerary.return_city ?? "?"}\u2069)`
+                    ? ` (⁨${data.itinerary.arrival_city ?? "?"}⁩ → ⁨${data.itinerary.return_city ?? "?"}⁩)`
                     : ""
                 }`
               : "The tour page's main itinerary"}
           </Fact>
-        </dl>
+        </FactList>
       </Section>
 
       <Section title="Flight and meeting">
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+        <FactList>
           <Fact label="Flight">
             {flightMode}
             {d.flight_mode === "priced" && (
@@ -107,21 +89,21 @@ function GeneralTab({ data }: { data: DepartureViewData }) {
           <Fact label="Transfers">{yesNo(d.transfers_included)}</Fact>
           <Fact label="Outbound connection">{d.connection_out}</Fact>
           <Fact label="Return connection">{d.connection_back}</Fact>
-        </dl>
+        </FactList>
       </Section>
 
       <Section title="Age rules">
-        <dl className="grid grid-cols-3 gap-x-4 gap-y-3">
+        <FactList>
           <Fact label="Child up to age">{d.child_max_age}</Fact>
           <Fact label="Senior from age">{d.senior_min_age}</Fact>
           <Fact label="Senior discount">{d.senior_discount != null && <Money value={d.senior_discount} currency={d.currency} />}</Fact>
-        </dl>
+        </FactList>
       </Section>
 
       <Section title="Tags on the site">
         {d.card_badge || d.date_labels.length > 0 ? (
           <div className="flex flex-wrap gap-1">
-            {d.card_badge && <Chip className="border-destructive/30 bg-destructive/10 text-destructive">{d.card_badge}</Chip>}
+            {d.card_badge && <Chip tone="error">{d.card_badge}</Chip>}
             {d.date_labels.map((l) => (
               <Chip key={l}>{l}</Chip>
             ))}
@@ -211,8 +193,7 @@ function PricesTab({ data }: { data: DepartureViewData }) {
                       <>
                         <Ltr className="text-sm font-medium tabular-nums text-foreground">
                           {t.extra > 0 ? "+" : "-"}
-                          {fmtMoney(Math.abs(t.extra))}
-                          {currencySymbol(d.currency)}
+                          {fmtPrice(Math.abs(t.extra), d.currency)}
                         </Ltr>{" "}
                         per person
                       </>
@@ -305,7 +286,7 @@ function PricesTab({ data }: { data: DepartureViewData }) {
 function PromotionsTab({ data }: { data: DepartureViewData }) {
   const d = data.departure;
   if (data.promotions.length === 0) {
-    return <p className="my-4 rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">This departure has no active promotions.</p>;
+    return <EmptyLine className="my-4">This departure has no active promotions.</EmptyLine>;
   }
   return (
     <div className="space-y-3 py-4">
@@ -322,11 +303,11 @@ function PromotionsTab({ data }: { data: DepartureViewData }) {
               </p>
             </div>
             {isExpired(p.valid_until) && (
-              <Chip className="border-warning/40 bg-warning-muted text-warning" title="The promotion is still live on the site. Check with the office before promising it to a customer.">
+              <Chip tone="warning" title="The promotion is still live on the site. Check with the office before promising it to a customer.">
                 Expiry date passed
               </Chip>
             )}
-            {p.scope === "series" && <Chip className="border-info/30 bg-info-muted text-info">Whole series</Chip>}
+            {p.scope === "series" && <Chip tone="info">Whole series</Chip>}
           </li>
         ))}
       </ul>
@@ -387,25 +368,16 @@ function FlightItem({ flight }: { flight: ViewFlight }) {
 }
 
 function FlightsTab({ data }: { data: DepartureViewData }) {
+  const { allocated, sold, remaining } = data.seats;
   return (
     <div className="space-y-4 py-4">
-      <dl className="grid grid-cols-3 gap-3 rounded-md border bg-muted/30 px-3 py-2" data-testid="view-seats">
-        <Fact label="Allocated">
-          <Ltr className="tabular-nums">{data.seats.allocated}</Ltr>
-        </Fact>
-        <Fact label="Sold">
-          <Ltr className="tabular-nums">{data.seats.sold}</Ltr>
-        </Fact>
-        <Fact label="Left">
-          <Ltr className={cn("font-semibold tabular-nums", data.seats.remaining <= 0 && data.seats.allocated > 0 && "text-destructive")}>
-            {data.seats.remaining}
-          </Ltr>
-        </Fact>
-      </dl>
+      <div className="grid grid-cols-3 gap-3" data-testid="view-seats">
+        <Stat label="Allocated" value={allocated} />
+        <Stat label="Sold" value={sold} />
+        <Stat label="Left" value={remaining} tone={remaining <= 0 && allocated > 0 ? "danger" : "default"} />
+      </div>
       {data.flights.length === 0 ? (
-        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-          Flight details to follow. This departure has no confirmed flight yet.
-        </p>
+        <EmptyLine>Flight details to follow. This departure has no confirmed flight yet.</EmptyLine>
       ) : (
         <ul className="space-y-2">
           {data.flights.map((f, i) => (
@@ -432,157 +404,85 @@ export function DepartureViewCard({
   periods: BoardPeriod[];
   onClose: () => void;
 }) {
-  const [data, setData] = useState<DepartureViewData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const targetId = target?.id;
-  const targetCode = target?.code;
   const shownTab: CardTab = VIEW_TABS.includes(tab) ? tab : "general";
+  return (
+    <DepartureSheet target={target} onClose={onClose} load={(ref) => getDepartureView(ref)} testId="departure-view-card">
+      {(data) => <ViewCard data={data} tab={shownTab} onTabChange={onTabChange} periods={periods} />}
+    </DepartureSheet>
+  );
+}
 
-  useEffect(() => {
-    if (!targetId && !targetCode) {
-      setData(null);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    void (async () => {
-      // Opening the card writes `?code=` first; let the router settle before queueing the action.
-      await afterUrlWrite();
-      const result = await getDepartureView({ id: targetId, code: targetCode });
-      if (cancelled) return;
-      if (result.success) {
-        setData(result.data);
-        setError(null);
-      } else {
-        setData(null);
-        setError(result.error);
-      }
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [targetId, targetCode]);
-
-  const d = data?.departure;
-  const holidays = useMemo(() => (d ? periodsOverlapping(periods, d.start_date, d.end_date) : []), [d, periods]);
-  const type = d ? routeType(d.arrival_airport, d.return_airport) : null;
-  const routeLabel = d ? departureRouteLabel(d.arrival_airport, d.return_airport) : "";
+function ViewCard({
+  data,
+  tab,
+  onTabChange,
+  periods,
+}: {
+  data: DepartureViewData;
+  tab: CardTab;
+  onTabChange: (tab: CardTab) => void;
+  periods: BoardPeriod[];
+}) {
+  const d = data.departure;
   /** The fixed per-passenger discount that is on - the same one the board row and the site apply. */
-  const discount = data ? activeFixedDiscount(data.promotions) : 0;
+  const discount = activeFixedDiscount(data.promotions);
 
   return (
-    <Sheet open={Boolean(target)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl" data-testid="departure-view-card">
-        {loading && !data ? (
-          <div className="space-y-4 p-6">
-            <SheetTitle className="sr-only">Loading departure</SheetTitle>
-            <SheetDescription className="sr-only">The departure details are loading</SheetDescription>
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-5 w-72" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-64 w-full" />
-          </div>
-        ) : error || !data || !d ? (
-          <div className="space-y-4 p-6">
-            <SheetTitle>Couldn&apos;t load the departure</SheetTitle>
-            <SheetDescription className="sr-only">Error loading the departure details</SheetDescription>
-            <Notice tone="error">{error ?? "Departure not found"}</Notice>
-            <Button variant="outline" onClick={onClose}>
-              Close
-            </Button>
-          </div>
-        ) : (
-          <>
-            <SheetHeader className="space-y-2 border-b pb-4 pe-12 ps-6 pt-5 text-start sm:text-start">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <SheetTitle className="font-display text-xl">
-                  <Ltr className="font-mono">{d.code}</Ltr>
-                </SheetTitle>
-                <Ltr className="text-sm tabular-nums text-muted-foreground">{fmtDateRange(d.start_date, d.end_date)}</Ltr>
-                <span className="text-sm text-muted-foreground">{nightsBetween(d.start_date, d.end_date)} nights</span>
-                {routeLabel && <Ltr className="font-mono text-sm">{routeLabel}</Ltr>}
-                {type && type !== "round_trip" && <Chip className="border-info/30 bg-info-muted text-info">{ROUTE_TYPE_LABELS[type]}</Chip>}
-              </div>
-              <SheetDescription>
-                {data.package?.name ?? ""}
-                {data.series && (
-                  <>
-                    {" · Series "}
-                    <Ltr className="font-mono">{data.series.code}</Ltr>
-                    {data.series.label ? ` (${data.series.label})` : ""}
-                  </>
-                )}
-                {" · Season "}
-                {d.season_year}
-              </SheetDescription>
-              {holidays.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {holidays.map((h) => (
-                    <Chip key={h.id} className="border-warning/40 bg-warning-muted text-warning">
-                      {periodLabel(h)}
-                    </Chip>
-                  ))}
-                </div>
+    <>
+      <DepartureSheetHeader departure={d} route={d} tourPage={data.package?.name ?? ""} series={data.series} periods={periods}>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 text-sm">
+          <SaleStatusBadge status={d.sale_status} />
+          {data.doublePrice.price != null && (
+            <span>
+              From{" "}
+              <Money value={data.doublePrice.price - discount} currency={d.currency} className="font-semibold" /> per person in a double room
+              {discount > 0 && (
+                <>
+                  {" "}
+                  <Money value={data.doublePrice.price} currency={d.currency} className="text-muted-foreground line-through decoration-1" />
+                </>
               )}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 text-sm">
-                <SaleStatusBadge status={d.sale_status} />
-                {data.doublePrice.price != null && (
-                  <span>
-                    From{" "}
-                    <Money value={data.doublePrice.price - discount} currency={d.currency} className="font-semibold" /> per person in a double room
-                    {discount > 0 && (
-                      <>
-                        {" "}
-                        <Money value={data.doublePrice.price} currency={d.currency} className="text-muted-foreground line-through decoration-1" />
-                      </>
-                    )}
-                  </span>
-                )}
-                <span className="text-muted-foreground">
-                  {data.seats.allocated > 0 ? (
-                    <>
-                      <Ltr className="font-semibold tabular-nums text-foreground">{data.seats.remaining}</Ltr> of{" "}
-                      <Ltr className="tabular-nums">{data.seats.allocated}</Ltr> seats left
-                    </>
-                  ) : (
-                    "Seat count to follow"
-                  )}
-                </span>
-                <Chip className="ms-auto gap-1" title="This account can't edit">
-                  <Eye className="h-3 w-3" />
-                  View only
-                </Chip>
-              </div>
-            </SheetHeader>
+            </span>
+          )}
+          <span className="text-muted-foreground">
+            {data.seats.allocated > 0 ? (
+              <>
+                <Ltr className="font-semibold tabular-nums text-foreground">{data.seats.remaining}</Ltr> of{" "}
+                <Ltr className="tabular-nums">{data.seats.allocated}</Ltr> seats left
+              </>
+            ) : (
+              "Seat count to follow"
+            )}
+          </span>
+          <Chip className="ms-auto gap-1" title="This account can't edit">
+            <Eye className="h-3 w-3" />
+            View only
+          </Chip>
+        </div>
+      </DepartureSheetHeader>
 
-            <Tabs value={shownTab} onValueChange={(v) => onTabChange(v as CardTab)} className="flex min-h-0 flex-1 flex-col">
-              <TabsList className="mx-6 mt-3 grid h-9 grid-cols-4">
-                <TabsTrigger value="general">General</TabsTrigger>
-                <TabsTrigger value="prices">Prices</TabsTrigger>
-                <TabsTrigger value="promotions">Promotions{data.promotions.length ? ` (${data.promotions.length})` : ""}</TabsTrigger>
-                <TabsTrigger value="flights">Flights{data.flights.length ? ` (${data.flights.length})` : ""}</TabsTrigger>
-              </TabsList>
-              <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 pt-2">
-                <TabsContent value="general">
-                  <GeneralTab data={data} />
-                </TabsContent>
-                <TabsContent value="prices">
-                  <PricesTab data={data} />
-                </TabsContent>
-                <TabsContent value="promotions">
-                  <PromotionsTab data={data} />
-                </TabsContent>
-                <TabsContent value="flights">
-                  <FlightsTab data={data} />
-                </TabsContent>
-              </div>
-            </Tabs>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
+      <Tabs value={tab} onValueChange={(v) => onTabChange(v as CardTab)} className="flex min-h-0 flex-1 flex-col">
+        <TabsList className="mx-6 mt-3 grid h-9 grid-cols-4">
+          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="prices">Prices</TabsTrigger>
+          <TabsTrigger value="promotions">Promotions{data.promotions.length ? ` (${data.promotions.length})` : ""}</TabsTrigger>
+          <TabsTrigger value="flights">Flights{data.flights.length ? ` (${data.flights.length})` : ""}</TabsTrigger>
+        </TabsList>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 pt-2">
+          <TabsContent value="general">
+            <GeneralTab data={data} />
+          </TabsContent>
+          <TabsContent value="prices">
+            <PricesTab data={data} />
+          </TabsContent>
+          <TabsContent value="promotions">
+            <PromotionsTab data={data} />
+          </TabsContent>
+          <TabsContent value="flights">
+            <FlightsTab data={data} />
+          </TabsContent>
+        </div>
+      </Tabs>
+    </>
   );
 }

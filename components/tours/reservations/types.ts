@@ -1,4 +1,4 @@
-/** Shapes of a tours company's reservations, shared by the actions and the screens. */
+/** Shapes and rules of a tours company's reservations, shared by the actions and the screens. */
 
 /** One row of the Reservations screen: a booking (+pax) or a cancellation (-pax) on a departure. */
 export interface ToursReservationRow {
@@ -33,9 +33,14 @@ export interface ReservationDeparture {
   siteId: number;
 }
 
+/** Travelers on one reservation row: a whole number from 1 to this (a group booking fits in one row). */
+export const MAX_TRAVELERS = 500;
+/** What the dialog and the action say when the travelers count breaks that rule. */
+export const TRAVELERS_RULE = `Travelers must be a whole number from 1 to ${MAX_TRAVELERS}.`;
+
 export interface ReservationInput {
   departureId: string;
-  /** +travelers for a booking, -travelers for a cancellation. */
+  /** +travelers for a booking, -travelers for a cancellation (1 to MAX_TRAVELERS either way). */
   pax: number;
   customerName?: string | null;
   customerPhone?: string | null;

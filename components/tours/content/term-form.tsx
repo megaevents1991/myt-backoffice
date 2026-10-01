@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/page-header";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import { saveTourTerm } from "@/lib/actions/tours-content-actions";
-import { Chip, Field, Section } from "@/components/tours/ui";
+import { ActiveChip, Field, Section } from "@/components/tours/ui";
 import { ImageListEditor, NO_UPLOAD_NOTE } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
@@ -31,7 +31,7 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
         title={saved.form.name}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <Chip tone={saved.form.isActive ? "outline" : "danger"}>{saved.form.isActive ? "Active" : "Inactive"}</Chip>
+            <ActiveChip active={saved.form.isActive} />
             <span>Slug: {saved.slug}</span>
           </span>
         }

@@ -58,6 +58,7 @@ import {
 } from "@/components/tours/content/shared";
 import { UUID, actionFail, fetchAll } from "@/lib/tours/action-kit";
 import { asObject, companyAudit, invalidInput, type JsonObject } from "@/lib/tours/company-kit";
+import { todayIso } from "@/lib/tours/format";
 
 const failure = (e: unknown, fallback: string) => actionFail(e, "tours-content-actions", fallback);
 
@@ -72,8 +73,6 @@ const same = (a: unknown, b: unknown): boolean => (blank(a) && blank(b)) || JSON
 
 /** "" -> null for a nullable text column. */
 const orNull = (value: string): string | null => (value.trim() === "" ? null : value);
-
-const today = (): string => new Date().toISOString().slice(0, 10);
 
 /** An id that is not a uuid cannot match a row - answer "not found" instead of a database error. */
 const isUuid = (value: string): boolean => UUID.test(value);
@@ -435,7 +434,7 @@ export async function listTourPackages(): Promise<ActionResult<PackageList>> {
           .eq("company_id", company.id)
           .eq("is_published", true)
           .is("is_deleted", null)
-          .gte("start_date", today())
+          .gte("start_date", todayIso())
           .order("id")
           .range(from, to),
       ),
@@ -757,7 +756,7 @@ export async function deleteTourPackage(id: string): Promise<ActionResult> {
 
     const { error: updateError } = await db
       .from("packages")
-      .update({ is_deleted: today(), is_active: false })
+      .update({ is_deleted: todayIso(), is_active: false })
       .eq("company_id", company.id)
       .eq("id", id);
     if (updateError) throw updateError;

@@ -9,6 +9,7 @@
 import { requireCompany } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
+import { companyAudit } from "@/lib/tours/company-kit";
 import { isDateOnly, todayIso } from "@/lib/tours/deadlines";
 import { CURRENCIES, type CompanyExchangeRate, type TourCurrency } from "@/types/tours.types";
 import { dbFail as databaseFail, plainFail as fail, type ActionResult } from "@/lib/tours/action-kit";
@@ -140,7 +141,7 @@ export async function saveTourRate(input: {
     entityType: "company_exchange_rate",
     entityId: `${date}:${input.currency}`,
     changes: { currency: input.currency, rate_date: date, rate_to_ils: rate },
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
   return { success: true, data: null };
 }

@@ -11,6 +11,7 @@ import { requireCompany } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
+import { companyAudit } from "@/lib/tours/company-kit";
 import { isDateOnly } from "@/lib/tours/deadlines";
 import { CURRENCIES, type FlightContract } from "@/types/tours.types";
 import { dbFail as databaseFail, plainFail as fail, type ActionResult } from "@/lib/tours/action-kit";
@@ -144,7 +145,7 @@ export async function saveTourContract(input: TourContractInput): Promise<Action
       entityType: "flight_contract",
       entityId: input.id,
       changes: values,
-      metadata: { company_id: company.id },
+      metadata: companyAudit(company),
     });
     return { success: true, data: { id: input.id } };
   }
@@ -160,7 +161,7 @@ export async function saveTourContract(input: TourContractInput): Promise<Action
     entityType: "flight_contract",
     entityId: data.id,
     changes: values,
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
   return { success: true, data: { id: data.id } };
 }

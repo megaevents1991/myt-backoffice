@@ -24,7 +24,9 @@ export const GENERIC_FAILURE = "The action failed. Try again, and if it happens 
 
 /** A database call failed: log where, show the generic message. */
 export function dbFail(scope: string, where: string, error: unknown): { success: false; error: string } {
-  console.error(`${scope}: ${where} failed`, error instanceof Error ? error.message : JSON.stringify(error));
+  // A Supabase error carries code, details and hint next to its message - keep them in the log.
+  const e = error as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown } | null;
+  console.error(`${scope}: ${where} failed`, e && typeof e === "object" ? JSON.stringify({ message: e.message, code: e.code, details: e.details, hint: e.hint }) : String(error));
   return plainFail(GENERIC_FAILURE);
 }
 
@@ -61,6 +63,18 @@ export function chunk<T>(items: readonly T[], size: number): T[][] {
 }
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * An optional whole number of a form, checked against its range: empty ->
+ * null; not a whole number, or outside [min, max] -> a UserError that names
+ * the field (`label`).
+ */
+export function intOrNull(value: unknown, min: number, max: number, label: string): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < min || n > max) throw new UserError(`${label}: invalid value`);
+  return n;
+}
 
 /** The data of a query, or throw its error. */
 export const must = <T>(result: { data: T; error: { message: string } | null }): T => {

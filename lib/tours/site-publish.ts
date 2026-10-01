@@ -29,7 +29,15 @@ import type { ActionResult, SitePublishRecord, SitePublishStatus } from "@/compo
 
 const TIMEOUT_MS = 20_000;
 
-const failure = (e: unknown, fallback: string) => actionFail(e, "site-publish", fallback);
+/**
+ * Only the error's message reaches the log: a database error's details can
+ * quote the companies row, and with it the deploy hook URL.
+ */
+const failure = (e: unknown, fallback: string) => {
+  const message =
+    e instanceof Error ? e.message : typeof e === "object" && e !== null && "message" in e ? String(e.message) : String(e);
+  return actionFail(new Error(message), "site-publish", fallback);
+};
 
 async function featuresOf(companyId: string): Promise<JsonObject> {
   const { data, error } = await supabaseTyped.from("companies").select("features").eq("id", companyId).single();

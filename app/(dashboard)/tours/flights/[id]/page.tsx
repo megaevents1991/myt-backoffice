@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { blockHref } from "@/lib/tours/links";
 
 /**
  * The card of a flight block is /offline-flights/[id], which shows the
@@ -9,5 +10,5 @@ export default async function TourBlockPage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const flightId = Number(id);
   if (!Number.isInteger(flightId) || flightId <= 0) notFound();
-  redirect(`/offline-flights/${flightId}`);
+  redirect(blockHref(flightId));
 }

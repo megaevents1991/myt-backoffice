@@ -16,11 +16,12 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { taskPeopleOf } from "@/lib/services/task-people";
 import { actionFail, fetchAll } from "@/lib/tours/action-kit";
-import { companyAudit } from "@/lib/tours/company-kit";
-import type { Json } from "@/types/database.types";
+import { asObject, companyAudit } from "@/lib/tours/company-kit";
+import { isoToJerusalemLocal, todayIso } from "@/lib/tours/format";
 import { LEAD_KIND_LABELS, type Lead } from "@/types/tours.types";
 import {
   LEAD_STATUSES,
+  leadMatches,
   leadStatusLabel,
   type ActionResult,
   type LeadAssignee,
@@ -32,7 +33,8 @@ import {
   type LeadStatus,
 } from "@/components/tours/content/shared";
 
-const SCOPE = "tours-leads-actions";
+const failure = (e: unknown, fallback: string) => actionFail(e, "tours-leads-actions", fallback);
+
 /** The table loads the company's leads in one go, newest first, up to this many. */
 const LIST_LIMIT = 5000;
 const EXPORT_LIMIT = 20000;
@@ -40,17 +42,15 @@ const COLUMNS = "id, created_at, kind, name, phone, email, message, source_path,
 
 /**
  * A spreadsheet cell has no timezone: it shows the clock reading it is given.
- * Shift the instant so the cell reads the operators' local time (Israel).
+ * Shift the instant by Israel's offset at that moment, so the cell reads the
+ * operators' local time. The offset comes from isoToJerusalemLocal (to the
+ * minute), the one Israel-time conversion of the tours screens.
  */
-function wallClock(iso: string, timeZone = "Asia/Jerusalem"): Date {
-  const instant = new Date(iso);
-  const inZone = new Date(instant.toLocaleString("en-US", { timeZone }));
-  const inUtc = new Date(instant.toLocaleString("en-US", { timeZone: "UTC" }));
-  return new Date(instant.getTime() + (inZone.getTime() - inUtc.getTime()));
+function wallClock(iso: string): Date {
+  const instant = Date.parse(iso);
+  const minute = instant - (instant % 60_000);
+  return new Date(instant + (Date.parse(`${isoToJerusalemLocal(iso)}Z`) - minute));
 }
-
-const asRecord = (value: Json): Record<string, unknown> =>
-  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
 type LeadColumns = Pick<
   Lead,
@@ -68,28 +68,20 @@ const toRow = (lead: LeadColumns): LeadRow => ({
   sourcePath: lead.source_path,
   status: lead.status,
   assignedTo: lead.assigned_to,
-  payload: asRecord(lead.payload),
-  utm: asRecord(lead.utm),
+  payload: asObject(lead.payload),
+  utm: asObject(lead.utm),
 });
 
-/** The company's leads narrowed by the filters. Company scope is applied here, once. */
+/**
+ * The company's leads of a kind and a status, newest first (id breaks ties, so
+ * paging never skips a row). Company scope is applied here, once. The search
+ * runs on the rows (leadMatches), the same rule as the inbox.
+ */
 function filtered(company: Company, filters: Partial<LeadFilters>) {
   let query = supabaseTyped.from("leads").select(COLUMNS).eq("company_id", company.id);
   if (filters.kind) query = query.eq("kind", filters.kind);
   if (filters.status) query = query.eq("status", filters.status);
-  // free text: every word must appear in one of the text fields
-  const words = (filters.q ?? "")
-    .replace(/[,()"\\%*]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 6);
-  for (const word of words) {
-    const like = `%${word}%`;
-    query = query.or(
-      ["name", "phone", "email", "message", "source_path"].map((column) => `${column}.ilike.${like}`).join(","),
-    );
-  }
-  return query.order("created_at", { ascending: false });
+  return query.order("created_at", { ascending: false }).order("id", { ascending: false });
 }
 
 /**
@@ -113,7 +105,7 @@ export async function listLeads(): Promise<ActionResult<LeadsPage>> {
     if (error) throw new Error(`leads: ${error.message}`);
     return { success: true, data: { rows: rows.map(toRow), truncated } };
   } catch (e) {
-    return actionFail(e, SCOPE);
+    return failure(e, "Failed to load the leads");
   }
 }
 
@@ -131,7 +123,7 @@ export async function getLeadsMeta(): Promise<ActionResult<LeadsMeta>> {
     const seen = [...new Set(kinds.map((r) => r.kind))].filter((k) => !known.includes(k));
     return { success: true, data: { assignees, kinds: [...known, ...seen.sort()], currentUserId: session.sub } };
   } catch (e) {
-    return actionFail(e, SCOPE);
+    return failure(e, "Failed to load the leads");
   }
 }
 
@@ -194,7 +186,7 @@ export async function updateLead(
     if (freshError) throw freshError;
     return { success: true, data: toRow(fresh as unknown as LeadColumns) };
   } catch (e) {
-    return actionFail(e, SCOPE);
+    return failure(e, "Failed to update the lead");
   }
 }
 
@@ -204,7 +196,7 @@ export async function exportLeads(filters: Partial<LeadFilters>): Promise<Action
     const { company } = await requireCompany("tours");
     const { rows: found, error } = await fetchPaged<LeadColumns>(() => filtered(company, filters), EXPORT_LIMIT);
     if (error) throw new Error(`leads: ${error.message}`);
-    const rows = found.map(toRow);
+    const rows = found.map(toRow).filter((lead) => leadMatches(lead, filters.q ?? ""));
     const names = new Map((await assigneesOf(company)).map((p) => [p.id, p.name]));
 
     const workbook = new ExcelJS.Workbook();
@@ -245,12 +237,12 @@ export async function exportLeads(filters: Partial<LeadFilters>): Promise<Action
     return {
       success: true,
       data: {
-        fileName: `leads-${company.slug}-${new Date().toISOString().slice(0, 10)}.xlsx`,
+        fileName: `leads-${company.slug}-${todayIso()}.xlsx`,
         base64: Buffer.from(buffer as ArrayBuffer).toString("base64"),
         rows: rows.length,
       },
     };
   } catch (e) {
-    return actionFail(e, SCOPE);
+    return failure(e, "Failed to export the leads");
   }
 }

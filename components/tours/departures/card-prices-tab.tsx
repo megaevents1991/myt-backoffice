@@ -9,14 +9,14 @@
  * Vacation packages: the selectable parts instead - hotels with double /
  * triple / quad prices, ticket categories, markup.
  */
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
-import { Field, Ltr, Notice, selectClass } from "@/components/tours/ui";
+import { CurrencySelect, EmptyLine, Field, Ltr, Notice, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
-import { currencySymbol, fmtDate, fmtMoney, parsePrice } from "@/lib/tours/format";
+import { EMPTY, currencySymbol, fmtDate, fmtPrice, inputValue, parsePrice } from "@/lib/tours/format";
 import { cardPrice, pricedRooms, type PriceMatrix } from "@/lib/tours/pricing";
 import { CURRENCIES, PRICE_MATRIX_ROWS } from "@/types/tours.types";
 import { saveDeparturePrices, saveVacationPricing, updateDeparture } from "@/lib/actions/tours-departure-actions";
@@ -24,18 +24,6 @@ import { activeFixedDiscount, isExpired, readRoomPrices, vacationDoublePerPerson
 import type { DepartureCardData, HotelOptionInput, TicketOptionInput } from "./types";
 
 const keyOf = (paxType: string, position: number) => `${paxType}:${position}`;
-
-function CurrencySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <select dir="ltr" className={`${selectClass} w-24`} value={value} onChange={(e) => onChange(e.target.value)}>
-      {CURRENCIES.map((c) => (
-        <option key={c} value={c}>
-          {c}
-        </option>
-      ))}
-    </select>
-  );
-}
 
 // ---------------------------------------------------------------- matrix
 function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () => Promise<void> }) {
@@ -49,9 +37,10 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
   const [currency, setCurrency] = useState(d.currency);
   const [saving, setSaving] = useState(false);
   const run = useActionToast();
+  const currencyId = useId();
   const readOnly = Boolean(d.is_deleted);
 
-  const parsed =PRICE_MATRIX_ROWS.map((r) => ({ row: r, value: parsePrice(draft[keyOf(r.paxType, r.position)] ?? "") }));
+  const parsed = PRICE_MATRIX_ROWS.map((r) => ({ row: r, value: parsePrice(draft[keyOf(r.paxType, r.position)] ?? "") }));
   const invalid = parsed.some((p) => p.value === undefined);
   const dirty =
     currency !== d.currency ||
@@ -89,8 +78,8 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
       <fieldset disabled={readOnly || saving} className="min-w-0 space-y-3">
         <div className="flex items-end justify-between gap-3">
           <h3 className="text-sm font-semibold">Price per person by room composition</h3>
-          <Field label="Currency">
-            <CurrencySelect value={currency} onChange={setCurrency} />
+          <Field label="Currency" htmlFor={currencyId}>
+            <CurrencySelect id={currencyId} value={currency} onChange={setCurrency} currencies={CURRENCIES} disabled={readOnly || saving} />
           </Field>
         </div>
         <div className="overflow-hidden rounded-md border">
@@ -107,7 +96,7 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
                     data-price-key={k}
                     className={cn("h-8 w-28 text-end tabular-nums", value === undefined && "border-destructive")}
                     value={draft[k] ?? ""}
-                    placeholder="—"
+                    placeholder={EMPTY}
                     onChange={(e) => setDraft((prev) => ({ ...prev, [k]: e.target.value }))}
                   />
                   <span className="w-4 text-xs text-muted-foreground">{sym}</span>
@@ -145,7 +134,7 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
         <h3 className="text-sm font-semibold">What the customer sees{dirty ? " (before saving)" : ""}</h3>
         {fixed.length > 0 && (
           <Notice tone="success" className="py-1.5 text-xs">
-            Active fixed discount: <Ltr>{fmtMoney(discount)}{sym}</Ltr> per traveler
+            Active fixed discount: <Ltr>{fmtPrice(discount, currency)}</Ltr> per traveler
             {fixed.some((p) => isExpired(p.valid_until)) && (
               <span>
                 {" "}
@@ -176,11 +165,11 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
                     </td>
                     <td className="px-3 py-1.5 text-center tabular-nums">{r.passengers}</td>
                     <td className={cn("px-3 py-1.5 text-end tabular-nums", discount > 0 && "text-muted-foreground line-through decoration-1")}>
-                      <Ltr>{fmtMoney(r.price)}{sym}</Ltr>
+                      <Ltr>{fmtPrice(r.price, currency)}</Ltr>
                     </td>
                     {discount > 0 && (
                       <td className="px-3 py-1.5 text-end font-semibold tabular-nums text-success">
-                        <Ltr>{fmtMoney(r.priceSale)}{sym}</Ltr>
+                        <Ltr>{fmtPrice(r.priceSale, currency)}</Ltr>
                       </td>
                     )}
                   </tr>
@@ -191,11 +180,11 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
         )}
         {card.offer != null && (
           <p className="text-xs text-muted-foreground">
-            On the date card: from <Ltr className="font-semibold text-foreground">{fmtMoney(card.offer)}{sym}</Ltr> per person in a double room
+            On the date card: from <Ltr className="font-semibold text-foreground">{fmtPrice(card.offer, currency)}</Ltr> per person in a double room
             {card.regular != null && (
               <>
                 {" "}
-                instead of <Ltr className="line-through">{fmtMoney(card.regular)}{sym}</Ltr>
+                instead of <Ltr className="line-through">{fmtPrice(card.regular, currency)}</Ltr>
               </>
             )}
             .
@@ -223,8 +212,6 @@ interface TicketDraft {
   price: string;
 }
 
-const s = (v: string | number | null | undefined): string => (v == null ? "" : String(v));
-
 function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () => Promise<void> }) {
   const d = data.departure;
   const initial = useMemo(() => {
@@ -234,19 +221,25 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
         const rp = readRoomPrices(o.room_prices);
         return {
           id: o.id,
-          ref_code: s(o.ref_code),
-          label: s(o.label),
-          board: s(o.board),
-          nights: s(o.nights),
-          double: s(rp.double),
-          triple: s(rp.triple),
-          quad: s(rp.quad),
+          ref_code: inputValue(o.ref_code),
+          label: inputValue(o.label),
+          board: inputValue(o.board),
+          nights: inputValue(o.nights),
+          double: inputValue(rp.double),
+          triple: inputValue(rp.triple),
+          quad: inputValue(rp.quad),
         };
       });
     const tickets: TicketDraft[] = data.options
       .filter((o) => o.kind === "ticket")
-      .map((o) => ({ id: o.id, label: s(o.label), price: s(o.price) }));
-    return { hotels, tickets, markup_percent: s(d.markup_percent), markup_fixed: s(d.markup_fixed), currency: d.currency };
+      .map((o) => ({ id: o.id, label: inputValue(o.label), price: inputValue(o.price) }));
+    return {
+      hotels,
+      tickets,
+      markup_percent: inputValue(d.markup_percent),
+      markup_fixed: inputValue(d.markup_fixed),
+      currency: d.currency,
+    };
   }, [data.options, d.markup_percent, d.markup_fixed, d.currency]);
 
   const [hotels, setHotels] = useState<HotelDraft[]>(initial.hotels);
@@ -256,6 +249,7 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
   const [currency, setCurrency] = useState(initial.currency);
   const [saving, setSaving] = useState(false);
   const run = useActionToast();
+  const currencyId = useId();
   const readOnly = Boolean(d.is_deleted);
   const sym = currencySymbol(currency);
 
@@ -321,7 +315,7 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
       aria-label={label}
       className={cn("h-8 w-20 text-end tabular-nums", parsePrice(value) === undefined && "border-destructive")}
       value={value}
-      placeholder="—"
+      placeholder={EMPTY}
       onChange={(e) => onChange(e.target.value)}
     />
   );
@@ -336,8 +330,8 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
             <strong className="font-medium text-foreground">{d.price_source === "calculator" ? "Calculator" : "Manual"}</strong>.
           </p>
         </div>
-        <Field label="Currency">
-          <CurrencySelect value={currency} onChange={setCurrency} />
+        <Field label="Currency" htmlFor={currencyId}>
+          <CurrencySelect id={currencyId} value={currency} onChange={setCurrency} currencies={CURRENCIES} disabled={readOnly || saving} />
         </Field>
       </div>
 
@@ -355,7 +349,7 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
           </Button>
         </div>
         {hotels.length === 0 ? (
-          <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">No hotels. Without a hotel with a double-room price the departure can&apos;t be published.</p>
+          <EmptyLine>No hotels. Without a hotel with a double-room price the departure can&apos;t be published.</EmptyLine>
         ) : (
           <div className="overflow-x-auto rounded-md border">
             <table className="w-full text-sm">
@@ -438,7 +432,7 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
           </Button>
         </div>
         {tickets.length === 0 ? (
-          <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">No tickets on this departure.</p>
+          <EmptyLine>No tickets on this departure.</EmptyLine>
         ) : (
           <div className="overflow-hidden rounded-md border">
             {tickets.map((t, i) => (
@@ -476,10 +470,7 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
         <Field label="Flight" hint="Edited in the General tab">
           <span className="flex h-8 items-center text-sm">
             {d.flight_mode === "priced" ? (
-              <Ltr>
-                {fmtMoney(d.flight_price)}
-                {sym}
-              </Ltr>
+              <Ltr>{fmtPrice(d.flight_price, currency)}</Ltr>
             ) : d.flight_mode === "included" ? (
               "Included in the price"
             ) : (
@@ -494,10 +485,7 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
       ) : (
         <Notice tone="info" className="text-xs">
           &quot;From&quot; price per person in a double room:{" "}
-          <Ltr className="text-sm font-semibold">
-            {fmtMoney(perPerson)}
-            {sym}
-          </Ltr>{" "}
+          <Ltr className="text-sm font-semibold">{fmtPrice(perPerson, currency)}</Ltr>{" "}
           = half a double room in the first hotel + the first ticket{d.flight_mode === "priced" ? " + flight" : ""} + fixed markup. The markup % is
           saved but not part of this calculation.
         </Notice>

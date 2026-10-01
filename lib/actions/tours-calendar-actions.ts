@@ -10,6 +10,7 @@
 import { requireCompany } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
+import { companyAudit } from "@/lib/tours/company-kit";
 import { isDateOnly } from "@/lib/tours/deadlines";
 import { CALENDAR_KINDS, type CalendarPeriod } from "@/types/tours.types";
 import { dbFail as databaseFail, plainFail as fail, type ActionResult } from "@/lib/tours/action-kit";
@@ -111,7 +112,7 @@ export async function saveCalendarPeriod(input: CalendarPeriodInput): Promise<Ac
       entityType: "calendar_period",
       entityId: input.id,
       changes: values,
-      metadata: { company_id: company.id },
+      metadata: companyAudit(company),
     });
     return { success: true, data: { id: input.id } };
   }
@@ -127,7 +128,7 @@ export async function saveCalendarPeriod(input: CalendarPeriodInput): Promise<Ac
     entityType: "calendar_period",
     entityId: data.id,
     changes: values,
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
   return { success: true, data: { id: data.id } };
 }
@@ -162,7 +163,7 @@ export async function deleteCalendarPeriod(id: string): Promise<ActionResult<nul
     entityType: "calendar_period",
     entityId: id,
     changes: existing,
-    metadata: { company_id: company.id },
+    metadata: companyAudit(company),
   });
   return { success: true, data: null };
 }

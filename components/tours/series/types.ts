@@ -1,9 +1,14 @@
 /**
  * Shapes that travel between the series server actions and the series screen.
- * (A "use server" module may only export async functions.)
+ * (A "use server" module may only export async functions.) Also the one link
+ * from the series screens to the board.
  */
 import type { BoardPackage, BoardPeriod, BoardSeries } from "@/components/tours/departures/types";
 
+/**
+ * The departures board filtered to one series and season year ("all" = every
+ * year). The series list and the season dialog both link with it.
+ */
 export const SERIES_TERM_KINDS = ["audiences", "tags", "destinations"] as const;
 /** A subset of the content taxonomies (components/tours/content/shared.ts TERM_KINDS); labels from TERM_KIND_LABELS. */
 export type SeriesTermKind = (typeof SERIES_TERM_KINDS)[number];

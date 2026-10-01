@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/page-header";
 import { listTourPackages } from "@/lib/actions/tours-content-actions";
 import { PackagesTable } from "@/components/tours/content/packages-table";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
-import { LoadError } from "@/components/tours/content/save-bar";
+import { PageLoadError } from "@/components/tours/content/save-bar";
 
 // Per request always: the action reads the session and the active company from cookies.
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export default async function TourPackagesPage() {
       {result.success ? (
         <PackagesTable rows={result.data.rows} siteUrl={result.data.siteUrl} />
       ) : (
-        <LoadError message={result.error} />
+        <PageLoadError message={result.error} />
       )}
     </div>
   );

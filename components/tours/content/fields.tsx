@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { Field } from "@/components/tours/ui";
+import { EmptyLine, Field } from "@/components/tours/ui";
 import { siteAssetUrl, type GalleryItem } from "@/components/tours/content/shared";
 
 /** Move an item of a list one place up or down. */
@@ -169,9 +169,7 @@ export function ImageListEditor({
       <Label>
         {label} <span className="font-normal text-muted-foreground">({value.length})</span>
       </Label>
-      {value.length === 0 && (
-        <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">No images</p>
-      )}
+      {value.length === 0 && <EmptyLine>No images</EmptyLine>}
       <ul className="space-y-2">
         {value.map((path, index) => (
           <li key={index} className="flex items-center gap-3 rounded-md border bg-background p-2">
@@ -222,9 +220,7 @@ export function GalleryItemsEditor({
       <Label>
         {label} <span className="font-normal text-muted-foreground">({value.length})</span>
       </Label>
-      {value.length === 0 && (
-        <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">No images</p>
-      )}
+      {value.length === 0 && <EmptyLine>No images</EmptyLine>}
       <ul className="space-y-2">
         {value.map((item, index) => (
           <li key={index} className="flex items-start gap-3 rounded-md border bg-background p-2">

@@ -18,7 +18,6 @@ import {
   flightFieldSet,
   formatFlightValue,
 } from "@/components/flight-field-groups";
-import { BLOCK_STATUS_LABELS } from "@/types/tours.types";
 import { TourBlockPanel } from "@/components/tours/flights/tour-block-panel";
 
 /** "Direct", or the airport the leg connects through and how long it sits there. */
@@ -167,19 +166,12 @@ export default async function OfflineFlightDetailsPage({
               />
               {tours && (
                 <>
-                  {/* Both legs: a group can fly home from another city. */}
+                  {/* Both legs: a group can fly home from another city. The
+                      block status is not repeated here - the block panel below
+                      shows it as its badge. */}
                   <FlightDetailItem
                     label="Route"
                     value={<span dir="ltr">{flightRouteLabel(flight)}</span>}
-                  />
-                  <FlightDetailItem
-                    label="Block Status"
-                    value={
-                      flight.block_status
-                        ? (BLOCK_STATUS_LABELS[flight.block_status] ??
-                          flight.block_status)
-                        : null
-                    }
                   />
                   <FlightDetailItem label="Series" value={flight.series_name} />
                 </>
