@@ -5,12 +5,13 @@
 --   20261001100300_flights_company_and_ops
 --   20261001100400_company_site_api
 --   20261001100500_tours_views
+--   20261001100600_tasks_company_and_tours_agent
 --
 -- This file lives OUTSIDE supabase/migrations on purpose: the CLI never runs it.
 -- Run it by hand (SQL editor or psql) only when the migrations must be undone,
--- then mark the six versions as reverted so the history matches the schema:
---   npx supabase migration repair --status reverted 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
--- and remove (or revert the commit of) the six migration files on master,
+-- then mark the seven versions as reverted so the history matches the schema:
+--   npx supabase migration repair --status reverted 20261001100600 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
+-- and remove (or revert the commit of) the seven migration files on master,
 -- otherwise the next push applies them again.
 --
 -- Everything here is new since the migrations: no Mega Events data is deleted.
@@ -18,6 +19,22 @@
 -- original block_status check back.
 
 begin;
+
+-- 7. tasks per company + the tours_agent role ---------------------------------
+-- Without company_id the board is one shared list again, so the tasks of any
+-- other company are soft-deleted first (deleted_at) - they must not surface on
+-- the Mega Events board. Nothing is hard-deleted.
+update public.tasks
+  set deleted_at = now()
+  where company_id is distinct from 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f601'
+    and deleted_at is null;
+drop index if exists public.tasks_company_id_idx;
+alter table public.tasks drop column if exists company_id;
+-- The old code does not know the tours_agent role: those accounts are switched
+-- off, not converted (the nearest old role, `agent`, is a Mega Events partner).
+-- The widened role check on user_profiles stays - it is harmless, and narrowing
+-- it would fail while such rows exist.
+update public.user_profiles set is_active = false where role = 'tours_agent';
 
 -- 5. site API ---------------------------------------------------------------
 do $$

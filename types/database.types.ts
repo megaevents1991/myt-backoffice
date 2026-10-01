@@ -4354,6 +4354,7 @@ export type Database = {
           assignee_id: string | null
           board: string
           channel: string | null
+          company_id: string
           completed_at: string | null
           created_at: string
           created_by: string | null
@@ -4376,6 +4377,7 @@ export type Database = {
           assignee_id?: string | null
           board?: string
           channel?: string | null
+          company_id?: string
           completed_at?: string | null
           created_at?: string
           created_by?: string | null
@@ -4398,6 +4400,7 @@ export type Database = {
           assignee_id?: string | null
           board?: string
           channel?: string | null
+          company_id?: string
           completed_at?: string | null
           created_at?: string
           created_by?: string | null
@@ -4422,6 +4425,13 @@ export type Database = {
             columns: ["assignee_id"]
             isOneToOne: false
             referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
