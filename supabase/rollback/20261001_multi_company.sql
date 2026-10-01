@@ -4,12 +4,13 @@
 --   20261001100200_company_support_tables
 --   20261001100300_flights_company_and_ops
 --   20261001100400_company_site_api
+--   20261001100500_tours_views
 --
 -- This file lives OUTSIDE supabase/migrations on purpose: the CLI never runs it.
 -- Run it by hand (SQL editor or psql) only when the migrations must be undone,
--- then mark the five versions as reverted so the history matches the schema:
---   npx supabase migration repair --status reverted 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
--- and remove (or revert the commit of) the five migration files on master,
+-- then mark the six versions as reverted so the history matches the schema:
+--   npx supabase migration repair --status reverted 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
+-- and remove (or revert the commit of) the six migration files on master,
 -- otherwise the next push applies them again.
 --
 -- Everything here is new since the migrations: no Mega Events data is deleted.

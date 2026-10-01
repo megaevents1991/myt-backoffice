@@ -109,7 +109,7 @@ begin
     execute format($v$create view %I.promotions with (security_barrier) as
       select id, departure_id, series_id, kind, value, label, valid_until, show_on_card
       from tours.promotions
-      where company_id = %L and is_active and (valid_until is null or valid_until >= current_date)$v$, s, c.id);
+      where company_id = %L and is_active$v$, s, c.id);  -- valid_until is shown, not enforced: the site decides (WordPress never hid an expired discount)
 
     -- the live flight block(s) of a published departure: schedule only ---------
     execute format('drop view if exists %I.departure_flights cascade', s);

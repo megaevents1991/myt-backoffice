@@ -5,19 +5,26 @@
 -- Rollback: supabase/rollback/20261001_multi_company.sql (dropping schema tours removes them).
 
 -- Seats of a departure: what its live flight blocks hold, what was sold, what is left.
+-- A departure may take its two directions from different blocks (legs = outbound /
+-- inbound), so each direction is summed apart and the smaller one is what can be
+-- sold: 40 seats out and 20 seats back carry 20 passengers. With the usual
+-- legs = both the two sums are equal.
 create or replace view tours.departure_stats as
 select
   d.id as departure_id,
   d.company_id,
-  coalesce(a.live_seats, 0)::int as allocated_seats,
+  least(coalesce(a.outbound_seats, 0), coalesce(a.inbound_seats, 0))::int as allocated_seats,
   coalesce(a.live_blocks, 0)::int as live_blocks,
   coalesce(a.total_blocks, 0)::int as total_blocks,
   coalesce(s.sold, 0)::int as sold,
-  (coalesce(a.live_seats, 0) - coalesce(s.sold, 0))::int as remaining
+  (least(coalesce(a.outbound_seats, 0), coalesce(a.inbound_seats, 0)) - coalesce(s.sold, 0))::int as remaining,
+  coalesce(a.outbound_seats, 0)::int as outbound_seats,
+  coalesce(a.inbound_seats, 0)::int as inbound_seats
 from tours.departures d
 left join lateral (
   select
-    sum(fa.seats) filter (where f.block_status in ('confirmed', 'operational', 'ticketed') and f.is_deleted is not true) as live_seats,
+    sum(fa.seats) filter (where fa.legs <> 'inbound' and f.block_status in ('confirmed', 'operational', 'ticketed') and f.is_deleted is not true) as outbound_seats,
+    sum(fa.seats) filter (where fa.legs <> 'outbound' and f.block_status in ('confirmed', 'operational', 'ticketed') and f.is_deleted is not true) as inbound_seats,
     count(*) filter (where f.block_status in ('confirmed', 'operational', 'ticketed') and f.is_deleted is not true) as live_blocks,
     count(*) as total_blocks
   from tours.flight_allocations fa

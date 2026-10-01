@@ -121,6 +121,7 @@ create table if not exists tours.hotels (
   excerpt text,
   content_html text,
   amenities text[] not null default '{}',
+  position int not null default 0,                    -- order on the site
   legacy_id int,
   data jsonb not null default '{}'::jsonb,             -- presentational payload the site adapter round-trips
   unique (company_id, code)
@@ -135,6 +136,7 @@ create table if not exists tours.cars (
   max_people int,
   image text,
   content_html text,
+  position int not null default 0,                    -- order on the site
   legacy_id int,
   data jsonb not null default '{}'::jsonb,             -- presentational payload the site adapter round-trips
   unique (company_id, code)
@@ -166,6 +168,7 @@ create table if not exists tours.cms_pages (          -- about/*, faq/*, legal, 
   blocks jsonb not null default '[]'::jsonb,
   content_html text,
   seo jsonb not null default '{}'::jsonb,
+  position int not null default 0,                    -- order on the site
   legacy_id int,
   data jsonb not null default '{}'::jsonb,             -- presentational payload the site adapter round-trips
   is_active boolean not null default true,
