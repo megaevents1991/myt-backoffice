@@ -8,6 +8,7 @@ import {
   FileDown,
   Loader2,
   Pencil,
+  Quote,
   StickyNote,
   Star,
   Trash2,
@@ -592,9 +593,10 @@ const asText = (value: AnswerValue | undefined) =>
   value === undefined || value === null ? "" : String(value);
 
 /**
- * The full submission, question by question, in form order. "עריכה" turns the
- * open answers (text, number, date...) into inputs so staff can fix a typo -
- * ratings and choices stay read-only; the server enforces the same rule.
+ * The full submission. Read mode is `ResponseStory` (what was written first, the
+ * stars under it, the rest last). "עריכה" lists every question in form order and
+ * turns the open answers (text, number, date...) into inputs so staff can fix a
+ * typo - ratings and choices stay read-only; the server enforces the same rule.
  */
 function ResponseDialog({
   response,
@@ -758,16 +760,19 @@ function ResponseDialog({
           </p>
         )}
 
-        {response && (
+        {response && !editing && (
+          <ResponseStory response={response} fields={fields} />
+        )}
+
+        {response && editing && (
           <div dir="rtl" className="space-y-1.5">
             {fields.map((field) => {
               const key = String(field.id);
               const value = response.answers[key];
-              const answered = value !== undefined && value !== null && value !== "";
               const label = adminLabel(field.label_en, field.label_he);
               const error = errors[key];
 
-              if (editing && fieldEditable(field)) {
+              if (fieldEditable(field)) {
                 const inputProps = {
                   value: draft[key] ?? "",
                   disabled: pending,
@@ -815,73 +820,178 @@ function ResponseDialog({
                 );
               }
 
-              // Long answers: label on top, full-width text below - a side-by-side
-              // row squeezed them into a narrow column and broke every word.
-              if (answered && stacked(field, value)) {
-                return (
-                  <div key={field.id} className="rounded-md border px-3 py-2 text-sm">
-                    <span className="block text-right text-xs font-medium text-muted-foreground">
-                      {label}
-                    </span>
-                    <p className="mt-1 whitespace-pre-wrap break-words text-right font-semibold leading-relaxed">
-                      {formatAnswer(field, value)}
-                    </p>
-                  </div>
-                );
-              }
-
-              return (
-                <div
-                  key={field.id}
-                  className={cn(
-                    "flex items-start justify-between gap-4 rounded-md border px-3 py-2 text-sm",
-                    !answered && "opacity-45",
-                  )}
-                >
-                  <span className="min-w-0 flex-1 text-right font-medium">{label}</span>
-                  <span className="shrink-0 text-left">
-                    {!answered ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : field.type === "rating" ? (
-                      <span className="inline-flex items-center gap-1 font-bold tabular-nums">
-                        <Star className="h-3.5 w-3.5 text-amber-500" fill="currentColor" />
-                        {String(value)}
-                      </span>
-                    ) : (
-                      <span className="whitespace-pre-wrap break-words font-semibold">
-                        {formatAnswer(field, value)}
-                      </span>
-                    )}
-                  </span>
-                </div>
-              );
+              return <AnswerRow key={field.id} field={field} value={value} />;
             })}
 
-            {editing && (
-              <div className="flex items-center justify-between gap-3 pt-2">
-                <span className="text-xs text-destructive">{message}</span>
-                <span className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={stopEdit}
-                    disabled={pending}
-                  >
-                    <X className="me-1 h-3.5 w-3.5" />
-                    ביטול
-                  </Button>
-                  <Button type="button" size="sm" onClick={save} disabled={pending}>
-                    {pending && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
-                    שמור
-                  </Button>
-                </span>
-              </div>
-            )}
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <span className="text-xs text-destructive">{message}</span>
+              <span className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={stopEdit}
+                  disabled={pending}
+                >
+                  <X className="me-1 h-3.5 w-3.5" />
+                  ביטול
+                </Button>
+                <Button type="button" size="sm" onClick={save} disabled={pending}>
+                  {pending && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
+                  שמור
+                </Button>
+              </span>
+            </div>
           </div>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+const isAnswered = (value: AnswerValue | undefined): value is AnswerValue =>
+  value !== undefined && value !== null && value !== "";
+
+/** One answer as a read-only row: a long one stacked under its label, a short one beside it. */
+function AnswerRow({ field, value }: { field: FormField; value: AnswerValue | undefined }) {
+  const label = adminLabel(field.label_en, field.label_he);
+  const answered = isAnswered(value);
+
+  // Long answers: label on top, full-width text below - a side-by-side
+  // row squeezed them into a narrow column and broke every word.
+  if (answered && stacked(field, value)) {
+    return (
+      <div className="rounded-md border px-3 py-2 text-sm">
+        <span className="block text-right text-xs font-medium text-muted-foreground">
+          {label}
+        </span>
+        <p className="mt-1 whitespace-pre-wrap break-words text-right font-semibold leading-relaxed">
+          {formatAnswer(field, value)}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex items-start justify-between gap-4 rounded-md border px-3 py-2 text-sm",
+        !answered && "opacity-45",
+      )}
+    >
+      <span className="min-w-0 flex-1 text-right font-medium">{label}</span>
+      <span className="shrink-0 text-left">
+        {!answered ? (
+          <span className="text-muted-foreground">—</span>
+        ) : field.type === "rating" ? (
+          <span className="inline-flex items-center gap-1 font-bold tabular-nums">
+            <Star className="h-3.5 w-3.5 text-amber-500" fill="currentColor" />
+            {String(value)}
+          </span>
+        ) : (
+          <span className="whitespace-pre-wrap break-words font-semibold">
+            {formatAnswer(field, value)}
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** A rating drawn as stars - the first ones filled (they sit on the right in this RTL popup). */
+function Stars({ value, max }: { value: number; max: number }) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-0.5"
+      role="img"
+      aria-label={`${value} מתוך ${max}`}
+    >
+      {Array.from({ length: max }, (_, i) => (
+        <Star
+          key={i}
+          className={cn("h-4 w-4", i < value ? "text-amber-500" : "text-muted-foreground/30")}
+          fill={i < value ? "currentColor" : "none"}
+        />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The response as staff read it - laid out to be screenshotted for a story
+ * (Dor / Alon, 2026-10-01): what the traveller WROTE first and large, the star
+ * ratings right under it, and everything else (trip details, yes / no answers,
+ * questions left empty) last and quiet. Editing keeps the form's own order.
+ */
+function ResponseStory({
+  response,
+  fields,
+}: {
+  response: FormResponseRow;
+  fields: FormField[];
+}) {
+  const answerOf = (field: FormField) => response.answers[String(field.id)];
+  const written = fields.filter(
+    (f) => f.type === "long_text" && isAnswered(answerOf(f)) && String(answerOf(f)).trim() !== "",
+  );
+  const rated = fields.filter(
+    (f) => f.type === "rating" && Number.isFinite(Number(answerOf(f))) && isAnswered(answerOf(f)),
+  );
+  const rest = fields.filter((f) => !written.includes(f) && !rated.includes(f));
+  // The traveller's own name signs the quote - never a staff-filled field (the escort).
+  const travellerField = fields.find((f) => f.type === "short_text" && !f.staff_only);
+  const traveller = travellerField ? answerOf(travellerField) : undefined;
+
+  return (
+    <div dir="rtl" className="space-y-3">
+      {written.length > 0 && (
+        <div className="rounded-xl border bg-muted/30 px-5 py-5">
+          <Quote className="mb-2 h-6 w-6 text-primary" aria-hidden />
+          <div className="space-y-4">
+            {written.map((field) => (
+              <div key={field.id}>
+                {/* With one free-text question its label is noise above the quote. */}
+                {written.length > 1 && (
+                  <p className="mb-1 text-right text-xs font-medium text-muted-foreground">
+                    {adminLabel(field.label_en, field.label_he)}
+                  </p>
+                )}
+                <p className="whitespace-pre-wrap break-words text-right text-lg font-semibold leading-relaxed sm:text-xl sm:leading-relaxed">
+                  {String(answerOf(field)).trim()}
+                </p>
+              </div>
+            ))}
+          </div>
+          {isAnswered(traveller) && (
+            <p className="mt-3 text-right text-sm font-medium text-muted-foreground">
+              — {String(traveller)}
+            </p>
+          )}
+        </div>
+      )}
+
+      {rated.length > 0 && (
+        <div className="space-y-2 rounded-xl border px-4 py-3">
+          {rated.map((field) => (
+            <div key={field.id} className="flex items-center justify-between gap-4 text-sm">
+              <span className="min-w-0 flex-1 text-right font-medium">
+                {adminLabel(field.label_en, field.label_he)}
+              </span>
+              <Stars value={Number(answerOf(field))} max={field.config.max ?? 5} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {rest.length > 0 && (
+        <div className="space-y-1.5 pt-1">
+          <p className="text-right text-xs font-semibold text-muted-foreground">פרטים נוספים</p>
+          {rest.map((field) => (
+            <AnswerRow key={field.id} field={field} value={answerOf(field)} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
