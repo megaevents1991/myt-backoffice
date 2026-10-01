@@ -1,4 +1,5 @@
 import { supabaseTyped } from "@/lib/supabase-server";
+import { megaEventsTasks } from "@/lib/tasks-scope";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { OPEN_TASK_STATUSES } from "@/types/task.types";
 import type { RuleGenerator } from "./types";
@@ -58,8 +59,7 @@ async function loadNeedsReviewRows(): Promise<SyncLogRow[]> {
 async function loadOpenReviewEventIds(): Promise<Set<number>> {
   const { rows, error, truncated } = await fetchPaged<OpenTaskRow>(
     () =>
-      db
-        .from("tasks")
+      megaEventsTasks()
         .select("id,source_ref")
         .eq("source", "price_review")
         .is("deleted_at", null)

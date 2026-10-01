@@ -9,6 +9,7 @@
 
 import { appOrigin, sendMail } from "@/lib/email";
 import { supabase } from "@/lib/supabase-server";
+import { taskUrl } from "@/lib/services/task-site-url";
 import type { TaskPriority, TaskSourceRef } from "@/types/task.types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,6 +30,8 @@ interface Profile {
 
 export interface TaskAssignedInput {
   taskId: string;
+  /** The task's company - the mailed link opens the board of that company (taskUrl). */
+  companyId: string;
   title: string;
   description: string | null;
   priority: TaskPriority;
@@ -62,7 +65,7 @@ export async function notifyTaskAssigned(input: TaskAssignedInput): Promise<Task
     const assignerName = assigner?.display_name || assigner?.email || "המערכת";
 
     const origin = appOrigin();
-    const boardUrl = `${origin}/tasks?task=${input.taskId}`;
+    const boardUrl = await taskUrl(input.taskId, input.companyId);
     // source_ref comes from the client side of a server action - only a
     // same-site relative path may become a link in the mail.
     const path = safeRelativePath(input.sourceRef?.url);
@@ -99,6 +102,8 @@ const SUMMARY_TITLES_MAX = 10;
 
 export interface RuleTasksCreatedInput {
   ruleId: string;
+  /** The company whose board the rule's tasks landed on. */
+  companyId: string;
   ruleName: string;
   assigneeId: string;
   titles: string[];
@@ -112,6 +117,7 @@ export interface RuleTasksCreatedInput {
 export async function notifyRuleTasksCreated(input: RuleTasksCreatedInput): Promise<void> {
   await sendTaskListMail({
     assigneeId: input.assigneeId,
+    companyId: input.companyId,
     subject: `${input.titles.length} משימות חדשות מהכלל ${input.ruleName}`,
     kicker: "MYT Admin · משימות חוזרות",
     titles: input.titles,
@@ -126,10 +132,13 @@ export async function notifyRuleTasksCreated(input: RuleTasksCreatedInput): Prom
  */
 export async function notifyTasksAssigned(input: {
   assigneeId: string;
+  /** The company whose board the tasks are on. */
+  companyId: string;
   titles: string[];
 }): Promise<TaskMailOutcome> {
   return sendTaskListMail({
     assigneeId: input.assigneeId,
+    companyId: input.companyId,
     subject: input.titles.length === 1 ? `משימה שויכה אליך: ${input.titles[0]}` : `${input.titles.length} משימות שויכו אליך`,
     kicker: "MYT Admin · שיוך משימות",
     titles: input.titles,
@@ -140,6 +149,7 @@ export async function notifyTasksAssigned(input: {
 /** One mail with a list of task titles and a button to the board. */
 async function sendTaskListMail(input: {
   assigneeId: string;
+  companyId: string;
   subject: string;
   kicker: string;
   titles: string[];
@@ -156,7 +166,7 @@ async function sendTaskListMail(input: {
     const assignee = data as Profile | null;
     if (!assignee?.email) return "skipped";
 
-    const boardUrl = `${appOrigin()}/tasks`;
+    const boardUrl = await taskUrl(null, input.companyId);
     const count = input.titles.length;
     const shown = input.titles.slice(0, SUMMARY_TITLES_MAX);
     const more = count - shown.length;

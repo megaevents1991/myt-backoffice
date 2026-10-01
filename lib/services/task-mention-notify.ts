@@ -1,7 +1,8 @@
 /** "You were mentioned in a task" mail. Sister of task-notify.ts: same
  *  transport, same best-effort contract - a mail failure is logged and never
  *  fails the comment write (spec §3.3). */
-import { appOrigin, sendMail } from "@/lib/email";
+import { sendMail } from "@/lib/email";
+import { taskUrl } from "@/lib/services/task-site-url";
 import { supabaseTyped } from "@/lib/supabase-server";
 
 const db = supabaseTyped;
@@ -18,6 +19,8 @@ export function commentForMail(body: string): string {
 
 export interface TaskMentionInput {
   taskId: string;
+  /** The task's company - the mailed link opens the board of that company (taskUrl). */
+  companyId: string;
   taskTitle: string;
   body: string;
   authorId: string | null;
@@ -36,7 +39,7 @@ export async function notifyTaskMention(input: TaskMentionInput): Promise<void> 
     const author = profiles.find((p) => p.id === input.authorId);
     const authorName = author?.display_name || author?.email || "מישהו";
 
-    const url = `${appOrigin()}/tasks?task=${input.taskId}`;
+    const url = await taskUrl(input.taskId, input.companyId);
     const excerpt = commentForMail(input.body);
 
     const mailPromises = profiles
@@ -49,7 +52,7 @@ export async function notifyTaskMention(input: TaskMentionInput): Promise<void> 
           html: `<div dir="rtl" style="font-family:Arial,sans-serif">
   <p>${escapeHtml(authorName)} אזכר/ה אותך במשימה <strong>${escapeHtml(input.taskTitle)}</strong>:</p>
   <blockquote style="border-right:3px solid #5BFF95;margin:0;padding:0 12px;color:#333;white-space:pre-line">${escapeHtml(excerpt)}</blockquote>
-  <p><a href="${url}">למשימה</a></p>
+  <p><a href="${escapeHtml(url)}">למשימה</a></p>
 </div>`,
           text: [`${authorName} אזכר/ה אותך במשימה: ${input.taskTitle}`, excerpt, url].join("\n"),
         });

@@ -13,6 +13,8 @@ import { toursDb } from "@/lib/tours/db";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { notifyTasksAssigned, type TaskMailOutcome } from "@/lib/services/task-notify";
+import { PLAIN_TASK_BOARD } from "@/lib/services/task-company";
+import { tasksOf, type TaskResult } from "@/lib/tasks-scope";
 import { checkBlockFitsDeparture, departureRouteLabel, flightRouteLabel } from "@/lib/tours/routes";
 import {
   DEADLINE_FIELDS,
@@ -408,8 +410,10 @@ const taskKind = (field: DeadlineField) => `flight_deadline:${field}`;
  * and has no task yet. Safe to press again: one task per block and deadline kind,
  * recognised by `source_ref` (table "flights", row_id = the block, kind = the deadline).
  *
- * The tasks table has no company column and no "flight deadline" source, so the
- * tasks are ordinary manual tasks on the operations board, assigned to one person.
+ * The tasks belong to this company's board (lib/tasks-scope.ts): `tasksOf(company)`
+ * stamps the company on every new task and looks for the existing ones inside the
+ * company only. There is no "flight deadline" source, so they are ordinary manual
+ * tasks on the company's plain board, assigned to one person.
  */
 export async function syncDeadlineTasks(
   input: { assigneeId?: string | null } = {},
@@ -432,12 +436,11 @@ export async function syncDeadlineTasks(
   const taken = new Set<string>();
   const flightIds = [...new Set(open.map((d) => String(d.flight_id)))];
   for (let i = 0; i < flightIds.length; i += IN_CHUNK) {
-    const { data, error } = await supabaseTyped
-      .from("tasks")
+    const { data, error } = (await tasksOf(company)
       .select("source_ref")
       .eq("source_ref->>table", "flights")
       .like("source_ref->>kind", "flight_deadline:%")
-      .in("source_ref->>row_id", flightIds.slice(i, i + IN_CHUNK));
+      .in("source_ref->>row_id", flightIds.slice(i, i + IN_CHUNK))) as TaskResult<{ source_ref: unknown }[]>;
     if (error) return dbFail("existing tasks", error);
     for (const row of data ?? []) {
       const ref = row.source_ref as TaskSourceRef | null;
@@ -473,11 +476,13 @@ export async function syncDeadlineTasks(
       due_date: d.date,
       source: "manual",
       source_ref: ref,
-      board: "ops",
+      board: PLAIN_TASK_BOARD,
     };
   });
 
-  const { data: inserted, error } = await supabaseTyped.from("tasks").insert(rows).select("id,title");
+  const { data: inserted, error } = (await tasksOf(company).insert(rows).select("id,title")) as TaskResult<
+    { id: string; title: string }[]
+  >;
   if (error) return dbFail("tasks insert", error);
   const created = inserted ?? [];
 
@@ -492,7 +497,7 @@ export async function syncDeadlineTasks(
   // Same as the task board: handing tasks to someone else mails them once, with the list.
   let mail: TaskMailOutcome | undefined;
   if (assigneeId !== session.sub && created.length > 0) {
-    mail = await notifyTasksAssigned({ assigneeId, titles: created.map((t) => t.title) });
+    mail = await notifyTasksAssigned({ assigneeId, companyId: company.id, titles: created.map((t) => t.title) });
   }
   return {
     success: true,

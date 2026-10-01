@@ -36,7 +36,13 @@ export function diffActivities(
   return out;
 }
 
-/** Best-effort: a failed activity row never fails the change it describes. */
+/** Best-effort: a failed activity row never fails the change it describes.
+ *
+ *  `task_comments` has no company column - it hangs off the task id. This function does not
+ *  resolve the task itself: the CALLER passes the id of a task it has just read or written
+ *  through a scope (lib/tasks-scope.ts), or - the overdue cron - a task it read with its own
+ *  company. scripts/tasks-company-scope-selftest.ts fails when a file that holds no scope
+ *  calls it. */
 export async function recordActivity(
   taskId: string,
   actorId: string | null,

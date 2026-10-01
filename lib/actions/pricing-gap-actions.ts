@@ -11,6 +11,7 @@
  */
 import { requireStaff } from "@/lib/auth/guards";
 import { supabaseTyped } from "@/lib/supabase-server";
+import { megaEventsTasks } from "@/lib/tasks-scope";
 import { generatorFor, type RuleCandidate } from "@/lib/services/task-rules";
 import { createTask } from "@/lib/actions/task-actions";
 import { openPriceLightTask as insertPriceLightTask } from "@/lib/services/price-light-tasks";
@@ -74,8 +75,7 @@ function changeRow(candidate: RuleCandidate, openTaskId: string | null): Pricing
  *  it (brief: "שורה שכבר יש לה משימה פתוחה מציגה קישור אליה במקום כפתור"), which
  *  needs the task's actual id, not just a yes/no. */
 async function loadOpenTaskIds(source: "price_light" | "price_review"): Promise<Map<string, string>> {
-  const { data, error } = await db
-    .from("tasks")
+  const { data, error } = await megaEventsTasks()
     .select("id,source_ref")
     .eq("source", source)
     .is("deleted_at", null)

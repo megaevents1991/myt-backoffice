@@ -2,16 +2,12 @@
 // dedupe against an already-open task for the same event+scope, and close it
 // again automatically once the scope leaves red. Spec:
 // docs/superpowers/specs/2026-09-09-price-light-design.md.
-import { supabase } from "@/lib/supabase-server";
+import { megaEventsTasks, type TaskResult } from "@/lib/tasks-scope";
 import { logAudit } from "@/lib/audit";
 import { lightSettled, signedUsd } from "@/lib/services/price-light";
 import type { LightEvent, Lights } from "@/lib/services/price-light-store";
 import type { LightDecisionSnapshot, LightScopeDetail, MatchRow, Scope } from "@/types/price-light.types";
 import { OPEN_TASK_STATUSES, type TaskSourceRef } from "@/types/task.types";
-
-// New table predates the generated DB types - one boundary cast (repo pattern).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
 
 const SCOPE_HE: Record<Scope, string> = { package: "חבילה", ticket: "כרטיס" };
 
@@ -42,15 +38,14 @@ function description(scope: Scope, d: LightScopeDetail, history: MatchRow[]): st
 
 /** Newest open price_light task for this event+scope, or null. */
 async function openTaskFor(eventId: number, scope: Scope): Promise<{ id: string; description: string | null } | null> {
-  const { data, error } = await db
-    .from("tasks")
+  const { data, error } = (await megaEventsTasks()
     .select("id,description")
     .eq("source", "price_light")
     .is("deleted_at", null)
     .in("status", OPEN_TASK_STATUSES)
     .contains("source_ref", { row_id: eventId, kind: scope })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle()) as TaskResult<{ id: string; description: string | null }>;
   if (error) {
     console.error(JSON.stringify(error));
     throw error;
@@ -70,8 +65,7 @@ export async function openPriceLightTask(
   try {
     const existing = await openTaskFor(event.id, scope);
     if (existing) return { ok: true, taskId: existing.id, existed: true };
-    const { data, error } = await db
-      .from("tasks")
+    const { data, error } = (await megaEventsTasks()
       .insert({
         title: `אדום · ${SCOPE_HE[scope]} · ${event.name} ${event.date.slice(0, 10)}`,
         description: [description(scope, detail, history), extra].filter(Boolean).join("\n\n"),
@@ -84,7 +78,7 @@ export async function openPriceLightTask(
         board: "pricing",
       })
       .select("id")
-      .single();
+      .single()) as TaskResult<{ id: string }>;
     if (error || !data) {
       // 23505 = the partial unique index tasks_price_light_open_uniq fired: another request
       // opened the same event+scope task between our dedupe read and this insert. Return it.
@@ -130,10 +124,9 @@ export async function closePriceLightTasksIfNotRed(eventId: number, lights: Ligh
     const task = await openTaskFor(eventId, scope).catch(() => null);
     if (!task) continue;
     const note = `האור ירד מאדום אוטומטית (${new Date().toISOString().slice(0, 10)})`;
-    const { error } = await db
-      .from("tasks")
+    const { error } = (await megaEventsTasks()
       .update({ status: "done", completed_at: new Date().toISOString(), description: `${task.description ?? ""}\n${note}`.trim() })
-      .eq("id", task.id);
+      .eq("id", task.id)) as TaskResult<null>;
     if (error) {
       console.error(JSON.stringify(error));
       continue;

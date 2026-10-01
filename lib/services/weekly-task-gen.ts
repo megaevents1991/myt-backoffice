@@ -13,6 +13,8 @@
  * to roll back.
  */
 import { supabaseTyped } from "@/lib/supabase-server";
+import { megaEventsTasks, type TaskResult } from "@/lib/tasks-scope";
+import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
@@ -50,8 +52,7 @@ const TASKS_MAX = 10_000;
 async function loadOpenItemKeys(): Promise<Set<string>> {
   const { rows, error, truncated } = await fetchPaged<OpenTaskKeyRow>(
     () =>
-      db
-        .from("tasks")
+      megaEventsTasks()
         .select("id,source_ref")
         .is("deleted_at", null)
         .in("status", OPEN_TASK_STATUSES)
@@ -74,14 +75,13 @@ async function loadOpenItemKeys(): Promise<Set<string>> {
 /** Whether a "recurring" digest for this rule already exists THIS week - open or done
  *  (ruling #4): a digest closed on Monday must not be recreated by the same week's re-run. */
 async function hasDigestThisWeek(ruleId: string, week: string): Promise<boolean> {
-  const { data, error } = await db
-    .from("tasks")
+  const { data, error } = (await megaEventsTasks()
     .select("id")
     .eq("source", "recurring")
     .is("deleted_at", null)
     .contains("source_ref", { row_id: ruleId, week })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle()) as TaskResult<{ id: string }>;
   if (error) throw new Error(`digest lookup failed: ${error.message}`);
   return !!data;
 }
@@ -93,14 +93,13 @@ async function loadEarlierOpenDigests(
   ruleId: string,
   week: string,
 ): Promise<{ id: string; description: string | null }[]> {
-  const { data, error } = await db
-    .from("tasks")
+  const { data, error } = (await megaEventsTasks()
     .select("id,description,source_ref")
     .eq("source", "recurring")
     .is("deleted_at", null)
     .in("status", OPEN_TASK_STATUSES)
     .contains("source_ref", { row_id: ruleId, kind: "rule" })
-    .order("id", { ascending: true });
+    .order("id", { ascending: true })) as TaskResult<{ id: string; description: string | null; source_ref: TaskSourceRef | null }[]>;
   if (error) throw new Error(`earlier digests load failed: ${error.message}`);
   return ((data ?? []) as { id: string; description: string | null; source_ref: TaskSourceRef | null }[])
     .filter((row) => row.source_ref?.week !== week)
@@ -121,14 +120,13 @@ async function closeEarlierDigests(
   let closed = 0;
   const note = "נסגר אוטומטית — אין יותר פריטים פתוחים";
   for (const row of rows) {
-    const { error } = await db
-      .from("tasks")
+    const { error } = (await megaEventsTasks()
       .update({
         status: "done",
         completed_at: new Date().toISOString(),
         description: `${row.description ?? ""}\n${note}`.trim(),
       })
-      .eq("id", row.id);
+      .eq("id", row.id)) as TaskResult<null>;
     if (error) {
       console.error("weekly-task-gen: close earlier digest failed", JSON.stringify(error));
       summary.errors.push(`${ruleName}: close earlier digest failed - ${error.message}`);
@@ -146,8 +144,7 @@ async function closeEarlierDigests(
  *  The index only covers `source = 'recurring'` rows, so a 23505 elsewhere would be a
  *  real, unexpected conflict and falls through to the normal error path. */
 async function insertTask(task: TaskInsert): Promise<{ id: string } | { conflict: true } | null> {
-  const { data, error } = await db
-    .from("tasks")
+  const { data, error } = (await megaEventsTasks()
     .insert({
       title: task.title,
       description: task.description,
@@ -160,7 +157,7 @@ async function insertTask(task: TaskInsert): Promise<{ id: string } | { conflict
       board: task.board,
     })
     .select("id")
-    .single();
+    .single()) as TaskResult<{ id: string }>;
   if (error) {
     if (error.code === "23505" && task.source === "recurring") return { conflict: true };
     console.error("weekly-task-gen: task insert failed", JSON.stringify(error));
@@ -230,6 +227,7 @@ async function runOneRule(
     if (task.assignee_id && rule.mode === "weekly_digest") {
       await notifyTaskAssigned({
         taskId: inserted.id,
+        companyId: MEGA_EVENTS_COMPANY_ID,
         title: task.title,
         description: task.description,
         priority: task.priority,
@@ -243,6 +241,7 @@ async function runOneRule(
   if (rule.mode === "per_item" && rule.assignee_id && createdTitles.length > 0) {
     await notifyRuleTasksCreated({
       ruleId: rule.id,
+      companyId: MEGA_EVENTS_COMPANY_ID,
       ruleName: rule.name,
       assigneeId: rule.assignee_id,
       titles: createdTitles,

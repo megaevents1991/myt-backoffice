@@ -1,13 +1,14 @@
 "use server";
 
 import { randomUUID } from "crypto";
-import { requireStaff } from "@/lib/auth/guards";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
+import { requireTaskBoard, type TaskResult, type TaskScope, type TasksScope } from "@/lib/tasks-scope";
 import { logAudit } from "@/lib/audit";
 import { sniffAttachmentMime } from "@/lib/images/sniff";
 import { notifyTaskMention } from "@/lib/services/task-mention-notify";
+import { taskPeopleIds, taskPeopleOf } from "@/lib/services/task-people";
 import { notifyTaskComment } from "@/lib/services/task-watch-notify";
-import { ADMIN_ROLES, STAFF_ROLES } from "@/types/auth.types";
+import { ADMIN_ROLES } from "@/types/auth.types";
 import type {
   Ok,
   StaffMentionOption,
@@ -18,6 +19,15 @@ import type {
 import { isValidTaskAttachmentPath } from "@/lib/tasks/attachment-path";
 import type { ThreadCommentRow } from "@/lib/tasks/thread-watch";
 
+/**
+ * The thread of a task: comments, read marks and attachments.
+ *
+ * `task_comments`, `task_reads` and the `task-attachments` bucket carry no company column -
+ * they hang off a task id. Every action here starts with `requireTaskBoard()` (the active
+ * company and its scope, lib/tasks-scope.ts) and resolves the parent task inside that scope
+ * BEFORE it touches a child row. A task of another company is then exactly a task that does
+ * not exist: an empty thread, nothing stamped, "not found".
+ */
 const db = supabaseTyped;
 
 const COMMENT_COLUMNS =
@@ -37,9 +47,21 @@ function isManager(role: string): boolean {
   return (ADMIN_ROLES as readonly string[]).includes(role);
 }
 
-/** Every staff member reads every thread (spec §3.4). */
+/** The comment's task belongs to the caller's company. A comment of another company's task -
+ *  or no comment at all - is the same "not there". */
+async function commentInScope(tasks: TasksScope, commentId: string): Promise<boolean> {
+  const { data, error } = await db.from("task_comments").select("task_id").eq("id", commentId).maybeSingle();
+  if (error) {
+    console.error("task-comments: comment lookup failed", JSON.stringify(error));
+    return false;
+  }
+  return !!data && (await tasks.owns(data.task_id));
+}
+
+/** Every staff member of the company reads every thread of its board (spec §3.4). */
 export async function listTaskComments(taskId: string): Promise<TaskCommentWithAuthor[]> {
-  await requireStaff();
+  const { tasks } = await requireTaskBoard();
+  if (!(await tasks.owns(taskId))) return [];
 
   const { data, error } = await db
     .from("task_comments")
@@ -83,7 +105,8 @@ export async function listTaskComments(taskId: string): Promise<TaskCommentWithA
  *  costs the marker, never the thread. An impersonating admin reads without stamping: the
  *  unread state is the real person's, not the visitor's. */
 export async function markTaskRead(taskId: string): Promise<{ ok: boolean; previous: string | null }> {
-  const session = await requireStaff();
+  const { session, tasks } = await requireTaskBoard();
+  if (!(await tasks.owns(taskId))) return { ok: false, previous: null };
 
   const { data: before, error: readError } = await db
     .from("task_reads")
@@ -126,24 +149,14 @@ async function signedUrlMap(paths: string[]): Promise<Map<string, string>> {
   return out;
 }
 
-/** Staff list for the @mention picker. `listUsers` (user-actions.ts) is
- *  admin-only, so an editor writing a comment would be refused - this is the
- *  same staff-active filter, requireStaff-guarded, and shaped down to just
- *  what the picker needs. */
+/** The people of the active company, for the @mention and reviewer pickers. `listUsers`
+ *  (user-actions.ts) is admin-only, so an editor writing a comment would be refused - this
+ *  is open to every staff member of the company and shaped down to just what a picker
+ *  needs. Who counts as the company's people: lib/services/task-people.ts (Mega Events =
+ *  the active staff list it always was). */
 export async function listStaffForMentions(): Promise<StaffMentionOption[]> {
-  await requireStaff();
-
-  const { data, error } = await db
-    .from("user_profiles")
-    .select("id,display_name,email")
-    .in("role", STAFF_ROLES)
-    .eq("is_active", true)
-    .order("display_name", { ascending: true });
-  if (error) {
-    console.error("task-comments: list staff failed", JSON.stringify(error));
-    return [];
-  }
-  return (data ?? []) as StaffMentionOption[];
+  const { company } = await requireTaskBoard();
+  return (await taskPeopleOf(company)) ?? [];
 }
 
 /** Upload one pasted/dropped/picked file - a screenshot or a PDF. The path is derived
@@ -152,7 +165,7 @@ export async function uploadTaskAttachment(
   taskId: string,
   form: FormData,
 ): Promise<{ ok: true; attachment: TaskAttachment } | { ok: false; error: string }> {
-  await requireStaff();
+  const { tasks } = await requireTaskBoard();
 
   const file = form.get("file");
   if (!(file instanceof File)) return { ok: false, error: "לא התקבל קובץ" };
@@ -163,10 +176,11 @@ export async function uploadTaskAttachment(
   const mime = sniffAttachmentMime(new Uint8Array(buffer.subarray(0, 12)));
   if (!mime) return { ok: false, error: "אפשר להעלות תמונה (PNG/JPG/WebP/GIF) או PDF" };
 
-  // The task must exist and not be deleted - otherwise the bucket collects
-  // orphan folders no screen will ever show.
-  const { data: task, error: taskError } = await db
-    .from("tasks").select("id").eq("id", taskId).is("deleted_at", null).maybeSingle();
+  // The task must exist IN THIS COMPANY and not be deleted - otherwise the bucket
+  // collects orphan folders no screen will ever show (or a file under another
+  // company's task).
+  const { data: task, error: taskError } = (await tasks
+    .select("id").eq("id", taskId).is("deleted_at", null).maybeSingle()) as TaskResult<{ id: string }>;
   if (taskError) console.error("task-comments: task lookup failed", JSON.stringify(taskError));
   if (taskError || !task) return { ok: false, error: "המשימה לא נמצאה" };
 
@@ -221,16 +235,19 @@ export async function addTaskComment(input: {
   attachments?: TaskAttachment[];
   mentions?: string[];
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  const session = await requireStaff();
+  const { session, company, tasks } = await requireTaskBoard();
 
   const body = input.body?.trim() ?? "";
   const attachments = sanitizeAttachments(input.taskId, input.attachments ?? []);
   if (!body && attachments.length === 0) return { ok: false, error: "אין מה לשלוח" };
   if (body.length > BODY_MAX) return { ok: false, error: "התגובה ארוכה מדי" };
+  // A task of another company fails exactly like a task id that does not exist
+  // (the insert below would hit the foreign key).
+  if (!(await tasks.owns(input.taskId))) return { ok: false, error: "השליחה נכשלה" };
 
   // Mentions come from the picker, but the client is not trusted with them:
-  // keep only ids that are real staff profiles.
-  const mentions = await staffIdsOnly(input.mentions ?? []);
+  // keep only ids that are people of this company.
+  const mentions = await staffIdsOnly(input.mentions ?? [], company);
 
   const { data, error } = await db
     .from("task_comments")
@@ -255,15 +272,15 @@ export async function addTaskComment(input: {
   // (creator, assignee, whoever wrote or was mentioned in it before - so a reply reaches
   // the person it answers) gets the "new comment" mail - never both for one comment,
   // never the author.
-  const { data: task, error: taskError } = await db
-    .from("tasks")
+  const { data: task, error: taskError } = (await tasks
     .select("id,title,created_by,assignee_id")
     .eq("id", input.taskId)
-    .maybeSingle();
+    .maybeSingle()) as TaskResult<{ id: string; title: string; created_by: string | null; assignee_id: string | null }>;
   if (taskError) console.error("task-comments: task lookup failed", JSON.stringify(taskError));
   if (mentions.length) {
     await notifyTaskMention({
       taskId: input.taskId,
+      companyId: company.id,
       taskTitle: task?.title ?? "משימה",
       body,
       authorId: session.sub,
@@ -283,6 +300,7 @@ export async function addTaskComment(input: {
     await notifyTaskComment({
       task: {
         id: task.id,
+        company_id: company.id,
         title: task.title,
         created_by: task.created_by,
         assignee_id: task.assignee_id,
@@ -306,13 +324,13 @@ export async function addTaskComment(input: {
  * created the task may call this, and only while its thread is still empty.
  */
 export async function attachFilesToNewTask(taskId: string, files: TaskAttachment[]): Promise<Ok> {
-  const session = await requireStaff();
+  const { session, tasks } = await requireTaskBoard();
 
   const attachments = sanitizeAttachments(taskId, files ?? []);
   if (attachments.length === 0) return { ok: false, error: "אין קבצים לצרף" };
 
-  const { data: task, error: taskError } = await db
-    .from("tasks").select("id,created_by").eq("id", taskId).is("deleted_at", null).maybeSingle();
+  const { data: task, error: taskError } = (await tasks
+    .select("id,created_by").eq("id", taskId).is("deleted_at", null).maybeSingle()) as TaskResult<{ id: string; created_by: string | null }>;
   if (taskError) console.error("task-comments: task lookup failed", JSON.stringify(taskError));
   if (taskError || !task) return { ok: false, error: "המשימה לא נמצאה" };
   if (task.created_by !== session.sub) return { ok: false, error: "רק מי שפתח את המשימה מצרף לה קבצים כאן" };
@@ -344,31 +362,25 @@ export async function attachFilesToNewTask(taskId: string, files: TaskAttachment
   return { ok: true };
 }
 
-async function staffIdsOnly(ids: string[]): Promise<string[]> {
+async function staffIdsOnly(ids: string[], company: TaskScope): Promise<string[]> {
   const unique = [...new Set(ids)];
   if (!unique.length) return [];
-  // Same gate as listStaffForMentions: an inactive profile is never mentionable/mailed.
-  const { data, error } = await db
-    .from("user_profiles")
-    .select("id,role")
-    .in("id", unique)
-    .eq("is_active", true);
-  if (error) {
-    console.error("task-comments: mention check failed", JSON.stringify(error));
-    return [];
-  }
-  return (data ?? [])
-    .filter((user: { role: string }) => (STAFF_ROLES as readonly string[]).includes(user.role))
-    .map((user: { id: string }) => user.id);
+  // Same gate as listStaffForMentions: an inactive profile, or someone who does not
+  // work in this company, is never mentionable/mailed. A failed read mentions nobody.
+  const people = await taskPeopleIds(company);
+  if (!people) return [];
+  return unique.filter((id) => people.has(id));
 }
 
 /** Author edits their own. An admin does NOT edit someone else's words - a
  *  comment edited by another hand is a forged quote. Admin power is deletion. */
 export async function editTaskComment(id: string, body: string): Promise<Ok> {
-  const session = await requireStaff();
+  const { session, tasks } = await requireTaskBoard();
   const text = body?.trim();
   if (!text) return { ok: false, error: "תגובה ריקה" };
   if (text.length > BODY_MAX) return { ok: false, error: "התגובה ארוכה מדי" };
+  // Not this company's thread = not a comment of yours (the answer for a missing id).
+  if (!(await commentInScope(tasks, id))) return { ok: false, error: "אפשר לערוך רק תגובה שלך" };
 
   const { data, error } = await db
     .from("task_comments")
@@ -387,7 +399,9 @@ export async function editTaskComment(id: string, body: string): Promise<Ok> {
 
 /** Soft delete: the row keeps its place, the content goes. */
 export async function deleteTaskComment(id: string): Promise<Ok> {
-  const session = await requireStaff();
+  const { session, tasks } = await requireTaskBoard();
+  // Not this company's thread = nothing to delete (the answer for a missing id).
+  if (!(await commentInScope(tasks, id))) return { ok: false, error: "אין הרשאה למחוק את התגובה" };
 
   let query = db
     .from("task_comments")

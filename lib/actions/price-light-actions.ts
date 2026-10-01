@@ -4,6 +4,7 @@ import { unstable_cache } from "next/cache";
 import { requireAdmin, requireStaff } from "@/lib/auth/guards";
 import { invalidatePriceLight, PRICE_LIGHT_TAG, PRICE_LIGHT_TTL_S } from "@/lib/services/price-light-cache";
 import { supabase } from "@/lib/supabase-server";
+import { megaEventsTasks } from "@/lib/tasks-scope";
 import { logAudit } from "@/lib/audit";
 import { PUBLIC_SITE_URL } from "@/lib/site";
 import { revalidateMain } from "@/lib/revalidate-main";
@@ -1147,8 +1148,7 @@ async function loadListedEvents(onlyRed: boolean): Promise<ListedEvent[]> {
 async function loadOpenPriceLightTaskKeys(): Promise<Set<string>> {
   const { rows, error, truncated } = await fetchPaged<{ id: string; source_ref: { row_id: string | number; kind: string } | null }>(
     () =>
-      db
-        .from("tasks")
+      megaEventsTasks()
         .select("id,source_ref")
         .eq("source", "price_light")
         .is("deleted_at", null)

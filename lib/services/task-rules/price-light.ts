@@ -1,4 +1,5 @@
 import { supabaseTyped } from "@/lib/supabase-server";
+import { megaEventsTasks } from "@/lib/tasks-scope";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { kindOf } from "@/lib/services/price-light";
 import { OPEN_TASK_STATUSES } from "@/types/task.types";
@@ -116,8 +117,7 @@ async function loadFootballEventIds(eventIds: number[]): Promise<Set<number>> {
 async function loadOpenTaskKeys(): Promise<Set<string>> {
   const { rows, error, truncated } = await fetchPaged<OpenTaskRow>(
     () =>
-      db
-        .from("tasks")
+      megaEventsTasks()
         .select("id,source_ref")
         .eq("source", "price_light")
         .is("deleted_at", null)

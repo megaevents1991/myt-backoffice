@@ -14,7 +14,8 @@
  *
  *  REVIEW (Dor, 30.09): a task moved to "review" mails the person it goes back to; their
  *  answer - approved (done) or returned to work - mails the assignee. */
-import { appOrigin, sendMail } from "@/lib/email";
+import { sendMail } from "@/lib/email";
+import { taskUrl } from "@/lib/services/task-site-url";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { commentForMail, escapeHtml } from "@/lib/services/task-mention-notify";
 import type { TaskMailOutcome } from "@/lib/services/task-notify";
@@ -24,6 +25,8 @@ const db = supabaseTyped;
 
 interface WatchedTask {
   id: string;
+  /** The task's company - the mailed link opens the board of that company (taskUrl). */
+  company_id: string;
   title: string;
   created_by: string | null;
   assignee_id: string | null;
@@ -88,13 +91,13 @@ export async function notifyTaskDone(input: {
       return;
     }
     const actorName = nameOf(profiles.find((p) => p.id === actorId), "מישהו");
-    const url = `${appOrigin()}/tasks?task=${task.id}`;
+    const url = await taskUrl(task.id, task.company_id);
 
     await mailEach("done", task.id, [creator], () => ({
       subject: `בוצע: ${task.title}`,
       html: `<div dir="rtl" style="font-family:Arial,sans-serif">
   <p>${escapeHtml(actorName)} סימן/ה את המשימה <strong>${escapeHtml(task.title)}</strong> כבוצעה.</p>
-  <p><a href="${url}">למשימה</a></p>
+  <p><a href="${escapeHtml(url)}">למשימה</a></p>
 </div>`,
       text: [`${actorName} סימן/ה את המשימה כבוצעה: ${task.title}`, url].join("\n"),
     }));
@@ -132,7 +135,7 @@ export async function notifyTaskReview(input: {
       return "skipped";
     }
     const actorName = nameOf(profiles.find((p) => p.id === actorId), "מישהו");
-    const url = `${appOrigin()}/tasks?task=${task.id}`;
+    const url = await taskUrl(task.id, task.company_id);
 
     const results = await Promise.allSettled(
       targets.map((target) =>
@@ -142,7 +145,7 @@ export async function notifyTaskReview(input: {
           html: `<div dir="rtl" style="font-family:Arial,sans-serif">
   <p>${escapeHtml(actorName)} סיים/ה את החלק שלו/ה במשימה <strong>${escapeHtml(task.title)}</strong> והעביר/ה אותה לבדיקה שלך.</p>
   <p style="color:#666;font-size:13px">הכול בסדר? מסמנים אותה Done. צריך עוד עבודה? מחזירים אותה ל-In progress וכותבים בשיחה מה חסר.</p>
-  <p><a href="${url}">למשימה</a></p>
+  <p><a href="${escapeHtml(url)}">למשימה</a></p>
 </div>`,
           text: [
             `${actorName} סיים/ה את החלק שלו/ה והעביר/ה לבדיקה שלך: ${task.title}`,
@@ -194,7 +197,7 @@ export async function notifyReviewOutcome(input: {
       return;
     }
     const actorName = nameOf(profiles.find((p) => p.id === actorId), "מישהו");
-    const url = `${appOrigin()}/tasks?task=${task.id}`;
+    const url = await taskUrl(task.id, task.company_id);
     const line =
       outcome === "approved"
         ? `${actorName} בדק/ה ואישר/ה את המשימה - היא סגורה.`
@@ -205,7 +208,7 @@ export async function notifyReviewOutcome(input: {
       html: `<div dir="rtl" style="font-family:Arial,sans-serif">
   <p><strong>${escapeHtml(task.title)}</strong></p>
   <p>${escapeHtml(line)}</p>
-  <p><a href="${url}">למשימה</a></p>
+  <p><a href="${escapeHtml(url)}">למשימה</a></p>
 </div>`,
       text: [task.title, line, url].join("\n"),
     }));
@@ -243,7 +246,7 @@ export async function notifyTaskComment(input: {
       return;
     }
     const authorName = nameOf(profiles.find((p) => p.id === authorId), "מישהו");
-    const url = `${appOrigin()}/tasks?task=${task.id}`;
+    const url = await taskUrl(task.id, task.company_id);
     const excerpt = commentForMail(input.body);
     const shots =
       input.attachmentCount > 0 && input.body.trim()
@@ -257,7 +260,7 @@ export async function notifyTaskComment(input: {
       html: `<div dir="rtl" style="font-family:Arial,sans-serif">
   <p>${escapeHtml(authorName)} הגיב/ה במשימה <strong>${escapeHtml(task.title)}</strong>:</p>
   <blockquote style="border-right:3px solid #5BFF95;margin:0;padding:0 12px;color:#333;white-space:pre-line">${escapeHtml(excerpt)}</blockquote>${shots ? `\n  <p style="color:#666;font-size:13px">${shots}</p>` : ""}
-  <p><a href="${url}">למשימה ולתשובה</a></p>
+  <p><a href="${escapeHtml(url)}">למשימה ולתשובה</a></p>
 </div>`,
       text: [`${authorName} הגיב/ה במשימה: ${task.title}`, excerpt, shots, url].filter(Boolean).join("\n"),
     }));

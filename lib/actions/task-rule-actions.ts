@@ -6,10 +6,20 @@
  * price-changes and creative-gaps and can spam the whole team, so only an admin
  * creates or runs one. `runRuleNow`/`previewRule` delegate to `runWeeklyTaskGen`
  * (Task 9) - that is the one place a rule is actually executed, cron or manual.
+ *
+ * The rules are Mega Events automation: `task_rules` has no company column and
+ * every task a rule creates lands on the Mega Events board (megaEventsTasks in
+ * lib/services/weekly-task-gen.ts). `requireAdmin()` already refuses an admin
+ * who works in other companies only; `refuseOutsideEvents` also refuses anyone
+ * while their active company is one that sells no events (Mega Family), where
+ * the tab is not shown.
  */
 import { requireAdmin } from "@/lib/auth/guards";
+import type { SessionPayload } from "@/lib/auth/session";
+import { getActiveCompany } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
+import { hasEventsTaskBoard } from "@/lib/services/task-company";
 import { runWeeklyTaskGen, type TaskGenSummary } from "@/lib/services/weekly-task-gen";
 import { validateRuleInput } from "@/lib/tasks/rule-validation";
 import type { TaskRule, TaskRuleWithNames } from "@/types/task-rule.types";
@@ -18,6 +28,13 @@ import type { TaskRule, TaskRuleWithNames } from "@/types/task-rule.types";
 const db = supabaseTyped;
 
 export type Ok = { ok: true } | { ok: false; error: string };
+
+/** null while the caller works in a company that has task rules; the refusal otherwise. */
+async function refuseOutsideEvents(session: SessionPayload): Promise<{ ok: false; error: string } | null> {
+  const company = await getActiveCompany(session);
+  if (hasEventsTaskBoard(company)) return null;
+  return { ok: false, error: "כללי משימות קיימים רק בלוח של Mega Events - החלף חברה כדי לנהל אותם" };
+}
 
 interface StaffNameRow {
   id: string;
@@ -57,7 +74,8 @@ async function attachAssigneeNames(rules: TaskRule[]): Promise<TaskRuleWithNames
 export async function listTaskRules(): Promise<
   { ok: true; rules: TaskRuleWithNames[] } | { ok: false; error: string }
 > {
-  await requireAdmin();
+  const refused = await refuseOutsideEvents(await requireAdmin());
+  if (refused) return refused;
   const { data, error } = await db.from("task_rules").select("*").order("created_at", { ascending: false });
   if (error) {
     console.error("listTaskRules failed", JSON.stringify(error));
@@ -93,6 +111,8 @@ export async function createTaskRule(
   input: unknown,
 ): Promise<{ ok: true; rule: TaskRuleWithNames } | { ok: false; error: string }> {
   const session = await requireAdmin();
+  const refused = await refuseOutsideEvents(session);
+  if (refused) return refused;
   const validated = validateRuleInput(input);
   if (!validated.ok) return { ok: false, error: validated.error };
   const v = validated.value;
@@ -135,7 +155,8 @@ export async function updateTaskRule(
   id: string,
   input: unknown,
 ): Promise<{ ok: true; rule: TaskRuleWithNames } | { ok: false; error: string }> {
-  await requireAdmin();
+  const refused = await refuseOutsideEvents(await requireAdmin());
+  if (refused) return refused;
   const validated = validateRuleInput(input);
   if (!validated.ok) return { ok: false, error: validated.error };
   const v = validated.value;
@@ -178,7 +199,8 @@ export async function updateTaskRule(
 /** Reads the full row first so the audit metadata carries what was actually
  *  deleted - the UI confirms with the user before ever calling this. */
 export async function deleteTaskRule(id: string): Promise<Ok> {
-  await requireAdmin();
+  const refused = await refuseOutsideEvents(await requireAdmin());
+  if (refused) return refused;
   const { data: row, error: readError } = await db.from("task_rules").select("*").eq("id", id).maybeSingle();
   if (readError) {
     console.error("deleteTaskRule read failed", JSON.stringify(readError));
@@ -201,7 +223,8 @@ export async function deleteTaskRule(id: string): Promise<Ok> {
 export async function runRuleNow(
   id: string,
 ): Promise<{ ok: true; summary: TaskGenSummary } | { ok: false; error: string }> {
-  await requireAdmin();
+  const refused = await refuseOutsideEvents(await requireAdmin());
+  if (refused) return refused;
   const exists = await requireRuleExists(id, { mustBeActive: true });
   if (!exists.ok) return exists;
 
@@ -219,7 +242,8 @@ export async function runRuleNow(
 export async function previewRule(
   id: string,
 ): Promise<{ ok: true; summary: TaskGenSummary } | { ok: false; error: string }> {
-  await requireAdmin();
+  const refused = await refuseOutsideEvents(await requireAdmin());
+  if (refused) return refused;
   const exists = await requireRuleExists(id, { mustBeActive: true });
   if (!exists.ok) return exists;
 
