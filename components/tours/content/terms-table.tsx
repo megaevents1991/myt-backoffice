@@ -35,7 +35,7 @@ export function TermsTable({ rows }: { rows: TermListRow[] }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="inline-flex flex-wrap rounded-md border bg-background p-0.5 text-sm" role="tablist" aria-label="סוג הקטגוריה">
+        <div className="inline-flex flex-wrap rounded-md border bg-background p-0.5 text-sm" role="tablist" aria-label="Category type">
           {TERM_KINDS.map((k) => (
             <button
               key={k}
@@ -49,19 +49,19 @@ export function TermsTable({ rows }: { rows: TermListRow[] }) {
             </button>
           ))}
         </div>
-        <SearchInput value={query} onValueChange={setQuery} placeholder="חיפוש לפי שם או כתובת" />
+        <SearchInput value={query} onValueChange={setQuery} placeholder="Search by name or slug" />
       </div>
 
       <div className="overflow-hidden rounded-lg border bg-card">
         <Table look="list">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[70px]">מיקום</TableHead>
-              <TableHead>שם</TableHead>
-              <TableHead>כתובת (slug)</TableHead>
-              <TableHead>עמודי טיול</TableHead>
-              <TableHead>תמונות ראש</TableHead>
-              <TableHead>מצב</TableHead>
+              <TableHead className="w-[70px]">Position</TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Slug</TableHead>
+              <TableHead>Tour Pages</TableHead>
+              <TableHead>Hero Images</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead className="w-[60px]" />
             </TableRow>
           </TableHeader>
@@ -80,11 +80,11 @@ export function TermsTable({ rows }: { rows: TermListRow[] }) {
                   {row.heroImages > 0 ? row.heroImages : <span className="text-muted-foreground">0</span>}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={row.isActive ? "outline" : "destructive"}>{row.isActive ? "פעיל" : "לא פעיל"}</Badge>
+                  <Badge variant={row.isActive ? "outline" : "destructive"}>{row.isActive ? "Active" : "Inactive"}</Badge>
                 </TableCell>
                 <TableCell>
                   <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                    <Link href={`/tours/terms/${row.id}`} aria-label={`עריכת ${row.name}`} title="עריכה">
+                    <Link href={`/tours/terms/${row.id}`} aria-label={`Edit ${row.name}`} title="Edit">
                       <Pencil />
                     </Link>
                   </Button>
@@ -95,8 +95,8 @@ export function TermsTable({ rows }: { rows: TermListRow[] }) {
         </Table>
         {shown.length === 0 && (
           <EmptyRows
-            title={query ? "אין תוצאות לחיפוש" : `אין ${TERM_KIND_LABELS[kind]} בחברה הזו`}
-            description={query ? "נסו חיפוש אחר." : "הקטגוריות נוצרות בטעינת הנתונים של האתר."}
+            title={query ? "No search results" : `No ${TERM_KIND_LABELS[kind].toLowerCase()} in this company yet`}
+            description={query ? "Try a different search." : "Categories and tags are created when the site's data is imported."}
           />
         )}
       </div>

@@ -47,13 +47,13 @@ import {
 
 const TABS = ["general", "images", "description", "itinerary", "faq", "seo", "terms"] as const;
 const TAB_LABELS: Record<(typeof TABS)[number], string> = {
-  general: "כללי",
-  images: "תמונות",
-  description: "תיאור",
-  itinerary: "מסלול יומי",
-  faq: "שאלות נפוצות",
+  general: "General",
+  images: "Images",
+  description: "Description",
+  itinerary: "Itinerary",
+  faq: "FAQ",
   seo: "SEO",
-  terms: "קטגוריות",
+  terms: "Categories & Tags",
 };
 
 /** A variant as it is saved: an empty image is no image. */
@@ -91,7 +91,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
   }, [variants, saved.itineraries]);
   const isDirty = formDirty || dirtyKeys.length > 0;
 
-  const problem = !form.name.trim() ? "חסר שם לעמוד" : !form.slug.trim() ? "חסרה כתובת לעמוד" : null;
+  const problem = !form.name.trim() ? "Page name is required" : !form.slug.trim() ? "Page slug is required" : null;
 
   const save = async () => {
     if (problem || isSaving) return;
@@ -125,7 +125,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
         }
       }
     } catch {
-      failed = "השמירה נכשלה. בדקו את החיבור ונסו שוב.";
+      failed = "Save failed. Check your connection and try again.";
     }
 
     // what did reach the server becomes the new baseline; what did not stays as typed
@@ -140,7 +140,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
     setIsSaving(false);
     if (failed) toast.error(failed, { duration: 7000 });
     else {
-      toast.success("נשמר. כדי שהשינוי יופיע באתר, לחצו על פרסום לאתר.");
+      toast.success("Saved. Click Publish Site to show the change on the site.");
       router.refresh();
     }
   };
@@ -152,10 +152,10 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
 
   const remove = async () => {
     const ok = await confirm({
-      title: `למחוק את העמוד "${saved.form.name}"?`,
-      description: "העמוד יוסר מהבקאופיס ומהאתר. עמוד שיש עליו סדרות או יציאות אי אפשר למחוק, רק לכבות.",
-      confirmLabel: "מחיקת העמוד",
-      cancelLabel: "ביטול",
+      title: `Delete the page "${saved.form.name}"?`,
+      description: "The page will be removed from the backoffice and the site. A page with series or departures cannot be deleted, only deactivated.",
+      confirmLabel: "Delete Page",
+      cancelLabel: "Cancel",
       destructive: true,
     });
     if (!ok) return;
@@ -166,7 +166,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
       toast.error(result.error, { duration: 7000 });
       return;
     }
-    toast.success("העמוד נמחק");
+    toast.success("Page deleted");
     router.push("/tours/packages");
     router.refresh();
   };
@@ -178,24 +178,24 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
     set("termIds", on ? [...form.termIds, id] : form.termIds.filter((t) => t !== id));
 
   return (
-    <div dir="rtl" className="space-y-4 pb-24">
-      <BackLink href="/tours/packages">כל עמודי הטיולים</BackLink>
+    <div className="space-y-4 pb-24">
+      <BackLink href="/tours/packages">Back to Tour Pages</BackLink>
       <PageHeader
-        eyebrow="עמוד טיול"
+        eyebrow="Tour page"
         title={saved.form.name}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <Pill tone={saved.form.isActive ? "on" : "off"}>{saved.form.isActive ? "פעיל באתר" : "לא פעיל"}</Pill>
-            {!saved.hasContent && <Pill>ללא תוכן</Pill>}
+            <Pill tone={saved.form.isActive ? "on" : "off"}>{saved.form.isActive ? "Active on site" : "Inactive"}</Pill>
+            {!saved.hasContent && <Pill>No content</Pill>}
             {saved.seriesCodes.length > 0 && (
               <span>
-                סדרות:{" "}
+                Series:{" "}
                 <span dir="ltr" className="font-mono">
                   {saved.seriesCodes.join(", ")}
                 </span>
               </span>
             )}
-            <span>{saved.departures} יציאות</span>
+            <span>{saved.departures} departures</span>
           </span>
         }
         actions={
@@ -204,7 +204,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
               <Button asChild variant="ghost">
                 <a href={liveUrl} target="_blank" rel="noreferrer">
                   <ExternalLink />
-                  צפייה באתר
+                  View on Site
                 </a>
               </Button>
             )}
@@ -217,13 +217,14 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
         <div className="flex items-start gap-3 rounded-lg border bg-muted/40 p-4 text-sm">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <p>
-            העמוד הזה נוצר בטעינת הנתונים כדי שלסדרה יהיה עמוד, ואין בו עדיין תוכן. אחרי שמזינים תיאור או תמונה ושומרים
-            הוא נחשב עמוד עם תוכן. כדי שיופיע באתר צריך גם לסמן אותו כפעיל ולפרסם.
+            The data import created this page so its series has a page, and it has no content yet. Once you add a
+            description or an image and save, it counts as a page with content. To show it on the site, also mark it
+            active and publish.
           </p>
         </div>
       )}
 
-      <UrlTabs defaultValue="general" values={TABS} dir="rtl" className="space-y-4">
+      <UrlTabs defaultValue="general" values={TABS} className="space-y-4">
         <TabsList className="h-auto flex-wrap justify-start">
           {TABS.map((tab) => (
             <TabsTrigger key={tab} value={tab}>
@@ -239,18 +240,18 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
         <TabsContent value="general" className="space-y-4">
           <Section>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="שם העמוד">
-                <Input value={form.name} onChange={(e) => set("name", e.target.value)} />
+              <Field label="Page name">
+                <Input dir="auto" value={form.name} onChange={(e) => set("name", e.target.value)} />
               </Field>
-              <Field label="כותרת משנה">
-                <Input value={form.subtitle} onChange={(e) => set("subtitle", e.target.value)} />
+              <Field label="Subtitle">
+                <Input dir="auto" value={form.subtitle} onChange={(e) => set("subtitle", e.target.value)} />
               </Field>
               <Field
-                label="כתובת העמוד (slug)"
+                label="Slug"
                 hint={
                   saved.slugLocked
-                    ? "לעמוד יש יציאות, ולכן הכתובת שלו באתר נעולה."
-                    : "החלק האחרון של כתובת העמוד באתר. בלי רווחים."
+                    ? "The page has departures, so its address on the site is locked."
+                    : "The last part of the page address on the site. No spaces."
                 }
                 className="md:col-span-2"
               >
@@ -261,12 +262,12 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                   onChange={(e) => set("slug", e.target.value)}
                 />
               </Field>
-              <Field label="סוג">
+              <Field label="Type">
                 <Select value={form.kind} onValueChange={(value) => set("kind", value)}>
-                  <SelectTrigger dir="rtl">
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent dir="rtl">
+                  <SelectContent>
                     {PACKAGE_KINDS.map((kind) => (
                       <SelectItem key={kind} value={kind}>
                         {PACKAGE_KIND_LABELS[kind]}
@@ -275,12 +276,12 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="צבע הכרטיס באתר">
+              <Field label="Card color on site">
                 <Select value={form.brand} onValueChange={(value) => set("brand", value)}>
-                  <SelectTrigger dir="rtl">
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent dir="rtl">
+                  <SelectContent>
                     {PACKAGE_BRANDS.map((brand) => (
                       <SelectItem key={brand} value={brand}>
                         <span className="flex items-center gap-2">
@@ -296,7 +297,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="ימים">
+              <Field label="Days">
                 <Input
                   type="number"
                   min={0}
@@ -305,7 +306,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                   onChange={(e) => set("days", numberOrNull(e.target.value))}
                 />
               </Field>
-              <Field label="לילות">
+              <Field label="Nights">
                 <Input
                   type="number"
                   min={0}
@@ -314,30 +315,30 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                   onChange={(e) => set("nights", numberOrNull(e.target.value))}
                 />
               </Field>
-              <Field label="מדינות" hint='כפי שמוצג באתר, למשל "מדינה אחת" או "3 מדינות"'>
-                <Input value={form.countries} onChange={(e) => set("countries", e.target.value)} />
+              <Field label="Countries" hint='As shown on the site, e.g. "מדינה אחת" or "3 מדינות"'>
+                <Input dir="auto" value={form.countries} onChange={(e) => set("countries", e.target.value)} />
               </Field>
               <div className="flex items-center gap-3 self-end rounded-md border p-3">
                 <Switch id="pkg-active" checked={form.isActive} onCheckedChange={(on) => set("isActive", on)} />
                 <label htmlFor="pkg-active" className="text-sm">
-                  <span className="font-medium">פעיל באתר</span>
-                  <span className="block text-xs text-muted-foreground">עמוד לא פעיל לא נכלל בבניית האתר.</span>
+                  <span className="font-medium">Active on site</span>
+                  <span className="block text-xs text-muted-foreground">An inactive page is left out of the site build.</span>
                 </label>
               </div>
             </div>
             <StringListEditor
-              label="עונות"
+              label="Seasons"
               value={form.seasons}
               onChange={(value) => set("seasons", value)}
               placeholder="קיץ, חנוכה, פסח..."
-              addLabel="הוספת עונה"
+              addLabel="Add Season"
             />
           </Section>
 
-          <Section title="מחיקת העמוד" description="מחיקה רכה: העמוד יוצא מהרשימות ומהאתר, והנתונים נשמרים.">
+          <Section title="Delete Page" description="Soft delete: the page leaves the lists and the site, and its data is kept.">
             <Button type="button" variant="outline" className="text-destructive" disabled={isDeleting} onClick={() => void remove()}>
               <Trash2 />
-              מחיקת העמוד
+              Delete Page
             </Button>
           </Section>
         </TabsContent>
@@ -347,13 +348,13 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
           <Section description={NO_UPLOAD_NOTE}>
             <div className="grid gap-4 lg:grid-cols-2">
               <ImageUrlField
-                label="תמונה ראשית (ראש העמוד)"
+                label="Hero image (top of the page)"
                 value={form.heroImage}
                 onChange={(value) => set("heroImage", value)}
                 siteUrl={siteUrl}
               />
               <ImageUrlField
-                label="תמונת כרטיס (ברשימות)"
+                label="Card image (in lists)"
                 value={form.cardImage}
                 onChange={(value) => set("cardImage", value)}
                 siteUrl={siteUrl}
@@ -362,11 +363,11 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
           </Section>
           <Section>
             <ImageListEditor
-              label="גלריה"
+              label="Gallery"
               value={form.gallery}
               onChange={(value) => set("gallery", value)}
               siteUrl={siteUrl}
-              hint="הסדר כאן הוא הסדר באתר."
+              hint="The order here is the order on the site."
             />
           </Section>
         </TabsContent>
@@ -375,7 +376,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
         <TabsContent value="description" className="space-y-4">
           <Section>
             <HtmlField
-              label="תיאור הטיול"
+              label="Tour description"
               value={form.descriptionHtml}
               onChange={(value) => set("descriptionHtml", value)}
               siteUrl={siteUrl}
@@ -383,23 +384,23 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
           </Section>
           <Section>
             <StringListEditor
-              label="אטרקציות"
+              label="Attractions"
               value={form.attractions}
               onChange={(value) => set("attractions", value)}
-              addLabel="הוספת אטרקציה"
+              addLabel="Add Attraction"
             />
           </Section>
           <div className="grid gap-4 xl:grid-cols-2">
             <Section>
               <StringListEditor
-                label="המחיר כולל"
+                label="Included"
                 value={form.included}
                 onChange={(value) => set("included", value)}
               />
             </Section>
             <Section>
               <StringListEditor
-                label="המחיר אינו כולל"
+                label="Not included"
                 value={form.notIncluded}
                 onChange={(value) => set("notIncluded", value)}
               />
@@ -407,17 +408,17 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
           </div>
           <Section>
             <HtmlField
-              label="מידע נוסף"
+              label="Additional info"
               value={form.extraInfoHtml}
               onChange={(value) => set("extraInfoHtml", value)}
               siteUrl={siteUrl}
               rows={8}
-              hint="רשימה פשוטה (ul / li) מוצגת באתר כנקודות. HTML אחר מוצג כפי שהוא."
+              hint="A plain list (ul / li) shows on the site as bullet points. Any other HTML is shown as is."
             />
           </Section>
           <Section>
             <HtmlField
-              label="תנאי הזמנה"
+              label="Booking terms"
               value={form.termsHtml}
               onChange={(value) => set("termsHtml", value)}
               siteUrl={siteUrl}
@@ -426,7 +427,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
           </Section>
           <Section>
             <HtmlField
-              label="תנאי ביטול"
+              label="Cancellation terms"
               value={form.cancellationHtml}
               onChange={(value) => set("cancellationHtml", value)}
               siteUrl={siteUrl}
@@ -460,14 +461,15 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
         <TabsContent value="faq" className="space-y-3">
           {form.faq.length === 0 && (
             <p className="rounded-lg border border-dashed bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-              אין שאלות נפוצות בעמוד הזה.
+              This page has no FAQ yet.
             </p>
           )}
           {form.faq.map((item, index) => (
             <Section key={index}>
               <div className="flex items-start gap-2">
-                <Field label={`שאלה ${index + 1}`} className="min-w-0 flex-1">
+                <Field label={`Question ${index + 1}`} className="min-w-0 flex-1">
                   <Input
+                    dir="auto"
                     value={item.q}
                     onChange={(e) =>
                       set(
@@ -488,12 +490,12 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                         form.faq.filter((_, i) => i !== index),
                       )
                     }
-                    removeLabel="הסרת השאלה"
+                    removeLabel="Remove Question"
                   />
                 </div>
               </div>
               <HtmlField
-                label="תשובה"
+                label="Answer"
                 value={item.aHtml}
                 onChange={(value) =>
                   set(
@@ -508,18 +510,18 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
           ))}
           <Button type="button" variant="outline" onClick={() => set("faq", [...form.faq, { q: "", aHtml: "" }])}>
             <Plus />
-            הוספת שאלה
+            Add Question
           </Button>
         </TabsContent>
 
         {/* ------------------------------------------------------------ seo */}
         <TabsContent value="seo">
-          <Section description="מה שמנועי החיפוש והרשתות החברתיות מציגים על העמוד.">
-            <Field label="כותרת (title)" hint={`${form.seoTitle.length} תווים. מומלץ עד 60.`}>
-              <Input value={form.seoTitle} onChange={(e) => set("seoTitle", e.target.value)} />
+          <Section description="What search engines and social networks show for this page.">
+            <Field label="Title" hint={`${form.seoTitle.length} characters. Up to 60 recommended.`}>
+              <Input dir="auto" value={form.seoTitle} onChange={(e) => set("seoTitle", e.target.value)} />
             </Field>
-            <Field label="תיאור (description)" hint={`${form.seoDescription.length} תווים. מומלץ עד 160.`}>
-              <Textarea rows={3} value={form.seoDescription} onChange={(e) => set("seoDescription", e.target.value)} />
+            <Field label="Description" hint={`${form.seoDescription.length} characters. Up to 160 recommended.`}>
+              <Textarea dir="auto" rows={3} value={form.seoDescription} onChange={(e) => set("seoDescription", e.target.value)} />
             </Field>
           </Section>
         </TabsContent>
@@ -540,7 +542,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                         onCheckedChange={(on) => toggleTerm(term.id, on === true)}
                       />
                       <span>{term.name}</span>
-                      {!term.isActive && <span className="text-xs text-muted-foreground">(לא פעיל)</span>}
+                      {!term.isActive && <span className="text-xs text-muted-foreground">(Inactive)</span>}
                     </label>
                   ))}
                 </div>

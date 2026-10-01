@@ -6,18 +6,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 /** Shown when the active company does not sell tours (Mega Events) - the same card the Tours overview shows. */
 export function NotAToursCompany() {
   return (
-    <div dir="rtl" className="mx-auto max-w-md py-10">
+    <div className="mx-auto max-w-md py-10">
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">המסך הזה שייך לחברת טיולים</CardTitle>
+          <CardTitle className="text-lg">This screen belongs to a tours company</CardTitle>
           <CardDescription>
-            אישורים וטיפול זמינים רק כשהחברה הפעילה מוכרת טיולים. אם יש לך גישה לחברה כזו, אפשר לעבור אליה
-            מבורר החברות בסרגל העליון.
+            Approvals are available only when the active company sells tours. If you have access to such a
+            company, switch to it from the company picker in the top bar.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button asChild>
-            <Link href="/dashboard">חזרה לדשבורד</Link>
+            <Link href="/dashboard">Back to Dashboard</Link>
           </Button>
         </CardContent>
       </Card>
@@ -28,18 +28,18 @@ export function NotAToursCompany() {
 /** Shown to a staff member of the company who is not its manager. */
 export function ManagersOnly() {
   return (
-    <div dir="rtl" className="mx-auto max-w-md py-10">
+    <div className="mx-auto max-w-md py-10">
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">המסך הזה פתוח למנהל החברה</CardTitle>
+          <CardTitle className="text-lg">Managers only</CardTitle>
           <CardDescription>
-            כאן מרוכזים האישורים וההחלטות שרק מנהל החברה נותן. את העבודה השוטפת ממשיכים מלוח היציאות ומקבוצות
-            הטיסה.
+            This screen gathers the approvals and decisions only the company manager makes. Day-to-day work
+            goes on from the Tours board and Offline Flights.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button asChild>
-            <Link href="/tours">חזרה לסקירה</Link>
+            <Link href="/tours">Back to Overview</Link>
           </Button>
         </CardContent>
       </Card>

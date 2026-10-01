@@ -33,18 +33,18 @@ export function DeparturesWithoutPrice({ data, run, busy }: QueueControls & { da
   return (
     <QueueSection
       id="no-price"
-      title="יציאות מפורסמות בלי מחיר"
+      title="Published with no price"
       count={rows.length}
-      description="יציאות עתידיות שמוצגות באתר בלי מחיר למבוגר בחדר זוגי, המחיר שממנו נבנים כרטיס הטיול וכל הרכבי החדרים. מזינים כאן את המחיר לאדם בחדר זוגי, או מסירים את היציאה מהאתר עד שהמחירון ייסגר. את שאר שורות המחירון משלימים בכרטיס היציאה."
+      description="Upcoming departures shown on the site with no price for an adult in a double room - the price the tour card and every room combination are built from. Enter the per-person double-room price here, or take the departure off the site until its price list is settled. The other price rows are filled in on the departure card."
     >
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="h-9 px-3 text-xs">יציאה</TableHead>
-            <TableHead className="h-9 px-3 text-xs">תאריכים</TableHead>
-            <TableHead className="h-9 px-3 text-xs">מחיר לאדם בחדר זוגי</TableHead>
+            <TableHead className="h-9 px-3 text-xs">Departure</TableHead>
+            <TableHead className="h-9 px-3 text-xs">Dates</TableHead>
+            <TableHead className="h-9 px-3 text-xs">Price per Person, Double Room</TableHead>
             <TableHead className="h-9 px-3 text-xs">
-              <span className="sr-only">פעולות</span>
+              <span className="sr-only">Actions</span>
             </TableHead>
           </TableRow>
         </TableHeader>
@@ -76,17 +76,17 @@ function PriceRow({ row, today, run, busy }: QueueControls & { row: DepartureWit
     void run(
       saveKey,
       () => saveDeparturePrices(row.id, [{ paxType: "adult", position: 2, price }]),
-      `המחיר של ${row.code} נשמר`,
+      `Price saved for ${row.code}`,
     );
   };
 
   const unpublish = async () => {
     const ok = await confirm({
-      title: `להסיר את ${row.code} מהאתר?`,
+      title: `Take ${row.code} off the site?`,
       description:
-        "היציאה תפסיק להופיע באתר אחרי הפרסום הבא לאתר. היא נשארת בלוח היציאות, ואפשר לפרסם אותה שוב אחרי שיוזן לה מחיר.",
-      confirmLabel: "הסרה מהאתר",
-      cancelLabel: "ביטול",
+        "The departure stops showing on the site after the next site publish. It stays on the departures board and can be published again once it has a price.",
+      confirmLabel: "Take Off Site",
+      cancelLabel: "Cancel",
       destructive: true,
     });
     if (!ok) return;
@@ -95,21 +95,21 @@ function PriceRow({ row, today, run, busy }: QueueControls & { row: DepartureWit
       async () => {
         const res = await setDeparturesPublished([row.id], false);
         if (res.success && res.data.done.length === 0) {
-          return { success: false, error: "היציאה לא נמצאה בחברה הפעילה" };
+          return { success: false, error: "The departure was not found in the active company" };
         }
         return res;
       },
-      `${row.code} הוסרה מהאתר`,
+      `${row.code} taken off the site`,
     );
   };
 
   return (
     <TableRow data-departure={row.code}>
       <TableCell className={cell}>
-        <Link href={departureHref(row.code, "prices")} className={linkClass} title="פתיחת כרטיס היציאה">
+        <Link href={departureHref(row.code, "prices")} className={linkClass} title="Open the departure card">
           <Ltr className="font-mono">{row.code}</Ltr>
         </Link>
-        {row.packageName && <span className="mr-2 text-sm">{row.packageName}</span>}
+        {row.packageName && <span className="ms-2 text-sm">{row.packageName}</span>}
       </TableCell>
       <TableCell className={`${cell} whitespace-nowrap`}>
         <Ltr>
@@ -120,13 +120,14 @@ function PriceRow({ row, today, run, busy }: QueueControls & { row: DepartureWit
       <TableCell className={cell}>
         {isVacation ? (
           <p className="max-w-[44ch] text-sm text-muted-foreground">
-            חבילת נופש מתומחרת לפי מלון וכרטיס. חסר מלון עם מחיר לחדר זוגי - משלימים בכרטיס היציאה.
+            A vacation package is priced by hotel and ticket. A hotel with a double-room price is missing - add it on the
+            departure card.
           </p>
         ) : (
           <>
             <div className="flex items-center gap-2">
               <label htmlFor={inputId} className="sr-only">
-                מחיר לאדם בחדר זוגי ליציאה {row.code}
+                Per-person double-room price for {row.code}
               </label>
               <Input
                 id={inputId}
@@ -146,10 +147,10 @@ function PriceRow({ row, today, run, busy }: QueueControls & { row: DepartureWit
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
               {text.trim() !== "" && !valid ? (
-                <span className="text-destructive">מחיר חייב להיות מספר גדול מאפס</span>
+                <span className="text-destructive">The price must be a number above zero</span>
               ) : row.seriesPrices ? (
                 <>
-                  ביציאות אחרות של הסדרה:{" "}
+                  Other departures in the series:{" "}
                   <Ltr>
                     {row.seriesPrices.min === row.seriesPrices.max
                       ? `${symbol}${fmtMoney(row.seriesPrices.min)}`
@@ -157,7 +158,7 @@ function PriceRow({ row, today, run, busy }: QueueControls & { row: DepartureWit
                   </Ltr>
                 </>
               ) : (
-                "אין יציאה אחרת בסדרה עם מחיר במטבע הזה"
+                "No other departure in the series has a price in this currency"
               )}
             </div>
           </>
@@ -167,13 +168,13 @@ function PriceRow({ row, today, run, busy }: QueueControls & { row: DepartureWit
         <div className="flex flex-wrap items-center justify-end gap-2">
           {!isVacation && (
             <ActionButton actionKey={saveKey} busy={busy} disabled={!valid} onClick={save}>
-              שמירת מחיר
+              Save Price
             </ActionButton>
           )}
           <ActionButton actionKey={unpublishKey} busy={busy} variant="outline" onClick={() => void unpublish()}>
-            הסרה מהאתר
+            Take Off Site
           </ActionButton>
-          <OpenLink href={departureHref(row.code, "prices")}>כרטיס היציאה</OpenLink>
+          <OpenLink href={departureHref(row.code, "prices")}>Departure Card</OpenLink>
         </div>
       </TableCell>
     </TableRow>

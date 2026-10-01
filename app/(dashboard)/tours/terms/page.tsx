@@ -9,10 +9,10 @@ export const dynamic = "force-dynamic";
 export default async function TourTermsPage() {
   const result = await listTourTerms();
   return (
-    <div dir="rtl">
+    <div>
       <PageHeader
-        title="קטגוריות ותגיות"
-        description="היעדים, קהלי היעד, התגיות ושאר הקטגוריות שהאתר מסנן ומקבץ לפיהן. לכל קטגוריה עמוד באתר עם שם, תיאור ותמונות ראש."
+        title="Categories & Tags"
+        description="The destinations, audiences, tags and other categories the site filters and groups by. Each one has a page on the site with a name, description and hero images."
         actions={<PublishSiteButton />}
       />
       {result.success ? <TermsTable rows={result.data} /> : <LoadError message={result.error} />}

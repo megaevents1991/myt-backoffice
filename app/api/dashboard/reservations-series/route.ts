@@ -1,37 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase-server";
 import { guardAdminRoute } from "@/lib/auth/guards";
-
-function startEndFromRange(range?: string) {
-  const now = new Date();
-  const end = new Date(now);
-  let start = new Date(now);
-  switch (range) {
-    case "7d":
-      start.setDate(start.getDate() - 7);
-      break;
-    case "30d":
-      start.setDate(start.getDate() - 30);
-      break;
-    case "90d":
-      start.setDate(start.getDate() - 90);
-      break;
-    case "1y":
-      start.setFullYear(start.getFullYear() - 1);
-      break;
-    case "ytd": {
-      start = new Date(now.getFullYear(), 0, 1);
-      break;
-    }
-    default:
-      start.setDate(start.getDate() - 30);
-  }
-  return { start, end };
-}
-
-function toDateKey(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
+import { dailySeries, seriesWindow } from "@/lib/dashboard-series";
 
 export async function GET(req: NextRequest) {
   const denied = await guardAdminRoute();
@@ -49,7 +19,7 @@ export async function GET(req: NextRequest) {
       start = new Date(startParam);
       end = new Date(endParam);
     } else {
-      const se = startEndFromRange(range);
+      const se = seriesWindow(range);
       start = se.start;
       end = se.end;
     }
@@ -67,21 +37,11 @@ export async function GET(req: NextRequest) {
     const { data, error } = await query;
     if (error) throw error;
 
-    // Aggregate by day
-    const counts = new Map<string, number>();
-    // Pre-seed days for continuity
-    const cur = new Date(start);
-    while (cur <= end) {
-      counts.set(toDateKey(cur), 0);
-      cur.setDate(cur.getDate() + 1);
-    }
-    for (const row of (data ?? []) as { created_at: string }[]) {
-      const key = toDateKey(new Date(row.created_at));
-      counts.set(key, (counts.get(key) || 0) + 1);
-    }
-    const series = Array.from(counts.entries())
-      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-      .map(([date, count]) => ({ date, count }));
+    const series = dailySeries(
+      ((data ?? []) as { created_at: string }[]).map((row) => row.created_at),
+      start,
+      end,
+    );
 
     return NextResponse.json({ start: start.toISOString(), end: end.toISOString(), series });
   } catch (e) {

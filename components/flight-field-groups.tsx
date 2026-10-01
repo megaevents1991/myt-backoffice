@@ -128,22 +128,22 @@ export const DEFAULT_VISIBLE_COLUMNS: FlightFieldKey[] = [
 // flight blocks). Mega Events keeps FLIGHT_FIELD_GROUPS / FLIGHT_FIELDS /
 // DEFAULT_VISIBLE_COLUMNS above exactly as they are.
 
-export const TOURS_FIELD_GROUP = "תפעול קבוצות";
+export const TOURS_FIELD_GROUP = "Group Operations";
 
 const TOURS_FIELDS: FlightField[] = [
-  { key: "season_label", label: "עונה / מאגר", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: true },
-  { key: "original_quantity", label: "הזמנה מקורית (מושבים)", group: TOURS_FIELD_GROUP, type: "number", bulkEditable: true },
-  { key: "cost_child_price", label: "מחיר ילד (CHD)", group: TOURS_FIELD_GROUP, type: "amount", bulkEditable: true },
-  { key: "cost_tax", label: "מסים (TAX)", group: TOURS_FIELD_GROUP, type: "amount", bulkEditable: true },
-  { key: "inbound_airline_code", label: "חברת תעופה בחזור", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: true },
-  { key: "contract_id", label: "חוזה", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: false, readOnly: true },
-  { key: "requested_at", label: "תאריך בקשה (RQ)", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
-  { key: "first_cancellation_date", label: "ביטול ראשון (CXX 1)", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
-  { key: "names_deadline", label: "מועד שמות", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
-  { key: "cancelled_at", label: "תאריך ביטול", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
-  { key: "cancel_reason", label: "סיבת ביטול", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: true },
-  { key: "cancellation_fee", label: "דמי ביטול", group: TOURS_FIELD_GROUP, type: "amount", bulkEditable: true },
-  { key: "reviewed_at", label: "נבדק בתאריך", group: TOURS_FIELD_GROUP, type: "datetime", bulkEditable: false, readOnly: true },
+  { key: "season_label", label: "Season / Pool", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: true },
+  { key: "original_quantity", label: "Original Seats", group: TOURS_FIELD_GROUP, type: "number", bulkEditable: true },
+  { key: "cost_child_price", label: "Child Price (CHD)", group: TOURS_FIELD_GROUP, type: "amount", bulkEditable: true },
+  { key: "cost_tax", label: "Taxes (TAX)", group: TOURS_FIELD_GROUP, type: "amount", bulkEditable: true },
+  { key: "inbound_airline_code", label: "Return Airline", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: true },
+  { key: "contract_id", label: "Contract", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: false, readOnly: true },
+  { key: "requested_at", label: "Requested (RQ)", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
+  { key: "first_cancellation_date", label: "First Cancellation (CXX 1)", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
+  { key: "names_deadline", label: "Names Due", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
+  { key: "cancelled_at", label: "Cancelled On", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
+  { key: "cancel_reason", label: "Cancel Reason", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: true },
+  { key: "cancellation_fee", label: "Cancellation Fee", group: TOURS_FIELD_GROUP, type: "amount", bulkEditable: true },
+  { key: "reviewed_at", label: "Reviewed At", group: TOURS_FIELD_GROUP, type: "datetime", bulkEditable: false, readOnly: true },
 ];
 
 /**
@@ -154,7 +154,7 @@ const TOURS_FIELDS: FlightField[] = [
  */
 const TOURS_BLOCK_STATUS_FIELD: FlightField = {
   key: "block_status",
-  label: "סטטוס בלוק",
+  label: "Block Status",
   group: "Operations",
   type: "select",
   options: [...BLOCK_STATUSES],

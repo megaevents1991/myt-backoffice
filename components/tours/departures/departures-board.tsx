@@ -21,14 +21,16 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import {
   ChevronDown,
-  ChevronLeft,
+  ChevronRight,
   ClipboardPaste,
   Copy,
   Download,
   Eye,
   Loader2,
+  MoreHorizontal,
   Plus,
   RefreshCw,
+  SlidersHorizontal,
   Tag,
   X,
 } from "lucide-react";
@@ -36,6 +38,12 @@ import { toast } from "react-hot-toast";
 import { PageHeader } from "@/components/page-header";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSessionState } from "@/hooks/use-view-state";
@@ -290,6 +298,12 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
 
   const clearFilters = () => setParams(NO_FILTERS);
 
+  // The filters most screens need stay in sight; the rest fold behind "More filters",
+  // which opens by itself while one of them is set.
+  const secondaryFilters = [season, seriesCode, pageId, noFlight, noPrice, upcoming, deleted].filter(Boolean).length;
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(secondaryFilters > 0);
+  const showMoreFilters = moreFiltersOpen || secondaryFilters > 0;
+
   // ---- row plumbing
   const patchRow = useCallback((id: string, patch: Partial<BoardRow>) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -354,13 +368,13 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
       }
       const skipped = result.data.skipped[0];
       if (skipped) {
-        toast.error(`אי אפשר לפרסם את ${row.code}: ${skipped.reason}`, { duration: 7000 });
+        toast.error(`Can't publish ${row.code}: ${skipped.reason}`, { duration: 7000 });
         return;
       }
       patchRow(row.id, { is_published: next });
       const warning = result.data.warnings[0];
-      if (warning) toast(`${row.code} פורסמה. ${warning.reason}`, { duration: 7000 });
-      else toast.success(next ? `${row.code} פורסמה` : `${row.code} הוסרה מהפרסום`);
+      if (warning) toast(`${row.code} published. ${warning.reason}`, { duration: 7000 });
+      else toast.success(next ? `${row.code} published` : `${row.code} unpublished`);
     },
     [markBusy, patchRow],
   );
@@ -388,7 +402,7 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
         toast.error(result.error);
         return;
       }
-      toast.success(`${row.code}: התגיות עודכנו`);
+      toast.success(`${row.code}: date tags updated`);
     },
     [patchRow],
   );
@@ -416,7 +430,7 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
         toast.error(`${row.code}: ${result.error}`, { duration: 7000 });
         return;
       }
-      toast.success(`${row.code}: המחיר עודכן`);
+      toast.success(`${row.code}: price updated`);
     },
     [patchRow],
   );
@@ -427,7 +441,7 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
   const finishBulk = async (title: string, result: BulkOutcome) => {
     await refreshRows(result.done);
     if (result.skipped.length || result.warnings.length) setOutcome({ title, outcome: result });
-    else toast.success(`${title}: ${result.done.length} יציאות`);
+    else toast.success(`${title}: ${result.done.length} departures`);
     if (result.skipped.length === 0) setSelected(new Set());
   };
 
@@ -436,7 +450,7 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
     const result = await setDeparturesPublished(selectedRows.map((r) => r.id), next);
     setBulkBusy(false);
     if (!result.success) toast.error(result.error);
-    else await finishBulk(next ? "פרסום" : "הסרה מפרסום", result.data);
+    else await finishBulk(next ? "Publish" : "Unpublish", result.data);
   };
 
   const bulkStatus = async (next: string) => {
@@ -445,7 +459,7 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
     const result = await setDeparturesSaleStatus(selectedRows.map((r) => r.id), next);
     setBulkBusy(false);
     if (!result.success) toast.error(result.error);
-    else await finishBulk(`סטטוס מכירה "${SALE_STATUS_LABELS[next as SaleStatus]}"`, result.data);
+    else await finishBulk(`Sale status "${SALE_STATUS_LABELS[next as SaleStatus]}"`, result.data);
   };
 
   const exportView = async () => {
@@ -457,7 +471,7 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
       return;
     }
     downloadBase64(result.data.filename, result.data.base64);
-    toast.success(`יוצאו ${filtered.length} יציאות`);
+    toast.success(`Exported ${filtered.length} departures`);
   };
 
   const toggleGroup = (seriesId: string) =>
@@ -475,38 +489,51 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
   }, [data, thisYear]);
 
   return (
-    <div dir="rtl" className="min-w-0">
+    <div className="min-w-0">
       <PageHeader
-        title="לוח יציאות"
+        title="Tours"
         description={
           readOnly
-            ? "היציאות שבמכירה, מקובצות לפי סדרה: תאריכים, מסלול, מחיר, הטבות, טיסה ומקומות פנויים. לחיצה על קוד היציאה פותחת את כל הפרטים."
-            : "כל היציאות של החברה, מקובצות לפי סדרה. כאן מעדכנים פרסום, סטטוס מכירה, תגיות ומחיר בלחיצה על התא. כל שאר הפרטים בכרטיס היציאה."
+            ? "The departures on sale, grouped by series: dates, route, price, promotions, flight and seats left. Click a departure code for its full details."
+            : "Every departure date of every tour, grouped by series. Publish, set the sale status, date tags and double-room price right in the row; click a code for the full departure card."
         }
         actions={
           readOnly ? (
-            <Chip className="gap-1 px-2.5 py-1 text-xs" title="אין לחשבון הזה הרשאת עריכה">
+            <Chip className="gap-1 px-2.5 py-1 text-xs" title="This account can't edit">
               <Eye className="h-3.5 w-3.5" />
-              צפייה בלבד
+              View only
             </Chip>
           ) : (
           <>
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/tours/series">סדרות ושכפול עונה</Link>
-            </Button>
-            <Button variant="outline" size="sm" onClick={exportView} disabled={exporting || filtered.length === 0}>
-              {exporting ? <Loader2 className="animate-spin" /> : <Download />}
-              ייצוא לאקסל
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setDialog("paste")} disabled={!data}>
-              <ClipboardPaste />
-              הדבקת מחירים מאקסל
-            </Button>
+            <PublishSiteButton />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" aria-label="More actions">
+                  {exporting ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
+                  More
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem asChild>
+                  <Link href="/tours/series">
+                    <Copy />
+                    Series &amp; Seasons
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setDialog("paste")} disabled={!data}>
+                  <ClipboardPaste />
+                  Paste Prices
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void exportView()} disabled={exporting || filtered.length === 0}>
+                  <Download />
+                  Export to Excel
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button size="sm" onClick={() => setDialog("new")} disabled={!data}>
               <Plus />
-              יציאה חדשה
+              New Departure
             </Button>
-            <PublishSiteButton />
           </>
           )
         }
@@ -514,7 +541,15 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
 
       {/* filters */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <select aria-label="שנה" className={selectClass} value={yearParam} onChange={(e) => setParams({ year: e.target.value })}>
+        <Input
+          dir="ltr"
+          aria-label="Search by code"
+          placeholder="Search code"
+          className="h-9 w-32 font-mono placeholder:font-sans"
+          value={query}
+          onChange={(e) => setParams({ q: e.target.value })}
+        />
+        <select aria-label="Year" className={selectClass} value={yearParam} onChange={(e) => setParams({ year: e.target.value })}>
           <option value="">
             {thisYear} + {thisYear + 1}
           </option>
@@ -523,37 +558,10 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
               {y}
             </option>
           ))}
-          <option value="all">כל השנים</option>
+          <option value="all">All years</option>
         </select>
-        <select aria-label="עונה" className={selectClass} value={season} onChange={(e) => setParams({ season: e.target.value })}>
-          <option value="">כל העונות</option>
-          {season && !options.seasons.includes(season) && <option value={season}>{season}</option>}
-          {options.seasons.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <select aria-label="סדרה" className={selectClass} value={seriesCode} onChange={(e) => setParams({ series: e.target.value })}>
-          <option value="">כל הסדרות</option>
-          {seriesCode && !options.series.some((s) => s.code === seriesCode) && <option value={seriesCode}>{seriesCode}</option>}
-          {options.series.map((s) => (
-            <option key={s.id} value={s.code}>
-              {s.code}
-              {s.label ? ` · ${s.label}` : ""}
-            </option>
-          ))}
-        </select>
-        <select aria-label="עמוד באתר" className={cn(selectClass, "max-w-56")} value={pageId} onChange={(e) => setParams({ page: e.target.value })}>
-          <option value="">כל העמודים</option>
-          {options.packages.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <select aria-label="סטטוס מכירה" className={selectClass} value={status} onChange={(e) => setParams({ status: e.target.value })}>
-          <option value="">כל הסטטוסים</option>
+        <select aria-label="Sale status" className={selectClass} value={status} onChange={(e) => setParams({ status: e.target.value })}>
+          <option value="">All sale statuses</option>
           {SALE_STATUSES.map((s) => (
             <option key={s} value={s}>
               {SALE_STATUS_LABELS[s]}
@@ -561,31 +569,67 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
           ))}
         </select>
         {!readOnly && (
-          <>
-            <select aria-label="פרסום" className={selectClass} value={published} onChange={(e) => setParams({ published: e.target.value })}>
-              <option value="">מפורסם + טיוטה</option>
-              <option value="yes">מפורסם</option>
-              <option value="no">לא מפורסם</option>
-            </select>
-            <FilterToggle label="בלי טיסה חיה" tone="bad" active={noFlight === "1"} onChange={(v) => setParams({ noflight: v ? "1" : "" })} />
-            <FilterToggle label="בלי מחיר" tone="bad" active={noPrice === "1"} onChange={(v) => setParams({ noprice: v ? "1" : "" })} />
-          </>
+          <select aria-label="Published" className={selectClass} value={published} onChange={(e) => setParams({ published: e.target.value })}>
+            <option value="">Published + draft</option>
+            <option value="yes">Published</option>
+            <option value="no">Draft</option>
+          </select>
         )}
-        <FilterToggle label="רק עתידיות" active={upcoming === "1"} onChange={(v) => setParams({ upcoming: v ? "1" : "" })} />
-        {!readOnly && <FilterToggle label="מחוקות" active={showDeleted} onChange={(v) => setParams({ deleted: v ? "1" : "" })} />}
-        <Input
-          dir="ltr"
-          aria-label="חיפוש לפי קוד"
-          placeholder="חיפוש קוד"
-          className="h-9 w-32 font-mono placeholder:font-sans"
-          value={query}
-          onChange={(e) => setParams({ q: e.target.value })}
-        />
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9"
+          aria-expanded={showMoreFilters}
+          onClick={() => setMoreFiltersOpen((open) => !open)}
+          disabled={secondaryFilters > 0}
+        >
+          <SlidersHorizontal />
+          More filters{secondaryFilters > 0 ? ` (${secondaryFilters})` : ""}
+        </Button>
         {filterCount > 0 && (
           <Button variant="ghost" size="sm" onClick={clearFilters}>
             <X />
-            ניקוי
+            Clear
           </Button>
+        )}
+        {showMoreFilters && (
+          <div className="flex w-full flex-wrap items-center gap-2">
+            <select aria-label="Season" className={selectClass} value={season} onChange={(e) => setParams({ season: e.target.value })}>
+              <option value="">All seasons</option>
+              {season && !options.seasons.includes(season) && <option value={season}>{season}</option>}
+              {options.seasons.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            <select aria-label="Series" className={selectClass} value={seriesCode} onChange={(e) => setParams({ series: e.target.value })}>
+              <option value="">All series</option>
+              {seriesCode && !options.series.some((s) => s.code === seriesCode) && <option value={seriesCode}>{seriesCode}</option>}
+              {options.series.map((s) => (
+                <option key={s.id} value={s.code}>
+                  {s.code}
+                  {s.label ? ` · ${s.label}` : ""}
+                </option>
+              ))}
+            </select>
+            <select aria-label="Tour page" className={cn(selectClass, "max-w-56")} value={pageId} onChange={(e) => setParams({ page: e.target.value })}>
+              <option value="">All tour pages</option>
+              {options.packages.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {!readOnly && (
+              <>
+                <FilterToggle label="No live flight" tone="bad" active={noFlight === "1"} onChange={(v) => setParams({ noflight: v ? "1" : "" })} />
+                <FilterToggle label="No price" tone="bad" active={noPrice === "1"} onChange={(v) => setParams({ noprice: v ? "1" : "" })} />
+              </>
+            )}
+            <FilterToggle label="Upcoming only" active={upcoming === "1"} onChange={(v) => setParams({ upcoming: v ? "1" : "" })} />
+            {!readOnly && <FilterToggle label="Deleted" active={showDeleted} onChange={(v) => setParams({ deleted: v ? "1" : "" })} />}
+          </div>
         )}
       </div>
 
@@ -593,22 +637,22 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
       <div className="mb-2 flex min-h-9 flex-wrap items-center gap-x-4 gap-y-2 text-sm">
         {selectedRows.length > 0 ? (
           <div className="flex w-full flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-accent/60 px-3 py-1.5">
-            <span className="font-semibold">{selectedRows.length} נבחרו</span>
+            <span className="font-semibold">{selectedRows.length} selected</span>
             <span className="mx-1 h-5 w-px bg-border" />
             <Button size="sm" variant="outline" className="h-8" disabled={bulkBusy} onClick={() => bulkPublish(true)}>
-              פרסום
+              Publish
             </Button>
             <Button size="sm" variant="outline" className="h-8" disabled={bulkBusy} onClick={() => bulkPublish(false)}>
-              הסרה מפרסום
+              Unpublish
             </Button>
             <select
-              aria-label="שינוי סטטוס מכירה לנבחרות"
+              aria-label="Set the sale status of the selected departures"
               className={cn(selectClass, "h-8")}
               value=""
               disabled={bulkBusy}
               onChange={(e) => void bulkStatus(e.target.value)}
             >
-              <option value="">שינוי סטטוס מכירה…</option>
+              <option value="">Set sale status…</option>
               {SALE_STATUSES.map((s) => (
                 <option key={s} value={s}>
                   {SALE_STATUS_LABELS[s]}
@@ -617,45 +661,45 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
             </select>
             <Button size="sm" variant="outline" className="h-8" disabled={bulkBusy} onClick={() => setDialog("copy")}>
               <Copy />
-              העתקת מחירים מיציאה
+              Copy Prices
             </Button>
             <Button size="sm" variant="outline" className="h-8" disabled={bulkBusy} onClick={() => setDialog("promotion")}>
               <Tag />
-              הוספת הטבה
+              Add Promotion
             </Button>
             {bulkBusy && <Loader2 className="h-4 w-4 animate-spin" />}
             <Button size="sm" variant="ghost" className="ms-auto h-8" onClick={() => setSelected(new Set())}>
-              ביטול הבחירה
+              Clear Selection
             </Button>
           </div>
         ) : (
           <>
             <span className="text-muted-foreground">
               {loading && !data
-                ? "טוען…"
-                : `${filtered.length} מתוך ${rows.filter((r) => (showDeleted ? r.is_deleted : !r.is_deleted)).length} יציאות${readOnly ? " במכירה" : ""}`}
+                ? "Loading…"
+                : `${filtered.length} of ${rows.filter((r) => (showDeleted ? r.is_deleted : !r.is_deleted)).length} departures${readOnly ? " on sale" : ""}`}
               {!loading && !readOnly && filtered.length > 0 && (
                 <>
                   {" · "}
-                  {publishedCount} מפורסמות
+                  {publishedCount} published
                   {" · "}
-                  <span className={cn(noFlightCount > 0 && "text-destructive")}>{noFlightCount} בלי טיסה חיה</span>
+                  <span className={cn(noFlightCount > 0 && "text-destructive")}>{noFlightCount} with no live flight</span>
                 </>
               )}
             </span>
             {groups.length > 1 && (
               <span className="flex gap-1">
                 <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setCollapsed(groups.map((g) => g.seriesId))}>
-                  כיווץ הכול
+                  Collapse all
                 </Button>
                 <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setCollapsed([])}>
-                  פתיחת הכול
+                  Expand all
                 </Button>
               </span>
             )}
             <Button variant="ghost" size="sm" className="ms-auto h-7 text-xs" onClick={() => void load()} disabled={loading}>
               <RefreshCw className={cn(loading && "animate-spin")} />
-              רענון
+              Refresh
             </Button>
           </>
         )}
@@ -665,7 +709,7 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
         <Notice tone="error" className="flex flex-wrap items-center justify-between gap-3">
           <span>{error}</span>
           <Button variant="outline" size="sm" onClick={() => void load()}>
-            ניסיון נוסף
+            Try Again
           </Button>
         </Notice>
       ) : (
@@ -678,31 +722,31 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
                     <input
                       type="checkbox"
                       className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
-                      aria-label="בחירת כל היציאות שבתצוגה"
+                      aria-label="Select every departure in view"
                       checked={allVisibleSelected}
                       onChange={(e) => setSelected(e.target.checked ? new Set(filtered.map((r) => r.id)) : new Set())}
                     />
                   </th>
                 )}
-                {!readOnly && <th className={th}>פרסום</th>}
-                <th className={cn(th, readOnly && "ps-3")}>קוד</th>
-                <th className={th}>תאריכים</th>
-                <th className={cn(th, "text-center")}>לילות</th>
-                <th className={th}>מסלול</th>
-                <th className={th}>עונה</th>
-                <th className={th}>סטטוס מכירה</th>
-                <th className={th}>תגיות תאריך</th>
-                <th className={cn(th, "text-center")}>מטבע</th>
-                <th className={cn(th, "text-end")} title="מחיר לאדם בחדר זוגי, ומתחתיו המחיר אחרי הנחה קבועה פעילה">
-                  מחיר זוגי
+                {!readOnly && <th className={th}>Published</th>}
+                <th className={cn(th, readOnly && "ps-3")}>Code</th>
+                <th className={th}>Dates</th>
+                <th className={cn(th, "text-center")}>Nights</th>
+                <th className={th}>Route</th>
+                <th className={th}>Season</th>
+                <th className={th}>Sale status</th>
+                <th className={th}>Date tags</th>
+                <th className={cn(th, "text-center")}>Currency</th>
+                <th className={cn(th, "text-end")} title="Price per person in a double room; below it, the price after an active fixed discount">
+                  Double-room price
                 </th>
-                <th className={th}>הטבה פעילה</th>
-                <th className={th}>טיסה</th>
+                <th className={th}>Active promotion</th>
+                <th className={th}>Flight</th>
                 <th
                   className={cn(th, "text-center", readOnly && "pe-2")}
-                  title={readOnly ? "מקומות בטיסות המאושרות / נמכרו / נשארו" : "מושבים משויכים בבלוקים חיים / נמכרו / יתרה"}
+                  title={readOnly ? "Seats on confirmed flights / Sold / Left" : "Allocated on live blocks / Sold / Left"}
                 >
-                  מושבים
+                  Seats
                 </th>
                 {!readOnly && <th className={cn(th, "pe-2")}>Docket</th>}
               </tr>
@@ -722,13 +766,13 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
                     <p className="mb-3">
                       {rows.length === 0
                         ? readOnly
-                          ? "אין יציאות במכירה בשנים שנבחרו."
-                          : "אין יציאות בשנים שנבחרו."
-                        : "אין יציאות שמתאימות לסינון."}
+                          ? "No departures on sale in the selected years."
+                          : "No departures in the selected years."
+                        : "No departures match the filters."}
                     </p>
                     {filterCount > 0 && (
                       <Button variant="outline" size="sm" onClick={clearFilters}>
-                        ניקוי הסינון
+                        Clear Filters
                       </Button>
                     )}
                   </td>
@@ -747,7 +791,7 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
                             <input
                               type="checkbox"
                               className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
-                              aria-label={`בחירת כל היציאות של ${g.series?.code ?? "הסדרה"}`}
+                              aria-label={`Select every departure of ${g.series?.code ?? "the series"}`}
                               checked={groupSelected}
                               onChange={(e) =>
                                 setSelected((prev) => {
@@ -764,12 +808,12 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
                         )}
                         <td colSpan={readOnly ? columnCount : columnCount - 1} className="border-b border-t px-2 py-1.5">
                           <span className="flex items-center gap-2">
-                            {folded ? <ChevronLeft className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                            {folded ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                             <Ltr className="font-mono text-sm font-bold">{g.series?.code ?? "?"}</Ltr>
                             {g.series?.label && <span className="text-sm font-medium">{g.series.label}</span>}
-                            <span className="truncate text-sm text-muted-foreground">{pkg?.name ?? "אין עמוד באתר"}</span>
+                            <span className="truncate text-sm text-muted-foreground">{pkg?.name ?? "No tour page"}</span>
                             <span className="rounded-full bg-background px-2 py-0.5 text-xs font-semibold tabular-nums">{g.rows.length}</span>
-                            {live > 0 && !readOnly && <span className="text-xs text-success">{live} מפורסמות</span>}
+                            {live > 0 && !readOnly && <span className="text-xs text-success">{live} published</span>}
                           </span>
                         </td>
                       </tr>
@@ -841,20 +885,20 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
             open={dialog === "paste"}
             onOpenChange={(open) => setDialog(open ? "paste" : null)}
             rows={rows}
-            onApplied={(result) => void finishBulk("הדבקת מחירים", result)}
+            onApplied={(result) => void finishBulk("Paste Prices", result)}
           />
           <CopyPricesDialog
             open={dialog === "copy"}
             onOpenChange={(open) => setDialog(open ? "copy" : null)}
             rows={rows}
             targets={selectedRows}
-            onApplied={(result) => void finishBulk("העתקת מחירים", result)}
+            onApplied={(result) => void finishBulk("Copy Prices", result)}
           />
           <BulkPromotionDialog
             open={dialog === "promotion"}
             onOpenChange={(open) => setDialog(open ? "promotion" : null)}
             targets={selectedRows}
-            onApplied={(result) => void finishBulk("הוספת הטבה", result)}
+            onApplied={(result) => void finishBulk("Add Promotion", result)}
           />
         </>
       )}

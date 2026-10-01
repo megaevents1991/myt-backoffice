@@ -33,7 +33,7 @@ import { ExceptionsSummary } from "./exceptions-summary";
 import { UnmatchedHotels } from "./unmatched-hotels";
 import type { QueueRun } from "./queue-ui";
 
-const LOAD_FAILED = "טעינת הנתונים נכשלה. רעננו את הדף, ואם זה חוזר פנו לתמיכה.";
+const LOAD_FAILED = "Couldn't load the data. Refresh the page, and if it happens again, contact support.";
 
 export function ApprovalsScreen({ companyName }: { companyName: string }) {
   const [data, setData] = useState<ApprovalsData | null>(null);
@@ -100,7 +100,7 @@ export function ApprovalsScreen({ companyName }: { companyName: string }) {
         return true;
       } catch (e) {
         console.error("approvals: action failed", e);
-        toast.error("הפעולה נכשלה. נסו שוב.");
+        toast.error("The action failed. Try again.");
         return false;
       } finally {
         end();
@@ -139,15 +139,14 @@ export function ApprovalsScreen({ companyName }: { companyName: string }) {
   }, [begin, end]);
 
   return (
-    <div dir="rtl">
+    <div>
       <PageHeader
-        eyebrow={companyName}
-        title="אישורים וטיפול"
-        description="מה שמחכה להחלטה של מנהל: אישורים לקבוצות טיסה, ויציאות ונתונים שהטעינה מהגיליונות לא יכלה לסגור לבד. מטפלים בשורה במקום, והיא יורדת מהרשימה."
+        title="Approvals"
+        description="Decisions only a manager makes, and data the import could not settle on its own. Handle a row in place and it leaves the list."
         actions={
           <Button type="button" size="sm" variant="outline" onClick={() => void refresh()} disabled={busy !== null || loading}>
             <RefreshCw className={cn(loading && data !== null && "animate-spin")} aria-hidden />
-            רענון
+            Refresh
           </Button>
         }
       />
@@ -159,7 +158,7 @@ export function ApprovalsScreen({ companyName }: { companyName: string }) {
           </div>
           {data === null && (
             <Button type="button" size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
-              ניסיון נוסף
+              Try Again
             </Button>
           )}
         </div>
@@ -188,12 +187,12 @@ function Summary({ data }: { data: ApprovalsData }) {
   const sections = [
     {
       id: "blocks",
-      label: "אישורי מנהל לקבוצות טיסה",
+      label: "Flight block approvals",
       count: data.awaitingApproval.total + data.cancelDecisions.total + data.review.total,
     },
-    { id: "no-block", label: "יציאות בלי קבוצת טיסה", count: data.departuresWithoutBlock.length },
-    { id: "hotels", label: "מלונות שלא בקטלוג", count: data.unmatchedHotels.length },
-    { id: "no-price", label: "יציאות בלי מחיר", count: data.departuresWithoutPrice.length },
+    { id: "no-block", label: "Published without a live flight", count: data.departuresWithoutBlock.length },
+    { id: "hotels", label: "Hotels not in catalog", count: data.unmatchedHotels.length },
+    { id: "no-price", label: "No price", count: data.departuresWithoutPrice.length },
   ];
   const total = sections.reduce((sum, s) => sum + s.count, 0);
 
@@ -211,13 +210,13 @@ function Summary({ data }: { data: ApprovalsData }) {
           </span>
         )}
         <div>
-          <div className="text-sm font-medium">{total === 0 ? "אין מה לטפל כרגע" : "ממתינים לטיפול"}</div>
+          <div className="text-sm font-medium">{total === 0 ? "Nothing to handle right now" : "Waiting to be handled"}</div>
           <div className="text-xs text-muted-foreground">
-            נכון ל-<span dir="ltr">{formatDateShort(data.today)}</span>
+            As of <span dir="ltr">{formatDateShort(data.today)}</span>
           </div>
         </div>
       </div>
-      <nav aria-label="חלקי המסך" className="flex flex-wrap items-center gap-2">
+      <nav aria-label="Sections" className="flex flex-wrap items-center gap-2">
         {sections.map((s) => (
           <button
             key={s.id}
@@ -239,7 +238,7 @@ function Summary({ data }: { data: ApprovalsData }) {
           onClick={() => jump("exceptions")}
           className="inline-flex items-center rounded-full border border-dashed px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          פערים שהטעינה מצאה
+          Data problems
         </button>
       </nav>
     </div>
@@ -248,7 +247,7 @@ function Summary({ data }: { data: ApprovalsData }) {
 
 function QueueSkeleton() {
   return (
-    <div className="space-y-4" aria-busy="true" aria-label="טוען נתונים">
+    <div className="space-y-4" aria-busy="true" aria-label="Loading data">
       <Skeleton className="h-16 w-full" />
       {[0, 1, 2].map((i) => (
         <div key={i} className="rounded-lg border bg-card p-4 shadow-sm">

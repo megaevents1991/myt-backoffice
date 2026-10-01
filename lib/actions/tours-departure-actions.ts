@@ -78,7 +78,6 @@ import type {
   CandidateBlock,
   CardAllocation,
   CardFlight,
-  CardSalesEntry,
   DepartureCardData,
   DepartureGeneralInput,
   DepartureViewData,
@@ -98,14 +97,14 @@ function fail(e: unknown): { success: false; error: string } {
   if (e instanceof UserError) return { success: false, error: e.message };
   const message = e instanceof Error ? e.message : String(e);
   if (message.startsWith("Forbidden")) {
-    return { success: false, error: "המסך הזה זמין רק כשהחברה הפעילה מוכרת טיולים. החליפו חברה בסרגל העליון." };
+    return { success: false, error: "This screen is available only when the active company sells tours. Switch company in the top bar." };
   }
-  if (message.startsWith("Unauthorized")) return { success: false, error: "אין הרשאה לפעולה הזו." };
+  if (message.startsWith("Unauthorized")) return { success: false, error: "You don't have permission for this action." };
   if (message.startsWith("Unassigned")) {
-    return { success: false, error: `${COMPANY_UNASSIGNED_NOTICE}. מנהל החברה צריך לשייך את החשבון לחברה.` };
+    return { success: false, error: `${COMPANY_UNASSIGNED_NOTICE}. A company admin needs to assign the account to a company.` };
   }
   console.error("tours-departure-actions:", e);
-  return { success: false, error: `הפעולה נכשלה: ${message}` };
+  return { success: false, error: `Action failed: ${message}` };
 }
 
 const ok = <T>(data: T, warning?: string): ActionResult<T> =>
@@ -380,9 +379,9 @@ async function loadCores(companyId: string, ids: string[]) {
 type Core = Awaited<ReturnType<typeof loadCores>>[number];
 
 async function loadCore(companyId: string, id: string): Promise<Core> {
-  if (!UUID.test(id)) throw new UserError("יציאה לא נמצאה");
+  if (!UUID.test(id)) throw new UserError("Departure not found");
   const [core] = await loadCores(companyId, [id]);
-  if (!core) throw new UserError("היציאה לא נמצאה בחברה הפעילה");
+  if (!core) throw new UserError("Departure not found in the active company");
   return core;
 }
 
@@ -566,7 +565,7 @@ export async function getDepartureView(ref: { id?: string; code?: string }): Pro
       const today = todayIso();
       found = matches.find((m) => m.end_date >= today) ?? matches[matches.length - 1] ?? null;
     }
-    if (!found) throw new UserError("היציאה לא נמצאה, או שהיא לא במכירה כרגע");
+    if (!found) throw new UserError("Departure not found, or it is not on sale right now");
     const dep = found;
 
     const [series, pkg, itinerary, prices, options, promotions, allocations, stats] = await Promise.all([
@@ -668,7 +667,7 @@ export async function getDepartureView(ref: { id?: string; code?: string }): Pro
         const room = readRoomPrices(o.room_prices);
         const catalog = o.ref_code ? hotelByCode.get(o.ref_code) : undefined;
         return {
-          name: catalog?.name ?? o.label ?? o.ref_code ?? "מלון",
+          name: catalog?.name ?? o.label ?? o.ref_code ?? "Hotel",
           city: catalog?.city ?? null,
           board: o.board,
           nights: o.nights,
@@ -840,10 +839,10 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
       departure =
         live.find((m) => m.end_date >= today) ?? live[live.length - 1] ?? matches[matches.length - 1] ?? null;
     }
-    if (!departure) throw new UserError("היציאה לא נמצאה בחברה הפעילה");
+    if (!departure) throw new UserError("Departure not found in the active company");
     const dep = departure;
 
-    const [series, pkg, itineraries, prices, options, promotions, allocations, sales, stats] = await Promise.all([
+    const [series, pkg, itineraries, prices, options, promotions, allocations, stats] = await Promise.all([
       db.from("series").select(SERIES_SELECT).eq("company_id", company.id).eq("id", dep.series_id).maybeSingle(),
       db.from("packages").select("id, name, kind, slug").eq("company_id", company.id).eq("id", dep.package_id).maybeSingle(),
       db
@@ -877,32 +876,19 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
         .eq("company_id", company.id)
         .eq("departure_id", dep.id)
         .order("created_at"),
-      db
-        .from("departure_sales_entries")
-        .select("id, pax, docket_no, note, flight_id, entered_by, created_at")
-        .eq("company_id", company.id)
-        .eq("departure_id", dep.id)
-        .order("created_at", { ascending: false }),
       loadStats(company.id, [dep.id]),
     ]);
 
     const pkgRow = must(pkg);
     const allocationRows = must(allocations) ?? [];
     const flightIds = allocationRows.map((a) => a.flight_id);
-    const salesRows = must(sales) ?? [];
-    const authorIds = Array.from(new Set(salesRows.map((s) => s.entered_by).filter((v): v is string => Boolean(v))));
-
-    const [flights, sums, authors, hotels] = await Promise.all([
+    const [flights, sums, hotels] = await Promise.all([
       loadFlights(company.id, flightIds),
       allocationSums(company.id, flightIds),
-      authorIds.length
-        ? supabaseTyped.from("user_profiles").select("id, display_name, email").in("id", authorIds)
-        : Promise.resolve({ data: [], error: null }),
       pkgRow?.kind === "vacation"
         ? db.from("hotels").select("code, name, city").eq("company_id", company.id).order("name")
         : Promise.resolve({ data: [], error: null }),
     ]);
-    const authorName = new Map((must(authors) ?? []).map((u) => [u.id, u.display_name || u.email]));
 
     const cardAllocations: CardAllocation[] = [];
     for (const a of allocationRows) {
@@ -918,11 +904,6 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
       });
     }
 
-    const cardSales: CardSalesEntry[] = salesRows.map((s) => ({
-      ...s,
-      entered_by_name: s.entered_by ? (authorName.get(s.entered_by) ?? null) : null,
-    }));
-
     return ok({
       departure: dep,
       series: must(series),
@@ -933,7 +914,6 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
       options: must(options) ?? [],
       promotions: must(promotions) ?? [],
       allocations: cardAllocations,
-      sales: cardSales,
       stats: stats.get(dep.id) ?? EMPTY_STATS,
     });
   } catch (e) {
@@ -945,14 +925,14 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
 const intOrNull = (value: unknown, min: number, max: number, label: string): number | null => {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
-  if (!Number.isInteger(n) || n < min || n > max) throw new UserError(`${label}: ערך לא תקין`);
+  if (!Number.isInteger(n) || n < min || n > max) throw new UserError(`${label}: invalid value`);
   return n;
 };
 
 const numOrNull = (value: unknown, min: number, max: number, label: string): number | null => {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
-  if (!Number.isFinite(n) || n < min || n > max) throw new UserError(`${label}: ערך לא תקין`);
+  if (!Number.isFinite(n) || n < min || n > max) throw new UserError(`${label}: invalid value`);
   return n;
 };
 
@@ -971,19 +951,19 @@ export async function updateDeparture(id: string, input: DepartureGeneralInput):
     if (has("start_date") || has("end_date")) {
       const start = input.start_date ?? core.start_date;
       const end = input.end_date ?? core.end_date;
-      if (!isIsoDate(start) || !isIsoDate(end)) throw new UserError("תאריך לא תקין");
-      if (end < start) throw new UserError("תאריך החזרה מוקדם מתאריך היציאה");
+      if (!isIsoDate(start) || !isIsoDate(end)) throw new UserError("Invalid date");
+      if (end < start) throw new UserError("The return date is before the departure date");
       patch.start_date = start;
       patch.end_date = end;
       if (seasonYearOf(start) !== core.season_year) patch.season_year = seasonYearOf(start);
     }
     if (has("season")) patch.season = text(input.season, 60);
     if (has("currency")) {
-      if (!(CURRENCIES as readonly string[]).includes(input.currency ?? "")) throw new UserError("מטבע לא נתמך");
+      if (!(CURRENCIES as readonly string[]).includes(input.currency ?? "")) throw new UserError("Unsupported currency");
       patch.currency = input.currency;
     }
     if (has("sale_status")) {
-      if (!(SALE_STATUSES as readonly string[]).includes(input.sale_status ?? "")) throw new UserError("סטטוס מכירה לא תקין");
+      if (!(SALE_STATUSES as readonly string[]).includes(input.sale_status ?? "")) throw new UserError("Invalid sale status");
       patch.sale_status = input.sale_status;
     }
     if (has("card_badge")) patch.card_badge = text(input.card_badge, 60);
@@ -996,7 +976,7 @@ export async function updateDeparture(id: string, input: DepartureGeneralInput):
     for (const key of ["arrival_airport", "return_airport"] as const) {
       if (!has(key)) continue;
       const code = normalizeAirport(input[key]);
-      if (code === undefined) throw new UserError("קוד שדה תעופה הוא שלוש אותיות באנגלית (למשל LHR)");
+      if (code === undefined) throw new UserError("An airport code is three English letters (e.g. LHR)");
       patch[key] = code;
     }
     if (has("itinerary_id")) {
@@ -1011,30 +991,30 @@ export async function updateDeparture(id: string, input: DepartureGeneralInput):
             .eq("id", itineraryId)
             .maybeSingle(),
         );
-        if (!found) throw new UserError("גרסת המסלול לא שייכת לעמוד של היציאה");
+        if (!found) throw new UserError("The itinerary version doesn't belong to the departure's tour page");
       }
       patch.itinerary_id = itineraryId;
     }
-    if (has("capacity")) patch.capacity = intOrNull(input.capacity, 0, 2000, "קיבולת");
+    if (has("capacity")) patch.capacity = intOrNull(input.capacity, 0, 2000, "Capacity");
     if (has("docket_no")) patch.docket_no = text(input.docket_no, 60);
     if (has("meeting_at")) {
       const at = input.meeting_at ? new Date(input.meeting_at) : null;
-      if (at && Number.isNaN(at.getTime())) throw new UserError("מועד מפגש לא תקין");
+      if (at && Number.isNaN(at.getTime())) throw new UserError("Invalid meeting time");
       patch.meeting_at = at ? at.toISOString() : null;
     }
     if (has("flight_mode")) {
-      if (!(FLIGHT_MODES as readonly string[]).includes(input.flight_mode ?? "")) throw new UserError("סוג טיסה לא תקין");
+      if (!(FLIGHT_MODES as readonly string[]).includes(input.flight_mode ?? "")) throw new UserError("Invalid flight type");
       patch.flight_mode = input.flight_mode;
     }
-    if (has("flight_price")) patch.flight_price = numOrNull(input.flight_price, 0, 1_000_000, "מחיר טיסה") ?? 0;
+    if (has("flight_price")) patch.flight_price = numOrNull(input.flight_price, 0, 1_000_000, "Flight price") ?? 0;
     for (const key of ["baggage_included", "meal_included", "transfers_included"] as const) {
       if (has(key)) patch[key] = Boolean(input[key]);
     }
     if (has("connection_out")) patch.connection_out = text(input.connection_out, 300);
     if (has("connection_back")) patch.connection_back = text(input.connection_back, 300);
-    if (has("child_max_age")) patch.child_max_age = intOrNull(input.child_max_age, 0, 25, "גיל ילד מרבי");
-    if (has("senior_min_age")) patch.senior_min_age = intOrNull(input.senior_min_age, 40, 120, "גיל ותיק מזערי");
-    if (has("senior_discount")) patch.senior_discount = numOrNull(input.senior_discount, 0, 100_000, "הנחת ותיק");
+    if (has("child_max_age")) patch.child_max_age = intOrNull(input.child_max_age, 0, 25, "Child up to age");
+    if (has("senior_min_age")) patch.senior_min_age = intOrNull(input.senior_min_age, 40, 120, "Senior from age");
+    if (has("senior_discount")) patch.senior_discount = numOrNull(input.senior_discount, 0, 100_000, "Senior discount");
     if (has("notes")) patch.notes = text(input.notes, 4000);
 
     if (Object.keys(patch).length === 0) return ok(undefined);
@@ -1045,13 +1025,13 @@ export async function updateDeparture(id: string, input: DepartureGeneralInput):
       );
       const blockers = blockersOf(core, series ?? undefined, patch);
       if (blockers.length) {
-        throw new UserError(`היציאה מפורסמת, והשינוי משאיר אותה בלי נתון חובה: ${blockers.join(", ")}. הסירו אותה מהפרסום קודם.`);
+        throw new UserError(`The departure is published, and this change leaves it without required data: ${blockers.join(", ")}. Unpublish it first.`);
       }
     }
 
     const { error } = await toursDb().from("departures").update(patch).eq("company_id", company.id).eq("id", id);
     if (error) {
-      if (error.code === "23505") throw new UserError(`כבר קיימת יציאה עם הקוד ${core.code} בשנת ${String(patch.season_year)}`);
+      if (error.code === "23505") throw new UserError(`A departure with code ${core.code} already exists in ${String(patch.season_year)}`);
       throw new Error(error.message);
     }
     await logAudit({
@@ -1078,7 +1058,7 @@ export async function setDeparturesPublished(ids: string[], published: boolean):
   try {
     const { company } = await requireCompany("tours");
     const wanted = cleanIds(ids);
-    if (wanted.length === 0) throw new UserError("לא נבחרו יציאות");
+    if (wanted.length === 0) throw new UserError("No departures selected");
     const cores = await loadCores(company.id, wanted);
     const outcome: BulkOutcome = { done: [], skipped: [], warnings: [] };
 
@@ -1087,7 +1067,7 @@ export async function setDeparturesPublished(ids: string[], published: boolean):
       const seriesById = new Map(series.map((s) => [s.id, s]));
       for (const core of cores) {
         if (core.is_deleted) {
-          outcome.skipped.push({ code: core.code, reason: "היציאה מחוקה" });
+          outcome.skipped.push({ code: core.code, reason: "The departure is deleted" });
           continue;
         }
         const blockers = blockersOf(core, seriesById.get(core.series_id));
@@ -1139,8 +1119,8 @@ export async function setDeparturesSaleStatus(ids: string[], status: string): Pr
   try {
     const { company } = await requireCompany("tours");
     const wanted = cleanIds(ids);
-    if (wanted.length === 0) throw new UserError("לא נבחרו יציאות");
-    if (!(SALE_STATUSES as readonly string[]).includes(status)) throw new UserError("סטטוס מכירה לא תקין");
+    if (wanted.length === 0) throw new UserError("No departures selected");
+    if (!(SALE_STATUSES as readonly string[]).includes(status)) throw new UserError("Invalid sale status");
     const done: string[] = [];
     for (const part of chunk(wanted, ID_CHUNK)) {
       const rows =
@@ -1173,16 +1153,16 @@ export async function setDeparturesSaleStatus(ids: string[], status: string): Pr
 const MATRIX_KEYS = new Set(PRICE_MATRIX_ROWS.map((r) => `${r.paxType}:${r.position}`));
 
 function validCells(cells: PriceCellInput[]): PriceCellInput[] {
-  if (!Array.isArray(cells)) throw new UserError("אין מחירים לשמירה");
+  if (!Array.isArray(cells)) throw new UserError("No prices to save");
   const seen = new Set<string>();
   const out: PriceCellInput[] = [];
   for (const c of cells) {
     const key = `${c.paxType}:${c.position}`;
-    if (!MATRIX_KEYS.has(key)) throw new UserError("שורת מחיר לא מוכרת");
+    if (!MATRIX_KEYS.has(key)) throw new UserError("Unknown price row");
     if (seen.has(key)) continue;
     seen.add(key);
     if (c.price !== null && (!Number.isFinite(c.price) || c.price < 0 || c.price > 1_000_000)) {
-      throw new UserError("מחיר חייב להיות מספר חיובי");
+      throw new UserError("A price must be a positive number");
     }
     out.push({ paxType: c.paxType, position: c.position, price: c.price });
   }
@@ -1250,7 +1230,7 @@ export async function saveDeparturePrices(
     const { company } = await requireCompany("tours");
     const core = await loadCore(company.id, id);
     const clean = validCells(cells);
-    if (currency !== undefined && !(CURRENCIES as readonly string[]).includes(currency)) throw new UserError("מטבע לא נתמך");
+    if (currency !== undefined && !(CURRENCIES as readonly string[]).includes(currency)) throw new UserError("Unsupported currency");
 
     if (core.is_published) {
       const series = must(
@@ -1258,7 +1238,7 @@ export async function saveDeparturePrices(
       );
       const blockers = blockersOf(core, series ?? undefined, { prices: matrixAfter(core, clean) });
       if (blockers.length) {
-        throw new UserError(`היציאה מפורסמת ולא יכולה להישאר כך: ${blockers.join(", ")}. הסירו אותה מהפרסום קודם.`);
+        throw new UserError(`The departure is published and can't stay that way: ${blockers.join(", ")}. Unpublish it first.`);
       }
     }
     await writeCells(company.id, [{ departureId: id, cells: clean }]);
@@ -1288,12 +1268,12 @@ export async function applyPastedPrices(
 ): Promise<ActionResult<BulkOutcome>> {
   try {
     const { company } = await requireCompany("tours");
-    if (!Array.isArray(items) || items.length === 0) throw new UserError("אין שורות להחלה");
-    if (items.length > 5000) throw new UserError("יותר מדי שורות בהדבקה אחת");
+    if (!Array.isArray(items) || items.length === 0) throw new UserError("No rows to apply");
+    if (items.length > 5000) throw new UserError("Too many rows in one paste");
     const byId = new Map<string, PriceCellInput[]>();
     for (const item of items) {
       if (!UUID.test(item.departureId) || !Array.isArray(item.prices) || item.prices.length !== PRICE_MATRIX_ROWS.length) {
-        throw new UserError("שורה לא תקינה בהדבקה");
+        throw new UserError("Invalid row in the paste");
       }
       byId.set(
         item.departureId,
@@ -1307,13 +1287,13 @@ export async function applyPastedPrices(
     for (const core of cores) {
       const cells = byId.get(core.id) ?? [];
       if (core.is_deleted) {
-        outcome.skipped.push({ code: core.code, reason: "היציאה מחוקה" });
+        outcome.skipped.push({ code: core.code, reason: "The departure is deleted" });
         continue;
       }
       if (core.is_published) {
         const blockers = blockersOf(core, seriesById.get(core.series_id), { prices: matrixAfter(core, cells) });
         if (blockers.length) {
-          outcome.skipped.push({ code: core.code, reason: `מפורסמת: ${blockers.join(", ")}` });
+          outcome.skipped.push({ code: core.code, reason: `Published: ${blockers.join(", ")}` });
           continue;
         }
       }
@@ -1348,10 +1328,10 @@ export async function copyDeparturePrices(
   try {
     const { company } = await requireCompany("tours");
     const targets = cleanIds(targetIds).filter((id) => id !== sourceId);
-    if (targets.length === 0) throw new UserError("לא נבחרו יציאות יעד");
+    if (targets.length === 0) throw new UserError("No target departures selected");
     const source = await loadCore(company.id, sourceId);
     if (source.departure_prices.length === 0 && !opts.includeOptions) {
-      throw new UserError(`ליציאה ${source.code} אין מחירים להעתקה`);
+      throw new UserError(`Departure ${source.code} has no prices to copy`);
     }
     const db = toursDb();
     const sourceOptions = opts.includeOptions
@@ -1385,7 +1365,7 @@ export async function copyDeparturePrices(
     const outcome: BulkOutcome = { done: [], skipped: [], warnings: [] };
     for (const core of cores) {
       if (core.is_deleted) {
-        outcome.skipped.push({ code: core.code, reason: "היציאה מחוקה" });
+        outcome.skipped.push({ code: core.code, reason: "The departure is deleted" });
         continue;
       }
       if (core.is_published) {
@@ -1395,7 +1375,7 @@ export async function copyDeparturePrices(
           ...(opts.includeOptions ? { options: sourceOptions, markup_fixed: sourceMarkup?.markup_fixed ?? null } : {}),
         });
         if (blockers.length) {
-          outcome.skipped.push({ code: core.code, reason: `מפורסמת: ${blockers.join(", ")}` });
+          outcome.skipped.push({ code: core.code, reason: `Published: ${blockers.join(", ")}` });
           continue;
         }
       }
@@ -1471,12 +1451,12 @@ export async function saveVacationPricing(id: string, input: VacationPricingInpu
       ref_code: text(h.ref_code, 120),
       label: text(h.label, 200),
       board: text(h.board, 120),
-      nights: intOrNull(h.nights, 0, 60, "לילות"),
+      nights: intOrNull(h.nights, 0, 60, "Nights"),
       price_unit: "per_stay",
       room_prices: {
-        double: price(h.double, "מחיר זוגי"),
-        triple: price(h.triple, "מחיר טריפל"),
-        quad: price(h.quad, "מחיר רביעייה"),
+        double: price(h.double, "Double-room price"),
+        triple: price(h.triple, "Triple-room price"),
+        quad: price(h.quad, "Quad-room price"),
       },
     }));
     const tickets = (input.tickets ?? []).map((t, i) => ({
@@ -1484,13 +1464,13 @@ export async function saveVacationPricing(id: string, input: VacationPricingInpu
       kind: "ticket",
       position: i + 1,
       label: text(t.label, 200),
-      price: price(t.price, "מחיר כרטיס"),
+      price: price(t.price, "Ticket price"),
       price_unit: "per_person",
     }));
-    for (const h of hotels) if (!h.ref_code && !h.label) throw new UserError("לכל מלון צריך קוד מלון או שם");
-    for (const t of tickets) if (!t.label) throw new UserError("לכל כרטיס צריך שם קטגוריה");
-    const markupPercent = numOrNull(input.markup_percent, 0, 1000, "אחוז markup");
-    const markupFixed = numOrNull(input.markup_fixed, 0, 1_000_000, "markup קבוע");
+    for (const h of hotels) if (!h.ref_code && !h.label) throw new UserError("Every hotel needs a hotel code or a name");
+    for (const t of tickets) if (!t.label) throw new UserError("Every ticket needs a category name");
+    const markupPercent = numOrNull(input.markup_percent, 0, 1000, "Markup percent");
+    const markupFixed = numOrNull(input.markup_fixed, 0, 1_000_000, "Fixed markup");
 
     if (core.is_published) {
       const series = must(
@@ -1504,7 +1484,7 @@ export async function saveVacationPricing(id: string, input: VacationPricingInpu
         markup_fixed: markupFixed,
       });
       if (blockers.length) {
-        throw new UserError(`היציאה מפורסמת ולא יכולה להישאר כך: ${blockers.join(", ")}. הסירו אותה מהפרסום קודם.`);
+        throw new UserError(`The departure is published and can't stay that way: ${blockers.join(", ")}. Unpublish it first.`);
       }
     }
 
@@ -1564,22 +1544,22 @@ export async function saveVacationPricing(id: string, input: VacationPricingInpu
 
 // ---------------------------------------------------------------- promotions
 function cleanPromotion(input: PromotionInput) {
-  if (!(PROMOTION_KINDS as readonly string[]).includes(input.kind)) throw new UserError("סוג הטבה לא מוכר");
+  if (!(PROMOTION_KINDS as readonly string[]).includes(input.kind)) throw new UserError("Unknown promotion type");
   const kind = input.kind as PromotionKind;
   const label = text(input.label, 200);
   let value: number | null = null;
   if (kind === "gift") {
-    if (!label) throw new UserError("למתנה צריך טקסט שמתאר אותה");
-    value = input.value == null ? null : numOrNull(input.value, 0, 1_000_000, "ערך");
+    if (!label) throw new UserError("A gift needs text that describes it");
+    value = input.value == null ? null : numOrNull(input.value, 0, 1_000_000, "Value");
   } else {
-    value = numOrNull(input.value, 0, 1_000_000, "ערך ההטבה");
-    if (value == null || value <= 0) throw new UserError("ערך ההטבה חייב להיות מספר גדול מאפס");
-    if (kind === "percent_order" && value > 100) throw new UserError("אחוז הנחה לא יכול לעבור 100");
-    if (kind === "named_per_pax" && !label) throw new UserError("להנחה בשם צריך שם");
+    value = numOrNull(input.value, 0, 1_000_000, "Promotion value");
+    if (value == null || value <= 0) throw new UserError("The promotion value must be a number greater than zero");
+    if (kind === "percent_order" && value > 100) throw new UserError("A percent discount can't exceed 100");
+    if (kind === "named_per_pax" && !label) throw new UserError("A named discount needs a name");
   }
   let validUntil: string | null = null;
   if (input.valid_until) {
-    if (!isIsoDate(input.valid_until)) throw new UserError("תאריך תפוגה לא תקין");
+    if (!isIsoDate(input.valid_until)) throw new UserError("Invalid expiry date");
     validUntil = input.valid_until;
   }
   return {
@@ -1624,7 +1604,7 @@ export async function savePromotion(
     const db = toursDb();
     let id = promotionId;
     if (promotionId) {
-      if (!UUID.test(promotionId)) throw new UserError("הטבה לא נמצאה");
+      if (!UUID.test(promotionId)) throw new UserError("Promotion not found");
       const updated = must(
         await db
           .from("promotions")
@@ -1634,7 +1614,7 @@ export async function savePromotion(
           .eq("departure_id", departureId)
           .select("id"),
       );
-      if (!updated || updated.length === 0) throw new UserError("ההטבה לא נמצאה ביציאה הזו");
+      if (!updated || updated.length === 0) throw new UserError("Promotion not found on this departure");
     } else {
       const inserted = mustRow(
         await db
@@ -1661,7 +1641,7 @@ export async function savePromotion(
 export async function setPromotionActive(promotionId: string, active: boolean): Promise<ActionResult<undefined>> {
   try {
     const { company } = await requireCompany("tours");
-    if (!UUID.test(promotionId)) throw new UserError("הטבה לא נמצאה");
+    if (!UUID.test(promotionId)) throw new UserError("Promotion not found");
     const db = toursDb();
     const promo = must(
       await db
@@ -1671,7 +1651,7 @@ export async function setPromotionActive(promotionId: string, active: boolean): 
         .eq("id", promotionId)
         .maybeSingle(),
     );
-    if (!promo || !promo.departure_id) throw new UserError("ההטבה לא נמצאה");
+    if (!promo || !promo.departure_id) throw new UserError("Promotion not found");
     if (active) {
       const core = await loadCore(company.id, promo.departure_id);
       const others = (await activePromotionsOf(company.id, promo.departure_id, core.series_id)).filter(
@@ -1697,7 +1677,7 @@ export async function setPromotionActive(promotionId: string, active: boolean): 
 export async function deletePromotion(promotionId: string): Promise<ActionResult<undefined>> {
   try {
     const { company } = await requireCompany("tours");
-    if (!UUID.test(promotionId)) throw new UserError("הטבה לא נמצאה");
+    if (!UUID.test(promotionId)) throw new UserError("Promotion not found");
     const removed = must(
       await toursDb()
         .from("promotions")
@@ -1707,7 +1687,7 @@ export async function deletePromotion(promotionId: string): Promise<ActionResult
         .not("departure_id", "is", null)
         .select("id, departure_id, kind, value, label, valid_until"),
     );
-    if (!removed || removed.length === 0) throw new UserError("ההטבה לא נמצאה");
+    if (!removed || removed.length === 0) throw new UserError("Promotion not found");
     await logAudit({
       action: "delete",
       entityType: "tours_promotion",
@@ -1735,7 +1715,7 @@ export async function addPromotionToDepartures(
   try {
     const { company } = await requireCompany("tours");
     const wanted = cleanIds(ids);
-    if (wanted.length === 0) throw new UserError("לא נבחרו יציאות");
+    if (wanted.length === 0) throw new UserError("No departures selected");
     const row = cleanPromotion(input);
     const db = toursDb();
     const cores = await loadCores(company.id, wanted);
@@ -1772,7 +1752,7 @@ export async function addPromotionToDepartures(
     const toDeactivate: string[] = [];
     for (const core of cores) {
       if (core.is_deleted) {
-        outcome.skipped.push({ code: core.code, reason: "היציאה מחוקה" });
+        outcome.skipped.push({ code: core.code, reason: "The departure is deleted" });
         continue;
       }
       const applying = active.filter((p) => p.departure_id === core.id || p.series_id === core.series_id);
@@ -1877,10 +1857,10 @@ export async function addFlightAllocation(
   try {
     const { company } = await requireCompany("tours");
     const core = await loadCore(company.id, departureId);
-    if (core.is_deleted) throw new UserError("היציאה מחוקה");
-    if (!LEGS.includes(legs)) throw new UserError("כיוון לא תקין");
-    if (!Number.isInteger(seats) || seats < 1 || seats > 1000) throw new UserError("מספר המושבים חייב להיות מספר שלם גדול מאפס");
-    if (!Number.isInteger(flightId)) throw new UserError("בלוק לא נמצא");
+    if (core.is_deleted) throw new UserError("The departure is deleted");
+    if (!LEGS.includes(legs)) throw new UserError("Invalid direction");
+    if (!Number.isInteger(seats) || seats < 1 || seats > 1000) throw new UserError("The number of seats must be a whole number greater than zero");
+    if (!Number.isInteger(flightId)) throw new UserError("Block not found");
 
     const db = toursDb();
     const [flights, seriesRow, sums, existing] = await Promise.all([
@@ -1895,21 +1875,21 @@ export async function addFlightAllocation(
         .eq("flight_id", flightId),
     ]);
     const block = flights.get(flightId);
-    if (!block || block.is_deleted) throw new UserError("הבלוק לא נמצא בחברה הפעילה");
+    if (!block || block.is_deleted) throw new UserError("Block not found in the active company");
     if (block.block_status === "cancelled" || block.block_status === "declined") {
-      throw new UserError(`אי אפשר לשייך בלוק בסטטוס "${BLOCK_STATUS_LABELS[block.block_status as BlockStatus]}"`);
+      throw new UserError(`Can't allocate a block with status "${BLOCK_STATUS_LABELS[block.block_status as BlockStatus]}"`);
     }
 
     const takesOut = legs !== "inbound";
     const takesIn = legs !== "outbound";
     for (const a of must(existing) ?? []) {
       const clash = (a.legs !== "inbound" && takesOut) || (a.legs !== "outbound" && takesIn);
-      if (clash) throw new UserError("הבלוק כבר משויך ליציאה הזו באותו כיוון. הסירו את השיוך הקיים כדי לשנות אותו.");
+      if (clash) throw new UserError("The block is already allocated to this departure in the same direction. Remove the existing allocation to change it.");
     }
 
     const route = effectiveRoute(core, must(seriesRow));
     const fit = checkBlockFitsDeparture(block, route, legs);
-    if (!fit.ok) throw new UserError(`הבלוק לא מתאים למסלול היציאה: ${fit.reason}`);
+    if (!fit.ok) throw new UserError(`The block doesn't match the departure's route: ${fit.reason}`);
 
     const warnings: string[] = [];
     if (takesOut) {
@@ -1918,26 +1898,26 @@ export async function addFlightAllocation(
         dayDiff(block.outbound_arrival_time.slice(0, 10), core.start_date),
       );
       if (diff > ALLOCATION_DAY_WINDOW) {
-        throw new UserError(`טיסת ההלוך ב-${fmtDate(block.outbound_departure_time)} והיציאה מתחילה ב-${fmtDate(core.start_date)} - הפרש של יותר מיומיים`);
+        throw new UserError(`The outbound flight is on ${fmtDate(block.outbound_departure_time)} and the departure starts on ${fmtDate(core.start_date)} - more than two days apart`);
       }
-      if (diff > 0) warnings.push(`טיסת ההלוך ב-${fmtDate(block.outbound_departure_time)}, היציאה מתחילה ב-${fmtDate(core.start_date)}`);
+      if (diff > 0) warnings.push(`The outbound flight is on ${fmtDate(block.outbound_departure_time)}, the departure starts on ${fmtDate(core.start_date)}`);
     }
     if (takesIn) {
       const diff = dayDiff(block.inbound_departure_time.slice(0, 10), core.end_date);
       if (diff > ALLOCATION_DAY_WINDOW) {
-        throw new UserError(`טיסת החזור ב-${fmtDate(block.inbound_departure_time)} והיציאה מסתיימת ב-${fmtDate(core.end_date)} - הפרש של יותר מיומיים`);
+        throw new UserError(`The return flight is on ${fmtDate(block.inbound_departure_time)} and the departure ends on ${fmtDate(core.end_date)} - more than two days apart`);
       }
-      if (diff > 0) warnings.push(`טיסת החזור ב-${fmtDate(block.inbound_departure_time)}, היציאה מסתיימת ב-${fmtDate(core.end_date)}`);
+      if (diff > 0) warnings.push(`The return flight is on ${fmtDate(block.inbound_departure_time)}, the departure ends on ${fmtDate(core.end_date)}`);
     }
 
     const used = sums.get(flightId) ?? { outbound: 0, inbound: 0 };
     const freeOut = block.initial_quantity - used.outbound;
     const freeIn = block.initial_quantity - used.inbound;
     if (takesOut && seats > freeOut) {
-      throw new UserError(`בבלוק ${block.initial_quantity} מושבים ו-${used.outbound} כבר משויכים בהלוך - נשארו ${Math.max(freeOut, 0)}`);
+      throw new UserError(`The block has ${block.initial_quantity} seats and ${used.outbound} are already allocated outbound - ${Math.max(freeOut, 0)} left`);
     }
     if (takesIn && seats > freeIn) {
-      throw new UserError(`בבלוק ${block.initial_quantity} מושבים ו-${used.inbound} כבר משויכים בחזור - נשארו ${Math.max(freeIn, 0)}`);
+      throw new UserError(`The block has ${block.initial_quantity} seats and ${used.inbound} are already allocated on the return - ${Math.max(freeIn, 0)} left`);
     }
 
     const { data: inserted, error } = await db
@@ -1946,7 +1926,7 @@ export async function addFlightAllocation(
       .select("id")
       .single();
     if (error) {
-      if (error.code === "23505") throw new UserError("הבלוק כבר משויך ליציאה הזו באותו כיוון");
+      if (error.code === "23505") throw new UserError("The block is already allocated to this departure in the same direction");
       throw new Error(error.message);
     }
     await logAudit({
@@ -1965,7 +1945,7 @@ export async function addFlightAllocation(
 export async function removeFlightAllocation(allocationId: string): Promise<ActionResult<undefined>> {
   try {
     const { company } = await requireCompany("tours");
-    if (!UUID.test(allocationId)) throw new UserError("שיוך לא נמצא");
+    if (!UUID.test(allocationId)) throw new UserError("Allocation not found");
     const removed = must(
       await toursDb()
         .from("flight_allocations")
@@ -1974,75 +1954,13 @@ export async function removeFlightAllocation(allocationId: string): Promise<Acti
         .eq("id", allocationId)
         .select("id, flight_id, departure_id, seats, legs"),
     );
-    if (!removed || removed.length === 0) throw new UserError("השיוך לא נמצא");
+    if (!removed || removed.length === 0) throw new UserError("Allocation not found");
     await logAudit({
       action: "delete",
       entityType: "tours_flight_allocation",
       entityId: allocationId,
       changes: removed[0],
       metadata: { company_id: company.id },
-    });
-    return ok(undefined);
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-// ---------------------------------------------------------------- sales entries
-/** Seats sold (or cancelled, as a negative number) outside MYT, typed in by operations. */
-export async function addSalesEntry(
-  departureId: string,
-  input: { pax: number; docket_no?: string | null; note?: string | null },
-): Promise<ActionResult<{ id: string }>> {
-  try {
-    const { session, company } = await requireCompany("tours");
-    const core = await loadCore(company.id, departureId);
-    if (core.is_deleted) throw new UserError("היציאה מחוקה");
-    const pax = Number(input.pax);
-    if (!Number.isInteger(pax) || pax === 0 || Math.abs(pax) > 500) {
-      throw new UserError("מספר הנוסעים חייב להיות מספר שלם, חיובי למכירה או שלילי לביטול");
-    }
-    const row = {
-      company_id: company.id,
-      departure_id: departureId,
-      pax,
-      docket_no: text(input.docket_no, 60),
-      note: text(input.note, 500),
-      entered_by: session.sub,
-    };
-    const inserted = mustRow(await toursDb().from("departure_sales_entries").insert(row).select("id").single());
-    await logAudit({
-      action: "create",
-      entityType: "tours_sales_entry",
-      entityId: inserted.id,
-      changes: { pax: row.pax, docket_no: row.docket_no, note: row.note },
-      metadata: { company_id: company.id, departure_id: departureId, code: core.code },
-    });
-    return ok({ id: inserted.id });
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function deleteSalesEntry(entryId: string): Promise<ActionResult<undefined>> {
-  try {
-    const { company } = await requireCompany("tours");
-    if (!UUID.test(entryId)) throw new UserError("רישום לא נמצא");
-    const removed = must(
-      await toursDb()
-        .from("departure_sales_entries")
-        .delete()
-        .eq("company_id", company.id)
-        .eq("id", entryId)
-        .select("id, departure_id, pax, docket_no, note, entered_by, created_at"),
-    );
-    if (!removed || removed.length === 0) throw new UserError("הרישום לא נמצא");
-    await logAudit({
-      action: "delete",
-      entityType: "tours_sales_entry",
-      entityId: entryId,
-      changes: removed[0],
-      metadata: { company_id: company.id, departure_id: removed[0].departure_id },
     });
     return ok(undefined);
   } catch (e) {
@@ -2064,17 +1982,17 @@ export async function createDeparture(input: {
 }): Promise<ActionResult<{ id: string; code: string }>> {
   try {
     const { company } = await requireCompany("tours");
-    if (!UUID.test(input.seriesId ?? "")) throw new UserError("בחרו סדרה");
-    if (!isIsoDate(input.start_date) || !isIsoDate(input.end_date)) throw new UserError("בחרו תאריך יציאה ותאריך חזרה");
-    if (input.end_date < input.start_date) throw new UserError("תאריך החזרה מוקדם מתאריך היציאה");
-    if ((nightsBetween(input.start_date, input.end_date) ?? 0) > 60) throw new UserError("טיול של יותר מ-60 לילות - בדקו את התאריכים");
+    if (!UUID.test(input.seriesId ?? "")) throw new UserError("Select a series");
+    if (!isIsoDate(input.start_date) || !isIsoDate(input.end_date)) throw new UserError("Select a departure date and a return date");
+    if (input.end_date < input.start_date) throw new UserError("The return date is before the departure date");
+    if ((nightsBetween(input.start_date, input.end_date) ?? 0) > 60) throw new UserError("A trip of more than 60 nights - check the dates");
 
     const db = toursDb();
     const series = must(
       await db.from("series").select(SERIES_SELECT).eq("company_id", company.id).eq("id", input.seriesId).maybeSingle(),
     );
-    if (!series) throw new UserError("הסדרה לא נמצאה בחברה הפעילה");
-    if (!series.package_id) throw new UserError(`לסדרה ${series.code} אין עמוד באתר. שייכו אותה לעמוד במסך הסדרות ואז צרו יציאה.`);
+    if (!series) throw new UserError("Series not found in the active company");
+    if (!series.package_id) throw new UserError(`Series ${series.code} has no tour page. Link it to a tour page on the Series screen, then create the departure.`);
 
     const code = departureCode(series.code, input.start_date);
     const seasonYear = seasonYearOf(input.start_date);
@@ -2090,8 +2008,8 @@ export async function createDeparture(input: {
     if (clash) {
       throw new UserError(
         clash.is_deleted
-          ? `קיימת יציאה מחוקה עם הקוד ${code} בשנת ${seasonYear}. שחזרו אותה מהלוח (סינון "מחוקות") במקום ליצור חדשה.`
-          : `כבר קיימת יציאה עם הקוד ${code} בשנת ${seasonYear}`,
+          ? `A deleted departure with code ${code} exists in ${seasonYear}. Restore it from the board (the "Deleted" filter) instead of creating a new one.`
+          : `A departure with code ${code} already exists in ${seasonYear}`,
       );
     }
 
@@ -2116,7 +2034,7 @@ export async function createDeparture(input: {
       .select("id, code")
       .single();
     if (error) {
-      if (error.code === "23505") throw new UserError(`כבר קיימת יציאה עם הקוד ${code} בשנת ${seasonYear}`);
+      if (error.code === "23505") throw new UserError(`A departure with code ${code} already exists in ${seasonYear}`);
       throw new Error(error.message);
     }
     await logAudit({
@@ -2179,7 +2097,7 @@ export async function exportDeparturesXlsx(ids: string[]): Promise<ActionResult<
   try {
     const { company } = await requireCompany("tours");
     const wanted = cleanIds(ids);
-    if (wanted.length === 0) throw new UserError("אין יציאות לייצוא בתצוגה הנוכחית");
+    if (wanted.length === 0) throw new UserError("No departures to export in the current view");
     const [rows, series, packages] = await Promise.all([
       loadBoardRows(company.id, { ids: wanted, includeDeleted: true }),
       loadSeries(company.id),
@@ -2193,32 +2111,32 @@ export async function exportDeparturesXlsx(ids: string[]): Promise<ActionResult<
     rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
 
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("יציאות", { views: [{ state: "frozen", ySplit: 1, rightToLeft: true }] });
+    const sheet = workbook.addWorksheet("Departures", { views: [{ state: "frozen", ySplit: 1 }] });
     sheet.columns = [
-      { header: "סדרה", key: "series", width: 9 },
-      { header: "עמוד", key: "package", width: 30 },
-      { header: "קוד", key: "code", width: 12 },
-      { header: "שנה", key: "year", width: 7 },
-      { header: "יציאה", key: "start", width: 12 },
-      { header: "חזרה", key: "end", width: 12 },
-      { header: "לילות", key: "nights", width: 7 },
-      { header: "נחיתה", key: "arrival", width: 8 },
-      { header: "חזרה מ", key: "ret", width: 8 },
-      { header: "סוג מסלול", key: "routeType", width: 18 },
-      { header: "עונה", key: "season", width: 12 },
-      { header: "מפורסם", key: "published", width: 9 },
-      { header: "סטטוס מכירה", key: "status", width: 16 },
-      { header: "תגיות תאריך", key: "labels", width: 24 },
-      { header: "מטבע", key: "currency", width: 7 },
+      { header: "Series", key: "series", width: 9 },
+      { header: "Tour page", key: "package", width: 30 },
+      { header: "Code", key: "code", width: 12 },
+      { header: "Year", key: "year", width: 7 },
+      { header: "Departure date", key: "start", width: 12 },
+      { header: "Return date", key: "end", width: 12 },
+      { header: "Nights", key: "nights", width: 7 },
+      { header: "Lands in", key: "arrival", width: 8 },
+      { header: "Returns from", key: "ret", width: 8 },
+      { header: "Route type", key: "routeType", width: 18 },
+      { header: "Season", key: "season", width: 12 },
+      { header: "Published", key: "published", width: 9 },
+      { header: "Sale status", key: "status", width: 16 },
+      { header: "Date labels", key: "labels", width: 24 },
+      { header: "Currency", key: "currency", width: 7 },
       ...PRICE_MATRIX_ROWS.map((r) => ({ header: r.label, key: r.sheetKey, width: 16 })),
-      { header: "הנחה קבועה לנוסע", key: "fixedDiscount", width: 14 },
-      { header: "מחיר זוגי אחרי הנחה", key: "doubleAfter", width: 16 },
-      { header: "הטבות פעילות", key: "promotions", width: 34 },
-      { header: "חברת תעופה", key: "airline", width: 11 },
-      { header: "סטטוס טיסה", key: "flightStatus", width: 20 },
-      { header: "מושבים משויכים", key: "allocated", width: 13 },
-      { header: "נמכרו", key: "sold", width: 8 },
-      { header: "יתרה", key: "remaining", width: 8 },
+      { header: "Fixed discount per traveler", key: "fixedDiscount", width: 14 },
+      { header: "Double-room price after discount", key: "doubleAfter", width: 16 },
+      { header: "Active promotions", key: "promotions", width: 34 },
+      { header: "Airline", key: "airline", width: 11 },
+      { header: "Flight status", key: "flightStatus", width: 20 },
+      { header: "Allocated", key: "allocated", width: 13 },
+      { header: "Sold", key: "sold", width: 8 },
+      { header: "Left", key: "remaining", width: 8 },
       { header: "Docket", key: "docket", width: 14 },
     ];
     for (const r of rows) {
@@ -2241,7 +2159,7 @@ export async function exportDeparturesXlsx(ids: string[]): Promise<ActionResult<
         ret: route.return_airport ?? "",
         routeType: type ? ROUTE_TYPE_LABELS[type] : departureRouteLabel(route.arrival_airport, route.return_airport),
         season: r.season ?? "",
-        published: r.is_published ? "כן" : "לא",
+        published: r.is_published ? "Yes" : "No",
         status: SALE_STATUS_LABELS[r.sale_status as SaleStatus] ?? r.sale_status,
         labels: r.date_labels.join(", "),
         currency: r.currency,
@@ -2251,7 +2169,7 @@ export async function exportDeparturesXlsx(ids: string[]): Promise<ActionResult<
         airline: Array.from(new Set(shownFlights.map((f) => f.airline))).join(", "),
         flightStatus: liveFlights.length
           ? Array.from(new Set(liveFlights.map((f) => BLOCK_STATUS_LABELS[f.blockStatus as BlockStatus] ?? f.blockStatus ?? ""))).join(", ")
-          : "אין טיסה",
+          : "No flight",
         allocated: r.stats.allocated,
         sold: r.stats.sold,
         remaining: r.stats.remaining,

@@ -156,8 +156,8 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
   const type = routeType(route.arrival_airport, route.return_airport);
   const datesOk = isIsoDate(draft.start_date) && isIsoDate(draft.end_date) && draft.end_date >= draft.start_date;
   const problems: string[] = [];
-  if (!datesOk) problems.push("תאריך החזרה מוקדם מתאריך היציאה, או שחסר תאריך");
-  if (arrival === undefined || ret === undefined) problems.push("קוד שדה תעופה הוא שלוש אותיות באנגלית");
+  if (!datesOk) problems.push("The return date is before the departure date, or a date is missing");
+  if (arrival === undefined || ret === undefined) problems.push("An airport code is three English letters");
 
   const codeByDate = series && isIsoDate(draft.start_date) ? departureCode(series.code, draft.start_date) : null;
 
@@ -169,23 +169,23 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
       toast.error(result.error, { duration: 7000 });
       return;
     }
-    toast.success("הפרטים נשמרו");
+    toast.success("Details saved");
     await onSaved();
   };
 
   return (
     <fieldset disabled={readOnly || saving} className="min-w-0">
-      {readOnly && <Notice tone="info" className="mt-2">היציאה מחוקה. שחזרו אותה כדי לערוך.</Notice>}
+      {readOnly && <Notice tone="info" className="mt-2">This departure is deleted. Restore it to edit.</Notice>}
 
-      <Section title="תאריכים ומסלול">
+      <Section title="Dates and Route">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Field label="תאריך יציאה">
+          <Field label="Departure date">
             <Input dir="ltr" type="date" className="h-9" value={draft.start_date} onChange={(e) => set("start_date", e.target.value)} />
           </Field>
-          <Field label="תאריך חזרה" hint={datesOk ? `${nightsBetween(draft.start_date, draft.end_date)} לילות` : undefined}>
+          <Field label="Return date" hint={datesOk ? `${nightsBetween(draft.start_date, draft.end_date)} nights` : undefined}>
             <Input dir="ltr" type="date" className="h-9" value={draft.end_date} min={draft.start_date} onChange={(e) => set("end_date", e.target.value)} />
           </Field>
-          <Field label="נוחתים ב" hint={series?.arrival_airport ? `ריק = לפי הסדרה (${series.arrival_airport})` : "קוד שדה, למשל LHR"}>
+          <Field label="Lands in" hint={series?.arrival_airport ? `Empty = from the series (${series.arrival_airport})` : "Airport code, e.g. LHR"}>
             <Input
               dir="ltr"
               className="h-9 font-mono uppercase"
@@ -195,7 +195,7 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
               onChange={(e) => set("arrival_airport", e.target.value.toUpperCase())}
             />
           </Field>
-          <Field label="חוזרים מ" hint={series?.return_airport ? `ריק = לפי הסדרה (${series.return_airport})` : "קוד שדה, למשל CDG"}>
+          <Field label="Returns from" hint={series?.return_airport ? `Empty = from the series (${series.return_airport})` : "Airport code, e.g. CDG"}>
             <Input
               dir="ltr"
               className="h-9 font-mono uppercase"
@@ -207,19 +207,19 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
           </Field>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          {type ? `סוג המסלול: ${ROUTE_TYPE_LABELS[type]}.` : "המסלול עוד לא מלא: צריך עיר נחיתה ועיר חזרה, ביציאה או בסדרה."}
+          {type ? `Route type: ${ROUTE_TYPE_LABELS[type]}.` : "The route is incomplete: it needs an arrival city and a return city, on the departure or the series."}
           {codeByDate && codeByDate !== d.code && (
             <>
               {" "}
-              הקוד <Ltr className="font-mono">{d.code}</Ltr> נשאר כמו שהוא גם כשהתאריך משתנה (לפי התאריך החדש הוא היה{" "}
+              The code <Ltr className="font-mono">{d.code}</Ltr> stays the same when the date changes (by the new date it would be{" "}
               <Ltr className="font-mono">{codeByDate}</Ltr>).
             </>
           )}
         </p>
         <div className="mt-3 grid grid-cols-2 gap-3">
-          <Field label="גרסת המסלול היומי" hint="לסדרה שהכיוון שלה מתהפך בין תאריכים">
+          <Field label="Itinerary version" hint="For a series whose direction flips between dates">
             <select className={`${selectClass} w-full`} value={draft.itinerary_id} onChange={(e) => set("itinerary_id", e.target.value)}>
-              <option value="">ברירת מחדל - המסלול הראשי של העמוד</option>
+              <option value="">Default - the tour page&apos;s main itinerary</option>
               {data.itineraries.map((it) => (
                 <option key={it.id} value={it.id}>
                   {it.label || it.key}
@@ -228,26 +228,26 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
               ))}
             </select>
           </Field>
-          <Field label="עונה">
-            <Input className="h-9" value={draft.season} list="tours-season-suggestions" onChange={(e) => set("season", e.target.value)} />
+          <Field label="Season">
+            <Input dir="auto" className="h-9" value={draft.season} list="tours-season-suggestions" onChange={(e) => set("season", e.target.value)} />
           </Field>
         </div>
       </Section>
 
-      <Section title="תגיות">
+      <Section title="Labels">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="תגיות תאריך" hint="עד שלוש תגיות אפורות ליד התאריך, מופרדות בפסיק">
-            <Input className="h-9" value={draft.date_labels} list="tours-date-label-suggestions" onChange={(e) => set("date_labels", e.target.value)} />
+          <Field label="Date labels" hint="Up to three grey labels next to the date, comma-separated">
+            <Input dir="auto" className="h-9" value={draft.date_labels} list="tours-date-label-suggestions" onChange={(e) => set("date_labels", e.target.value)} />
           </Field>
-          <Field label="תגית כרטיס" hint='התגית האדומה על הכרטיס, למשל "חדש באתר" או "מבצע"'>
-            <Input className="h-9" value={draft.card_badge} onChange={(e) => set("card_badge", e.target.value)} />
+          <Field label="Card badge" hint='The red badge on the date card, e.g. "חדש באתר" or "מבצע"'>
+            <Input dir="auto" className="h-9" value={draft.card_badge} onChange={(e) => set("card_badge", e.target.value)} />
           </Field>
         </div>
       </Section>
 
-      <Section title="כללי גיל">
+      <Section title="Age Rules">
         <div className="grid grid-cols-3 gap-3">
-          <Field label="ילד עד גיל" hint="ריק = לפי הסדרה">
+          <Field label="Child up to age" hint="Empty = from the series">
             <Input
               dir="ltr"
               inputMode="numeric"
@@ -257,7 +257,7 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
               onChange={(e) => set("child_max_age", e.target.value)}
             />
           </Field>
-          <Field label="ותיק מגיל" hint="ריק = לפי הסדרה">
+          <Field label="Senior from age" hint="Empty = from the series">
             <Input
               dir="ltr"
               inputMode="numeric"
@@ -267,7 +267,7 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
               onChange={(e) => set("senior_min_age", e.target.value)}
             />
           </Field>
-          <Field label="הנחת ותיק" hint="ריק = לפי הסדרה">
+          <Field label="Senior discount" hint="Empty = from the series">
             <Input
               dir="ltr"
               inputMode="decimal"
@@ -280,9 +280,9 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
         </div>
       </Section>
 
-      <Section title="טיסה ומפגש">
+      <Section title="Flight and Meeting">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <Field label="טיסה">
+          <Field label="Flight">
             <select className={`${selectClass} w-full`} value={draft.flight_mode} onChange={(e) => set("flight_mode", e.target.value)}>
               {FLIGHT_MODES.map((m) => (
                 <option key={m} value={m}>
@@ -291,7 +291,7 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
               ))}
             </select>
           </Field>
-          <Field label={`מחיר טיסה (${d.currency})`} hint={draft.flight_mode === "priced" ? "לנוסע" : "רלוונטי רק לטיסה בתוספת מחיר"}>
+          <Field label={`Flight price (${d.currency})`} hint={draft.flight_mode === "priced" ? "Per traveler" : "Only for a flight at extra cost"}>
             <Input
               dir="ltr"
               inputMode="decimal"
@@ -301,35 +301,35 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
               onChange={(e) => set("flight_price", e.target.value)}
             />
           </Field>
-          <Field label="מועד מפגש" hint="שעון ישראל">
+          <Field label="Meeting time" hint="Israel time">
             <Input dir="ltr" type="datetime-local" className="h-9" value={draft.meeting_at} onChange={(e) => set("meeting_at", e.target.value)} />
           </Field>
         </div>
         <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
-          <Check label="כבודה כלולה" checked={draft.baggage_included} onChange={(v) => set("baggage_included", v)} />
-          <Check label="ארוחה בטיסה כלולה" checked={draft.meal_included} onChange={(v) => set("meal_included", v)} />
-          <Check label="העברות כלולות" checked={draft.transfers_included} onChange={(v) => set("transfers_included", v)} />
+          <Check label="Baggage included" checked={draft.baggage_included} onChange={(v) => set("baggage_included", v)} />
+          <Check label="Meals included" checked={draft.meal_included} onChange={(v) => set("meal_included", v)} />
+          <Check label="Transfers included" checked={draft.transfers_included} onChange={(v) => set("transfers_included", v)} />
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
-          <Field label="קונקשן בהלוך" hint="טקסט שמוצג ללקוח">
-            <Input className="h-9" value={draft.connection_out} onChange={(e) => set("connection_out", e.target.value)} />
+          <Field label="Connection note, outbound" hint="Text shown to the customer">
+            <Input dir="auto" className="h-9" value={draft.connection_out} onChange={(e) => set("connection_out", e.target.value)} />
           </Field>
-          <Field label="קונקשן בחזור">
-            <Input className="h-9" value={draft.connection_back} onChange={(e) => set("connection_back", e.target.value)} />
+          <Field label="Connection note, return">
+            <Input dir="auto" className="h-9" value={draft.connection_back} onChange={(e) => set("connection_back", e.target.value)} />
           </Field>
         </div>
       </Section>
 
-      <Section title="פנימי">
+      <Section title="Internal">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="מספר Docket" hint="מספר הנהלת החשבונות. נשמר כשדה בלבד">
+          <Field label="Docket number" hint="The accounting number. Stored as a field only">
             <Input dir="ltr" className="h-9" value={draft.docket_no} onChange={(e) => set("docket_no", e.target.value)} />
           </Field>
-          <Field label="קיבולת" hint={series?.default_capacity ? `ברירת המחדל של הסדרה: ${series.default_capacity}` : undefined}>
+          <Field label="Capacity" hint={series?.default_capacity ? `Series default: ${series.default_capacity}` : undefined}>
             <Input dir="ltr" inputMode="numeric" className="h-9" value={draft.capacity} onChange={(e) => set("capacity", e.target.value)} />
           </Field>
-          <Field label="הערות" className="col-span-2">
-            <Textarea rows={3} value={draft.notes} onChange={(e) => set("notes", e.target.value)} />
+          <Field label="Notes" className="col-span-2">
+            <Textarea dir="auto" rows={3} value={draft.notes} onChange={(e) => set("notes", e.target.value)} />
           </Field>
         </div>
       </Section>
@@ -340,13 +340,13 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
           <span className="flex gap-2">
             <Button size="sm" disabled={!dirty || saving || problems.length > 0} onClick={save}>
               {saving && <Loader2 className="animate-spin" />}
-              שמירה
+              Save Changes
             </Button>
             <Button variant="outline" size="sm" disabled={!dirty || saving} onClick={() => setDraft(base)}>
-              ביטול השינויים
+              Discard Changes
             </Button>
           </span>
-          <span className="text-xs text-muted-foreground">{dirty ? "יש שינויים שלא נשמרו" : "אין שינויים"}</span>
+          <span className="text-xs text-muted-foreground">{dirty ? "Unsaved changes" : "No changes"}</span>
         </div>
       )}
     </fieldset>

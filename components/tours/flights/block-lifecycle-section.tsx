@@ -74,49 +74,49 @@ export function BlockLifecycleSection({ data, run }: { data: TourBlockData; run:
 
   const toggleReviewed = async (checked: boolean) => {
     setSavingReview(true);
-    await run(() => setTourBlockReviewed(block.id, checked), checked ? "סומן כנבדק" : "סימון הבדיקה הוסר");
+    await run(() => setTourBlockReviewed(block.id, checked), checked ? "Marked Reviewed" : "Review mark removed");
     setSavingReview(false);
   };
 
   return (
     <Section
-      title="מחזור חיים"
-      description="כל מעבר שלב נרשם בציר האירועים, עם מי שביצע אותו."
+      title="Status"
+      description="Every step is recorded on the timeline, with who took it."
       actions={
         <label className="flex items-center gap-2 text-sm">
           <Switch
             checked={!!block.reviewed_at}
             onCheckedChange={toggleReviewed}
             disabled={!isManager || savingReview}
-            aria-label="נבדק"
+            aria-label="Reviewed"
           />
-          <span className="font-medium">נבדק</span>
+          <span className="font-medium">Reviewed</span>
           <span className="text-xs text-muted-foreground">
             {block.reviewed_at ? (
               <>
-                {data.reviewedByName ?? "מנהל"} · <Ltr>{formatDateShort(block.reviewed_at)}</Ltr>
+                {data.reviewedByName ?? "Manager"} · <Ltr>{formatDateShort(block.reviewed_at)}</Ltr>
               </>
             ) : isManager ? (
-              "עוד לא נבדק"
+              "Not reviewed yet"
             ) : (
-              "רק מנהל החברה מסמן"
+              "Managers only"
             )}
           </span>
         </label>
       }
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-muted-foreground">סטטוס:</span>
+        <span className="text-sm text-muted-foreground">Status:</span>
         <BlockStatusBadge status={block.block_status} className="px-3 py-1 text-sm" />
       </div>
 
-      <ol className="mt-3 flex flex-wrap items-center gap-1.5 text-xs" aria-label="שלבי הבלוק">
+      <ol className="mt-3 flex flex-wrap items-center gap-1.5 text-xs" aria-label="Flight block stages">
         {MAIN_PATH.filter((s) => s !== "ticketed" || stage === "ticketed").map((s, i) => {
           const isCurrent = s === stage;
           const passed = reachedIndex > -1 && i < reachedIndex;
           return (
             <li key={s} className="flex items-center gap-1.5">
-              {i > 0 && <span className="text-muted-foreground">←</span>}
+              {i > 0 && <span className="text-muted-foreground">→</span>}
               <span
                 className={cn(
                   "rounded-full border px-2.5 py-0.5",
@@ -136,11 +136,11 @@ export function BlockLifecycleSection({ data, run }: { data: TourBlockData; run:
         <div className="mt-3">
           <Notice tone="danger">
             <div className="font-medium">
-              הבלוק בוטל{block.cancelled_at ? <> ב-<Ltr>{formatDateShort(block.cancelled_at)}</Ltr></> : null}
+              Flight block cancelled{block.cancelled_at ? <> on <Ltr>{formatDateShort(block.cancelled_at)}</Ltr></> : null}
             </div>
             {block.cancel_reason && <div className="mt-0.5">{block.cancel_reason}</div>}
             <div className="mt-0.5">
-              דמי ביטול: <Ltr>{formatMoney(block.cancellation_fee, block.cost_currency)}</Ltr>
+              Cancellation fee: <Ltr>{formatMoney(block.cancellation_fee, block.cost_currency)}</Ltr>
             </div>
           </Notice>
         </div>
@@ -148,7 +148,7 @@ export function BlockLifecycleSection({ data, run }: { data: TourBlockData; run:
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {steps.length === 0 ? (
-          <span className="text-sm text-muted-foreground">אין שלב נוסף מהסטטוס הזה.</span>
+          <span className="text-sm text-muted-foreground">No further step from this status.</span>
         ) : (
           steps.map((to) => (
             <Button
@@ -165,8 +165,8 @@ export function BlockLifecycleSection({ data, run }: { data: TourBlockData; run:
       </div>
       {blockedForViewer.length > 0 && (
         <p className="mt-2 text-xs text-muted-foreground">
-          {blockedForViewer.includes("approved") && "אישור להזמנה שמור למנהל החברה. "}
-          {blockedForViewer.includes("cancelled") && "בלוק שכבר אושר בחברת התעופה מבוטל רק על ידי מנהל החברה."}
+          {blockedForViewer.includes("approved") && "Approve to book is for the company manager only. "}
+          {blockedForViewer.includes("cancelled") && "Only the company manager can cancel a flight block the airline already confirmed."}
         </p>
       )}
 
@@ -211,10 +211,10 @@ function TransitionDialog({
     to === "confirmed"
       ? [
           { label: "PNR", ok: !!(block.pnr?.trim() || pnr.trim()) },
-          { label: "כמות מושבים", ok: block.initial_quantity > 0 },
-          { label: "עלות מבוגר", ok: block.cost_price !== null },
-          { label: "מטבע העלות", ok: !!block.cost_currency },
-          { label: "חוזה", ok: !!block.contract_id },
+          { label: "Seat count", ok: block.initial_quantity > 0 },
+          { label: "Adult cost", ok: block.cost_price !== null },
+          { label: "Cost currency", ok: !!block.cost_currency },
+          { label: "Contract", ok: !!block.contract_id },
         ]
       : [];
   const computed = to === "confirmed" ? computeDeadlines(block.outbound_departure_time, contract) : null;
@@ -224,7 +224,7 @@ function TransitionDialog({
     setSaving(true);
     const ok = await run(
       () => transitionTourBlock(block.id, to, { ...input, fee: feeValue ?? null }),
-      `הבלוק עבר ל"${BLOCK_STATUS_LABELS[to]}"`,
+      `Flight block moved to "${BLOCK_STATUS_LABELS[to]}"`,
     );
     setSaving(false);
     if (ok) onClose();
@@ -236,21 +236,21 @@ function TransitionDialog({
         <RtlDialogHeader>
           <DialogTitle>{TRANSITION_ACTION_LABELS[to]}</DialogTitle>
           <DialogDescription>
-            הבלוק יעבור לסטטוס &quot;{BLOCK_STATUS_LABELS[to]}&quot; והמעבר יירשם בציר האירועים.
+            The flight block moves to &quot;{BLOCK_STATUS_LABELS[to]}&quot; and the step is recorded on the timeline.
           </DialogDescription>
         </RtlDialogHeader>
 
         <div className="grid gap-4">
           {to === "confirmed" && (
             <div className="rounded-md border p-3">
-              <div className="mb-2 text-sm font-medium">מה נדרש לאישור</div>
+              <div className="mb-2 text-sm font-medium">Required for confirmation</div>
               <ul className="grid gap-1 text-sm">
                 {requirements.map((r) => (
                   <li key={r.label} className="flex items-center gap-2">
                     {r.ok ? (
-                      <Check className="h-4 w-4 text-emerald-600" aria-label="קיים" />
+                      <Check className="h-4 w-4 text-emerald-600" aria-label="Present" />
                     ) : (
-                      <X className="h-4 w-4 text-destructive" aria-label="חסר" />
+                      <X className="h-4 w-4 text-destructive" aria-label="Missing" />
                     )}
                     <span className={r.ok ? undefined : "font-medium text-destructive"}>{r.label}</span>
                   </li>
@@ -258,7 +258,7 @@ function TransitionDialog({
               </ul>
               {missing.filter((m) => m !== "PNR").length > 0 && (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  את החסר משלימים בכרטיס הבלוק: מושבים, עלויות וחוזה בחלקים שמתחת.
+                  Fill in what is missing on this card: seats, costs and contract, in the sections below.
                 </p>
               )}
             </div>
@@ -272,9 +272,9 @@ function TransitionDialog({
 
           {to === "confirmed" && computed && (
             <div className="rounded-md border p-3 text-sm">
-              <div className="mb-2 font-medium">מועדים מהחוזה</div>
+              <div className="mb-2 font-medium">Deadlines from the contract</div>
               {!contract ? (
-                <p className="text-muted-foreground">בלי חוזה אין מועדים לחשב.</p>
+                <p className="text-muted-foreground">Without a contract there are no deadlines to compute.</p>
               ) : (
                 <ul className="grid gap-1">
                   {CONTRACT_DEADLINE_FIELDS.map((field) => (
@@ -283,15 +283,15 @@ function TransitionDialog({
                       {willFill[field] ? (
                         <span>
                           <Ltr>{formatDateShort(willFill[field])}</Ltr>{" "}
-                          <span className="text-xs text-muted-foreground">יחושב עכשיו</span>
+                          <span className="text-xs text-muted-foreground">computed now</span>
                         </span>
                       ) : block[field] ? (
                         <span>
                           <Ltr>{formatDateShort(block[field])}</Ltr>{" "}
-                          <span className="text-xs text-muted-foreground">כבר הוזן, נשאר</span>
+                          <span className="text-xs text-muted-foreground">already set, kept</span>
                         </span>
                       ) : (
-                        <span className="text-xs text-muted-foreground">אין ימים בחוזה</span>
+                        <span className="text-xs text-muted-foreground">no days in the contract</span>
                       )}
                     </li>
                   ))}
@@ -301,15 +301,15 @@ function TransitionDialog({
           )}
 
           {to === "operational" && data.allocations.length === 0 && (
-            <Notice tone="warning">הבלוק לא משויך לאף יציאה. אפשר להעביר לתפעול, אבל כדאי לשייך קודם.</Notice>
+            <Notice tone="warning">The flight block is not allocated to any departure. You can hand it to operations, but it is better to allocate it first.</Notice>
           )}
 
           {to === "cancelled" && (
             <>
-              <Field label="מי ביטל">
-                <Select dir="rtl" value={cancelledBy} onValueChange={(v) => setCancelledBy(v as CancelledBy)}>
+              <Field label="Cancelled By">
+                <Select value={cancelledBy} onValueChange={(v) => setCancelledBy(v as CancelledBy)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="בחרו" />
+                    <SelectValue placeholder="Select" />
                   </SelectTrigger>
                   <SelectContent>
                     {CANCELLED_BY.map((who) => (
@@ -321,9 +321,9 @@ function TransitionDialog({
                 </Select>
               </Field>
               <Field
-                label={`דמי ביטול ששולמו${block.cost_currency ? ` (${block.cost_currency})` : ""}`}
+                label={`Cancellation Fee Paid${block.cost_currency ? ` (${block.cost_currency})` : ""}`}
                 htmlFor="transition-fee"
-                hint="להשאיר ריק אם לא שולמו."
+                hint="Leave empty if none was paid."
               >
                 <Input
                   id="transition-fee"
@@ -335,19 +335,19 @@ function TransitionDialog({
               </Field>
               {data.allocations.length > 0 && (
                 <Notice tone="warning">
-                  {data.allocations.length === 1 ? "יציאה אחת נשענת" : `${data.allocations.length} יציאות נשענות`} על
-                  הבלוק הזה ויישארו בלי טיסה חיה: {data.allocations.map((a) => a.code).join(", ")}
+                  {data.allocations.length === 1 ? "One departure relies" : `${data.allocations.length} departures rely`} on
+                  this flight block and will be left without a live flight: {data.allocations.map((a) => a.code).join(", ")}
                 </Notice>
               )}
             </>
           )}
 
-          <Field label={to === "requested" ? "תאריך הבקשה" : "תאריך"} htmlFor="transition-date">
+          <Field label={to === "requested" ? "Request Date" : "Date"} htmlFor="transition-date">
             <Input id="transition-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
 
-          <Field label={needsReason ? "סיבה" : "הערה (לא חובה)"} htmlFor="transition-note">
-            <Textarea id="transition-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+          <Field label={needsReason ? "Reason" : "Note (Optional)"} htmlFor="transition-note">
+            <Textarea id="transition-note" dir="auto" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
           </Field>
 
           {!check.ok && <p className="text-sm text-destructive">{check.error}</p>}
@@ -359,10 +359,10 @@ function TransitionDialog({
             disabled={saving || !check.ok || !date}
             variant={to === "cancelled" ? "destructive" : "default"}
           >
-            {saving ? "שומר..." : TRANSITION_ACTION_LABELS[to]}
+            {saving ? "Saving..." : TRANSITION_ACTION_LABELS[to]}
           </Button>
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            חזרה
+            Back
           </Button>
         </RtlDialogFooter>
       </RtlDialogContent>

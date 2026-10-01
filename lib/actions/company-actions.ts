@@ -59,7 +59,7 @@ export async function setActiveCompany(slug: string): Promise<{ success: boolean
   }
   const companies = await listCompaniesFor(session);
   const target = companies.find((c) => c.slug === slug);
-  if (!target) return { success: false, error: "אין לך גישה לחברה הזו" };
+  if (!target) return { success: false, error: "You don't have access to this company." };
 
   const store = await cookies();
   store.set(ACTIVE_COMPANY_COOKIE, target.slug, {

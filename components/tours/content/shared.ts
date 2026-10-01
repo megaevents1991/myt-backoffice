@@ -15,9 +15,9 @@ export type ActionResult<T = undefined> =
 export const PACKAGE_KINDS = ["organized", "vacation", "village"] as const;
 export type PackageKind = (typeof PACKAGE_KINDS)[number];
 export const PACKAGE_KIND_LABELS: Record<PackageKind, string> = {
-  organized: "טיול מאורגן",
-  vacation: "חבילת נופש",
-  village: "כפר נופש",
+  organized: "Organized tour",
+  vacation: "Vacation package",
+  village: "Holiday village",
 };
 export const packageKindLabel = (kind: string): string => PACKAGE_KIND_LABELS[kind as PackageKind] ?? kind;
 
@@ -25,10 +25,10 @@ export const packageKindLabel = (kind: string): string => PACKAGE_KIND_LABELS[ki
 export const PACKAGE_BRANDS = ["family", "events", "organized", "general"] as const;
 export type PackageBrand = (typeof PACKAGE_BRANDS)[number];
 export const PACKAGE_BRAND_LABELS: Record<PackageBrand, string> = {
-  family: "משפחות (אדום)",
-  events: "ספורט ומוזיקה (טורקיז)",
-  organized: "זוגות, נשים ויחידים (סגול)",
-  general: "כללי (סגול)",
+  family: "Families (red)",
+  events: "Sports & music (teal)",
+  organized: "Couples, women & solo travelers (purple)",
+  general: "General (purple)",
 };
 export const PACKAGE_BRAND_COLORS: Record<PackageBrand, string> = {
   family: "#A61C14",
@@ -158,13 +158,13 @@ export interface PackageEditorData {
 export const TERM_KINDS = ["destinations", "audiences", "tags", "packages", "artists", "villages", "categories"] as const;
 export type TermKind = (typeof TERM_KINDS)[number];
 export const TERM_KIND_LABELS: Record<TermKind, string> = {
-  destinations: "יעדים",
-  audiences: "קהלי יעד",
-  tags: "תגיות",
-  packages: "חבילות",
-  artists: "אמנים",
-  villages: "כפרי נופש",
-  categories: "קטגוריות",
+  destinations: "Destinations",
+  audiences: "Audiences",
+  tags: "Tags",
+  packages: "Packages",
+  artists: "Artists",
+  villages: "Holiday villages",
+  categories: "Categories",
 };
 export const termKindLabel = (kind: string): string => TERM_KIND_LABELS[kind as TermKind] ?? kind;
 
@@ -287,7 +287,7 @@ export interface HotelEditorData {
 /** cms_pages kinds this screen edits. "product" and "extras" are import payloads, not pages. */
 export const CMS_PAGE_KINDS = ["page", "post"] as const;
 export type CmsPageKind = (typeof CMS_PAGE_KINDS)[number];
-export const CMS_PAGE_KIND_LABELS: Record<CmsPageKind, string> = { page: "עמוד", post: "פוסט" };
+export const CMS_PAGE_KIND_LABELS: Record<CmsPageKind, string> = { page: "Page", post: "Post" };
 export const cmsPageKindLabel = (kind: string): string => CMS_PAGE_KIND_LABELS[kind as CmsPageKind] ?? kind;
 
 export interface CmsPageListRow {
@@ -320,14 +320,12 @@ export interface CmsPageEditorData {
 export const LEAD_STATUSES = ["new", "in_progress", "done", "spam"] as const;
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
-  new: "חדש",
-  in_progress: "בטיפול",
-  done: "טופל",
-  spam: "ספאם",
+  new: "New",
+  in_progress: "In progress",
+  done: "Done",
+  spam: "Spam",
 };
 export const leadStatusLabel = (status: string): string => LEAD_STATUS_LABELS[status as LeadStatus] ?? status;
-
-export const LEADS_PAGE_SIZE = 50;
 
 export interface LeadFilters {
   kind: string;
@@ -362,8 +360,8 @@ export interface LeadAssignee {
 
 export interface LeadsPage {
   rows: LeadRow[];
-  total: number;
-  page: number;
+  /** The company has more leads than one load reads; the oldest are left out. */
+  truncated: boolean;
 }
 
 export interface LeadsMeta {
@@ -425,14 +423,14 @@ export interface CompanySettingsData {
 }
 
 export const COMPANY_ROLE_LABELS: Record<string, string> = {
-  superadmin: "מנהל-על",
-  admin: "מנהל החברה",
-  editor: "עורך",
-  office_manager: "מנהל משרד",
-  agent: "סוכן",
-  affiliate: "שותף",
-  forms_operator: "מפעיל טפסים",
-  tours_agent: "סוכן טיולים",
+  superadmin: "Superadmin",
+  admin: "Admin",
+  editor: "Editor",
+  office_manager: "Office manager",
+  agent: "Agent",
+  affiliate: "Affiliate",
+  forms_operator: "Forms operator",
+  tours_agent: "Tours agent",
 };
 
 // ---------------------------------------------------------------- small helpers

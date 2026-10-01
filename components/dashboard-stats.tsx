@@ -1,41 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { getDashboardStats } from "@/lib/actions/dashboard-actions";
-
-type TopItem = { label: string; count: number };
-
-function TopListCard({ title, items, loading }: { title: string; items: TopItem[]; loading: boolean }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {loading ? (
-          <div className="space-y-2">
-            <div className="h-4 bg-muted rounded animate-pulse" />
-            <div className="h-4 bg-muted rounded animate-pulse" />
-            <div className="h-4 bg-muted rounded animate-pulse" />
-          </div>
-        ) : items.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No data</p>
-        ) : (
-          <ul className="text-xs space-y-1">
-            {items.map((it) => (
-              <li key={it.label} className="flex justify-between">
-                <span className="truncate max-w-[70%]" title={it.label}>{it.label}</span>
-                <span className="font-medium">{it.count}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
+import { StatCard } from "@/components/dashboard/stat-card";
+import { TopListCard, type TopItem } from "@/components/dashboard/top-list-card";
 
 export function DashboardStats() {
   const [stats, setStats] = useState({
@@ -85,63 +54,38 @@ export function DashboardStats() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
         {/* Not revenue: getDashboardStats' `totalRevenue` is $175 (the site
             markup) per traveller on every Paid booking - an estimated margin. */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Est. Margin</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="font-display text-2xl font-bold tabular-nums tracking-tight">
-              $
-              {loading
-                ? "..."
-                : stats.totalRevenue.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-            </div>
-            <p className="text-xs text-muted-foreground">$175 × travellers, Paid bookings</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Reservations Last Month</CardTitle>
-          </CardHeader>
-            <CardContent>
-              <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : stats.reservationsLastMonth}</div>
-              <p className="text-xs text-muted-foreground">PAX: {loading ? "..." : stats.paxLastMonth}</p>
-            </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Reservations This Month</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : stats.reservationsCurrentMonth}</div>
-            <p className="text-xs text-muted-foreground">PAX: {loading ? "..." : stats.paxCurrentMonth}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Reservations Last 7 Days</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : stats.reservationsLast7Days}</div>
-            <p className="text-xs text-muted-foreground">PAX: {loading ? "..." : stats.paxLast7Days}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Reservations Last 30 Days</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="font-display text-2xl font-bold tabular-nums tracking-tight">{loading ? "..." : stats.recentReservations}</div>
-            <p className="text-xs text-muted-foreground">PAX: {loading ? "..." : stats.recentReservationsPax}</p>
-          </CardContent>
-        </Card>
+        <StatCard
+          label="Est. Margin"
+          value={`$${
+            loading
+              ? "..."
+              : stats.totalRevenue.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })
+          }`}
+          hint="$175 × travellers, Paid bookings"
+        />
+        <StatCard
+          label="Reservations Last Month"
+          value={loading ? "..." : stats.reservationsLastMonth}
+          hint={`PAX: ${loading ? "..." : stats.paxLastMonth}`}
+        />
+        <StatCard
+          label="Reservations This Month"
+          value={loading ? "..." : stats.reservationsCurrentMonth}
+          hint={`PAX: ${loading ? "..." : stats.paxCurrentMonth}`}
+        />
+        <StatCard
+          label="Reservations Last 7 Days"
+          value={loading ? "..." : stats.reservationsLast7Days}
+          hint={`PAX: ${loading ? "..." : stats.paxLast7Days}`}
+        />
+        <StatCard
+          label="Reservations Last 30 Days"
+          value={loading ? "..." : stats.recentReservations}
+          hint={`PAX: ${loading ? "..." : stats.recentReservationsPax}`}
+        />
       </div>
 
       {/* Top Lists */}

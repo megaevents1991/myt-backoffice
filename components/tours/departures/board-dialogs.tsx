@@ -48,7 +48,7 @@ import {
 import type { BoardPackage, BoardPeriod, BoardRow, BoardSeries, BulkOutcome } from "./types";
 import { Chip, DialogActions, Field, Ltr, Notice, selectClass } from "./ui-bits";
 
-const SHORT_MATRIX_LABELS = ["יחיד", "זוגי", "מבוגר 3", "ילד 2", "ילד 3", "ילד 4"];
+const SHORT_MATRIX_LABELS = ["Single", "Double", "Adult 3", "Child 2", "Child 3", "Child 4"];
 
 // ---------------------------------------------------------------- outcome of a bulk action
 export function BulkOutcomeDialog({
@@ -62,18 +62,18 @@ export function BulkOutcomeDialog({
 }) {
   return (
     <Dialog open={Boolean(outcome)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent dir="rtl" className="max-w-xl">
-        <DialogHeader className="ps-8 text-start sm:text-start">
+      <DialogContent className="max-w-xl">
+        <DialogHeader className="pe-8 text-start sm:text-start">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            {outcome ? `עודכנו ${outcome.done.length} יציאות. ${outcome.skipped.length ? `${outcome.skipped.length} לא עודכנו.` : ""}` : ""}
+            {outcome ? `Updated ${outcome.done.length} departures. ${outcome.skipped.length ? `${outcome.skipped.length} not updated.` : ""}` : ""}
           </DialogDescription>
         </DialogHeader>
         {outcome && (
           <div className="max-h-[50vh] space-y-3 overflow-y-auto">
             {outcome.skipped.length > 0 && (
               <Notice tone="error">
-                <p className="mb-1 font-semibold">לא עודכנו</p>
+                <p className="mb-1 font-semibold">Not updated</p>
                 <ul className="space-y-1">
                   {outcome.skipped.map((s) => (
                     <li key={s.code}>
@@ -85,7 +85,7 @@ export function BulkOutcomeDialog({
             )}
             {outcome.warnings.length > 0 && (
               <Notice tone="warning">
-                <p className="mb-1 font-semibold">עודכנו, עם אזהרה</p>
+                <p className="mb-1 font-semibold">Updated, with a warning</p>
                 <ul className="space-y-1">
                   {outcome.warnings.map((s) => (
                     <li key={s.code}>
@@ -98,7 +98,7 @@ export function BulkOutcomeDialog({
           </div>
         )}
         <DialogActions>
-          <Button onClick={onClose}>סגירה</Button>
+          <Button onClick={onClose}>Close</Button>
         </DialogActions>
       </DialogContent>
     </Dialog>
@@ -159,7 +159,7 @@ export function NewDepartureDialog({
       toast.error(result.error);
       return;
     }
-    toast.success(`נוצרה יציאה ${result.data.code} כטיוטה`);
+    toast.success(`Departure ${result.data.code} created as a draft`);
     setStart("");
     setEnd("");
     setSeason("");
@@ -169,51 +169,51 @@ export function NewDepartureDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="max-w-lg">
-        <DialogHeader className="ps-8 text-start sm:text-start">
-          <DialogTitle>יציאה חדשה</DialogTitle>
+      <DialogContent className="max-w-lg">
+        <DialogHeader className="pe-8 text-start sm:text-start">
+          <DialogTitle>New Departure</DialogTitle>
           <DialogDescription>
-            היציאה נוצרת כטיוטה לא מפורסמת. הקוד נבנה מקוד הסדרה ומתאריך היציאה, והמסלול, המטבע והקיבולת נלקחים מהסדרה.
+            The departure is created as an unpublished draft. Its code is built from the series code and the departure date; route, currency and capacity come from the series.
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="סדרה" className="col-span-2">
+          <Field label="Series" className="col-span-2">
             <select className={`${selectClass} w-full`} value={seriesId} onChange={(e) => onSeries(e.target.value)}>
-              <option value="">בחרו סדרה…</option>
+              <option value="">Choose a series…</option>
               {series
                 .filter((s) => s.is_active)
                 .map((s) => (
                   <option key={s.id} value={s.id} disabled={!s.package_id}>
                     {s.code}
-                    {s.label ? ` · ${s.label}` : ""} · {s.package_id ? (packageName.get(s.package_id) ?? "") : "אין עמוד באתר"}
+                    {s.label ? ` · ${s.label}` : ""} · {s.package_id ? (packageName.get(s.package_id) ?? "") : "No tour page"}
                   </option>
                 ))}
             </select>
           </Field>
-          <Field label="תאריך יציאה">
+          <Field label="Departure date">
             <Input dir="ltr" type="date" className="h-9" value={start} onChange={(e) => onStart(e.target.value)} />
           </Field>
-          <Field label="תאריך חזרה">
+          <Field label="Return date">
             <Input dir="ltr" type="date" className="h-9" value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} />
           </Field>
-          <Field label="עונה (לא חובה)" className="col-span-2">
-            <Input className="h-9" value={season} onChange={(e) => setSeason(e.target.value)} placeholder="קיץ, פסח, חגי תשרי…" list="tours-season-suggestions" />
+          <Field label="Season (optional)" className="col-span-2">
+            <Input dir="auto" className="h-9" value={season} onChange={(e) => setSeason(e.target.value)} placeholder="e.g. קיץ, פסח, חגי תשרי" list="tours-season-suggestions" />
           </Field>
         </div>
         {chosen && (
           <div className="rounded-md border bg-muted/40 p-3 text-sm">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <span>
-                קוד: <Ltr className="font-mono font-semibold">{code || "—"}</Ltr>
+                Code: <Ltr className="font-mono font-semibold">{code || "—"}</Ltr>
                 {isIsoDate(start) && <span className="text-muted-foreground"> ({seasonYearOf(start)})</span>}
               </span>
               <span>
-                מסלול:{" "}
-                <Ltr className="font-mono">{departureRouteLabel(chosen.arrival_airport, chosen.return_airport) || "לא הוגדר בסדרה"}</Ltr>
+                Route:{" "}
+                <Ltr className="font-mono">{departureRouteLabel(chosen.arrival_airport, chosen.return_airport) || "Not set on the series"}</Ltr>
               </span>
-              {valid && <span>לילות: {nightsBetween(start, end)}</span>}
+              {valid && <span>Nights: {nightsBetween(start, end)}</span>}
               <span>
-                מטבע: <Ltr>{chosen.default_currency}</Ltr>
+                Currency: <Ltr>{chosen.default_currency}</Ltr>
               </span>
             </div>
             {holidays.length > 0 && (
@@ -229,11 +229,11 @@ export function NewDepartureDialog({
         )}
         <DialogActions>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            ביטול
+            Cancel
           </Button>
           <Button onClick={submit} disabled={!valid || saving}>
             {saving && <Loader2 className="animate-spin" />}
-            יצירת יציאה
+            Create Departure
           </Button>
         </DialogActions>
       </DialogContent>
@@ -271,13 +271,13 @@ export function PastePricesDialog({
     return parsePastedPrices(textValue).map((p) => {
       const matches = byCode.get(p.code) ?? [];
       let error = p.error;
-      if (!error && matches.length === 0) error = "הקוד לא נמצא ביציאות שעל הלוח";
-      if (!error && matches.length > 1) error = "הקוד קיים בכמה שנים - סננו את הלוח לשנה אחת";
-      if (!error && seen.has(p.code)) error = "הקוד מופיע פעמיים בהדבקה";
+      if (!error && matches.length === 0) error = "Code not found among the departures on the board";
+      if (!error && matches.length > 1) error = "Code exists in more than one year - filter the board to a single year";
+      if (!error && seen.has(p.code)) error = "Code appears twice in the paste";
       seen.add(p.code);
       const target = !error ? matches[0] : null;
       if (target && target.options.length > 0 && Object.keys(target.prices).length === 0) {
-        error = "חבילת נופש - המחיר נקבע ממלון וכרטיס, לא ממטריצה";
+        error = "Vacation package - priced from hotel and ticket, not from a matrix";
       }
       return { ...p, error, target: error ? null : target };
     });
@@ -301,12 +301,12 @@ export function PastePricesDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="max-w-4xl">
-        <DialogHeader className="ps-8 text-start sm:text-start">
-          <DialogTitle>הדבקת מחירים מאקסל</DialogTitle>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader className="pe-8 text-start sm:text-start">
+          <DialogTitle>Paste Prices</DialogTitle>
           <DialogDescription>
-            העתיקו מהגיליון שורות של קוד יציאה ואחריו שש עמודות מחיר, בסדר הזה: {PRICE_MATRIX_ROWS.map((r) => r.label).join(" · ")}. תא ריק מוחק את המחיר
-            של אותה שורה.
+            Copy rows from the spreadsheet: a departure code followed by six price columns, in this order: {PRICE_MATRIX_ROWS.map((r) => r.label).join(" · ")}. An
+            empty cell removes that price.
           </DialogDescription>
         </DialogHeader>
         <textarea
@@ -322,13 +322,13 @@ export function PastePricesDialog({
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-muted">
                 <tr>
-                  <th className="px-2 py-1.5 text-start font-semibold">קוד</th>
+                  <th className="px-2 py-1.5 text-start font-semibold">Code</th>
                   {SHORT_MATRIX_LABELS.map((l) => (
                     <th key={l} className="px-2 py-1.5 text-end font-semibold">
                       {l}
                     </th>
                   ))}
-                  <th className="px-2 py-1.5 text-start font-semibold">מצב</th>
+                  <th className="px-2 py-1.5 text-start font-semibold">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -346,13 +346,13 @@ export function PastePricesDialog({
                           <Ltr>
                             {changed && before != null && <span className="me-1 text-muted-foreground line-through">{fmtMoney(before)}</span>}
                             <span className={cn(changed && (after == null ? "font-semibold text-destructive" : "font-semibold text-success"))}>
-                              {after == null ? (changed ? "מחיקה" : "—") : fmtMoney(after)}
+                              {after == null ? (changed ? "Remove" : "—") : fmtMoney(after)}
                             </span>
                           </Ltr>
                         </td>
                       );
                     })}
-                    <td className={cn("px-2 py-1", p.error ? "text-destructive" : "text-success")}>{p.error ?? "תקין"}</td>
+                    <td className={cn("px-2 py-1", p.error ? "text-destructive" : "text-success")}>{p.error ?? "OK"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -361,15 +361,15 @@ export function PastePricesDialog({
         )}
         <DialogActions className="justify-between">
           <span className="text-sm text-muted-foreground">
-            {preview.length > 0 ? `${valid.length} שורות תקינות${invalid ? ` · ${invalid} עם שגיאה (לא יוחלו)` : ""}` : ""}
+            {preview.length > 0 ? `${valid.length} valid rows${invalid ? ` · ${invalid} with errors (won't be applied)` : ""}` : ""}
           </span>
           <span className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-              ביטול
+              Cancel
             </Button>
             <Button onClick={apply} disabled={saving || valid.length === 0}>
               {saving && <Loader2 className="animate-spin" />}
-              החלת {valid.length} שורות
+              Apply {valid.length} Rows
             </Button>
           </span>
         </DialogActions>
@@ -425,14 +425,14 @@ export function CopyPricesDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="max-w-xl">
-        <DialogHeader className="ps-8 text-start sm:text-start">
-          <DialogTitle>העתקת מחירים מיציאה אחרת</DialogTitle>
+      <DialogContent className="max-w-xl">
+        <DialogHeader className="pe-8 text-start sm:text-start">
+          <DialogTitle>Copy Prices From Another Departure</DialogTitle>
           <DialogDescription>
-            מטריצת המחירים והמטבע של יציאת המקור יחליפו את אלה של {targets.length} היציאות שנבחרו.
+            The source departure&apos;s price matrix and currency will replace those of the {targets.length} selected departures.
           </DialogDescription>
         </DialogHeader>
-        <Field label="קוד יציאת המקור" hint="התחילו להקליד קוד של יציאה שיש לה מחירים">
+        <Field label="Source departure code" hint="Start typing the code of a departure that has prices">
           <Input
             dir="ltr"
             className="h-9 font-mono"
@@ -450,8 +450,8 @@ export function CopyPricesDialog({
             ))}
           </datalist>
         </Field>
-        {matches.length > 1 && <Notice tone="error">הקוד קיים בכמה שנים - סננו את הלוח לשנה אחת ונסו שוב.</Notice>}
-        {sourceCode && matches.length === 0 && <Notice tone="warning">לא נמצאה על הלוח יציאה עם מחירים בקוד הזה.</Notice>}
+        {matches.length > 1 && <Notice tone="error">This code exists in more than one year - filter the board to a single year and try again.</Notice>}
+        {sourceCode && matches.length === 0 && <Notice tone="warning">No departure with prices on the board has this code.</Notice>}
         {source && (
           <div className="rounded-md border p-3 text-sm">
             <p className="mb-2 font-medium">
@@ -468,7 +468,7 @@ export function CopyPricesDialog({
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">ליציאה אין מטריצת מחירים (חבילת נופש).</p>
+              <p className="text-xs text-muted-foreground">This departure has no price matrix (vacation package).</p>
             )}
             {source.options.length > 0 && (
               <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm">
@@ -478,23 +478,23 @@ export function CopyPricesDialog({
                   checked={includeOptions}
                   onChange={(e) => setIncludeOptions(e.target.checked)}
                 />
-                להעתיק גם מלונות, כרטיסים ו-markup (מחליף את אלה של יציאות היעד)
+                Also copy hotels, tickets and markup (replaces those of the target departures)
               </label>
             )}
           </div>
         )}
         {source && currencyChanges > 0 && (
           <Notice tone="warning">
-            ב-{currencyChanges} מהיציאות שנבחרו המטבע ישתנה ל-<Ltr>{source.currency}</Ltr>.
+            The currency of {currencyChanges} of the selected departures will change to <Ltr>{source.currency}</Ltr>.
           </Notice>
         )}
         <DialogActions>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            ביטול
+            Cancel
           </Button>
           <Button onClick={apply} disabled={!source || saving || realTargets.length === 0}>
             {saving && <Loader2 className="animate-spin" />}
-            העתקה ל-{realTargets.length} יציאות
+            Copy to {realTargets.length} Departures
           </Button>
         </DialogActions>
       </DialogContent>
@@ -540,10 +540,10 @@ export function BulkPromotionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="max-w-lg">
-        <DialogHeader className="ps-8 text-start sm:text-start">
-          <DialogTitle>הטבה ל-{targets.length} יציאות</DialogTitle>
-          <DialogDescription>ההטבה תתווסף לכל אחת מהיציאות שנבחרו.</DialogDescription>
+      <DialogContent className="max-w-lg">
+        <DialogHeader className="pe-8 text-start sm:text-start">
+          <DialogTitle>Promotion for {targets.length} Departures</DialogTitle>
+          <DialogDescription>The promotion is added to each selected departure.</DialogDescription>
         </DialogHeader>
         <PromotionFields draft={draft} onChange={setDraft} currency={currencies.length === 1 ? currencies[0] : null} />
         <label className="flex cursor-pointer items-start gap-2 text-sm">
@@ -554,26 +554,26 @@ export function BulkPromotionDialog({
             onChange={(e) => setReplace(e.target.checked)}
           />
           <span>
-            להחליף הטבה פעילה מאותו סוג
+            Replace an active promotion of the same kind
             <span className="block text-xs text-muted-foreground">
-              ההטבה הקיימת תכובה והחדשה תיכנס במקומה. בלי הסימון, יציאה שכבר יש לה הטבה פעילה מהסוג הזה תדולג.
+              The existing one is switched off and the new one takes its place. Unchecked, a departure that already has an active promotion of this kind is skipped.
             </span>
           </span>
         </label>
         {mixedCurrency && (
           <Notice tone="warning">
-            היציאות שנבחרו הן במטבעות שונים ({currencies.join(", ")}). הסכום יחול בכל יציאה במטבע שלה.
+            The selected departures use different currencies ({currencies.join(", ")}). The amount applies in each departure&apos;s own currency.
           </Notice>
         )}
         <DialogActions className="justify-between">
           <span className="text-sm text-destructive">{draft.value || draft.label ? error : ""}</span>
           <span className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-              ביטול
+              Cancel
             </Button>
             <Button onClick={apply} disabled={saving || Boolean(error)}>
               {saving && <Loader2 className="animate-spin" />}
-              הוספת ההטבה
+              Add Promotion
             </Button>
           </span>
         </DialogActions>

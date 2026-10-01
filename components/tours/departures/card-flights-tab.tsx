@@ -23,7 +23,6 @@ import { fmtDateTime, type RouteEnds } from "./departure-utils";
 import { LEGS_LABELS, type AllocationLegs, type CandidateBlock, type CardFlight, type DepartureCardData } from "./types";
 import { Chip, Ltr, Notice, selectClass } from "./ui-bits";
 
-const RLM = "‏";
 const LEGS: AllocationLegs[] = ["both", "outbound", "inbound"];
 
 function BlockStatusChip({ flight }: { flight: Pick<CardFlight, "block_status" | "is_deleted"> }) {
@@ -38,7 +37,7 @@ function BlockStatusChip({ flight }: { flight: Pick<CardFlight, "block_status" |
         !live && !dead && "border-warning/40 bg-warning-muted text-warning",
       )}
     >
-      {flight.is_deleted ? "נמחק" : status ? BLOCK_STATUS_LABELS[status] : "טיוטה"}
+      {flight.is_deleted ? "Deleted" : status ? BLOCK_STATUS_LABELS[status] : "Draft"}
     </Chip>
   );
 }
@@ -47,11 +46,11 @@ function FlightLines({ flight }: { flight: CardFlight }) {
   return (
     <div className="text-xs text-muted-foreground">
       <div>
-        הלוך: <Ltr className="font-mono text-foreground">{flight.outbound_flight_number}</Ltr>{" "}
+        Outbound: <Ltr className="font-mono text-foreground">{flight.outbound_flight_number}</Ltr>{" "}
         <Ltr className="tabular-nums">{fmtDateTime(flight.outbound_departure_time)}</Ltr>
       </div>
       <div>
-        חזור: <Ltr className="font-mono text-foreground">{flight.inbound_flight_number}</Ltr>{" "}
+        Return: <Ltr className="font-mono text-foreground">{flight.inbound_flight_number}</Ltr>{" "}
         <Ltr className="tabular-nums">{fmtDateTime(flight.inbound_departure_time)}</Ltr>
       </div>
     </div>
@@ -104,18 +103,18 @@ function CandidateRow({
         <Ltr className="font-mono text-xs font-semibold">{flightRouteLabel(block)}</Ltr>
         <FlightLines flight={block} />
         {!fit.ok && <p className="mt-1 text-xs font-medium text-destructive">{fit.reason}</p>}
-        {block.alreadyAllocated && <p className="mt-1 text-xs text-muted-foreground">כבר משויך ליציאה הזו</p>}
+        {block.alreadyAllocated && <p className="mt-1 text-xs text-muted-foreground">Already allocated to this departure</p>}
       </td>
       <td className="whitespace-nowrap px-2 py-2 text-center text-xs tabular-nums">
         <Ltr>
           {Math.max(free, 0)} / {block.initial_quantity}
         </Ltr>
-        <div className="text-muted-foreground">פנויים / בבלוק</div>
+        <div className="text-muted-foreground">Left / in block</div>
       </td>
       <td className="px-2 py-2">
         <div className="flex items-center gap-1.5">
           <select
-            aria-label="כיוון"
+            aria-label="Direction"
             className={`${selectClass} h-8 text-xs`}
             value={legs}
             onChange={(e) => {
@@ -133,7 +132,7 @@ function CandidateRow({
           <Input
             dir="ltr"
             inputMode="numeric"
-            aria-label="מספר מושבים"
+            aria-label="Number of seats"
             className="h-8 w-16 text-end"
             value={seats}
             onChange={(e) => setSeats(e.target.value)}
@@ -150,7 +149,7 @@ function CandidateRow({
             }}
           >
             {adding ? <Loader2 className="animate-spin" /> : <Plus />}
-            שיוך
+            Allocate
           </Button>
         </div>
       </td>
@@ -192,17 +191,17 @@ export function CardFlightsTab({
       toast.error(result.error, { duration: 8000 });
       return;
     }
-    if (result.warning) toast(`הבלוק שויך. שימו לב: ${result.warning}`, { duration: 8000 });
-    else toast.success("הבלוק שויך ליציאה");
+    if (result.warning) toast(`Block allocated. Note: ${result.warning}`, { duration: 8000 });
+    else toast.success("Block allocated to the departure");
     await Promise.all([onSaved(), loadCandidates()]);
   };
 
   const remove = async (allocationId: string, label: string) => {
     const agreed = await confirm({
-      title: `להסיר את השיוך?${RLM}`,
-      description: `הבלוק ${label} יפסיק לשרת את היציאה ${d.code}. הבלוק עצמו לא נמחק והמושבים חוזרים למאגר.${RLM}`,
-      confirmLabel: "הסרת השיוך",
-      cancelLabel: "ביטול",
+      title: "Remove this allocation?",
+      description: `Block ${label} will stop serving departure ${d.code}. The block itself is not deleted and the seats return to the pool.`,
+      confirmLabel: "Remove Allocation",
+      cancelLabel: "Cancel",
       destructive: true,
     });
     if (!agreed) return;
@@ -213,7 +212,7 @@ export function CardFlightsTab({
       toast.error(result.error);
       return;
     }
-    toast.success("השיוך הוסר");
+    toast.success("Allocation removed");
     await Promise.all([onSaved(), candidates ? loadCandidates() : Promise.resolve()]);
   };
 
@@ -224,13 +223,13 @@ export function CardFlightsTab({
     <div className="space-y-4 py-4">
       {data.stats.liveBlocks === 0 && (
         <Notice tone={d.is_published ? "error" : "warning"}>
-          ליציאה אין בלוק טיסה חי{data.allocations.length > 0 ? " - הבלוקים המשויכים אינם בסטטוס מאושר" : ""}.
-          {d.is_published ? " היא מפורסמת, והאתר מציג \"פרטי הטיסות יעודכנו\"." : ""}
+          The departure has no live flight block{data.allocations.length > 0 ? " - the allocated blocks are not in an approved status" : ""}.
+          {d.is_published ? " It is published, and the site shows \"flight details will be updated\"." : ""}
         </Notice>
       )}
 
       {data.allocations.length === 0 ? (
-        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">אין בלוקים משויכים ליציאה הזו.</p>
+        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No blocks allocated to this departure.</p>
       ) : (
         <ul className="space-y-2">
           {data.allocations.map((a) => {
@@ -248,14 +247,14 @@ export function CardFlightsTab({
                 <div className="text-center text-sm tabular-nums">
                   <div className="font-semibold">{a.seats}</div>
                   <div className="text-xs text-muted-foreground">
-                    מושבים, מתוך <Ltr>{a.flight.initial_quantity}</Ltr> בבלוק
+                    seats, of <Ltr>{a.flight.initial_quantity}</Ltr> in the block
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
                   <Button variant="ghost" size="sm" className="h-8" asChild>
-                    <Link href={`/offline-flights/${a.flight.id}`} target="_blank" title="פתיחת כרטיס הבלוק בלשונית חדשה">
+                    <Link href={`/offline-flights/${a.flight.id}`} target="_blank" title="Open the block card in a new tab">
                       <ExternalLink />
-                      בלוק <Ltr>#{a.flight.id}</Ltr>
+                      Block <Ltr>#{a.flight.id}</Ltr>
                     </Link>
                   </Button>
                   {!readOnly && (
@@ -263,7 +262,7 @@ export function CardFlightsTab({
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 text-destructive hover:text-destructive"
-                      title="הסרת השיוך"
+                      title="Remove allocation"
                       disabled={removing === a.id}
                       onClick={() => remove(a.id, label)}
                     >
@@ -281,18 +280,18 @@ export function CardFlightsTab({
         <div className="space-y-2 border-t pt-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 className="text-sm font-semibold">שיוך בלוק</h3>
-              <p className="text-xs text-muted-foreground">בלוקים של החברה שטסים עד יומיים מתאריכי היציאה. הבדיקה היא בשני הקצוות, לפי עיר.</p>
+              <h3 className="text-sm font-semibold">Allocate a Flight Block</h3>
+              <p className="text-xs text-muted-foreground">The company&apos;s blocks that fly within two days of the departure dates. Both ends are checked, by city.</p>
             </div>
             <Button size="sm" variant="outline" onClick={loadCandidates} disabled={loading}>
               {loading ? <Loader2 className="animate-spin" /> : <Plus />}
-              {candidates ? "רענון הרשימה" : "חיפוש בלוקים מתאימים"}
+              {candidates ? "Refresh List" : "Find Matching Blocks"}
             </Button>
           </div>
 
           {candidates && fitting.length === 0 && (
             <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
-              לא נמצא בלוק פנוי שמתאים למסלול ולתאריכים של היציאה.
+              No free block matches the route and dates of this departure.
             </p>
           )}
           {candidates && fitting.length > 0 && (
@@ -309,7 +308,7 @@ export function CardFlightsTab({
           {candidates && unfit.length > 0 && (
             <div className="space-y-2">
               <button type="button" className="text-xs text-muted-foreground underline underline-offset-2" onClick={() => setShowUnfit((v) => !v)}>
-                {showUnfit ? "הסתרת" : "הצגת"} {unfit.length} בלוקים באותם תאריכים שלא מתאימים למסלול
+                {showUnfit ? "Hide" : "Show"} {unfit.length} blocks on the same dates that don&apos;t match the route
               </button>
               {showUnfit && (
                 <div className="overflow-x-auto rounded-md border">

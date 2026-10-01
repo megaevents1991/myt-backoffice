@@ -9,10 +9,10 @@ export const dynamic = "force-dynamic";
 export default async function TourInstructorsPage() {
   const result = await listTourInstructors();
   return (
-    <div dir="rtl">
+    <div>
       <PageHeader
-        title="מלווי קבוצות"
-        description="המלווים שמוצגים באתר, לפי הסדר שבו הם מופיעים שם. לכל מלווה עמוד עם תמונה, יעדי הדרכה, תוכן וגלריה."
+        title="Group Leaders"
+        description="The group leaders shown on the site, in the order they appear there. Each one has a page with a photo, destinations, content and a gallery."
         actions={<PublishSiteButton />}
       />
       {result.success ? (

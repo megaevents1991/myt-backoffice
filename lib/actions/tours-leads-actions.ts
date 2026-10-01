@@ -1,22 +1,24 @@
 "use server";
 
 /**
- * Leads inbox of a tours company: every form of the customer site (lead form,
+ * Leads of a tours company: every form of the customer site (lead form,
  * contact, cancellation request, newsletter, advisor request) lands in
  * public.leads through c_<slug>.submit_lead(). This file is the backoffice
- * side: read, filter, change status, assign, export.
+ * side: read, change status, assign, export. A lead becomes a reservation
+ * through createToursReservation (tours-reservation-actions.ts).
  */
 import ExcelJS from "exceljs";
 import { revalidatePath } from "next/cache";
 
 import { requireCompany, type Company } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
+import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
+import { actionFail } from "@/lib/tours/action-kit";
 import type { SessionPayload } from "@/lib/auth/session";
 import type { Json } from "@/types/database.types";
 import { LEAD_KIND_LABELS, type Lead } from "@/types/tours.types";
 import {
-  LEADS_PAGE_SIZE,
   LEAD_STATUSES,
   leadStatusLabel,
   type ActionResult,
@@ -29,18 +31,11 @@ import {
   type LeadStatus,
 } from "@/components/tours/content/shared";
 
+const SCOPE = "tours-leads-actions";
+/** The table loads the company's leads in one go, newest first, up to this many. */
+const LIST_LIMIT = 5000;
 const EXPORT_LIMIT = 20000;
 const COLUMNS = "id, created_at, kind, name, phone, email, message, source_path, status, assigned_to, payload, utm";
-
-function failure(e: unknown, fallback: string): { success: false; error: string } {
-  const message = e instanceof Error ? e.message : String(e);
-  if (message.startsWith("Forbidden: the active company")) {
-    return { success: false, error: "המסך הזה שייך לחברה שמוכרת טיולים. החליפו חברה בסרגל העליון." };
-  }
-  if (message === "Unauthorized") return { success: false, error: "אין הרשאה לפעולה הזו" };
-  console.error(`${fallback}:`, e);
-  return { success: false, error: fallback };
-}
 
 /**
  * A spreadsheet cell has no timezone: it shows the clock reading it is given.
@@ -76,35 +71,13 @@ const toRow = (lead: LeadColumns): LeadRow => ({
   utm: asRecord(lead.utm),
 });
 
-const isDay = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value);
-
-/** The day after, so "to" is inclusive whatever the time of day. */
-function nextDay(day: string): string {
-  const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
-}
-
-/** The instant a calendar day starts for the operators (Israel time), as ISO. */
-function dayStart(day: string, timeZone = "Asia/Jerusalem"): string {
-  const utc = new Date(`${day}T00:00:00Z`);
-  const inZone = new Date(utc.toLocaleString("en-US", { timeZone }));
-  const inUtc = new Date(utc.toLocaleString("en-US", { timeZone: "UTC" }));
-  return new Date(utc.getTime() - (inZone.getTime() - inUtc.getTime())).toISOString();
-}
-
 /** The company's leads narrowed by the filters. Company scope is applied here, once. */
-function filtered(company: Company, filters: LeadFilters, withCount: boolean) {
-  let query = supabaseTyped
-    .from("leads")
-    .select(COLUMNS, withCount ? { count: "exact" } : undefined)
-    .eq("company_id", company.id);
+function filtered(company: Company, filters: Partial<LeadFilters>) {
+  let query = supabaseTyped.from("leads").select(COLUMNS).eq("company_id", company.id);
   if (filters.kind) query = query.eq("kind", filters.kind);
   if (filters.status) query = query.eq("status", filters.status);
-  if (isDay(filters.from)) query = query.gte("created_at", dayStart(filters.from));
-  if (isDay(filters.to)) query = query.lt("created_at", dayStart(nextDay(filters.to)));
   // free text: every word must appear in one of the text fields
-  const words = filters.q
+  const words = (filters.q ?? "")
     .replace(/[,()"\\%*]/g, " ")
     .split(/\s+/)
     .filter(Boolean)
@@ -141,19 +114,15 @@ async function assigneesOf(company: Company, session: SessionPayload): Promise<L
   return people.sort((a, b) => a.name.localeCompare(b.name, "he"));
 }
 
-export async function listLeads(filters: LeadFilters, page = 0): Promise<ActionResult<LeadsPage>> {
+/** Every lead of the company for the table, newest first (search, views and paging run in the table). */
+export async function listLeads(): Promise<ActionResult<LeadsPage>> {
   try {
     const { company } = await requireCompany("tours");
-    const safePage = Number.isInteger(page) && page > 0 ? page : 0;
-    const from = safePage * LEADS_PAGE_SIZE;
-    const { data, error, count } = await filtered(company, filters, true).range(from, from + LEADS_PAGE_SIZE - 1);
-    if (error) throw error;
-    return {
-      success: true,
-      data: { rows: ((data ?? []) as unknown as LeadColumns[]).map(toRow), total: count ?? 0, page: safePage },
-    };
+    const { rows, truncated, error } = await fetchPaged<LeadColumns>(() => filtered(company, {}), LIST_LIMIT);
+    if (error) throw new Error(`leads: ${error.message}`);
+    return { success: true, data: { rows: rows.map(toRow), truncated } };
   } catch (e) {
-    return failure(e, "טעינת הלידים נכשלה");
+    return actionFail(e, SCOPE);
   }
 }
 
@@ -170,7 +139,7 @@ export async function getLeadsMeta(): Promise<ActionResult<LeadsMeta>> {
     const seen = [...new Set((kinds.data ?? []).map((r) => r.kind))].filter((k) => !known.includes(k));
     return { success: true, data: { assignees, kinds: [...known, ...seen.sort()], currentUserId: session.sub } };
   } catch (e) {
-    return failure(e, "טעינת הלידים נכשלה");
+    return actionFail(e, SCOPE);
   }
 }
 
@@ -188,12 +157,12 @@ export async function updateLead(
       .eq("id", id)
       .maybeSingle();
     if (error) throw error;
-    if (!before) return { success: false, error: "הליד לא נמצא" };
+    if (!before) return { success: false, error: "The lead was not found." };
 
     const patch: { status?: string; assigned_to?: string | null } = {};
     const changes: Record<string, { from: unknown; to: unknown }> = {};
     if (change.status !== undefined && change.status !== before.status) {
-      if (!LEAD_STATUSES.includes(change.status as LeadStatus)) return { success: false, error: "סטטוס לא מוכר" };
+      if (!LEAD_STATUSES.includes(change.status as LeadStatus)) return { success: false, error: "Unknown status." };
       patch.status = change.status;
       changes.status = { from: before.status, to: change.status };
     }
@@ -201,7 +170,7 @@ export async function updateLead(
       if (change.assignedTo !== null) {
         const allowed = await assigneesOf(company, session);
         if (!allowed.some((p) => p.id === change.assignedTo)) {
-          return { success: false, error: "אפשר לשייך ליד רק לאיש צוות של החברה" };
+          return { success: false, error: "A lead can be assigned only to a member of the company's staff." };
         }
       }
       patch.assigned_to = change.assignedTo;
@@ -233,37 +202,32 @@ export async function updateLead(
     if (freshError) throw freshError;
     return { success: true, data: toRow(fresh as unknown as LeadColumns) };
   } catch (e) {
-    return failure(e, "עדכון הליד נכשל");
+    return actionFail(e, SCOPE);
   }
 }
 
-/** The filtered list as an .xlsx file (base64), newest first. */
-export async function exportLeads(filters: LeadFilters): Promise<ActionResult<LeadsExport>> {
+/** The leads of the open view (status, kind, search) as an .xlsx file (base64), newest first. */
+export async function exportLeads(filters: Partial<LeadFilters>): Promise<ActionResult<LeadsExport>> {
   try {
     const { session, company } = await requireCompany("tours");
-    const rows: LeadRow[] = [];
-    for (let from = 0; from < EXPORT_LIMIT; from += 1000) {
-      const { data, error } = await filtered(company, filters, false).range(from, from + 999);
-      if (error) throw error;
-      const batch = (data ?? []) as unknown as LeadColumns[];
-      rows.push(...batch.map(toRow));
-      if (batch.length < 1000) break;
-    }
+    const { rows: found, error } = await fetchPaged<LeadColumns>(() => filtered(company, filters), EXPORT_LIMIT);
+    if (error) throw new Error(`leads: ${error.message}`);
+    const rows = found.map(toRow);
     const names = new Map((await assigneesOf(company, session)).map((p) => [p.id, p.name]));
 
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("לידים", { views: [{ rightToLeft: true, state: "frozen", ySplit: 1 }] });
+    const sheet = workbook.addWorksheet("Leads", { views: [{ state: "frozen", ySplit: 1 }] });
     sheet.columns = [
-      { header: "תאריך", key: "date", width: 18 },
-      { header: "סוג", key: "kind", width: 20 },
-      { header: "שם", key: "name", width: 24 },
-      { header: "טלפון", key: "phone", width: 16 },
-      { header: "אימייל", key: "email", width: 28 },
-      { header: "הודעה", key: "message", width: 50 },
-      { header: "עמוד מקור", key: "source", width: 30 },
-      { header: "סטטוס", key: "status", width: 12 },
-      { header: "משויך ל", key: "assigned", width: 20 },
-      { header: "פרטים נוספים", key: "payload", width: 50 },
+      { header: "Date", key: "date", width: 18 },
+      { header: "Type", key: "kind", width: 24 },
+      { header: "Name", key: "name", width: 24 },
+      { header: "Phone", key: "phone", width: 16 },
+      { header: "Email", key: "email", width: 28 },
+      { header: "Message", key: "message", width: 50 },
+      { header: "Source Page", key: "source", width: 30 },
+      { header: "Status", key: "status", width: 12 },
+      { header: "Assigned To", key: "assigned", width: 20 },
+      { header: "Form Details", key: "payload", width: 50 },
       { header: "UTM", key: "utm", width: 30 },
     ];
     const json = (value: Record<string, unknown>) => (Object.keys(value).length ? JSON.stringify(value) : "");
@@ -295,6 +259,6 @@ export async function exportLeads(filters: LeadFilters): Promise<ActionResult<Le
       },
     };
   } catch (e) {
-    return failure(e, "ייצוא הלידים נכשל");
+    return actionFail(e, SCOPE);
   }
 }

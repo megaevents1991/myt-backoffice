@@ -216,7 +216,7 @@ const CANDIDATES_SHOWN = 3;
 const BULK_REVIEW_MAX = 200;
 const ID_CHUNK = 100;
 
-const MANAGERS_ONLY = "המסך הזה פתוח למנהל החברה בלבד.";
+const MANAGERS_ONLY = "Managers only.";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const fail = (error: string): { success: false; error: string } => ({ success: false, error });
@@ -226,7 +226,7 @@ function dbFail(where: string, error: unknown): { success: false; error: string 
     `tours-approvals-actions: ${where} failed`,
     error instanceof Error ? error.message : JSON.stringify(error),
   );
-  return fail("הפעולה נכשלה. נסו שוב, ואם זה חוזר פנו לתמיכה.");
+  return fail("The action failed. Try again, and if it happens again, contact support.");
 }
 
 type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
@@ -867,13 +867,13 @@ export async function getApprovalsReviewPage(page: number): Promise<ApprovalsRes
  */
 export async function markTourBlocksReviewed(flightIds: number[]): Promise<ApprovalsResult<{ done: number }>> {
   const { session, company } = await requireCompany("tours");
-  if (!isManagerRole(session.role)) return fail("רק מנהל החברה מסמן שורה כנבדקה");
+  if (!isManagerRole(session.role)) return fail("Only the company manager can mark a row Reviewed");
 
   const ids = Array.isArray(flightIds)
     ? [...new Set(flightIds.filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0))]
     : [];
-  if (ids.length === 0) return fail("לא נבחרו קבוצות טיסה");
-  if (ids.length > BULK_REVIEW_MAX) return fail(`אפשר לסמן עד ${BULK_REVIEW_MAX} שורות בפעם אחת`);
+  if (ids.length === 0) return fail("No flight blocks selected");
+  if (ids.length > BULK_REVIEW_MAX) return fail(`You can mark up to ${BULK_REVIEW_MAX} rows at once`);
 
   const done: number[] = [];
   for (const part of chunk(ids, ID_CHUNK)) {
@@ -887,7 +887,7 @@ export async function markTourBlocksReviewed(flightIds: number[]): Promise<Appro
     if (error) return dbFail("bulk review", error);
     done.push(...(data ?? []).map((row) => row.id));
   }
-  if (done.length === 0) return fail("הקבוצות לא נמצאו בחברה הפעילה");
+  if (done.length === 0) return fail("The flight blocks were not found in the active company");
 
   await logAudit({
     action: "tours.flight.reviewed",
@@ -898,7 +898,7 @@ export async function markTourBlocksReviewed(flightIds: number[]): Promise<Appro
   return {
     success: true,
     data: { done: done.length },
-    ...(done.length < ids.length ? { warning: `${ids.length - done.length} שורות לא נמצאו ולא סומנו.` } : {}),
+    ...(done.length < ids.length ? { warning: `${ids.length - done.length} rows were not found and were not marked.` } : {}),
   };
 }
 
@@ -910,8 +910,8 @@ export async function markTourBlocksReviewed(flightIds: number[]): Promise<Appro
  */
 export async function keepTourBlock(flightId: number): Promise<ApprovalsResult> {
   const { session, company } = await requireCompany("tours");
-  if (!isManagerRole(session.role)) return fail("רק מנהל החברה מחליט על קבוצה שאושרה בחברת התעופה");
-  if (typeof flightId !== "number" || !Number.isInteger(flightId) || flightId <= 0) return fail("הבלוק לא נמצא");
+  if (!isManagerRole(session.role)) return fail("Only the company manager decides on a flight block the airline confirmed");
+  if (typeof flightId !== "number" || !Number.isInteger(flightId) || flightId <= 0) return fail("Flight block not found");
 
   const { data: block, error } = await supabaseTyped
     .from("flights")
@@ -921,12 +921,13 @@ export async function keepTourBlock(flightId: number): Promise<ApprovalsResult> 
     .eq("is_deleted", false)
     .maybeSingle();
   if (error) return dbFail("block read", error);
-  if (!block) return fail("הבלוק לא נמצא");
+  if (!block) return fail("Flight block not found");
 
   const decision = cancelDecisionOf(block, todayIso());
-  if (!decision) return fail("הקבוצה כבר לא מחכה להחלטה. רעננו את המסך.");
+  if (!decision) return fail("This flight block no longer waits for a decision. Refresh the screen.");
 
-  const label = decision.kind === "first" ? DEADLINE_LABELS.first_cancellation_date : DEADLINE_LABELS.last_cancellation_date;
+  // The note is data and keeps its Hebrew wording; DEADLINE_LABELS are English screen copy.
+  const label = decision.kind === "first" ? "ביטול ראשון" : "ביטול אחרון";
   const noted = await addTourBlockEvent(flightId, {
     kind: "note",
     note: `הוחלט להשאיר את הקבוצה. מועד ${label}: ${formatDateShort(decision.date)}`,
@@ -945,9 +946,9 @@ export async function keepTourBlock(flightId: number): Promise<ApprovalsResult> 
 export async function setHotelOptionCatalogCode(optionId: string, hotelCode: string): Promise<ApprovalsResult> {
   const { session, company } = await requireCompany("tours");
   if (!isManagerRole(session.role)) return fail(MANAGERS_ONLY);
-  if (typeof optionId !== "string" || !UUID.test(optionId)) return fail("שורת המלון לא נמצאה");
+  if (typeof optionId !== "string" || !UUID.test(optionId)) return fail("Hotel row not found");
   const code = typeof hotelCode === "string" ? hotelCode.trim() : "";
-  if (!code) return fail("בחרו מלון מהקטלוג");
+  if (!code) return fail("Pick a hotel from the catalog");
 
   const db = toursDb();
   const [optionRes, hotelRes] = await Promise.all([
@@ -962,8 +963,8 @@ export async function setHotelOptionCatalogCode(optionId: string, hotelCode: str
   if (optionRes.error) return dbFail("option read", optionRes.error);
   if (hotelRes.error) return dbFail("hotel read", hotelRes.error);
   const option = optionRes.data;
-  if (!option || option.kind !== "hotel") return fail("שורת המלון לא נמצאה");
-  if (!hotelRes.data) return fail("המלון לא נמצא בקטלוג של החברה");
+  if (!option || option.kind !== "hotel") return fail("Hotel row not found");
+  if (!hotelRes.data) return fail("The hotel is not in the company catalog");
   if (option.ref_code === code) return { success: true, data: null };
 
   const { data: departure, error: departureError } = await db
@@ -974,7 +975,7 @@ export async function setHotelOptionCatalogCode(optionId: string, hotelCode: str
     .is("is_deleted", null)
     .maybeSingle();
   if (departureError) return dbFail("departure read", departureError);
-  if (!departure) return fail("היציאה של שורת המלון לא נמצאה");
+  if (!departure) return fail("The departure of the hotel row was not found");
 
   const { data: updated, error } = await db
     .from("departure_options")
@@ -984,7 +985,7 @@ export async function setHotelOptionCatalogCode(optionId: string, hotelCode: str
     .eq("kind", "hotel")
     .select("id");
   if (error) return dbFail("option update", error);
-  if (!updated || updated.length === 0) return fail("שורת המלון לא נמצאה");
+  if (!updated || updated.length === 0) return fail("Hotel row not found");
 
   await logAudit({
     action: "update",

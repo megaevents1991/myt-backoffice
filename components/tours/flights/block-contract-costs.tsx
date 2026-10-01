@@ -36,19 +36,19 @@ interface SectionProps {
 }
 
 export const CONTRACT_KIND_LABELS: Record<string, string> = {
-  series_contract: "חוזה סדרה",
-  closed_group: "קבוצה סגורה",
+  series_contract: "Series contract",
+  closed_group: "Closed group",
 };
 
 export const COMMITMENT_UNIT_LABELS: Record<string, string> = {
-  per_group: "לקבוצה",
-  per_pax: "לנוסע",
-  pct_of_fare: "אחוז מהמחיר",
+  per_group: "per group",
+  per_pax: "per passenger",
+  pct_of_fare: "of the fare",
 };
 
 const NO_CONTRACT = "__none__";
 
-const daysText = (days: number | null) => (days === null ? "לא הוגדר" : `${days} ימים לפני היציאה`);
+const daysText = (days: number | null) => (days === null ? "Not set" : `${days} days before departure`);
 
 export function BlockContractSection({ data, run }: SectionProps) {
   const { block, contract } = data;
@@ -56,32 +56,32 @@ export function BlockContractSection({ data, run }: SectionProps) {
 
   const change = async (value: string) => {
     setSaving(true);
-    await run(() => setTourBlockContract(block.id, value === NO_CONTRACT ? null : value), "החוזה עודכן");
+    await run(() => setTourBlockContract(block.id, value === NO_CONTRACT ? null : value), "Contract updated");
     setSaving(false);
   };
 
   return (
     <Section
-      title="חוזה"
-      description="החוזה קובע כמה ימים לפני היציאה חל כל מועד. החלפת חוזה לא משנה מועדים שכבר הוזנו."
+      title="Contract"
+      description="The contract sets how many days before departure each deadline falls. Switching the contract does not change deadlines already set."
       actions={
         <Button asChild size="sm" variant="ghost">
-          <Link href="/tours/contracts">כל החוזים</Link>
+          <Link href="/tours/contracts">All Contracts</Link>
         </Button>
       }
     >
-      <Field label="החוזה של הבלוק">
-        <Select dir="rtl" value={block.contract_id ?? NO_CONTRACT} onValueChange={change} disabled={saving}>
+      <Field label="Flight Block Contract">
+        <Select value={block.contract_id ?? NO_CONTRACT} onValueChange={change} disabled={saving}>
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={NO_CONTRACT}>בלי חוזה</SelectItem>
+            <SelectItem value={NO_CONTRACT}>No contract</SelectItem>
             {data.contracts.map((c) => (
               <SelectItem key={c.id} value={c.id}>
                 {c.name}
                 {c.airline_group ? ` · ${c.airline_group}` : ""}
-                {c.is_active ? "" : " (לא פעיל)"}
+                {c.is_active ? "" : " (inactive)"}
               </SelectItem>
             ))}
           </SelectContent>
@@ -91,19 +91,19 @@ export function BlockContractSection({ data, run }: SectionProps) {
       {contract ? (
         <div className="mt-3 grid gap-3 text-sm">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-            <dt className="text-muted-foreground">סוג</dt>
+            <dt className="text-muted-foreground">Type</dt>
             <dd>{CONTRACT_KIND_LABELS[contract.kind] ?? contract.kind}</dd>
-            <dt className="text-muted-foreground">ביטול ראשון</dt>
+            <dt className="text-muted-foreground">First cancellation date</dt>
             <dd>{daysText(contract.cxx1_days_before)}</dd>
-            <dt className="text-muted-foreground">ביטול אחרון</dt>
+            <dt className="text-muted-foreground">Last cancellation date</dt>
             <dd>{daysText(contract.cxx2_days_before)}</dd>
-            <dt className="text-muted-foreground">שמות</dt>
+            <dt className="text-muted-foreground">Names due</dt>
             <dd>{daysText(contract.names_days_before)}</dd>
-            <dt className="text-muted-foreground">כרטוס</dt>
+            <dt className="text-muted-foreground">Ticketing due</dt>
             <dd>{daysText(contract.ticketing_days_before)}</dd>
             {contract.commitment_amount !== null && (
               <>
-                <dt className="text-muted-foreground">התחייבות</dt>
+                <dt className="text-muted-foreground">Commitment</dt>
                 <dd>
                   <Ltr>
                     {contract.commitment_unit === "pct_of_fare"
@@ -116,7 +116,7 @@ export function BlockContractSection({ data, run }: SectionProps) {
             )}
             {contract.name_change_fee !== null && (
               <>
-                <dt className="text-muted-foreground">שינוי שם</dt>
+                <dt className="text-muted-foreground">Name change</dt>
                 <dd>
                   <Ltr>{formatMoney(contract.name_change_fee, contract.currency)}</Ltr>
                 </dd>
@@ -124,30 +124,30 @@ export function BlockContractSection({ data, run }: SectionProps) {
             )}
           </dl>
           <div>
-            <div className="mb-1 font-medium">נוסח מקורי</div>
+            <div className="mb-1 font-medium">Original terms</div>
             {contract.terms_text?.trim() ? (
               <div
-                className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-3 text-xs leading-relaxed [unicode-bidi:plaintext] text-right"
+                className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-3 text-xs leading-relaxed [unicode-bidi:plaintext]"
               >
                 {contract.terms_text}
               </div>
             ) : data.sourceTerms?.trim() ? (
               <details className="rounded-md border bg-muted/30 p-3 text-xs">
                 <summary className="cursor-pointer text-muted-foreground">
-                  לחוזה הזה לא הוזן נוסח. להצגת מסמך המקור של תנאי הביטול וההתחייבות
+                  No terms were entered for this contract. Show the source document of the cancellation and commitment terms
                 </summary>
-                <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed [unicode-bidi:plaintext] text-right">
+                <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed [unicode-bidi:plaintext]">
                   {data.sourceTerms}
                 </div>
               </details>
             ) : (
-              <span className="text-muted-foreground">לא הוזן נוסח.</span>
+              <span className="text-muted-foreground">No terms entered.</span>
             )}
           </div>
         </div>
       ) : (
         <div className="mt-3">
-          <Notice>לבלוק אין חוזה. בלי חוזה אי אפשר לסמן שחברת התעופה אישרה, ואין מועדים לחשב.</Notice>
+          <Notice>The flight block has no contract. Without one it cannot be marked &quot;Confirmed by airline&quot;, and there are no deadlines to compute.</Notice>
         </div>
       )}
     </Section>
@@ -200,27 +200,27 @@ export function BlockCostsSection({ data, run }: SectionProps) {
           cost_tax: taxValue ?? null,
           cost_currency: currency || null,
         }),
-      "העלויות נשמרו",
+      "Costs saved",
     );
     setSaving(false);
   };
 
   return (
-    <Section title="עלויות" description="עלות למושב. סך הכל = מחיר ועוד מס.">
+    <Section title="Costs" description="Cost per seat. Total = fare plus tax.">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Field label="מבוגר" htmlFor="cost-adult">
+        <Field label="Adult" htmlFor="cost-adult">
           <Input id="cost-adult" dir="ltr" inputMode="decimal" value={adult} onChange={(e) => setAdult(e.target.value)} />
         </Field>
-        <Field label="ילד" htmlFor="cost-child">
+        <Field label="Child" htmlFor="cost-child">
           <Input id="cost-child" dir="ltr" inputMode="decimal" value={child} onChange={(e) => setChild(e.target.value)} />
         </Field>
-        <Field label="מס" htmlFor="cost-tax">
+        <Field label="Tax" htmlFor="cost-tax">
           <Input id="cost-tax" dir="ltr" inputMode="decimal" value={tax} onChange={(e) => setTax(e.target.value)} />
         </Field>
-        <Field label="מטבע">
-          <Select dir="rtl" value={currency} onValueChange={setCurrency}>
+        <Field label="Currency">
+          <Select value={currency} onValueChange={setCurrency}>
             <SelectTrigger>
-              <SelectValue placeholder="בחרו" />
+              <SelectValue placeholder="Select" />
             </SelectTrigger>
             <SelectContent>
               {CURRENCIES.map((c) => (
@@ -235,23 +235,23 @@ export function BlockCostsSection({ data, run }: SectionProps) {
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={save} disabled={!dirty || invalid || saving}>
-          {saving ? "שומר..." : "שמירת עלויות"}
+          {saving ? "Saving..." : "Save Costs"}
         </Button>
-        {invalid && <span className="text-sm text-destructive">עלות חייבת להיות מספר, 0 ומעלה</span>}
+        {invalid && <span className="text-sm text-destructive">A cost must be a number, 0 or more</span>}
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <Stat label="סך הכל למבוגר" value={<Ltr>{formatMoney(adultTotal, shownCurrency)}</Ltr>} />
-        <Stat label="סך הכל לילד" value={<Ltr>{formatMoney(childTotal, shownCurrency)}</Ltr>} />
+        <Stat label="Adult Total" value={<Ltr>{formatMoney(adultTotal, shownCurrency)}</Ltr>} />
+        <Stat label="Child Total" value={<Ltr>{formatMoney(childTotal, shownCurrency)}</Ltr>} />
         <Stat
-          label="פוטנציאל"
+          label="Potential"
           value={<Ltr>{formatMoney(adultTotal === null ? null : adultTotal * original, shownCurrency)}</Ltr>}
-          hint={`${original} מושבים בהזמנה המקורית`}
+          hint={`${original} seats in the original booking`}
         />
         <Stat
-          label="בפועל"
+          label="Actual"
           value={<Ltr>{formatMoney(adultTotal === null ? null : adultTotal * block.initial_quantity, shownCurrency)}</Ltr>}
-          hint={`${block.initial_quantity} מושבים היום`}
+          hint={`${block.initial_quantity} seats today`}
         />
       </div>
     </Section>

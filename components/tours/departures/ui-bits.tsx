@@ -95,7 +95,7 @@ export function SaleStatusSelect({
   const known = (SALE_STATUSES as readonly string[]).includes(value) ? (value as SaleStatus) : null;
   return (
     <select
-      aria-label="סטטוס מכירה"
+      aria-label="Sale status"
       value={value}
       disabled={disabled}
       onClick={(e) => e.stopPropagation()}

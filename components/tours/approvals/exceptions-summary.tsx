@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,13 +22,13 @@ type ProblemKey = Exclude<keyof DataProblems, "today" | "includePast">;
 
 /** The lists of /tours/exceptions, in its order and with its titles. */
 const KINDS: { key: ProblemKey; label: string }[] = [
-  { key: "noLiveBlock", label: "יציאות מפורסמות בלי טיסה חיה" },
-  { key: "allBlocksDead", label: "יציאות שכל הבלוקים שלהן בוטלו או נדחו" },
-  { key: "dateMismatch", label: "שיוכים שתאריך הטיסה שונה מתאריך היציאה" },
-  { key: "routeMismatch", label: "שיוכים שהמסלול שלהם לא תואם ליציאה" },
-  { key: "noDoublePrice", label: "יציאות בלי מחיר לחדר זוגי" },
-  { key: "negativeRemaining", label: "יציאות עם יתרת מושבים שלילית" },
-  { key: "blocksMissingData", label: "בלוקים מאושרים בלי PNR או בלי חוזה" },
+  { key: "noLiveBlock", label: "Published without a live flight" },
+  { key: "allBlocksDead", label: "Departures whose flight blocks were all cancelled or declined" },
+  { key: "dateMismatch", label: "Allocations whose flight date differs from the departure date" },
+  { key: "routeMismatch", label: "Allocations whose route does not match the departure" },
+  { key: "noDoublePrice", label: "Departures with no double-room price" },
+  { key: "negativeRemaining", label: "Departures with fewer than zero seats left" },
+  { key: "blocksMissingData", label: "Confirmed flight blocks with no PNR or no contract" },
 ];
 
 const HREF = "/tours/exceptions";
@@ -52,7 +52,7 @@ export function ExceptionsSummary({ refreshKey }: { refreshKey: number }) {
       })
       .catch((e) => {
         console.error("approvals: data problems load failed", e);
-        if (alive) setError("טעינת הפערים נכשלה.");
+        if (alive) setError("Couldn't load the data problems.");
       });
     return () => {
       alive = false;
@@ -66,18 +66,19 @@ export function ExceptionsSummary({ refreshKey }: { refreshKey: number }) {
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2.5">
-            <h2 className="font-display text-base font-semibold">פערים שהטעינה מצאה</h2>
+            <h2 className="font-display text-base font-semibold">Data problems</h2>
             {data && <CountBadge count={total} />}
           </div>
           <p className="mt-1 max-w-[90ch] text-xs text-muted-foreground">
-            אי-התאמות בין היציאות, המחירים וקבוצות הטיסה, ביציאות ובטיסות שעוד לפנינו. הרשימות המלאות, עם קישור לכל
-            שורה, נמצאות במסך בעיות נתונים. חלק מהשורות מופיעות גם למעלה, שם אפשר לטפל בהן במקום.
+            Mismatches between departures, prices and flight blocks, in departures and flights still ahead. The full
+            lists, with a link on every row, are on the Data problems screen. Some rows also appear above, where you
+            can handle them in place.
           </p>
         </div>
         <Button asChild size="sm" variant="outline">
           <Link href={HREF}>
-            למסך בעיות נתונים
-            <ChevronLeft aria-hidden />
+            Open Data Problems
+            <ChevronRight aria-hidden />
           </Link>
         </Button>
       </div>
@@ -86,11 +87,11 @@ export function ExceptionsSummary({ refreshKey }: { refreshKey: number }) {
         <div className="flex flex-wrap items-center gap-3 border-t px-4 py-3 text-sm text-destructive" role="alert">
           <span>{error}</span>
           <Button type="button" size="sm" variant="outline" onClick={() => setAttempt((n) => n + 1)}>
-            ניסיון נוסף
+            Try Again
           </Button>
         </div>
       ) : !data ? (
-        <div className="grid gap-px border-t bg-border sm:grid-cols-2 xl:grid-cols-4" aria-busy="true" aria-label="טוען">
+        <div className="grid gap-px border-t bg-border sm:grid-cols-2 xl:grid-cols-4" aria-busy="true" aria-label="Loading">
           {KINDS.map((kind) => (
             <div key={kind.key} className="bg-card px-4 py-2.5">
               <Skeleton className="h-5 w-full" />

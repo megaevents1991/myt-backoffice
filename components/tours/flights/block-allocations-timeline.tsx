@@ -69,42 +69,42 @@ export function BlockAllocationsSection({ data, run }: SectionProps) {
 
   const remove = async (allocation: TourBlockAllocation) => {
     const ok = await confirm({
-      title: "להסיר את השיוך?",
-      description: `${allocation.seats} מושבים יחזרו למאגר, והיציאה ${allocation.code} תישאר בלי הבלוק הזה.`,
-      confirmLabel: "הסרת השיוך",
-      cancelLabel: "חזרה",
+      title: "Remove this allocation?",
+      description: `${allocation.seats} seats go back to the pool, and departure ${allocation.code} is left without this flight block.`,
+      confirmLabel: "Remove Allocation",
+      cancelLabel: "Back",
       destructive: true,
     });
     if (!ok) return;
     setRemoving(allocation.id);
-    await run(() => removeTourBlockAllocation(block.id, allocation.id), "השיוך הוסר");
+    await run(() => removeTourBlockAllocation(block.id, allocation.id), "Allocation removed");
     setRemoving(null);
   };
 
   return (
     <Section
-      title="שיוך ליציאות"
-      description="היציאות שהבלוק משרת. בלוק בלי שיוך נשאר במאגר."
+      title="Allocation"
+      description="The departures this flight block serves. A flight block with no allocation stays in the pool."
       actions={
         <Button size="sm" variant="outline" onClick={() => setOpen(true)} disabled={closed}>
-          שיוך ליציאה
+          Allocate to Departure
         </Button>
       }
     >
       {allocations.length === 0 ? (
         <Notice>
-          {closed ? "הבלוק לא משויך לאף יציאה." : `הבלוק במאגר: ${free} מושבים פנויים לשיוך.`}
+          {closed ? "The flight block is not allocated to any departure." : `The flight block is in the pool: ${free} seats left to allocate.`}
         </Notice>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>יציאה</TableHead>
-              <TableHead>תאריכים</TableHead>
-              <TableHead>מסלול</TableHead>
-              <TableHead>מושבים</TableHead>
-              <TableHead>כיוון</TableHead>
-              <TableHead>בדיקה</TableHead>
+              <TableHead>Departure</TableHead>
+              <TableHead>Dates</TableHead>
+              <TableHead>Route</TableHead>
+              <TableHead>Seats</TableHead>
+              <TableHead>Direction</TableHead>
+              <TableHead>Check</TableHead>
               <TableHead className="w-0" />
             </TableRow>
           </TableHeader>
@@ -115,7 +115,7 @@ export function BlockAllocationsSection({ data, run }: SectionProps) {
                   <Link href={departureHref(a.code)} className="font-medium text-primary underline-offset-4 hover:underline">
                     <Ltr>{a.code}</Ltr>
                   </Link>
-                  {!a.is_published && <span className="ms-2 text-xs text-muted-foreground">לא מפורסם</span>}
+                  {!a.is_published && <span className="ms-2 text-xs text-muted-foreground">Not published</span>}
                 </TableCell>
                 <TableCell>
                   <Ltr>
@@ -132,10 +132,10 @@ export function BlockAllocationsSection({ data, run }: SectionProps) {
                     <span className="font-medium text-destructive">{a.fitReason}</span>
                   ) : a.dayGap !== 0 ? (
                     <span className="text-amber-700 dark:text-amber-400">
-                      הפרש של {Math.abs(a.dayGap) === 1 ? "יום" : `${Math.abs(a.dayGap)} ימים`} מהטיסה
+                      {Math.abs(a.dayGap) === 1 ? "1 day" : `${Math.abs(a.dayGap)} days`} off the flight
                     </span>
                   ) : (
-                    <span className="text-muted-foreground">תואם</span>
+                    <span className="text-muted-foreground">Matches</span>
                   )}
                 </TableCell>
                 <TableCell>
@@ -146,7 +146,7 @@ export function BlockAllocationsSection({ data, run }: SectionProps) {
                     disabled={removing === a.id}
                     onClick={() => remove(a)}
                   >
-                    הסרה
+                    Remove
                   </Button>
                 </TableCell>
               </TableRow>
@@ -177,7 +177,7 @@ function AllocateDialog({ data, run, onClose }: SectionProps & { onClose: () => 
         if (res.success) setCandidates(res.data);
         else setLoadError(res.error);
       })
-      .catch(() => !cancelled && setLoadError("טעינת היציאות נכשלה"));
+      .catch(() => !cancelled && setLoadError("Couldn't load the departures"));
     return () => {
       cancelled = true;
     };
@@ -194,7 +194,7 @@ function AllocateDialog({ data, run, onClose }: SectionProps & { onClose: () => 
     setSaving(true);
     const ok = await run(
       () => allocateTourBlock(block.id, { departureId: chosen.id, seats: seatsValue, legs }),
-      existing ? `השיוך ל-${chosen.code} עודכן` : `הבלוק שויך ל-${chosen.code}`,
+      existing ? `Allocation to ${chosen.code} updated` : `Flight block allocated to ${chosen.code}`,
     );
     setSaving(false);
     if (ok) onClose();
@@ -204,9 +204,9 @@ function AllocateDialog({ data, run, onClose }: SectionProps & { onClose: () => 
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <RtlDialogContent className="sm:max-w-lg">
         <RtlDialogHeader>
-          <DialogTitle>שיוך ליציאה</DialogTitle>
+          <DialogTitle>Allocate to Departure</DialogTitle>
           <DialogDescription>
-            מוצגות יציאות שמתחילות עד יומיים מתאריך הטיסה. המסלול נבדק בשני הקצוות לפי עיר.
+            Shows departures that start within two days of the flight date. The route is checked at both ends by city.
           </DialogDescription>
         </RtlDialogHeader>
 
@@ -214,16 +214,16 @@ function AllocateDialog({ data, run, onClose }: SectionProps & { onClose: () => 
           <Notice tone="danger">{loadError}</Notice>
         ) : candidates === null ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> טוען יציאות...
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading departures...
           </div>
         ) : candidates.length === 0 ? (
-          <Notice>אין יציאה של החברה בטווח של יומיים מתאריכי הטיסה.</Notice>
+          <Notice>The company has no departure within two days of the flight dates.</Notice>
         ) : (
           <div className="grid gap-4">
-            <Field label="יציאה">
-              <Select dir="rtl" value={departureId} onValueChange={setDepartureId}>
+            <Field label="Departure">
+              <Select value={departureId} onValueChange={setDepartureId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="בחרו יציאה" />
+                  <SelectValue placeholder="Select a departure" />
                 </SelectTrigger>
                 <SelectContent>
                   {candidates.map((c) => (
@@ -232,15 +232,15 @@ function AllocateDialog({ data, run, onClose }: SectionProps & { onClose: () => 
                         {c.code} · {formatDateShort(c.start_date)} - {formatDateShort(c.end_date)}
                         {c.route ? ` · ${c.route}` : ""}
                       </span>
-                      {c.fit.both.ok ? "" : " · לא תואם"}
+                      {c.fit.both.ok ? "" : " · no match"}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="כיוון">
-                <Select dir="rtl" value={legs} onValueChange={(v) => setLegs(v as AllocationLegs)}>
+              <Field label="Direction">
+                <Select value={legs} onValueChange={(v) => setLegs(v as AllocationLegs)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -253,7 +253,7 @@ function AllocateDialog({ data, run, onClose }: SectionProps & { onClose: () => 
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="מושבים" htmlFor="allocate-seats" hint={`פנויים בבלוק: ${free}`}>
+              <Field label="Seats" htmlFor="allocate-seats" hint={`Left in the flight block: ${free}`}>
                 <Input
                   id="allocate-seats"
                   dir="ltr"
@@ -266,12 +266,12 @@ function AllocateDialog({ data, run, onClose }: SectionProps & { onClose: () => 
             {chosen && (
               <div className="grid gap-2 text-sm">
                 <div className="text-muted-foreground">
-                  ליציאה {chosen.code} משויכים היום {chosen.allocated_seats} מושבים חיים, נמכרו {chosen.sold}.
+                  Departure {chosen.code} has {chosen.allocated_seats} live seats allocated today, {chosen.sold} sold.
                 </div>
                 {fit && !fit.ok && <Notice tone="danger">{fit.reason}</Notice>}
                 {existing && (
                   <Notice tone="warning">
-                    כבר קיים שיוך כזה של {existing.seats} מושבים. השמירה תעדכן את הכמות.
+                    This allocation already exists with {existing.seats} seats. Saving updates the count.
                   </Notice>
                 )}
               </div>
@@ -281,10 +281,10 @@ function AllocateDialog({ data, run, onClose }: SectionProps & { onClose: () => 
 
         <RtlDialogFooter>
           <Button onClick={submit} disabled={saving || !chosen || seatsValue === null || (fit !== null && !fit.ok)}>
-            {saving ? "שומר..." : existing ? "עדכון השיוך" : "שיוך"}
+            {saving ? "Saving..." : existing ? "Update Allocation" : "Allocate"}
           </Button>
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            חזרה
+            Back
           </Button>
         </RtlDialogFooter>
       </RtlDialogContent>
@@ -324,7 +324,7 @@ export function BlockTimelineSection({ data, run }: SectionProps) {
           amount: parsedAmount ?? null,
           currency: parsedAmount === null || parsedAmount === undefined ? null : (block.cost_currency ?? "USD"),
         }),
-      "נרשם בציר האירועים",
+      "Added to the timeline",
     );
     setSaving(false);
     if (ok) {
@@ -335,10 +335,10 @@ export function BlockTimelineSection({ data, run }: SectionProps) {
   };
 
   return (
-    <Section title="ציר אירועים" description="כל מה שקרה לבלוק, מהחדש לישן.">
+    <Section title="Timeline" description="Everything that happened to the flight block, newest first.">
       <div className="grid gap-3 rounded-md border bg-muted/30 p-3 md:grid-cols-[10rem_10rem_1fr_auto] md:items-end">
-        <Field label="סוג">
-          <Select dir="rtl" value={kind} onValueChange={(v) => setKind(v as BlockEventKind)}>
+        <Field label="Type">
+          <Select value={kind} onValueChange={(v) => setKind(v as BlockEventKind)}>
             <SelectTrigger className="bg-background">
               <SelectValue />
             </SelectTrigger>
@@ -351,7 +351,7 @@ export function BlockTimelineSection({ data, run }: SectionProps) {
             </SelectContent>
           </Select>
         </Field>
-        <Field label="תאריך" htmlFor="event-date">
+        <Field label="Date" htmlFor="event-date">
           <Input
             id="event-date"
             type="date"
@@ -361,9 +361,10 @@ export function BlockTimelineSection({ data, run }: SectionProps) {
           />
         </Field>
         <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-          <Field label={kind === "note" ? "הערה" : "הערה (לא חובה)"} htmlFor="event-note">
+          <Field label={kind === "note" ? "Note" : "Note (Optional)"} htmlFor="event-note">
             <Textarea
               id="event-note"
+              dir="auto"
               rows={1}
               className="min-h-10 bg-background"
               value={note}
@@ -371,7 +372,7 @@ export function BlockTimelineSection({ data, run }: SectionProps) {
             />
           </Field>
           {withAmount && (
-            <Field label={`מחיר שהוצע${block.cost_currency ? ` (${block.cost_currency})` : ""}`} htmlFor="event-amount">
+            <Field label={`Quoted Price${block.cost_currency ? ` (${block.cost_currency})` : ""}`} htmlFor="event-amount">
               <Input
                 id="event-amount"
                 dir="ltr"
@@ -384,13 +385,13 @@ export function BlockTimelineSection({ data, run }: SectionProps) {
           )}
         </div>
         <Button onClick={add} disabled={saving || !canSave}>
-          {saving ? "שומר..." : "הוספה"}
+          {saving ? "Saving..." : "Add"}
         </Button>
       </div>
 
       {events.length === 0 ? (
         <div className="mt-3">
-          <Notice>עוד לא נרשם אירוע לבלוק הזה.</Notice>
+          <Notice>Nothing recorded for this flight block yet.</Notice>
         </div>
       ) : (
         <ol className="mt-3 divide-y">
@@ -399,7 +400,7 @@ export function BlockTimelineSection({ data, run }: SectionProps) {
               <Ltr className="w-16 shrink-0 text-muted-foreground">{formatDateShort(e.happened_on)}</Ltr>
               <span className="font-medium">{eventLabel(e.kind)}</span>
               {e.seats_after !== null && (
-                <span className="rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums">{e.seats_after} מושבים</span>
+                <span className="rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums">{e.seats_after} seats</span>
               )}
               {e.amount !== null && <Ltr className="font-medium">{formatMoney(e.amount, e.currency)}</Ltr>}
               {e.note && (
@@ -408,7 +409,7 @@ export function BlockTimelineSection({ data, run }: SectionProps) {
                 </span>
               )}
               <span className="ms-auto text-xs text-muted-foreground">
-                {e.created_by_name ?? (e.created_by ? "משתמש" : "מהטעינה")}
+                {e.created_by_name ?? (e.created_by ? "User" : "Import")}
               </span>
             </li>
           ))}

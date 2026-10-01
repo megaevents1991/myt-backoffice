@@ -156,13 +156,13 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
       let error: string | undefined;
       try {
         const result = await setActiveCompany(slug);
-        if (!result.success) error = result.error ?? "החלפת החברה נכשלה";
+        if (!result.success) error = result.error ?? "Switching company failed";
       } catch (e) {
         console.error("setActiveCompany:", e);
-        error = "החלפת החברה נכשלה";
+        error = "Switching company failed";
       }
       if (error) {
-        toast({ variant: "destructive", title: "החלפת חברה", description: error });
+        toast({ variant: "destructive", title: "Switch company", description: error });
         return;
       }
       // A full load, not router.push: every server component must render again in the new company.

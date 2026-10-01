@@ -13,9 +13,9 @@ export type ActionResult<T = undefined> =
 export type AllocationLegs = "both" | "outbound" | "inbound";
 
 export const LEGS_LABELS: Record<AllocationLegs, string> = {
-  both: "הלוך וחזור",
-  outbound: "הלוך בלבד",
-  inbound: "חזור בלבד",
+  both: "Round trip",
+  outbound: "Outbound only",
+  inbound: "Return only",
 };
 
 export type BoardSeries = Pick<
@@ -179,17 +179,6 @@ export interface CardAllocation {
   flight: CardFlight;
 }
 
-export interface CardSalesEntry {
-  id: string;
-  pax: number;
-  docket_no: string | null;
-  note: string | null;
-  flight_id: number | null;
-  entered_by: string | null;
-  entered_by_name: string | null;
-  created_at: string;
-}
-
 export type CardDeparture = Omit<TourDeparture, "data">;
 
 export type CardOption = Pick<
@@ -226,7 +215,6 @@ export interface DepartureCardData {
   options: CardOption[];
   promotions: CardPromotion[];
   allocations: CardAllocation[];
-  sales: CardSalesEntry[];
   stats: BoardStats;
 }
 

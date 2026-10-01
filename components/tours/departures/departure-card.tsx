@@ -50,8 +50,6 @@ export interface CardTarget {
   code?: string;
 }
 
-const RLM = "‏";
-
 export function DepartureCard({
   target,
   tab,
@@ -141,7 +139,7 @@ export function DepartureCard({
     const result = await work();
     setBusy(false);
     if (!result.success) {
-      toast.error(result.error ?? "הפעולה נכשלה");
+      toast.error(result.error ?? "Action failed");
       return false;
     }
     if (done) toast.success(done);
@@ -160,12 +158,12 @@ export function DepartureCard({
     }
     const skipped = result.data.skipped[0];
     if (skipped) {
-      toast.error(`אי אפשר לפרסם: ${skipped.reason}`, { duration: 7000 });
+      toast.error(`Can't publish: ${skipped.reason}`, { duration: 7000 });
       return;
     }
     const warning = result.data.warnings[0];
-    if (warning) toast(`פורסם. ${warning.reason}`, { duration: 7000 });
-    else toast.success(next ? "היציאה פורסמה" : "היציאה הוסרה מהפרסום");
+    if (warning) toast(`Published. ${warning.reason}`, { duration: 7000 });
+    else toast.success(next ? "Departure published" : "Departure unpublished");
     await refresh();
   };
 
@@ -173,25 +171,25 @@ export function DepartureCard({
     if (!data) return;
     const d = data.departure;
     const agreed = await confirm({
-      title: `למחוק את היציאה ${d.code}?${RLM}`,
-      description: `היציאה תסומן כמחוקה בתאריך של היום${d.is_published ? " ותרד מהאתר" : ""}. אפשר לשחזר אותה מהלוח (סינון "מחוקות").${data.allocations.length ? ` שימו לב: ${data.allocations.length} בלוקי טיסה נשארים משויכים אליה - הסירו את השיוך בלשונית טיסות כדי להחזיר את המושבים למאגר.` : ""}${RLM}`,
-      confirmLabel: "מחיקה",
-      cancelLabel: "ביטול",
+      title: `Delete departure ${d.code}?`,
+      description: `The departure will be marked as deleted as of today${d.is_published ? " and taken off the site" : ""}. You can restore it from the board (the "Deleted" filter).${data.allocations.length ? ` Note: ${data.allocations.length} flight blocks stay allocated to it - remove the allocation in the Flights tab to return the seats to the pool.` : ""}`,
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
       destructive: true,
     });
     if (!agreed) return;
-    if (await run(() => softDeleteDeparture(d.id), `היציאה ${d.code} נמחקה`)) onClose();
+    if (await run(() => softDeleteDeparture(d.id), `Departure ${d.code} deleted`)) onClose();
   };
 
   const d = data?.departure;
 
   return (
     <Sheet open={Boolean(target)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="left" dir="rtl" className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+      <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
         {loading && !data ? (
           <div className="space-y-4 p-6">
-            <SheetTitle className="sr-only">טוען יציאה</SheetTitle>
-            <SheetDescription className="sr-only">כרטיס היציאה נטען</SheetDescription>
+            <SheetTitle className="sr-only">Loading departure</SheetTitle>
+            <SheetDescription className="sr-only">The departure card is loading</SheetDescription>
             <Skeleton className="h-8 w-48" />
             <Skeleton className="h-5 w-72" />
             <Skeleton className="h-10 w-full" />
@@ -199,22 +197,22 @@ export function DepartureCard({
           </div>
         ) : error || !data || !d || !derived ? (
           <div className="space-y-4 p-6">
-            <SheetTitle>היציאה לא נטענה</SheetTitle>
-            <SheetDescription className="sr-only">שגיאה בטעינת כרטיס היציאה</SheetDescription>
-            <Notice tone="error">{error ?? "לא נמצאה יציאה"}</Notice>
+            <SheetTitle>Departure failed to load</SheetTitle>
+            <SheetDescription className="sr-only">Error loading the departure card</SheetDescription>
+            <Notice tone="error">{error ?? "Departure not found"}</Notice>
             <Button variant="outline" onClick={onClose}>
-              סגירה
+              Close
             </Button>
           </div>
         ) : (
           <>
-            <SheetHeader className="space-y-2 border-b pb-4 pe-6 ps-12 pt-5 text-start sm:text-start">
+            <SheetHeader className="space-y-2 border-b pb-4 pe-12 ps-6 pt-5 text-start sm:text-start">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                 <SheetTitle className="font-display text-xl">
                   <Ltr className="font-mono">{d.code}</Ltr>
                 </SheetTitle>
                 <Ltr className="text-sm tabular-nums text-muted-foreground">{fmtDateRange(d.start_date, d.end_date)}</Ltr>
-                <span className="text-sm text-muted-foreground">{nightsBetween(d.start_date, d.end_date)} לילות</span>
+                <span className="text-sm text-muted-foreground">{nightsBetween(d.start_date, d.end_date)} nights</span>
                 {departureRouteLabel(derived.route.arrival_airport, derived.route.return_airport) && (
                   <Ltr className="font-mono text-sm">{departureRouteLabel(derived.route.arrival_airport, derived.route.return_airport)}</Ltr>
                 )}
@@ -222,19 +220,19 @@ export function DepartureCard({
                   <Chip className="border-info/30 bg-info-muted text-info">{ROUTE_TYPE_LABELS[derived.type]}</Chip>
                 )}
                 {d.is_deleted && (
-                  <Chip className="border-destructive/30 bg-destructive/10 text-destructive">נמחקה ב-{fmtDate(d.is_deleted)}</Chip>
+                  <Chip className="border-destructive/30 bg-destructive/10 text-destructive">Deleted {fmtDate(d.is_deleted)}</Chip>
                 )}
               </div>
               <SheetDescription>
-                {data.package?.name ?? "עמוד לא נמצא"}
+                {data.package?.name ?? "Tour page not found"}
                 {data.series && (
                   <>
-                    {" · סדרה "}
+                    {" · Series "}
                     <Ltr className="font-mono">{data.series.code}</Ltr>
                     {data.series.label ? ` (${data.series.label})` : ""}
                   </>
                 )}
-                {" · עונה "}
+                {" · Season "}
                 {d.season_year}
               </SheetDescription>
               {derived.holidays.length > 0 && (
@@ -251,15 +249,15 @@ export function DepartureCard({
                   <Toggle
                     checked={d.is_published}
                     disabled={busy || Boolean(d.is_deleted)}
-                    label={d.is_published ? "מפורסם באתר" : "לא מפורסם"}
+                    label={d.is_published ? "Published on the site" : "Not published"}
                     onChange={togglePublished}
                   />
-                  {d.is_published ? "מפורסם באתר" : "טיוטה, לא מפורסם"}
+                  {d.is_published ? "Published on the site" : "Draft, not published"}
                 </span>
                 <SaleStatusSelect
                   value={d.sale_status}
                   disabled={busy || Boolean(d.is_deleted)}
-                  onChange={(next) => run(() => updateDeparture(d.id, { sale_status: next }), `סטטוס המכירה: ${SALE_STATUS_LABELS[next]}`)}
+                  onChange={(next) => run(() => updateDeparture(d.id, { sale_status: next }), `Sale status: ${SALE_STATUS_LABELS[next]}`)}
                 />
                 {busy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                 <span className="ms-auto">
@@ -268,38 +266,38 @@ export function DepartureCard({
                       variant="outline"
                       size="sm"
                       disabled={busy}
-                      onClick={() => run(() => restoreDeparture(d.id), "היציאה שוחזרה כטיוטה")}
+                      onClick={() => run(() => restoreDeparture(d.id), "Departure restored as a draft")}
                     >
                       <RotateCcw />
-                      שחזור
+                      Restore
                     </Button>
                   ) : (
                     <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={busy} onClick={remove}>
                       <Trash2 />
-                      מחיקה
+                      Delete
                     </Button>
                   )}
                 </span>
               </div>
               {!d.is_published && !d.is_deleted && derived.blockers.length > 0 && (
-                <p className="text-xs text-muted-foreground">כדי לפרסם חסר: {derived.blockers.join(" · ")}</p>
+                <p className="text-xs text-muted-foreground">Can&apos;t publish yet: {derived.blockers.join(" · ")}</p>
               )}
               {d.is_published && data.stats.liveBlocks === 0 && (
                 <Notice tone="warning" className="py-1.5 text-xs">
-                  היציאה מפורסמת בלי בלוק טיסה חי. האתר מציג &quot;פרטי הטיסות יעודכנו&quot;.
+                  The departure is published without a live flight block. The site shows &quot;flight details will be updated&quot;.
                 </Notice>
               )}
               {derived.suggestion && !d.is_deleted && (
                 <Notice tone="warning" className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-xs">
                   <span>
                     {data.stats.remaining > 0 ? (
-                      `נשארו ${data.stats.remaining} מקומות.`
+                      `${data.stats.remaining} seats left.`
                     ) : (
                       <>
-                        אין מקומות פנויים (יתרה <Ltr>{data.stats.remaining}</Ltr>).
+                        No seats left (balance <Ltr>{data.stats.remaining}</Ltr>).
                       </>
                     )}{" "}
-                    כדאי לשקול לשנות את סטטוס המכירה ל&quot;{SALE_STATUS_LABELS[derived.suggestion]}&quot;.
+                    Consider changing the sale status to &quot;{SALE_STATUS_LABELS[derived.suggestion]}&quot;.
                   </span>
                   <Button
                     size="sm"
@@ -308,24 +306,24 @@ export function DepartureCard({
                     disabled={busy}
                     onClick={() => {
                       const next = derived.suggestion as SaleStatus;
-                      void run(() => updateDeparture(d.id, { sale_status: next }), `סטטוס המכירה: ${SALE_STATUS_LABELS[next]}`);
+                      void run(() => updateDeparture(d.id, { sale_status: next }), `Sale status: ${SALE_STATUS_LABELS[next]}`);
                     }}
                   >
-                    עדכון הסטטוס
+                    Update Status
                   </Button>
                 </Notice>
               )}
             </SheetHeader>
 
-            <Tabs dir="rtl" value={tab} onValueChange={(v) => onTabChange(v as CardTab)} className="flex min-h-0 flex-1 flex-col">
+            <Tabs value={tab} onValueChange={(v) => onTabChange(v as CardTab)} className="flex min-h-0 flex-1 flex-col">
               <TabsList className="mx-6 mt-3 grid h-9 grid-cols-5">
-                <TabsTrigger value="general">כללי</TabsTrigger>
-                <TabsTrigger value="prices">מחירים</TabsTrigger>
+                <TabsTrigger value="general">General</TabsTrigger>
+                <TabsTrigger value="prices">Prices</TabsTrigger>
                 <TabsTrigger value="promotions">
-                  הטבות{derived.activePromotions.length ? ` (${derived.activePromotions.length})` : ""}
+                  Promotions{derived.activePromotions.length ? ` (${derived.activePromotions.length})` : ""}
                 </TabsTrigger>
-                <TabsTrigger value="flights">טיסות{data.allocations.length ? ` (${data.allocations.length})` : ""}</TabsTrigger>
-                <TabsTrigger value="sales">מכירות{data.stats.sold ? ` (${data.stats.sold})` : ""}</TabsTrigger>
+                <TabsTrigger value="flights">Flights{data.allocations.length ? ` (${data.allocations.length})` : ""}</TabsTrigger>
+                <TabsTrigger value="sales">Reservations{data.stats.sold ? ` (${data.stats.sold})` : ""}</TabsTrigger>
               </TabsList>
               <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-2">
                 <TabsContent value="general">

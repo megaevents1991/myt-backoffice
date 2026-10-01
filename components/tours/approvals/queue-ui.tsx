@@ -68,7 +68,7 @@ export function QueueSection({
       >
         <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
         <h2 className="font-medium text-foreground/80">{title}</h2>
-        <span>אין מה לטפל</span>
+        <span>Nothing to handle</span>
       </section>
     );
   }
@@ -159,7 +159,7 @@ export function OpenLink({ href, children }: { href: string; children: ReactNode
 
 /** "בעוד 5 ימים" for a date that is today or later. */
 export function inDays(days: number): string {
-  if (days <= 0) return "היום";
-  if (days === 1) return "מחר";
-  return `בעוד ${days} ימים`;
+  if (days <= 0) return "today";
+  if (days === 1) return "tomorrow";
+  return `in ${days} days`;
 }

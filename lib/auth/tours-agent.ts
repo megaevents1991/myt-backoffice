@@ -25,4 +25,4 @@ export function isToursAgentPath(pathname: string): boolean {
  */
 export const COMPANY_UNASSIGNED_ERROR = "Unassigned: this account is not a member of any company";
 
-export const COMPANY_UNASSIGNED_NOTICE = "החשבון עוד לא שויך לחברה";
+export const COMPANY_UNASSIGNED_NOTICE = "This account is not assigned to a company yet";

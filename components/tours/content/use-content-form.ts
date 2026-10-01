@@ -38,10 +38,10 @@ export function useContentForm<F extends object, D extends { form: F }>(
       }
       setSaved(result.data);
       setForm(result.data.form);
-      toast.success("נשמר. כדי שהשינוי יופיע באתר, לחצו על פרסום לאתר.");
+      toast.success("Saved. Click Publish Site to show the change on the site.");
       router.refresh();
     } catch {
-      toast.error("השמירה נכשלה. בדקו את החיבור ונסו שוב.");
+      toast.error("Save failed. Check your connection and try again.");
     } finally {
       setIsSaving(false);
     }

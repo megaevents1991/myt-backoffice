@@ -8,7 +8,7 @@ export default async function TourTermPage({ params }: { params: Promise<{ id: s
   const { id } = await params;
   const result = await getTourTerm(id);
   if (!result.success) {
-    return <LoadError message={result.error} backHref="/tours/terms" backLabel="כל הקטגוריות" />;
+    return <LoadError message={result.error} backHref="/tours/terms" backLabel="Back to Categories & Tags" />;
   }
   return <TermFormEditor key={result.data.id} initial={result.data} />;
 }

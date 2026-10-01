@@ -8,7 +8,7 @@ export default async function TourInstructorPage({ params }: { params: Promise<{
   const { id } = await params;
   const result = await getTourInstructor(id);
   if (!result.success) {
-    return <LoadError message={result.error} backHref="/tours/instructors" backLabel="כל המלווים" />;
+    return <LoadError message={result.error} backHref="/tours/instructors" backLabel="Back to Group Leaders" />;
   }
   return <InstructorFormEditor key={result.data.id} initial={result.data} />;
 }

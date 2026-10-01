@@ -45,18 +45,18 @@ export function PublishSiteButton({ className }: { className?: string }) {
 
   const publish = async () => {
     const ok = await confirm({
-      title: "לפרסם את השינויים לאתר?",
+      title: "Publish changes to the site?",
       description:
-        "האתר ייבנה מחדש עם כל מה שנשמר בבקאופיס עד עכשיו. הבנייה אורכת כמה דקות, ועד שהיא מסתיימת הגולשים רואים את הגרסה הקודמת.",
-      confirmLabel: "פרסום לאתר",
-      cancelLabel: "ביטול",
+        "The site will be rebuilt with everything saved in the backoffice so far. The build takes a few minutes, and until it finishes visitors see the previous version.",
+      confirmLabel: "Publish Site",
+      cancelLabel: "Cancel",
     });
     if (!ok) return;
     startTransition(async () => {
       const result = await publishSite();
       if (result.success) {
         setStatus({ configured: true, last: result.data });
-        toast.success("בניית האתר התחילה. השינויים יופיעו בעוד כמה דקות.");
+        toast.success("The site build has started. Changes will appear in a few minutes.");
       } else {
         toast.error(result.error, { duration: 7000 });
         // a failed call is recorded too - show it
@@ -72,13 +72,13 @@ export function PublishSiteButton({ className }: { className?: string }) {
   const note = !status
     ? null
     : !status.configured
-      ? "החיבור לאתר לא הוגדר"
+      ? "Site connection not set up"
       : last
-        ? `${last.ok ? "פורסם לאחרונה" : "ניסיון אחרון נכשל"}: ${formatDayTime(last.at)}`
-        : "עוד לא פורסם מכאן";
+        ? `${last.ok ? "Last published" : "Last attempt failed"}: ${formatDayTime(last.at)}`
+        : "Not published from here yet";
 
   return (
-    <div dir="rtl" className={cn("flex items-center gap-3", className)}>
+    <div className={cn("flex items-center gap-3", className)}>
       {note && (
         <span
           className={cn("text-xs text-muted-foreground", last && !last.ok && status?.configured && "text-destructive")}
@@ -89,7 +89,7 @@ export function PublishSiteButton({ className }: { className?: string }) {
       )}
       <Button type="button" variant="outline" onClick={() => void publish()} disabled={isPending}>
         {isPending ? <Loader2 className="animate-spin" /> : <Rocket />}
-        {isPending ? "מפרסם..." : "פרסום לאתר"}
+        {isPending ? "Publishing..." : "Publish Site"}
       </Button>
     </div>
   );

@@ -7,7 +7,7 @@
  */
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { flightRouteLabel } from "@/lib/tours/routes";
@@ -35,9 +35,9 @@ export function TourBlockView({ flightId }: { flightId: number }) {
     : "";
 
   return (
-    <div dir="rtl">
+    <div>
       <PageHeader
-        eyebrow="קבוצת טיסה"
+        eyebrow="Flight block"
         title={
           block ? (
             <span className="flex flex-wrap items-center gap-3">
@@ -45,7 +45,7 @@ export function TourBlockView({ flightId }: { flightId: number }) {
               <BlockStatusBadge status={block.block_status} />
             </span>
           ) : (
-            `בלוק ${flightId}`
+            `Flight block ${flightId}`
           )
         }
         description={
@@ -56,8 +56,8 @@ export function TourBlockView({ flightId }: { flightId: number }) {
         actions={
           <Button asChild variant="outline" size="sm">
             <Link href="/offline-flights">
-              <ArrowRight className="h-4 w-4" />
-              לרשימת הטיסות
+              <ArrowLeft className="h-4 w-4" />
+              Back to Flights
             </Link>
           </Button>
         }
@@ -66,7 +66,7 @@ export function TourBlockView({ flightId }: { flightId: number }) {
       {/* Until the block arrives the panel below shows the loading (or the error) state. */}
       {block && (
         <dl className="mb-4 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border bg-card p-4 shadow-sm sm:grid-cols-3 lg:grid-cols-6">
-          <Detail label="הלוך">
+          <Detail label="Outbound">
             <Ltr>
               {formatDateShort(block.outbound_departure_time)} {timeOf(block.outbound_departure_time)}
             </Ltr>
@@ -76,7 +76,7 @@ export function TourBlockView({ flightId }: { flightId: number }) {
               </Ltr>
             </div>
           </Detail>
-          <Detail label="חזור">
+          <Detail label="Return">
             <Ltr>
               {formatDateShort(block.inbound_departure_time)} {timeOf(block.inbound_departure_time)}
             </Ltr>
@@ -86,7 +86,7 @@ export function TourBlockView({ flightId }: { flightId: number }) {
               </Ltr>
             </div>
           </Detail>
-          <Detail label="חברת תעופה">
+          <Detail label="Airline">
             <Ltr>{airline}</Ltr>
             {block.metadata_name && (
               <div className="text-xs font-normal text-muted-foreground">{block.metadata_name}</div>
@@ -95,19 +95,19 @@ export function TourBlockView({ flightId }: { flightId: number }) {
           <Detail label="PNR">
             <Ltr>{orDash(block.pnr)}</Ltr>
           </Detail>
-          <Detail label="מזהה קבוצה">
+          <Detail label="Group ID">
             <Ltr>{orDash(block.group_code)}</Ltr>
           </Detail>
-          <Detail label="מושבים">
+          <Detail label="Seats">
             <span className="tabular-nums">{block.initial_quantity}</span>
             {block.original_quantity !== null && block.original_quantity !== block.initial_quantity && (
-              <span className="text-xs font-normal text-muted-foreground"> מתוך {block.original_quantity}</span>
+              <span className="text-xs font-normal text-muted-foreground"> of {block.original_quantity}</span>
             )}
           </Detail>
           {block.notes?.trim() && (
             <div className="col-span-full min-w-0">
-              <dt className="text-xs text-muted-foreground">הערות</dt>
-              <dd className="mt-0.5 whitespace-pre-wrap text-sm [unicode-bidi:plaintext] text-right">
+              <dt className="text-xs text-muted-foreground">Notes</dt>
+              <dd className="mt-0.5 whitespace-pre-wrap text-sm [unicode-bidi:plaintext]">
                 {block.notes}
               </dd>
             </div>

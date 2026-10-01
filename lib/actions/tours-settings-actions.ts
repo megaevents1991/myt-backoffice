@@ -39,33 +39,33 @@ const text = (value: Json | undefined): string => (typeof value === "string" ? v
 function failure(e: unknown, fallback: string): { success: false; error: string } {
   const message = e instanceof Error ? e.message : String(e);
   if (message.startsWith("Forbidden: the active company")) {
-    return { success: false, error: "המסך הזה שייך לחברה שמוכרת טיולים. החליפו חברה בסרגל העליון." };
+    return { success: false, error: "This screen belongs to a company that sells tours. Switch companies in the top bar." };
   }
-  if (message === "Unauthorized") return { success: false, error: "אין הרשאה לפעולה הזו" };
+  if (message === "Unauthorized") return { success: false, error: "You don't have permission to do this" };
   console.error(`${fallback}:`, e);
   return { success: false, error: fallback };
 }
 
-const NOT_ADMIN = { success: false as const, error: "הגדרות החברה פתוחות למנהל החברה בלבד" };
+const NOT_ADMIN = { success: false as const, error: "Settings are open to company admins only" };
 const isAdmin = (session: SessionPayload): boolean => session.role === "superadmin" || session.role === "admin";
 
 const optionalEmail = z
   .string()
   .trim()
   .max(200)
-  .refine((v) => v === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), "כתובת אימייל לא תקינה");
+  .refine((v) => v === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), "Invalid email address");
 const optionalUrl = z
   .string()
   .trim()
   .max(500)
-  .refine((v) => v === "" || /^https?:\/\/[^\s]+$/i.test(v), "כתובת אתר מתחילה ב-https://");
+  .refine((v) => v === "" || /^https?:\/\/[^\s]+$/i.test(v), "A site URL starts with https://");
 const short = z.string().trim().max(500);
 
 const settingsSchema = z.object({
-  name: z.string().trim().min(1, "חסר שם לחברה").max(200),
+  name: z.string().trim().min(1, "Company name is required").max(200),
   legalName: short,
   siteUrl: optionalUrl,
-  defaultCurrency: z.enum(SETTINGS_CURRENCIES, { errorMap: () => ({ message: "מטבע לא מוכר" }) }),
+  defaultCurrency: z.enum(SETTINGS_CURRENCIES, { errorMap: () => ({ message: "Unknown currency" }) }),
   contact: z.object({
     phone: short,
     whatsapp: short,
@@ -78,11 +78,11 @@ const settingsSchema = z.object({
       .string()
       .trim()
       .max(700)
-      .refine((v) => v === "" || v.startsWith("/") || /^https?:\/\//i.test(v), "כתובת לוגו מתחילה ב-/media/ או ב-https://"),
+      .refine((v) => v === "" || v.startsWith("/") || /^https?:\/\//i.test(v), "A logo URL starts with /media/ or https://"),
     primaryColor: z
       .string()
       .trim()
-      .refine((v) => v === "" || /^#[0-9a-fA-F]{6}$/.test(v), "צבע בפורמט ‎#RRGGBB"),
+      .refine((v) => v === "" || /^#[0-9a-fA-F]{6}$/.test(v), "Color must be in #RRGGBB format"),
   }),
   email: z.object({ from: short, replyTo: optionalEmail, leadsInbox: optionalEmail }),
   analytics: z.object({ gtm: short, pixel: short }),
@@ -189,7 +189,7 @@ export async function getCompanySettings(): Promise<ActionResult<CompanySettings
     if (!isAdmin(session)) return NOT_ADMIN;
     return { success: true, data: (await load(company)).settings };
   } catch (e) {
-    return failure(e, "טעינת הגדרות החברה נכשלה");
+    return failure(e, "Failed to load settings");
   }
 }
 
@@ -202,7 +202,7 @@ export async function saveCompanySettings(
     if (!isAdmin(session)) return NOT_ADMIN;
     const parsed = settingsSchema.safeParse(form);
     if (!parsed.success) {
-      return { success: false, error: parsed.error.issues[0]?.message ?? "הנתונים שהוזנו לא תקינים" };
+      return { success: false, error: parsed.error.issues[0]?.message ?? "The data entered is invalid" };
     }
     const input = parsed.data;
     const { row: before } = await load(company);
@@ -218,7 +218,7 @@ export async function saveCompanySettings(
     let hookChange: string | null = null;
     if (hook.action === "set") {
       const url = validHook(hook.url);
-      if (!url) return { success: false, error: "כתובת ה-deploy hook חייבת להיות כתובת https מלאה" };
+      if (!url) return { success: false, error: "The deploy hook must be a full https URL" };
       nextFeatures = { ...features, [HOOK_KEY]: url };
       hookChange = features[HOOK_KEY] ? "replaced" : "set";
     } else if (hook.action === "clear" && features[HOOK_KEY] !== undefined) {
@@ -277,6 +277,6 @@ export async function saveCompanySettings(
     }
     return { success: true, data: (await load(company)).settings };
   } catch (e) {
-    return failure(e, "שמירת הגדרות החברה נכשלה");
+    return failure(e, "Failed to save settings");
   }
 }

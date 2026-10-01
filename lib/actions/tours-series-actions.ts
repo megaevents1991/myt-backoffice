@@ -45,11 +45,11 @@ function fail(e: unknown): { success: false; error: string } {
   if (e instanceof UserError) return { success: false, error: e.message };
   const message = e instanceof Error ? e.message : String(e);
   if (message.startsWith("Forbidden")) {
-    return { success: false, error: "המסך הזה זמין רק כשהחברה הפעילה מוכרת טיולים. החליפו חברה בסרגל העליון." };
+    return { success: false, error: "This screen is only available when the active company sells tours. Switch company in the top bar." };
   }
-  if (message.startsWith("Unauthorized")) return { success: false, error: "אין הרשאה לפעולה הזו." };
+  if (message.startsWith("Unauthorized")) return { success: false, error: "You don't have permission for this action." };
   console.error("tours-series-actions:", e);
-  return { success: false, error: `הפעולה נכשלה: ${message}` };
+  return { success: false, error: `The action failed: ${message}` };
 }
 
 const ok = <T>(data: T): ActionResult<T> => ({ success: true, data });
@@ -86,7 +86,7 @@ const SERIES_SELECT =
 const intIn = (value: unknown, min: number, max: number, label: string): number | null => {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
-  if (!Number.isInteger(n) || n < min || n > max) throw new UserError(`${label}: ערך לא תקין`);
+  if (!Number.isInteger(n) || n < min || n > max) throw new UserError(`${label}: invalid value`);
   return n;
 };
 
@@ -182,30 +182,30 @@ export async function saveSeries(id: string | null, input: SeriesInput): Promise
   try {
     const { company } = await requireCompany("tours");
     const db = toursDb();
-    if (id !== null && !UUID.test(id)) throw new UserError("הסדרה לא נמצאה");
+    if (id !== null && !UUID.test(id)) throw new UserError("Series not found");
 
     const code = String(input.code ?? "").trim().toUpperCase();
     if (!/^[A-Z][A-Z0-9]{1,7}$/.test(code)) {
-      throw new UserError("קוד סדרה: 2 עד 8 תווים, אותיות באנגלית וספרות, מתחיל באות (למשל BBC)");
+      throw new UserError("Series code: 2 to 8 characters, letters (A-Z) and digits, starting with a letter (e.g. BBC)");
     }
     const arrival = normalizeAirport(input.arrival_airport);
     const ret = normalizeAirport(input.return_airport);
-    if (arrival === undefined || ret === undefined) throw new UserError("קוד שדה תעופה הוא שלוש אותיות באנגלית (למשל LHR)");
-    if (!(CURRENCIES as readonly string[]).includes(input.default_currency)) throw new UserError("מטבע לא נתמך");
-    const childMaxAge = intIn(input.child_max_age, 0, 25, "גיל ילד מרבי");
-    if (childMaxAge === null) throw new UserError("גיל ילד מרבי הוא שדה חובה (ברירת המחדל 16)");
+    if (arrival === undefined || ret === undefined) throw new UserError("An airport code is three letters A-Z (e.g. LHR)");
+    if (!(CURRENCIES as readonly string[]).includes(input.default_currency)) throw new UserError("Unsupported currency");
+    const childMaxAge = intIn(input.child_max_age, 0, 25, "Maximum child age");
+    if (childMaxAge === null) throw new UserError("Maximum child age is required (default 16)");
     const discount = input.senior_discount === null || input.senior_discount === undefined ? null : Number(input.senior_discount);
     if (discount !== null && (!Number.isFinite(discount) || discount < 0 || discount > 100_000)) {
-      throw new UserError("הנחת ותיק: ערך לא תקין");
+      throw new UserError("Senior discount: invalid value");
     }
 
     let packageId: string | null = null;
     if (input.package_id) {
-      if (!UUID.test(input.package_id)) throw new UserError("העמוד לא נמצא");
+      if (!UUID.test(input.package_id)) throw new UserError("Tour page not found");
       const pkg = must(
         await db.from("packages").select("id").eq("company_id", company.id).eq("id", input.package_id).maybeSingle(),
       );
-      if (!pkg) throw new UserError("העמוד לא נמצא בחברה הפעילה");
+      if (!pkg) throw new UserError("Tour page not found in the active company");
       packageId = pkg.id;
     }
 
@@ -220,7 +220,7 @@ export async function saveSeries(id: string | null, input: SeriesInput): Promise
             .in("kind", [...SERIES_TERM_KINDS])
             .in("id", wantedTerms),
         ) ?? [];
-      if (found.length !== wantedTerms.length) throw new UserError("אחת התגיות לא שייכת לחברה הפעילה");
+      if (found.length !== wantedTerms.length) throw new UserError("One of the tags doesn't belong to the active company");
     }
 
     const row = {
@@ -228,14 +228,14 @@ export async function saveSeries(id: string | null, input: SeriesInput): Promise
       label: (input.label ?? "").trim().slice(0, 120) || null,
       package_id: packageId,
       arrival_airport: arrival,
-      arrival_weekday: intIn(input.arrival_weekday, 0, 6, "יום נחיתה"),
+      arrival_weekday: intIn(input.arrival_weekday, 0, 6, "Arrival day"),
       return_airport: ret,
-      return_weekday: intIn(input.return_weekday, 0, 6, "יום חזרה"),
-      default_nights: intIn(input.default_nights, 0, 60, "לילות"),
-      default_capacity: intIn(input.default_capacity, 0, 2000, "קיבולת"),
+      return_weekday: intIn(input.return_weekday, 0, 6, "Return day"),
+      default_nights: intIn(input.default_nights, 0, 60, "Nights"),
+      default_capacity: intIn(input.default_capacity, 0, 2000, "Capacity"),
       default_currency: input.default_currency,
       child_max_age: childMaxAge,
-      senior_min_age: intIn(input.senior_min_age, 40, 120, "גיל ותיק מזערי"),
+      senior_min_age: intIn(input.senior_min_age, 40, 120, "Minimum senior age"),
       senior_discount: discount,
       is_active: Boolean(input.is_active),
     };
@@ -243,7 +243,7 @@ export async function saveSeries(id: string | null, input: SeriesInput): Promise
     let seriesId = id;
     if (id) {
       const current = must(await db.from("series").select("id, code").eq("company_id", company.id).eq("id", id).maybeSingle());
-      if (!current) throw new UserError("הסדרה לא נמצאה בחברה הפעילה");
+      if (!current) throw new UserError("Series not found in the active company");
       if (current.code !== code) {
         const { count } = await db
           .from("departures")
@@ -251,12 +251,12 @@ export async function saveSeries(id: string | null, input: SeriesInput): Promise
           .eq("company_id", company.id)
           .eq("series_id", id);
         if ((count ?? 0) > 0) {
-          throw new UserError(`לסדרה יש ${count} יציאות שהקוד שלהן נבנה מ-${current.code}. אי אפשר לשנות את קוד הסדרה.`);
+          throw new UserError(`The series has ${count} departures whose codes are built from ${current.code}. The series code can't be changed.`);
         }
       }
       const { error } = await db.from("series").update(row).eq("company_id", company.id).eq("id", id);
       if (error) {
-        if (error.code === "23505") throw new UserError(`כבר קיימת סדרה עם הקוד ${code}`);
+        if (error.code === "23505") throw new UserError(`A series with the code ${code} already exists`);
         throw new Error(error.message);
       }
     } else {
@@ -266,7 +266,7 @@ export async function saveSeries(id: string | null, input: SeriesInput): Promise
         .select("id")
         .single();
       if (error) {
-        if (error.code === "23505") throw new UserError(`כבר קיימת סדרה עם הקוד ${code}`);
+        if (error.code === "23505") throw new UserError(`A series with the code ${code} already exists`);
         throw new Error(error.message);
       }
       seriesId = inserted.id;
@@ -300,10 +300,10 @@ export async function saveSeries(id: string | null, input: SeriesInput): Promise
 export async function getSeasonContext(seriesId: string): Promise<ActionResult<SeasonContext>> {
   try {
     const { company } = await requireCompany("tours");
-    if (!UUID.test(seriesId)) throw new UserError("הסדרה לא נמצאה");
+    if (!UUID.test(seriesId)) throw new UserError("Series not found");
     const db = toursDb();
     const series = must(await db.from("series").select("id, code").eq("company_id", company.id).eq("id", seriesId).maybeSingle());
-    if (!series) throw new UserError("הסדרה לא נמצאה בחברה הפעילה");
+    if (!series) throw new UserError("Series not found in the active company");
 
     const [own, taken] = await Promise.all([
       fetchAll((from, to) =>
@@ -361,22 +361,22 @@ export async function createSeasonDepartures(input: SeasonCreateInput): Promise<
   try {
     const { company } = await requireCompany("tours");
     const db = toursDb();
-    if (!UUID.test(input.seriesId ?? "")) throw new UserError("בחרו סדרה");
+    if (!UUID.test(input.seriesId ?? "")) throw new UserError("Choose a series");
     const items = Array.isArray(input.items) ? input.items : [];
-    if (items.length === 0) throw new UserError("לא סומנו יציאות ליצירה");
-    if (items.length > MAX_SEASON_ITEMS) throw new UserError(`אפשר ליצור עד ${MAX_SEASON_ITEMS} יציאות בפעם אחת`);
+    if (items.length === 0) throw new UserError("No departures selected to create");
+    if (items.length > MAX_SEASON_ITEMS) throw new UserError(`You can create up to ${MAX_SEASON_ITEMS} departures at a time`);
     for (const item of items) {
       if (!isIsoDate(item.start_date) || !isIsoDate(item.end_date) || item.end_date < item.start_date) {
-        throw new UserError("תאריך לא תקין באחת היציאות");
+        throw new UserError("Invalid date on one of the departures");
       }
-      if ((nightsBetween(item.start_date, item.end_date) ?? 0) > 60) throw new UserError("טיול של יותר מ-60 לילות - בדקו את מספר הלילות");
+      if ((nightsBetween(item.start_date, item.end_date) ?? 0) > 60) throw new UserError("A trip of more than 60 nights - check the number of nights");
     }
 
     const series = must(
       await db.from("series").select(SERIES_SELECT).eq("company_id", company.id).eq("id", input.seriesId).maybeSingle(),
     );
-    if (!series) throw new UserError("הסדרה לא נמצאה בחברה הפעילה");
-    if (!series.package_id) throw new UserError(`לסדרה ${series.code} אין עמוד באתר. שייכו אותה לעמוד ואז צרו יציאות.`);
+    if (!series) throw new UserError("Series not found in the active company");
+    if (!series.package_id) throw new UserError(`Series ${series.code} has no tour page. Assign it one, then create departures.`);
 
     const copying = Boolean(input.copyFromDepartureId) && (input.copyPrices || input.copyPromotions);
     let source: {
@@ -389,7 +389,7 @@ export async function createSeasonDepartures(input: SeasonCreateInput): Promise<
       markup_fixed: number | null;
     } | null = null;
     if (copying) {
-      if (!UUID.test(input.copyFromDepartureId ?? "")) throw new UserError("יציאת המקור לא נמצאה");
+      if (!UUID.test(input.copyFromDepartureId ?? "")) throw new UserError("Source departure not found");
       source = must(
         await db
           .from("departures")
@@ -399,7 +399,7 @@ export async function createSeasonDepartures(input: SeasonCreateInput): Promise<
           .eq("id", input.copyFromDepartureId as string)
           .maybeSingle(),
       );
-      if (!source) throw new UserError("יציאת המקור לא שייכת לסדרה הזו");
+      if (!source) throw new UserError("The source departure doesn't belong to this series");
     }
     const copyPrices = Boolean(source && input.copyPrices);
     const copyPromotions = Boolean(source && input.copyPromotions);
@@ -421,7 +421,7 @@ export async function createSeasonDepartures(input: SeasonCreateInput): Promise<
     for (const w of wanted) {
       const key = `${w.code}:${w.season_year}`;
       if (taken.has(key)) {
-        result.skipped.push({ code: w.code, reason: `כבר קיימת יציאה עם הקוד הזה בשנת ${w.season_year}` });
+        result.skipped.push({ code: w.code, reason: `A departure with this code already exists in ${w.season_year}` });
         continue;
       }
       taken.add(key);

@@ -8,9 +8,9 @@ export const SERIES_TERM_KINDS = ["audiences", "tags", "destinations"] as const;
 export type SeriesTermKind = (typeof SERIES_TERM_KINDS)[number];
 
 export const SERIES_TERM_KIND_LABELS: Record<SeriesTermKind, string> = {
-  audiences: "קהל",
-  tags: "תגיות",
-  destinations: "יעדים",
+  audiences: "Audience",
+  tags: "Tags",
+  destinations: "Destinations",
 };
 
 export interface SeriesTerm {

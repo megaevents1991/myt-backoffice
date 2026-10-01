@@ -31,13 +31,13 @@ import type { HotelEditorData, HotelForm, HotelListRow } from "@/components/tour
 
 const Stars = ({ count }: { count: number | null }) =>
   count ? (
-    <span className="inline-flex items-center gap-0.5" title={`${count} כוכבים`}>
+    <span className="inline-flex items-center gap-0.5" title={`${count} stars`}>
       {Array.from({ length: count }, (_, i) => (
         <Star key={i} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
       ))}
     </span>
   ) : (
-    <span className="text-muted-foreground">לא צוין</span>
+    <span className="text-muted-foreground">Not set</span>
   );
 
 /** The hotels the vacation packages offer. */
@@ -47,16 +47,16 @@ export function HotelsTable({ rows, siteUrl }: { rows: HotelListRow[]; siteUrl: 
 
   return (
     <div className="space-y-3">
-      <SearchInput value={query} onValueChange={setQuery} placeholder="חיפוש לפי שם, עיר או קוד" />
+      <SearchInput value={query} onValueChange={setQuery} placeholder="Search by name, city or code" />
       <div className="overflow-hidden rounded-lg border bg-card">
         <Table look="list">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[72px]">תמונה</TableHead>
-              <TableHead>שם</TableHead>
-              <TableHead>קוד</TableHead>
-              <TableHead>עיר</TableHead>
-              <TableHead>כוכבים</TableHead>
+              <TableHead className="w-[72px]">Image</TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Code</TableHead>
+              <TableHead>City</TableHead>
+              <TableHead>Stars</TableHead>
               <TableHead className="w-[60px]" />
             </TableRow>
           </TableHeader>
@@ -76,13 +76,13 @@ export function HotelsTable({ rows, siteUrl }: { rows: HotelListRow[]; siteUrl: 
                     {row.code}
                   </span>
                 </TableCell>
-                <TableCell>{row.city || <span className="text-muted-foreground">לא צוין</span>}</TableCell>
+                <TableCell>{row.city || <span className="text-muted-foreground">Not set</span>}</TableCell>
                 <TableCell>
                   <Stars count={row.stars} />
                 </TableCell>
                 <TableCell>
                   <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                    <Link href={`/tours/hotels/${row.id}`} aria-label={`עריכת ${row.name}`} title="עריכה">
+                    <Link href={`/tours/hotels/${row.id}`} aria-label={`Edit ${row.name}`} title="Edit">
                       <Pencil />
                     </Link>
                   </Button>
@@ -93,8 +93,8 @@ export function HotelsTable({ rows, siteUrl }: { rows: HotelListRow[]; siteUrl: 
         </Table>
         {shown.length === 0 && (
           <EmptyRows
-            title={rows.length === 0 ? "עוד אין מלונות" : "אין מלונות שמתאימים לחיפוש"}
-            description={rows.length === 0 ? "המלונות נוצרים בטעינת הנתונים של האתר." : "נסו חיפוש אחר."}
+            title={rows.length === 0 ? "No hotels yet" : "No hotels match the search"}
+            description={rows.length === 0 ? "Hotels are created when the site's data is imported." : "Try a different search."}
           />
         )}
       </div>
@@ -108,26 +108,26 @@ export function HotelFormEditor({ initial }: { initial: HotelEditorData }) {
     initial,
     (values) => saveTourHotel(initial.id, values),
   );
-  const problem = !form.name.trim() ? "חסר שם" : !form.code.trim() ? "חסר קוד" : null;
+  const problem = !form.name.trim() ? "Name is required" : !form.code.trim() ? "Code is required" : null;
   const codeLocked = saved.optionsUsingCode > 0;
 
   return (
-    <div dir="rtl" className="space-y-4 pb-24">
-      <BackLink href="/tours/hotels">כל המלונות</BackLink>
-      <PageHeader eyebrow="מלון" title={saved.form.name} actions={<PublishSiteButton />} />
+    <div className="space-y-4 pb-24">
+      <BackLink href="/tours/hotels">Back to Hotels</BackLink>
+      <PageHeader eyebrow="Hotel" title={saved.form.name} actions={<PublishSiteButton />} />
 
       <Section>
         <div className="grid gap-4 md:grid-cols-4">
-          <Field label="שם" className="md:col-span-2">
+          <Field label="Name" className="md:col-span-2">
             <Input dir="auto" value={form.name} onChange={(e) => set("name", e.target.value)} />
           </Field>
           <Field
-            label="קוד"
+            label="Code"
             className="md:col-span-2"
             hint={
               codeLocked
-                ? `יש אפשרויות ביציאות שמצביעות על הקוד הזה (${saved.optionsUsingCode}), ולכן הוא נעול.`
-                : "הקוד שאפשרות מלון ביציאה מצביעה עליו. בלי רווחים."
+                ? `Departure options point to this code (${saved.optionsUsingCode}), so it is locked.`
+                : "The code a departure's hotel option points to. No spaces."
             }
           >
             <Input
@@ -138,19 +138,19 @@ export function HotelFormEditor({ initial }: { initial: HotelEditorData }) {
               onChange={(e) => set("code", e.target.value)}
             />
           </Field>
-          <Field label="עיר" className="md:col-span-2">
-            <Input value={form.city} onChange={(e) => set("city", e.target.value)} />
+          <Field label="City" className="md:col-span-2">
+            <Input dir="auto" value={form.city} onChange={(e) => set("city", e.target.value)} />
           </Field>
-          <Field label="כוכבים">
+          <Field label="Stars">
             <Select
               value={form.stars ? String(form.stars) : "none"}
               onValueChange={(value) => set("stars", value === "none" ? null : Number(value))}
             >
-              <SelectTrigger dir="rtl">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent dir="rtl">
-                <SelectItem value="none">לא צוין</SelectItem>
+              <SelectContent>
+                <SelectItem value="none">Not set</SelectItem>
                 {[1, 2, 3, 4, 5].map((n) => (
                   <SelectItem key={n} value={String(n)}>
                     {n}
@@ -159,20 +159,20 @@ export function HotelFormEditor({ initial }: { initial: HotelEditorData }) {
               </SelectContent>
             </Select>
           </Field>
-          <Field label="תקציר" hint="הטקסט הקצר בכרטיס המלון" className="md:col-span-4">
-            <Textarea rows={4} value={form.excerpt} onChange={(e) => set("excerpt", e.target.value)} />
+          <Field label="Excerpt" hint="The short text on the hotel card" className="md:col-span-4">
+            <Textarea dir="auto" rows={4} value={form.excerpt} onChange={(e) => set("excerpt", e.target.value)} />
           </Field>
         </div>
       </Section>
 
       <Section description={NO_UPLOAD_NOTE}>
-        <ImageUrlField label="תמונה ראשית" value={form.image} onChange={(value) => set("image", value)} siteUrl={saved.siteUrl} />
-        <ImageListEditor label="גלריה" value={form.gallery} onChange={(value) => set("gallery", value)} siteUrl={saved.siteUrl} />
+        <ImageUrlField label="Main image" value={form.image} onChange={(value) => set("image", value)} siteUrl={saved.siteUrl} />
+        <ImageListEditor label="Gallery" value={form.gallery} onChange={(value) => set("gallery", value)} siteUrl={saved.siteUrl} />
       </Section>
 
       <Section>
         <HtmlField
-          label="תיאור המלון"
+          label="Hotel description"
           value={form.contentHtml}
           onChange={(value) => set("contentHtml", value)}
           siteUrl={saved.siteUrl}
@@ -182,11 +182,11 @@ export function HotelFormEditor({ initial }: { initial: HotelEditorData }) {
 
       <Section>
         <StringListEditor
-          label="מתקנים ושירותים"
+          label="Facilities & services"
           value={form.amenities}
           onChange={(value) => set("amenities", value)}
           placeholder="WiFi חינם, בריכה, חדר כושר..."
-          addLabel="הוספת מתקן"
+          addLabel="Add Facility"
         />
       </Section>
 

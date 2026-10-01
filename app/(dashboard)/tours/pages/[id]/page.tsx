@@ -8,7 +8,7 @@ export default async function TourCmsPagePage({ params }: { params: Promise<{ id
   const { id } = await params;
   const result = await getTourCmsPage(id);
   if (!result.success) {
-    return <LoadError message={result.error} backHref="/tours/pages" backLabel="כל עמודי התוכן" />;
+    return <LoadError message={result.error} backHref="/tours/pages" backLabel="Back to Content Pages" />;
   }
   return <CmsPageFormEditor key={result.data.id} initial={result.data} />;
 }

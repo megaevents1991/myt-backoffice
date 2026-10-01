@@ -31,9 +31,9 @@ export function DeparturesWithoutBlock({ data, run, busy }: QueueControls & { da
   return (
     <QueueSection
       id="no-block"
-      title="יציאות מפורסמות בלי קבוצת טיסה פעילה"
+      title="Published without a live flight"
       count={rows.length}
-      description='יציאות עתידיות שמוצגות באתר, ואף קבוצת טיסה מאושרת לא משויכת אליהן - האתר מציג להן "פרטי הטיסות יעודכנו". לכל יציאה מוצעות קבוצות חיות של החברה שנוחתות וחוזרות בערים שלה, טסות עד יומיים מהתאריכים שלה ועוד יש בהן מושבים פנויים.'
+      description='Upcoming departures shown on the site with no confirmed flight block allocated - the site shows them "flight details will be updated". Each one is offered live flight blocks of the company that land and return in its cities, fly within two days of its dates and still have seats left.'
     >
       <ul className="divide-y">
         {rows.map((departure) => (
@@ -54,7 +54,7 @@ function DepartureItem({
     <li data-departure={departure.code} className="grid gap-x-6 gap-y-2 px-4 py-3 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_auto]">
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-2">
-          <Link href={departureHref(departure.code, "flights")} className={linkClass} title="פתיחת כרטיס היציאה">
+          <Link href={departureHref(departure.code, "flights")} className={linkClass} title="Open the departure card">
             <Ltr className="font-mono">{departure.code}</Ltr>
           </Link>
           {departure.packageName && <span className="truncate text-sm">{departure.packageName}</span>}
@@ -67,9 +67,9 @@ function DepartureItem({
           {inDays(daysBetween(today, departure.startDate))}
         </div>
         <div className="mt-0.5 text-xs text-muted-foreground">
-          מסלול <Ltr className="font-medium text-foreground/80">{departure.route || "לא הוגדר"}</Ltr>
+          Route <Ltr className="font-medium text-foreground/80">{departure.route || "not set"}</Ltr>
           {departure.deadBlocks > 0 && (
-            <> · {departure.deadBlocks === 1 ? "קבוצה אחת משויכת, לא חיה" : `${departure.deadBlocks} קבוצות משויכות, אף אחת לא חיה`}</>
+            <> · {departure.deadBlocks === 1 ? "one flight block allocated, not live" : `${departure.deadBlocks} flight blocks allocated, none live`}</>
           )}
         </div>
       </div>
@@ -79,9 +79,9 @@ function DepartureItem({
           <p className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
             {departure.fullCandidates > 0
               ? departure.fullCandidates === 1
-                ? "נמצאה קבוצה חיה שמתאימה בתאריכים ובערים, אבל כל המושבים שלה כבר משויכים ליציאות אחרות."
-                : `נמצאו ${departure.fullCandidates} קבוצות חיות שמתאימות בתאריכים ובערים, אבל כל המושבים שלהן כבר משויכים ליציאות אחרות.`
-              : "לא נמצאה קבוצת טיסה חיה שמתאימה לתאריכים ולערים של היציאה. צריך להזמין קבוצה, או להסיר את היציאה מהאתר."}
+                ? "A live flight block matches the dates and cities, but all its seats are already allocated to other departures."
+                : `${departure.fullCandidates} live flight blocks match the dates and cities, but all their seats are already allocated to other departures.`
+              : "No live flight block matches the dates and cities of this departure. Book a flight block, or take the departure off the site."}
           </p>
         ) : (
           <ul className="space-y-1.5">
@@ -96,7 +96,7 @@ function DepartureItem({
             ))}
             {departure.moreCandidates > 0 && (
               <li className="text-xs text-muted-foreground">
-                ועוד {departure.moreCandidates} קבוצות מתאימות - בכרטיס היציאה, בלשונית טיסות.
+                {departure.moreCandidates} more matching flight blocks on the departure card, under Flights.
               </li>
             )}
           </ul>
@@ -104,7 +104,7 @@ function DepartureItem({
       </div>
 
       <div className="flex items-start justify-end">
-        <OpenLink href={departureHref(departure.code, "flights")}>כרטיס היציאה</OpenLink>
+        <OpenLink href={departureHref(departure.code, "flights")}>Departure Card</OpenLink>
       </div>
     </li>
   );
@@ -141,22 +141,22 @@ function CandidateRow({
             {formatDateShort(candidate.outboundDate)} - {formatDateShort(candidate.inboundDate)}
           </Ltr>
           {exact ? (
-            <span>אותם תאריכים</span>
+            <span>Same dates</span>
           ) : (
             <span className="font-medium text-amber-700 dark:text-amber-400">{gapText(candidate)}</span>
           )}
           {flights && <Ltr>{flights}</Ltr>}
           <span>
-            {candidate.freeSeats} פנויים מתוך {candidate.seats}
+            {candidate.freeSeats} left of {candidate.seats}
           </span>
           <Link href={blockHref(candidate.flightId)} className={linkClass}>
-            <span dir="auto">{candidate.seriesName ?? `קבוצה ${candidate.flightId}`}</span>
+            <span dir="auto">{candidate.seriesName ?? `Flight block ${candidate.flightId}`}</span>
           </Link>
         </div>
       </div>
       <div className="flex items-center gap-2">
         <label htmlFor={inputId} className="text-xs text-muted-foreground">
-          מושבים
+          Seats
         </label>
         <Input
           id={inputId}
@@ -172,16 +172,16 @@ function CandidateRow({
           actionKey={key}
           busy={busy}
           disabled={!valid}
-          title={valid ? undefined : `אפשר לשייך בין 1 ל-${candidate.freeSeats} מושבים`}
+          title={valid ? undefined : `Allocate between 1 and ${candidate.freeSeats} seats`}
           onClick={() =>
             void run(
               key,
               () => addFlightAllocation(departure.id, candidate.flightId, count, "both"),
-              `${count} מושבים שויכו ליציאה ${departure.code}`,
+              `${count} seats allocated to ${departure.code}`,
             )
           }
         >
-          שיוך ליציאה
+          Allocate
         </ActionButton>
       </div>
     </li>
@@ -189,9 +189,9 @@ function CandidateRow({
 }
 
 function gapText(candidate: BlockCandidate): string {
-  const days = (n: number) => (n === 1 ? "יום" : `${n} ימים`);
+  const days = (n: number) => (n === 1 ? "1 day" : `${n} days`);
   const parts: string[] = [];
-  if (candidate.gapOut > 0) parts.push(`הלוך בהפרש של ${days(candidate.gapOut)}`);
-  if (candidate.gapIn > 0) parts.push(`חזור בהפרש של ${days(candidate.gapIn)}`);
+  if (candidate.gapOut > 0) parts.push(`outbound off by ${days(candidate.gapOut)}`);
+  if (candidate.gapIn > 0) parts.push(`return off by ${days(candidate.gapIn)}`);
   return parts.join(", ");
 }

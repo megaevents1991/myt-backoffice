@@ -70,15 +70,15 @@ export function BlockApprovals({ data, run, busy, onReviewPage }: BlockApprovals
   return (
     <QueueSection
       id="blocks"
-      title="אישורי מנהל לקבוצות טיסה"
+      title="Flight block approvals"
       count={count}
-      description="שלושה דברים בקבוצת טיסה שמורים למנהל החברה: אישור להזמנת התאריכים, ביטול של קבוצה שכבר אושרה בחברת התעופה, וסימון השורה כנבדקה. כל פעולה כאן נרשמת בקבוצה עצמה, עם השם והתאריך."
+      description="Three steps on a flight block are for the company manager only: approving its dates to book, cancelling a flight block the airline already confirmed, and marking it Reviewed. Every action here is recorded on the flight block itself, with the name and date."
     >
       <SubList
-        title="טיוטות שמחכות לאישור הזמנה"
+        title="Drafts waiting for approval to book"
         count={awaitingApproval.total}
-        emptyText="אין טיוטות שמחכות לאישור"
-        hint="קבוצות שהוכנו ועוד לא אושרו. אחרי האישור התפעול פונה לחברת התעופה."
+        emptyText="No drafts waiting for approval"
+        hint="Flight blocks that were prepared and not approved yet. Once approved, operations contacts the airline."
       >
         <BlockTable
           rows={awaitingApproval.rows}
@@ -88,12 +88,12 @@ export function BlockApprovals({ data, run, busy, onReviewPage }: BlockApprovals
               actionKey={`approve:${block.id}`}
               busy={busy}
               disabled={block.seats <= 0}
-              title={block.seats <= 0 ? "אי אפשר לאשר להזמנה קבוצה בלי כמות מושבים" : undefined}
+              title={block.seats <= 0 ? "A flight block with no seats can't be approved to book" : undefined}
               onClick={() =>
                 void run(
                   `approve:${block.id}`,
                   () => transitionTourBlock(block.id, "approved", {}),
-                  "הקבוצה אושרה להזמנה",
+                  "Flight block approved to book",
                 )
               }
             >
@@ -105,10 +105,10 @@ export function BlockApprovals({ data, run, busy, onReviewPage }: BlockApprovals
       </SubList>
 
       <SubList
-        title="להחליט לפני מועד הביטול"
+        title="Decide before the cancellation date"
         count={cancelDecisions.total}
-        emptyText={`אין קבוצה שמועד הביטול שלה ב-${data.decisionWindowDays} הימים הקרובים`}
-        hint={`קבוצות מאושרות שמועד הביטול הראשון או האחרון שלהן ב-${data.decisionWindowDays} הימים הקרובים. "משאירים" רושם את ההחלטה בקבוצה ומסמן אותה כנבדקה; אחרי המועד אי אפשר להחזיר מושבים בלי דמי ביטול.`}
+        emptyText={`No flight block has a cancellation date in the next ${data.decisionWindowDays} days`}
+        hint={`Confirmed flight blocks whose first or last cancellation date falls in the next ${data.decisionWindowDays} days. "Keep" records the decision on the flight block and marks it Reviewed; after the date, seats can't be given back without a cancellation fee.`}
       >
         <BlockTable
           rows={cancelDecisions.rows}
@@ -119,10 +119,10 @@ export function BlockApprovals({ data, run, busy, onReviewPage }: BlockApprovals
                 actionKey={`keep:${block.id}`}
                 busy={busy}
                 onClick={() =>
-                  void run(`keep:${block.id}`, () => keepTourBlock(block.id), "ההחלטה נרשמה והקבוצה סומנה כנבדקה")
+                  void run(`keep:${block.id}`, () => keepTourBlock(block.id), "Decision recorded and flight block marked Reviewed")
                 }
               >
-                משאירים
+                Keep
               </ActionButton>
               <ActionButton
                 actionKey={`cancel:${block.id}`}
@@ -131,7 +131,7 @@ export function BlockApprovals({ data, run, busy, onReviewPage }: BlockApprovals
                 className="text-destructive hover:text-destructive"
                 onClick={() => setCancelTarget(block)}
               >
-                ביטול הקבוצה
+                Cancel Flight Block
               </ActionButton>
             </>
           )}
@@ -160,9 +160,10 @@ function CutNote({ shown, total }: { shown: number; total: number }) {
   if (total <= shown) return null;
   return (
     <p className="px-4 pb-3 text-xs text-muted-foreground">
-      מוצגות {shown} הראשונות מתוך {total.toLocaleString("he-IL")}. השאר יופיעו כשאלה יטופלו, והרשימה המלאה ב
+      Showing the first {shown} of {total.toLocaleString("he-IL")}. The rest appear as these are handled; the full list
+      is in{" "}
       <Link href="/offline-flights" className={linkClass}>
-        קבוצות הטיסה
+        Offline Flights
       </Link>
       .
     </p>
@@ -204,25 +205,25 @@ function ReviewList({ data, run, busy, onReviewPage }: BlockApprovalsProps) {
     await run(
       "review:bulk",
       () => markTourBlocksReviewed(ids),
-      ids.length === 1 ? "השורה סומנה כנבדקה" : `${ids.length} שורות סומנו כנבדקות`,
+      ids.length === 1 ? "Row marked Reviewed" : `${ids.length} rows marked Reviewed`,
     );
   };
 
   return (
     <SubList
-      title="קבוצות חיות שעוד לא נבדקו"
+      title="Live flight blocks not reviewed yet"
       count={review.total}
-      emptyText="כל הקבוצות החיות שעוד לא טסו נבדקו"
+      emptyText="Every live flight block that has not flown yet is reviewed"
       hint={
         <>
-          קבוצות שאושרו בחברת התעופה ועוד לא טסו, שמנהל עוד לא סימן כנבדקות. הקרובות למועד שלהן ראשונות.
+          Flight blocks confirmed by the airline that have not flown yet and no manager has marked Reviewed. Soonest first.
           {data.otherUnreviewed > 0 && (
             <>
               {" "}
-              עוד {data.otherUnreviewed.toLocaleString("he-IL")} שורות בלי סימון שייכות לקבוצות שכבר טסו, בוטלו, נדחו
-              או עוד לא אושרו, והן לא מחכות כאן (
+              Another {data.otherUnreviewed.toLocaleString("he-IL")} unmarked rows belong to flight blocks that already
+              flew, were cancelled or declined, or are not confirmed yet, so they do not wait here (
               <Link href="/offline-flights" className={linkClass}>
-                לכל קבוצות הטיסה
+                all flight blocks
               </Link>
               ).
             </>
@@ -236,7 +237,7 @@ function ReviewList({ data, run, busy, onReviewPage }: BlockApprovalsProps) {
           disabled={selected.size === 0}
           onClick={() => void markSelected()}
         >
-          {selected.size > 0 ? `סמן ${selected.size} כנבדק` : "סמן כנבדק"}
+          {selected.size > 0 ? `Mark ${selected.size} Reviewed` : "Mark Reviewed"}
         </ActionButton>
       }
     >
@@ -257,16 +258,16 @@ function ReviewList({ data, run, busy, onReviewPage }: BlockApprovalsProps) {
             busy={busy}
             variant="outline"
             onClick={() =>
-              void run(`review:${block.id}`, () => setTourBlockReviewed(block.id, true), "השורה סומנה כנבדקה")
+              void run(`review:${block.id}`, () => setTourBlockReviewed(block.id, true), "Row marked Reviewed")
             }
           >
-            נבדק
+            Mark Reviewed
           </ActionButton>
         )}
       />
       <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2.5 text-xs text-muted-foreground">
         <span className="tabular-nums">
-          שורות {first.toLocaleString("he-IL")}-{last.toLocaleString("he-IL")} מתוך {review.total.toLocaleString("he-IL")}
+          Rows {first.toLocaleString("he-IL")}-{last.toLocaleString("he-IL")} of {review.total.toLocaleString("he-IL")}
         </span>
         {pages > 1 && (
           <div className="flex items-center gap-2">
@@ -278,11 +279,11 @@ function ReviewList({ data, run, busy, onReviewPage }: BlockApprovalsProps) {
               disabled={review.page <= 1 || busy !== null}
               onClick={() => onReviewPage(review.page - 1)}
             >
-              <ChevronRight aria-hidden />
-              הקודם
+              <ChevronLeft aria-hidden />
+              Previous
             </Button>
             <span className="tabular-nums">
-              עמוד {review.page} מתוך {pages}
+              Page {review.page} of {pages}
             </span>
             <Button
               type="button"
@@ -292,8 +293,8 @@ function ReviewList({ data, run, busy, onReviewPage }: BlockApprovalsProps) {
               disabled={review.page >= pages || busy !== null}
               onClick={() => onReviewPage(review.page + 1)}
             >
-              הבא
-              <ChevronLeft aria-hidden />
+              Next
+              <ChevronRight aria-hidden />
             </Button>
           </div>
         )}
@@ -335,21 +336,21 @@ function BlockTable({
           {selection && (
             <TableHead className="w-10 px-3">
               <Checkbox
-                aria-label="בחירת כל השורות בעמוד"
+                aria-label="Select all rows on this page"
                 checked={selection.allSelected ? true : selection.someSelected ? "indeterminate" : false}
                 onCheckedChange={(v) => selection.onToggleAll(v === true)}
                 disabled={selection.disabled}
               />
             </TableHead>
           )}
-          <TableHead className="h-9 px-3 text-xs">קבוצה</TableHead>
-          <TableHead className="h-9 px-3 text-xs">מסלול וטיסות</TableHead>
-          <TableHead className="h-9 px-3 text-xs">תאריכים</TableHead>
-          <TableHead className="h-9 px-3 text-xs">מושבים</TableHead>
-          <TableHead className="h-9 px-3 text-xs">עלות למושב</TableHead>
-          <TableHead className="h-9 px-3 text-xs">המועד הקרוב</TableHead>
+          <TableHead className="h-9 px-3 text-xs">Flight Block</TableHead>
+          <TableHead className="h-9 px-3 text-xs">Route & Flights</TableHead>
+          <TableHead className="h-9 px-3 text-xs">Dates</TableHead>
+          <TableHead className="h-9 px-3 text-xs">Seats</TableHead>
+          <TableHead className="h-9 px-3 text-xs">Cost per Seat</TableHead>
+          <TableHead className="h-9 px-3 text-xs">Next Deadline</TableHead>
           <TableHead className="h-9 px-3 text-xs">
-            <span className="sr-only">פעולות</span>
+            <span className="sr-only">Actions</span>
           </TableHead>
         </TableRow>
       </TableHeader>
@@ -379,7 +380,7 @@ function BlockRow({
   actions: ReactNode;
   selection?: Selection;
 }) {
-  const name = block.seriesName ?? block.seasonLabel ?? `קבוצה ${block.id}`;
+  const name = block.seriesName ?? block.seasonLabel ?? `Flight block ${block.id}`;
   const airlines = block.inboundAirline ? `${block.airline} / ${block.inboundAirline}` : block.airline;
   const flights = [block.outboundFlight, block.inboundFlight].filter(Boolean).join(" · ");
   const deadline = block.cancelDecision
@@ -396,7 +397,7 @@ function BlockRow({
       {selection && (
         <TableCell className={`${cell} w-10`}>
           <Checkbox
-            aria-label={`בחירת ${name}`}
+            aria-label={`Select ${name}`}
             checked={selection.selected.has(block.id)}
             onCheckedChange={(v) => selection.onToggle(block.id, v === true)}
             disabled={selection.disabled}
@@ -404,7 +405,7 @@ function BlockRow({
         </TableCell>
       )}
       <TableCell className={cell}>
-        <Link href={blockHref(block.id)} className={linkClass} title="פתיחת כרטיס הקבוצה">
+        <Link href={blockHref(block.id)} className={linkClass} title="Open the flight block card">
           <span dir="auto">{name}</span>
         </Link>
         <div className={`${sub} flex flex-wrap items-center gap-x-2 gap-y-1`}>
@@ -415,7 +416,7 @@ function BlockRow({
             </span>
           )}
           {block.status !== null && block.status !== "confirmed" && <BlockStatusBadge status={block.status} />}
-          {!block.hasContract && block.status !== null && <span className="text-amber-700 dark:text-amber-400">בלי חוזה</span>}
+          {!block.hasContract && block.status !== null && <span className="text-amber-700 dark:text-amber-400">No contract</span>}
         </div>
       </TableCell>
       <TableCell className={cell}>
@@ -430,17 +431,17 @@ function BlockRow({
         <Ltr>
           {formatDateShort(block.outboundDate)} - {formatDateShort(block.inboundDate)}
         </Ltr>
-        {flyIn !== null && <div className={sub}>טסים {inDays(flyIn)}</div>}
+        {flyIn !== null && <div className={sub}>Flies {inDays(flyIn)}</div>}
       </TableCell>
       <TableCell className={cell}>
         <span className="font-medium tabular-nums">{block.seats}</span>
         {block.originalSeats !== null && (
-          <span className="text-xs text-muted-foreground"> מתוך {block.originalSeats} במקור</span>
+          <span className="text-xs text-muted-foreground"> of {block.originalSeats} originally</span>
         )}
         <div className={sub}>
           {block.allocated > 0 ? (
             <>
-              משויכים {block.allocated}
+              Allocated {block.allocated}
               {block.allocatedTo.length > 0 && (
                 <>
                   : <Ltr>{block.allocatedTo.join(", ")}</Ltr>
@@ -448,19 +449,19 @@ function BlockRow({
               )}
             </>
           ) : (
-            "לא משויכת ליציאה"
+            "Not allocated to a departure"
           )}
         </div>
       </TableCell>
       <TableCell className={`${cell} whitespace-nowrap`}>
         {block.costPrice === null ? (
-          <span className="text-muted-foreground">לא הוזנה</span>
+          <span className="text-muted-foreground">Not entered</span>
         ) : (
           <>
             <Ltr className="font-medium">{formatMoney(block.costPrice, block.costCurrency)}</Ltr>
             {block.costTax !== null && block.costTax > 0 && (
               <div className={sub}>
-                ועוד מס <Ltr>{formatNumber(block.costTax)}</Ltr>
+                plus tax <Ltr>{formatNumber(block.costTax)}</Ltr>
               </div>
             )}
           </>
@@ -475,7 +476,7 @@ function BlockRow({
             </div>
           </>
         ) : (
-          <span className="text-xs text-muted-foreground">אין מועד פתוח</span>
+          <span className="text-xs text-muted-foreground">No open deadline</span>
         )}
       </TableCell>
       <TableCell className={cell}>
@@ -510,15 +511,15 @@ function CancelBlockDialog({
 
   const feeValue = parseNumber(fee);
   const problem = !cancelledBy
-    ? "ביטול דורש לציין מי ביטל: חברת התעופה או אנחנו"
+    ? "Say who cancelled: the airline or us"
     : !note.trim()
-      ? "ביטול דורש סיבה"
+      ? "A cancellation needs a reason"
       : feeValue === undefined || (feeValue !== null && feeValue < 0)
-        ? "דמי הביטול חייבים להיות מספר חיובי"
+        ? "The cancellation fee must be a positive number"
         : !date
-          ? "חסר תאריך"
+          ? "The date is missing"
           : null;
-  const name = block.seriesName ?? block.seasonLabel ?? `קבוצה ${block.id}`;
+  const name = block.seriesName ?? block.seasonLabel ?? `Flight block ${block.id}`;
   const saving = busy === `cancel:${block.id}`;
 
   const submit = async () => {
@@ -526,7 +527,7 @@ function CancelBlockDialog({
     const ok = await run(
       `cancel:${block.id}`,
       () => transitionTourBlock(block.id, "cancelled", { date, note, cancelledBy, fee: feeValue ?? null }),
-      "הקבוצה בוטלה",
+      "Flight block cancelled",
     );
     if (ok) onClose();
   };
@@ -535,9 +536,10 @@ function CancelBlockDialog({
     <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
       <RtlDialogContent className="sm:max-w-lg">
         <RtlDialogHeader>
-          <DialogTitle>ביטול הקבוצה</DialogTitle>
+          <DialogTitle>Cancel Flight Block</DialogTitle>
           <DialogDescription>
-            הקבוצה תעבור לסטטוס &quot;בוטל&quot;. הביטול נרשם בציר האירועים שלה, ואי אפשר לחזור ממנו.
+            The flight block moves to &quot;Cancelled&quot;. The cancellation is recorded on its timeline and cannot
+            be undone.
           </DialogDescription>
         </RtlDialogHeader>
 
@@ -550,18 +552,18 @@ function CancelBlockDialog({
             <Ltr className="text-muted-foreground">
               {formatDateShort(block.outboundDate)} - {formatDateShort(block.inboundDate)}
             </Ltr>
-            <span className="text-muted-foreground">{block.seats} מושבים</span>
+            <span className="text-muted-foreground">{block.seats} seats</span>
           </div>
           {block.allocatedTo.length > 0 && (
             <Notice tone="warning">
-              {block.allocatedTo.length === 1 ? "יציאה אחת נשענת" : `${block.allocatedTo.length} יציאות נשענות`} על
-              הקבוצה הזו ויישארו בלי טיסה חיה: <Ltr>{block.allocatedTo.join(", ")}</Ltr>
+              {block.allocatedTo.length === 1 ? "One departure relies" : `${block.allocatedTo.length} departures rely`} on
+              this flight block and will be left without a live flight: <Ltr>{block.allocatedTo.join(", ")}</Ltr>
             </Notice>
           )}
-          <Field label="מי ביטל">
-            <Select dir="rtl" value={cancelledBy} onValueChange={(v) => setCancelledBy(v as CancelledBy)}>
+          <Field label="Cancelled By">
+            <Select value={cancelledBy} onValueChange={(v) => setCancelledBy(v as CancelledBy)}>
               <SelectTrigger>
-                <SelectValue placeholder="בחרו" />
+                <SelectValue placeholder="Select" />
               </SelectTrigger>
               <SelectContent>
                 {CANCELLED_BY.map((who) => (
@@ -573,9 +575,9 @@ function CancelBlockDialog({
             </Select>
           </Field>
           <Field
-            label={`דמי ביטול ששולמו${block.costCurrency ? ` (${block.costCurrency})` : ""}`}
+            label={`Cancellation Fee Paid${block.costCurrency ? ` (${block.costCurrency})` : ""}`}
             htmlFor="approvals-cancel-fee"
-            hint="להשאיר ריק אם לא שולמו."
+            hint="Leave empty if none was paid."
           >
             <Input
               id="approvals-cancel-fee"
@@ -585,21 +587,21 @@ function CancelBlockDialog({
               onChange={(e) => setFee(e.target.value)}
             />
           </Field>
-          <Field label="תאריך" htmlFor="approvals-cancel-date">
+          <Field label="Date" htmlFor="approvals-cancel-date">
             <Input id="approvals-cancel-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
-          <Field label="סיבה" htmlFor="approvals-cancel-note">
-            <Textarea id="approvals-cancel-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+          <Field label="Reason" htmlFor="approvals-cancel-note">
+            <Textarea id="approvals-cancel-note" dir="auto" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
           </Field>
           {problem && <p className="text-sm text-muted-foreground">{problem}</p>}
         </div>
 
         <RtlDialogFooter>
           <Button type="button" variant="destructive" onClick={() => void submit()} disabled={!!problem || busy !== null}>
-            {saving ? "מבטל..." : "ביטול הקבוצה"}
+            {saving ? "Cancelling..." : "Cancel Flight Block"}
           </Button>
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-            חזרה
+            Back
           </Button>
         </RtlDialogFooter>
       </RtlDialogContent>

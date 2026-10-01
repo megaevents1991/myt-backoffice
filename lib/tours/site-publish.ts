@@ -31,9 +31,9 @@ const asObject = (value: Json | null | undefined): JsonObject =>
 function failure(e: unknown, fallback: string): { success: false; error: string } {
   const message = e instanceof Error ? e.message : String(e);
   if (message.startsWith("Forbidden: the active company")) {
-    return { success: false, error: "פרסום לאתר זמין רק בחברה שמוכרת טיולים. החליפו חברה בסרגל העליון." };
+    return { success: false, error: "Publish Site is available only in a company that sells tours. Switch companies in the top bar." };
   }
-  if (message === "Unauthorized") return { success: false, error: "אין הרשאה לפעולה הזו" };
+  if (message === "Unauthorized") return { success: false, error: "You don't have permission to do this" };
   console.error(`${fallback}:`, message);
   return { success: false, error: fallback };
 }
@@ -74,7 +74,7 @@ export async function getSitePublishStatus(): Promise<ActionResult<SitePublishSt
     const features = await featuresOf(company.id);
     return { success: true, data: { configured: hookOf(features) !== null, last: toRecord(features[LAST_KEY]) } };
   } catch (e) {
-    return failure(e, "טעינת מצב הפרסום נכשלה");
+    return failure(e, "Failed to load the publish status");
   }
 }
 
@@ -89,7 +89,7 @@ export async function publishSite(): Promise<ActionResult<SitePublishRecord>> {
     if (!hook) {
       return {
         success: false,
-        error: "לא הוגדר חיבור לפרסום האתר (deploy hook). מנהל החברה מגדיר אותו במסך הגדרות החברה.",
+        error: "Site connection not set up (deploy hook). A company admin sets it up in Settings.",
       };
     }
 
@@ -100,11 +100,11 @@ export async function publishSite(): Promise<ActionResult<SitePublishRecord>> {
     try {
       const response = await fetch(hook, { method: "POST", cache: "no-store", signal: controller.signal });
       status = response.status;
-      if (!response.ok) problem = `השרת של האתר החזיר ${response.status}`;
+      if (!response.ok) problem = `The site server returned ${response.status}`;
     } catch (e) {
       // never log or return the error text itself - it can carry the hook URL
       problem =
-        e instanceof Error && e.name === "AbortError" ? "השרת של האתר לא ענה בזמן" : "לא הצלחנו להגיע לשרת של האתר";
+        e instanceof Error && e.name === "AbortError" ? "The site server did not respond in time" : "Could not reach the site server";
     } finally {
       clearTimeout(timer);
     }
@@ -131,9 +131,9 @@ export async function publishSite(): Promise<ActionResult<SitePublishRecord>> {
       metadata: { company: company.slug, status, ok: record.ok },
     });
 
-    if (problem) return { success: false, error: `האתר לא התחיל להיבנות: ${problem}` };
+    if (problem) return { success: false, error: `The site build did not start: ${problem}` };
     return { success: true, data: record };
   } catch (e) {
-    return failure(e, "פרסום האתר נכשל");
+    return failure(e, "Failed to publish the site");
   }
 }

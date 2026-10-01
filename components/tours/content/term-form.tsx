@@ -19,18 +19,18 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
     initial,
     (values) => saveTourTerm(initial.id, values),
   );
-  const problem = !form.name.trim() ? "חסר שם" : null;
+  const problem = !form.name.trim() ? "Name is required" : null;
 
   return (
-    <div dir="rtl" className="space-y-4 pb-24">
-      <BackLink href="/tours/terms">כל הקטגוריות</BackLink>
+    <div className="space-y-4 pb-24">
+      <BackLink href="/tours/terms">Back to Categories & Tags</BackLink>
       <PageHeader
         eyebrow={termKindLabel(saved.kind)}
         title={saved.form.name}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <Pill tone={saved.form.isActive ? "on" : "off"}>{saved.form.isActive ? "פעיל" : "לא פעיל"}</Pill>
-            <span>כתובת: {saved.slug}</span>
+            <Pill tone={saved.form.isActive ? "on" : "off"}>{saved.form.isActive ? "Active" : "Inactive"}</Pill>
+            <span>Slug: {saved.slug}</span>
           </span>
         }
         actions={<PublishSiteButton />}
@@ -38,10 +38,10 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
 
       <Section>
         <div className="grid gap-4 md:grid-cols-4">
-          <Field label="שם" className="md:col-span-2">
-            <Input value={form.name} onChange={(e) => set("name", e.target.value)} />
+          <Field label="Name" className="md:col-span-2">
+            <Input dir="auto" value={form.name} onChange={(e) => set("name", e.target.value)} />
           </Field>
-          <Field label="מיקום ברשימה" hint="מספר נמוך מופיע קודם">
+          <Field label="Position in list" hint="Lower numbers come first">
             <Input
               type="number"
               min={0}
@@ -53,7 +53,7 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
           <div className="flex items-center gap-3 self-end rounded-md border p-3">
             <Switch id="term-active" checked={form.isActive} onCheckedChange={(on) => set("isActive", on)} />
             <label htmlFor="term-active" className="text-sm font-medium">
-              פעיל באתר
+              Active on site
             </label>
           </div>
         </div>
@@ -61,26 +61,26 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
 
       <Section>
         <HtmlField
-          label="תיאור"
+          label="Description"
           value={form.descriptionHtml}
           onChange={(value) => set("descriptionHtml", value)}
           siteUrl={saved.siteUrl}
-          hint="מוצג בראש עמוד הקטגוריה באתר. הטקסט בלי העיצוב משמש גם כתיאור למנועי חיפוש."
+          hint="Shown at the top of the category page on the site. The text without formatting is also used as the search engine description."
         />
       </Section>
 
       <Section description={NO_UPLOAD_NOTE}>
         <ImageListEditor
-          label="תמונות ראש העמוד"
+          label="Hero images"
           value={form.heroImages}
           onChange={(value) => set("heroImages", value)}
           siteUrl={saved.siteUrl}
         />
       </Section>
 
-      <Section title={`עמודי טיול בקטגוריה (${saved.pages.length})`} description="השיוך נערך בלשונית קטגוריות של עמוד הטיול.">
+      <Section title={`Tour pages in this category (${saved.pages.length})`} description="Assignments are edited in the Categories & Tags tab of the tour page.">
         {saved.pages.length === 0 ? (
-          <p className="text-sm text-muted-foreground">אין עמודים שמשויכים לקטגוריה הזו.</p>
+          <p className="text-sm text-muted-foreground">No tour pages are assigned to this category.</p>
         ) : (
           <ul className="flex flex-wrap gap-2">
             {saved.pages.map((page) => (

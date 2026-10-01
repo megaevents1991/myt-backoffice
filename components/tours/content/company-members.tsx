@@ -21,7 +21,7 @@ import { COMPANY_ROLE_LABELS, type CompanyMemberRow } from "@/components/tours/c
 import { ROLE_LABELS, type Role } from "@/types/auth.types";
 
 /** The Hebrew name of a member's role; roles added after COMPANY_ROLE_LABELS (tours_agent) come from ROLE_LABELS. */
-const roleName = (role: string): string => COMPANY_ROLE_LABELS[role] ?? ROLE_LABELS[role as Role]?.he ?? role;
+const roleName = (role: string): string => COMPANY_ROLE_LABELS[role] ?? ROLE_LABELS[role as Role]?.en ?? role;
 
 export function CompanyMembers({ initial, companyName }: { initial: CompanyMemberRow[]; companyName: string }) {
   const confirm = useConfirm();
@@ -47,10 +47,10 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
 
   const remove = async (member: CompanyMemberRow) => {
     const ok = await confirm({
-      title: `להסיר את ${member.name} מ-${companyName}?`,
-      description: "המשתמש לא יראה יותר את החברה הזו. החשבון עצמו והשיוך שלו לחברות אחרות לא משתנים.",
-      confirmLabel: "הסרה מהחברה",
-      cancelLabel: "ביטול",
+      title: `Remove ${member.name} from ${companyName}?`,
+      description: "The user will no longer see this company. The account itself and its other company memberships do not change.",
+      confirmLabel: "Remove from Company",
+      cancelLabel: "Cancel",
       destructive: true,
     });
     if (!ok) return;
@@ -61,26 +61,26 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
         return;
       }
       setMembers(result.data);
-      toast.success(`${member.name} הוסר/ה מ-${companyName}`);
+      toast.success(`${member.name} was removed from ${companyName}`);
     });
   };
 
   return (
     <Section
-      title={`חברי הצוות בחברה (${members.length})`}
-      description="מי שמשויך לחברה רואה אותה ועובד בה. סוכן טיולים רואה רק את לוח היציאות, לצפייה בלבד. את החשבון עצמו (שם, סיסמה, תפקיד, השבתה) מנהלים במסך המשתמשים. מנהלי-על רואים כל חברה ואינם מופיעים כאן."
+      title={`Members (${members.length})`}
+      description="Members see this company and work in it. A tours agent sees only the departures board, read-only. The account itself (name, password, role, deactivation) is managed on the Users screen. Superadmins see every company and are not listed here."
     >
       {members.length === 0 ? (
-        <p className="text-sm text-muted-foreground">עוד לא שויכו משתמשים לחברה הזו.</p>
+        <p className="text-sm text-muted-foreground">No users are assigned to this company yet.</p>
       ) : (
         <div className="overflow-hidden rounded-md border">
           <Table look="list">
             <TableHeader>
               <TableRow>
-                <TableHead>שם</TableHead>
-                <TableHead>אימייל</TableHead>
-                <TableHead>תפקיד בחברה</TableHead>
-                <TableHead>מצב</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
@@ -94,14 +94,14 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
                   <TableCell>{roleName(member.role)}</TableCell>
                   <TableCell>
                     <Badge variant={member.isActive ? "outline" : "destructive"}>
-                      {member.isActive ? "פעיל" : "מושבת"}
+                      {member.isActive ? "Active" : "Deactivated"}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label={`הסרת ${member.name} מהחברה`}
+                      aria-label={`Remove ${member.name} from the company`}
                       disabled={isPending}
                       onClick={() => void remove(member)}
                     >
@@ -117,9 +117,9 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
 
       <div className="space-y-3 rounded-md border border-dashed p-3">
         <div>
-          <p className="text-sm font-medium">שיוך משתמש קיים</p>
+          <p className="text-sm font-medium">Add an existing user</p>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            מזינים את האימייל של משתמש צוות או של סוכן טיולים שכבר קיים במערכת. משתמש חדש יוצרים קודם במסך המשתמשים.
+            Enter the email of a staff user or tours agent who already exists in the system. Create new users on the Users screen first.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -140,7 +140,7 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
           />
           <Button type="button" size="sm" onClick={add} disabled={isPending || !email.trim()}>
             {isPending ? <Loader2 className="animate-spin" /> : <UserPlus />}
-            שיוך לחברה
+            Add to Company
           </Button>
         </div>
         <label className="flex items-start gap-2 text-sm">
@@ -150,11 +150,11 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
             onCheckedChange={(checked) => setKeepMegaEvents(checked === true)}
           />
           <span>
-            להשאיר לו גישה גם למגה איבנטס
+            Also keep access to Mega Events
             <span className="block text-muted-foreground">
-              משתמש שעוד לא שויך לאף חברה עובד היום במגה איבנטס. בלי הסימון הוא יעבוד רק ב-{companyName}. למשתמש
-              שכבר משויך למגה איבנטס השיוך הקיים נשאר בכל מקרה. לסוכן טיולים הסימון לא חל: הוא עובד רק בחברה
-              שאליה שויך.
+              A user not yet assigned to any company works in Mega Events today. Without this option they will work
+              only in {companyName}. A user already assigned to Mega Events keeps that access either way. This does not
+              apply to tours agents: they work only in the company they are assigned to.
             </span>
           </span>
         </label>

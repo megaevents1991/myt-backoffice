@@ -91,7 +91,7 @@ export function RowControls({
   count,
   onMove,
   onRemove,
-  removeLabel = "הסרה",
+  removeLabel = "Remove",
 }: {
   index: number;
   count: number;
@@ -108,8 +108,8 @@ export function RowControls({
         className="h-8 w-8"
         disabled={index === 0}
         onClick={() => onMove(-1)}
-        aria-label="העברה למעלה"
-        title="העברה למעלה"
+        aria-label="Move up"
+        title="Move up"
       >
         <ArrowUp />
       </Button>
@@ -120,8 +120,8 @@ export function RowControls({
         className="h-8 w-8"
         disabled={index === count - 1}
         onClick={() => onMove(1)}
-        aria-label="העברה למטה"
-        title="העברה למטה"
+        aria-label="Move down"
+        title="Move down"
       >
         <ArrowDown />
       </Button>
@@ -158,7 +158,7 @@ export function SiteImage({
     return (
       <div
         className={cn("flex items-center justify-center rounded bg-muted text-muted-foreground", className)}
-        title={src ? "התמונה לא נטענה מהאתר" : "אין תמונה"}
+        title={src ? "The image did not load from the site" : "No image"}
       >
         <ImageOff className="h-4 w-4" />
       </div>
@@ -216,7 +216,7 @@ export function ImageListEditor({
   onChange,
   siteUrl,
   hint,
-  addLabel = "הוספת תמונה",
+  addLabel = "Add Image",
 }: {
   label: string;
   value: string[];
@@ -231,7 +231,7 @@ export function ImageListEditor({
         {label} <span className="font-normal text-muted-foreground">({value.length})</span>
       </Label>
       {value.length === 0 && (
-        <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">אין תמונות</p>
+        <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">No images</p>
       )}
       <ul className="space-y-2">
         {value.map((path, index) => (
@@ -284,7 +284,7 @@ export function GalleryItemsEditor({
         {label} <span className="font-normal text-muted-foreground">({value.length})</span>
       </Label>
       {value.length === 0 && (
-        <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">אין תמונות</p>
+        <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">No images</p>
       )}
       <ul className="space-y-2">
         {value.map((item, index) => (
@@ -293,21 +293,23 @@ export function GalleryItemsEditor({
             <div className="grid min-w-0 flex-1 gap-2 md:grid-cols-2">
               <Input
                 dir="ltr"
-                aria-label="כתובת התמונה"
+                aria-label="Image URL"
                 placeholder="/media/2026/01/picture.webp"
                 value={item.src}
                 onChange={(event) => patch(index, { src: event.target.value })}
                 className="font-mono text-xs md:col-span-2"
               />
               <Input
-                aria-label="כותרת"
-                placeholder="כותרת"
+                dir="auto"
+                aria-label="Title"
+                placeholder="Title"
                 value={item.title}
                 onChange={(event) => patch(index, { title: event.target.value })}
               />
               <Input
-                aria-label="כיתוב"
-                placeholder="כיתוב"
+                dir="auto"
+                aria-label="Caption"
+                placeholder="Caption"
                 value={item.caption}
                 onChange={(event) => patch(index, { caption: event.target.value })}
               />
@@ -328,7 +330,7 @@ export function GalleryItemsEditor({
         onClick={() => onChange([...value, { src: "", title: "", caption: "" }])}
       >
         <Plus />
-        הוספת תמונה
+        Add Image
       </Button>
     </div>
   );
@@ -340,7 +342,7 @@ export function StringListEditor({
   value,
   onChange,
   placeholder,
-  addLabel = "הוספת שורה",
+  addLabel = "Add Item",
   hint,
 }: {
   label: string;
@@ -359,6 +361,7 @@ export function StringListEditor({
         {value.map((item, index) => (
           <li key={index} className="flex items-center gap-2">
             <Input
+              dir="auto"
               aria-label={`${label} ${index + 1}`}
               placeholder={placeholder}
               value={item}
@@ -384,4 +387,4 @@ export function StringListEditor({
 
 /** The note every image editor carries in this version. */
 export const NO_UPLOAD_NOTE =
-  "בגרסה הזו אין העלאת קבצים: מזינים את כתובת התמונה כפי שהיא באתר (‎/media/...‎), והתמונה נטענת מהאתר.";
+  "File upload is not available yet: enter the image path as it is on the site (/media/...) and the image loads from there.";

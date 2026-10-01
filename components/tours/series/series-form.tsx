@@ -63,10 +63,10 @@ const numOrNull = (v: string): number | null => (v.trim() === "" ? null : Number
 function WeekdaySelect({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
   return (
     <select aria-label={label} className={`${selectClass} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="">לא קבוע</option>
+      <option value="">Not fixed</option>
       {WEEKDAY_LABELS.map((day, i) => (
         <option key={day} value={i}>
-          יום {day}
+          {day}
         </option>
       ))}
     </select>
@@ -104,8 +104,8 @@ export function SeriesForm({
   const type = routeType(arrival ?? null, ret ?? null);
   const codeOk = /^[A-Z][A-Z0-9]{1,7}$/.test(draft.code.trim().toUpperCase());
   const problems: string[] = [];
-  if (!codeOk) problems.push("קוד סדרה: 2 עד 8 תווים באנגלית, מתחיל באות");
-  if (arrival === undefined || ret === undefined) problems.push("קוד שדה תעופה הוא שלוש אותיות באנגלית");
+  if (!codeOk) problems.push("Series code: 2 to 8 letters (A-Z) or digits, starting with a letter");
+  if (arrival === undefined || ret === undefined) problems.push("An airport code is three letters (A-Z)");
   const codeLocked = Boolean(editing && editing.departures > 0);
 
   const toggleTerm = (id: string) =>
@@ -135,32 +135,32 @@ export function SeriesForm({
       toast.error(result.error, { duration: 7000 });
       return;
     }
-    toast.success(editing ? "הסדרה נשמרה" : "הסדרה נוצרה");
+    toast.success(editing ? "Series saved" : "Series created");
     onSaved();
     onClose();
   };
 
   return (
     <Sheet open={Boolean(target)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="left" dir="rtl" className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
-        <SheetHeader className="space-y-1 border-b pb-4 pe-6 ps-12 pt-5 text-start sm:text-start">
+      <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <SheetHeader className="space-y-1 border-b pb-4 pe-12 ps-6 pt-5 text-start sm:text-start">
           <SheetTitle className="font-display text-xl">
             {editing ? (
               <>
-                סדרה <Ltr className="font-mono">{editing.code}</Ltr>
+                Series <Ltr className="font-mono">{editing.code}</Ltr>
               </>
             ) : (
-              "סדרה חדשה"
+              "New Series"
             )}
           </SheetTitle>
           <SheetDescription>
-            סדרה היא דפוס שחוזר: מאיפה נוחתים ומאיפה חוזרים, באיזה יום, לכמה לילות. יציאות חדשות מתחילות מהערכים האלה.
+            A series is a repeating pattern: where the trip lands and returns from, on which day, for how many nights. New departures start from these values.
           </SheetDescription>
         </SheetHeader>
 
         <fieldset disabled={saving} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Field label="קוד" hint={codeLocked ? "נעול: יש יציאות שהקוד שלהן נבנה ממנו" : "למשל BBC"}>
+            <Field label="Code" hint={codeLocked ? "Locked: departure codes are built from it" : "e.g. BBC"}>
               <Input
                 dir="ltr"
                 className="h-9 font-mono uppercase"
@@ -170,12 +170,12 @@ export function SeriesForm({
                 onChange={(e) => set("code", e.target.value.toUpperCase())}
               />
             </Field>
-            <Field label="שם פנימי" hint='למשל "מסורת"'>
-              <Input className="h-9" value={draft.label} onChange={(e) => set("label", e.target.value)} />
+            <Field label="Internal name" hint='e.g. "מסורת"'>
+              <Input dir="auto" className="h-9" value={draft.label} onChange={(e) => set("label", e.target.value)} />
             </Field>
-            <Field label="העמוד באתר" className="col-span-2" hint="העמוד שעליו נמכרות היציאות של הסדרה. יציאות קיימות נשארות בעמוד שלהן">
+            <Field label="Tour page" className="col-span-2" hint="The page the series' departures sell on. Existing departures stay on their own page">
               <select className={`${selectClass} w-full`} value={draft.package_id} onChange={(e) => set("package_id", e.target.value)}>
-                <option value="">בלי עמוד</option>
+                <option value="">No tour page</option>
                 {packages.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -186,9 +186,9 @@ export function SeriesForm({
           </div>
 
           <section>
-            <h3 className="mb-2 text-sm font-semibold">דפוס המסלול</h3>
+            <h3 className="mb-2 text-sm font-semibold">Route pattern</h3>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Field label="נוחתים ב">
+              <Field label="Lands in">
                 <Input
                   dir="ltr"
                   className="h-9 font-mono uppercase"
@@ -198,10 +198,10 @@ export function SeriesForm({
                   onChange={(e) => set("arrival_airport", e.target.value.toUpperCase())}
                 />
               </Field>
-              <Field label="יום נחיתה">
-                <WeekdaySelect label="יום נחיתה" value={draft.arrival_weekday} onChange={(v) => set("arrival_weekday", v)} />
+              <Field label="Arrival day">
+                <WeekdaySelect label="Arrival day" value={draft.arrival_weekday} onChange={(v) => set("arrival_weekday", v)} />
               </Field>
-              <Field label="חוזרים מ">
+              <Field label="Returns from">
                 <Input
                   dir="ltr"
                   className="h-9 font-mono uppercase"
@@ -211,23 +211,23 @@ export function SeriesForm({
                   onChange={(e) => set("return_airport", e.target.value.toUpperCase())}
                 />
               </Field>
-              <Field label="יום חזרה">
-                <WeekdaySelect label="יום חזרה" value={draft.return_weekday} onChange={(v) => set("return_weekday", v)} />
+              <Field label="Return day">
+                <WeekdaySelect label="Return day" value={draft.return_weekday} onChange={(v) => set("return_weekday", v)} />
               </Field>
             </div>
-            {type && <p className="mt-2 text-xs text-muted-foreground">סוג המסלול: {ROUTE_TYPE_LABELS[type]}.</p>}
+            {type && <p className="mt-2 text-xs text-muted-foreground">Route type: {ROUTE_TYPE_LABELS[type]}.</p>}
           </section>
 
           <section>
-            <h3 className="mb-2 text-sm font-semibold">ברירות מחדל ליציאה חדשה</h3>
+            <h3 className="mb-2 text-sm font-semibold">Defaults for a new departure</h3>
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-              <Field label="לילות">
+              <Field label="Nights">
                 <Input dir="ltr" inputMode="numeric" className="h-9" value={draft.default_nights} onChange={(e) => set("default_nights", e.target.value)} />
               </Field>
-              <Field label="קיבולת">
+              <Field label="Capacity">
                 <Input dir="ltr" inputMode="numeric" className="h-9" value={draft.default_capacity} onChange={(e) => set("default_capacity", e.target.value)} />
               </Field>
-              <Field label="מטבע">
+              <Field label="Currency">
                 <select dir="ltr" className={`${selectClass} w-full`} value={draft.default_currency} onChange={(e) => set("default_currency", e.target.value)}>
                   {CURRENCIES.map((c) => (
                     <option key={c} value={c}>
@@ -236,13 +236,13 @@ export function SeriesForm({
                   ))}
                 </select>
               </Field>
-              <Field label="ילד עד גיל">
+              <Field label="Child up to age">
                 <Input dir="ltr" inputMode="numeric" className="h-9" value={draft.child_max_age} onChange={(e) => set("child_max_age", e.target.value)} />
               </Field>
-              <Field label="ותיק מגיל">
+              <Field label="Senior from age">
                 <Input dir="ltr" inputMode="numeric" className="h-9" value={draft.senior_min_age} onChange={(e) => set("senior_min_age", e.target.value)} />
               </Field>
-              <Field label="הנחת ותיק">
+              <Field label="Senior discount">
                 <Input dir="ltr" inputMode="decimal" className="h-9" value={draft.senior_discount} onChange={(e) => set("senior_discount", e.target.value)} />
               </Field>
             </div>
@@ -254,7 +254,7 @@ export function SeriesForm({
               <section key={kind}>
                 <h3 className="mb-2 text-sm font-semibold">{SERIES_TERM_KIND_LABELS[kind]}</h3>
                 {options.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">אין ערכים מהסוג הזה. מוסיפים אותם במסך קטגוריות ותגיות.</p>
+                  <p className="text-xs text-muted-foreground">No values of this kind yet. Add them on the Categories &amp; Tags screen.</p>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     {options.map((t) => {
@@ -281,9 +281,9 @@ export function SeriesForm({
           })}
 
           <label className="flex items-center gap-2 text-sm">
-            <Toggle checked={draft.is_active} onChange={(v) => set("is_active", v)} label="סדרה פעילה" />
-            סדרה פעילה
-            <span className="text-xs text-muted-foreground">סדרה לא פעילה לא מוצעת ביצירת יציאה חדשה</span>
+            <Toggle checked={draft.is_active} onChange={(v) => set("is_active", v)} label="Active series" />
+            Active series
+            <span className="text-xs text-muted-foreground">An inactive series isn&apos;t offered when creating a new departure</span>
           </label>
 
           {problems.length > 0 && draft.code !== "" && <Notice tone="error">{problems.join(" · ")}</Notice>}
@@ -292,10 +292,10 @@ export function SeriesForm({
         <div className="flex items-center gap-2 border-t px-6 py-3">
           <Button onClick={submit} disabled={saving || problems.length > 0}>
             {saving && <Loader2 className="animate-spin" />}
-            {editing ? "שמירה" : "יצירת סדרה"}
+            {editing ? "Save" : "Create Series"}
           </Button>
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            ביטול
+            Cancel
           </Button>
         </div>
       </SheetContent>

@@ -120,16 +120,16 @@ class RowPatch {
 function failure(e: unknown, fallback: string): { success: false; error: string } {
   const message = e instanceof Error ? e.message : String(e);
   if (message.startsWith("Forbidden: the active company")) {
-    return { success: false, error: "המסך הזה שייך לחברה שמוכרת טיולים. החליפו חברה בסרגל העליון." };
+    return { success: false, error: "This screen belongs to a company that sells tours. Switch companies in the top bar." };
   }
-  if (message === "Unauthorized") return { success: false, error: "אין הרשאה לפעולה הזו" };
+  if (message === "Unauthorized") return { success: false, error: "You don't have permission to do this" };
   console.error(`${fallback}:`, e);
   return { success: false, error: fallback };
 }
 
 const invalid = (error: z.ZodError): { success: false; error: string } => ({
   success: false,
-  error: error.issues[0]?.message ?? "הנתונים שהוזנו לא תקינים",
+  error: error.issues[0]?.message ?? "The data entered is invalid",
 });
 
 const ENTITIES: Record<string, string> = {
@@ -165,31 +165,31 @@ function bulletsOf(html: string): string[] {
 
 // ---------------------------------------------------------------- validation
 const shortText = z.string().max(2000);
-const htmlText = z.string().max(900_000, "התוכן ארוך מדי");
+const htmlText = z.string().max(900_000, "The content is too long");
 const textList = z.array(z.string().max(4000)).max(300);
 const imagePath = z
   .string()
   .trim()
   .max(700)
-  .refine((v) => v === "" || v.startsWith("/") || /^https?:\/\//i.test(v), "כתובת תמונה מתחילה ב-/media/ או ב-https://");
+  .refine((v) => v === "" || v.startsWith("/") || /^https?:\/\//i.test(v), "An image URL starts with /media/ or https://");
 const cityCode = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(/^([A-Z]{3})?$/, "קוד עיר הוא שלוש אותיות באנגלית, למשל LON");
+  .regex(/^([A-Z]{3})?$/, "A city code is three English letters, e.g. LON");
 const wholeNumber = z.number().int().min(0).max(100000);
 
 const cleanList = (list: string[]): string[] => list.map((s) => s.trim()).filter(Boolean);
 
 const packageSchema = z.object({
-  name: z.string().trim().min(1, "חסר שם לעמוד").max(200),
+  name: z.string().trim().min(1, "Page name is required").max(200),
   subtitle: shortText,
   slug: z
     .string()
     .trim()
-    .min(1, "חסרה כתובת (slug) לעמוד")
+    .min(1, "Page slug is required")
     .max(200)
-    .regex(/^[^\s/?#%]+$/, "כתובת העמוד לא יכולה לכלול רווחים או את התווים / ? # %"),
+    .regex(/^[^\s/?#%]+$/, "The page slug cannot contain spaces or the characters / ? # %"),
   kind: z.enum(PACKAGE_KINDS),
   brand: z.enum(PACKAGE_BRANDS),
   days: z.number().int().min(0).max(365).nullable(),
@@ -215,7 +215,7 @@ const packageSchema = z.object({
 
 const daySchema = z
   .object({
-    n: z.number().int().min(1, "מספר יום מתחיל מ-1").max(99),
+    n: z.number().int().min(1, "Day numbers start at 1").max(99),
     title: z.string().max(500),
     subtitle: z.string().max(1000),
     html: htmlText,
@@ -236,14 +236,14 @@ const variantSchema = z.object({
     .string()
     .trim()
     .toLowerCase()
-    .regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "מזהה הגרסה באנגלית: אותיות קטנות, ספרות ומקף (למשל reverse)"),
-  label: z.string().trim().min(1, "חסר שם לגרסה").max(200),
+    .regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "The variant ID is in English: lowercase letters, digits and hyphens (e.g. reverse)"),
+  label: z.string().trim().min(1, "Variant name is required").max(200),
   arrivalCity: cityCode,
   returnCity: cityCode,
 });
 
 const termSchema = z.object({
-  name: z.string().trim().min(1, "חסר שם").max(300),
+  name: z.string().trim().min(1, "Name is required").max(300),
   descriptionHtml: htmlText,
   heroImages: z.array(imagePath).max(100),
   position: wholeNumber,
@@ -251,7 +251,7 @@ const termSchema = z.object({
 });
 
 const instructorSchema = z.object({
-  name: z.string().trim().min(1, "חסר שם").max(300),
+  name: z.string().trim().min(1, "Name is required").max(300),
   image: imagePath,
   regions: shortText,
   excerpt: z.string().max(20000),
@@ -267,12 +267,12 @@ const hotelSchema = z.object({
   code: z
     .string()
     .trim()
-    .min(1, "חסר קוד למלון")
+    .min(1, "Hotel code is required")
     .max(200)
-    .regex(/^\S+$/, "קוד המלון לא יכול לכלול רווחים"),
-  name: z.string().trim().min(1, "חסר שם").max(300),
+    .regex(/^\S+$/, "The hotel code cannot contain spaces"),
+  name: z.string().trim().min(1, "Name is required").max(300),
   city: shortText,
-  stars: z.number().int().min(1, "דירוג כוכבים בין 1 ל-5").max(5, "דירוג כוכבים בין 1 ל-5").nullable(),
+  stars: z.number().int().min(1, "Star rating is between 1 and 5").max(5, "Star rating is between 1 and 5").nullable(),
   image: imagePath,
   gallery: z.array(imagePath).max(200),
   excerpt: z.string().max(20000),
@@ -281,7 +281,7 @@ const hotelSchema = z.object({
 });
 
 const cmsPageSchema = z.object({
-  title: z.string().trim().min(1, "חסרה כותרת").max(500),
+  title: z.string().trim().min(1, "Title is required").max(500),
   contentHtml: htmlText,
   seoTitle: shortText,
   seoDescription: shortText,
@@ -460,7 +460,7 @@ export async function listTourPackages(): Promise<ActionResult<PackageList>> {
     }));
     return { success: true, data: { rows, siteUrl: company.siteUrl } };
   } catch (e) {
-    return failure(e, "טעינת עמודי הטיול נכשלה");
+    return failure(e, "Failed to load tour pages");
   }
 }
 
@@ -468,10 +468,10 @@ export async function getTourPackage(id: string): Promise<ActionResult<PackageEd
   try {
     const { company } = await requireCompany("tours");
     const data = await loadPackageEditor(company, id);
-    if (!data) return { success: false, error: "העמוד לא נמצא" };
+    if (!data) return { success: false, error: "Page not found" };
     return { success: true, data };
   } catch (e) {
-    return failure(e, "טעינת העמוד נכשלה");
+    return failure(e, "Failed to load the page");
   }
 }
 
@@ -540,7 +540,7 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
       .is("is_deleted", null)
       .maybeSingle();
     if (error) throw error;
-    if (!before) return { success: false, error: "העמוד לא נמצא" };
+    if (!before) return { success: false, error: "Page not found" };
     const data = asObject(before.data);
     const patch = new RowPatch();
 
@@ -552,7 +552,7 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
         .eq("company_id", company.id)
         .eq("package_id", id);
       if (depError) throw depError;
-      if ((count ?? 0) > 0) return { success: false, error: "לעמוד כבר יש יציאות, ולכן אי אפשר לשנות את הכתובת שלו" };
+      if ((count ?? 0) > 0) return { success: false, error: "The page already has departures, so its slug cannot change" };
       const { data: clash, error: clashError } = await db
         .from("packages")
         .select("id")
@@ -561,7 +561,7 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
         .neq("id", id)
         .limit(1);
       if (clashError) throw clashError;
-      if (clash && clash.length > 0) return { success: false, error: "כבר קיים עמוד עם הכתובת הזו" };
+      if (clash && clash.length > 0) return { success: false, error: "A page with this slug already exists" };
       patch.set("slug", before.slug, input.slug, "slug");
       const oldPath = `/package/${before.slug}/`;
       const newPath = `/package/${input.slug}/`;
@@ -707,10 +707,10 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
       revalidatePath(`/tours/packages/${id}`);
     }
     const fresh = await loadPackageEditor(company, id);
-    if (!fresh) return { success: false, error: "העמוד לא נמצא" };
+    if (!fresh) return { success: false, error: "Page not found" };
     return { success: true, data: fresh };
   } catch (e) {
-    return failure(e, "שמירת העמוד נכשלה");
+    return failure(e, "Failed to save the page");
   }
 }
 
@@ -727,7 +727,7 @@ export async function deleteTourPackage(id: string): Promise<ActionResult> {
       .is("is_deleted", null)
       .maybeSingle();
     if (error) throw error;
-    if (!pkg) return { success: false, error: "העמוד לא נמצא" };
+    if (!pkg) return { success: false, error: "Page not found" };
 
     const [series, departures] = await Promise.all([
       db.from("series").select("id", { count: "exact", head: true }).eq("company_id", company.id).eq("package_id", id),
@@ -741,10 +741,10 @@ export async function deleteTourPackage(id: string): Promise<ActionResult> {
     if (series.error) throw series.error;
     if (departures.error) throw departures.error;
     if ((departures.count ?? 0) > 0) {
-      return { success: false, error: `על העמוד יש יציאות (${departures.count}). אפשר לכבות אותו (לא פעיל), לא למחוק` };
+      return { success: false, error: `The page has departures (${departures.count}). You can deactivate it, but not delete it` };
     }
     if ((series.count ?? 0) > 0) {
-      return { success: false, error: `יש סדרות שמוכרות על העמוד הזה (${series.count}). העבירו אותן לעמוד אחר לפני המחיקה` };
+      return { success: false, error: `Series sell on this page (${series.count}). Move them to another page before deleting it` };
     }
 
     const { error: updateError } = await db
@@ -762,7 +762,7 @@ export async function deleteTourPackage(id: string): Promise<ActionResult> {
     revalidatePath("/tours/packages");
     return { success: true, data: undefined };
   } catch (e) {
-    return failure(e, "מחיקת העמוד נכשלה");
+    return failure(e, "Failed to delete the page");
   }
 }
 
@@ -802,7 +802,7 @@ export async function saveTourItinerary(
     const input = parsed.data;
     const db = toursDb();
     const pkg = await packageOf(company, packageId);
-    if (!pkg) return { success: false, error: "העמוד לא נמצא" };
+    if (!pkg) return { success: false, error: "Page not found" };
 
     const days = cleanDays(input.days);
     const arrival = input.arrivalCity || null;
@@ -814,7 +814,7 @@ export async function saveTourItinerary(
     if (error) throw error;
 
     if (!before) {
-      if (itineraryId) return { success: false, error: "גרסת המסלול לא נמצאה" };
+      if (itineraryId) return { success: false, error: "Itinerary variant not found" };
       const { data: created, error: insertError } = await db
         .from("package_itineraries")
         .insert({
@@ -860,10 +860,10 @@ export async function saveTourItinerary(
     }
     revalidatePath(`/tours/packages/${packageId}`);
     const fresh = await loadPackageEditor(company, packageId);
-    if (!fresh) return { success: false, error: "העמוד לא נמצא" };
+    if (!fresh) return { success: false, error: "Page not found" };
     return { success: true, data: fresh };
   } catch (e) {
-    return failure(e, "שמירת המסלול נכשלה");
+    return failure(e, "Failed to save the itinerary");
   }
 }
 
@@ -877,10 +877,10 @@ export async function createTourItineraryVariant(
     const parsed = variantSchema.safeParse(form);
     if (!parsed.success) return invalid(parsed.error);
     const input = parsed.data;
-    if (input.key === "main") return { success: false, error: "המזהה main שמור למסלול הראשי" };
+    if (input.key === "main") return { success: false, error: "The ID main is reserved for the main itinerary" };
     const db = toursDb();
     const pkg = await packageOf(company, packageId);
-    if (!pkg) return { success: false, error: "העמוד לא נמצא" };
+    if (!pkg) return { success: false, error: "Page not found" };
 
     const { data: existing, error } = await db
       .from("package_itineraries")
@@ -889,9 +889,9 @@ export async function createTourItineraryVariant(
       .eq("package_id", packageId);
     if (error) throw error;
     const source = (existing ?? []).find((row) => row.id === input.sourceId);
-    if (!source) return { success: false, error: "הגרסה שממנה מעתיקים לא נמצאה" };
+    if (!source) return { success: false, error: "The variant to copy from was not found" };
     if ((existing ?? []).some((row) => row.key === input.key)) {
-      return { success: false, error: "כבר קיימת בעמוד גרסה עם המזהה הזה" };
+      return { success: false, error: "This page already has a variant with this ID" };
     }
 
     const { data: created, error: insertError } = await db
@@ -917,10 +917,10 @@ export async function createTourItineraryVariant(
     });
     revalidatePath(`/tours/packages/${packageId}`);
     const fresh = await loadPackageEditor(company, packageId);
-    if (!fresh) return { success: false, error: "העמוד לא נמצא" };
+    if (!fresh) return { success: false, error: "Page not found" };
     return { success: true, data: fresh };
   } catch (e) {
-    return failure(e, "יצירת הגרסה נכשלה");
+    return failure(e, "Failed to create the variant");
   }
 }
 
@@ -940,8 +940,8 @@ export async function deleteTourItineraryVariant(
       .eq("id", itineraryId)
       .maybeSingle();
     if (error) throw error;
-    if (!row) return { success: false, error: "גרסת המסלול לא נמצאה" };
-    if (row.key === "main") return { success: false, error: "את המסלול הראשי אי אפשר למחוק" };
+    if (!row) return { success: false, error: "Itinerary variant not found" };
+    if (row.key === "main") return { success: false, error: "The main itinerary cannot be deleted" };
 
     const { count, error: countError } = await db
       .from("departures")
@@ -950,7 +950,7 @@ export async function deleteTourItineraryVariant(
       .eq("itinerary_id", itineraryId);
     if (countError) throw countError;
     if ((count ?? 0) > 0) {
-      return { success: false, error: `יש יציאות שמצביעות על הגרסה הזו (${count}). העבירו אותן לגרסה אחרת לפני המחיקה` };
+      return { success: false, error: `Departures use this variant (${count}). Move them to another variant before deleting it` };
     }
 
     const { error: deleteError } = await db
@@ -967,10 +967,10 @@ export async function deleteTourItineraryVariant(
     });
     revalidatePath(`/tours/packages/${packageId}`);
     const fresh = await loadPackageEditor(company, packageId);
-    if (!fresh) return { success: false, error: "העמוד לא נמצא" };
+    if (!fresh) return { success: false, error: "Page not found" };
     return { success: true, data: fresh };
   } catch (e) {
-    return failure(e, "מחיקת הגרסה נכשלה");
+    return failure(e, "Failed to delete the variant");
   }
 }
 
@@ -1012,7 +1012,7 @@ export async function listTourTerms(): Promise<ActionResult<TermListRow[]>> {
       })),
     };
   } catch (e) {
-    return failure(e, "טעינת הקטגוריות נכשלה");
+    return failure(e, "Failed to load categories and tags");
   }
 }
 
@@ -1055,10 +1055,10 @@ export async function getTourTerm(id: string): Promise<ActionResult<TermEditorDa
   try {
     const { company } = await requireCompany("tours");
     const loaded = await loadTerm(company, id);
-    if (!loaded) return { success: false, error: "הקטגוריה לא נמצאה" };
+    if (!loaded) return { success: false, error: "Category or tag not found" };
     return { success: true, data: loaded.editor };
   } catch (e) {
-    return failure(e, "טעינת הקטגוריה נכשלה");
+    return failure(e, "Failed to load the category or tag");
   }
 }
 
@@ -1069,7 +1069,7 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
     if (!parsed.success) return invalid(parsed.error);
     const input = parsed.data;
     const loaded = await loadTerm(company, id);
-    if (!loaded) return { success: false, error: "הקטגוריה לא נמצאה" };
+    if (!loaded) return { success: false, error: "Category or tag not found" };
     const before = loaded.row;
 
     const patch = new RowPatch();
@@ -1100,10 +1100,10 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
       revalidatePath(`/tours/terms/${id}`);
     }
     const fresh = await loadTerm(company, id);
-    if (!fresh) return { success: false, error: "הקטגוריה לא נמצאה" };
+    if (!fresh) return { success: false, error: "Category or tag not found" };
     return { success: true, data: fresh.editor };
   } catch (e) {
-    return failure(e, "שמירת הקטגוריה נכשלה");
+    return failure(e, "Failed to save the category or tag");
   }
 }
 
@@ -1164,7 +1164,7 @@ export async function listTourInstructors(): Promise<ActionResult<InstructorList
       },
     };
   } catch (e) {
-    return failure(e, "טעינת המלווים נכשלה");
+    return failure(e, "Failed to load group leaders");
   }
 }
 
@@ -1184,10 +1184,10 @@ export async function getTourInstructor(id: string): Promise<ActionResult<Instru
   try {
     const { company } = await requireCompany("tours");
     const row = await instructorRow(company, id);
-    if (!row) return { success: false, error: "המלווה לא נמצא" };
+    if (!row) return { success: false, error: "Group leader not found" };
     return { success: true, data: instructorEditor(company, row) };
   } catch (e) {
-    return failure(e, "טעינת המלווה נכשלה");
+    return failure(e, "Failed to load the group leader");
   }
 }
 
@@ -1201,7 +1201,7 @@ export async function saveTourInstructor(
     if (!parsed.success) return invalid(parsed.error);
     const input = parsed.data;
     const before = await instructorRow(company, id);
-    if (!before) return { success: false, error: "המלווה לא נמצא" };
+    if (!before) return { success: false, error: "Group leader not found" };
 
     const gallery = input.gallery.filter((g) => g.src) as unknown as Json;
     const patch = new RowPatch();
@@ -1232,10 +1232,10 @@ export async function saveTourInstructor(
       revalidatePath(`/tours/instructors/${id}`);
     }
     const fresh = await instructorRow(company, id);
-    if (!fresh) return { success: false, error: "המלווה לא נמצא" };
+    if (!fresh) return { success: false, error: "Group leader not found" };
     return { success: true, data: instructorEditor(company, fresh) };
   } catch (e) {
-    return failure(e, "שמירת המלווה נכשלה");
+    return failure(e, "Failed to save the group leader");
   }
 }
 
@@ -1287,7 +1287,7 @@ export async function listTourHotels(): Promise<ActionResult<HotelList>> {
     if (error) throw error;
     return { success: true, data: { rows: data ?? [], siteUrl: company.siteUrl } };
   } catch (e) {
-    return failure(e, "טעינת המלונות נכשלה");
+    return failure(e, "Failed to load hotels");
   }
 }
 
@@ -1295,10 +1295,10 @@ export async function getTourHotel(id: string): Promise<ActionResult<HotelEditor
   try {
     const { company } = await requireCompany("tours");
     const row = await hotelRow(company, id);
-    if (!row) return { success: false, error: "המלון לא נמצא" };
+    if (!row) return { success: false, error: "Hotel not found" };
     return { success: true, data: await hotelEditor(company, row) };
   } catch (e) {
-    return failure(e, "טעינת המלון נכשלה");
+    return failure(e, "Failed to load the hotel");
   }
 }
 
@@ -1310,7 +1310,7 @@ export async function saveTourHotel(id: string, form: HotelForm): Promise<Action
     const input = parsed.data;
     const db = toursDb();
     const before = await hotelRow(company, id);
-    if (!before) return { success: false, error: "המלון לא נמצא" };
+    if (!before) return { success: false, error: "Hotel not found" };
 
     // The code is what a departure's hotel option points at - it cannot move under one.
     if (input.code !== before.code) {
@@ -1326,9 +1326,9 @@ export async function saveTourHotel(id: string, form: HotelForm): Promise<Action
       if (used.error) throw used.error;
       if (clash.error) throw clash.error;
       if ((used.count ?? 0) > 0) {
-        return { success: false, error: `יש אפשרויות ביציאות שמצביעות על הקוד הזה (${used.count}), ולכן אי אפשר לשנות אותו` };
+        return { success: false, error: `Departure options point to this code (${used.count}), so it cannot change` };
       }
-      if (clash.data && clash.data.length > 0) return { success: false, error: "כבר קיים מלון עם הקוד הזה" };
+      if (clash.data && clash.data.length > 0) return { success: false, error: "A hotel with this code already exists" };
     }
 
     const gallery = cleanList(input.gallery);
@@ -1362,10 +1362,10 @@ export async function saveTourHotel(id: string, form: HotelForm): Promise<Action
       revalidatePath(`/tours/hotels/${id}`);
     }
     const fresh = await hotelRow(company, id);
-    if (!fresh) return { success: false, error: "המלון לא נמצא" };
+    if (!fresh) return { success: false, error: "Hotel not found" };
     return { success: true, data: await hotelEditor(company, fresh) };
   } catch (e) {
-    return failure(e, "שמירת המלון נכשלה");
+    return failure(e, "Failed to save the hotel");
   }
 }
 
@@ -1443,7 +1443,7 @@ export async function listTourCmsPages(): Promise<ActionResult<CmsPageListRow[]>
       })),
     };
   } catch (e) {
-    return failure(e, "טעינת עמודי התוכן נכשלה");
+    return failure(e, "Failed to load content pages");
   }
 }
 
@@ -1451,10 +1451,10 @@ export async function getTourCmsPage(id: string): Promise<ActionResult<CmsPageEd
   try {
     const { company } = await requireCompany("tours");
     const row = await cmsPageRow(company, id);
-    if (!row) return { success: false, error: "העמוד לא נמצא" };
+    if (!row) return { success: false, error: "Page not found" };
     return { success: true, data: cmsPageEditor(company, row) };
   } catch (e) {
-    return failure(e, "טעינת העמוד נכשלה");
+    return failure(e, "Failed to load the page");
   }
 }
 
@@ -1465,7 +1465,7 @@ export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<Ac
     if (!parsed.success) return invalid(parsed.error);
     const input = parsed.data;
     const before = await cmsPageRow(company, id);
-    if (!before) return { success: false, error: "העמוד לא נמצא" };
+    if (!before) return { success: false, error: "Page not found" };
     const shown = cmsPageEditor(company, before).form;
 
     const patch = new RowPatch();
@@ -1498,9 +1498,9 @@ export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<Ac
       revalidatePath(`/tours/pages/${id}`);
     }
     const fresh = await cmsPageRow(company, id);
-    if (!fresh) return { success: false, error: "העמוד לא נמצא" };
+    if (!fresh) return { success: false, error: "Page not found" };
     return { success: true, data: cmsPageEditor(company, fresh) };
   } catch (e) {
-    return failure(e, "שמירת העמוד נכשלה");
+    return failure(e, "Failed to save the page");
   }
 }

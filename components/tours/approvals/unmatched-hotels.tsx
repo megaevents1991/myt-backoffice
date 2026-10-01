@@ -26,19 +26,19 @@ export function UnmatchedHotels({ data, run, busy }: QueueControls & { data: App
   return (
     <QueueSection
       id="hotels"
-      title="מלונות של חבילות נופש שלא נמצאו בקטלוג"
+      title="Hotels not in catalog"
       count={rows.length}
-      description="שורות מלון ביציאות של חבילות נופש שהקוד שלהן בגיליון לא תואם אף מלון בקטלוג המלונות, ולכן האתר לא יודע איזה מלון להציג. בוחרים את המלון הנכון מהקטלוג ושומרים; מלון שחסר בקטלוג מוסיפים קודם במסך המלונות."
+      description="Hotel rows on vacation-package departures whose sheet code matches no hotel in the hotel catalog, so the site does not know which hotel to show. Pick the right hotel from the catalog and save; a hotel missing from the catalog is added first on the Hotels screen."
     >
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="h-9 px-3 text-xs">יציאה</TableHead>
-            <TableHead className="h-9 px-3 text-xs">הקוד בגיליון</TableHead>
-            <TableHead className="h-9 px-3 text-xs">מחירי החדרים</TableHead>
-            <TableHead className="h-9 px-3 text-xs">המלון בקטלוג</TableHead>
+            <TableHead className="h-9 px-3 text-xs">Departure</TableHead>
+            <TableHead className="h-9 px-3 text-xs">Sheet Code</TableHead>
+            <TableHead className="h-9 px-3 text-xs">Room Prices</TableHead>
+            <TableHead className="h-9 px-3 text-xs">Catalog Hotel</TableHead>
             <TableHead className="h-9 px-3 text-xs">
-              <span className="sr-only">פעולות</span>
+              <span className="sr-only">Actions</span>
             </TableHead>
           </TableRow>
         </TableHeader>
@@ -50,9 +50,9 @@ export function UnmatchedHotels({ data, run, busy }: QueueControls & { data: App
       </Table>
       {data.hotelCatalog.length === 0 && (
         <p className="border-t px-4 py-2.5 text-xs text-muted-foreground">
-          קטלוג המלונות של החברה ריק.{" "}
+          The hotel catalog is empty.{" "}
           <Link href="/tours/hotels" className={linkClass}>
-            למסך המלונות
+            Go to Hotels
           </Link>
         </p>
       )}
@@ -72,49 +72,49 @@ function HotelRow({
   const key = `hotel:${row.optionId}`;
   const sheetCode = row.refCode ?? row.label;
   const prices = [
-    row.roomPrices.double !== null ? `זוגי ${formatNumber(row.roomPrices.double)}` : null,
-    row.roomPrices.triple !== null ? `טריפל ${formatNumber(row.roomPrices.triple)}` : null,
-    row.roomPrices.quad !== null ? `רביעייה ${formatNumber(row.roomPrices.quad)}` : null,
+    row.roomPrices.double !== null ? `Double ${formatNumber(row.roomPrices.double)}` : null,
+    row.roomPrices.triple !== null ? `Triple ${formatNumber(row.roomPrices.triple)}` : null,
+    row.roomPrices.quad !== null ? `Quad ${formatNumber(row.roomPrices.quad)}` : null,
   ].filter((p): p is string => p !== null);
   const chosen = catalog.find((h) => h.code === code);
 
   return (
     <TableRow data-option-id={row.optionId}>
       <TableCell className={cell}>
-        <Link href={departureHref(row.departureCode, "prices")} className={linkClass} title="פתיחת כרטיס היציאה">
+        <Link href={departureHref(row.departureCode, "prices")} className={linkClass} title="Open the departure card">
           <Ltr className="font-mono">{row.departureCode}</Ltr>
         </Link>
-        {row.packageName && <span className="mr-2 text-sm">{row.packageName}</span>}
+        {row.packageName && <span className="ms-2 text-sm">{row.packageName}</span>}
         <div className="mt-0.5 text-xs text-muted-foreground">
           <Ltr>
             {formatDateShort(row.startDate)} - {formatDateShort(row.endDate)}
           </Ltr>
           {" · "}
-          {row.isPast ? "היציאה כבר חזרה" : row.isPublished ? "מפורסמת" : "לא מפורסמת"}
+          {row.isPast ? "Already returned" : row.isPublished ? "Published" : "Not published"}
         </div>
       </TableCell>
       <TableCell className={cell}>
-        {sheetCode ? <Ltr className="font-mono text-[0.9em]">{sheetCode}</Ltr> : <span className="text-muted-foreground">אין קוד</span>}
+        {sheetCode ? <Ltr className="font-mono text-[0.9em]">{sheetCode}</Ltr> : <span className="text-muted-foreground">No code</span>}
         <div className="mt-0.5 text-xs text-muted-foreground">
-          מלון {row.position} ביציאה
+          Hotel {row.position} of the departure
           {row.board && <> · {row.board}</>}
-          {row.nights !== null && <> · {row.nights} לילות</>}
+          {row.nights !== null && <> · {row.nights} nights</>}
         </div>
       </TableCell>
       <TableCell className={`${cell} whitespace-nowrap`}>
         {prices.length > 0 ? (
           <>
             {prices.join(" · ")}
-            {row.currency && <Ltr className="mr-1.5 text-xs text-muted-foreground">{row.currency}</Ltr>}
+            {row.currency && <Ltr className="ms-1.5 text-xs text-muted-foreground">{row.currency}</Ltr>}
           </>
         ) : (
-          <span className="text-muted-foreground">בלי מחירים</span>
+          <span className="text-muted-foreground">No prices</span>
         )}
       </TableCell>
       <TableCell className={`${cell} w-[22rem] max-w-[22rem]`}>
-        <Select dir="rtl" value={code} onValueChange={setCode} disabled={busy !== null || catalog.length === 0}>
-          <SelectTrigger className="h-9" aria-label={`המלון בקטלוג של ${sheetCode ?? row.departureCode}`}>
-            <SelectValue placeholder="בחרו מלון מהקטלוג" />
+        <Select value={code} onValueChange={setCode} disabled={busy !== null || catalog.length === 0}>
+          <SelectTrigger className="h-9" aria-label={`Catalog hotel for ${sheetCode ?? row.departureCode}`}>
+            <SelectValue placeholder="Pick a catalog hotel" />
           </SelectTrigger>
           <SelectContent>
             {catalog.map((hotel) => (
@@ -127,7 +127,7 @@ function HotelRow({
         </Select>
         {chosen && (
           <div className="mt-1 truncate text-xs text-muted-foreground">
-            {row.suggestedCode === chosen.code && "הוצע לפי דמיון הקוד, בדקו שזה המלון · "}
+            {row.suggestedCode === chosen.code && "Suggested from a similar code, check it is the right hotel · "}
             <Ltr className="font-mono">{chosen.code}</Ltr>
           </div>
         )}
@@ -142,13 +142,13 @@ function HotelRow({
               void run(
                 key,
                 () => setHotelOptionCatalogCode(row.optionId, code),
-                `המלון ביציאה ${row.departureCode} עודכן`,
+                `Hotel updated on ${row.departureCode}`,
               )
             }
           >
-            שמירה
+            Save
           </ActionButton>
-          <OpenLink href={departureHref(row.departureCode, "prices")}>כרטיס היציאה</OpenLink>
+          <OpenLink href={departureHref(row.departureCode, "prices")}>Departure Card</OpenLink>
         </div>
       </TableCell>
     </TableRow>

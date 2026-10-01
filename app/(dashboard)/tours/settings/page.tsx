@@ -9,10 +9,10 @@ export const dynamic = "force-dynamic";
 export default async function TourCompanySettingsPage() {
   const result = await getCompanySettings();
   return (
-    <div dir="rtl">
+    <div>
       <PageHeader
-        title="הגדרות חברה"
-        description="הפרטים של החברה הפעילה: שם, אתר, פרטי קשר, מיתוג, אימייל, מדידה והחיבור שמפרסם את האתר. פתוח למנהל החברה בלבד."
+        title="Settings"
+        description="Details of the active company: name, site, contact details, brand, email, analytics, the connection that publishes the site, and members. Company admins only."
         actions={result.success ? <PublishSiteButton /> : undefined}
       />
       {result.success ? (

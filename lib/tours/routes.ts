@@ -13,9 +13,9 @@ import { airportsMatch } from "@/lib/airport-cities";
 export type RouteType = "round_trip" | "airport_change" | "open_jaw";
 
 export const ROUTE_TYPE_LABELS: Record<RouteType, string> = {
-  round_trip: "הלוך-חזור",
-  airport_change: "אותה עיר, שדה אחר",
-  open_jaw: "חוזרים מעיר אחרת",
+  round_trip: "Round trip",
+  airport_change: "Same city, other airport",
+  open_jaw: "Returns from another city",
 };
 
 /** True only when both codes are present and name the same city. */
@@ -68,10 +68,10 @@ export function checkBlockFitsDeparture(
   const arrival = departure.arrival_airport;
   const ret = departure.return_airport ?? departure.arrival_airport;
   if (legs !== "inbound" && arrival && !sameCity(block.outbound_arrival_airport, arrival)) {
-    return { ok: false, reason: `הטיסה נוחתת ב-${block.outbound_arrival_airport}, היציאה נוחתת ב-${arrival}` };
+    return { ok: false, reason: `The flight lands in ${block.outbound_arrival_airport}, the departure lands in ${arrival}` };
   }
   if (legs !== "outbound" && ret && !sameCity(block.inbound_departure_airport, ret)) {
-    return { ok: false, reason: `הטיסה חוזרת מ-${block.inbound_departure_airport}, היציאה חוזרת מ-${ret}` };
+    return { ok: false, reason: `The flight returns from ${block.inbound_departure_airport}, the departure returns from ${ret}` };
   }
   return { ok: true };
 }

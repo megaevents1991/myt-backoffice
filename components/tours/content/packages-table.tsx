@@ -40,7 +40,7 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
     }),
     [rows],
   );
-  const labels: Record<View, string> = { content: "עם תוכן", stubs: "ללא תוכן", all: "הכל" };
+  const labels: Record<View, string> = { content: "With content", stubs: "No content", all: "All" };
 
   const shown = useMemo(
     () =>
@@ -53,7 +53,7 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="inline-flex rounded-md border bg-background p-0.5 text-sm" role="tablist" aria-label="סינון לפי תוכן">
+        <div className="inline-flex rounded-md border bg-background p-0.5 text-sm" role="tablist" aria-label="Filter by content">
           {VIEWS.map((v) => (
             <button
               key={v}
@@ -70,20 +70,20 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
             </button>
           ))}
         </div>
-        <SearchInput value={query} onValueChange={setQuery} placeholder="חיפוש לפי שם, כתובת או קוד סדרה" />
+        <SearchInput value={query} onValueChange={setQuery} placeholder="Search by name, slug or series code" />
       </div>
 
       <div className="overflow-hidden rounded-lg border bg-card">
         <Table look="list">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[72px]">תמונה</TableHead>
-              <TableHead>שם העמוד</TableHead>
-              <TableHead>סוג</TableHead>
-              <TableHead>סדרות</TableHead>
-              <TableHead>יציאות עתידיות באתר</TableHead>
-              <TableHead>תוכן</TableHead>
-              <TableHead>מצב</TableHead>
+              <TableHead className="w-[72px]">Image</TableHead>
+              <TableHead>Page Name</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Series</TableHead>
+              <TableHead>Upcoming Departures on Site</TableHead>
+              <TableHead>Content</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead className="w-[60px]" />
             </TableRow>
           </TableHeader>
@@ -115,7 +115,7 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
                       ))}
                     </div>
                   ) : (
-                    <span className="text-muted-foreground">אין</span>
+                    <span className="text-muted-foreground">None</span>
                   )}
                 </TableCell>
                 <TableCell>
@@ -127,17 +127,17 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
                 </TableCell>
                 <TableCell>
                   {row.hasContent ? (
-                    <Badge variant="outline">יש תוכן</Badge>
+                    <Badge variant="outline">Has content</Badge>
                   ) : (
-                    <Badge variant="secondary">ללא תוכן</Badge>
+                    <Badge variant="secondary">No content</Badge>
                   )}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={row.isActive ? "outline" : "destructive"}>{row.isActive ? "פעיל" : "לא פעיל"}</Badge>
+                  <Badge variant={row.isActive ? "outline" : "destructive"}>{row.isActive ? "Active" : "Inactive"}</Badge>
                 </TableCell>
                 <TableCell>
                   <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                    <Link href={`/tours/packages/${row.id}`} aria-label={`עריכת ${row.name}`} title="עריכה">
+                    <Link href={`/tours/packages/${row.id}`} aria-label={`Edit ${row.name}`} title="Edit">
                       <Pencil />
                     </Link>
                   </Button>
@@ -148,13 +148,13 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
         </Table>
         {shown.length === 0 && (
           <EmptyRows
-            title={rows.length === 0 ? "עוד אין עמודי טיול" : "אין עמודים שמתאימים לסינון"}
+            title={rows.length === 0 ? "No tour pages yet" : "No pages match the filter"}
             description={
               rows.length === 0
-                ? "עמודי הטיול נוצרים בטעינת הנתונים של החברה."
+                ? "Tour pages are created when the company's data is imported."
                 : view === "content" && counts.stubs > 0
-                  ? `יש ${counts.stubs} עמודים ללא תוכן. הם מוצגים בלשונית "ללא תוכן".`
-                  : "נסו חיפוש אחר או לשונית אחרת."
+                  ? `${counts.stubs} pages have no content yet. They are listed under the "No content" tab.`
+                  : "Try a different search or tab."
             }
           />
         )}

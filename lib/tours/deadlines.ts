@@ -29,12 +29,12 @@ export const DEADLINE_FIELDS = [...CONTRACT_DEADLINE_FIELDS, "payment_deadline",
 export type DeadlineField = (typeof DEADLINE_FIELDS)[number];
 
 export const DEADLINE_LABELS: Record<DeadlineField, string> = {
-  first_cancellation_date: "ביטול ראשון",
-  last_cancellation_date: "ביטול אחרון",
-  names_deadline: "שמות",
-  ticketing_deadline: "כרטוס",
-  payment_deadline: "תשלום / מקדמה",
-  option_expiry: "תפוגת אופציה",
+  first_cancellation_date: "First cancellation date",
+  last_cancellation_date: "Last cancellation date",
+  names_deadline: "Names due",
+  ticketing_deadline: "Ticketing due",
+  payment_deadline: "Payment / deposit due",
+  option_expiry: "Option expiry",
 };
 
 /** The contract columns the deadlines are derived from. */

@@ -33,14 +33,14 @@ export function CompanySwitcher() {
   };
 
   return (
-    <DropdownMenu dir="rtl">
+    <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
           size="sm"
           disabled={pending !== null}
           className="h-8 max-w-[12rem] gap-1.5 px-2.5 text-xs"
-          aria-label={`החברה הפעילה: ${active.name}. החלפת חברה`}
+          aria-label={`Active company: ${active.name}. Switch company`}
           data-testid="company-switcher"
         >
           {pending ? (
@@ -54,7 +54,7 @@ export function CompanySwitcher() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-          החברה הפעילה
+          Active company
         </DropdownMenuLabel>
         {companies.map((company) => (
           <DropdownMenuItem
@@ -63,7 +63,7 @@ export function CompanySwitcher() {
             onSelect={() => choose(company.slug)}
           >
             <span className="truncate">{company.name}</span>
-            {company.slug === active.slug && <Check className="mr-auto h-3.5 w-3.5 shrink-0" />}
+            {company.slug === active.slug && <Check className="ms-auto h-3.5 w-3.5 shrink-0" />}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

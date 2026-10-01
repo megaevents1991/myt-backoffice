@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/page-header";
 import { DashboardCards } from "@/components/dashboard-cards";
 import { DashboardStats } from "@/components/dashboard-stats";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,12 +52,10 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Manage your events, partners, and reservations.
-        </p>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description="Events, partners and reservations of Mega Events. The numbers come from the reservations the customer site writes at checkout."
+      />
 
       {/* Only renders when the Google-reviews cron failed / went stale. */}
       <GoogleReviewsHealthAlert />

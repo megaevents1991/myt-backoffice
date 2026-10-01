@@ -33,13 +33,13 @@ import {
 import {
   ALLOCATION_LEGS,
   ALLOCATION_MAX_DAY_GAP,
-  CANCELLED_BY_LABELS,
   TRANSITION_EVENT_KIND,
   allocatedSeats,
   checkTransition,
   isManagerRole,
   stageOf,
   type AllocationLegs,
+  type CancelledBy,
   type TransitionInput,
 } from "@/components/tours/flights/block-rules";
 import {
@@ -171,7 +171,9 @@ export interface AllocatableDeparture {
 
 /** The row that holds the original conditions document of the company (import). */
 const SOURCE_TERMS_CONTRACT_NAME = "תנאי ביטול והתחייבות (מסמך מקור)";
-const NOT_FOUND = "הבלוק לא נמצא";
+const NOT_FOUND = "Flight block not found";
+/** Who cancelled, in the Hebrew wording the stored cancel reason has always used (data, not screen copy). */
+const CANCELLED_BY_DATA_TEXT: Record<CancelledBy, string> = { airline: "חברת התעופה", us: "אנחנו" };
 const EVENTS_MAX = 500;
 /** Timeline kinds an operator may add by hand (the rest are written by the lifecycle actions). */
 const MANUAL_EVENT_KINDS: readonly BlockEventKind[] = ["note", "quoted", "names_sent", "schedule_change"];
@@ -181,7 +183,7 @@ const fail = (error: string): { success: false; error: string } => ({ success: f
 
 function dbFail(where: string, error: unknown): { success: false; error: string } {
   console.error(`tours-flight-actions: ${where} failed`, JSON.stringify(error));
-  return fail("הפעולה נכשלה. נסו שוב, ואם זה חוזר פנו לתמיכה.");
+  return fail("The action failed. Try again, and if it happens again, contact support.");
 }
 
 const validId = (value: unknown): value is number =>
@@ -258,7 +260,7 @@ async function writeEvent(input: EventInput): Promise<boolean> {
   return true;
 }
 
-const EVENT_NOT_WRITTEN = "השינוי נשמר, אבל האירוע לא נרשם בציר האירועים.";
+const EVENT_NOT_WRITTEN = "The change was saved, but it was not recorded on the timeline.";
 
 /** A date the client sent: a real `yyyy-mm-dd`, or today when nothing was sent. null = bad value. */
 function dateOrToday(value: string | null | undefined): string | null {
@@ -423,14 +425,14 @@ export async function transitionTourBlock(
   input: TransitionInput = {},
 ): Promise<ToursResult<{ status: BlockStatus }>> {
   const { session, company } = await requireCompany("tours");
-  if (!(BLOCK_STATUSES as readonly string[]).includes(to)) return fail("סטטוס לא מוכר");
+  if (!(BLOCK_STATUSES as readonly string[]).includes(to)) return fail("Unknown status");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
 
   const check = checkTransition(block, to, session.role, input);
   if (!check.ok) return fail(check.error);
   const date = dateOrToday(input.date);
-  if (!date) return fail("תאריך לא תקין");
+  if (!date) return fail("Invalid date");
 
   const patch: FlightUpdate = { block_status: to };
   let eventNote = input.note?.trim() || null;
@@ -445,7 +447,7 @@ export async function transitionTourBlock(
     if (!block.pnr?.trim() && input.pnr?.trim()) patch.pnr = input.pnr.trim();
     // The contract must be one of this company's - a stale or foreign id counts as "no contract".
     const contract = await loadContract(company.id, block.contract_id);
-    if (!contract) return fail('כדי לסמן "אושר בחברת התעופה" חסר: חוזה');
+    if (!contract) return fail('Missing for "Confirmed by airline": Contract');
     // Entering "confirmed" computes the deadlines from the contract - but only the
     // ones the block does not have yet. A date someone typed in stays.
     const computed = computeDeadlines(block.outbound_departure_time, contract);
@@ -455,11 +457,11 @@ export async function transitionTourBlock(
   if (to === "operational") {
     const { data: allocRows, error: allocError } = await loadAllocationRows(company.id, block.id);
     if (allocError) return dbFail("allocations read", allocError);
-    if ((allocRows ?? []).length === 0) warnings.push("הבלוק הועבר לתפעול בלי שיוך לאף יציאה.");
+    if ((allocRows ?? []).length === 0) warnings.push("The flight block was handed to operations with no allocation to any departure.");
   }
 
   if (to === "cancelled") {
-    const who = input.cancelledBy ? CANCELLED_BY_LABELS[input.cancelledBy] : "";
+    const who = input.cancelledBy ? CANCELLED_BY_DATA_TEXT[input.cancelledBy] : "";
     const reason = `בוטל על ידי ${who}: ${eventNote}`;
     patch.cancelled_at = date;
     patch.cancel_reason = reason;
@@ -477,7 +479,7 @@ export async function transitionTourBlock(
     : update.eq("block_status", block.block_status)
   ).select("id");
   if (error) return dbFail("transition", error);
-  if (!updated || updated.length === 0) return fail("הסטטוס של הבלוק השתנה בינתיים. רעננו ונסו שוב.");
+  if (!updated || updated.length === 0) return fail("The status of the flight block changed in the meantime. Refresh and try again.");
 
   const eventWritten = await writeEvent({
     flightId: block.id,
@@ -505,7 +507,7 @@ export async function transitionTourBlock(
 /** The "נבדק" mark: a manager went over this row. Separate from the status. */
 export async function setTourBlockReviewed(flightId: number, reviewed: boolean): Promise<ToursResult> {
   const { session, company } = await requireCompany("tours");
-  if (!isManagerRole(session.role)) return fail("רק מנהל החברה מסמן שורה כנבדקה");
+  if (!isManagerRole(session.role)) return fail("Only the company manager can mark a row Reviewed");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
 
@@ -540,19 +542,19 @@ export async function updateTourBlockSeats(
 
   const quantity = input.quantity;
   if (typeof quantity !== "number" || !Number.isInteger(quantity) || quantity < 0) {
-    return fail("כמות המושבים חייבת להיות מספר שלם, 0 ומעלה");
+    return fail("The seat count must be a whole number, 0 or more");
   }
   const reason = input.reason?.trim();
-  if (!reason) return fail("עדכון מושבים דורש סיבה");
+  if (!reason) return fail("A seat update needs a reason");
   const date = dateOrToday(input.date);
-  if (!date) return fail("תאריך לא תקין");
-  if (quantity === block.initial_quantity) return fail("זו כבר כמות המושבים של הבלוק");
+  if (!date) return fail("Invalid date");
+  if (quantity === block.initial_quantity) return fail("That is already the seat count of the flight block");
 
   const { data: allocRows, error: allocError } = await loadAllocationRows(company.id, block.id);
   if (allocError) return dbFail("allocations read", allocError);
   const allocated = allocatedSeats(allocRows ?? []);
   if (quantity < allocated) {
-    return fail(`${allocated} מושבים כבר משויכים ליציאות. הורידו את השיוך לפני שמורידים את הבלוק ל-${quantity}.`);
+    return fail(`${allocated} seats are already allocated to departures. Reduce the allocation before cutting the flight block to ${quantity}.`);
   }
 
   const reduced = quantity < block.initial_quantity;
@@ -568,7 +570,7 @@ export async function updateTourBlockSeats(
     .eq("initial_quantity", block.initial_quantity)
     .select("id");
   if (error) return dbFail("seats update", error);
-  if (!updated || updated.length === 0) return fail("כמות המושבים השתנתה בינתיים. רעננו ונסו שוב.");
+  if (!updated || updated.length === 0) return fail("The seat count changed in the meantime. Refresh and try again.");
 
   // The events vocabulary knows reductions only; an increase is written as a note that says so.
   const eventWritten = await writeEvent({
@@ -599,8 +601,8 @@ export async function updateTourBlockDeadline(
   value: string | null,
 ): Promise<ToursResult> {
   const { company } = await requireCompany("tours");
-  if (!(DEADLINE_FIELDS as readonly string[]).includes(field)) return fail("שדה לא מוכר");
-  if (value !== null && !isDateOnly(value)) return fail("תאריך לא תקין");
+  if (!(DEADLINE_FIELDS as readonly string[]).includes(field)) return fail("Unknown field");
+  if (value !== null && !isDateOnly(value)) return fail("Invalid date");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
   if (block[field] === value) return { success: true, data: null };
@@ -629,16 +631,16 @@ export async function recomputeTourBlockDeadlines(
 ): Promise<ToursResult<{ updated: ContractDeadlineField[] }>> {
   const { company } = await requireCompany("tours");
   const wanted = [...new Set(fields ?? [])];
-  if (wanted.length === 0) return fail("בחרו לפחות מועד אחד לחישוב");
-  if (wanted.some((f) => !(CONTRACT_DEADLINE_FIELDS as readonly string[]).includes(f))) return fail("שדה לא מוכר");
+  if (wanted.length === 0) return fail("Pick at least one deadline to compute");
+  if (wanted.some((f) => !(CONTRACT_DEADLINE_FIELDS as readonly string[]).includes(f))) return fail("Unknown field");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
   const contract = await loadContract(company.id, block.contract_id);
-  if (!contract) return fail("לבלוק אין חוזה. בחרו חוזה לפני חישוב המועדים.");
+  if (!contract) return fail("The flight block has no contract. Pick a contract before computing the deadlines.");
 
   const patch = pickDeadlines(computeDeadlines(block.outbound_departure_time, contract), block, wanted);
   const updatedFields = Object.keys(patch) as ContractDeadlineField[];
-  if (updatedFields.length === 0) return fail("בחוזה אין ימים מוגדרים למועדים שנבחרו");
+  if (updatedFields.length === 0) return fail("The contract has no days set for the selected deadlines");
 
   const { error } = await supabaseTyped.from("flights").update(patch).eq("id", block.id).eq("company_id", company.id);
   if (error) return dbFail("deadlines recompute", error);
@@ -660,11 +662,11 @@ export async function recordTourBlockDeposit(
 ): Promise<ToursResult> {
   const { session, company } = await requireCompany("tours");
   if (typeof input.amount !== "number" || !Number.isFinite(input.amount) || input.amount <= 0) {
-    return fail("סכום המקדמה חייב להיות גדול מאפס");
+    return fail("The deposit amount must be above zero");
   }
-  if (!EVENT_CURRENCIES.includes(input.currency)) return fail("מטבע לא מוכר");
+  if (!EVENT_CURRENCIES.includes(input.currency)) return fail("Unknown currency");
   const date = dateOrToday(input.date);
-  if (!date) return fail("תאריך לא תקין");
+  if (!date) return fail("Invalid date");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
 
@@ -677,7 +679,7 @@ export async function recordTourBlockDeposit(
     note: input.note,
     createdBy: session.sub,
   });
-  if (!written) return fail("רישום המקדמה נכשל. נסו שוב.");
+  if (!written) return fail("Could not record the deposit. Try again.");
 
   await logAudit({
     action: "tours.flight.deposit",
@@ -701,11 +703,11 @@ export async function setTourBlockContract(flightId: number, contractId: string 
   if (contractId === null) {
     const stage = stageOf(block.block_status);
     if (stage !== "draft" && LIVE_BLOCK_STATUSES.includes(stage)) {
-      return fail(`בלוק בסטטוס "${BLOCK_STATUS_LABELS[stage]}" חייב חוזה. אפשר להחליף חוזה, לא להסיר.`);
+      return fail(`A flight block in "${BLOCK_STATUS_LABELS[stage]}" needs a contract. You can switch contracts, not remove one.`);
     }
   } else {
     const contract = await loadContract(company.id, contractId);
-    if (!contract) return fail("החוזה לא נמצא");
+    if (!contract) return fail("Contract not found");
   }
 
   const { error } = await supabaseTyped
@@ -739,15 +741,15 @@ export async function updateTourBlockCosts(
   const adult = money(input.cost_price);
   const child = money(input.cost_child_price);
   const tax = money(input.cost_tax);
-  if (adult === undefined || child === undefined || tax === undefined) return fail("עלות חייבת להיות מספר, 0 ומעלה");
+  if (adult === undefined || child === undefined || tax === undefined) return fail("A cost must be a number, 0 or more");
   const currency = input.cost_currency || null;
-  if (currency !== null && !(CURRENCIES as readonly string[]).includes(currency)) return fail("מטבע לא מוכר");
+  if (currency !== null && !(CURRENCIES as readonly string[]).includes(currency)) return fail("Unknown currency");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
 
   const stage = stageOf(block.block_status);
   if (stage !== "draft" && LIVE_BLOCK_STATUSES.includes(stage) && (adult === null || currency === null)) {
-    return fail(`בלוק בסטטוס "${BLOCK_STATUS_LABELS[stage]}" חייב עלות מבוגר ומטבע`);
+    return fail(`A flight block in "${BLOCK_STATUS_LABELS[stage]}" needs an adult cost and a currency`);
   }
 
   const patch = { cost_price: adult, cost_child_price: child, cost_tax: tax, cost_currency: currency };
@@ -785,7 +787,7 @@ export async function listAllocatableDepartures(flightId: number): Promise<Tours
   if (!block) return fail(NOT_FOUND);
   const outbound = toDateOnly(block.outbound_departure_time);
   const inbound = toDateOnly(block.inbound_departure_time);
-  if (!outbound || !inbound) return fail("לבלוק חסרים תאריכי טיסה");
+  if (!outbound || !inbound) return fail("The flight block has no flight dates");
 
   const columns = "id,code,start_date,end_date,arrival_airport,return_airport,series_id,is_published";
   const [byStart, byEnd] = await Promise.all([
@@ -828,7 +830,7 @@ export async function listAllocatableDepartures(flightId: number): Promise<Tours
   ): { ok: boolean; reason: string | null } => {
     const gap = dayGapOf(block, departure, legs);
     if (gap === null || Math.abs(gap) > ALLOCATION_MAX_DAY_GAP) {
-      return { ok: false, reason: `התאריך רחוק מהטיסה ביותר מ-${ALLOCATION_MAX_DAY_GAP} ימים` };
+      return { ok: false, reason: `The date is more than ${ALLOCATION_MAX_DAY_GAP} days from the flight` };
     }
     const check = checkBlockFitsDeparture(block, route, legs);
     return { ok: check.ok, reason: check.reason ?? null };
@@ -869,16 +871,16 @@ export async function allocateTourBlock(
 ): Promise<ToursResult> {
   const { company } = await requireCompany("tours");
   const legs = input.legs ?? "both";
-  if (!ALLOCATION_LEGS.includes(legs)) return fail("כיוון לא מוכר");
+  if (!ALLOCATION_LEGS.includes(legs)) return fail("Unknown direction");
   if (typeof input.seats !== "number" || !Number.isInteger(input.seats) || input.seats < 1) {
-    return fail("כמות המושבים לשיוך חייבת להיות מספר שלם, 1 ומעלה");
+    return fail("Seats to allocate must be a whole number, 1 or more");
   }
-  if (typeof input.departureId !== "string" || !input.departureId) return fail("בחרו יציאה");
+  if (typeof input.departureId !== "string" || !input.departureId) return fail("Select a departure");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
   const stage = stageOf(block.block_status);
   if (stage === "cancelled" || stage === "declined") {
-    return fail(`אי אפשר לשייך בלוק בסטטוס "${BLOCK_STATUS_LABELS[stage]}"`);
+    return fail(`A flight block in "${BLOCK_STATUS_LABELS[stage]}" cannot be allocated`);
   }
 
   const { data: departure, error: depError } = await toursDb()
@@ -889,15 +891,15 @@ export async function allocateTourBlock(
     .is("is_deleted", null)
     .maybeSingle();
   if (depError) return dbFail("departure read", depError);
-  if (!departure) return fail("היציאה לא נמצאה");
+  if (!departure) return fail("Departure not found");
 
   const gap = dayGapOf(block, departure, legs);
   if (gap === null || Math.abs(gap) > ALLOCATION_MAX_DAY_GAP) {
-    return fail(`היציאה ${departure.code} רחוקה מתאריך הטיסה ביותר מ-${ALLOCATION_MAX_DAY_GAP} ימים`);
+    return fail(`Departure ${departure.code} is more than ${ALLOCATION_MAX_DAY_GAP} days from the flight date`);
   }
   const series = await loadSeriesRoutes(company.id, [departure.series_id]);
   const fit = checkBlockFitsDeparture(block, effectiveRoute(departure, series), legs);
-  if (!fit.ok) return fail(fit.reason ?? "הבלוק לא מתאים למסלול של היציאה");
+  if (!fit.ok) return fail(fit.reason ?? "The flight block does not fit the route of the departure");
 
   const { data: allocRows, error: allocError } = await loadAllocationRows(company.id, block.id);
   if (allocError) return dbFail("allocations read", allocError);
@@ -905,7 +907,7 @@ export async function allocateTourBlock(
   const others = (allocRows ?? []).filter((a) => a.id !== existing?.id);
   const total = allocatedSeats([...others, { seats: input.seats, legs }]);
   if (total > block.initial_quantity) {
-    return fail(`בבלוק ${block.initial_quantity} מושבים. עם השיוך הזה ישויכו ${total}.`);
+    return fail(`The flight block holds ${block.initial_quantity} seats. With this allocation ${total} would be allocated.`);
   }
 
   if (existing) {
@@ -936,7 +938,7 @@ export async function allocateTourBlock(
   return {
     success: true,
     data: null,
-    ...(gap !== 0 ? { warning: `שימו לב: הטיסה והיציאה ${departure.code} בהפרש של ${Math.abs(gap)} ימים.` } : {}),
+    ...(gap !== 0 ? { warning: `Note: the flight and departure ${departure.code} are ${Math.abs(gap)} days apart.` } : {}),
   };
 }
 
@@ -945,7 +947,7 @@ export async function removeTourBlockAllocation(flightId: number, allocationId: 
   const { company } = await requireCompany("tours");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
-  if (typeof allocationId !== "string" || !allocationId) return fail("השיוך לא נמצא");
+  if (typeof allocationId !== "string" || !allocationId) return fail("Allocation not found");
 
   const { data: removed, error } = await toursDb()
     .from("flight_allocations")
@@ -955,7 +957,7 @@ export async function removeTourBlockAllocation(flightId: number, allocationId: 
     .eq("flight_id", block.id)
     .select("id,departure_id,seats,legs");
   if (error) return dbFail("allocation delete", error);
-  if (!removed || removed.length === 0) return fail("השיוך לא נמצא");
+  if (!removed || removed.length === 0) return fail("Allocation not found");
 
   await logAudit({
     action: "tours.flight.allocation_delete",
@@ -976,15 +978,15 @@ export async function addTourBlockEvent(
 ): Promise<ToursResult> {
   const { session, company } = await requireCompany("tours");
   const kind = input.kind ?? "note";
-  if (!MANUAL_EVENT_KINDS.includes(kind)) return fail("סוג אירוע לא מוכר");
+  if (!MANUAL_EVENT_KINDS.includes(kind)) return fail("Unknown event type");
   const note = input.note?.trim();
-  if (!note && kind === "note") return fail("כתבו את ההערה");
+  if (!note && kind === "note") return fail("Enter the note");
   const date = dateOrToday(input.date);
-  if (!date) return fail("תאריך לא תקין");
+  if (!date) return fail("Invalid date");
   const amount = input.amount ?? null;
-  if (amount !== null && !(typeof amount === "number" && Number.isFinite(amount) && amount >= 0)) return fail("סכום לא תקין");
+  if (amount !== null && !(typeof amount === "number" && Number.isFinite(amount) && amount >= 0)) return fail("Invalid amount");
   const currency = amount !== null ? (input.currency ?? null) : null;
-  if (currency !== null && !EVENT_CURRENCIES.includes(currency)) return fail("מטבע לא מוכר");
+  if (currency !== null && !EVENT_CURRENCIES.includes(currency)) return fail("Unknown currency");
   const block = await loadBlock(company.id, flightId);
   if (!block) return fail(NOT_FOUND);
 
@@ -997,7 +999,7 @@ export async function addTourBlockEvent(
     note,
     createdBy: session.sub,
   });
-  if (!written) return fail("הרישום נכשל. נסו שוב.");
+  if (!written) return fail("Could not save the entry. Try again.");
 
   await logAudit({
     action: "tours.flight.event",

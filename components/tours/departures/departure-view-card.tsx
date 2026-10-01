@@ -64,7 +64,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-const yesNo = (value: boolean): string => (value ? "כלול" : "לא כלול");
+const yesNo = (value: boolean): string => (value ? "Included" : "Not included");
 
 function Money({ value, currency, className }: { value: number | null | undefined; currency: string; className?: string }) {
   if (value == null) return <span className="text-muted-foreground">—</span>;
@@ -83,62 +83,62 @@ function GeneralTab({ data }: { data: DepartureViewData }) {
   const flightMode = FLIGHT_MODE_LABELS[d.flight_mode as FlightMode] ?? d.flight_mode;
   return (
     <div>
-      <Section title="תאריכים ומסלול">
+      <Section title="Dates and route">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-          <Fact label="תאריך יציאה">
+          <Fact label="Departure date">
             <Ltr className="tabular-nums">{fmtDate(d.start_date)}</Ltr>
           </Fact>
-          <Fact label="תאריך חזרה">
+          <Fact label="Return date">
             <Ltr className="tabular-nums">{fmtDate(d.end_date)}</Ltr>
           </Fact>
-          <Fact label="נוחתים ב">{d.arrival_airport && <Ltr className="font-mono">{d.arrival_airport}</Ltr>}</Fact>
-          <Fact label="חוזרים מ">{d.return_airport && <Ltr className="font-mono">{d.return_airport}</Ltr>}</Fact>
-          <Fact label="לילות">{nightsBetween(d.start_date, d.end_date)}</Fact>
-          <Fact label="סוג המסלול">{type && ROUTE_TYPE_LABELS[type]}</Fact>
-          <Fact label="עונה">{d.season}</Fact>
-          <Fact label="גרסת המסלול היומי">
+          <Fact label="Lands in">{d.arrival_airport && <Ltr className="font-mono">{d.arrival_airport}</Ltr>}</Fact>
+          <Fact label="Returns from">{d.return_airport && <Ltr className="font-mono">{d.return_airport}</Ltr>}</Fact>
+          <Fact label="Nights">{nightsBetween(d.start_date, d.end_date)}</Fact>
+          <Fact label="Route type">{type && ROUTE_TYPE_LABELS[type]}</Fact>
+          <Fact label="Season">{d.season}</Fact>
+          <Fact label="Itinerary version">
             {data.itinerary
-              ? `${data.itinerary.label ?? "גרסה נוספת"}${
+              ? `${data.itinerary.label ?? "Alternative version"}${
                   data.itinerary.arrival_city || data.itinerary.return_city
-                    ? ` (${data.itinerary.arrival_city ?? "?"} ← ${data.itinerary.return_city ?? "?"})`
+                    ? ` (\u2068${data.itinerary.arrival_city ?? "?"}\u2069 → \u2068${data.itinerary.return_city ?? "?"}\u2069)`
                     : ""
                 }`
-              : "המסלול הראשי של העמוד"}
+              : "The tour page's main itinerary"}
           </Fact>
         </dl>
       </Section>
 
-      <Section title="טיסה ומפגש">
+      <Section title="Flight and meeting">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
-          <Fact label="טיסה">
+          <Fact label="Flight">
             {flightMode}
             {d.flight_mode === "priced" && (
               <>
                 {" · "}
-                <Money value={d.flight_price} currency={d.currency} /> לנוסע
+                <Money value={d.flight_price} currency={d.currency} /> per traveler
               </>
             )}
           </Fact>
-          <Fact label="מועד מפגש (שעון ישראל)">
+          <Fact label="Meeting time (Israel time)">
             {d.meeting_at && <Ltr className="tabular-nums">{fmtInstant(d.meeting_at)}</Ltr>}
           </Fact>
-          <Fact label="כבודה">{yesNo(d.baggage_included)}</Fact>
-          <Fact label="ארוחה בטיסה">{yesNo(d.meal_included)}</Fact>
-          <Fact label="העברות">{yesNo(d.transfers_included)}</Fact>
-          <Fact label="קונקשן בהלוך">{d.connection_out}</Fact>
-          <Fact label="קונקשן בחזור">{d.connection_back}</Fact>
+          <Fact label="Baggage">{yesNo(d.baggage_included)}</Fact>
+          <Fact label="In-flight meal">{yesNo(d.meal_included)}</Fact>
+          <Fact label="Transfers">{yesNo(d.transfers_included)}</Fact>
+          <Fact label="Outbound connection">{d.connection_out}</Fact>
+          <Fact label="Return connection">{d.connection_back}</Fact>
         </dl>
       </Section>
 
-      <Section title="כללי גיל">
+      <Section title="Age rules">
         <dl className="grid grid-cols-3 gap-x-4 gap-y-3">
-          <Fact label="ילד עד גיל">{d.child_max_age}</Fact>
-          <Fact label="ותיק מגיל">{d.senior_min_age}</Fact>
-          <Fact label="הנחת ותיק">{d.senior_discount != null && <Money value={d.senior_discount} currency={d.currency} />}</Fact>
+          <Fact label="Child up to age">{d.child_max_age}</Fact>
+          <Fact label="Senior from age">{d.senior_min_age}</Fact>
+          <Fact label="Senior discount">{d.senior_discount != null && <Money value={d.senior_discount} currency={d.currency} />}</Fact>
         </dl>
       </Section>
 
-      <Section title="תגיות באתר">
+      <Section title="Tags on the site">
         {d.card_badge || d.date_labels.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {d.card_badge && <Chip className="border-destructive/30 bg-destructive/10 text-destructive">{d.card_badge}</Chip>}
@@ -147,7 +147,7 @@ function GeneralTab({ data }: { data: DepartureViewData }) {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">אין תגיות ליציאה הזו.</p>
+          <p className="text-sm text-muted-foreground">This departure has no tags.</p>
         )}
       </Section>
     </div>
@@ -167,26 +167,26 @@ function PricesTab({ data }: { data: DepartureViewData }) {
     <div className="space-y-5 py-4">
       {discount > 0 && (
         <Notice tone="success" className="py-1.5 text-xs">
-          הנחה קבועה פעילה: <Money value={discount} currency={d.currency} /> לנוסע. המחירים אחרי ההנחה מופיעים לצד המחיר המלא.
+          Active fixed discount: <Money value={discount} currency={d.currency} /> per traveler. Prices after the discount are shown next to the full price.
         </Notice>
       )}
 
       {vacation && (
         <section className="space-y-3">
-          <h3 className="text-sm font-semibold">חבילת נופש: מחיר לאדם לפי מלון וסוג חדר</h3>
+          <h3 className="text-sm font-semibold">Vacation package: price per person by hotel and room type</h3>
           {data.hotels.length === 0 ? (
-            <Notice tone="warning">אין מלון ביציאה הזו.</Notice>
+            <Notice tone="warning">This departure has no hotel.</Notice>
           ) : (
             <div className="overflow-x-auto rounded-md border">
               <table className="w-full text-sm" data-testid="view-hotels">
                 <thead className="bg-muted/60 text-xs text-muted-foreground">
                   <tr>
-                    <th className={th}>מלון</th>
-                    <th className={th}>בסיס אירוח</th>
-                    <th className={th}>לילות</th>
-                    <th className={cn(th, "text-end")}>בחדר זוגי</th>
-                    <th className={cn(th, "text-end")}>בטריפל</th>
-                    <th className={cn(th, "text-end")}>ברביעייה</th>
+                    <th className={th}>Hotel</th>
+                    <th className={th}>Board</th>
+                    <th className={th}>Nights</th>
+                    <th className={cn(th, "text-end")}>Double</th>
+                    <th className={cn(th, "text-end")}>Triple</th>
+                    <th className={cn(th, "text-end")}>Quad</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -195,7 +195,7 @@ function PricesTab({ data }: { data: DepartureViewData }) {
                       <td className="px-3 py-1.5">
                         {h.name}
                         {h.city && <span className="ms-2 text-xs text-muted-foreground">{h.city}</span>}
-                        {i === 0 && data.hotels.length > 1 && <Chip className="ms-2">ברירת המחדל</Chip>}
+                        {i === 0 && data.hotels.length > 1 && <Chip className="ms-2">Default</Chip>}
                       </td>
                       <td className="px-3 py-1.5">{h.board ?? ""}</td>
                       <td className="px-3 py-1.5 tabular-nums">{h.nights ?? ""}</td>
@@ -215,18 +215,18 @@ function PricesTab({ data }: { data: DepartureViewData }) {
             </div>
           )}
           <p className="text-xs text-muted-foreground">
-            המחיר לאדם כולל את המלון, את קטגוריית הכרטיס הראשונה
-            {d.flight_mode === "priced" ? " ואת הטיסה" : d.flight_mode === "included" ? ", והטיסה כלולה" : ""}. קטגוריית כרטיס אחרת
-            מוסיפה את ההפרש שלה.
+            The price per person includes the hotel and the first ticket category
+            {d.flight_mode === "priced" ? ", plus the flight" : d.flight_mode === "included" ? ", and the flight is included" : ""}. Another ticket category
+            adds its difference.
           </p>
           {data.tickets.length > 0 && (
             <div className="overflow-hidden rounded-md border" data-testid="view-tickets">
               {data.tickets.map((t, i) => (
                 <div key={`${t.label}-${i}`} className="flex items-center justify-between gap-3 border-b px-3 py-1.5 text-sm last:border-b-0">
-                  <span>{t.label ?? `קטגוריה ${i + 1}`}</span>
+                  <span>{t.label ?? `Category ${i + 1}`}</span>
                   <span className="text-xs text-muted-foreground">
                     {i === 0 || !t.extra ? (
-                      "כלול במחיר"
+                      "Included in the price"
                     ) : (
                       <>
                         <Ltr className="text-sm font-medium tabular-nums text-foreground">
@@ -234,7 +234,7 @@ function PricesTab({ data }: { data: DepartureViewData }) {
                           {fmtMoney(Math.abs(t.extra))}
                           {currencySymbol(d.currency)}
                         </Ltr>{" "}
-                        לאדם
+                        per person
                       </>
                     )}
                   </span>
@@ -248,7 +248,7 @@ function PricesTab({ data }: { data: DepartureViewData }) {
       {data.prices.length > 0 && (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
           <section className="min-w-0 space-y-3">
-            <h3 className="text-sm font-semibold">מחיר לאדם לפי הרכב החדר</h3>
+            <h3 className="text-sm font-semibold">Price per person by room composition</h3>
             <div className="overflow-hidden rounded-md border" data-testid="view-matrix">
               {PRICE_MATRIX_ROWS.map((row) => {
                 const price = matrix[`${row.paxType}:${row.position}`];
@@ -260,22 +260,22 @@ function PricesTab({ data }: { data: DepartureViewData }) {
                 );
               })}
             </div>
-            <p className="text-xs text-muted-foreground">שורה בלי מחיר = ההרכב הזה לא מוצע ביציאה.</p>
+            <p className="text-xs text-muted-foreground">A row with no price = that composition isn&apos;t offered on this departure.</p>
           </section>
 
           <section className="min-w-0 space-y-3">
-            <h3 className="text-sm font-semibold">מחיר לחדר, כפי שהלקוח רואה</h3>
+            <h3 className="text-sm font-semibold">Price per room, as the customer sees it</h3>
             {rooms.length === 0 ? (
-              <Notice tone="warning">אין מחיר לחדר זוגי ביציאה הזו.</Notice>
+              <Notice tone="warning">This departure has no double-room price.</Notice>
             ) : (
               <div className="overflow-hidden rounded-md border">
                 <table className="w-full text-sm" data-testid="view-rooms">
                   <thead className="bg-muted/60 text-xs text-muted-foreground">
                     <tr>
-                      <th className={th}>הרכב</th>
-                      <th className={cn(th, "text-center")}>נוסעים</th>
-                      <th className={cn(th, "text-end")}>מחיר לחדר</th>
-                      {discount > 0 && <th className={cn(th, "text-end")}>אחרי הנחה</th>}
+                      <th className={th}>Composition</th>
+                      <th className={cn(th, "text-center")}>Travelers</th>
+                      <th className={cn(th, "text-end")}>Room price</th>
+                      {discount > 0 && <th className={cn(th, "text-end")}>After discount</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -302,12 +302,12 @@ function PricesTab({ data }: { data: DepartureViewData }) {
             )}
             {card.offer != null && (
               <p className="text-xs text-muted-foreground">
-                על כרטיס התאריך באתר: החל מ-
-                <Money value={card.offer} currency={d.currency} className="font-semibold text-foreground" /> לאדם בחדר זוגי
+                On the site&apos;s date card: from{" "}
+                <Money value={card.offer} currency={d.currency} className="font-semibold text-foreground" /> per person in a double room
                 {card.regular != null && (
                   <>
                     {" "}
-                    במקום <Money value={card.regular} currency={d.currency} className="line-through" />
+                    instead of <Money value={card.regular} currency={d.currency} className="line-through" />
                   </>
                 )}
                 .
@@ -317,7 +317,7 @@ function PricesTab({ data }: { data: DepartureViewData }) {
         </div>
       )}
 
-      {!vacation && data.prices.length === 0 && <Notice tone="warning">עוד לא הוזנו מחירים ליציאה הזו.</Notice>}
+      {!vacation && data.prices.length === 0 && <Notice tone="warning">No prices entered for this departure yet.</Notice>}
     </div>
   );
 }
@@ -325,11 +325,11 @@ function PricesTab({ data }: { data: DepartureViewData }) {
 function PromotionsTab({ data }: { data: DepartureViewData }) {
   const d = data.departure;
   if (data.promotions.length === 0) {
-    return <p className="my-4 rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">אין הטבות פעילות ליציאה הזו.</p>;
+    return <p className="my-4 rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">This departure has no active promotions.</p>;
   }
   return (
     <div className="space-y-3 py-4">
-      <p className="text-xs text-muted-foreground">ההטבות הפעילות חלות אוטומטית על כל הזמנה ליציאה הזו.</p>
+      <p className="text-xs text-muted-foreground">Active promotions apply automatically to every booking on this departure.</p>
       <ul className="space-y-2">
         {data.promotions.map((p) => (
           <li key={p.id} data-promotion-kind={p.kind} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2">
@@ -337,16 +337,16 @@ function PromotionsTab({ data }: { data: DepartureViewData }) {
               <p className="text-sm font-medium">{promotionSummary(p, d.currency)}</p>
               <p className="text-xs text-muted-foreground">
                 {PROMOTION_KIND_LABELS[p.kind as PromotionKind] ?? p.kind}
-                {p.valid_until ? ` · בתוקף עד ${fmtDate(p.valid_until)}` : " · בלי תאריך תפוגה"}
-                {p.show_on_card ? " · מוצגת על הכרטיס באתר" : ""}
+                {p.valid_until ? ` · valid until ${fmtDate(p.valid_until)}` : " · no expiry date"}
+                {p.show_on_card ? " · shown on the site card" : ""}
               </p>
             </div>
             {isExpired(p.valid_until) && (
-              <Chip className="border-warning/40 bg-warning-muted text-warning" title="ההטבה עדיין פעילה באתר. כדאי לוודא מול המשרד לפני שמבטיחים אותה ללקוח.">
-                תאריך התפוגה עבר
+              <Chip className="border-warning/40 bg-warning-muted text-warning" title="The promotion is still live on the site. Check with the office before promising it to a customer.">
+                Expiry date passed
               </Chip>
             )}
-            {p.scope === "series" && <Chip className="border-info/30 bg-info-muted text-info">לכל הסדרה</Chip>}
+            {p.scope === "series" && <Chip className="border-info/30 bg-info-muted text-info">Whole series</Chip>}
           </li>
         ))}
       </ul>
@@ -363,9 +363,9 @@ function FlightLeg({ title, number, from, to, departs, arrives }: { title: strin
         {from}→{to}
       </Ltr>
       <span className="text-xs text-muted-foreground">
-        המראה <Ltr className="tabular-nums text-foreground">{fmtDateTime(departs)}</Ltr>
+        Departs <Ltr className="tabular-nums text-foreground">{fmtDateTime(departs)}</Ltr>
         {" · "}
-        נחיתה <Ltr className="tabular-nums text-foreground">{fmtDateTime(arrives)}</Ltr>
+        Arrives <Ltr className="tabular-nums text-foreground">{fmtDateTime(arrives)}</Ltr>
       </span>
     </div>
   );
@@ -384,7 +384,7 @@ function FlightItem({ flight }: { flight: ViewFlight }) {
       </div>
       {flight.legs !== "inbound" && (
         <FlightLeg
-          title="הלוך"
+          title="Out"
           number={flight.outbound_flight_number}
           from={flight.outbound_departure_airport}
           to={flight.outbound_arrival_airport}
@@ -394,7 +394,7 @@ function FlightItem({ flight }: { flight: ViewFlight }) {
       )}
       {flight.legs !== "outbound" && (
         <FlightLeg
-          title="חזור"
+          title="Back"
           number={flight.inbound_flight_number}
           from={flight.inbound_departure_airport}
           to={flight.inbound_arrival_airport}
@@ -410,13 +410,13 @@ function FlightsTab({ data }: { data: DepartureViewData }) {
   return (
     <div className="space-y-4 py-4">
       <dl className="grid grid-cols-3 gap-3 rounded-md border bg-muted/30 px-3 py-2" data-testid="view-seats">
-        <Fact label="מקומות בטיסות">
+        <Fact label="Allocated">
           <Ltr className="tabular-nums">{data.seats.allocated}</Ltr>
         </Fact>
-        <Fact label="נמכרו">
+        <Fact label="Sold">
           <Ltr className="tabular-nums">{data.seats.sold}</Ltr>
         </Fact>
-        <Fact label="נשארו">
+        <Fact label="Left">
           <Ltr className={cn("font-semibold tabular-nums", data.seats.remaining <= 0 && data.seats.allocated > 0 && "text-destructive")}>
             {data.seats.remaining}
           </Ltr>
@@ -424,7 +424,7 @@ function FlightsTab({ data }: { data: DepartureViewData }) {
       </dl>
       {data.flights.length === 0 ? (
         <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-          פרטי הטיסות יעודכנו. עדיין אין ליציאה הזו טיסה מאושרת.
+          Flight details to follow. This departure has no confirmed flight yet.
         </p>
       ) : (
         <ul className="space-y-2">
@@ -433,7 +433,7 @@ function FlightsTab({ data }: { data: DepartureViewData }) {
           ))}
         </ul>
       )}
-      <p className="text-xs text-muted-foreground">לוח הזמנים של הטיסות המאושרות בלבד. השעות הן שעות מקומיות בשדה.</p>
+      <p className="text-xs text-muted-foreground">Schedule of confirmed flights only. Times are local airport times.</p>
     </div>
   );
 }
@@ -495,11 +495,11 @@ export function DepartureViewCard({
 
   return (
     <Sheet open={Boolean(target)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="left" dir="rtl" className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl" data-testid="departure-view-card">
+      <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl" data-testid="departure-view-card">
         {loading && !data ? (
           <div className="space-y-4 p-6">
-            <SheetTitle className="sr-only">טוען יציאה</SheetTitle>
-            <SheetDescription className="sr-only">פרטי היציאה נטענים</SheetDescription>
+            <SheetTitle className="sr-only">Loading departure</SheetTitle>
+            <SheetDescription className="sr-only">The departure details are loading</SheetDescription>
             <Skeleton className="h-8 w-48" />
             <Skeleton className="h-5 w-72" />
             <Skeleton className="h-10 w-full" />
@@ -507,22 +507,22 @@ export function DepartureViewCard({
           </div>
         ) : error || !data || !d ? (
           <div className="space-y-4 p-6">
-            <SheetTitle>היציאה לא נטענה</SheetTitle>
-            <SheetDescription className="sr-only">שגיאה בטעינת פרטי היציאה</SheetDescription>
-            <Notice tone="error">{error ?? "לא נמצאה יציאה"}</Notice>
+            <SheetTitle>Couldn&apos;t load the departure</SheetTitle>
+            <SheetDescription className="sr-only">Error loading the departure details</SheetDescription>
+            <Notice tone="error">{error ?? "Departure not found"}</Notice>
             <Button variant="outline" onClick={onClose}>
-              סגירה
+              Close
             </Button>
           </div>
         ) : (
           <>
-            <SheetHeader className="space-y-2 border-b pb-4 pe-6 ps-12 pt-5 text-start sm:text-start">
+            <SheetHeader className="space-y-2 border-b pb-4 pe-12 ps-6 pt-5 text-start sm:text-start">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                 <SheetTitle className="font-display text-xl">
                   <Ltr className="font-mono">{d.code}</Ltr>
                 </SheetTitle>
                 <Ltr className="text-sm tabular-nums text-muted-foreground">{fmtDateRange(d.start_date, d.end_date)}</Ltr>
-                <span className="text-sm text-muted-foreground">{nightsBetween(d.start_date, d.end_date)} לילות</span>
+                <span className="text-sm text-muted-foreground">{nightsBetween(d.start_date, d.end_date)} nights</span>
                 {routeLabel && <Ltr className="font-mono text-sm">{routeLabel}</Ltr>}
                 {type && type !== "round_trip" && <Chip className="border-info/30 bg-info-muted text-info">{ROUTE_TYPE_LABELS[type]}</Chip>}
               </div>
@@ -530,12 +530,12 @@ export function DepartureViewCard({
                 {data.package?.name ?? ""}
                 {data.series && (
                   <>
-                    {" · סדרה "}
+                    {" · Series "}
                     <Ltr className="font-mono">{data.series.code}</Ltr>
                     {data.series.label ? ` (${data.series.label})` : ""}
                   </>
                 )}
-                {" · עונה "}
+                {" · Season "}
                 {d.season_year}
               </SheetDescription>
               {holidays.length > 0 && (
@@ -551,8 +551,8 @@ export function DepartureViewCard({
                 <SaleStatusBadge status={d.sale_status} />
                 {data.doublePrice.price != null && (
                   <span>
-                    החל מ-
-                    <Money value={data.doublePrice.price - discount} currency={d.currency} className="font-semibold" /> לאדם בחדר זוגי
+                    From{" "}
+                    <Money value={data.doublePrice.price - discount} currency={d.currency} className="font-semibold" /> per person in a double room
                     {discount > 0 && (
                       <>
                         {" "}
@@ -564,26 +564,26 @@ export function DepartureViewCard({
                 <span className="text-muted-foreground">
                   {data.seats.allocated > 0 ? (
                     <>
-                      נשארו <Ltr className="font-semibold tabular-nums text-foreground">{data.seats.remaining}</Ltr> מתוך{" "}
-                      <Ltr className="tabular-nums">{data.seats.allocated}</Ltr> מקומות
+                      <Ltr className="font-semibold tabular-nums text-foreground">{data.seats.remaining}</Ltr> of{" "}
+                      <Ltr className="tabular-nums">{data.seats.allocated}</Ltr> seats left
                     </>
                   ) : (
-                    "מספר המקומות יעודכן"
+                    "Seat count to follow"
                   )}
                 </span>
-                <Chip className="ms-auto gap-1" title="אין לחשבון הזה הרשאת עריכה">
+                <Chip className="ms-auto gap-1" title="This account can't edit">
                   <Eye className="h-3 w-3" />
-                  צפייה בלבד
+                  View only
                 </Chip>
               </div>
             </SheetHeader>
 
-            <Tabs dir="rtl" value={shownTab} onValueChange={(v) => onTabChange(v as CardTab)} className="flex min-h-0 flex-1 flex-col">
+            <Tabs value={shownTab} onValueChange={(v) => onTabChange(v as CardTab)} className="flex min-h-0 flex-1 flex-col">
               <TabsList className="mx-6 mt-3 grid h-9 grid-cols-4">
-                <TabsTrigger value="general">כללי</TabsTrigger>
-                <TabsTrigger value="prices">מחירים</TabsTrigger>
-                <TabsTrigger value="promotions">הטבות{data.promotions.length ? ` (${data.promotions.length})` : ""}</TabsTrigger>
-                <TabsTrigger value="flights">טיסות{data.flights.length ? ` (${data.flights.length})` : ""}</TabsTrigger>
+                <TabsTrigger value="general">General</TabsTrigger>
+                <TabsTrigger value="prices">Prices</TabsTrigger>
+                <TabsTrigger value="promotions">Promotions{data.promotions.length ? ` (${data.promotions.length})` : ""}</TabsTrigger>
+                <TabsTrigger value="flights">Flights{data.flights.length ? ` (${data.flights.length})` : ""}</TabsTrigger>
               </TabsList>
               <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 pt-2">
                 <TabsContent value="general">

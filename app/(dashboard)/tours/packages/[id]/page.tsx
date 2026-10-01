@@ -10,7 +10,7 @@ export default async function TourPackagePage({ params }: { params: Promise<{ id
   const { id } = await params;
   const result = await getTourPackage(id);
   if (!result.success) {
-    return <LoadError message={result.error} backHref="/tours/packages" backLabel="כל עמודי הטיולים" />;
+    return <LoadError message={result.error} backHref="/tours/packages" backLabel="Back to Tour Pages" />;
   }
   return (
     <Suspense>

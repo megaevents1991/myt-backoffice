@@ -86,12 +86,12 @@ export function CompanyRouteGate({ children }: { children: React.ReactNode }) {
 
   if (unassigned) {
     return (
-      <div dir="rtl" className="flex h-[50vh] items-center justify-center" data-testid="company-unassigned">
+      <div className="flex h-[50vh] items-center justify-center" data-testid="company-unassigned">
         <div className="max-w-md rounded-lg border bg-card p-8 text-center">
           <Building2 className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
           <h1 className="font-display text-xl font-bold">{COMPANY_UNASSIGNED_NOTICE}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            מנהל החברה צריך לשייך את החשבון שלכם לחברה. אחרי השיוך רעננו את הדף ולוח היציאות ייפתח.
+            A company admin needs to add your account to the company. Once that is done, refresh the page and the Tours board opens.
           </p>
         </div>
       </div>

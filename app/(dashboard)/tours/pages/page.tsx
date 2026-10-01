@@ -9,10 +9,10 @@ export const dynamic = "force-dynamic";
 export default async function TourCmsPagesPage() {
   const result = await listTourCmsPages();
   return (
-    <div dir="rtl">
+    <div>
       <PageHeader
-        title="עמודי תוכן"
-        description="העמודים החופשיים של האתר: אודות, שאלות נפוצות, תקנון, צור קשר והפוסטים. כתובת העמוד קבועה; עורכים את הכותרת, התוכן וה-SEO."
+        title="Content Pages"
+        description="The free-form pages of the site: about, FAQ, terms, contact and the blog posts. A page's address is fixed; you edit its title, content and SEO."
         actions={<PublishSiteButton />}
       />
       {result.success ? <CmsPagesTable rows={result.data} /> : <LoadError message={result.error} />}

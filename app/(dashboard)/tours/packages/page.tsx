@@ -10,10 +10,10 @@ export const dynamic = "force-dynamic";
 export default async function TourPackagesPage() {
   const result = await listTourPackages();
   return (
-    <div dir="rtl">
+    <div>
       <PageHeader
-        title="עמודי טיולים"
-        description="כל עמוד כאן הוא עמוד מוצר באתר: שם, תמונות, תיאור, מסלול יומי ושאלות נפוצות. הסדרות והיציאות נמכרות על העמוד. שינוי מגיע לאתר אחרי שמירה ופרסום."
+        title="Tour Pages"
+        description="Each page here is a product page on the site: name, images, description, itinerary and FAQ. Series and departures are sold on the page. Changes reach the site after you save and publish."
         actions={<PublishSiteButton />}
       />
       {result.success ? (

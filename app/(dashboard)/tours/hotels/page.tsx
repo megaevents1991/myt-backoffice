@@ -9,10 +9,10 @@ export const dynamic = "force-dynamic";
 export default async function TourHotelsPage() {
   const result = await listTourHotels();
   return (
-    <div dir="rtl">
+    <div>
       <PageHeader
-        title="מלונות"
-        description="המלונות שחבילות הנופש מציעות. אפשרות מלון ביציאה מצביעה על המלון לפי הקוד שלו, והאתר מציג משם את השם, התמונות והתיאור."
+        title="Hotels"
+        description="The hotels the vacation packages offer. A departure's hotel option points to a hotel by its code, and the site takes the name, images and description from here."
         actions={<PublishSiteButton />}
       />
       {result.success ? (

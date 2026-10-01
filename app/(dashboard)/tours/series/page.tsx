@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { SeriesScreen } from "@/components/tours/series/series-screen";
 
-export const metadata = { title: "סדרות" };
+export const metadata = { title: "Series" };
 
 /**
  * Series of the active company (product type "tours"): list, edit and season

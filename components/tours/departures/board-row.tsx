@@ -94,7 +94,7 @@ function PriceEditor({
       ref={ref}
       dir="ltr"
       inputMode="decimal"
-      aria-label="מחיר לאדם בחדר זוגי"
+      aria-label="Price per person in a double room"
       value={value}
       onChange={(e) => {
         setValue(e.target.value);
@@ -143,8 +143,9 @@ function LabelsEditor({
     <input
       ref={ref}
       list="tours-date-label-suggestions"
-      aria-label="תגיות תאריך, מופרדות בפסיק"
-      placeholder="תגית, תגית"
+      dir="auto"
+      aria-label="Date tags, comma-separated"
+      placeholder="tag, tag"
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onClick={(e) => e.stopPropagation()}
@@ -221,7 +222,7 @@ function BoardRowImpl({
             type="checkbox"
             className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
             checked={selected}
-            aria-label={`בחירת ${row.code}`}
+            aria-label={`Select ${row.code}`}
             onChange={(e) => onSelect(row.id, e.target.checked)}
           />
         </td>
@@ -236,7 +237,7 @@ function BoardRowImpl({
               size="sm"
               checked={row.is_published}
               disabled={deleted}
-              label={row.is_published ? "מפורסם באתר - לחצו להסרה" : "לא מפורסם - לחצו לפרסום"}
+              label={row.is_published ? "Published on the site - click to unpublish" : "Not published - click to publish"}
               onChange={(next) => onPublish(row, next)}
             />
           )}
@@ -247,7 +248,7 @@ function BoardRowImpl({
         <button
           type="button"
           onClick={() => onOpen(row)}
-          title="פתיחת כרטיס היציאה"
+          title="Open the departure card"
           className={cn(
             "rounded font-mono text-[13px] font-semibold text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             deleted && "text-muted-foreground line-through",
@@ -255,13 +256,13 @@ function BoardRowImpl({
         >
           <Ltr>{row.code}</Ltr>
         </button>
-        {deleted && <Chip className="ms-1 border-destructive/30 bg-destructive/10 text-destructive">מחוקה</Chip>}
+        {deleted && <Chip className="ms-1 border-destructive/30 bg-destructive/10 text-destructive">Deleted</Chip>}
       </td>
 
       <td className={cn(cell, "whitespace-nowrap tabular-nums")}>
         <Ltr>{fmtDateRange(row.start_date, row.end_date)}</Ltr>
         {holidays && (
-          <span title={holidays} className="ms-1 inline-flex align-middle text-warning" aria-label={`חג או חופשה: ${holidays}`}>
+          <span title={holidays} className="ms-1 inline-flex align-middle text-warning" aria-label={`Holiday or school break: ${holidays}`}>
             <CalendarDays className="h-3.5 w-3.5" />
           </span>
         )}
@@ -273,12 +274,12 @@ function BoardRowImpl({
         {routeLabel ? (
           <Ltr
             className={cn("font-mono text-xs", inheritedRoute && "text-muted-foreground")}
-            title={inheritedRoute ? "המסלול נלקח מהסדרה" : undefined}
+            title={inheritedRoute ? "Route taken from the series" : undefined}
           >
             {routeLabel}
           </Ltr>
         ) : (
-          <span className="text-xs text-destructive">אין מסלול</span>
+          <span className="text-xs text-destructive">No route</span>
         )}
         {type === "open_jaw" && (
           <span
@@ -304,7 +305,7 @@ function BoardRowImpl({
       <td
         className={cn(cell, "min-w-24 max-w-52", !locked && "cursor-text")}
         onClick={() => !locked && !editingLabels && setEditingLabels(true)}
-        title={locked ? undefined : "לחצו לעריכת תגיות התאריך"}
+        title={locked ? undefined : "Click to edit the date tags"}
       >
         {editingLabels ? (
           <LabelsEditor
@@ -320,7 +321,7 @@ function BoardRowImpl({
             {row.card_badge && (
               <Chip
                 className="border-destructive/30 bg-destructive/10 text-destructive"
-                title={readOnly ? "תגית הכרטיס באתר" : "תגית הכרטיס - נערכת בכרטיס היציאה"}
+                title={readOnly ? "Card badge on the site" : "Card badge - edited in the departure card"}
               >
                 {row.card_badge}
               </Chip>
@@ -349,10 +350,10 @@ function BoardRowImpl({
           deleted
             ? undefined
             : readOnly
-              ? "מחיר לאדם בחדר זוגי. לחצו לכל המחירים."
+              ? "Price per person in a double room. Click for all prices."
               : derived
-              ? "חבילת נופש: המחיר מחושב ממלון, כרטיס, טיסה ו-markup. לחצו לפתיחת לשונית המחירים."
-              : "מחיר לאדם בחדר זוגי - לחצו לעריכה, Enter עובר לשורה הבאה"
+              ? "Vacation package: the price is worked out from hotel, ticket, flight and markup. Click to open the Prices tab."
+              : "Price per person in a double room - click to edit; Enter moves to the next row"
         }
       >
         {priceEditing ? (
@@ -362,7 +363,7 @@ function BoardRowImpl({
             onCommit={(price, next) => onDoublePrice(row, price, next)}
           />
         ) : double == null ? (
-          <span className="text-xs font-medium text-destructive">אין מחיר</span>
+          <span className="text-xs font-medium text-destructive">No price</span>
         ) : (
           <span className="inline-flex flex-col items-end leading-tight">
             <Ltr className={cn("font-medium", discount > 0 && "text-muted-foreground line-through decoration-1", derived && "italic")}>
@@ -388,7 +389,7 @@ function BoardRowImpl({
             title={row.promotions
               .map(
                 (p) =>
-                  `${promotionSummary(p, row.currency)}${p.valid_until ? ` (עד ${p.valid_until.split("-").reverse().join(".")}${isExpired(p.valid_until, today) ? ", פג תוקף" : ""})` : ""}${p.scope === "series" ? " - מהסדרה" : ""}`,
+                  `${promotionSummary(p, row.currency)}${p.valid_until ? ` (until ${p.valid_until.split("-").reverse().join(".")}${isExpired(p.valid_until, today) ? ", expired" : ""})` : ""}${p.scope === "series" ? " - from the series" : ""}`,
               )
               .join("\n")}
             className="flex max-w-full items-center gap-1 text-start text-xs hover:underline"
@@ -396,7 +397,7 @@ function BoardRowImpl({
             <span className="truncate">{promotionSummary(firstPromotion, row.currency)}</span>
             {row.promotions.length > 1 && <Chip className="px-1.5">+{row.promotions.length - 1}</Chip>}
             {row.promotions.some((p) => isExpired(p.valid_until, today)) && (
-              <span className="inline-flex shrink-0 text-warning" aria-label="תאריך התפוגה עבר, ההטבה עדיין פעילה">
+              <span className="inline-flex shrink-0 text-warning" aria-label="Expiry date has passed; the promotion is still active">
                 <Clock className="h-3.5 w-3.5" />
               </span>
             )}
@@ -409,7 +410,7 @@ function BoardRowImpl({
           {readOnly ? (
             // The viewer gets live blocks only, and no block status.
             noLiveFlight ? (
-              <span className="text-muted-foreground">יעודכן</span>
+              <span className="text-muted-foreground">TBA</span>
             ) : (
               <span>
                 <Ltr className="font-mono font-semibold">{Array.from(new Set(liveFlights.map((f) => f.airline))).join("+")}</Ltr>
@@ -418,10 +419,10 @@ function BoardRowImpl({
             )
           ) : noLiveFlight ? (
             <span className="font-semibold text-destructive">
-              אין טיסה
+              No flight
               {row.flights.length > 0 && (
                 <span className="ms-1 font-normal text-muted-foreground">
-                  ({Array.from(new Set(row.flights.map((f) => BLOCK_STATUS_LABELS[f.blockStatus as BlockStatus] ?? "טיוטה"))).join(", ")})
+                  ({Array.from(new Set(row.flights.map((f) => BLOCK_STATUS_LABELS[f.blockStatus as BlockStatus] ?? "Draft"))).join(", ")})
                 </span>
               )}
             </span>
@@ -444,8 +445,8 @@ function BoardRowImpl({
           onClick={() => onOpen(row, readOnly ? "flights" : "sales")}
           title={
             readOnly
-              ? `מקומות ${row.stats.allocated} · נמכרו ${row.stats.sold} · נשארו ${row.stats.remaining}`
-              : `משויכים ${row.stats.allocated} · נמכרו ${row.stats.sold} · יתרה ${row.stats.remaining}`
+              ? `Seats ${row.stats.allocated} · Sold ${row.stats.sold} · Left ${row.stats.remaining}`
+              : `Allocated ${row.stats.allocated} · Sold ${row.stats.sold} · Left ${row.stats.remaining}`
           }
           className="hover:underline"
         >
@@ -464,7 +465,7 @@ function BoardRowImpl({
         {suggestion && !readOnly && (
           <span
             className="ms-1 inline-flex align-middle text-warning"
-            title={`לפי היתרה כדאי לשקול לשנות את סטטוס המכירה ל"${SALE_STATUS_LABELS[suggestion]}"`}
+            title={`Based on the seats left, consider setting the sale status to "${SALE_STATUS_LABELS[suggestion]}"`}
           >
             <TriangleAlert className="h-3.5 w-3.5" />
           </span>

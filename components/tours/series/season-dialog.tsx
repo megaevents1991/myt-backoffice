@@ -155,7 +155,7 @@ export function SeasonDialog({
       toast.error(res.error, { duration: 7000 });
       return;
     }
-    toast.success(`נוצרו ${res.data.created.length} יציאות כטיוטה`);
+    toast.success(`Created ${res.data.created.length} departures as drafts`);
     setResult(res.data);
     onCreated();
   };
@@ -164,27 +164,27 @@ export function SeasonDialog({
 
   return (
     <Dialog open={Boolean(series)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent dir="rtl" className="flex max-h-[92vh] max-w-3xl flex-col">
-        <DialogHeader className="ps-8 text-start sm:text-start">
+      <DialogContent className="flex max-h-[92vh] max-w-3xl flex-col">
+        <DialogHeader className="pe-8 text-start sm:text-start">
           <DialogTitle>
-            שכפול עונה · <Ltr className="font-mono">{series?.code}</Ltr>
+            Duplicate Season · <Ltr className="font-mono">{series?.code}</Ltr>
             {series?.label ? ` · ${series.label}` : ""}
           </DialogTitle>
           <DialogDescription>
-            המערכת מציעה יציאה אחת לכל שבוע בטווח, לפי דפוס הסדרה. סמנו אילו ליצור. כל יציאה נוצרת כטיוטה לא מפורסמת, והקוד נבנה מקוד הסדרה
-            ומהתאריך.
+            One departure is proposed for each week in the range, following the series pattern. Tick the ones to create. Each is created as an
+            unpublished draft, with its code built from the series code and the date.
           </DialogDescription>
         </DialogHeader>
 
         {result ? (
           <div className="space-y-3">
             <Notice tone="success">
-              נוצרו {result.created.length} יציאות:{" "}
+              Created {result.created.length} departures:{" "}
               <Ltr className="font-mono">{result.created.map((c) => c.code).join(", ") || "—"}</Ltr>
             </Notice>
             {result.skipped.length > 0 && (
               <Notice tone="warning">
-                דולגו {result.skipped.length}:{" "}
+                Skipped {result.skipped.length}:{" "}
                 {result.skipped.map((s) => (
                   <span key={s.code} className="me-2">
                     <Ltr className="font-mono">{s.code}</Ltr> ({s.reason})
@@ -194,11 +194,11 @@ export function SeasonDialog({
             )}
             <DialogActions>
               <Button variant="outline" onClick={onClose}>
-                סגירה
+                Close
               </Button>
               {series && createdYear && (
                 <Button asChild>
-                  <Link href={`/tours/departures?series=${series.code}&year=${createdYear}`}>פתיחה בלוח היציאות</Link>
+                  <Link href={`/tours/departures?series=${series.code}&year=${createdYear}`}>Open in Tours</Link>
                 </Button>
               )}
             </DialogActions>
@@ -207,46 +207,46 @@ export function SeasonDialog({
           <Notice tone="error">{loadError}</Notice>
         ) : !series ? null : (
           <>
-            {!series.package_id && <Notice tone="error">לסדרה אין עמוד באתר. שייכו אותה לעמוד (עריכת הסדרה) לפני יצירת יציאות.</Notice>}
+            {!series.package_id && <Notice tone="error">This series has no tour page. Assign it one (edit the series) before creating departures.</Notice>}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <Field label="מתאריך">
+              <Field label="From">
                 <Input dir="ltr" type="date" className="h-9" value={from} onChange={(e) => setFrom(e.target.value)} />
               </Field>
-              <Field label="עד תאריך">
+              <Field label="To">
                 <Input dir="ltr" type="date" className="h-9" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
               </Field>
-              <Field label="יום יציאה">
+              <Field label="Departure day">
                 <select className={`${selectClass} w-full`} value={weekday} onChange={(e) => setWeekday(Number(e.target.value))}>
                   {WEEKDAY_LABELS.map((label, i) => (
                     <option key={label} value={i}>
-                      יום {label}
-                      {series.arrival_weekday === i ? " (הסדרה)" : ""}
+                      {label}
+                      {series.arrival_weekday === i ? " (series)" : ""}
                     </option>
                   ))}
                 </select>
               </Field>
-              <Field label="לילות">
+              <Field label="Nights">
                 <Input dir="ltr" inputMode="numeric" className={cn("h-9", !nightsOk && nights !== "" && "border-destructive")} value={nights} onChange={(e) => setNights(e.target.value)} />
               </Field>
-              <Field label="עונה (לא חובה)">
-                <Input className="h-9" value={season} placeholder="קיץ" onChange={(e) => setSeason(e.target.value)} />
+              <Field label="Season (optional)">
+                <Input dir="auto" className="h-9" value={season} placeholder="e.g. קיץ" onChange={(e) => setSeason(e.target.value)} />
               </Field>
             </div>
             <p className="text-xs text-muted-foreground">
-              מסלול מהסדרה: <Ltr className="font-mono text-foreground">{route || "לא הוגדר"}</Ltr> · מטבע{" "}
-              <Ltr className="text-foreground">{source && copyPrices ? source.currency : series.default_currency}</Ltr> · קיבולת{" "}
+              Route from the series: <Ltr className="font-mono text-foreground">{route || "Not set"}</Ltr> · Currency{" "}
+              <Ltr className="text-foreground">{source && copyPrices ? source.currency : series.default_currency}</Ltr> · Capacity{" "}
               {series.default_capacity ?? "—"}
-              {nights === "" && " · הזינו מספר לילות כדי לקבל הצעות"}
+              {nights === "" && " · Enter the number of nights to get proposals"}
             </p>
 
             <div className="grid grid-cols-1 gap-3 rounded-md border bg-muted/30 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <Field label="העתקה מיציאה קיימת של הסדרה (לא חובה)">
+              <Field label="Copy from an existing departure of the series (optional)">
                 <select className={`${selectClass} w-full`} value={sourceId} onChange={(e) => setSourceId(e.target.value)} disabled={!context}>
-                  <option value="">{context ? "בלי העתקה - יציאות ריקות ממחיר" : "טוען…"}</option>
+                  <option value="">{context ? "No copy - departures start without prices" : "Loading…"}</option>
                   {sources.map((d) => (
                     <option key={d.id} value={d.id}>
-                      {d.code} · {fmtDateRange(d.start_date, d.end_date)} · {d.priceRows + d.optionRows > 0 ? "יש מחירים" : "בלי מחירים"}
-                      {d.activePromotions ? ` · ${d.activePromotions} הטבות` : ""}
+                      {d.code} · {fmtDateRange(d.start_date, d.end_date)} · {d.priceRows + d.optionRows > 0 ? "Has prices" : "No prices"}
+                      {d.activePromotions ? ` · ${d.activePromotions} promotions` : ""}
                     </option>
                   ))}
                 </select>
@@ -260,7 +260,7 @@ export function SeasonDialog({
                     checked={copyPrices}
                     onChange={(e) => setCopyPrices(e.target.checked)}
                   />
-                  מחירים ומטבע
+                  Prices and currency
                 </label>
                 <label className={cn("flex items-center gap-2", sourceId ? "cursor-pointer" : "opacity-50")}>
                   <input
@@ -270,7 +270,7 @@ export function SeasonDialog({
                     checked={copyPromotions}
                     onChange={(e) => setCopyPromotions(e.target.checked)}
                   />
-                  הטבות פעילות
+                  Active promotions
                 </label>
               </div>
             </div>
@@ -278,7 +278,7 @@ export function SeasonDialog({
             <div className="min-h-0 flex-1 overflow-auto rounded-md border" data-testid="season-proposals">
               {proposals.length === 0 ? (
                 <p className="p-8 text-center text-sm text-muted-foreground">
-                  {rangeOk && nightsOk ? "אין יום כזה בטווח שנבחר." : "בחרו טווח תאריכים ומספר לילות כדי לקבל הצעות."}
+                  {rangeOk && nightsOk ? "That weekday doesn't fall in the selected range." : "Choose a date range and number of nights to get proposals."}
                 </p>
               ) : (
                 <table className="w-full text-sm">
@@ -288,15 +288,15 @@ export function SeasonDialog({
                         <input
                           type="checkbox"
                           className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
-                          aria-label="סימון כל ההצעות"
+                          aria-label="Select all proposals"
                           checked={chosen.length > 0 && chosen.length === proposals.filter((p) => !p.exists).length}
                           onChange={(e) => setUnticked(e.target.checked ? new Set() : new Set(proposals.map((p) => p.key)))}
                         />
                       </th>
-                      <th className="px-2 py-1.5 text-start font-semibold">קוד</th>
-                      <th className="px-2 py-1.5 text-start font-semibold">תאריכים</th>
-                      <th className="px-2 py-1.5 text-start font-semibold">ימים</th>
-                      <th className="px-2 py-1.5 text-start font-semibold">חגים וחופשות</th>
+                      <th className="px-2 py-1.5 text-start font-semibold">Code</th>
+                      <th className="px-2 py-1.5 text-start font-semibold">Dates</th>
+                      <th className="px-2 py-1.5 text-start font-semibold">Days</th>
+                      <th className="px-2 py-1.5 text-start font-semibold">Holidays and breaks</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -306,7 +306,7 @@ export function SeasonDialog({
                           <input
                             type="checkbox"
                             className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
-                            aria-label={`יצירת ${p.code}`}
+                            aria-label={`Create ${p.code}`}
                             disabled={p.exists}
                             checked={!p.exists && !unticked.has(p.key)}
                             onChange={(e) =>
@@ -321,13 +321,13 @@ export function SeasonDialog({
                         </td>
                         <td className="whitespace-nowrap px-2 py-1.5 font-mono font-semibold">
                           <Ltr>{p.code}</Ltr>
-                          {p.exists && <Chip className="ms-2 font-sans">קיים, ידולג</Chip>}
+                          {p.exists && <Chip className="ms-2 font-sans">Exists, will be skipped</Chip>}
                         </td>
                         <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">
                           <Ltr>{fmtDateRange(p.start, p.end)}</Ltr>
                         </td>
                         <td className="whitespace-nowrap px-2 py-1.5 text-xs text-muted-foreground">
-                          {WEEKDAY_LABELS[weekdayOf(p.start)]} עד {WEEKDAY_LABELS[weekdayOf(p.end)]}
+                          {WEEKDAY_LABELS[weekdayOf(p.start)]} to {WEEKDAY_LABELS[weekdayOf(p.end)]}
                         </td>
                         <td className="px-2 py-1.5">
                           <span className="flex flex-wrap gap-1">
@@ -345,20 +345,20 @@ export function SeasonDialog({
               )}
             </div>
             {proposals.length >= MAX_PROPOSALS && (
-              <p className="text-xs text-warning">מוצגות {MAX_PROPOSALS} ההצעות הראשונות (עד {fmtDate(proposals[proposals.length - 1].start)}). צמצמו את הטווח.</p>
+              <p className="text-xs text-warning">Showing the first {MAX_PROPOSALS} proposals (up to {fmtDate(proposals[proposals.length - 1].start)}). Narrow the range.</p>
             )}
 
             <DialogActions className="justify-between">
               <span className="text-sm text-muted-foreground">
-                {proposals.length > 0 && `${chosen.length} מסומנות ליצירה · ${proposals.filter((p) => p.exists).length} כבר קיימות`}
+                {proposals.length > 0 && `${chosen.length} selected to create · ${proposals.filter((p) => p.exists).length} already exist`}
               </span>
               <span className="flex gap-2">
                 <Button variant="outline" onClick={onClose} disabled={saving}>
-                  ביטול
+                  Cancel
                 </Button>
                 <Button onClick={create} disabled={saving || chosen.length === 0 || !series.package_id}>
                   {saving && <Loader2 className="animate-spin" />}
-                  יצירת {chosen.length} יציאות
+                  Create {chosen.length} Departures
                 </Button>
               </span>
             </DialogActions>

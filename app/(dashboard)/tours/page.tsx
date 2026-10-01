@@ -1,27 +1,23 @@
-import { Suspense } from "react";
 import Link from "next/link";
 
 import { requireCompany, type Company } from "@/lib/company";
 import type { SessionPayload } from "@/lib/auth/session";
-import { TOURS_HOME, visibleGroups } from "@/lib/nav";
-import { formatDateShort, todayIso } from "@/lib/tours/deadlines";
+import { isManagerRole } from "@/components/tours/flights/block-rules";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { OverviewContent } from "@/components/tours/overview/overview-content";
+import { ToursDashboard } from "@/components/tours/dashboard/tours-dashboard";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
-import { OverviewSkeleton } from "@/components/tours/overview/overview-skeleton";
 
 // Per request always: the guard reads cookies, and its refusal is caught below -
 // a build-time prerender must never bake the "not a tours company" notice in.
 export const dynamic = "force-dynamic";
 
 /**
- * /tours - the landing page of a company that sells tours (Mega Family):
- * what is on sale, what leaves soon, where the flight blocks stand and what
- * needs handling today.
+ * /tours - the dashboard of a company that sells tours (Mega Family): the
+ * Mega Events dashboard's sections, filled with tours, reservations and leads.
  */
-export default async function ToursOverviewPage() {
+export default async function ToursDashboardPage() {
   let session: SessionPayload;
   let company: Company;
   try {
@@ -33,41 +29,32 @@ export default async function ToursOverviewPage() {
     throw e;
   }
 
-  // The shortcuts are the sidebar's own Tours items, minus this page.
-  const links = visibleGroups(session.role, company.productTypes)
-    .filter((group) => group.productType === "tours")
-    .flatMap((group) => group.items)
-    .filter((item) => item.href !== TOURS_HOME);
-
   return (
-    <div dir="rtl">
+    <div className="space-y-6">
       <PageHeader
-        eyebrow={company.name}
-        title="סקירה"
-        description={`היציאות, קבוצות הטיסה והלידים של ${company.name}, נכון ל-${formatDateShort(todayIso())}. כל מספר וכל שורה מובילים למסך שבו מטפלים בהם.`}
+        title="Dashboard"
+        description={`Tours, reservations and leads of ${company.name}. Every number opens the screen that holds its rows.`}
         actions={<PublishSiteButton />}
       />
-      <Suspense fallback={<OverviewSkeleton />}>
-        <OverviewContent links={links} />
-      </Suspense>
+      <ToursDashboard isManager={isManagerRole(session.role)} />
     </div>
   );
 }
 
 function NotAToursCompany() {
   return (
-    <div dir="rtl" className="mx-auto max-w-md py-10">
+    <div className="mx-auto max-w-md py-10">
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">המסך הזה שייך לחברת טיולים</CardTitle>
+          <CardTitle className="text-lg">This screen belongs to a tours company</CardTitle>
           <CardDescription>
-            סקירת הטיולים זמינה רק כשהחברה הפעילה מוכרת טיולים. אם יש לך גישה לחברה כזו, אפשר לעבור אליה
-            מבורר החברות בסרגל העליון.
+            The tours dashboard opens only while the active company sells tours. If you have access to one,
+            switch to it from the company switcher in the top bar.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button asChild>
-            <Link href="/dashboard">חזרה לדשבורד</Link>
+            <Link href="/dashboard">Back to Dashboard</Link>
           </Button>
         </CardContent>
       </Card>

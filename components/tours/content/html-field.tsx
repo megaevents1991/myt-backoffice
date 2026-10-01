@@ -48,7 +48,7 @@ export function HtmlPreview({
   html,
   siteUrl,
   className,
-  title = "תצוגה מקדימה",
+  title = "Preview",
 }: {
   html: string;
   siteUrl?: string | null;
@@ -107,7 +107,7 @@ export function HtmlField({ label, value, onChange, siteUrl, rows = 10, hint, cl
             onClick={() => setMode("code")}
             className={cn("rounded px-2 py-1", !visual && "bg-muted font-medium text-foreground")}
           >
-            קוד HTML ותצוגה מקדימה
+            HTML & Preview
           </button>
           <button
             type="button"
@@ -115,21 +115,23 @@ export function HtmlField({ label, value, onChange, siteUrl, rows = 10, hint, cl
             disabled={!simple}
             title={
               simple
-                ? "עריכה בלי קוד: כותרות, רשימות, קישורים, הדגשות"
-                : "בשדה הזה יש עיצוב שהעורך החזותי היה מוחק (מחלקות, תמונות או מבנה מיובא), ולכן הוא נערך כקוד"
+                ? "Edit without code: headings, lists, links, bold and italic"
+                : "This field has formatting the visual editor would remove (classes, images or imported structure), so it is edited as code"
             }
             className={cn(
               "rounded px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50",
               visual && "bg-muted font-medium text-foreground",
             )}
           >
-            עורך חזותי
+            Visual Editor
           </button>
         </div>
       </div>
 
       {visual ? (
-        <RichBodyEditor value={value} onChange={onChange} />
+        <div dir="rtl">
+          <RichBodyEditor value={value} onChange={onChange} />
+        </div>
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
           <Textarea
@@ -142,10 +144,10 @@ export function HtmlField({ label, value, onChange, siteUrl, rows = 10, hint, cl
             onChange={(event) => onChange(event.target.value)}
           />
           {preview.trim() ? (
-            <HtmlPreview html={preview} siteUrl={siteUrl} title={`תצוגה מקדימה: ${label}`} />
+            <HtmlPreview html={preview} siteUrl={siteUrl} title={`Preview: ${label}`} />
           ) : (
             <div className="flex min-h-[160px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-              אין תוכן להצגה
+              Nothing to preview
             </div>
           )}
         </div>

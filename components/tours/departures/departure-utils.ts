@@ -56,8 +56,8 @@ export const dayDiff = (a: string, b: string): number => Math.abs(Math.round((ut
 /** 0 = Sunday ... 6 = Saturday, the convention of tours.series.arrival_weekday. */
 export const weekdayOf = (iso: string): number => new Date(utc(iso)).getUTCDay();
 
-export const WEEKDAY_LABELS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"] as const;
-export const WEEKDAY_SHORT = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"] as const;
+export const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+export const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 /** Today in Israel as `YYYY-MM-DD` - the date a soft delete is stamped with. */
 export function todayIso(now: Date = new Date()): string {
@@ -193,15 +193,15 @@ export function promotionSummary(p: PromotionLike, currency: string | null | und
   const value = p.value == null ? "" : fmtMoney(Number(p.value));
   switch (p.kind as PromotionKind) {
     case "percent_order":
-      return `${value}% מההזמנה`;
+      return `${value}% off the order`;
     case "fixed_per_pax":
-      return `${value}${sym} לנוסע`;
+      return `${value}${sym} per traveler`;
     case "fixed_per_order":
-      return `${value}${sym} להזמנה`;
+      return `${value}${sym} per order`;
     case "named_per_pax":
-      return `${p.label ?? "הנחה"}: ${value}${sym} לנוסע`;
+      return `${p.label ?? "Discount"}: ${value}${sym} per traveler`;
     case "gift":
-      return `מתנה: ${p.label ?? ""}`.trim();
+      return `Gift: ${p.label ?? ""}`.trim();
     default:
       return PROMOTION_KIND_LABELS[p.kind as PromotionKind] ?? p.kind;
   }
@@ -218,11 +218,11 @@ export function promotionConflict(kind: PromotionKind, others: { kind: string }[
   if (EXCLUSIVE_PROMOTION_KINDS.includes(kind)) {
     const rival = EXCLUSIVE_PROMOTION_KINDS.find((k) => k !== kind);
     if (rival && others.some((o) => o.kind === rival)) {
-      return `"${PROMOTION_KIND_LABELS.percent_order}" ו"${PROMOTION_KIND_LABELS.fixed_per_pax}" לא יכולות להיות פעילות יחד באותה יציאה. בטלו קודם את ההטבה הפעילה.`;
+      return `"${PROMOTION_KIND_LABELS.percent_order}" and "${PROMOTION_KIND_LABELS.fixed_per_pax}" can't both be active on the same departure. Switch off the active promotion first.`;
     }
   }
   if (SINGLE_ACTIVE_PROMOTION_KINDS.includes(kind) && others.some((o) => o.kind === kind)) {
-    return `כבר קיימת ביציאה הטבה פעילה מסוג "${PROMOTION_KIND_LABELS[kind]}". ערכו אותה או בטלו אותה קודם.`;
+    return `This departure already has an active "${PROMOTION_KIND_LABELS[kind]}" promotion. Edit it or switch it off first.`;
   }
   return null;
 }
@@ -302,16 +302,16 @@ export interface PublishInput extends DoublePriceInput {
  */
 export function publishBlockers(d: PublishInput): string[] {
   const out: string[] = [];
-  if (!d.start_date || !d.end_date) out.push("חסרים תאריכים");
-  else if (d.end_date < d.start_date) out.push("תאריך החזרה מוקדם מתאריך היציאה");
-  if (!d.route.arrival_airport) out.push("חסרה עיר נחיתה (ביציאה או בסדרה)");
-  if (!d.route.return_airport) out.push("חסרה עיר חזרה (ביציאה או בסדרה)");
-  if (!d.currency) out.push("חסר מטבע");
-  if (doublePricePerPerson(d).price == null) out.push("חסר מחיר לחדר זוגי");
+  if (!d.start_date || !d.end_date) out.push("Missing dates");
+  else if (d.end_date < d.start_date) out.push("Return date is before the departure date");
+  if (!d.route.arrival_airport) out.push("Missing arrival city (on the departure or the series)");
+  if (!d.route.return_airport) out.push("Missing return city (on the departure or the series)");
+  if (!d.currency) out.push("Missing currency");
+  if (doublePricePerPerson(d).price == null) out.push("Missing double-room price");
   return out;
 }
 
-export const NO_LIVE_FLIGHT_WARNING = "אין בלוק טיסה חי - האתר יציג \"פרטי הטיסות יעודכנו\"";
+export const NO_LIVE_FLIGHT_WARNING = "No live flight block - the site will show \"Flight details to follow\"";
 
 // ---------------------------------------------------------------- sale status
 /** Badge colours, matching the tag the site prints next to a date. */
@@ -403,14 +403,14 @@ export function parsePastedPrices(text: string, columns = 6): PastedPriceRow[] {
     if (index === 0 && priceCells.length > 0 && priceCells.every((c) => c !== "" && parsePrice(c) === undefined)) return;
     const prices: (number | null)[] = [];
     let error: string | null = null;
-    if (!code) error = "חסר קוד יציאה";
+    if (!code) error = "Missing departure code";
     if (priceCells.length > columns && priceCells.slice(columns).some((c) => c !== "")) {
-      error = error ?? `יותר מ-${columns} עמודות מחיר`;
+      error = error ?? `More than ${columns} price columns`;
     }
     for (let i = 0; i < columns; i++) {
       const parsed = parsePrice(priceCells[i] ?? "");
       if (parsed === undefined) {
-        error = error ?? `מחיר לא תקין בעמודה ${i + 1}: "${priceCells[i]}"`;
+        error = error ?? `Invalid price in column ${i + 1}: "${priceCells[i]}"`;
         prices.push(null);
       } else prices.push(parsed);
     }

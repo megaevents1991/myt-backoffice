@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Inbox, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Inbox, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { UnsavedChangesGuard } from "@/components/unsaved-changes-guard";
@@ -31,9 +31,8 @@ export function ContentSaveBar({
     <>
       <UnsavedChangesGuard when={isDirty && !isSaving} />
       <div
-        dir="rtl"
         role="region"
-        aria-label="שינויים שלא נשמרו"
+        aria-label="Unsaved changes"
         aria-hidden={!visible}
         className={cn(
           "fixed bottom-0 left-0 right-0 z-40 md:left-64",
@@ -45,15 +44,15 @@ export function ContentSaveBar({
       >
         <div className="flex items-center justify-between gap-4 px-6 py-3">
           <span className={cn("text-sm text-muted-foreground", disabledReason && "text-destructive")}>
-            {disabledReason || "יש שינויים שלא נשמרו. הם יגיעו לאתר רק אחרי שמירה ופרסום."}
+            {disabledReason || "You have unsaved changes. They reach the site only after you save and publish."}
           </span>
           <div className="flex items-center gap-2">
             <Button type="button" variant="ghost" onClick={onDiscard} disabled={isSaving} tabIndex={visible ? 0 : -1}>
-              ביטול השינויים
+              Discard
             </Button>
             <Button type="button" onClick={onSave} disabled={isSaving || !!disabledReason} tabIndex={visible ? 0 : -1}>
               {isSaving && <Loader2 className="animate-spin" />}
-              {isSaving ? "שומר..." : "שמירה"}
+              {isSaving ? "Saving..." : "Save"}
             </Button>
           </div>
         </div>
@@ -66,7 +65,7 @@ export function ContentSaveBar({
 export function BackLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <Link href={href} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-      <ArrowRight className="h-4 w-4" />
+      <ArrowLeft className="h-4 w-4" />
       {children}
     </Link>
   );
@@ -75,14 +74,14 @@ export function BackLink({ href, children }: { href: string; children: ReactNode
 /** What a screen shows when its data could not be loaded. */
 export function LoadError({ message, backHref, backLabel }: { message: string; backHref?: string; backLabel?: string }) {
   return (
-    <div dir="rtl" className="rounded-lg border border-destructive/40 bg-destructive/5 p-6" role="alert">
+    <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6" role="alert">
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
         <div className="space-y-2">
           <p className="font-medium">{message}</p>
           {/* a refusal (wrong company, no permission, no such row) is not fixed by a refresh */}
-          {message.includes("נכשל") && <p className="text-sm text-muted-foreground">אפשר לרענן את העמוד ולנסות שוב.</p>}
-          {backHref && <BackLink href={backHref}>{backLabel ?? "חזרה לרשימה"}</BackLink>}
+          {/נכשל|failed/i.test(message) && <p className="text-sm text-muted-foreground">Refresh the page to try again.</p>}
+          {backHref && <BackLink href={backHref}>{backLabel ?? "Back to list"}</BackLink>}
         </div>
       </div>
     </div>

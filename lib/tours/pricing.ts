@@ -31,14 +31,14 @@ export interface RoomComposition {
 }
 
 export const ROOM_COMPOSITIONS: RoomComposition[] = [
-  { key: "double_room", title: "זוגי", adults: 2, children: 0, summaryLabel: "חדר זוגי" },
-  { key: "single_room", title: "סינגל", adults: 1, children: 0, summaryLabel: "חדר סינגל" },
-  { key: "adult_kid", title: "מבוגר + ילד", adults: 1, children: 1, summaryLabel: "חדר זוגי" },
-  { key: "three_adults", title: "3 מבוגרים", adults: 3, children: 0, summaryLabel: "חדר טריפל" },
-  { key: "couple_kid", title: "זוג + ילד", adults: 2, children: 1, summaryLabel: "חדר טריפל" },
-  { key: "adult_2_kids", title: "מבוגר + 2 ילדים", adults: 1, children: 2, summaryLabel: "חדר טריפל" },
-  { key: "couple_2_kids", title: "זוג + 2 ילדים", adults: 2, children: 2, summaryLabel: "חדר רביעייה" },
-  { key: "couple_3_kids", title: "זוג + 3 ילדים", adults: 2, children: 3, summaryLabel: "חדר חמישייה" },
+  { key: "double_room", title: "Double", adults: 2, children: 0, summaryLabel: "Double room" },
+  { key: "single_room", title: "Single", adults: 1, children: 0, summaryLabel: "Single room" },
+  { key: "adult_kid", title: "Adult + child", adults: 1, children: 1, summaryLabel: "Double room" },
+  { key: "three_adults", title: "3 adults", adults: 3, children: 0, summaryLabel: "Triple room" },
+  { key: "couple_kid", title: "Couple + child", adults: 2, children: 1, summaryLabel: "Triple room" },
+  { key: "adult_2_kids", title: "Adult + 2 children", adults: 1, children: 2, summaryLabel: "Triple room" },
+  { key: "couple_2_kids", title: "Couple + 2 children", adults: 2, children: 2, summaryLabel: "Quad room" },
+  { key: "couple_3_kids", title: "Couple + 3 children", adults: 2, children: 3, summaryLabel: "Quintuple room" },
 ];
 
 export function toPriceMatrix(rows: { pax_type: string; room_position: number; price: number }[]): PriceMatrix {

@@ -57,7 +57,7 @@ export function TourBlockPanel({ flightId, onLoaded }: TourBlockPanelProps) {
       }
     } catch (e) {
       console.error("TourBlockPanel: load failed", e);
-      setError("טעינת הבלוק נכשלה. בדקו שהחברה הפעילה היא החברה של הבלוק ונסו שוב.");
+      setError("Couldn't load the flight block. Check that the active company owns it and try again.");
     } finally {
       setLoading(false);
     }
@@ -84,7 +84,7 @@ export function TourBlockPanel({ flightId, onLoaded }: TourBlockPanelProps) {
         return true;
       } catch (e) {
         console.error("TourBlockPanel: action failed", e);
-        toast.error("הפעולה נכשלה. נסו שוב.");
+        toast.error("The action failed. Try again.");
         return false;
       }
     },
@@ -93,7 +93,7 @@ export function TourBlockPanel({ flightId, onLoaded }: TourBlockPanelProps) {
 
   if (loading && !data) {
     return (
-      <div dir="rtl" className="space-y-4" aria-busy="true">
+      <div className="space-y-4" aria-busy="true">
         <Skeleton className="h-36 w-full" />
         <div className="grid gap-4 xl:grid-cols-2">
           <Skeleton className="h-56 w-full" />
@@ -106,17 +106,17 @@ export function TourBlockPanel({ flightId, onLoaded }: TourBlockPanelProps) {
 
   if (!data) {
     return (
-      <div dir="rtl" className="space-y-3">
-        <Notice tone="danger">{error ?? "הבלוק לא נמצא"}</Notice>
+      <div className="space-y-3">
+        <Notice tone="danger">{error ?? "Flight block not found"}</Notice>
         <Button size="sm" variant="outline" onClick={() => void load()}>
-          ניסיון נוסף
+          Try Again
         </Button>
       </div>
     );
   }
 
   return (
-    <div dir="rtl" className="space-y-4">
+    <div className="space-y-4">
       {error && <Notice tone="danger">{error}</Notice>}
       <BlockLifecycleSection data={data} run={run} />
       <div className="grid items-start gap-4 xl:grid-cols-2">

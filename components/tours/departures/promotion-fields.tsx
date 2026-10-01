@@ -38,11 +38,11 @@ export const draftToInput = (d: PromotionDraft): PromotionInput => ({
 });
 
 const VALUE_HINT: Record<PromotionKind, string> = {
-  percent_order: "אחוז מסך ההזמנה",
-  fixed_per_pax: "סכום לכל נוסע, במטבע היציאה",
-  fixed_per_order: "סכום להזמנה, במטבע היציאה",
-  named_per_pax: "סכום לכל נוסע, במטבע היציאה",
-  gift: "אין ערך כספי - רק טקסט",
+  percent_order: "Percent of the order total",
+  fixed_per_pax: "Amount per traveler, in the departure currency",
+  fixed_per_order: "Amount per order, in the departure currency",
+  named_per_pax: "Amount per traveler, in the departure currency",
+  gift: "No money value - text only",
 };
 
 export function PromotionFields({
@@ -59,12 +59,12 @@ export function PromotionFields({
 }) {
   const set = <K extends keyof PromotionDraft>(key: K, value: PromotionDraft[K]) => onChange({ ...draft, [key]: value });
   const isGift = draft.kind === "gift";
-  const unit = draft.kind === "percent_order" ? "%" : currencySymbol(currency) || "סכום";
+  const unit = draft.kind === "percent_order" ? "%" : currencySymbol(currency) || "amount";
   return (
     <div className="grid grid-cols-2 gap-3">
-      <Field label="סוג ההטבה" className="col-span-2">
+      <Field label="Promotion type" className="col-span-2">
         <select
-          aria-label="סוג ההטבה"
+          aria-label="Promotion type"
           className={`${selectClass} w-full`}
           value={draft.kind}
           disabled={kindLocked}
@@ -78,11 +78,11 @@ export function PromotionFields({
         </select>
       </Field>
       {!isGift && (
-        <Field label={`ערך (${unit})`} hint={VALUE_HINT[draft.kind]}>
+        <Field label={`Value (${unit})`} hint={VALUE_HINT[draft.kind]}>
           <Input
             dir="ltr"
             inputMode="decimal"
-            aria-label="ערך ההטבה"
+            aria-label="Promotion value"
             className="h-9 text-end"
             value={draft.value}
             onChange={(e) => set("value", e.target.value)}
@@ -91,13 +91,13 @@ export function PromotionFields({
         </Field>
       )}
       <Field
-        label={isGift ? "המתנה" : draft.kind === "named_per_pax" ? "שם ההנחה" : "טקסט (לא חובה)"}
+        label={isGift ? "Gift" : draft.kind === "named_per_pax" ? "Discount name" : "Text (optional)"}
         className={isGift ? "col-span-2" : undefined}
-        hint={isGift ? "מוצג מעל בחירת התאריך באתר" : undefined}
+        hint={isGift ? "Shown above the date picker on the site" : undefined}
       >
-        <Input className="h-9" value={draft.label} onChange={(e) => set("label", e.target.value)} />
+        <Input dir="auto" className="h-9" value={draft.label} onChange={(e) => set("label", e.target.value)} />
       </Field>
-      <Field label="בתוקף עד" hint="ריק = בלי תאריך תפוגה">
+      <Field label="Valid until" hint="Empty = no expiry date">
         <Input
           dir="ltr"
           type="date"
@@ -114,7 +114,7 @@ export function PromotionFields({
             checked={draft.show_on_card}
             onChange={(e) => set("show_on_card", e.target.checked)}
           />
-          להציג על כרטיס התאריך
+          Show on the date card
         </label>
         <label className="flex cursor-pointer items-center gap-2">
           <input
@@ -123,7 +123,7 @@ export function PromotionFields({
             checked={draft.is_active}
             onChange={(e) => set("is_active", e.target.checked)}
           />
-          פעילה
+          Active
         </label>
       </div>
     </div>
@@ -132,10 +132,10 @@ export function PromotionFields({
 
 /** Client-side check before the server's: catches the obvious so the dialog can say it at once. */
 export function promotionDraftError(d: PromotionDraft): string | null {
-  if (d.kind === "gift") return d.label.trim() ? null : "למתנה צריך טקסט שמתאר אותה";
+  if (d.kind === "gift") return d.label.trim() ? null : "A gift needs text that describes it";
   const value = Number(d.value);
-  if (d.value.trim() === "" || !Number.isFinite(value) || value <= 0) return "ערך ההטבה חייב להיות מספר גדול מאפס";
-  if (d.kind === "percent_order" && value > 100) return "אחוז הנחה לא יכול לעבור 100";
-  if (d.kind === "named_per_pax" && !d.label.trim()) return "להנחה בשם צריך שם";
+  if (d.value.trim() === "" || !Number.isFinite(value) || value <= 0) return "The promotion value must be a number greater than zero";
+  if (d.kind === "percent_order" && value > 100) return "A percent discount can't exceed 100";
+  if (d.kind === "named_per_pax" && !d.label.trim()) return "A named discount needs a name";
   return null;
 }

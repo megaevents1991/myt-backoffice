@@ -86,10 +86,10 @@ export function ItineraryEditor({
     if (
       hasText &&
       !(await confirm({
-        title: `להסיר את יום ${day.n}?`,
-        description: "היום יוסר מהמסלול. השינוי נשמר רק בלחיצה על שמירה.",
-        confirmLabel: "הסרה",
-        cancelLabel: "ביטול",
+        title: `Remove Day ${day.n}?`,
+        description: "The day will be removed from the itinerary. The change is kept only when you save.",
+        confirmLabel: "Remove",
+        cancelLabel: "Cancel",
         destructive: true,
       }))
     )
@@ -107,10 +107,10 @@ export function ItineraryEditor({
   const removeVariant = async () => {
     if (!active.id) return;
     const ok = await confirm({
-      title: `למחוק את הגרסה "${active.label || active.key}"?`,
-      description: "כל ימי המסלול של הגרסה הזו יימחקו. את המחיקה אי אפשר לבטל.",
-      confirmLabel: "מחיקת הגרסה",
-      cancelLabel: "ביטול",
+      title: `Delete the variant "${active.label || active.key}"?`,
+      description: "All itinerary days of this variant will be deleted. This cannot be undone.",
+      confirmLabel: "Delete Variant",
+      cancelLabel: "Cancel",
       destructive: true,
     });
     if (!ok) return;
@@ -121,7 +121,7 @@ export function ItineraryEditor({
         toast.error(result.error, { duration: 7000 });
         return;
       }
-      toast.success("הגרסה נמחקה");
+      toast.success("Variant deleted");
       setActiveKey("main");
       setOpenDay(null);
       onVariantsChanged(result.data, { deleted: key });
@@ -133,8 +133,8 @@ export function ItineraryEditor({
   return (
     <div className="space-y-4">
       <Section
-        title="גרסאות המסלול"
-        description="לכל עמוד יש מסלול ראשי. כשהטיול נמכר גם בכיוון ההפוך, פותחים גרסה נוספת כהעתק ועורכים בה את הימים. כל יציאה מציגה באתר את הגרסה שעיר הנחיתה והחזרה שלה תואמות למסלול היציאה."
+        title="Itinerary variants"
+        description="Every page has a main itinerary. When the tour is also sold in the opposite direction, open another variant as a copy and edit its days. On the site, each departure shows the variant whose arrival and return cities match the departure's route."
       >
         <div className="flex flex-wrap items-center gap-2">
           {variants.map((variant) => (
@@ -154,9 +154,9 @@ export function ItineraryEditor({
               <span dir="ltr" className="font-mono text-[11px] text-muted-foreground">
                 {variant.key}
               </span>
-              <span className="text-xs text-muted-foreground">{variant.days.length} ימים</span>
+              <span className="text-xs text-muted-foreground">{variant.days.length} days</span>
               {dirtyKeys.includes(variant.key) && (
-                <span className="h-2 w-2 rounded-full bg-amber-500" title="יש שינויים שלא נשמרו" />
+                <span className="h-2 w-2 rounded-full bg-amber-500" title="Unsaved changes" />
               )}
             </button>
           ))}
@@ -167,25 +167,25 @@ export function ItineraryEditor({
             disabled={anyDirty || copyable.length === 0}
             title={
               anyDirty
-                ? "שמרו את השינויים במסלול לפני פתיחת גרסה חדשה - הגרסה מועתקת ממה ששמור"
+                ? "Save the itinerary changes before opening a new variant - the variant is copied from what is saved"
                 : copyable.length === 0
-                  ? "שמרו קודם את המסלול הראשי"
+                  ? "Save the main itinerary first"
                   : undefined
             }
             onClick={() => setDialogOpen(true)}
           >
             <CopyPlus />
-            גרסה חדשה
+            New Variant
           </Button>
         </div>
       </Section>
 
       <Section>
         <div className="grid gap-4 md:grid-cols-4">
-          <Field label="שם הגרסה" className="md:col-span-2">
-            <Input value={active.label} onChange={(event) => patchActive({ label: event.target.value })} />
+          <Field label="Variant name" className="md:col-span-2">
+            <Input dir="auto" value={active.label} onChange={(event) => patchActive({ label: event.target.value })} />
           </Field>
-          <Field label="עיר נחיתה" hint="קוד עיר, למשל LON">
+          <Field label="Arrival city" hint="City code, e.g. LON">
             <Input
               dir="ltr"
               maxLength={3}
@@ -194,7 +194,7 @@ export function ItineraryEditor({
               onChange={(event) => patchActive({ arrivalCity: event.target.value.toUpperCase() })}
             />
           </Field>
-          <Field label="עיר חזרה" hint="קוד עיר, למשל PAR">
+          <Field label="Return city" hint="City code, e.g. PAR">
             <Input
               dir="ltr"
               maxLength={3}
@@ -207,12 +207,12 @@ export function ItineraryEditor({
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
           <span>
             {active.id === null
-              ? "לעמוד עוד אין מסלול שמור. הוא ייווצר בשמירה."
+              ? "This page has no saved itinerary yet. It is created when you save."
               : active.departures > 0
-                ? `יציאות שמצביעות על הגרסה הזו: ${active.departures}.`
+                ? `Departures using this variant: ${active.departures}.`
                 : active.key === "main"
-                  ? "המסלול הראשי משמש כל יציאה שלא נבחרה לה גרסה אחרת."
-                  : "אף יציאה לא מצביעה כרגע על הגרסה הזו."}
+                  ? "The main itinerary is used by every departure that has no other variant."
+                  : "No departure uses this variant right now."}
           </span>
           {active.key !== "main" && active.id && (
             <Button
@@ -224,7 +224,7 @@ export function ItineraryEditor({
               onClick={() => void removeVariant()}
             >
               {isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
-              מחיקת הגרסה
+              Delete Variant
             </Button>
           )}
         </div>
@@ -233,7 +233,7 @@ export function ItineraryEditor({
       <div className="space-y-2">
         {active.days.length === 0 && (
           <p className="rounded-lg border border-dashed bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-            אין עדיין ימים במסלול הזה. הוסיפו את היום הראשון.
+            This itinerary has no days yet. Add the first day.
           </p>
         )}
         {active.days.map((day, index) => {
@@ -249,9 +249,9 @@ export function ItineraryEditor({
                 >
                   <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-180")} />
                   <Badge variant="secondary" className="shrink-0">
-                    יום {day.n}
+                    Day {day.n}
                   </Badge>
-                  <span className="min-w-0 truncate font-medium">{day.title || "ללא כותרת"}</span>
+                  <span className="min-w-0 truncate font-medium">{day.title || "Untitled"}</span>
                   {day.subtitle && (
                     <span className="hidden min-w-0 truncate text-sm text-muted-foreground md:inline">
                       {day.subtitle}
@@ -263,13 +263,13 @@ export function ItineraryEditor({
                   count={active.days.length}
                   onMove={(delta) => moveDay(index, delta)}
                   onRemove={() => void removeDay(index)}
-                  removeLabel="הסרת היום"
+                  removeLabel="Remove Day"
                 />
               </div>
               {open && (
                 <div className="space-y-4 border-t p-4">
                   <div className="grid gap-4 md:grid-cols-6">
-                    <Field label="מספר היום">
+                    <Field label="Day number">
                       <Input
                         type="number"
                         min={1}
@@ -278,24 +278,25 @@ export function ItineraryEditor({
                         onChange={(event) => patchDay(index, { n: Math.max(1, Math.trunc(Number(event.target.value)) || 1) })}
                       />
                     </Field>
-                    <Field label="כותרת (המסלול של היום)" className="md:col-span-2">
-                      <Input value={day.title} onChange={(event) => patchDay(index, { title: event.target.value })} />
+                    <Field label="Title (the day's route)" className="md:col-span-2">
+                      <Input dir="rtl" value={day.title} onChange={(event) => patchDay(index, { title: event.target.value })} />
                     </Field>
-                    <Field label="כותרת משנה" className="md:col-span-3">
+                    <Field label="Subtitle" className="md:col-span-3">
                       <Input
+                        dir="rtl"
                         value={day.subtitle}
                         onChange={(event) => patchDay(index, { subtitle: event.target.value })}
                       />
                     </Field>
                   </div>
                   <ImageUrlField
-                    label="תמונה"
+                    label="Image"
                     value={day.image ?? ""}
                     onChange={(image) => patchDay(index, { image })}
                     siteUrl={siteUrl}
                   />
                   <HtmlField
-                    label="תיאור היום"
+                    label="Day description"
                     value={day.html}
                     onChange={(html) => patchDay(index, { html })}
                     siteUrl={siteUrl}
@@ -308,7 +309,7 @@ export function ItineraryEditor({
         })}
         <Button type="button" variant="outline" onClick={addDay}>
           <Plus />
-          הוספת יום
+          Add Day
         </Button>
       </div>
 
@@ -354,13 +355,13 @@ function NewVariantDialog({
 
   const cleanKey = key.trim().toLowerCase();
   const problem = !sourceId
-    ? "בחרו מאיזו גרסה להעתיק"
+    ? "Choose a variant to copy from"
     : !/^[a-z0-9][a-z0-9-]{0,39}$/.test(cleanKey)
-      ? "מזהה באנגלית: אותיות קטנות, ספרות ומקף"
+      ? "ID in English: lowercase letters, digits and hyphens"
       : takenKeys.includes(cleanKey)
-        ? "כבר קיימת גרסה עם המזהה הזה"
+        ? "A variant with this ID already exists"
         : !label.trim()
-          ? "תנו שם לגרסה"
+          ? "Give the variant a name"
           : null;
 
   const create = () => {
@@ -377,22 +378,22 @@ function NewVariantDialog({
         toast.error(result.error, { duration: 7000 });
         return;
       }
-      toast.success("הגרסה נוצרה. עכשיו אפשר לערוך את הימים שלה.");
+      toast.success("Variant created. You can now edit its days.");
       onCreated(result.data, cleanKey);
     });
   };
 
   return (
     <Dialog open onOpenChange={(open) => !open && !isPending && onClose()}>
-      <DialogContent dir="rtl" className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader className="pt-4 text-start sm:text-start">
-          <DialogTitle>גרסת מסלול חדשה</DialogTitle>
+          <DialogTitle>New Itinerary Variant</DialogTitle>
           <DialogDescription>
-            הגרסה נפתחת כהעתק של מסלול קיים. אחרי היצירה עורכים בה את הימים לפי הכיוון החדש.
+            The variant opens as a copy of an existing itinerary. After creating it, edit its days for the new direction.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="להעתיק מ" className="sm:col-span-2">
+          <Field label="Copy from" className="sm:col-span-2">
             <Select
               value={sourceId}
               onValueChange={(id) => {
@@ -404,22 +405,22 @@ function NewVariantDialog({
                 }
               }}
             >
-              <SelectTrigger dir="rtl">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent dir="rtl">
+              <SelectContent>
                 {sources.map((v) => (
                   <SelectItem key={v.key} value={v.id ?? v.key}>
-                    {v.label || v.key} ({v.days.length} ימים)
+                    {v.label || v.key} ({v.days.length} days)
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </Field>
-          <Field label="שם הגרסה">
-            <Input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="מסלול הפוך" />
+          <Field label="Variant name">
+            <Input dir="auto" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="מסלול הפוך" />
           </Field>
-          <Field label="מזהה" hint="באנגלית, למשל reverse">
+          <Field label="ID" hint="In English, e.g. reverse">
             <Input
               dir="ltr"
               className="font-mono"
@@ -428,7 +429,7 @@ function NewVariantDialog({
               placeholder="reverse"
             />
           </Field>
-          <Field label="עיר נחיתה" hint="קוד עיר, למשל PAR">
+          <Field label="Arrival city" hint="City code, e.g. PAR">
             <Input
               dir="ltr"
               maxLength={3}
@@ -437,7 +438,7 @@ function NewVariantDialog({
               onChange={(event) => setArrivalCity(event.target.value.toUpperCase())}
             />
           </Field>
-          <Field label="עיר חזרה" hint="קוד עיר, למשל LON">
+          <Field label="Return city" hint="City code, e.g. LON">
             <Input
               dir="ltr"
               maxLength={3}
@@ -447,13 +448,13 @@ function NewVariantDialog({
             />
           </Field>
         </div>
-        <DialogFooter className="gap-2 sm:justify-start">
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="ghost" onClick={onClose} disabled={isPending}>
+            Cancel
+          </Button>
           <Button type="button" onClick={create} disabled={!!problem || isPending} title={problem ?? undefined}>
             {isPending && <Loader2 className="animate-spin" />}
-            יצירת הגרסה
-          </Button>
-          <Button type="button" variant="ghost" onClick={onClose} disabled={isPending}>
-            ביטול
+            Create Variant
           </Button>
         </DialogFooter>
       </DialogContent>

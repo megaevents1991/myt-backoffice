@@ -32,15 +32,15 @@ import type { ActionResult, CompanyMemberRow } from "@/components/tours/content/
 
 const ASSIGNABLE_ROLES = ["admin", "editor", TOURS_AGENT_ROLE];
 
-const NOT_ADMIN = { success: false as const, error: "שיוך משתמשים לחברה פתוח למנהל החברה בלבד" };
+const NOT_ADMIN = { success: false as const, error: "Only company admins can manage members" };
 const isAdmin = (session: SessionPayload): boolean => session.role === "superadmin" || session.role === "admin";
 
 function failure(e: unknown, fallback: string): { success: false; error: string } {
   const message = e instanceof Error ? e.message : String(e);
   if (message.startsWith("Forbidden: the active company")) {
-    return { success: false, error: "המסך הזה שייך לחברה שמוכרת טיולים. החליפו חברה בסרגל העליון." };
+    return { success: false, error: "This screen belongs to a company that sells tours. Switch companies in the top bar." };
   }
-  if (message === "Unauthorized") return { success: false, error: "אין הרשאה לפעולה הזו" };
+  if (message === "Unauthorized") return { success: false, error: "You don't have permission to do this" };
   console.error(`${fallback}:`, e);
   return { success: false, error: fallback };
 }
@@ -86,7 +86,7 @@ export async function addCompanyMember(
     if (!isAdmin(session)) return NOT_ADMIN;
 
     const wanted = email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wanted)) return { success: false, error: "כתובת אימייל לא תקינה" };
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wanted)) return { success: false, error: "Invalid email address" };
 
     const { data: profile, error: profileError } = await supabaseTyped
       .from("user_profiles")
@@ -95,15 +95,15 @@ export async function addCompanyMember(
       .maybeSingle();
     if (profileError) throw profileError;
     if (!profile) {
-      return { success: false, error: "אין משתמש עם האימייל הזה. קודם יוצרים אותו במסך המשתמשים, ואז משייכים אותו כאן." };
+      return { success: false, error: "No user has this email. Create the user on the Users screen first, then add them here." };
     }
     if (profile.role === "superadmin") {
-      return { success: false, error: "מנהל-על רואה כל חברה, אין צורך לשייך אותו." };
+      return { success: false, error: "A superadmin sees every company, so there is no need to add them." };
     }
     if (!ASSIGNABLE_ROLES.includes(profile.role)) {
-      return { success: false, error: "אפשר לשייך רק משתמשי צוות (מנהל או עורך) או סוכן טיולים." };
+      return { success: false, error: "Only staff users (admin or editor) or tours agents can be added." };
     }
-    if (!profile.is_active) return { success: false, error: "המשתמש מושבת. מפעילים אותו במסך המשתמשים לפני השיוך." };
+    if (!profile.is_active) return { success: false, error: "This user is deactivated. Reactivate them on the Users screen before adding them." };
 
     const { data: existing, error: existingError } = await supabaseTyped
       .from("company_members")
@@ -111,7 +111,7 @@ export async function addCompanyMember(
       .eq("user_id", profile.id);
     if (existingError) throw existingError;
     const companyIds = (existing ?? []).map((row) => row.company_id);
-    if (companyIds.includes(company.id)) return { success: false, error: "המשתמש כבר משויך לחברה הזו." };
+    if (companyIds.includes(company.id)) return { success: false, error: "This user is already a member of this company." };
 
     // A tours_agent works only where it is assigned: no Mega Events default, and never a Mega Events row.
     const isToursAgent = profile.role === TOURS_AGENT_ROLE;
@@ -128,12 +128,12 @@ export async function addCompanyMember(
     const name = profile.display_name || profile.email;
     const staysInEvents = !isToursAgent && (companyIds.includes(MEGA_EVENTS_COMPANY_ID) || keepsEvents);
     const note = isToursAgent
-      ? `${name} שויך/ה ל-${company.name} כסוכן/ת טיולים: לוח היציאות בלבד, לצפייה.`
+      ? `${name} was added to ${company.name} as a tours agent: departures board only, read-only.`
       : staysInEvents
-        ? `${name} עובד/ת מעכשיו גם ב-${company.name} וגם במגה איבנטס.`
+        ? `${name} now works in both ${company.name} and Mega Events.`
         : unassigned
-          ? `${name} עובד/ת מעכשיו רק ב-${company.name}, בלי גישה למסכי מגה איבנטס.`
-          : `${name} שויך/ה ל-${company.name}.`;
+          ? `${name} now works only in ${company.name}, without access to the Mega Events screens.`
+          : `${name} was added to ${company.name}.`;
 
     await logAudit({
       action: "create",
@@ -155,7 +155,7 @@ export async function addCompanyMember(
     revalidatePath("/tours/settings");
     return { success: true, data: { members: await membersOf(company), note } };
   } catch (e) {
-    return failure(e, "שיוך המשתמש נכשל");
+    return failure(e, "Failed to add the user");
   }
 }
 
@@ -164,7 +164,7 @@ export async function removeCompanyMember(userId: string): Promise<ActionResult<
   try {
     const { session, company } = await requireCompany("tours");
     if (!isAdmin(session)) return NOT_ADMIN;
-    if (userId === session.sub) return { success: false, error: "אי אפשר להסיר את עצמך מהחברה." };
+    if (userId === session.sub) return { success: false, error: "You cannot remove yourself from the company." };
 
     const { data: existing, error: existingError } = await supabaseTyped
       .from("company_members")
@@ -172,7 +172,7 @@ export async function removeCompanyMember(userId: string): Promise<ActionResult<
       .eq("user_id", userId);
     if (existingError) throw existingError;
     const companyIds = (existing ?? []).map((row) => row.company_id);
-    if (!companyIds.includes(company.id)) return { success: false, error: "המשתמש לא משויך לחברה הזו." };
+    if (!companyIds.includes(company.id)) return { success: false, error: "This user is not a member of this company." };
 
     // The "last membership" rule protects staff from turning into Mega Events
     // accounts. A tours_agent has no such default - with no membership it
@@ -189,7 +189,7 @@ export async function removeCompanyMember(userId: string): Promise<ActionResult<
       return {
         success: false,
         error:
-          "זו החברה היחידה של המשתמש. משתמש בלי חברה נחשב משתמש של מגה איבנטס, ולכן לא מסירים את השיוך האחרון. כדי לחסום אותו, משביתים אותו במסך המשתמשים.",
+          "This is the user's only company. A user with no company counts as a Mega Events user, so the last membership is not removed. To block the user, deactivate them on the Users screen.",
       };
     }
 
@@ -210,6 +210,6 @@ export async function removeCompanyMember(userId: string): Promise<ActionResult<
     revalidatePath("/tours/settings");
     return { success: true, data: await membersOf(company) };
   } catch (e) {
-    return failure(e, "הסרת המשתמש נכשלה");
+    return failure(e, "Failed to remove the user");
   }
 }

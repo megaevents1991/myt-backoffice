@@ -25,8 +25,6 @@ import {
 import type { CardPromotion, DepartureCardData } from "./types";
 import { Chip, Notice, Toggle } from "./ui-bits";
 
-const RLM = "‏";
-
 const toDraft = (p: CardPromotion): PromotionDraft => ({
   kind: p.kind as PromotionKind,
   value: p.value == null ? "" : String(p.value),
@@ -59,7 +57,7 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
       toast.error(result.error, { duration: 8000 });
       return;
     }
-    toast.success(editing === "new" ? "ההטבה נוספה" : "ההטבה עודכנה");
+    toast.success(editing === "new" ? "Promotion added" : "Promotion updated");
     setEditing(null);
     await onSaved();
   };
@@ -72,16 +70,16 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
       toast.error(result.error, { duration: 8000 });
       return;
     }
-    toast.success(next ? "ההטבה הופעלה" : "ההטבה כובתה");
+    toast.success(next ? "Promotion switched on" : "Promotion switched off");
     await onSaved();
   };
 
   const remove = async (p: CardPromotion) => {
     const agreed = await confirm({
-      title: `למחוק את ההטבה?${RLM}`,
-      description: `${promotionSummary(p, d.currency)}. כדי להפסיק הטבה בלי למחוק אותה אפשר פשוט לכבות אותה.${RLM}`,
-      confirmLabel: "מחיקה",
-      cancelLabel: "ביטול",
+      title: "Delete this promotion?",
+      description: `${promotionSummary(p, d.currency)}. To stop a promotion without deleting it, just switch it off.`,
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
       destructive: true,
     });
     if (!agreed) return;
@@ -92,7 +90,7 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
       toast.error(result.error);
       return;
     }
-    toast.success("ההטבה נמחקה");
+    toast.success("Promotion deleted");
     await onSaved();
   };
 
@@ -103,11 +101,11 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
         <span className="text-xs text-destructive">{draft.value || draft.label ? error : ""}</span>
         <span className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setEditing(null)} disabled={busy === "form"}>
-            ביטול
+            Cancel
           </Button>
           <Button size="sm" onClick={submit} disabled={busy === "form" || Boolean(error)}>
             {busy === "form" && <Loader2 className="animate-spin" />}
-            {editing === "new" ? "הוספת ההטבה" : "שמירה"}
+            {editing === "new" ? "Add Promotion" : "Save Changes"}
           </Button>
         </span>
       </div>
@@ -118,12 +116,12 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
     <div className="space-y-3 py-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          ההטבות חלות אוטומטית על כל הזמנה ליציאה הזו. הנחת אחוז מההזמנה והנחה בסכום קבוע לנוסע לא פעילות יחד.
+          Promotions apply automatically to every booking on this departure. A percent-off-the-order discount and a fixed discount per traveler can&apos;t be active together.
         </p>
         {!readOnly && editing !== "new" && (
           <Button size="sm" variant="outline" onClick={() => open(null)}>
             <Plus />
-            הטבה חדשה
+            New Promotion
           </Button>
         )}
       </div>
@@ -131,7 +129,7 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
       {editing === "new" && form}
 
       {data.promotions.length === 0 && editing !== "new" ? (
-        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">אין הטבות ליציאה הזו.</p>
+        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No promotions on this departure.</p>
       ) : (
         <ul className="space-y-2">
           {data.promotions.map((p) => {
@@ -145,7 +143,7 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
                 className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2", !p.is_active && "bg-muted/40 text-muted-foreground")}
               >
                 {fromSeries ? (
-                  <Chip className="border-info/30 bg-info-muted text-info">מהסדרה</Chip>
+                  <Chip className="border-info/30 bg-info-muted text-info">From series</Chip>
                 ) : busy === p.id ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -153,7 +151,7 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
                     size="sm"
                     checked={p.is_active}
                     disabled={readOnly}
-                    label={p.is_active ? "פעילה - לחצו לכיבוי" : "כבויה - לחצו להפעלה"}
+                    label={p.is_active ? "Active - click to switch off" : "Off - click to switch on"}
                     onChange={(next) => toggle(p, next)}
                   />
                 )}
@@ -161,26 +159,26 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
                   <p className="text-sm font-medium">{promotionSummary(p, d.currency)}</p>
                   <p className="text-xs text-muted-foreground">
                     {PROMOTION_KIND_LABELS[p.kind as PromotionKind] ?? p.kind}
-                    {p.valid_until ? ` · בתוקף עד ${fmtDate(p.valid_until)}` : " · בלי תאריך תפוגה"}
-                    {p.show_on_card ? " · מוצגת על הכרטיס" : ""}
+                    {p.valid_until ? ` · Valid until ${fmtDate(p.valid_until)}` : " · No expiry date"}
+                    {p.show_on_card ? " · Shown on the date card" : ""}
                   </p>
                 </div>
                 {expired && p.is_active && (
-                  <Chip className="border-warning/40 bg-warning-muted text-warning" title="האתר ממשיך להציג הטבה פעילה גם אחרי תאריך התפוגה. כבו אותה כדי להפסיק.">
-                    פג תוקף, עדיין פעילה
+                  <Chip className="border-warning/40 bg-warning-muted text-warning" title="The site keeps showing an active promotion after its expiry date. Switch it off to stop it.">
+                    Expired, still active
                   </Chip>
                 )}
-                {!p.is_active && <Chip>כבויה</Chip>}
+                {!p.is_active && <Chip>Off</Chip>}
                 {!fromSeries && !readOnly && (
                   <span className="flex items-center">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" title="עריכה" onClick={() => open(p)}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit" onClick={() => open(p)}>
                       <Pencil />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 text-destructive hover:text-destructive"
-                      title="מחיקה"
+                      title="Delete"
                       disabled={busy === p.id}
                       onClick={() => remove(p)}
                     >
@@ -195,7 +193,7 @@ export function CardPromotionsTab({ data, onSaved }: { data: DepartureCardData; 
       )}
       {data.promotions.some((p) => !p.departure_id) && (
         <Notice tone="info" className="text-xs">
-          הטבה שמסומנת &quot;מהסדרה&quot; חלה על כל היציאות של הסדרה ונערכת ברמת הסדרה.
+          A promotion marked &quot;From series&quot; applies to every departure of the series and is edited on the series.
         </Notice>
       )}
     </div>

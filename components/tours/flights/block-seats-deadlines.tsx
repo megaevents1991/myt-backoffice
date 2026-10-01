@@ -56,8 +56,8 @@ interface SectionProps {
 
 /** The wording to show beside a seat change: the block's contract, else the company's source document. */
 function termsOf(data: TourBlockData): { title: string; text: string } | null {
-  if (data.contract?.terms_text?.trim()) return { title: `נוסח החוזה: ${data.contract.name}`, text: data.contract.terms_text };
-  if (data.sourceTerms?.trim()) return { title: "תנאי ביטול והתחייבות (מסמך מקור)", text: data.sourceTerms };
+  if (data.contract?.terms_text?.trim()) return { title: `Contract terms: ${data.contract.name}`, text: data.contract.terms_text };
+  if (data.sourceTerms?.trim()) return { title: "Cancellation and commitment terms (source document)", text: data.sourceTerms };
   return null;
 }
 
@@ -83,23 +83,23 @@ export function BlockSeatsSection({ data, run }: SectionProps) {
 
   return (
     <Section
-      title="מושבים"
-      description="הכמות המקורית נשמרת בעדכון הראשון. כל שינוי נרשם בציר האירועים."
+      title="Seats"
+      description="The original count is kept on the first update. Every change is recorded on the timeline."
       actions={
         <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-          עדכון מושבים
+          Update Seats
         </Button>
       }
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat label="הזמנה מקורית" value={original} tone={block.original_quantity === null ? "muted" : "default"} />
-        <Stat label="נוכחי" value={block.initial_quantity} />
-        <Stat label="משויך ליציאות" value={data.allocatedSeats} />
-        <Stat label="פנוי לשיוך" value={free} tone={free < 0 ? "danger" : "default"} />
+        <Stat label="Original" value={original} tone={block.original_quantity === null ? "muted" : "default"} />
+        <Stat label="Current" value={block.initial_quantity} />
+        <Stat label="Allocated" value={data.allocatedSeats} />
+        <Stat label="Left" value={free} tone={free < 0 ? "danger" : "default"} />
       </div>
       {free < 0 && (
         <div className="mt-2">
-          <Notice tone="danger">שויכו יותר מושבים ממה שיש בבלוק. הקטינו שיוך או עדכנו את כמות המושבים.</Notice>
+          <Notice tone="danger">More seats are allocated than the flight block holds. Reduce an allocation or update the seat count.</Notice>
         </div>
       )}
       {open && <SeatsDialog data={data} run={run} onClose={() => setOpen(false)} />}
@@ -122,17 +122,17 @@ function SeatsDialog({ data, run, onClose }: SectionProps & { onClose: () => voi
   const reducing = value !== null && value < block.initial_quantity;
 
   let problem: string | null = null;
-  if (value === null) problem = "הזינו מספר שלם, 0 ומעלה";
-  else if (value === block.initial_quantity) problem = "זו כבר כמות המושבים של הבלוק";
-  else if (value < data.allocatedSeats) problem = `${data.allocatedSeats} מושבים כבר משויכים ליציאות. הורידו שיוך קודם.`;
-  else if (!reason.trim()) problem = "כתבו את הסיבה";
+  if (value === null) problem = "Enter a whole number, 0 or more";
+  else if (value === block.initial_quantity) problem = "That is already the seat count of the flight block";
+  else if (value < data.allocatedSeats) problem = `${data.allocatedSeats} seats are already allocated to departures. Reduce an allocation first.`;
+  else if (!reason.trim()) problem = "Enter the reason";
 
   const submit = async () => {
     if (value === null) return;
     setSaving(true);
     const ok = await run(
       () => updateTourBlockSeats(block.id, { quantity: value, date, reason, cleaned: reducing && cleaned }),
-      `הבלוק עודכן ל-${value} מושבים`,
+      `Flight block updated to ${value} seats`,
     );
     setSaving(false);
     if (ok) onClose();
@@ -142,15 +142,16 @@ function SeatsDialog({ data, run, onClose }: SectionProps & { onClose: () => voi
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <RtlDialogContent className="sm:max-w-3xl">
         <RtlDialogHeader>
-          <DialogTitle>עדכון מושבים</DialogTitle>
+          <DialogTitle>Update Seats</DialogTitle>
           <DialogDescription>
-            היום בבלוק {block.initial_quantity} מושבים, מהם {data.allocatedSeats} משויכים ליציאות.
+            The flight block holds {block.initial_quantity} seats today, {data.allocatedSeats} of them allocated to
+            departures.
           </DialogDescription>
         </RtlDialogHeader>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="grid content-start gap-4">
-            <Field label="כמות חדשה" htmlFor="seats-quantity">
+            <Field label="New Count" htmlFor="seats-quantity">
               <Input
                 id="seats-quantity"
                 dir="ltr"
@@ -159,16 +160,16 @@ function SeatsDialog({ data, run, onClose }: SectionProps & { onClose: () => voi
                 onChange={(e) => setQuantity(e.target.value)}
               />
             </Field>
-            <Field label="תאריך" htmlFor="seats-date">
+            <Field label="Date" htmlFor="seats-date">
               <Input id="seats-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </Field>
-            <Field label="סיבה" htmlFor="seats-reason">
-              <Textarea id="seats-reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+            <Field label="Reason" htmlFor="seats-reason">
+              <Textarea id="seats-reason" dir="auto" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
             </Field>
             {reducing && (
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox checked={cleaned} onCheckedChange={(c) => setCleaned(c === true)} />
-                ניקוי מושבים (החזרת מושבים שלא נמכרו, לא הורדה יזומה)
+                Seats released (unsold seats given back, not a deliberate cut)
               </label>
             )}
             {problem && <p className="text-sm text-destructive">{problem}</p>}
@@ -176,7 +177,7 @@ function SeatsDialog({ data, run, onClose }: SectionProps & { onClose: () => voi
 
           <div className="grid content-start gap-3">
             <div className="rounded-md border p-3 text-sm">
-              <div className="mb-1 font-medium">המועד הקרוב</div>
+              <div className="mb-1 font-medium">Next deadline</div>
               {next ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <span>{DEADLINE_LABELS[next.field]}</span>
@@ -184,7 +185,7 @@ function SeatsDialog({ data, run, onClose }: SectionProps & { onClose: () => voi
                   <DaysLeft days={next.days} />
                 </div>
               ) : (
-                <span className="text-muted-foreground">אין מועד עתידי בבלוק.</span>
+                <span className="text-muted-foreground">The flight block has no upcoming deadline.</span>
               )}
               <ul className="mt-2 grid gap-1 text-xs text-muted-foreground">
                 {(["first_cancellation_date", "last_cancellation_date"] as const).map((field) => (
@@ -197,14 +198,14 @@ function SeatsDialog({ data, run, onClose }: SectionProps & { onClose: () => voi
               </ul>
             </div>
             <div className="rounded-md border p-3 text-sm">
-              <div className="mb-1 font-medium">{terms ? terms.title : "נוסח החוזה"}</div>
+              <div className="mb-1 font-medium">{terms ? terms.title : "Contract terms"}</div>
               {terms ? (
-                <div className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground [unicode-bidi:plaintext] text-right">
+                <div className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground [unicode-bidi:plaintext]">
                   {terms.text}
                 </div>
               ) : (
                 <span className="text-muted-foreground">
-                  {data.contract ? "לחוזה של הבלוק לא הוזן נוסח." : "לבלוק אין חוזה."}
+                  {data.contract ? "No terms were entered for the contract of this flight block." : "The flight block has no contract."}
                 </span>
               )}
             </div>
@@ -213,10 +214,10 @@ function SeatsDialog({ data, run, onClose }: SectionProps & { onClose: () => voi
 
         <RtlDialogFooter>
           <Button onClick={submit} disabled={saving || problem !== null || !date}>
-            {saving ? "שומר..." : "עדכון מושבים"}
+            {saving ? "Saving..." : "Update Seats"}
           </Button>
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            חזרה
+            Back
           </Button>
         </RtlDialogFooter>
       </RtlDialogContent>
@@ -239,15 +240,15 @@ export function BlockDeadlinesSection({ data, run }: SectionProps) {
 
   return (
     <Section
-      title="מועדים"
-      description="ארבעת הראשונים מחושבים מהחוזה בכניסה לסטטוס אושר. כל מועד ניתן לעריכה, ועריכה ידנית לא נדרסת."
+      title="Deadlines"
+      description="The first four are computed from the contract when the flight block is confirmed by the airline. Every deadline can be edited, and a manual edit is never overwritten."
       actions={
         <>
           <Button size="sm" variant="outline" onClick={() => setRecomputeOpen(true)}>
-            חשב מחדש מהחוזה
+            Recompute from Contract
           </Button>
           <Button size="sm" variant="outline" onClick={() => setDepositOpen(true)}>
-            רישום מקדמה
+            Record Deposit
           </Button>
         </>
       }
@@ -259,9 +260,9 @@ export function BlockDeadlinesSection({ data, run }: SectionProps) {
       </ul>
 
       <div className="mt-3 border-t pt-3 text-sm">
-        <div className="mb-1 font-medium">מקדמות ששולמו</div>
+        <div className="mb-1 font-medium">Deposits paid</div>
         {deposits.length === 0 ? (
-          <span className="text-muted-foreground">לא נרשמה מקדמה.</span>
+          <span className="text-muted-foreground">No deposit recorded.</span>
         ) : (
           <ul className="grid gap-1">
             {deposits.map((d) => (
@@ -300,7 +301,7 @@ function DeadlineRow({
     setSaving(true);
     const ok = await run(
       () => updateTourBlockDeadline(data.block.id, field, next === "" ? null : next),
-      `מועד ${DEADLINE_LABELS[field]} עודכן`,
+      `${DEADLINE_LABELS[field]} updated`,
     );
     setSaving(false);
     if (!ok) setValue(saved);
@@ -308,7 +309,7 @@ function DeadlineRow({
 
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-      <label htmlFor={`deadline-${field}`} className="w-28 shrink-0 text-sm font-medium">
+      <label htmlFor={`deadline-${field}`} className="w-44 shrink-0 text-sm font-medium">
         {DEADLINE_LABELS[field]}
       </label>
       <Input
@@ -328,7 +329,7 @@ function DeadlineRow({
         // field must never wipe a deadline.
         <>
           <Button size="sm" className="h-7 px-2 text-xs" disabled={saving} onClick={() => commit(value)}>
-            {saving ? "שומר..." : "שמור"}
+            {saving ? "Saving..." : "Save"}
           </Button>
           <Button
             size="sm"
@@ -337,7 +338,7 @@ function DeadlineRow({
             disabled={saving}
             onClick={() => setValue(saved)}
           >
-            בטל
+            Cancel
           </Button>
         </>
       ) : (
@@ -351,7 +352,7 @@ function DeadlineRow({
               disabled={saving}
               onClick={() => commit("")}
             >
-              נקה
+              Clear
             </Button>
           )}
         </>
@@ -374,7 +375,7 @@ function RecomputeDialog({ data, run, onClose }: SectionProps & { onClose: () =>
 
   const submit = async () => {
     setSaving(true);
-    const ok = await run(() => recomputeTourBlockDeadlines(block.id, picked), "המועדים חושבו מהחוזה");
+    const ok = await run(() => recomputeTourBlockDeadlines(block.id, picked), "Deadlines recomputed from the contract");
     setSaving(false);
     if (ok) onClose();
   };
@@ -383,11 +384,11 @@ function RecomputeDialog({ data, run, onClose }: SectionProps & { onClose: () =>
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <RtlDialogContent className="sm:max-w-xl">
         <RtlDialogHeader>
-          <DialogTitle>חישוב מועדים מהחוזה</DialogTitle>
+          <DialogTitle>Recompute Deadlines from Contract</DialogTitle>
           <DialogDescription>
             {contract
-              ? `לפי "${contract.name}" ותאריך הטיסה. מתעדכנים רק המועדים שתסמנו.`
-              : "לבלוק אין חוזה. בחרו חוזה בחלק \"חוזה\" ואז חשבו."}
+              ? `Based on "${contract.name}" and the flight date. Only the deadlines you tick are updated.`
+              : "The flight block has no contract. Pick one in the \"Contract\" section, then recompute."}
           </DialogDescription>
         </RtlDialogHeader>
 
@@ -405,19 +406,19 @@ function RecomputeDialog({ data, run, onClose }: SectionProps & { onClose: () =>
                     disabled={!next || same}
                     onCheckedChange={(c) => toggle(field, c === true)}
                   />
-                  <label htmlFor={`recompute-${field}`} className="w-24 font-medium">
+                  <label htmlFor={`recompute-${field}`} className="w-44 font-medium">
                     {DEADLINE_LABELS[field]}
                   </label>
                   <span className="text-muted-foreground">
-                    היום: {current ? <Ltr>{formatDateShort(current)}</Ltr> : "ריק"}
+                    Now: {current ? <Ltr>{formatDateShort(current)}</Ltr> : "empty"}
                   </span>
                   <span>
-                    מהחוזה:{" "}
-                    {next ? <Ltr className="font-medium">{formatDateShort(next)}</Ltr> : "אין ימים בחוזה"}
+                    From contract:{" "}
+                    {next ? <Ltr className="font-medium">{formatDateShort(next)}</Ltr> : "no days in the contract"}
                   </span>
-                  {same && <span className="text-xs text-muted-foreground">זהה</span>}
+                  {same && <span className="text-xs text-muted-foreground">Same</span>}
                   {next && current && !same && (
-                    <span className="text-xs text-amber-700 dark:text-amber-400">יחליף תאריך קיים</span>
+                    <span className="text-xs text-amber-700 dark:text-amber-400">Replaces the current date</span>
                   )}
                 </li>
               );
@@ -427,10 +428,10 @@ function RecomputeDialog({ data, run, onClose }: SectionProps & { onClose: () =>
 
         <RtlDialogFooter>
           <Button onClick={submit} disabled={saving || !contract || picked.length === 0}>
-            {saving ? "מחשב..." : "עדכון המועדים שסומנו"}
+            {saving ? "Computing..." : "Update Ticked Deadlines"}
           </Button>
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            חזרה
+            Back
           </Button>
         </RtlDialogFooter>
       </RtlDialogContent>
@@ -456,7 +457,7 @@ function DepositDialog({ data, run, onClose }: SectionProps & { onClose: () => v
     setSaving(true);
     const ok = await run(
       () => recordTourBlockDeposit(block.id, { amount: parsed, currency, date, note }),
-      "המקדמה נרשמה",
+      "Deposit recorded",
     );
     setSaving(false);
     if (ok) onClose();
@@ -466,12 +467,12 @@ function DepositDialog({ data, run, onClose }: SectionProps & { onClose: () => v
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <RtlDialogContent className="sm:max-w-md">
         <RtlDialogHeader>
-          <DialogTitle>רישום מקדמה</DialogTitle>
-          <DialogDescription>תשלום מקדמה לחברת התעופה נרשם כאירוע בציר האירועים של הבלוק.</DialogDescription>
+          <DialogTitle>Record Deposit</DialogTitle>
+          <DialogDescription>A deposit paid to the airline is recorded as an event on the timeline of the flight block.</DialogDescription>
         </RtlDialogHeader>
         <div className="grid gap-4">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="סכום" htmlFor="deposit-amount">
+            <Field label="Amount" htmlFor="deposit-amount">
               <Input
                 id="deposit-amount"
                 dir="ltr"
@@ -480,8 +481,8 @@ function DepositDialog({ data, run, onClose }: SectionProps & { onClose: () => v
                 onChange={(e) => setAmount(e.target.value)}
               />
             </Field>
-            <Field label="מטבע">
-              <Select dir="rtl" value={currency} onValueChange={setCurrency}>
+            <Field label="Currency">
+              <Select value={currency} onValueChange={setCurrency}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -495,19 +496,19 @@ function DepositDialog({ data, run, onClose }: SectionProps & { onClose: () => v
               </Select>
             </Field>
           </div>
-          <Field label="תאריך התשלום" htmlFor="deposit-date">
+          <Field label="Payment Date" htmlFor="deposit-date">
             <Input id="deposit-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
-          <Field label="הערה (לא חובה)" htmlFor="deposit-note">
-            <Input id="deposit-note" value={note} onChange={(e) => setNote(e.target.value)} />
+          <Field label="Note (Optional)" htmlFor="deposit-note">
+            <Input id="deposit-note" dir="auto" value={note} onChange={(e) => setNote(e.target.value)} />
           </Field>
         </div>
         <RtlDialogFooter>
           <Button onClick={submit} disabled={saving || !valid || !date}>
-            {saving ? "שומר..." : "רישום המקדמה"}
+            {saving ? "Saving..." : "Record Deposit"}
           </Button>
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            חזרה
+            Back
           </Button>
         </RtlDialogFooter>
       </RtlDialogContent>

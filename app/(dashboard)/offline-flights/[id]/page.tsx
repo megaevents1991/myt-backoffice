@@ -173,7 +173,7 @@ export default async function OfflineFlightDetailsPage({
                     value={<span dir="ltr">{flightRouteLabel(flight)}</span>}
                   />
                   <FlightDetailItem
-                    label="סטטוס בלוק"
+                    label="Block Status"
                     value={
                       flight.block_status
                         ? (BLOCK_STATUS_LABELS[flight.block_status] ??
@@ -358,10 +358,10 @@ export default async function OfflineFlightDetailsPage({
             {tours && (
               <>
                 <Separator className="my-2" />
-                <div className="px-4 py-3 sm:px-6 bg-muted" dir="rtl">
+                <div className="px-4 py-3 sm:px-6 bg-muted">
                   <h4 className="text-lg font-semibold">{TOURS_FIELD_GROUP}</h4>
                 </div>
-                <div className="px-6" dir="rtl">
+                <div className="px-6">
                   {toursFields.map((field) => {
                     const value = (flight as unknown as Record<string, unknown>)[
                       field.key

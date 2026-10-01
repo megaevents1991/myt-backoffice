@@ -35,16 +35,16 @@ export function CmsPagesTable({ rows }: { rows: CmsPageListRow[] }) {
 
   return (
     <div className="space-y-3">
-      <SearchInput value={query} onValueChange={setQuery} placeholder="חיפוש לפי כותרת או כתובת" />
+      <SearchInput value={query} onValueChange={setQuery} placeholder="Search by title or path" />
       <div className="overflow-hidden rounded-lg border bg-card">
         <Table look="list">
           <TableHeader>
             <TableRow>
-              <TableHead>כותרת</TableHead>
-              <TableHead>כתובת באתר</TableHead>
-              <TableHead>סוג</TableHead>
-              <TableHead>תוכן</TableHead>
-              <TableHead>מצב</TableHead>
+              <TableHead>Title</TableHead>
+              <TableHead>Path</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Content</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead className="w-[60px]" />
             </TableRow>
           </TableHeader>
@@ -63,14 +63,14 @@ export function CmsPagesTable({ rows }: { rows: CmsPageListRow[] }) {
                 </TableCell>
                 <TableCell>{cmsPageKindLabel(row.kind)}</TableCell>
                 <TableCell>
-                  {row.hasContent ? <Badge variant="outline">יש תוכן</Badge> : <Badge variant="secondary">ריק</Badge>}
+                  {row.hasContent ? <Badge variant="outline">Has content</Badge> : <Badge variant="secondary">Empty</Badge>}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={row.isActive ? "outline" : "destructive"}>{row.isActive ? "פעיל" : "לא פעיל"}</Badge>
+                  <Badge variant={row.isActive ? "outline" : "destructive"}>{row.isActive ? "Active" : "Inactive"}</Badge>
                 </TableCell>
                 <TableCell>
                   <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                    <Link href={`/tours/pages/${row.id}`} aria-label={`עריכת ${row.title}`} title="עריכה">
+                    <Link href={`/tours/pages/${row.id}`} aria-label={`Edit ${row.title}`} title="Edit">
                       <Pencil />
                     </Link>
                   </Button>
@@ -81,8 +81,8 @@ export function CmsPagesTable({ rows }: { rows: CmsPageListRow[] }) {
         </Table>
         {shown.length === 0 && (
           <EmptyRows
-            title={rows.length === 0 ? "עוד אין עמודי תוכן" : "אין עמודים שמתאימים לחיפוש"}
-            description={rows.length === 0 ? "עמודי התוכן נוצרים בטעינת הנתונים של האתר." : "נסו חיפוש אחר."}
+            title={rows.length === 0 ? "No content pages yet" : "No pages match the search"}
+            description={rows.length === 0 ? "Content pages are created when the site's data is imported." : "Try a different search."}
           />
         )}
       </div>
@@ -96,17 +96,17 @@ export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
     initial,
     (values) => saveTourCmsPage(initial.id, values),
   );
-  const problem = !form.title.trim() ? "חסרה כותרת" : null;
+  const problem = !form.title.trim() ? "Title is required" : null;
   const liveUrl = saved.form.isActive ? siteAssetUrl(saved.siteUrl, saved.path) : null;
 
   return (
-    <div dir="rtl" className="space-y-4 pb-24">
-      <BackLink href="/tours/pages">כל עמודי התוכן</BackLink>
+    <div className="space-y-4 pb-24">
+      <BackLink href="/tours/pages">Back to Content Pages</BackLink>
       <PageHeader
         eyebrow={cmsPageKindLabel(saved.kind)}
         title={saved.form.title}
         description={
-          <Pill tone={saved.form.isActive ? "on" : "off"}>{saved.form.isActive ? "פעיל באתר" : "לא פעיל"}</Pill>
+          <Pill tone={saved.form.isActive ? "on" : "off"}>{saved.form.isActive ? "Active on site" : "Inactive"}</Pill>
         }
         actions={
           <>
@@ -114,7 +114,7 @@ export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
               <Button asChild variant="ghost">
                 <a href={liveUrl} target="_blank" rel="noreferrer">
                   <ExternalLink />
-                  צפייה באתר
+                  View on Site
                 </a>
               </Button>
             )}
@@ -125,16 +125,16 @@ export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
 
       <Section>
         <div className="grid gap-4 md:grid-cols-4">
-          <Field label="כותרת" className="md:col-span-2">
-            <Input value={form.title} onChange={(e) => set("title", e.target.value)} />
+          <Field label="Title" className="md:col-span-2">
+            <Input dir="auto" value={form.title} onChange={(e) => set("title", e.target.value)} />
           </Field>
-          <Field label="כתובת באתר" hint="קבועה: תפריטים ועמודים אחרים מקשרים אליה.">
-            <Input dir="ltr" className="text-end" value={saved.path} readOnly disabled />
+          <Field label="Path" hint="Fixed: menus and other pages link to it.">
+            <Input dir="ltr" value={saved.path} readOnly disabled />
           </Field>
           <div className="flex items-center gap-3 self-start rounded-md border p-3 md:mt-6">
             <Switch id="page-active" checked={form.isActive} onCheckedChange={(on) => set("isActive", on)} />
             <label htmlFor="page-active" className="text-sm font-medium">
-              פעיל באתר
+              Active on site
             </label>
           </div>
         </div>
@@ -142,21 +142,21 @@ export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
 
       <Section>
         <HtmlField
-          label="תוכן העמוד"
+          label="Page content"
           value={form.contentHtml}
           onChange={(value) => set("contentHtml", value)}
           siteUrl={saved.siteUrl}
           rows={22}
-          hint="התצוגה המקדימה מציגה את התוכן בלי עיצוב האתר, ולכן עמוד שיובא מוורדפרס נראה כאן פשוט יותר מאשר באתר."
+          hint="The preview shows the content without the site's styling, so a page imported from WordPress looks plainer here than on the site."
         />
       </Section>
 
-      <Section title="SEO" description="מה שמנועי החיפוש והרשתות החברתיות מציגים על העמוד.">
-        <Field label="כותרת (title)" hint={`${form.seoTitle.length} תווים. מומלץ עד 60.`}>
-          <Input value={form.seoTitle} onChange={(e) => set("seoTitle", e.target.value)} />
+      <Section title="SEO" description="What search engines and social networks show for this page.">
+        <Field label="Title" hint={`${form.seoTitle.length} characters. Up to 60 recommended.`}>
+          <Input dir="auto" value={form.seoTitle} onChange={(e) => set("seoTitle", e.target.value)} />
         </Field>
-        <Field label="תיאור (description)" hint={`${form.seoDescription.length} תווים. מומלץ עד 160.`}>
-          <Textarea rows={3} value={form.seoDescription} onChange={(e) => set("seoDescription", e.target.value)} />
+        <Field label="Description" hint={`${form.seoDescription.length} characters. Up to 160 recommended.`}>
+          <Textarea dir="auto" rows={3} value={form.seoDescription} onChange={(e) => set("seoDescription", e.target.value)} />
         </Field>
       </Section>
 

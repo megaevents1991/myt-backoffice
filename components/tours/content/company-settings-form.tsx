@@ -43,7 +43,7 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
     value: string,
   ) => setForm((current) => ({ ...current, [group]: { ...current[group], [key]: value } }));
 
-  const problem = !form.name.trim() ? "חסר שם לחברה" : null;
+  const problem = !form.name.trim() ? "Company name is required" : null;
 
   const save = async () => {
     if (problem || isSaving) return;
@@ -56,14 +56,14 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
     const result = await saveCompanySettings(form, hook).catch(() => null);
     setIsSaving(false);
     if (!result || !result.success) {
-      toast.error(result ? result.error : "השמירה נכשלה. בדקו את החיבור ונסו שוב.", { duration: 7000 });
+      toast.error(result ? result.error : "Save failed. Check your connection and try again.", { duration: 7000 });
       return;
     }
     setSaved(result.data);
     setForm(result.data.form);
     setHookUrl("");
     setClearHook(false);
-    toast.success("הגדרות החברה נשמרו");
+    toast.success("Settings saved");
     router.refresh();
   };
 
@@ -77,18 +77,18 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
 
   return (
     <div className="space-y-4 pb-24">
-      <Section title="פרטי החברה">
+      <Section title="Company details">
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="שם החברה" hint="השם שמוצג בבקאופיס ובבורר החברות">
-            <Input value={form.name} onChange={(e) => set("name", e.target.value)} />
+          <Field label="Company name" hint="The name shown in the backoffice and the company switcher">
+            <Input dir="auto" value={form.name} onChange={(e) => set("name", e.target.value)} />
           </Field>
-          <Field label="שם משפטי" hint='למשל: מגה תיירות בע"מ ח.פ 511910804'>
-            <Input value={form.legalName} onChange={(e) => set("legalName", e.target.value)} />
+          <Field label="Legal name" hint='e.g. מגה תיירות בע"מ ח.פ 511910804'>
+            <Input dir="auto" value={form.legalName} onChange={(e) => set("legalName", e.target.value)} />
           </Field>
-          <Field label="כתובת האתר" hint="התמונות בעמודי התוכן (‎/media/...‎) נטענות מהכתובת הזו">
+          <Field label="Site URL" hint="Images on the content pages (/media/...) load from this address">
             <Input dir="ltr" placeholder="https://" value={form.siteUrl} onChange={(e) => set("siteUrl", e.target.value)} />
           </Field>
-          <Field label="מטבע ברירת מחדל">
+          <Field label="Default currency">
             <Select value={form.defaultCurrency} onValueChange={(value) => set("defaultCurrency", value)}>
               <SelectTrigger dir="ltr">
                 <SelectValue />
@@ -105,39 +105,39 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
         </div>
       </Section>
 
-      <Section title="פרטי קשר" description="מוצגים בראש האתר, בתחתית ובעמוד צור קשר.">
+      <Section title="Contact details" description="Shown in the site header, the footer and the contact page.">
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="טלפון">
+          <Field label="Phone">
             <Input dir="ltr" value={form.contact.phone} onChange={(e) => setIn("contact", "phone", e.target.value)} />
           </Field>
           <Field label="WhatsApp">
             <Input dir="ltr" value={form.contact.whatsapp} onChange={(e) => setIn("contact", "whatsapp", e.target.value)} />
           </Field>
-          <Field label="אימייל">
+          <Field label="Email">
             <Input dir="ltr" type="email" value={form.contact.email} onChange={(e) => setIn("contact", "email", e.target.value)} />
           </Field>
-          <Field label="כתובת">
-            <Input value={form.contact.address} onChange={(e) => setIn("contact", "address", e.target.value)} />
+          <Field label="Address">
+            <Input dir="auto" value={form.contact.address} onChange={(e) => setIn("contact", "address", e.target.value)} />
           </Field>
-          <Field label="שעות פעילות" hint="שורה לכל טווח, למשל: א'-ה' : 09:00-17:00" className="md:col-span-2">
-            <Textarea rows={3} value={form.contact.hours} onChange={(e) => setIn("contact", "hours", e.target.value)} />
+          <Field label="Opening hours" hint="One line per range, e.g. א'-ה' : 09:00-17:00" className="md:col-span-2">
+            <Textarea dir="auto" rows={3} value={form.contact.hours} onChange={(e) => setIn("contact", "hours", e.target.value)} />
           </Field>
         </div>
       </Section>
 
-      <Section title="מיתוג">
+      <Section title="Brand">
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="לוגו" hint="כתובת התמונה באתר (‎/media/...‎) או כתובת מלאה">
+          <Field label="Logo" hint="The image path on the site (/media/...) or a full URL">
             <div className="flex items-center gap-3">
-              <SiteImage siteUrl={saved.form.siteUrl} path={form.brand.logo} className="h-12 w-24 shrink-0 object-contain" alt="לוגו" />
+              <SiteImage siteUrl={saved.form.siteUrl} path={form.brand.logo} className="h-12 w-24 shrink-0 object-contain" alt="Logo" />
               <Input dir="ltr" className="font-mono text-xs" value={form.brand.logo} onChange={(e) => setIn("brand", "logo", e.target.value)} />
             </div>
           </Field>
-          <Field label="צבע ראשי" hint="בפורמט ‎#RRGGBB‎">
+          <Field label="Primary color" hint="In #RRGGBB format">
             <div className="flex items-center gap-3">
               <input
                 type="color"
-                aria-label="בחירת צבע"
+                aria-label="Pick a color"
                 className="h-10 w-12 shrink-0 cursor-pointer rounded border bg-background p-1"
                 value={/^#[0-9a-fA-F]{6}$/.test(form.brand.primaryColor) ? form.brand.primaryColor : "#60356c"}
                 onChange={(e) => setIn("brand", "primaryColor", e.target.value)}
@@ -154,56 +154,56 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
         </div>
       </Section>
 
-      <Section title="אימייל" description="מי השולח של הודעות האתר ולאן מגיעות הפניות.">
+      <Section title="Email" description="Who sends the site's emails and where inquiries arrive.">
         <div className="grid gap-4 md:grid-cols-3">
-          <Field label="שולח (from)" hint='למשל: מגה פמילי <no-reply@megatr.co.il>'>
+          <Field label="From" hint='e.g. מגה פמילי <no-reply@megatr.co.il>'>
             <Input dir="ltr" value={form.email.from} onChange={(e) => setIn("email", "from", e.target.value)} />
           </Field>
-          <Field label="כתובת למענה (reply-to)">
+          <Field label="Reply-to">
             <Input dir="ltr" type="email" value={form.email.replyTo} onChange={(e) => setIn("email", "replyTo", e.target.value)} />
           </Field>
-          <Field label="תיבת הלידים" hint="לכאן נשלחת התראה על ליד חדש">
+          <Field label="Leads email" hint="New lead notifications are sent here">
             <Input dir="ltr" type="email" value={form.email.leadsInbox} onChange={(e) => setIn("email", "leadsInbox", e.target.value)} />
           </Field>
         </div>
       </Section>
 
-      <Section title="מדידה">
+      <Section title="Analytics">
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Google Tag Manager" hint="מזהה בפורמט GTM-XXXXXXX">
+          <Field label="Google Tag Manager" hint="ID in GTM-XXXXXXX format">
             <Input dir="ltr" className="font-mono" value={form.analytics.gtm} onChange={(e) => setIn("analytics", "gtm", e.target.value)} />
           </Field>
-          <Field label="Meta Pixel" hint="מזהה הפיקסל (מספר)">
+          <Field label="Meta Pixel" hint="The pixel ID (a number)">
             <Input dir="ltr" className="font-mono" value={form.analytics.pixel} onChange={(e) => setIn("analytics", "pixel", e.target.value)} />
           </Field>
         </div>
       </Section>
 
       <Section
-        title="פרסום לאתר"
-        description='הכפתור "פרסום לאתר" בונה את האתר מחדש דרך כתובת deploy hook של Vercel. הכתובת היא סוד: מי שמחזיק בה יכול להפעיל בנייה, ולכן היא לא מוצגת אחרי השמירה. אפשר רק להחליף או להסיר אותה.'
+        title="Publish Site"
+        description='The "Publish Site" button rebuilds the site through a Vercel deploy hook URL. The URL is a secret: anyone who has it can trigger a build, so it is not shown after saving. You can only replace or remove it.'
       >
         <div className="flex flex-wrap items-center gap-3 text-sm">
           {saved.deployHookSet ? (
             <Badge variant="outline" className="gap-1.5">
               <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
-              מוגדר
+              Set up
             </Badge>
           ) : (
             <Badge variant="secondary" className="gap-1.5">
               <CircleSlash className="h-3.5 w-3.5" />
-              לא מוגדר
+              Not set up
             </Badge>
           )}
           <span className="text-muted-foreground">
             {last
-              ? `${last.ok ? "פרסום אחרון" : "ניסיון אחרון נכשל"}: ${formatDayTime(last.at)} · ${last.by}${last.status ? ` · HTTP ${last.status}` : ""}`
-              : "האתר עוד לא פורסם מהבקאופיס."}
+              ? `${last.ok ? "Last published" : "Last attempt failed"}: ${formatDayTime(last.at)} · ${last.by}${last.status ? ` · HTTP ${last.status}` : ""}`
+              : "The site has not been published from the backoffice yet."}
           </span>
         </div>
         <Field
-          label={saved.deployHookSet ? "החלפת הכתובת" : "כתובת ה-deploy hook"}
-          hint="משאירים ריק כדי לא לשנות. הכתובת נשמרת בלחיצה על שמירה."
+          label={saved.deployHookSet ? "Replace URL" : "Deploy hook URL"}
+          hint="Leave empty to keep it unchanged. The URL is stored when you save."
         >
           <Input
             dir="ltr"
@@ -226,7 +226,7 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
               setHookUrl("");
             }}
           >
-            {clearHook ? "הכתובת תוסר בשמירה (לחצו לביטול)" : "הסרת הכתובת"}
+            {clearHook ? "URL will be removed on save (click to undo)" : "Remove URL"}
           </Button>
         )}
       </Section>

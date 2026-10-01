@@ -88,7 +88,7 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
       toast.error(result.error, { duration: 7000 });
       return;
     }
-    toast.success("המחירים נשמרו");
+    toast.success("Prices saved");
     await onSaved();
   };
 
@@ -96,8 +96,8 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
     <div className="grid gap-6 py-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
       <fieldset disabled={readOnly || saving} className="min-w-0 space-y-3">
         <div className="flex items-end justify-between gap-3">
-          <h3 className="text-sm font-semibold">מחיר לאדם לפי הרכב החדר</h3>
-          <Field label="מטבע">
+          <h3 className="text-sm font-semibold">Price per person by room composition</h3>
+          <Field label="Currency">
             <CurrencySelect value={currency} onChange={setCurrency} />
           </Field>
         </div>
@@ -125,14 +125,14 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
           })}
         </div>
         <p className="text-xs text-muted-foreground">
-          מקור המחיר: <strong className="font-medium text-foreground">{d.price_source === "calculator" ? "מחשבון" : "ידני"}</strong>. שורה ריקה = אין מחיר
-          להרכב הזה, והוא לא יוצע באתר.
+          Price source: <strong className="font-medium text-foreground">{d.price_source === "calculator" ? "Calculator" : "Manual"}</strong>. An empty row = no
+          price for that composition, and the site won&apos;t offer it.
         </p>
         {!readOnly && (
           <div className="flex items-center gap-2">
             <Button size="sm" disabled={!dirty || invalid} onClick={save}>
               {saving && <Loader2 className="animate-spin" />}
-              שמירת מחירים
+              Save Prices
             </Button>
             <Button
               variant="outline"
@@ -143,36 +143,36 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
                 setCurrency(d.currency);
               }}
             >
-              ביטול השינויים
+              Discard Changes
             </Button>
           </div>
         )}
       </fieldset>
 
       <div className="min-w-0 space-y-3">
-        <h3 className="text-sm font-semibold">מה הלקוח רואה{dirty ? " (לפני שמירה)" : ""}</h3>
+        <h3 className="text-sm font-semibold">What the customer sees{dirty ? " (before saving)" : ""}</h3>
         {fixed.length > 0 && (
           <Notice tone="success" className="py-1.5 text-xs">
-            הנחה קבועה פעילה: <Ltr>{fmtMoney(discount)}{sym}</Ltr> לנוסע
+            Active fixed discount: <Ltr>{fmtMoney(discount)}{sym}</Ltr> per traveler
             {fixed.some((p) => isExpired(p.valid_until)) && (
               <span>
                 {" "}
-                - תאריך התפוגה ({fixed.map((p) => fmtDate(p.valid_until)).filter(Boolean).join(", ")}) עבר, אבל האתר ממשיך להציג אותה עד שתכובה
+                - the expiry date ({fixed.map((p) => fmtDate(p.valid_until)).filter(Boolean).join(", ")}) has passed, but the site keeps showing it until it is switched off
               </span>
             )}
           </Notice>
         )}
         {rooms.length === 0 ? (
-          <Notice tone="warning">אין מחיר לחדר זוגי - אף הרכב לא ניתן לתמחור, והיציאה לא ניתנת לפרסום.</Notice>
+          <Notice tone="warning">No double-room price - no composition can be priced, and the departure can&apos;t be published.</Notice>
         ) : (
           <div className="overflow-hidden rounded-md border">
             <table className="w-full text-sm" data-testid="room-preview">
               <thead className="bg-muted/60 text-xs text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-1.5 text-start font-semibold">הרכב</th>
-                  <th className="px-3 py-1.5 text-center font-semibold">נוסעים</th>
-                  <th className="px-3 py-1.5 text-end font-semibold">מחיר לחדר</th>
-                  {discount > 0 && <th className="px-3 py-1.5 text-end font-semibold">אחרי הנחה</th>}
+                  <th className="px-3 py-1.5 text-start font-semibold">Room composition</th>
+                  <th className="px-3 py-1.5 text-center font-semibold">Travelers</th>
+                  <th className="px-3 py-1.5 text-end font-semibold">Room price</th>
+                  {discount > 0 && <th className="px-3 py-1.5 text-end font-semibold">After discount</th>}
                 </tr>
               </thead>
               <tbody>
@@ -199,11 +199,11 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
         )}
         {card.offer != null && (
           <p className="text-xs text-muted-foreground">
-            על כרטיס התאריך: החל מ-<Ltr className="font-semibold text-foreground">{fmtMoney(card.offer)}{sym}</Ltr> לאדם בחדר זוגי
+            On the date card: from <Ltr className="font-semibold text-foreground">{fmtMoney(card.offer)}{sym}</Ltr> per person in a double room
             {card.regular != null && (
               <>
                 {" "}
-                במקום <Ltr className="line-through">{fmtMoney(card.regular)}{sym}</Ltr>
+                instead of <Ltr className="line-through">{fmtMoney(card.regular)}{sym}</Ltr>
               </>
             )}
             .
@@ -321,7 +321,7 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
       toast.error(result.error, { duration: 7000 });
       return;
     }
-    toast.success("המחירים נשמרו");
+    toast.success("Prices saved");
     await onSaved();
   };
 
@@ -341,20 +341,20 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
     <fieldset disabled={readOnly || saving} className="min-w-0 space-y-5 py-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold">חבילת נופש: מלונות, כרטיסים ו-markup</h3>
+          <h3 className="text-sm font-semibold">Vacation package: hotels, tickets and markup</h3>
           <p className="text-xs text-muted-foreground">
-            השורה הראשונה בכל טבלה היא ברירת המחדל באתר. השאר מוצגות כהפרש מחיר. מקור המחיר:{" "}
-            <strong className="font-medium text-foreground">{d.price_source === "calculator" ? "מחשבון" : "ידני"}</strong>.
+            The first row of each table is the site default. The rest show as a price difference. Price source:{" "}
+            <strong className="font-medium text-foreground">{d.price_source === "calculator" ? "Calculator" : "Manual"}</strong>.
           </p>
         </div>
-        <Field label="מטבע">
+        <Field label="Currency">
           <CurrencySelect value={currency} onChange={setCurrency} />
         </Field>
       </div>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h4 className="text-xs font-semibold text-muted-foreground">מלונות (מחיר לחדר לכל השהות)</h4>
+          <h4 className="text-xs font-semibold text-muted-foreground">Hotels (room price for the whole stay)</h4>
           <Button
             variant="outline"
             size="sm"
@@ -362,22 +362,22 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
             onClick={() => setHotels((prev) => [...prev, { ref_code: "", label: "", board: "", nights: "", double: "", triple: "", quad: "" }])}
           >
             <Plus />
-            מלון
+            Add Hotel
           </Button>
         </div>
         {hotels.length === 0 ? (
-          <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">אין מלונות. בלי מלון עם מחיר לחדר זוגי היציאה לא ניתנת לפרסום.</p>
+          <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">No hotels. Without a hotel with a double-room price the departure can&apos;t be published.</p>
         ) : (
           <div className="overflow-x-auto rounded-md border">
             <table className="w-full text-sm">
               <thead className="bg-muted/60 text-xs text-muted-foreground">
                 <tr>
-                  <th className="px-2 py-1.5 text-start font-semibold">מלון</th>
-                  <th className="px-2 py-1.5 text-start font-semibold">בסיס אירוח</th>
-                  <th className="px-2 py-1.5 text-start font-semibold">לילות</th>
-                  <th className="px-2 py-1.5 text-start font-semibold">זוגי</th>
-                  <th className="px-2 py-1.5 text-start font-semibold">טריפל</th>
-                  <th className="px-2 py-1.5 text-start font-semibold">רביעייה</th>
+                  <th className="px-2 py-1.5 text-start font-semibold">Hotel</th>
+                  <th className="px-2 py-1.5 text-start font-semibold">Board basis</th>
+                  <th className="px-2 py-1.5 text-start font-semibold">Nights</th>
+                  <th className="px-2 py-1.5 text-start font-semibold">Double</th>
+                  <th className="px-2 py-1.5 text-start font-semibold">Triple</th>
+                  <th className="px-2 py-1.5 text-start font-semibold">Quad</th>
                   <th className="w-8" />
                 </tr>
               </thead>
@@ -389,13 +389,13 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
                       <td className="px-2 py-1.5">
                         <select
                           dir="ltr"
-                          aria-label="מלון"
+                          aria-label="Hotel"
                           className={`${selectClass} h-8 w-52 max-w-full`}
                           value={h.ref_code}
                           onChange={(e) => setHotel(i, { ref_code: e.target.value })}
                         >
-                          <option value="">בחרו מלון…</option>
-                          {!known && h.ref_code && <option value={h.ref_code}>{h.ref_code} (לא בקטלוג)</option>}
+                          <option value="">Select a hotel…</option>
+                          {!known && h.ref_code && <option value={h.ref_code}>{h.ref_code} (not in catalog)</option>}
                           {data.hotels.map((x) => (
                             <option key={x.code} value={x.code}>
                               {x.name}
@@ -405,27 +405,27 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
                         </select>
                       </td>
                       <td className="px-2 py-1.5">
-                        <Input aria-label="בסיס אירוח" className="h-8 w-28" value={h.board} onChange={(e) => setHotel(i, { board: e.target.value })} />
+                        <Input dir="auto" aria-label="Board basis" className="h-8 w-28" value={h.board} onChange={(e) => setHotel(i, { board: e.target.value })} />
                       </td>
                       <td className="px-2 py-1.5">
                         <Input
                           dir="ltr"
                           inputMode="numeric"
-                          aria-label="לילות"
+                          aria-label="Nights"
                           className="h-8 w-14 text-end"
                           value={h.nights}
                           onChange={(e) => setHotel(i, { nights: e.target.value })}
                         />
                       </td>
-                      <td className="px-2 py-1.5">{priceInput(h.double, (v) => setHotel(i, { double: v }), "מחיר חדר זוגי")}</td>
-                      <td className="px-2 py-1.5">{priceInput(h.triple, (v) => setHotel(i, { triple: v }), "מחיר חדר טריפל")}</td>
-                      <td className="px-2 py-1.5">{priceInput(h.quad, (v) => setHotel(i, { quad: v }), "מחיר חדר רביעייה")}</td>
+                      <td className="px-2 py-1.5">{priceInput(h.double, (v) => setHotel(i, { double: v }), "Double-room price")}</td>
+                      <td className="px-2 py-1.5">{priceInput(h.triple, (v) => setHotel(i, { triple: v }), "Triple-room price")}</td>
+                      <td className="px-2 py-1.5">{priceInput(h.quad, (v) => setHotel(i, { quad: v }), "Quad-room price")}</td>
                       <td className="px-1 py-1.5">
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-destructive hover:text-destructive"
-                          title="הסרת המלון"
+                          title="Remove hotel"
                           onClick={() => setHotels((prev) => prev.filter((_, idx) => idx !== i))}
                         >
                           <Trash2 />
@@ -442,32 +442,33 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h4 className="text-xs font-semibold text-muted-foreground">כרטיסים (מחיר לאדם)</h4>
+          <h4 className="text-xs font-semibold text-muted-foreground">Tickets (price per person)</h4>
           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setTickets((prev) => [...prev, { label: "", price: "" }])}>
             <Plus />
-            קטגוריית כרטיס
+            Add Ticket Category
           </Button>
         </div>
         {tickets.length === 0 ? (
-          <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">אין כרטיסים ביציאה הזו.</p>
+          <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">No tickets on this departure.</p>
         ) : (
           <div className="overflow-hidden rounded-md border">
             {tickets.map((t, i) => (
               <div key={t.id ?? `new-${i}`} className="flex items-center gap-2 border-b px-2 py-1.5 last:border-b-0">
                 <Input
-                  aria-label="קטגוריית כרטיס"
+                  dir="auto"
+                  aria-label="Ticket category"
                   className="h-8 flex-1"
                   value={t.label}
-                  placeholder="שם הקטגוריה, למשל ישיבה תחתונה"
+                  placeholder="Category name, e.g. lower tier"
                   onChange={(e) => setTicket(i, { label: e.target.value })}
                 />
-                {priceInput(t.price, (v) => setTicket(i, { price: v }), "מחיר כרטיס")}
+                {priceInput(t.price, (v) => setTicket(i, { price: v }), "Ticket price")}
                 <span className="w-4 text-xs text-muted-foreground">{sym}</span>
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-destructive hover:text-destructive"
-                  title="הסרת הכרטיס"
+                  title="Remove ticket"
                   onClick={() => setTickets((prev) => prev.filter((_, idx) => idx !== i))}
                 >
                   <Trash2 />
@@ -479,11 +480,11 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Field label="Markup באחוזים">
-          {priceInput(markupPercent, setMarkupPercent, "markup באחוזים")}
+        <Field label="Markup %">
+          {priceInput(markupPercent, setMarkupPercent, "Markup percent")}
         </Field>
-        <Field label={`Markup קבוע לנוסע (${sym})`}>{priceInput(markupFixed, setMarkupFixed, "markup קבוע")}</Field>
-        <Field label="טיסה" hint="נערך בלשונית כללי">
+        <Field label={`Fixed markup per traveler (${sym})`}>{priceInput(markupFixed, setMarkupFixed, "Fixed markup")}</Field>
+        <Field label="Flight" hint="Edited in the General tab">
           <span className="flex h-8 items-center text-sm">
             {d.flight_mode === "priced" ? (
               <Ltr>
@@ -491,25 +492,25 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
                 {sym}
               </Ltr>
             ) : d.flight_mode === "included" ? (
-              "כלולה במחיר"
+              "Included in the price"
             ) : (
-              "ללא טיסה"
+              "No flight"
             )}
           </span>
         </Field>
       </div>
 
       {perPerson == null ? (
-        <Notice tone="warning">אין מלון עם מחיר לחדר זוגי - היציאה לא ניתנת לפרסום.</Notice>
+        <Notice tone="warning">No hotel with a double-room price - the departure can&apos;t be published.</Notice>
       ) : (
         <Notice tone="info" className="text-xs">
-          מחיר &quot;החל מ&quot; לאדם בחדר זוגי:{" "}
+          &quot;From&quot; price per person in a double room:{" "}
           <Ltr className="text-sm font-semibold">
             {fmtMoney(perPerson)}
             {sym}
           </Ltr>{" "}
-          = חצי חדר זוגי במלון הראשון + הכרטיס הראשון{d.flight_mode === "priced" ? " + טיסה" : ""} + markup קבוע. ה-markup באחוזים נשמר ואינו נכנס
-          לחישוב הזה.
+          = half a double room in the first hotel + the first ticket{d.flight_mode === "priced" ? " + flight" : ""} + fixed markup. The markup % is
+          saved but not part of this calculation.
         </Notice>
       )}
 
@@ -517,7 +518,7 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
         <div className="flex items-center gap-2">
           <Button size="sm" disabled={!dirty || invalid} onClick={save}>
             {saving && <Loader2 className="animate-spin" />}
-            שמירת מחירים
+            Save Prices
           </Button>
           <Button
             variant="outline"
@@ -531,7 +532,7 @@ function VacationEditor({ data, onSaved }: { data: DepartureCardData; onSaved: (
               setCurrency(initial.currency);
             }}
           >
-            ביטול השינויים
+            Discard Changes
           </Button>
         </div>
       )}

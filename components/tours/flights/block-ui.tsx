@@ -113,7 +113,8 @@ export function Stat({
   );
 }
 
-// The stock dialog is laid out for left-to-right text; these three put it right.
+// Kept under their old names: the stock dialog parts, scrollable, with the primary action (the first
+// child of the footer) on the right.
 export function RtlDialogContent({
   children,
   className,
@@ -122,21 +123,18 @@ export function RtlDialogContent({
   className?: string;
 }) {
   return (
-    <DialogContent
-      dir="rtl"
-      className={cn("max-h-[90vh] overflow-y-auto [&>button]:left-4 [&>button]:right-auto", className)}
-    >
+    <DialogContent className={cn("max-h-[90vh] overflow-y-auto", className)}>
       {children}
     </DialogContent>
   );
 }
 
 export function RtlDialogHeader({ children }: { children: ReactNode }) {
-  return <DialogHeader className="text-right sm:text-right">{children}</DialogHeader>;
+  return <DialogHeader>{children}</DialogHeader>;
 }
 
 export function RtlDialogFooter({ children }: { children: ReactNode }) {
-  return <DialogFooter className="gap-2 sm:justify-start sm:space-x-0">{children}</DialogFooter>;
+  return <DialogFooter className="gap-2 sm:flex-row-reverse sm:justify-start sm:space-x-0">{children}</DialogFooter>;
 }
 
 const STAGE_TONE: Record<BlockStage, string> = {
@@ -162,19 +160,19 @@ export function BlockStatusBadge({ status, className }: { status: string | null;
 
 /** "בעוד 12 ימים" / "היום" / "באיחור של 3 ימים" - red once the date has passed. */
 export function DaysLeft({ days, done = false }: { days: number | null; done?: boolean }) {
-  if (days === null) return <span className="text-xs text-muted-foreground">לא נקבע</span>;
-  if (done) return <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">בוצע</span>;
+  if (days === null) return <span className="text-xs text-muted-foreground">Not set</span>;
+  if (done) return <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Done</span>;
   if (days < 0) {
     return (
       <span className="text-xs font-semibold text-destructive">
-        {days === -1 ? "באיחור של יום" : `באיחור של ${-days} ימים`}
+        {days === -1 ? "1 day overdue" : `${-days} days overdue`}
       </span>
     );
   }
-  if (days === 0) return <span className="text-xs font-semibold text-destructive">היום</span>;
+  if (days === 0) return <span className="text-xs font-semibold text-destructive">Today</span>;
   return (
     <span className={cn("text-xs", days <= 7 ? "font-semibold text-amber-700 dark:text-amber-400" : "text-muted-foreground")}>
-      {days === 1 ? "מחר" : `בעוד ${days} ימים`}
+      {days === 1 ? "Tomorrow" : `In ${days} days`}
     </span>
   );
 }
