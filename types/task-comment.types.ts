@@ -17,6 +17,10 @@ export type TaskAttachment = {
   height: number | null;
 };
 
+/** The six tracked task fields, plus two rows that change no field (01.10, lib/tasks/reminders.ts):
+ *  `reminder` - someone sent a reminder mail (`to` = the reminded ids, comma-joined);
+ *  `overdue_alert` - the daily check told the opener the task is late with no answer
+ *  (`from` = the due date, `to` = the opener's id; written by the system, author null). */
 export const ACTIVITY_FIELDS = [
   "status",
   "assignee",
@@ -24,6 +28,8 @@ export const ACTIVITY_FIELDS = [
   "due_date",
   "progress",
   "board",
+  "reminder",
+  "overdue_alert",
 ] as const;
 export type ActivityField = (typeof ACTIVITY_FIELDS)[number];
 

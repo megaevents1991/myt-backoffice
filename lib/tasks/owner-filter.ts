@@ -2,11 +2,13 @@
 // Whose tasks the board shows (Dor, 30.09): mine, the ones I handed to someone else, one
 // person's (admins), nobody's. Pure - no DB, no session (scripts/task-thread-selftest.ts).
 import { awaitsReviewBy } from "@/lib/tasks/review";
+import { openerOf } from "@/lib/tasks/reminders";
 import type { TaskStatus } from "@/types/task.types";
 
-/** "all" | "mine" | "delegated" (I assigned it, someone else owns it) | "unassigned" |
- *  "user:<id>" (that person's tasks - the admin's per-person view). */
-export type OwnerFilter = "all" | "mine" | "delegated" | "unassigned" | `user:${string}`;
+/** "all" | "mine" | "delegated" (I assigned it, someone else owns it) | "late" (I opened it, its
+ *  deadline passed and its assignee has not answered - lib/tasks/reminders.ts, 01.10) |
+ *  "unassigned" | "user:<id>" (that person's tasks - the admin's per-person view). */
+export type OwnerFilter = "all" | "mine" | "delegated" | "late" | "unassigned" | `user:${string}`;
 
 /** An `assignee` activity row of the task thread - who changed the owner, and to whom. */
 export interface AssigneeChangeRow {
@@ -55,6 +57,8 @@ export function matchesOwner(
     status: TaskStatus;
     created_by: string | null;
     reviewer_ids: string[] | null;
+    /** Late with no answer from its assignee (TaskWithNames.late). */
+    late?: boolean;
   },
   filter: OwnerFilter,
   userId: string | null,
@@ -62,6 +66,9 @@ export function matchesOwner(
   switch (filter) {
     case "all":
       return true;
+    case "late":
+      // Raised to whoever opened it (else whoever assigned it) - the same person the daily mail goes to.
+      return !!userId && !!task.late && openerOf(task) === userId;
     case "mine":
       // Mine = assigned to me, plus what came BACK to me: a task in review that I opened
       // is my move now, whoever its assignee is (lib/tasks/review.ts).

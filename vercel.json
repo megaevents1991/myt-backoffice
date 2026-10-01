@@ -83,6 +83,10 @@
     {
       "path": "/api/cron/weeklyTaskGen",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/taskOverdueAlerts",
+      "schedule": "30 6 * * 0-4"
     }
   ],
   "functions": {

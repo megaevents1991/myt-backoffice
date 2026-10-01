@@ -21,8 +21,12 @@ export const TASK_FIELDS = [
 ] as const;
 export type EditableTaskField = (typeof TASK_FIELDS)[number];
 
-/** The only two fields an editor may ever change, and only on their own task. */
-const EDITOR_OWN_TASK_FIELDS: readonly EditableTaskField[] = ["status", "progress"];
+/** What an editor may change on a task assigned to them: its progress, and who has it - they
+ *  can hand it on (Dor, 01.10: Liz opened a task and could not give it to anyone). */
+const EDITOR_OWN_TASK_FIELDS: readonly EditableTaskField[] = ["status", "progress", "assignee_id"];
+
+/** What an editor may change on a task they OPENED that someone else holds: who holds it. */
+const EDITOR_OPENED_TASK_FIELDS: readonly EditableTaskField[] = ["assignee_id"];
 
 function isManagerRole(role: string): boolean {
   return (ADMIN_ROLES as readonly string[]).includes(role);
@@ -31,13 +35,20 @@ function isManagerRole(role: string): boolean {
 /**
  * The whole board is visible to every staff member (Dor, 16.09) - what
  * narrows is editing. Admins (superadmin/admin) edit everything, anywhere.
- * An editor touches only status/progress, and only on a task assigned to
- * them; on anyone else's task they have no edit rights at all (comments are
- * a separate, always-open door - see TaskThread).
+ * An editor changes status/progress only on a task assigned to them, and may
+ * re-assign a task assigned to them or one they opened (01.10); on anyone
+ * else's task they have no edit rights at all (comments are a separate,
+ * always-open door - see TaskThread). A NEW task is not governed here: any
+ * staff member fills in every field of a task they create, assignee included.
  */
-export function editableFields(role: string, isOwnTask: boolean): Set<EditableTaskField> {
+export function editableFields(
+  role: string,
+  isOwnTask: boolean,
+  isOpenedByMe = false,
+): Set<EditableTaskField> {
   if (isManagerRole(role)) return new Set(TASK_FIELDS);
   if (isOwnTask) return new Set(EDITOR_OWN_TASK_FIELDS);
+  if (isOpenedByMe) return new Set(EDITOR_OPENED_TASK_FIELDS);
   return new Set();
 }
 
@@ -45,6 +56,7 @@ export function canEditTaskField(
   role: string,
   isOwnTask: boolean,
   field: EditableTaskField,
+  isOpenedByMe = false,
 ): boolean {
-  return editableFields(role, isOwnTask).has(field);
+  return editableFields(role, isOwnTask, isOpenedByMe).has(field);
 }

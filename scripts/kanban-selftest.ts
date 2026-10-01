@@ -49,6 +49,8 @@ function task(overrides: Partial<TaskWithNames>): TaskWithNames {
     site_url: null,
     comment_count: 0,
     unread_count: 0,
+    late: false,
+    last_reminded_at: null,
     ...overrides,
   };
 }

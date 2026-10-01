@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { FileText, ListTree, Paperclip, Plus, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,11 +24,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createTask, updateTask } from "@/lib/actions/task-actions";
+import { createTask, listTaskAssignees, updateTask } from "@/lib/actions/task-actions";
 import { attachFilesToNewTask, listStaffForMentions } from "@/lib/actions/task-comment-actions";
 import type { StaffMentionOption } from "@/types/task-comment.types";
-import { listUsers } from "@/lib/actions/user-actions";
 import { TaskThread } from "@/components/task-thread";
+import { TaskRemindButton } from "@/components/task-remind-button";
 import {
   ATTACHMENT_ACCEPT,
   ATTACHMENT_MAX_BYTES,
@@ -40,7 +41,8 @@ import type { TaskMailOutcome } from "@/lib/services/task-notify";
 import type { TaskAttachment } from "@/types/task-comment.types";
 import { BOARD_META, CHANNEL_META, PHASES, defaultBoardFor } from "@/lib/task-boards";
 import { TASK_FIELDS, type EditableTaskField } from "@/lib/tasks/permissions";
-import { STAFF_ROLES, type UserProfile } from "@/types/auth.types";
+import { PLAIN_TASK_BOARD } from "@/lib/services/task-company";
+import type { TaskPerson } from "@/lib/services/task-people";
 import {
   MKT_CHANNELS,
   TASK_BOARDS,
@@ -103,12 +105,17 @@ interface DraftPart {
 
 /**
  * The one task dialog: create (blank or prefilled from a source) and edit.
- * Loads the staff list itself when the viewer is a manager (listUsers is
- * admin-guarded), so any screen can open it without wiring users through.
+ * Loads the people of the active company itself (listTaskAssignees - company-aware on the
+ * server), so any screen can open it without wiring users through.
+ *
+ * `plainBoard` = the board of a company that sells no events (lib/services/task-company.ts):
+ * the task sits on the one plain board, so the Board select (and with it the dev phase and
+ * the marketing channel / progress) is not offered. The server refuses them there anyway.
  */
 export function TaskEditor({
   state,
   isManager,
+  plainBoard = false,
   editable,
   onClose,
   onSaved,
@@ -117,6 +124,8 @@ export function TaskEditor({
 }: {
   state: TaskEditorState;
   isManager: boolean;
+  /** The active company has the plain board - passed by /tasks; omitted = the Mega Events board. */
+  plainBoard?: boolean;
   /** Fields the current viewer may change on THIS task (ignored while creating -
    *  any staff member can fill in a new task for themself). Empty on an
    *  existing task = read-only: the form still renders and the thread still
@@ -132,10 +141,14 @@ export function TaskEditor({
   children?: React.ReactNode;
 }) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { task, prefill } = state;
   const fields = editable ?? new Set<EditableTaskField>(isManager ? TASK_FIELDS : []);
   const canEdit = (field: EditableTaskField) => !task || fields.has(field);
   const readOnly = !!task && fields.size === 0;
+  // Who a new task (or a new part) goes to by default: an admin's starts unassigned, anyone
+  // else's starts as their own - and since 01.10 they may pick someone else (Liz could not).
+  const ownDefault = isManager ? "unassigned" : (user?.id ?? "unassigned");
 
   const [title, setTitle] = useState(task?.title ?? prefill?.title ?? "");
   const [description, setDescription] = useState(
@@ -144,11 +157,13 @@ export function TaskEditor({
   const [priority, setPriority] = useState<TaskPriority>(
     task?.priority ?? prefill?.priority ?? "medium",
   );
-  const [assignee, setAssignee] = useState<string>(task?.assignee_id ?? "unassigned");
+  const [assignee, setAssignee] = useState<string>(task ? (task.assignee_id ?? "unassigned") : ownDefault);
   const [dueDate, setDueDate] = useState(task?.due_date ?? "");
   const { defaults } = state;
   const [board, setBoard] = useState<TaskBoard>(
-    task?.board ?? defaults?.board ?? defaultBoardFor(prefill?.source ?? "manual"),
+    plainBoard
+      ? PLAIN_TASK_BOARD
+      : (task?.board ?? defaults?.board ?? defaultBoardFor(prefill?.source ?? "manual")),
   );
   const [phase, setPhase] = useState<number | null>(
     task ? (task.phase ?? null) : defaults?.board === "dev" ? (defaults.phase ?? null) : null,
@@ -158,7 +173,7 @@ export function TaskEditor({
   );
   const [progress, setProgress] = useState<number>(task?.progress ?? 0);
   const [saving, setSaving] = useState(false);
-  const [staff, setStaff] = useState<UserProfile[]>([]);
+  const [staff, setStaff] = useState<TaskPerson[]>([]);
   // Who the task goes back to in review (Dor, 30.09: "Alon opened it, but Tom checks it, or
   // both"). Empty = the default (whoever opened it). The picker's staff list is the
   // requireStaff one, so an editor can name a reviewer for a task they create themself.
@@ -174,13 +189,18 @@ export function TaskEditor({
     const person = reviewerOptions.find((option) => option.id === id);
     return person ? person.display_name || person.email : "…";
   };
+  // Who a task can go to: the people of the active company. Admins read them newest first; everyone
+  // else the active-staff list the reviewer and @mention pickers use.
+  const assigneeOptions: Array<{ id: string; label: string }> = isManager
+    ? staff.map((member) => ({ id: member.id, label: member.display_name || member.email }))
+    : reviewerOptions.map((option) => ({ id: option.id, label: option.display_name || option.email }));
 
   // New task only (Dor, 30.09): files and sub-tasks can be added before the task exists.
   // Both need the new task's id, so they are held here and written right after createTask.
   const [files, setFiles] = useState<DraftFile[]>([]);
   const [parts, setParts] = useState<DraftPart[]>([]);
   const [partTitle, setPartTitle] = useState("");
-  const [partAssignee, setPartAssignee] = useState("unassigned");
+  const [partAssignee, setPartAssignee] = useState(ownDefault);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Live thumbnail blob URLs, tracked outside state so the unmount cleanup sees them all.
   const previewUrlsRef = useRef<Set<string>>(new Set());
@@ -293,15 +313,9 @@ export function TaskEditor({
 
   useEffect(() => {
     if (!state.open || !isManager) return;
-    listUsers().then((users) =>
-      setStaff(
-        users.filter(
-          (candidate) =>
-            candidate.is_active &&
-            (STAFF_ROLES as readonly string[]).includes(candidate.role),
-        ),
-      ),
-    );
+    listTaskAssignees()
+      .then(setStaff)
+      .catch((error) => console.error("task-editor: assignee list failed", error));
   }, [state.open, isManager]);
 
   const submit = async () => {
@@ -387,7 +401,11 @@ export function TaskEditor({
     <Dialog open={state.open} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[85vh] flex-col overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{task ? "Edit task" : "New task"}</DialogTitle>
+          <div className="flex items-center justify-between gap-2 pe-6">
+            <DialogTitle>{task ? "Edit task" : "New task"}</DialogTitle>
+            {/* A mail's "to the task" link lands here - the reminder is one click away (01.10). */}
+            {task && <TaskRemindButton task={task} withLabel />}
+          </div>
         </DialogHeader>
         <div
           className="space-y-4"
@@ -452,21 +470,24 @@ export function TaskEditor({
               />
             </div>
           </div>
-          <div className="space-y-2">
-            <Label>Board</Label>
-            <Select value={board} onValueChange={onBoardChange} disabled={!canEdit("board")}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TASK_BOARDS.map((value) => (
-                  <SelectItem key={value} value={value}>
-                    {BOARD_META[value].label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* One board on the plain board - nothing to choose. */}
+          {!plainBoard && (
+            <div className="space-y-2">
+              <Label>Board</Label>
+              <Select value={board} onValueChange={onBoardChange} disabled={!canEdit("board")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TASK_BOARDS.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {BOARD_META[value].label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {board === "dev" && (
             <div className="space-y-2">
               <Label>Phase</Label>
@@ -527,18 +548,19 @@ export function TaskEditor({
               </div>
             </div>
           )}
-          {isManager && (
+          {/* Admins always; anyone else on a new task, or on one they own / opened (01.10). */}
+          {(isManager || canEdit("assignee_id")) && (
             <div className="space-y-2">
               <Label>Assign to</Label>
-              <Select value={assignee} onValueChange={setAssignee}>
+              <Select value={assignee} onValueChange={setAssignee} disabled={!canEdit("assignee_id")}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="unassigned">Unassigned</SelectItem>
-                  {staff.map((member) => (
+                  {assigneeOptions.map((member) => (
                     <SelectItem key={member.id} value={member.id}>
-                      {member.display_name || member.email}
+                      {member.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -684,20 +706,16 @@ export function TaskEditor({
                       <span className="min-w-0 flex-1 truncate" title={part.title}>
                         {part.title}
                       </span>
-                      {isManager && (
-                        <span
-                          className={cn(
-                            "shrink-0 text-xs",
-                            part.assignee === "unassigned" ? "text-muted-foreground" : "text-foreground",
-                          )}
-                        >
-                          {part.assignee === "unassigned"
-                            ? "לא משויך"
-                            : (staff.find((member) => member.id === part.assignee)?.display_name ??
-                              staff.find((member) => member.id === part.assignee)?.email ??
-                              "")}
-                        </span>
-                      )}
+                      <span
+                        className={cn(
+                          "shrink-0 text-xs",
+                          part.assignee === "unassigned" ? "text-muted-foreground" : "text-foreground",
+                        )}
+                      >
+                        {part.assignee === "unassigned"
+                          ? "לא משויך"
+                          : (assigneeOptions.find((member) => member.id === part.assignee)?.label ?? "")}
+                      </span>
                       <button
                         type="button"
                         aria-label={`הסר את ${part.title}`}
@@ -725,21 +743,19 @@ export function TaskEditor({
                   className="h-8 min-w-[160px] flex-1 text-sm"
                   disabled={saving}
                 />
-                {isManager && (
-                  <Select value={partAssignee} onValueChange={setPartAssignee} disabled={saving}>
-                    <SelectTrigger className="h-8 w-[150px] text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="unassigned">לא משויך</SelectItem>
-                      {staff.map((member) => (
-                        <SelectItem key={member.id} value={member.id}>
-                          {member.display_name || member.email}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+                <Select value={partAssignee} onValueChange={setPartAssignee} disabled={saving}>
+                  <SelectTrigger className="h-8 w-[150px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">לא משויך</SelectItem>
+                    {assigneeOptions.map((member) => (
+                      <SelectItem key={member.id} value={member.id}>
+                        {member.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button
                   type="button"
                   size="sm"

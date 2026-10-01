@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
+  AlarmClock,
   Check,
   CornerDownLeft,
   ExternalLink,
@@ -45,15 +46,19 @@ import {
   type TaskPrefill,
 } from "@/components/task-editor";
 import { TaskThread } from "@/components/task-thread";
+import { TaskRemindButton } from "@/components/task-remind-button";
 import { TaskSubtasks, subtaskProgress, type StaffOption } from "@/components/task-subtasks";
+import { listStaffForMentions } from "@/lib/actions/task-comment-actions";
 import {
   bulkUpdateTasks,
   deleteTask,
+  findTaskCompany,
+  listTaskAssignees,
   listTasks,
   openTaskGapKeys,
   setTaskStatus,
 } from "@/lib/actions/task-actions";
-import { listUsers } from "@/lib/actions/user-actions";
+import { setActiveCompany } from "@/lib/actions/company-actions";
 import {
   dismissCreativeGap,
   listAllCreativeGaps,
@@ -76,7 +81,7 @@ import {
   STATUS_LABEL,
   type GroupBy,
 } from "@/lib/tasks/kanban";
-import { ADMIN_ROLES, STAFF_ROLES } from "@/types/auth.types";
+import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   GAP_KINDS,
   GAP_META,
@@ -96,6 +101,9 @@ import {
 
 /** Every tab `?tab=` may deep-link to. */
 const TAB_IDS = ["tasks", "kanban", "roadmap", "marketing", "gaps", "pricing", "rules"] as const;
+/** The tabs of the plain board (a company that sells no events - lib/services/task-company.ts):
+ *  the list and the Kanban. Roadmap, Marketing, gaps, pricing and rules are Mega Events'. */
+const PLAIN_TAB_IDS = ["tasks", "kanban"] as const;
 /** The Tasks table's saved views - `?view=`. */
 const VIEW_IDS = ["open", "done", "all"] as const;
 
@@ -127,7 +135,12 @@ function gapPrefill(gap: GapItem): TaskPrefill {
   };
 }
 
-export function TasksClient() {
+/**
+ * `plainBoard` comes from the server page (the active company sells no events): one board, no
+ * board lens, only the Tasks and Kanban tabs. It decides what is drawn - the actions enforce
+ * the same rule on their own (requireTaskBoard).
+ */
+export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
@@ -136,10 +149,11 @@ export function TasksClient() {
   // ?board= all read from this same instance (never a second hook call).
   const searchParams = useSearchParams();
   // /tasks?tab=<id> deep-links straight to that tab (TAB_IDS); anything else opens Tasks.
+  const tabIds: readonly string[] = plainBoard ? PLAIN_TAB_IDS : TAB_IDS;
   const tabParam = searchParams.get("tab") ?? "";
-  const initialTab = (TAB_IDS as readonly string[]).includes(tabParam) ? tabParam : "tasks";
+  const initialTab = tabIds.includes(tabParam) ? tabParam : "tasks";
   const initialTaskId = searchParams.get("task");
-  const boardLens = parseBoardParam(searchParams.get("board"));
+  const boardLens = plainBoard ? "all" : parseBoardParam(searchParams.get("board"));
   const isManager = !!user && (ADMIN_ROLES as readonly string[]).includes(user.role);
 
   const [tasks, setTasks] = useState<TaskWithNames[]>([]);
@@ -148,6 +162,9 @@ export function TasksClient() {
   // All view in the URL, the owner filter and the kanban grouping for the browser tab.
   const [view, setView] = useUrlState<string>("view", "open", VIEW_IDS);
   const [groupBy, setGroupBy] = useSessionState<GroupBy>("groupBy", "none");
+  // Phases exist on the Mega Events dev board only - a stored "phase" grouping means nothing
+  // on the plain board.
+  const kanbanGroupBy: GroupBy = plainBoard && groupBy === "phase" ? "none" : groupBy;
   // The whole board is visible (16.09) - the owner filter says whose tasks are on screen:
   // mine (an editor's default), everyone's (an admin's default - they assign work), the ones
   // I handed to someone else, or - admins - one person's (30.09). Null = not chosen yet, so
@@ -175,21 +192,17 @@ export function TasksClient() {
     reload();
   }, [reload]);
 
-  // Assignable people for the bulk bar and the sub-tasks panel. listUsers is admin-guarded,
-  // so a non-admin never asks (their sub-task is always their own).
+  // Assignable people for the bulk bar and the sub-tasks panel: the people of the ACTIVE
+  // company (lib/services/task-people.ts - Mega Events' active staff, or a company's members).
+  // Admins read them newest first, the order their picker always had; since editors assign
+  // too (01.10) they read the same people by name, like the @mention picker.
   const [staff, setStaff] = useState<StaffOption[] | null>(null);
   useEffect(() => {
-    if (!isManager) return;
-    listUsers()
-      .then((users) =>
-        setStaff(
-          users
-            .filter((u) => u.is_active && (STAFF_ROLES as readonly string[]).includes(u.role))
-            .map((u) => ({ id: u.id, name: u.display_name || u.email })),
-        ),
-      )
+    if (!user) return;
+    (isManager ? listTaskAssignees() : listStaffForMentions())
+      .then((people) => setStaff(people.map((p) => ({ id: p.id, name: p.display_name || p.email }))))
       .catch((error) => console.error("tasks: staff list failed", error));
-  }, [isManager]);
+  }, [isManager, user]);
 
   // Sub-tasks by general task, over the WHOLE board (a part assigned to someone else still
   // counts toward its parent's "x/y" when the "my tasks" switch hides it).
@@ -215,6 +228,35 @@ export function TasksClient() {
     handledTaskRef.current = initialTaskId;
   }, [loading, tasks, initialTaskId]);
 
+  // A task link this board does not hold: the board is per company, and a mail sent before
+  // links carried `company=` may be opened while working in another one. Ask - once - whether
+  // one of MY other companies has the task, and offer to go there. A link that names its
+  // company is switched by the app itself, so it is left alone here.
+  const [elsewhere, setElsewhere] = useState<{ slug: string; name: string } | null>(null);
+  const linkCompany = searchParams.get("company");
+  const lookedUpTaskRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (loading || !initialTaskId || linkCompany) return;
+    if (lookedUpTaskRef.current === initialTaskId) return;
+    lookedUpTaskRef.current = initialTaskId;
+    if (tasks.some((t) => t.id === initialTaskId)) return;
+    findTaskCompany(initialTaskId)
+      .then(setElsewhere)
+      .catch((error) => console.error("tasks: task company lookup failed", error));
+  }, [loading, tasks, initialTaskId, linkCompany]);
+  const goToTaskCompany = useCallback(async () => {
+    if (!elsewhere || !initialTaskId) return;
+    const result = await setActiveCompany(elsewhere.slug);
+    if (!result.success) {
+      toast({ variant: "destructive", title: "החלפת חברה", description: result.error ?? "החלפת החברה נכשלה" });
+      return;
+    }
+    // A full load: every server component renders again in the other company.
+    window.location.assign(
+      `/tasks?task=${encodeURIComponent(initialTaskId)}&company=${encodeURIComponent(elsewhere.slug)}`,
+    );
+  }, [elsewhere, initialTaskId, toast]);
+
   // The board-wide list, narrowed by the owner filter first - every other count/filter
   // below reads from here so the tabs and the filter never disagree about what's on screen.
   const scoped = useMemo(() => {
@@ -232,6 +274,7 @@ export function TasksClient() {
       all: open.length,
       mine: count("mine"),
       delegated: count("delegated"),
+      late: count("late"),
       unassigned: count("unassigned"),
       people: (staff ?? [])
         .filter((member) => member.id !== me)
@@ -488,6 +531,17 @@ export function TasksClient() {
                   לבדיקה שלך
                 </Badge>
               )}
+              {/* Past its deadline and the assignee has said nothing since (lib/tasks/reminders.ts). */}
+              {row.original.late && (
+                <Badge
+                  variant="outline"
+                  className="shrink-0 gap-1 border-destructive/50 text-[10px] text-destructive"
+                  title="תאריך היעד עבר והאחראי לא הגיב, לא עדכן סטטוס ולא כתב כלום מאז"
+                >
+                  <AlarmClock className="h-3 w-3" />
+                  באיחור, בלי מענה
+                </Badge>
+              )}
             </div>
             {row.original.description && (
               <p className="truncate text-xs text-muted-foreground">
@@ -557,7 +611,9 @@ export function TasksClient() {
         header: "Due",
         cell: ({ row }) =>
           row.original.due_date ? (
-            <span className="tabular text-sm">{row.original.due_date}</span>
+            <span className={cn("tabular text-sm", row.original.late && "font-semibold text-destructive")}>
+              {row.original.due_date}
+            </span>
           ) : (
             <span className="text-muted-foreground">—</span>
           ),
@@ -626,6 +682,7 @@ export function TasksClient() {
         cell: ({ row }) =>
           isManager ? (
             <div className="flex justify-end gap-1">
+              <TaskRemindButton task={row.original} onSent={reload} />
               <Button
                 variant="ghost"
                 size="icon"
@@ -651,6 +708,7 @@ export function TasksClient() {
             // (see the `editable` prop on TaskEditor), and the thread is
             // always there to read and comment on regardless.
             <div className="flex justify-end gap-1">
+              <TaskRemindButton task={row.original} onSent={reload} />
               <Button
                 variant="ghost"
                 size="icon"
@@ -664,7 +722,7 @@ export function TasksClient() {
           ),
       },
     ],
-    [isManager, user, onStatus, onDelete, threadTaskId, toggleThread, taskById, childrenOf],
+    [isManager, user, onStatus, onDelete, threadTaskId, toggleThread, taskById, childrenOf, reload],
   );
 
   // Whose tasks are on screen - shared by the Tasks table and the Kanban. Everyone gets
@@ -684,6 +742,7 @@ export function TasksClient() {
         <SelectItem value="all">{withCount("כל המשימות", ownerOptions.all)}</SelectItem>
         <SelectItem value="mine">{withCount("המשימות שלי", ownerOptions.mine)}</SelectItem>
         <SelectItem value="delegated">{withCount("ששייכתי לאחרים", ownerOptions.delegated)}</SelectItem>
+        <SelectItem value="late">{withCount("באיחור, בלי מענה", ownerOptions.late)}</SelectItem>
         {isManager && (
           <>
             <SelectSeparator />
@@ -722,42 +781,92 @@ export function TasksClient() {
     // on Kanban landed back on the Tasks list.
     <UrlTabs
       defaultValue="tasks"
-      values={TAB_IDS}
+      values={tabIds}
       onValueChange={(next) => {
         // "Run now" on the rules tab creates tasks - refresh the board when leaving it.
         if (activeTabRef.current === "rules" && next !== "rules") reload();
         activeTabRef.current = next;
       }}
     >
-      {/* Board lens - filters the table AND the kanban below it together. */}
-      <div className="mb-3 flex flex-wrap gap-1.5">
-        <FilterPill
-          active={boardLens === "all"}
-          onClick={() => setBoardLens("all")}
-          label="הכל"
-          count={scopedOpen.length}
-          title="משימות פתוחות"
-        />
-        {TASK_BOARDS.map((board) => (
+      {/* Board lens - filters the table AND the kanban below it together. The plain board is
+          one board, so it has no lens. */}
+      {!plainBoard && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
           <FilterPill
-            key={board}
-            active={boardLens === board}
-            onClick={() => setBoardLens(board)}
-            label={BOARD_META[board].label}
-            count={boardCounts.get(board) ?? 0}
+            active={boardLens === "all"}
+            onClick={() => setBoardLens("all")}
+            label="הכל"
+            count={scopedOpen.length}
             title="משימות פתוחות"
           />
-        ))}
-      </div>
+          {TASK_BOARDS.map((board) => (
+            <FilterPill
+              key={board}
+              active={boardLens === board}
+              onClick={() => setBoardLens(board)}
+              label={BOARD_META[board].label}
+              count={boardCounts.get(board) ?? 0}
+              title="משימות פתוחות"
+            />
+          ))}
+        </div>
+      )}
+
+      {/* The task a link pointed at lives on the board of another company of mine. */}
+      {elsewhere && (
+        <div
+          dir="rtl"
+          className="mb-3 flex flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm"
+        >
+          <span className="flex-1">
+            המשימה שבקישור לא נמצאת בלוח הזה - היא בלוח המשימות של {elsewhere.name}.
+          </span>
+          <Button size="sm" variant="outline" className="h-8" onClick={goToTaskCompany}>
+            עבור ל-{elsewhere.name}
+          </Button>
+        </div>
+      )}
+
+      {/* Tasks I opened that went past their deadline with no word from the assignee (Dor, 01.10) -
+          the same list the daily mail sends; the filter shows them. */}
+      {ownerOptions.late > 0 && owner !== "late" && (
+        <div
+          dir="rtl"
+          className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
+        >
+          <AlarmClock className="h-4 w-4 shrink-0 text-destructive" />
+          <span className="flex-1">
+            {ownerOptions.late === 1
+              ? "משימה אחת שפתחת עברה את תאריך היעד, והאחראי עוד לא הגיב עליה."
+              : `${ownerOptions.late} משימות שפתחת עברו את תאריך היעד, והאחראים עוד לא הגיבו עליהן.`}{" "}
+            <span className="text-muted-foreground">אפשר לשלוח להם תזכורת בכפתור הפעמון.</span>
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8"
+            onClick={() => {
+              setOwner("late");
+              setView("open");
+            }}
+          >
+            הצג אותן
+          </Button>
+        </div>
+      )}
 
       <TabsList>
         <TabsTrigger value="tasks">Tasks</TabsTrigger>
         <TabsTrigger value="kanban">Kanban</TabsTrigger>
-        <TabsTrigger value="roadmap">Roadmap</TabsTrigger>
-        <TabsTrigger value="marketing">Marketing</TabsTrigger>
-        <TabsTrigger value="gaps">Creative gaps</TabsTrigger>
-        <TabsTrigger value="pricing">Pricing</TabsTrigger>
-        {isManager && <TabsTrigger value="rules">Task rules</TabsTrigger>}
+        {!plainBoard && (
+          <>
+            <TabsTrigger value="roadmap">Roadmap</TabsTrigger>
+            <TabsTrigger value="marketing">Marketing</TabsTrigger>
+            <TabsTrigger value="gaps">Creative gaps</TabsTrigger>
+            <TabsTrigger value="pricing">Pricing</TabsTrigger>
+            {isManager && <TabsTrigger value="rules">Task rules</TabsTrigger>}
+          </>
+        )}
       </TabsList>
 
       <TabsContent value="tasks" className="mt-4">
@@ -791,22 +900,24 @@ export function TasksClient() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select
-                value=""
-                onValueChange={(value) => runBulk({ board: value as TaskBoard }, "הועברו")}
-                disabled={bulkBusy}
-              >
-                <SelectTrigger className="h-8 w-[130px] text-foreground">
-                  <SelectValue placeholder="ללוח…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TASK_BOARDS.map((board) => (
-                    <SelectItem key={board} value={board}>
-                      {BOARD_META[board].label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {!plainBoard && (
+                <Select
+                  value=""
+                  onValueChange={(value) => runBulk({ board: value as TaskBoard }, "הועברו")}
+                  disabled={bulkBusy}
+                >
+                  <SelectTrigger className="h-8 w-[130px] text-foreground">
+                    <SelectValue placeholder="ללוח…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TASK_BOARDS.map((board) => (
+                      <SelectItem key={board} value={board}>
+                        {BOARD_META[board].label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Select
                 value=""
                 onValueChange={(value) => runBulk({ status: value as TaskStatus }, "עודכנו")}
@@ -874,7 +985,9 @@ export function TasksClient() {
             title: loading ? "Loading tasks…" : "No tasks here",
             description: loading
               ? undefined
-              : "Create one, or pull work in from the Creative gaps tab.",
+              : plainBoard
+                ? "Create one with New task."
+                : "Create one, or pull work in from the Creative gaps tab.",
           }}
         />
       </TabsContent>
@@ -884,13 +997,14 @@ export function TasksClient() {
           {/* Same owner filter (and state) as the Tasks tab - it filters this board too. */}
           {ownerSelect}
           <span className="text-muted-foreground">קיבוץ:</span>
-          <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupBy)}>
+          <Select value={kanbanGroupBy} onValueChange={(value) => setGroupBy(value as GroupBy)}>
             <SelectTrigger className="h-8 w-[140px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">ללא</SelectItem>
-              <SelectItem value="phase">פאזה</SelectItem>
+              {/* Phases belong to the Mega Events dev board. */}
+              {!plainBoard && <SelectItem value="phase">פאזה</SelectItem>}
               <SelectItem value="assignee">משובץ</SelectItem>
             </SelectContent>
           </Select>
@@ -898,66 +1012,74 @@ export function TasksClient() {
         <KanbanBoard
           tasks={boardFiltered}
           onStatusChange={onKanbanStatusChange}
-          groupBy={groupBy}
+          groupBy={kanbanGroupBy}
           role={user?.role ?? ""}
           userId={user?.id ?? null}
           onOpenTask={(task) => setEditor({ open: true, task })}
         />
       </TabsContent>
 
-      {/* Roadmap / Marketing read the WHOLE board (their own assignee filter inside), not the
-          board lens or the my-tasks switch - they are the team map. */}
-      <TabsContent value="roadmap" className="mt-4">
-        <TaskMapView
-          mode="roadmap"
-          tasks={tasks}
-          loading={loading}
-          onOpenTask={(task) => setEditor({ open: true, task })}
-          onAddTask={(defaults) => setEditor({ open: true, task: null, defaults })}
-        />
-      </TabsContent>
+      {/* The Mega Events tabs - never mounted on the plain board (the server refuses their
+          actions there as well). */}
+      {!plainBoard && (
+        <>
+          {/* Roadmap / Marketing read the WHOLE board (their own assignee filter inside), not the
+              board lens or the my-tasks switch - they are the team map. */}
+          <TabsContent value="roadmap" className="mt-4">
+            <TaskMapView
+              mode="roadmap"
+              tasks={tasks}
+              loading={loading}
+              onOpenTask={(task) => setEditor({ open: true, task })}
+              onAddTask={(defaults) => setEditor({ open: true, task: null, defaults })}
+            />
+          </TabsContent>
 
-      <TabsContent value="marketing" className="mt-4">
-        <TaskMapView
-          mode="marketing"
-          tasks={tasks}
-          loading={loading}
-          onOpenTask={(task) => setEditor({ open: true, task })}
-          onAddTask={(defaults) => setEditor({ open: true, task: null, defaults })}
-        />
-      </TabsContent>
+          <TabsContent value="marketing" className="mt-4">
+            <TaskMapView
+              mode="marketing"
+              tasks={tasks}
+              loading={loading}
+              onOpenTask={(task) => setEditor({ open: true, task })}
+              onAddTask={(defaults) => setEditor({ open: true, task: null, defaults })}
+            />
+          </TabsContent>
 
-      <TabsContent value="gaps" className="mt-4">
-        <GapsTab
-          onCreateTask={(gap) =>
-            setEditor({ open: true, task: null, prefill: gapPrefill(gap) })
-          }
-        />
-      </TabsContent>
+          <TabsContent value="gaps" className="mt-4">
+            <GapsTab
+              onCreateTask={(gap) =>
+                setEditor({ open: true, task: null, prefill: gapPrefill(gap) })
+              }
+            />
+          </TabsContent>
 
-      <TabsContent value="pricing" className="mt-4">
-        <PricingGapsTab
-          onOpenTask={(taskId) => {
-            const found = tasks.find((t) => t.id === taskId);
-            if (found) setEditor({ open: true, task: found });
-          }}
-          onTasksChanged={reload}
-        />
-      </TabsContent>
+          <TabsContent value="pricing" className="mt-4">
+            <PricingGapsTab
+              onOpenTask={(taskId) => {
+                const found = tasks.find((t) => t.id === taskId);
+                if (found) setEditor({ open: true, task: found });
+              }}
+              onTasksChanged={reload}
+            />
+          </TabsContent>
 
-      {isManager && (
-        <TabsContent value="rules" className="mt-4">
-          <RulesTab />
-        </TabsContent>
+          {isManager && (
+            <TabsContent value="rules" className="mt-4">
+              <RulesTab />
+            </TabsContent>
+          )}
+        </>
       )}
 
       <TaskEditor
         key={`${editor.task?.id ?? "new"}-${editor.prefill?.source_ref.row_id ?? ""}-${editor.defaults?.board ?? ""}${editor.defaults?.phase ?? ""}${editor.defaults?.channel ?? ""}-${editor.open}`}
         state={editor}
         isManager={isManager}
+        plainBoard={plainBoard}
         editable={editableFields(
           user?.role ?? "",
           !!user && editor.task?.assignee_id === user.id,
+          !!user && editor.task?.created_by === user.id,
         )}
         onClose={() => setEditor({ open: false, task: null })}
         onThreadRead={markThreadRead}

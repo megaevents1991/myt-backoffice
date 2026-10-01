@@ -6,6 +6,16 @@ import { isValidTaskAttachmentPath } from "../lib/tasks/attachment-path";
 import { mentionsStillInBody } from "../lib/tasks/mentions";
 import { assignedByMap, matchesOwner, type AssigneeChangeRow } from "../lib/tasks/owner-filter";
 import { awaitsReviewBy, canChangeStatus, reviewMove, reviewersOf } from "../lib/tasks/review";
+import {
+  assignedAtMap,
+  canRemind,
+  daysLate,
+  israelDate,
+  lateWithoutAnswer,
+  overdueAlertDue,
+  reminderCoolingDown,
+  reminderTargets,
+} from "../lib/tasks/reminders";
 import type { TaskStatus } from "../types/task.types";
 import {
   commentMailTargets,
@@ -230,6 +240,95 @@ check("review move: into review, approved, returned, and everything else",
     reviewMove("in_progress", "done"),
   ],
   ["sent", "sent", null, "approved", "returned", "returned", null, null]);
+
+// --- reminders (01.10): the button, and "late with no answer" raised to whoever opened it ---
+check("israel date: 23:30 UTC is already tomorrow in Israel", israelDate("2026-09-30T23:30:00Z"), "2026-10-01");
+check("israel date: 20:00 UTC is still today", israelDate("2026-09-30T20:00:00Z"), "2026-09-30");
+check("days late", [daysLate("2026-09-26", "2026-10-01"), daysLate("2026-10-01", "2026-10-01"), daysLate("2026-10-03", "2026-10-01")], [5, 0, -2]);
+check("remind targets: the assignee while it is theirs, the reviewers while it waits, nobody when closed",
+  [
+    reminderTargets(owned("tom", "dor", "in_progress", "dor")),
+    reminderTargets(owned("tom", "dor", "review", "dor", ["alon"])),
+    reminderTargets(owned("tom", "dor", "review", "dor")),
+    reminderTargets(owned("tom", "dor", "done", "dor")),
+    reminderTargets(owned(null, null, "todo", "dor")),
+  ],
+  [["tom"], ["alon"], ["dor"], [], []]);
+check("can remind: the opener, the assigner, an admin; not a bystander; not yourself",
+  [
+    canRemind("editor", owned("tom", null, "todo", "liz"), "liz"), // opened it
+    canRemind("editor", owned("tom", "rina", "todo", null), "rina"), // assigned it
+    canRemind("admin", owned("tom", null, "todo", "liz"), "dor"), // admin
+    canRemind("editor", owned("tom", null, "todo", "liz"), "rina"), // nothing to do with it
+    canRemind("editor", owned("tom", null, "todo", "liz"), "tom"), // the only target is me
+    canRemind("editor", owned("tom", null, "done", "liz"), "liz"), // closed
+  ],
+  [true, true, true, false, false, false]);
+check("can remind: in review the owner reminds the reviewer (\"I got no answer\")",
+  canRemind("editor", owned("tom", null, "review", "liz"), "tom"), true);
+check("cooldown: an hour", [
+  reminderCoolingDown("2026-10-01T10:00:00Z", new Date("2026-10-01T10:30:00Z")),
+  reminderCoolingDown("2026-10-01T10:00:00Z", new Date("2026-10-01T11:01:00Z")),
+  reminderCoolingDown(null, new Date("2026-10-01T10:30:00Z")),
+], [true, false, false]);
+
+const lateTask = (over: Partial<ReturnType<typeof owned> & { due_date: string | null }> = {}) => ({
+  ...owned("tom", null, "in_progress", "liz"),
+  due_date: "2026-09-26" as string | null,
+  ...over,
+});
+const TODAY = "2026-10-01";
+check("late: past the deadline, the assignee silent since -> late", lateWithoutAnswer({
+  task: lateTask(), assignedAt: "2026-09-20T08:00:00Z", events: [{ author_id: "tom", created_at: "2026-09-21T08:00:00Z" }], today: TODAY,
+}), true);
+check("late: the assignee wrote on the due day -> answered", lateWithoutAnswer({
+  task: lateTask(), assignedAt: "2026-09-20T08:00:00Z", events: [{ author_id: "tom", created_at: "2026-09-26T09:00:00Z" }], today: TODAY,
+}), false);
+check("late: someone ELSE writing is not the assignee's answer", lateWithoutAnswer({
+  task: lateTask(), assignedAt: "2026-09-20T08:00:00Z", events: [{ author_id: "liz", created_at: "2026-09-29T09:00:00Z" }], today: TODAY,
+}), true);
+check("late: due today, or no due date -> not late", [
+  lateWithoutAnswer({ task: lateTask({ due_date: TODAY }), assignedAt: "2026-09-20T08:00:00Z", events: [], today: TODAY }),
+  lateWithoutAnswer({ task: lateTask({ due_date: null }), assignedAt: "2026-09-20T08:00:00Z", events: [], today: TODAY }),
+], [false, false]);
+check("late: in review / done -> the assignee already answered", [
+  lateWithoutAnswer({ task: lateTask({ status: "review" }), assignedAt: "2026-09-20T08:00:00Z", events: [], today: TODAY }),
+  lateWithoutAnswer({ task: lateTask({ status: "done" }), assignedAt: "2026-09-20T08:00:00Z", events: [], today: TODAY }),
+], [false, false]);
+check("late: a task I opened for myself is never raised to me", lateWithoutAnswer({
+  task: lateTask({ assignee_id: "liz" }), assignedAt: "2026-09-20T08:00:00Z", events: [], today: TODAY,
+}), false);
+check("late: handed over today -> they get until tonight; handed over yesterday and silent -> late", [
+  lateWithoutAnswer({ task: lateTask(), assignedAt: "2026-10-01T07:00:00Z", events: [], today: TODAY }),
+  lateWithoutAnswer({ task: lateTask(), assignedAt: "2026-09-30T07:00:00Z", events: [], today: TODAY }),
+], [false, true]);
+check("late: an answer from before it reached the current owner does not count", lateWithoutAnswer({
+  task: lateTask(), assignedAt: "2026-09-28T08:00:00Z", events: [{ author_id: "tom", created_at: "2026-09-27T08:00:00Z" }], today: TODAY,
+}), true);
+check("late: a rule task nobody opened goes to whoever assigned it, else nobody", [
+  lateWithoutAnswer({ task: lateTask({ created_by: null, assigned_by: "alon" }), assignedAt: "2026-09-20T08:00:00Z", events: [], today: TODAY }),
+  lateWithoutAnswer({ task: lateTask({ created_by: null, assigned_by: null }), assignedAt: "2026-09-20T08:00:00Z", events: [], today: TODAY }),
+], [true, false]);
+check("assigned at: the newest change to the current owner, else creation",
+  [...assignedAtMap(
+    [
+      { id: "t1", assignee_id: "tom", created_at: "2026-09-01T00:00:00Z" },
+      { id: "t2", assignee_id: "tom", created_at: "2026-09-02T00:00:00Z" },
+    ],
+    [change("t1", "dor", "alon", 3), change("t1", "dor", "tom", 4), change("t1", "dor", "tom", 5)],
+  )],
+  [["t1", at(5)], ["t2", "2026-09-02T00:00:00Z"]]);
+check("overdue alert: first time at once, again only after three days", [
+  overdueAlertDue(null, new Date("2026-10-01T06:30:00Z")),
+  overdueAlertDue("2026-09-30T06:30:00Z", new Date("2026-10-01T06:30:00Z")),
+  overdueAlertDue("2026-09-28T06:30:00Z", new Date("2026-10-01T06:30:00Z")),
+], [true, false, true]);
+check("owner: late = tasks I opened that are late", [
+  matchesOwner({ ...owned("tom", null, "todo", "liz"), late: true }, "late", "liz"),
+  matchesOwner({ ...owned("tom", null, "todo", "liz"), late: true }, "late", "tom"),
+  matchesOwner({ ...owned("tom", null, "todo", "liz"), late: false }, "late", "liz"),
+  matchesOwner({ ...owned("tom", "alon", "todo", null), late: true }, "late", "alon"),
+], [true, false, false, true]);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

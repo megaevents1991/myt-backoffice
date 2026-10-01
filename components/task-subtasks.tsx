@@ -56,7 +56,9 @@ export function TaskSubtasks({
 }) {
   const { toast } = useToast();
   const [title, setTitle] = useState("");
-  const [assignee, setAssignee] = useState<string>("unassigned");
+  // An admin's new part starts unassigned; anyone else's starts as their own (still changeable -
+  // editors assign too since 01.10).
+  const [assignee, setAssignee] = useState<string>(isManager ? "unassigned" : (userId ?? "unassigned"));
   const [adding, setAdding] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -73,7 +75,7 @@ export function TaskSubtasks({
         title: name,
         priority: parent.priority,
         due_date: parent.due_date,
-        assignee_id: isManager ? (assignee === "unassigned" ? null : assignee) : userId,
+        assignee_id: assignee === "unassigned" ? null : assignee,
         parent_id: parent.id,
       });
       if (!result.ok) {
@@ -186,7 +188,7 @@ export function TaskSubtasks({
             className="h-8 min-w-[180px] flex-1 text-sm"
             disabled={adding}
           />
-          {isManager && staff && (
+          {staff && (
             <Select value={assignee} onValueChange={setAssignee} disabled={adding}>
               <SelectTrigger className="h-8 w-[150px] text-xs">
                 <SelectValue />

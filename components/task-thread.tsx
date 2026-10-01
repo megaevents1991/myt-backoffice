@@ -46,6 +46,8 @@ const ACTIVITY_LABEL: Record<ActivityField, string> = {
   due_date: "שינה יעד",
   progress: "עדכן התקדמות",
   board: "העביר לוח",
+  reminder: "שלח/ה תזכורת במייל ל-",
+  overdue_alert: "עבר תאריך היעד בלי מענה - נשלחה התראה ל-",
 };
 
 const MAX_MENTION_RESULTS = 6;
@@ -87,7 +89,16 @@ function initials(name: string | null): string {
 }
 
 function activityText(activity: NonNullable<TaskCommentWithAuthor["activity"]>, nameOf: Map<string, string>): string {
-  const label = ACTIVITY_LABEL[activity.field];
+  const label = ACTIVITY_LABEL[activity.field] ?? activity.field;
+  // Reminder rows name people (comma-joined ids); they change no field, so no "from → to".
+  if (activity.field === "reminder" || activity.field === "overdue_alert") {
+    const names = (activity.to ?? "")
+      .split(",")
+      .filter(Boolean)
+      .map((id) => nameOf.get(id) ?? "?")
+      .join(", ");
+    return `${label}${names || "?"}`;
+  }
   const resolve = (value: string | null) =>
     activity.field === "assignee" && value ? (nameOf.get(value) ?? value) : value;
   const from = resolve(activity.from);

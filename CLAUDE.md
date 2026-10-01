@@ -356,6 +356,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >     (`TASK_FIELDS`). Validated server-side (`cleanReviewerIds`: active staff ids, `REVIEWERS_MAX`
 >     5; `[]`/null = back to the default). The table prints "בודק: X, Y" under the assignee only
 >     when someone was picked.
+>   - **Editors assign + reminders + late alerts (2026-10-01).** (a) Liz (`editor`) could not give a
+>     task to anyone - `createTask` forced `assignee_id = session.sub` and the form hid "Assign to".
+>     Now any staff member picks any assignee on a NEW task (an editor's form starts on themself;
+>     the id is validated server-side, `cleanAssigneeId`), and `editableFields(role, isOwn,
+>     isOpenedByMe)` lets an editor change `assignee_id` on a task assigned to them (plus status /
+>     progress) or one they opened; `updateTask` reads the owner first and scopes its write by
+>     assignee or creator. The sub-task panel and the form's drafts offer the picker to editors.
+>     (b) **Reminder button** (bell at the row's end, "תזכורת" in the dialog header,
+>     `components/task-remind-button.tsx` -> `remindTask`): mails whoever holds the next move -
+>     the assignee, or the reviewers while in review (`reminderTargets`) - shown to an admin or
+>     anyone the task belongs to (`canRemind`), one per task per hour (`REMINDER_COOLDOWN_MS`),
+>     recorded as a `reminder` activity row. (c) **Late without an answer** (`lateWithoutAnswer`,
+>     pure in `lib/tasks/reminders.ts`, selftest `scripts/task-thread-selftest.ts`): a
+>     working-status task (todo / in_progress / paused - not review) past its due date (Israel
+>     calendar, `israelDate`) whose ASSIGNEE wrote or changed nothing on it since the due day and
+>     since it reached them; a task someone opened for themself never counts.
+>     `TaskWithNames.late` -> red "באיחור, בלי מענה" tag + red due date, owner filter "late"
+>     (= late tasks I opened, `openerOf` = creator, else assigner) and a banner above the tabs.
+>     The cron `taskOverdueAlerts` mails each opener ONE digest
+>     (`lib/services/task-overdue-alerts.ts`, `task-reminder-notify.ts`) and writes an
+>     `overdue_alert` activity row (author null) per task - the dedupe: raised again only after
+>     `OVERDUE_REALERT_DAYS` (3); a skipped / failed mail writes nothing and retries next run.
+>     Both new activity kinds are in `ACTIVITY_FIELDS`; no migration (activity is jsonb, no CHECK).
+>     Dry run on prod 01.10: 23 assigned tasks overdue, 9 late without an answer (Alon 7).
 >   - **Pricing tab** (`?tab=pricing`, all staff, not admin-only like
 >     `/price-light`): every open pricing problem - red price lights and
 >     frozen `/price-changes` rows - in one list via
@@ -617,6 +641,7 @@ fallback for manual triggers:
 - `price-light-retention` - weekly, Sundays 03:00 UTC: keeps `RETENTION_DAYS` (**180**) and hard-deletes the rest of `event_price_snapshots` (by `day`), `competitor_matches` (by the EVENT they describe being 180 days past - never by their own age, or a quiet row that is still an event's newest verdict would be erased and its light would vanish at the next recompute), `competitor_listings` (`last_seen_at` - not seen in six months = off their site), `competitor_crawl_runs` (`started_at`) and `audit_log` rows whose action starts `price_light.`. Backoffice-only log tables, so a hard delete is the policy here (same precedent as `purgeAuditLog`); it never touches `events`. `?dry_run=1` counts exactly what a real run would remove and writes nothing. **`purgeAuditLog` now EXEMPTS `price_light.*`** - those rows are the decisions the agent learns from, and dropping them at 30 days silently capped its 120-day memory at a month. Why these sizes are safe: the price-drop lookback reads 14 days, a light goes stale at 14, and the circuit reads the last handful of runs - every read path lives far inside 180.
 - `price-light-ours` - nightly 02:40 UTC (after `base-price-sync` finishes its own Amadeus searches): describes OUR package contents for the /price-light comparison - the flight and hotel the pricing rule would buy today (cheapest direct / connection past the $300 gap via `fetchFlightOffers` + `pickFlightPrice`; cheapest 3★ via main's `/api/hotels`; a linked offline flight/hotel wins) - into `events.light_detail.ours`. Never-described first, then older than `OUR_OFFER_REFRESH_DAYS` (7) or last lost to a TRANSIENT error (HTTP/API/timeout - retried next night, not left blank a week), `OUR_OFFER_CONCURRENCY` 3 events at a time in a 260s budget (~5-8s per event). **Hotel searches run through ONE queue** whatever the event concurrency, with one retry on 429/5xx: main's `/api/hotels` fails under parallel load (first full pass lost 308 of 426 hotels; each answered alone). Flights: 423 of 426 described. Reads the rule, writes no price. `?dry_run=1` still SEARCHES (that is what is being tested) but writes nothing; `?limit=N` caps a manual run. Dor 2026-09-14: the extra Amadeus/hotel calls are fine nightly and on demand.
 - `price-light-nightly` - 00:15 UTC, before `base-price-sync`: refreshes the `livetickets` competitor table from `live_events` first (it's an API read, never crawled, budgeted at 60s so it can't eat the whole run); then pass 1 snapshots every live future event and applies the "ירידת מחיר" tag (drop ≥$50 vs ~14 days ago, shown 14 days); pass 2 rule-matches every event against the stored catalogs and recomputes `events.light_package` / `light_ticket` / `light_detail`. Both passes go least-recently-checked first and share one 270s budget measured from the top of the run, so a cutoff mid-pass-1 is recorded (`snapshotsRemaining`) rather than silently skipped. **Follow-ups at 03:30 and 05:30 UTC** (`?followup=1`, 2026-09-24): same queue, no LiveTickets refresh, no second snapshot for an event already snapshotted today - the lights the first run did not reach (it covered ~60 of 430 a night, so a light sat ~8 days); a follow-up mails only on a red move or an error. Revalidates main (both targets) once if anything changed; summary email (which also reports `aiCalls` used out of `AI_CALLS_PER_RUN`). `?dry_run=1` = zero writes **and zero AI** - dry runs pass `judge: null`, so a report pointed at prod never spends money. Spec `docs/superpowers/specs/2026-09-09-price-light-design.md`; rules + constants ONLY in `lib/services/price-light.ts`.
+- `taskOverdueAlerts` - Sunday-Thursday 06:30 UTC (`30 6 * * 0-4`, the office's working days): every task past its due date whose assignee has said nothing since is raised to whoever opened it, ONE mail per opener, again every `OVERDUE_REALERT_DAYS` (3) while it stays silent (`overdue_alert` activity rows are the dedupe). Reads every company's tasks on purpose. `?dry_run=1` = full report, nothing mailed or written. See "Editors assign + reminders + late alerts" under Tasks Hub.
 - `weeklyTaskGen` - daily 06:00 UTC (`vercel.json` `0 6 * * *`); each rule runs only on its own UTC weekday (`dow`): runs every active `task_rules` row through its domain's generator (`lib/services/task-rules/*`) and `weekly-task-plan.ts`'s pure decision logic, creating one weekly-digest task per rule (source `recurring`) or one task per item under that domain's native source (`price_light`/`price_review`/`creative_gap`). Per-item rules are capped at 25 creates per run (`PER_ITEM_MAX_PER_RUN`) with one summary mail per assignee; the 270s budget is checked per created task. A generator that fails to load its data THROWS - never silently returns an empty list, which would auto-close open digests that are still valid. `?dry_run=1` reports what it would create with zero writes. See "Tasks Hub" above.
 
 ### Environment Variables

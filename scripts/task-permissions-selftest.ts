@@ -15,16 +15,22 @@ function check(name: string, got: unknown, want: unknown) {
   }
 }
 
-const EDITOR_OWN: EditableTaskField[] = ["status", "progress"];
+// 01.10: an editor may hand on a task - their own, or one they opened (Liz could not assign).
+const EDITOR_OWN: EditableTaskField[] = ["status", "progress", "assignee_id"];
+const EDITOR_OPENED: EditableTaskField[] = ["assignee_id"];
 
 for (const field of TASK_FIELDS) {
   // Admins edit everything, on any task, whichever admin role.
   check(`admin / any task / ${field}`, canEditTaskField("admin", false, field), true);
   check(`superadmin / own task / ${field}`, canEditTaskField("superadmin", true, field), true);
 
-  // Editor on their OWN task: only status + progress.
+  // Editor on their OWN task: status, progress, and who has it.
   const shouldOwn = EDITOR_OWN.includes(field);
   check(`editor / own task / ${field}`, canEditTaskField("editor", true, field), shouldOwn);
+  check(`editor / own task they also opened / ${field}`, canEditTaskField("editor", true, field, true), shouldOwn);
+
+  // Editor on a task THEY opened that someone else holds: only who holds it.
+  check(`editor / opened, held by another / ${field}`, canEditTaskField("editor", false, field, true), EDITOR_OPENED.includes(field));
 
   // Editor on someone ELSE's task: nothing at all.
   check(`editor / other's task / ${field}`, canEditTaskField("editor", false, field), false);

@@ -124,4 +124,9 @@ export interface TaskWithNames extends Task {
   /** Of those, the ones the VIEWER has not read - written by someone else since they last
    *  opened the thread, on a task whose conversation they are part of (lib/tasks/thread-watch.ts). */
   unread_count: number;
+  /** Past its due date with no word from its assignee since (lib/tasks/reminders.ts
+   *  lateWithoutAnswer) - raised to whoever opened it, by mail and on the board (01.10). */
+  late: boolean;
+  /** When the reminder button was last pressed on it (a `reminder` activity row), else null. */
+  last_reminded_at: string | null;
 }

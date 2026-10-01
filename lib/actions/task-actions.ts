@@ -1,7 +1,9 @@
 "use server";
 
-import { requireStaff } from "@/lib/auth/guards";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
+import { otherCompanyOfTask, requireTaskBoard, type TaskResult, type TaskScope } from "@/lib/tasks-scope";
+import { PLAIN_TASK_BOARD, taskBoardsOf } from "@/lib/services/task-company";
+import { taskPeopleIds, taskPeopleOf, type TaskPerson } from "@/lib/services/task-people";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { logAudit } from "@/lib/audit";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
@@ -10,7 +12,7 @@ import { notifyReviewOutcome, notifyTaskDone, notifyTaskReview } from "@/lib/ser
 import { reviewMove, reviewersOf } from "@/lib/tasks/review";
 import { siteUrlOf, siteUrlsForRefs } from "@/lib/services/task-site-url";
 import { resolveGapForTask } from "@/lib/services/gap-resolution";
-import { ADMIN_ROLES, STAFF_ROLES } from "@/types/auth.types";
+import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   OPEN_TASK_STATUSES,
   TASK_PRIORITIES,
@@ -30,7 +32,30 @@ import { diffActivities, recordActivity } from "@/lib/services/task-activity";
 import { editableFields, type EditableTaskField } from "@/lib/tasks/permissions";
 import { unreadCounts, type ThreadCommentRow } from "@/lib/tasks/thread-watch";
 import { assignedByMap, type AssigneeChangeRow } from "@/lib/tasks/owner-filter";
+import {
+  assignedAtMap,
+  canRemind,
+  daysLate,
+  israelDate,
+  lateWithoutAnswer,
+  reminderCoolingDown,
+  reminderTargets,
+  type ThreadEvent,
+} from "@/lib/tasks/reminders";
+import { notifyTaskReminder } from "@/lib/services/task-reminder-notify";
 
+/**
+ * The task board is per company (lib/tasks-scope.ts). Every action starts with
+ * `requireTaskBoard()`: the staff session, the ACTIVE company and `tasks` - that company's
+ * door to `public.tasks`. Nothing here names the table itself, so a task of another company
+ * is exactly a task that does not exist: not listed, not found, not written.
+ * `db` below is for the tables around a task (profiles, and the thread rows of a task that
+ * was first resolved through `tasks`).
+ *
+ * A company that sells no events (Mega Family) has the plain board of
+ * lib/services/task-company.ts: one board, manual tasks only - the Mega Events boards,
+ * phases, channels and sourced tasks are refused there (`eventsBoard` false).
+ */
 // Typed against types/database.types.ts (npm run db:types).
 const db = supabaseTyped;
 
@@ -41,10 +66,12 @@ type CreateResult =
   | { ok: false; error: string };
 
 /**
- * Permissions (decided 01.09):
+ * Permissions (decided 01.09, widened 01.10):
  * - superadmin/admin: create for anyone, edit/delete everything.
- * - editor: sees own tasks, updates their status, may create FOR HIMSELF only.
- * - Partner roles never reach these actions - requireStaff() rejects them,
+ * - editor: sees the whole board, updates the status of their own tasks, creates a task for
+ *   anyone (Dor, 01.10 - Liz could only open tasks for herself) and hands on a task assigned
+ *   to them or opened by them (lib/tasks/permissions.ts).
+ * - Partner roles never reach these actions - requireTaskBoard() rejects them,
  *   and middleware confines them to /portal anyway.
  */
 function isManager(role: string): boolean {
@@ -66,30 +93,37 @@ function missingColumn(error: { code?: string; message?: string } | null): boole
 /** Most reviewers one task may carry - "Alon, Tom or both", not the whole company. */
 const REVIEWERS_MAX = 5;
 
-/** The reviewer ids a form sent, kept only where they are real, active staff profiles -
- *  the client is never trusted with a user id. `null` = back to the default reviewer. */
-async function cleanReviewerIds(value: unknown): Promise<string[] | null | { error: string }> {
+/** The reviewer ids a form sent, kept only where they are people of the company (real, active
+ *  staff - lib/services/task-people.ts) - the client is never trusted with a user id.
+ *  `null` = back to the default reviewer. */
+async function cleanReviewerIds(
+  value: unknown,
+  company: TaskScope,
+): Promise<string[] | null | { error: string }> {
   if (value === null || value === undefined) return null;
   if (!Array.isArray(value) || value.some((id) => typeof id !== "string")) return { error: "Bad reviewers" };
   const unique = [...new Set(value as string[])].filter((id) => id.length > 0);
   if (unique.length === 0) return null;
   if (unique.length > REVIEWERS_MAX) return { error: `עד ${REVIEWERS_MAX} בודקים למשימה` };
-  const { data, error } = await db
-    .from("user_profiles")
-    .select("id,role")
-    .in("id", unique)
-    .eq("is_active", true);
-  if (error) {
-    console.error("tasks: reviewer check failed", JSON.stringify(error));
-    return { error: "Save failed - check the log" };
-  }
-  const staff = new Set(
-    (data ?? [])
-      .filter((user: { role: string }) => (STAFF_ROLES as readonly string[]).includes(user.role))
-      .map((user: { id: string }) => user.id),
-  );
-  if (unique.some((id) => !staff.has(id))) return { error: "בודק חייב להיות איש צוות פעיל" };
+  const people = await taskPeopleIds(company);
+  if (!people) return { error: "Save failed - check the log" };
+  if (unique.some((id) => !people.has(id))) return { error: "בודק חייב להיות איש צוות פעיל" };
   return unique;
+}
+
+/** An assignee a form sent: null (nobody), or one of the company's people (a real, active staff
+ *  profile that works in it). Since editors may assign (01.10) the id comes from more hands
+ *  than the admins' - never trust it unchecked. */
+async function cleanAssigneeId(
+  value: unknown,
+  company: TaskScope,
+): Promise<string | null | { error: string }> {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "string") return { error: "Bad assignee" };
+  const people = await taskPeopleIds(company);
+  if (!people) return { error: "Save failed - check the log" };
+  if (!people.has(value)) return { error: "אפשר לשייך רק לאיש צוות פעיל" };
+  return value;
 }
 
 function validStatus(value: string): value is TaskStatus {
@@ -121,6 +155,33 @@ function validSourceRef(value: unknown): value is TaskSourceRef {
     ref.url.startsWith("/") &&
     !ref.url.startsWith("//")
   );
+}
+
+/**
+ * What the plain board (a company that sells no events) does not take, as the error to
+ * return - or null when the fields are fine. Only fields that were sent are judged, so the
+ * same check serves create and update.
+ */
+function plainBoardRefusal(
+  fields: {
+    board?: unknown;
+    phase?: unknown;
+    channel?: unknown;
+    progress?: unknown;
+    source?: TaskSource;
+    source_ref?: unknown;
+  },
+  company: { productTypes: readonly string[] },
+): string | null {
+  if (fields.board !== undefined && !(taskBoardsOf(company) as readonly unknown[]).includes(fields.board)) {
+    return "Bad board";
+  }
+  if (fields.phase !== undefined && fields.phase !== null) return "Bad phase";
+  if (fields.channel !== undefined && fields.channel !== null) return "Bad channel";
+  if (fields.progress !== undefined && fields.progress !== null) return "Bad progress";
+  if (fields.source !== undefined && fields.source !== "manual") return "Bad source";
+  if (fields.source_ref !== undefined && fields.source_ref !== null) return "Bad source_ref";
+  return null;
 }
 
 /** Board read cap - far above today's size; a truncated read is logged, never hidden. */
@@ -157,10 +218,14 @@ async function commentRows(taskIds: string[]): Promise<ThreadCommentRow[]> {
   return out;
 }
 
-/** Every "assignee changed" activity row of these tasks - who handed each task to whom.
+/** Every "assignee changed" activity row of these tasks - who handed each task to whom - plus,
+ *  when asked, the other activity kinds named (the board also reads `reminder` rows).
  *  Same chunking as commentRows; a failed chunk is logged and its tasks fall back to
  *  "assigned by whoever created it". */
-async function assigneeChangeRows(taskIds: string[]): Promise<AssigneeChangeRow[]> {
+async function assigneeChangeRows(
+  taskIds: string[],
+  fields: readonly string[] = ["assignee"],
+): Promise<AssigneeChangeRow[]> {
   const out: AssigneeChangeRow[] = [];
   for (let i = 0; i < taskIds.length; i += COMMENT_COUNT_CHUNK) {
     const chunk = taskIds.slice(i, i + COMMENT_COUNT_CHUNK);
@@ -170,7 +235,7 @@ async function assigneeChangeRows(taskIds: string[]): Promise<AssigneeChangeRow[
           .from("task_comments")
           .select("id,task_id,author_id,created_at,activity")
           .eq("kind", "activity")
-          .eq("activity->>field", "assignee")
+          .in("activity->>field", [...fields])
           .in("task_id", chunk)
           .order("id", { ascending: true }),
       COMMENT_ROWS_MAX,
@@ -183,6 +248,46 @@ async function assigneeChangeRows(taskIds: string[]): Promise<AssigneeChangeRow[
     out.push(...rows);
   }
   return out;
+}
+
+/** Every thread row (comment or activity, deleted or not - a retracted answer was still an
+ *  answer) of these tasks: who did anything on them, and when. Read only for the few tasks past
+ *  their deadline, to tell "late, but the assignee said something" from "late and silent"
+ *  (lib/tasks/reminders.ts). A failed chunk is logged and its tasks come back in `failed` -
+ *  never flag someone as ignoring a task because a read failed. */
+async function threadEventRows(
+  taskIds: string[],
+): Promise<{ rows: Array<ThreadEvent & { task_id: string }>; failed: Set<string> }> {
+  const out: Array<ThreadEvent & { task_id: string }> = [];
+  const failed = new Set<string>();
+  for (let i = 0; i < taskIds.length; i += COMMENT_COUNT_CHUNK) {
+    const chunk = taskIds.slice(i, i + COMMENT_COUNT_CHUNK);
+    const { rows, error, truncated } = await fetchPaged<ThreadEvent & { id: string; task_id: string }>(
+      () =>
+        db
+          .from("task_comments")
+          .select("id,task_id,author_id,created_at")
+          .in("task_id", chunk)
+          .order("id", { ascending: true }),
+      COMMENT_ROWS_MAX,
+    );
+    if (error) {
+      console.error("tasks: thread events failed for a chunk", JSON.stringify(error));
+      for (const id of chunk) failed.add(id);
+      continue;
+    }
+    if (truncated) console.error(`tasks: thread events truncated at ${COMMENT_ROWS_MAX} rows for a chunk`);
+    out.push(...rows);
+  }
+  return { rows: out, failed };
+}
+
+function isWorkingStatus(status: string): boolean {
+  return status === "todo" || status === "in_progress" || status === "paused";
+}
+
+function isOpenStatus(status: string): boolean {
+  return (OPEN_TASK_STATUSES as readonly string[]).includes(status);
 }
 
 /** When this person last opened each thread. A failed read (the table not migrated yet
@@ -207,8 +312,10 @@ async function lastReadByTask(userId: string): Promise<Map<string, string> | nul
   return new Map(rows.map((row) => [row.id, row.last_read_at] as const));
 }
 
-/** Attach display names without a DB relation (no FK join over PostgREST needed). */
-async function withNames(rows: Task[], userId: string): Promise<TaskWithNames[]> {
+/** Attach display names without a DB relation (no FK join over PostgREST needed).
+ *  `rows` come from the caller's scope - every thread read below is keyed by their ids.
+ *  `eventsBoard` false = no customer-site links (they point at Mega Events' site). */
+async function withNames(rows: Task[], userId: string, eventsBoard: boolean): Promise<TaskWithNames[]> {
   const ids = [
     ...new Set(
       rows
@@ -216,14 +323,51 @@ async function withNames(rows: Task[], userId: string): Promise<TaskWithNames[]>
         .filter((value): value is string => !!value),
     ),
   ];
-  const [comments, lastReadAt, siteUrls, assigneeChanges] = await Promise.all([
+  const today = israelDate(new Date());
+  // Only an OPEN task with an owner has a deadline someone can miss - the only threads read whole.
+  const overdueIds = rows
+    .filter((row) => row.assignee_id && row.due_date && row.due_date < today && isWorkingStatus(row.status))
+    .map((row) => row.id);
+  const overdue = new Set(overdueIds);
+  const [comments, lastReadAt, siteUrls, activityRows, overdueEvents] = await Promise.all([
     commentRows(rows.map((row) => row.id)),
     lastReadByTask(userId),
-    siteUrlsForRefs(rows.map((row) => row.source_ref)),
-    // Only a task that HAS an owner can have been handed to someone.
-    assigneeChangeRows(rows.filter((row) => row.assignee_id).map((row) => row.id)),
+    eventsBoard ? siteUrlsForRefs(rows.map((row) => row.source_ref)) : new Map<string, string>(),
+    // Assignee changes (who handed it on) - only a task that HAS an owner can have been handed to
+    // someone - and reminder rows (when the reminder button was last pressed, any open task).
+    assigneeChangeRows(
+      rows.filter((row) => row.assignee_id || isOpenStatus(row.status)).map((row) => row.id),
+      ["assignee", "reminder"],
+    ),
+    threadEventRows(overdueIds),
   ]);
+  const assigneeChanges = activityRows.filter((row) => row.activity?.field === "assignee");
   const assignedBy = assignedByMap(rows, assigneeChanges);
+  const assignedAt = assignedAtMap(
+    rows.filter((row) => overdue.has(row.id)),
+    assigneeChanges,
+  );
+  const lastReminder = new Map<string, string>();
+  for (const row of activityRows) {
+    if (row.activity?.field !== "reminder") continue;
+    const current = lastReminder.get(row.task_id);
+    if (!current || row.created_at > current) lastReminder.set(row.task_id, row.created_at);
+  }
+  const eventsOf = new Map<string, ThreadEvent[]>();
+  for (const event of overdueEvents.rows) {
+    const list = eventsOf.get(event.task_id) ?? [];
+    list.push(event);
+    eventsOf.set(event.task_id, list);
+  }
+  const lateOf = (row: Task) =>
+    overdue.has(row.id) &&
+    !overdueEvents.failed.has(row.id) &&
+    lateWithoutAnswer({
+      task: { ...row, assigned_by: assignedBy.get(row.id) ?? null },
+      assignedAt: assignedAt.get(row.id) ?? row.created_at,
+      events: eventsOf.get(row.id) ?? [],
+      today,
+    });
   const countOf = new Map<string, number>();
   for (const comment of comments) countOf.set(comment.task_id, (countOf.get(comment.task_id) ?? 0) + 1);
   const unreadOf = lastReadAt
@@ -240,6 +384,8 @@ async function withNames(rows: Task[], userId: string): Promise<TaskWithNames[]>
       site_url: siteUrlOf(row.source_ref, siteUrls),
       comment_count: countOf.get(row.id) ?? 0,
       unread_count: unreadOf.get(row.id) ?? 0,
+      late: false,
+      last_reminded_at: lastReminder.get(row.id) ?? null,
     }));
   }
 
@@ -262,12 +408,15 @@ async function withNames(rows: Task[], userId: string): Promise<TaskWithNames[]>
     site_url: siteUrlOf(row.source_ref, siteUrls),
     comment_count: countOf.get(row.id) ?? 0,
     unread_count: unreadOf.get(row.id) ?? 0,
+    late: lateOf(row),
+    last_reminded_at: lastReminder.get(row.id) ?? null,
   }));
 }
 
-/** Every staff member sees the whole board; editing stays scoped (see updateTask/setTaskStatus). */
+/** Every staff member sees the whole board of their company; editing stays scoped (see
+ *  updateTask/setTaskStatus). */
 export async function listTasks(): Promise<TaskWithNames[]> {
-  const session = await requireStaff();
+  const { session, tasks, eventsBoard } = await requireTaskBoard();
 
   // Everyone on staff sees the whole board (Dor, 16.09): the roadmap lives here
   // now, and a board people cannot see is not a board. Editing stays narrow -
@@ -275,8 +424,7 @@ export async function listTasks(): Promise<TaskWithNames[]> {
   const read = (columns: string) =>
     fetchPaged<Task>(
       () =>
-        db
-          .from("tasks")
+        tasks
           .select(columns)
           .is("deleted_at", null)
           .order("created_at", { ascending: false })
@@ -296,7 +444,31 @@ export async function listTasks(): Promise<TaskWithNames[]> {
     return [];
   }
   if (truncated) console.error(`tasks: list truncated at ${TASKS_LIST_MAX} rows`);
-  return withNames(rows, session.sub);
+  return withNames(rows, session.sub, eventsBoard);
+}
+
+/**
+ * Who a task of the active company may be given to - the "Assign to" pickers, newest account
+ * first (the order that picker always had). Mega Events: its active staff. Any other company:
+ * its members plus the superadmins (lib/services/task-people.ts). The reviewer and @mention
+ * pickers read the same people by name (listStaffForMentions).
+ */
+export async function listTaskAssignees(): Promise<TaskPerson[]> {
+  const { company } = await requireTaskBoard();
+  return (await taskPeopleOf(company, "newest")) ?? [];
+}
+
+/**
+ * A mail's "to the task" link (/tasks?task=<id>) opened while working in another company: the
+ * board does not hold that task, so the screen asks where it lives. Answers only with a company
+ * the caller may work in (lib/tasks-scope.ts otherCompanyOfTask) - the screen then offers to
+ * switch to it. null = not found anywhere the caller can go.
+ */
+export async function findTaskCompany(id: string): Promise<{ slug: string; name: string } | null> {
+  const { session, company } = await requireTaskBoard();
+  if (typeof id !== "string" || !id) return null;
+  const other = await otherCompanyOfTask(session, company, id);
+  return other ? { slug: other.slug, name: other.name } : null;
 }
 
 /**
@@ -307,11 +479,10 @@ export async function listTasks(): Promise<TaskWithNames[]> {
  * שלי" on the board.)
  */
 export async function listMyOpenTasks(limit = 6): Promise<Task[]> {
-  const session = await requireStaff();
+  const { session, tasks } = await requireTaskBoard();
 
-  const [mine, back] = await Promise.all([
-    db
-      .from("tasks")
+  const [mine, back] = (await Promise.all([
+    tasks
       .select(TASK_COLUMNS)
       .is("deleted_at", null)
       .eq("assignee_id", session.sub)
@@ -319,15 +490,14 @@ export async function listMyOpenTasks(limit = 6): Promise<Task[]> {
       .order("created_at", { ascending: false })
       .limit(200),
     // Waiting for MY review: I am a picked reviewer, or nobody was picked and I opened it.
-    db
-      .from("tasks")
+    tasks
       .select(TASK_COLUMNS)
       .is("deleted_at", null)
       .eq("status", "review")
       .or(`reviewer_ids.cs.{${session.sub}},and(reviewer_ids.is.null,created_by.eq.${session.sub})`)
       .order("created_at", { ascending: false })
       .limit(200),
-  ]);
+  ])) as [TaskResult<Task[]>, TaskResult<Task[]>];
   if (mine.error) {
     console.error("tasks: my-open failed", JSON.stringify(mine.error));
     return [];
@@ -364,11 +534,11 @@ export async function createTask(input: {
    *  pick reviewers for a task they create - an editor's own task included. */
   reviewer_ids?: string[] | null;
 }): Promise<CreateResult> {
-  const session = await requireStaff();
+  const { session, company, tasks, eventsBoard } = await requireTaskBoard();
 
   const title = input.title?.trim();
   if (!title) return { ok: false, error: "Title is required" };
-  const reviewerIds = await cleanReviewerIds(input.reviewer_ids);
+  const reviewerIds = await cleanReviewerIds(input.reviewer_ids, company);
   if (reviewerIds && !Array.isArray(reviewerIds)) return { ok: false, error: reviewerIds.error };
   if (!validPriority(input.priority)) return { ok: false, error: "Bad priority" };
   if (input.board !== undefined && !validBoard(input.board)) return { ok: false, error: "Bad board" };
@@ -381,6 +551,13 @@ export async function createTask(input: {
   }
   const source: TaskSource = input.source ?? "manual";
   const sourceRef: TaskSourceRef | null = input.source_ref ?? null;
+  if (!eventsBoard) {
+    // The plain board of a company that sells no events: one board, tasks typed in by a
+    // person. The Mega Events boards, roadmap phases, marketing channels and every sourced
+    // task (creative gaps, price light, price changes) are refused here.
+    const refused = plainBoardRefusal({ ...input, source, source_ref: sourceRef }, company);
+    if (refused) return { ok: false, error: refused };
+  }
   if (sourceRef !== null) {
     if (!validSourceRef(sourceRef)) return { ok: false, error: "Bad source_ref" };
   } else if (source !== "manual") {
@@ -397,22 +574,32 @@ export async function createTask(input: {
       }
     : null;
 
-  // Editors may only create tasks for themselves.
-  const assigneeId = isManager(session.role)
-    ? (input.assignee_id ?? null)
-    : session.sub;
+  // Anyone on staff may give a new task to anyone (Dor, 01.10). An editor who names nobody keeps
+  // the old default - the task is theirs; an admin's default stays "unassigned".
+  const requested =
+    input.assignee_id === undefined ? (isManager(session.role) ? null : session.sub) : input.assignee_id;
+  const assignee = requested === session.sub ? session.sub : await cleanAssigneeId(requested, company);
+  if (assignee && typeof assignee === "object") return { ok: false, error: assignee.error };
+  const assigneeId: string | null = assignee;
 
   // A sub-task lives where its parent lives (board, phase, channel) unless told otherwise,
   // and only its parent's owners - an admin, or whoever the general task is assigned to or
   // was opened by - may split it.
   let parent: { id: string; board: string; phase: number | null; channel: string | null } | null = null;
   if (input.parent_id) {
-    const { data: row, error: parentError } = await db
-      .from("tasks")
+    const { data: row, error: parentError } = (await tasks
       .select("id,board,phase,channel,parent_id,assignee_id,created_by")
       .eq("id", input.parent_id)
       .is("deleted_at", null)
-      .maybeSingle();
+      .maybeSingle()) as TaskResult<{
+      id: string;
+      board: string;
+      phase: number | null;
+      channel: string | null;
+      parent_id: string | null;
+      assignee_id: string | null;
+      created_by: string | null;
+    }>;
     if (parentError) {
       console.error("tasks: parent read failed", JSON.stringify(parentError));
       return { ok: false, error: "Create failed - check the log" };
@@ -424,11 +611,12 @@ export async function createTask(input: {
     }
     parent = { id: row.id, board: row.board, phase: row.phase, channel: row.channel };
   }
-  const board: TaskBoard =
-    input.board ?? (parent && validBoard(parent.board) ? parent.board : defaultBoardFor(source));
+  const board: TaskBoard = eventsBoard
+    ? (input.board ?? (parent && validBoard(parent.board) ? parent.board : defaultBoardFor(source)))
+    : PLAIN_TASK_BOARD;
 
-  const { data, error } = await db
-    .from("tasks")
+  // `tasks.insert` stamps the active company on the row - never taken from the form.
+  const { data, error } = (await tasks
     .insert({
       title,
       description: input.description?.trim() || null,
@@ -448,7 +636,7 @@ export async function createTask(input: {
       ...(reviewerIds ? { reviewer_ids: reviewerIds } : {}),
     })
     .select("id")
-    .single();
+    .single()) as TaskResult<{ id: string }>;
 
   if (error || !data) {
     console.error("tasks: create failed", JSON.stringify(error));
@@ -468,6 +656,7 @@ export async function createTask(input: {
   if (assigneeId && assigneeId !== session.sub) {
     mail = await notifyTaskAssigned({
       taskId: data.id,
+      companyId: company.id,
       title,
       description: input.description?.trim() || null,
       priority: input.priority,
@@ -496,20 +685,45 @@ export async function updateTask(
     reviewer_ids?: string[] | null;
   },
 ): Promise<Result> {
-  const session = await requireStaff();
+  const { session, company, tasks, eventsBoard } = await requireTaskBoard();
   const manager = isManager(session.role);
+  if (!eventsBoard) {
+    const refused = plainBoardRefusal(patch, company);
+    if (refused) return { ok: false, error: refused };
+  }
 
+  // A non-admin's rights depend on whose task this is (lib/tasks/permissions.ts): the owner
+  // changes status/progress and hands it on, whoever opened it may hand it on. The whole board
+  // is visible to every staff member, so reading the two ids first leaks nothing; the write
+  // below is still scoped to the same ownership, so a task that changed hands in between is
+  // not written.
+  let scope: "assignee" | "creator" | null = null;
   if (!manager) {
-    // The most permissive a non-admin can ever be (editing their OWN task) -
-    // any patch key outside that set is refused before we even know whose
-    // task this is. Real ownership is enforced below via the scoped queries.
-    const allowed = editableFields(session.role, true);
+    const { data: owner, error: ownerError } = (await tasks
+      .select("assignee_id,created_by")
+      .eq("id", id)
+      .is("deleted_at", null)
+      .maybeSingle()) as TaskResult<{ assignee_id: string | null; created_by: string | null }>;
+    if (ownerError) {
+      console.error("tasks: owner read failed", JSON.stringify(ownerError));
+      return { ok: false, error: "Update failed" };
+    }
+    if (!owner) return { ok: false, error: "המשימה לא נמצאה" };
+    const isOwn = owner.assignee_id === session.sub;
+    const openedByMe = owner.created_by === session.sub;
+    const allowed = editableFields(session.role, isOwn, openedByMe);
     const disallowed = (Object.keys(patch) as EditableTaskField[]).filter(
       (key) => !allowed.has(key),
     );
+    if (allowed.size === 0) return { ok: false, error: "לא המשימה שלך" };
     if (disallowed.length > 0) {
       return { ok: false, error: "רק מנהל עורך פרטי משימה" };
     }
+    scope = isOwn ? "assignee" : "creator";
+  }
+  if (patch.assignee_id !== undefined && patch.assignee_id !== session.sub) {
+    const assignee = await cleanAssigneeId(patch.assignee_id, company);
+    if (assignee && typeof assignee === "object") return { ok: false, error: assignee.error };
   }
 
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -544,7 +758,7 @@ export async function updateTask(
     update.progress = patch.progress;
   }
   if (patch.reviewer_ids !== undefined) {
-    const reviewerIds = await cleanReviewerIds(patch.reviewer_ids);
+    const reviewerIds = await cleanReviewerIds(patch.reviewer_ids, company);
     if (reviewerIds && !Array.isArray(reviewerIds)) return { ok: false, error: reviewerIds.error };
     update.reviewer_ids = reviewerIds;
   }
@@ -553,21 +767,30 @@ export async function updateTask(
   // and to diff every tracked field into the thread's activity rows below.
   // Scoped the same way as the update itself for a non-admin, so a non-owner
   // can never learn another task's fields through the activity diff.
-  let beforeQuery = db
-    .from("tasks")
+  let beforeQuery = tasks
     .select("status,assignee_id,priority,due_date,progress,board")
     .eq("id", id);
-  if (!manager) beforeQuery = beforeQuery.eq("assignee_id", session.sub);
-  const { data: before, error: beforeError } = await beforeQuery.maybeSingle();
+  if (scope === "assignee") beforeQuery = beforeQuery.eq("assignee_id", session.sub);
+  if (scope === "creator") beforeQuery = beforeQuery.eq("created_by", session.sub);
+  const { data: before, error: beforeError } = (await beforeQuery.maybeSingle()) as TaskResult<Record<string, unknown>>;
   if (beforeError) console.error("tasks: before-read failed", JSON.stringify(beforeError));
   // Tradeoff: if before-read fails, diffActivities records every patched field as changing from
   // null (not true, but safe: the actual edit succeeded so audit has the final state).
 
-  let updateQuery = db.from("tasks").update(update).eq("id", id);
-  if (!manager) updateQuery = updateQuery.eq("assignee_id", session.sub);
-  const { data: after, error } = await updateQuery
+  let updateQuery = tasks.update(update).eq("id", id);
+  if (scope === "assignee") updateQuery = updateQuery.eq("assignee_id", session.sub);
+  if (scope === "creator") updateQuery = updateQuery.eq("created_by", session.sub);
+  const { data: after, error } = (await updateQuery
     .select("id,title,description,priority,assignee_id,due_date,source_ref")
-    .maybeSingle();
+    .maybeSingle()) as TaskResult<{
+    id: string;
+    title: string;
+    description: string | null;
+    priority: string;
+    assignee_id: string | null;
+    due_date: string | null;
+    source_ref: unknown;
+  }>;
   if (error) {
     console.error("tasks: update failed", JSON.stringify(error));
     return { ok: false, error: "Update failed" };
@@ -600,6 +823,7 @@ export async function updateTask(
   ) {
     mail = await notifyTaskAssigned({
       taskId: id,
+      companyId: company.id,
       title: after.title,
       description: after.description ?? null,
       priority: validPriority(after.priority) ? after.priority : "medium",
@@ -641,17 +865,21 @@ async function reviewerIdsOf(
  * (`mail` says what became of it); the reviewer's answer mails the assignee.
  */
 export async function setTaskStatus(id: string, status: TaskStatus): Promise<Result> {
-  const session = await requireStaff();
+  const { session, company, tasks, eventsBoard } = await requireTaskBoard();
   if (!validStatus(status)) return { ok: false, error: "Bad status" };
   const manager = isManager(session.role);
 
   // The status as it was - read BEFORE the update, or an activity row would
   // record "from" equal to "to".
-  const { data: beforeRow, error: beforeError } = await db
-    .from("tasks")
+  const { data: beforeRow, error: beforeError } = (await tasks
     .select("status,assignee_id,created_by,reviewer_ids")
     .eq("id", id)
-    .maybeSingle();
+    .maybeSingle()) as TaskResult<{
+    status: string;
+    assignee_id: string | null;
+    created_by: string | null;
+    reviewer_ids: string[] | null;
+  }>;
   if (beforeError) console.error("tasks: before-read failed", JSON.stringify(beforeError));
   // Tradeoff: if before-read fails, activity records status as changing from null (not true,
   // but safe: the actual update succeeded so audit has the final state).
@@ -663,8 +891,7 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
     asReviewer = (await reviewerIdsOf(id, beforeRow)).includes(session.sub);
   }
 
-  let query = db
-    .from("tasks")
+  let query = tasks
     .update({
       status,
       completed_at: status === "done" ? new Date().toISOString() : null,
@@ -676,7 +903,19 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
     query = asReviewer ? query.eq("status", "review") : query.eq("assignee_id", session.sub);
   }
 
-  const { data, error } = await query.select("id,title,created_by,assignee_id,reviewer_ids,source,source_ref");
+  const { data, error } = (await query.select(
+    "id,title,created_by,assignee_id,reviewer_ids,source,source_ref",
+  )) as TaskResult<
+    {
+      id: string;
+      title: string;
+      created_by: string | null;
+      assignee_id: string | null;
+      reviewer_ids: string[] | null;
+      source: TaskSource;
+      source_ref: TaskSourceRef | null;
+    }[]
+  >;
   if (error) {
     console.error("tasks: status failed", JSON.stringify(error));
     return { ok: false, error: "Update failed" };
@@ -691,7 +930,8 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
   });
   // /price-light's "ממתינים להחלטה" excludes events with an open price-light task - closing or
   // reopening one changes that screen, which caches its rows (lib/services/price-light-cache).
-  invalidatePriceLight("rows");
+  // A Mega Events screen: another company's task never changes it.
+  if (eventsBoard) invalidatePriceLight("rows");
 
   // Reuses diffActivities' from===to skip: a no-op setTaskStatus call (same
   // status re-applied) writes no activity row.
@@ -712,10 +952,11 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
     source: TaskSource;
     source_ref: TaskSourceRef | null;
   };
-  await resolveGapForTask({ id, source: row.source, source_ref: row.source_ref }, status);
+  // Gaps (creative, pricing) are Mega Events' - the plain board has no sourced tasks.
+  if (eventsBoard) await resolveGapForTask({ id, source: row.source, source_ref: row.source_ref }, status);
 
   // Done (and it was not already) → the person who opened the task hears about it.
-  const watched = { id, title: row.title, created_by: row.created_by, assignee_id: row.assignee_id };
+  const watched = { id, company_id: company.id, title: row.title, created_by: row.created_by, assignee_id: row.assignee_id };
   if (status === "done" && previousStatus !== "done") {
     await notifyTaskDone({ task: watched, actorId: session.sub });
   }
@@ -735,16 +976,103 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
   return { ok: true, mail };
 }
 
+/**
+ * The reminder button (Dor, 01.10: "pop the task again by mail - it was not done, or I got no
+ * answer on it"). Mails whoever owns the next move - the assignee, or the reviewers of a task
+ * in review (lib/tasks/reminders.ts) - and leaves a `reminder` row in the thread, which is also
+ * what holds a second press back for REMINDER_COOLDOWN_MS. Who may press: an admin, or anyone
+ * the task belongs to (`canRemind`). `reached` = the names the mail went to.
+ */
+export async function remindTask(
+  id: string,
+): Promise<{ ok: true; mail: TaskMailOutcome; reached: string[] } | { ok: false; error: string }> {
+  const { session, company, tasks } = await requireTaskBoard();
+
+  const { data: row, error } = (await tasks
+    .select("id,title,status,due_date,assignee_id,created_by,reviewer_ids")
+    .eq("id", id)
+    .is("deleted_at", null)
+    .maybeSingle()) as TaskResult<{
+    id: string;
+    title: string;
+    status: string;
+    due_date: string | null;
+    assignee_id: string | null;
+    created_by: string | null;
+    reviewer_ids: string[] | null;
+  }>;
+  if (error) {
+    console.error("tasks: remind read failed", JSON.stringify(error));
+    return { ok: false, error: "Reminder failed - check the log" };
+  }
+  if (!row || !validStatus(row.status)) return { ok: false, error: "המשימה לא נמצאה" };
+
+  const task = {
+    status: row.status as TaskStatus,
+    assignee_id: row.assignee_id,
+    created_by: row.created_by,
+    reviewer_ids: row.reviewer_ids,
+    assigned_by: await assignerOf(id, row.assignee_id),
+  };
+  if (!canRemind(session.role, task, session.sub)) {
+    return {
+      ok: false,
+      error: reminderTargets(task).filter((target) => target !== session.sub).length
+        ? "רק מי שפתח, שייך או מטפל במשימה (או מנהל) שולח עליה תזכורת"
+        : "אין למי לשלוח תזכורת על המשימה הזו",
+    };
+  }
+
+  const { data: last, error: lastError } = await db
+    .from("task_comments")
+    .select("created_at")
+    .eq("task_id", id)
+    .eq("kind", "activity")
+    .eq("activity->>field", "reminder")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (lastError) console.error("tasks: last reminder read failed", JSON.stringify(lastError));
+  if (reminderCoolingDown(last?.created_at ?? null, new Date())) {
+    return { ok: false, error: "כבר נשלחה תזכורת על המשימה בשעה האחרונה" };
+  }
+
+  const targetIds = reminderTargets(task).filter((target) => target !== session.sub);
+  const today = israelDate(new Date());
+  const { mail, reached } = await notifyTaskReminder({
+    task: { id, company_id: company.id, title: row.title, status: task.status, due_date: row.due_date },
+    daysLate: row.due_date ? daysLate(row.due_date, today) : 0,
+    targetIds,
+    actorId: session.sub,
+  });
+  if (reached.length === 0) return { ok: true, mail, reached: [] };
+
+  await recordActivity(id, session.sub, { field: "reminder", from: null, to: reached.join(",") });
+  await logAudit({
+    action: "task.remind",
+    entityType: "task",
+    entityId: id,
+    changes: { reminded: reached },
+  });
+
+  const { data: people } = await db.from("user_profiles").select("id,display_name,email").in("id", reached);
+  const names = reached.map((target) => {
+    const person = (people ?? []).find((p: { id: string }) => p.id === target);
+    return person?.display_name || person?.email || "?";
+  });
+  return { ok: true, mail, reached: names };
+}
+
 export async function deleteTask(id: string): Promise<Result> {
-  const session = await requireStaff();
+  const { session, tasks, eventsBoard } = await requireTaskBoard();
   if (!isManager(session.role)) {
     return { ok: false, error: "Only admins delete tasks" };
   }
 
-  const { error } = await db
-    .from("tasks")
+  const { data: deleted, error } = (await tasks
     .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .select("id")) as TaskResult<{ id: string }[]>;
   if (error) {
     console.error("tasks: delete failed", JSON.stringify(error));
     return { ok: false, error: "Delete failed" };
@@ -754,24 +1082,29 @@ export async function deleteTask(id: string): Promise<Result> {
   // Best-effort: list() defaults to 100 entries, so pass an explicit limit
   // large enough to cover a task with many screenshots; a cleanup failure is
   // logged and never fails the delete itself.
-  try {
-    const { data: files, error: listError } = await supabase.storage
-      .from("task-attachments")
-      .list(id, { limit: 1000 });
-    if (listError) {
-      console.error("tasks: attachment list failed", JSON.stringify(listError));
-    } else if (files?.length) {
-      const { error: removeError } = await supabase.storage
+  // Only when the delete matched a task of THIS company: the bucket is keyed by task id
+  // alone, and an id that matched nothing here (unknown, or another company's task) must
+  // not have its files removed. For an unknown id there was never anything to remove.
+  if (deleted?.length) {
+    try {
+      const { data: files, error: listError } = await supabase.storage
         .from("task-attachments")
-        .remove(files.map((file) => `${id}/${file.name}`));
-      if (removeError) console.error("tasks: attachment cleanup failed", JSON.stringify(removeError));
+        .list(id, { limit: 1000 });
+      if (listError) {
+        console.error("tasks: attachment list failed", JSON.stringify(listError));
+      } else if (files?.length) {
+        const { error: removeError } = await supabase.storage
+          .from("task-attachments")
+          .remove(files.map((file) => `${id}/${file.name}`));
+        if (removeError) console.error("tasks: attachment cleanup failed", JSON.stringify(removeError));
+      }
+    } catch (cleanupError) {
+      console.error("tasks: attachment cleanup threw", JSON.stringify(cleanupError));
     }
-  } catch (cleanupError) {
-    console.error("tasks: attachment cleanup threw", JSON.stringify(cleanupError));
   }
 
   await logAudit({ action: "task.delete", entityType: "task", entityId: id });
-  invalidatePriceLight("rows");
+  if (eventsBoard) invalidatePriceLight("rows");
   return { ok: true };
 }
 
@@ -783,14 +1116,15 @@ export async function deleteTask(id: string): Promise<Result> {
 export async function openTaskGapKeys(
   source: Exclude<TaskSource, "manual"> = "creative_gap",
 ): Promise<string[]> {
-  await requireStaff();
+  const { tasks, eventsBoard } = await requireTaskBoard();
+  // Gap sources exist on the Mega Events board only.
+  if (!eventsBoard) return [];
 
-  const { data, error } = await db
-    .from("tasks")
+  const { data, error } = (await tasks
     .select("source_ref")
     .is("deleted_at", null)
     .in("status", OPEN_TASK_STATUSES)
-    .eq("source", source);
+    .eq("source", source)) as TaskResult<{ source_ref: unknown }[]>;
   if (error) {
     console.error("tasks: gap-keys failed", JSON.stringify(error));
     return [];
@@ -817,25 +1151,34 @@ export async function bulkUpdateTasks(
   ids: string[],
   patch: { assignee_id?: string | null; board?: TaskBoard; status?: TaskStatus },
 ): Promise<{ ok: true; updated: number; mail?: TaskMailOutcome } | { ok: false; error: string }> {
-  const session = await requireStaff();
+  const { session, company, tasks, eventsBoard } = await requireTaskBoard();
   if (!isManager(session.role)) return { ok: false, error: "רק מנהל מעדכן כמה משימות יחד" };
   const unique = [...new Set((ids ?? []).filter((id): id is string => typeof id === "string" && id.length > 0))];
   if (unique.length === 0) return { ok: false, error: "לא נבחרו משימות" };
   if (unique.length > BULK_MAX) return { ok: false, error: `עד ${BULK_MAX} משימות בפעולה אחת` };
   if (patch.board !== undefined && !validBoard(patch.board)) return { ok: false, error: "Bad board" };
+  if (!eventsBoard) {
+    const refused = plainBoardRefusal({ board: patch.board }, company);
+    if (refused) return { ok: false, error: refused };
+  }
   if (patch.status !== undefined && !validStatus(patch.status)) return { ok: false, error: "Bad status" };
   const fieldPatch = patch.assignee_id !== undefined || patch.board !== undefined;
   if (!fieldPatch && patch.status === undefined) return { ok: false, error: "אין מה לעדכן" };
+  // The id comes from the bar's picker (the company's people) - checked like any assignee.
+  if (patch.assignee_id && patch.assignee_id !== session.sub) {
+    const assignee = await cleanAssigneeId(patch.assignee_id, company);
+    if (assignee && typeof assignee === "object") return { ok: false, error: assignee.error };
+  }
 
   let updated = 0;
   let mail: TaskMailOutcome | undefined;
 
   if (fieldPatch) {
-    const { data: before, error: beforeError } = await db
-      .from("tasks")
+    // Ids of another company are not found here, so they are left out of the update below.
+    const { data: before, error: beforeError } = (await tasks
       .select("id,title,assignee_id,board")
       .in("id", unique)
-      .is("deleted_at", null);
+      .is("deleted_at", null)) as TaskResult<{ id: string; title: string; assignee_id: string | null; board: string }[]>;
     if (beforeError) {
       console.error("tasks: bulk before-read failed", JSON.stringify(beforeError));
       return { ok: false, error: "Update failed" };
@@ -846,7 +1189,7 @@ export async function bulkUpdateTasks(
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (patch.assignee_id !== undefined) update.assignee_id = patch.assignee_id;
     if (patch.board !== undefined) update.board = patch.board;
-    const { error } = await db.from("tasks").update(update).in("id", rows.map((row) => row.id));
+    const { error } = (await tasks.update(update).in("id", rows.map((row) => row.id))) as TaskResult<null>;
     if (error) {
       console.error("tasks: bulk update failed", JSON.stringify(error));
       return { ok: false, error: "Update failed" };
@@ -869,7 +1212,7 @@ export async function bulkUpdateTasks(
     const newAssignee = patch.assignee_id ?? null;
     if (newAssignee && newAssignee !== session.sub) {
       const handed = rows.filter((row) => row.assignee_id !== newAssignee).map((row) => row.title);
-      if (handed.length > 0) mail = await notifyTasksAssigned({ assigneeId: newAssignee, titles: handed });
+      if (handed.length > 0) mail = await notifyTasksAssigned({ assigneeId: newAssignee, companyId: company.id, titles: handed });
     }
   }
 
@@ -883,6 +1226,6 @@ export async function bulkUpdateTasks(
     updated = Math.max(updated, statusOk);
   }
 
-  invalidatePriceLight("rows");
+  if (eventsBoard) invalidatePriceLight("rows");
   return { ok: true, updated, mail };
 }
