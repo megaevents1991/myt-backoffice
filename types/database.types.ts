@@ -876,6 +876,7 @@ export type Database = {
           bio: Json | null
           created_at: string
           display_order: number | null
+          event_gallery: Json
           featured_order: number | null
           gallery: Json
           hero_video_url: string | null
@@ -907,6 +908,7 @@ export type Database = {
           bio?: Json | null
           created_at?: string
           display_order?: number | null
+          event_gallery?: Json
           featured_order?: number | null
           gallery?: Json
           hero_video_url?: string | null
@@ -938,6 +940,7 @@ export type Database = {
           bio?: Json | null
           created_at?: string
           display_order?: number | null
+          event_gallery?: Json
           featured_order?: number | null
           gallery?: Json
           hero_video_url?: string | null
@@ -2757,6 +2760,7 @@ export type Database = {
           bio: Json | null
           created_at: string
           display_order: number | null
+          event_gallery: Json
           featured_order: number | null
           gallery: Json
           hero_video_url: string | null
@@ -2789,6 +2793,7 @@ export type Database = {
           bio?: Json | null
           created_at?: string
           display_order?: number | null
+          event_gallery?: Json
           featured_order?: number | null
           gallery?: Json
           hero_video_url?: string | null
@@ -2821,6 +2826,7 @@ export type Database = {
           bio?: Json | null
           created_at?: string
           display_order?: number | null
+          event_gallery?: Json
           featured_order?: number | null
           gallery?: Json
           hero_video_url?: string | null
@@ -5368,33 +5374,48 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string
+          customer_email: string | null
+          customer_name: string | null
+          customer_phone: string | null
           departure_id: string
           docket_no: string | null
           entered_by: string | null
           flight_id: number | null
           id: string
+          is_deleted: string | null
+          lead_id: string | null
           note: string | null
           pax: number
         }
         Insert: {
           company_id: string
           created_at?: string
+          customer_email?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
           departure_id: string
           docket_no?: string | null
           entered_by?: string | null
           flight_id?: number | null
           id?: string
+          is_deleted?: string | null
+          lead_id?: string | null
           note?: string | null
           pax: number
         }
         Update: {
           company_id?: string
           created_at?: string
+          customer_email?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
           departure_id?: string
           docket_no?: string | null
           entered_by?: string | null
           flight_id?: number | null
           id?: string
+          is_deleted?: string | null
+          lead_id?: string | null
           note?: string | null
           pax?: number
         }

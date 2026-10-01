@@ -6,12 +6,13 @@
 --   20261001100400_company_site_api
 --   20261001100500_tours_views
 --   20261001100600_tasks_company_and_tours_agent
+--   20261002100000_tours_reservations
 --
 -- This file lives OUTSIDE supabase/migrations on purpose: the CLI never runs it.
 -- Run it by hand (SQL editor or psql) only when the migrations must be undone,
--- then mark the seven versions as reverted so the history matches the schema:
---   npx supabase migration repair --status reverted 20261001100600 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
--- and remove (or revert the commit of) the seven migration files on master,
+-- then mark the eight versions as reverted so the history matches the schema:
+--   npx supabase migration repair --status reverted 20261002100000 20261001100600 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
+-- and remove (or revert the commit of) the eight migration files on master,
 -- otherwise the next push applies them again.
 --
 -- Everything here is new since the migrations: no Mega Events data is deleted.
@@ -19,6 +20,58 @@
 -- original block_status check back.
 
 begin;
+
+-- 8. tours reservations ------------------------------------------------------
+-- Undoes 20261002100000 alone too (run just this block): the seats view goes back
+-- to counting every sales row, then the reservation columns go. A soft-deleted
+-- row would count again, so such rows are reported first and nothing runs while
+-- any exist - decide on them (delete for real, or keep) before rolling back.
+do $$
+begin
+  if to_regclass('tours.departure_sales_entries') is not null
+     and exists (select 1 from information_schema.columns where table_schema = 'tours' and table_name = 'departure_sales_entries' and column_name = 'is_deleted')
+     and exists (select 1 from tours.departure_sales_entries where is_deleted is not null) then
+    raise exception 'tours.departure_sales_entries has soft-deleted rows; settle them before rolling back 20261002100000';
+  end if;
+end $$;
+do $$
+begin
+  if to_regclass('tours.departure_stats') is not null then
+    create or replace view tours.departure_stats as
+    select
+      d.id as departure_id,
+      d.company_id,
+      least(coalesce(a.outbound_seats, 0), coalesce(a.inbound_seats, 0))::int as allocated_seats,
+      coalesce(a.live_blocks, 0)::int as live_blocks,
+      coalesce(a.total_blocks, 0)::int as total_blocks,
+      coalesce(s.sold, 0)::int as sold,
+      (least(coalesce(a.outbound_seats, 0), coalesce(a.inbound_seats, 0)) - coalesce(s.sold, 0))::int as remaining,
+      coalesce(a.outbound_seats, 0)::int as outbound_seats,
+      coalesce(a.inbound_seats, 0)::int as inbound_seats
+    from tours.departures d
+    left join lateral (
+      select
+        sum(fa.seats) filter (where fa.legs <> 'inbound' and f.block_status in ('confirmed', 'operational', 'ticketed') and f.is_deleted is not true) as outbound_seats,
+        sum(fa.seats) filter (where fa.legs <> 'outbound' and f.block_status in ('confirmed', 'operational', 'ticketed') and f.is_deleted is not true) as inbound_seats,
+        count(*) filter (where f.block_status in ('confirmed', 'operational', 'ticketed') and f.is_deleted is not true) as live_blocks,
+        count(*) as total_blocks
+      from tours.flight_allocations fa
+      join public.flights f on f.id = fa.flight_id
+      where fa.departure_id = d.id
+    ) a on true
+    left join lateral (
+      select sum(e.pax) as sold from tours.departure_sales_entries e where e.departure_id = d.id
+    ) s on true;
+    drop index if exists tours.departure_sales_entries_company_created_idx;
+    drop index if exists tours.departure_sales_entries_lead_idx;
+    alter table tours.departure_sales_entries
+      drop column if exists customer_name,
+      drop column if exists customer_phone,
+      drop column if exists customer_email,
+      drop column if exists lead_id,
+      drop column if exists is_deleted;
+  end if;
+end $$;
 
 -- 7. tasks per company + the tours_agent role ---------------------------------
 -- Without company_id the board is one shared list again, so the tasks of any
