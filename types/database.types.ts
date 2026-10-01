@@ -23,6 +23,7 @@ export type Database = {
           legacy_id: number | null
           max_people: number | null
           name: string | null
+          position: number | null
           slug: string | null
         }
         Insert: {
@@ -35,6 +36,7 @@ export type Database = {
           legacy_id?: number | null
           max_people?: number | null
           name?: string | null
+          position?: number | null
           slug?: string | null
         }
         Update: {
@@ -47,6 +49,7 @@ export type Database = {
           legacy_id?: number | null
           max_people?: number | null
           name?: string | null
+          position?: number | null
           slug?: string | null
         }
         Relationships: []
@@ -62,6 +65,7 @@ export type Database = {
           kind: string | null
           legacy_id: number | null
           path: string | null
+          position: number | null
           seo: Json | null
           title: string | null
         }
@@ -75,6 +79,7 @@ export type Database = {
           kind?: string | null
           legacy_id?: number | null
           path?: string | null
+          position?: number | null
           seo?: Json | null
           title?: string | null
         }
@@ -88,6 +93,7 @@ export type Database = {
           kind?: string | null
           legacy_id?: number | null
           path?: string | null
+          position?: number | null
           seo?: Json | null
           title?: string | null
         }
@@ -312,6 +318,7 @@ export type Database = {
           image: string | null
           legacy_id: number | null
           name: string | null
+          position: number | null
           slug: string | null
           stars: number | null
         }
@@ -328,6 +335,7 @@ export type Database = {
           image?: string | null
           legacy_id?: number | null
           name?: string | null
+          position?: number | null
           slug?: string | null
           stars?: number | null
         }
@@ -344,6 +352,7 @@ export type Database = {
           image?: string | null
           legacy_id?: number | null
           name?: string | null
+          position?: number | null
           slug?: string | null
           stars?: number | null
         }
@@ -5038,6 +5047,7 @@ export type Database = {
           legacy_id: number | null
           max_people: number | null
           name: string
+          position: number
           slug: string
         }
         Insert: {
@@ -5050,6 +5060,7 @@ export type Database = {
           legacy_id?: number | null
           max_people?: number | null
           name: string
+          position?: number
           slug: string
         }
         Update: {
@@ -5062,6 +5073,7 @@ export type Database = {
           legacy_id?: number | null
           max_people?: number | null
           name?: string
+          position?: number
           slug?: string
         }
         Relationships: []
@@ -5077,6 +5089,7 @@ export type Database = {
           kind: string
           legacy_id: number | null
           path: string
+          position: number
           seo: Json
           title: string
         }
@@ -5090,6 +5103,7 @@ export type Database = {
           kind?: string
           legacy_id?: number | null
           path: string
+          position?: number
           seo?: Json
           title: string
         }
@@ -5103,6 +5117,7 @@ export type Database = {
           kind?: string
           legacy_id?: number | null
           path?: string
+          position?: number
           seo?: Json
           title?: string
         }
@@ -5603,6 +5618,7 @@ export type Database = {
           image: string | null
           legacy_id: number | null
           name: string
+          position: number
           slug: string
           stars: number | null
         }
@@ -5619,6 +5635,7 @@ export type Database = {
           image?: string | null
           legacy_id?: number | null
           name: string
+          position?: number
           slug: string
           stars?: number | null
         }
@@ -5635,6 +5652,7 @@ export type Database = {
           image?: string | null
           legacy_id?: number | null
           name?: string
+          position?: number
           slug?: string
           stars?: number | null
         }
@@ -6066,7 +6084,9 @@ export type Database = {
           allocated_seats: number | null
           company_id: string | null
           departure_id: string | null
+          inbound_seats: number | null
           live_blocks: number | null
+          outbound_seats: number | null
           remaining: number | null
           sold: number | null
           total_blocks: number | null

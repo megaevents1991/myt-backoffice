@@ -267,8 +267,8 @@ async function main() {
   const hotels = readJson<SiteEntity[]>("hotels.json");
   const cars = readJson<SiteEntity[]>("cars.json");
   const instructors = readJson<(SiteEntity & { regions?: string; gallery?: Json[] })[]>("instructors.json");
-  await upsertTours("hotels", hotels.map((h) => ({ ...entity(h), code: h.slug, excerpt: h.excerpt ?? null })), "company_id,code");
-  await upsertTours("cars", cars.map((c) => ({ ...entity(c), code: c.slug })), "company_id,code");
+  await upsertTours("hotels", hotels.map((h, position) => ({ ...entity(h), code: h.slug, excerpt: h.excerpt ?? null, position })), "company_id,code");
+  await upsertTours("cars", cars.map((c, position) => ({ ...entity(c), code: c.slug, position })), "company_id,code");
   await upsertTours(
     "instructors",
     instructors.map((x, position) => ({ ...entity(x), regions: x.regions ?? null, excerpt: x.excerpt ?? null, gallery: x.gallery ?? [], position })),
@@ -278,12 +278,12 @@ async function main() {
 
   const pageRows: Tours["cms_pages"]["Insert"][] = [];
   const pushPages = (file: string, kind: string) => {
-    for (const p of readJson<SiteEntity[]>(file)) {
+    readJson<SiteEntity[]>(file).forEach((p, position) => {
       pageRows.push({
         company_id: companyId, path: p.path ?? `/${p.slug}/`, title: p.title ?? p.name ?? p.slug, kind,
-        content_html: p.contentHtml ?? null, legacy_id: p.id, data: p as unknown as Json,
+        content_html: p.contentHtml ?? null, legacy_id: p.id, position, data: p as unknown as Json,
       });
-    }
+    });
   };
   pushPages("pages.json", "page");
   pushPages("posts.json", "post");
@@ -474,6 +474,22 @@ async function main() {
   const deps = new Map<string, Dep>(); // key = code:year
   const pctValue = (v: number) => (v <= 1 ? Math.round(v * 10000) / 100 : v);
 
+  // The sheet names a hotel by its own code ("K+K_Hotel_Opera"); the catalog
+  // (tours.hotels) is keyed by the site slug ("kk-hotel-opera"). Options store
+  // the catalog code, matched by the hotel NAME (never by slug: the site has a
+  // slug that was reused for a hotel of another name). No match keeps the sheet
+  // code and is reported, so the operator picks the hotel in the card.
+  const hotelKey = (v: string) => v.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  const hotelCodeByName = new Map(hotels.map((h) => [hotelKey(h.name ?? h.title ?? ""), h.slug]));
+  const catalogHotelCode = (sheetCode: string): string | null => {
+    const key = hotelKey(sheetCode);
+    if (!key) return null;
+    const exact = hotelCodeByName.get(key);
+    if (exact) return exact;
+    const starts = [...hotelCodeByName.entries()].filter(([name]) => name && (name.startsWith(key) || key.startsWith(name)));
+    return starts.length === 1 ? starts[0][1] : null;
+  };
+
   const fromSheet = (r: Record<string, Cell>, kind: "organized" | "vacation") => {
     const series = str(r.pck_code).toUpperCase();
     const code = `${series}${Math.round(num(r.pck_number) ?? 0)}`;
@@ -534,8 +550,10 @@ async function main() {
       for (const i of [1, 2, 3]) {
         const ref = str(r[`hotel_code_${i}`] ?? null);
         if (!ref) continue;
+        const catalogCode = catalogHotelCode(ref);
+        if (!catalogCode) note("hotel_not_in_catalog", code, `hotel code "${ref}" has no hotel of that name in the catalog`);
         dep.options.push({
-          kind: "hotel", position: i, ref_code: ref, board: str(r[`hotel_${i}_food`] ?? null) || null,
+          kind: "hotel", position: i, ref_code: catalogCode ?? ref, label: catalogCode ? null : ref, board: str(r[`hotel_${i}_food`] ?? null) || null,
           room_prices: { double: num(r[`dual_room_${i}`] ?? null), triple: num(r[`triple_room_${i}`] ?? null), quad: num(r[`quadro_room_${i}`] ?? null) } as Json,
           price_unit: "per_stay",
         });
@@ -571,6 +589,9 @@ async function main() {
             company_id: companyId, package_id: "", series_id: "", code: d.code, season_year: year,
             start_date: d.startDate, end_date: d.endDate, season: d.season ?? null, currency: d.currency ?? "USD",
             sale_status: status.sale, card_badge: status.badge ?? null, date_labels: d.tags ?? [],
+            // the site's flight cards print the airport in brackets: "לונדון (LHR)"
+            arrival_airport: /\(([A-Z]{3})\)/.exec(d.flights?.[0]?.to ?? "")?.[1] ?? null,
+            return_airport: /\(([A-Z]{3})\)/.exec(d.flights?.[1]?.from ?? "")?.[1] ?? null,
           },
           seriesCode: series, prices: [], options: [], promotions: [], flight: { out: "", back: "", outDate: d.startDate },
         };
@@ -608,6 +629,22 @@ async function main() {
       rows.push(dep.row);
     }
     await upsertTours("departures", rows, "company_id,code,season_year");
+    // usual length of a series = the most common number of nights among its departures;
+    // written only where nobody set one, so an operator's value is never replaced
+    const nightsBySeries = new Map<string, Map<number, number>>();
+    for (const row of rows) {
+      const nights = dayDiff(row.end_date, row.start_date);
+      if (nights <= 0) continue;
+      const tally = nightsBySeries.get(row.series_id) ?? new Map<number, number>();
+      tally.set(nights, (tally.get(nights) ?? 0) + 1);
+      nightsBySeries.set(row.series_id, tally);
+    }
+    for (const [sid, tally] of nightsBySeries) {
+      const usual = top(tally);
+      if (!usual) continue;
+      const { error } = await tours.from("series").update({ default_nights: usual }).eq("id", sid).eq("company_id", companyId).is("default_nights", null);
+      if (error) throw new Error(`series.default_nights: ${error.message}`);
+    }
     const dbDeps = await selectTours("departures", "id, code, season_year", companyId);
     const depId = new Map(dbDeps.map((d) => [`${d.code}:${d.season_year}`, String(d.id)]));
     const prices: Tours["departure_prices"]["Insert"][] = [];
@@ -669,10 +706,22 @@ async function importFlightWorkbook(
       const year = num(c(1)); const name = str(c(2));
       if (!year || !name) continue;
       const texts = [c(4), c(5), c(6)].filter((v) => v !== null && !isoDate(v)).map(str).filter(Boolean);
+      const periodStart = isoDate(c(5));
+      let periodEnd = isoDate(c(6));
+      // typed with the year of the row: a period that starts in December and ends in January ends NEXT year
+      if (periodStart && periodEnd && periodEnd < periodStart) {
+        const nextYear = `${Number(periodEnd.slice(0, 4)) + 1}${periodEnd.slice(4)}`;
+        if (nextYear >= periodStart && dayDiff(nextYear, periodStart) <= 31) {
+          note("calendar_end_moved_to_next_year", `${name} ${year}`, `${periodStart}..${periodEnd} read as ..${nextYear}`);
+          periodEnd = nextYear;
+        } else {
+          note("calendar_end_before_start", `${name} ${year}`, `${periodStart}..${periodEnd}`);
+        }
+      }
       calendar.push({
         company_id: companyId, year, name,
         kind: /צום|באב/.test(name) ? "fast" : /CARN|CANAVAL/i.test(name) ? "carnival" : "holiday",
-        holiday_date: isoDate(c(4)), start_date: isoDate(c(5)), end_date: isoDate(c(6)), note: texts.join(" | ") || null,
+        holiday_date: isoDate(c(4)), start_date: periodStart, end_date: periodEnd, note: texts.join(" | ") || null,
       });
     }
   }
