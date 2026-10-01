@@ -18,6 +18,10 @@ import { useConfirm } from "@/components/confirm-provider";
 import { addCompanyMember, removeCompanyMember } from "@/lib/actions/tours-members-actions";
 import { Section } from "@/components/tours/content/fields";
 import { COMPANY_ROLE_LABELS, type CompanyMemberRow } from "@/components/tours/content/shared";
+import { ROLE_LABELS, type Role } from "@/types/auth.types";
+
+/** The Hebrew name of a member's role; roles added after COMPANY_ROLE_LABELS (tours_agent) come from ROLE_LABELS. */
+const roleName = (role: string): string => COMPANY_ROLE_LABELS[role] ?? ROLE_LABELS[role as Role]?.he ?? role;
 
 export function CompanyMembers({ initial, companyName }: { initial: CompanyMemberRow[]; companyName: string }) {
   const confirm = useConfirm();
@@ -64,7 +68,7 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
   return (
     <Section
       title={`חברי הצוות בחברה (${members.length})`}
-      description="מי שמשויך לחברה רואה אותה ועובד בה. את החשבון עצמו (שם, סיסמה, תפקיד, השבתה) מנהלים במסך המשתמשים. מנהלי-על רואים כל חברה ואינם מופיעים כאן."
+      description="מי שמשויך לחברה רואה אותה ועובד בה. סוכן טיולים רואה רק את לוח היציאות, לצפייה בלבד. את החשבון עצמו (שם, סיסמה, תפקיד, השבתה) מנהלים במסך המשתמשים. מנהלי-על רואים כל חברה ואינם מופיעים כאן."
     >
       {members.length === 0 ? (
         <p className="text-sm text-muted-foreground">עוד לא שויכו משתמשים לחברה הזו.</p>
@@ -87,7 +91,7 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
                   <TableCell>
                     <span dir="ltr">{member.email}</span>
                   </TableCell>
-                  <TableCell>{COMPANY_ROLE_LABELS[member.role] ?? member.role}</TableCell>
+                  <TableCell>{roleName(member.role)}</TableCell>
                   <TableCell>
                     <Badge variant={member.isActive ? "outline" : "destructive"}>
                       {member.isActive ? "פעיל" : "מושבת"}
@@ -115,7 +119,7 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
         <div>
           <p className="text-sm font-medium">שיוך משתמש קיים</p>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            מזינים את האימייל של משתמש צוות שכבר קיים במערכת. משתמש חדש יוצרים קודם במסך המשתמשים.
+            מזינים את האימייל של משתמש צוות או של סוכן טיולים שכבר קיים במערכת. משתמש חדש יוצרים קודם במסך המשתמשים.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -149,7 +153,8 @@ export function CompanyMembers({ initial, companyName }: { initial: CompanyMembe
             להשאיר לו גישה גם למגה איבנטס
             <span className="block text-muted-foreground">
               משתמש שעוד לא שויך לאף חברה עובד היום במגה איבנטס. בלי הסימון הוא יעבוד רק ב-{companyName}. למשתמש
-              שכבר משויך למגה איבנטס השיוך הקיים נשאר בכל מקרה.
+              שכבר משויך למגה איבנטס השיוך הקיים נשאר בכל מקרה. לסוכן טיולים הסימון לא חל: הוא עובד רק בחברה
+              שאליה שויך.
             </span>
           </span>
         </label>

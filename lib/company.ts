@@ -14,12 +14,13 @@
 import { cookies } from "next/headers";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { getSession, requireStaffOfAnyCompany } from "@/lib/auth/guards";
+import { COMPANY_UNASSIGNED_ERROR } from "@/lib/auth/tours-agent";
 import {
   COMPANY_HOME_HINT_MAX_AGE,
   MEGA_EVENTS_COMPANY_ID,
   type CompanyHomeHint,
 } from "@/lib/company-ids";
-import type { Role } from "@/types/auth.types";
+import { TOURS_AGENT_ROLE, type Role } from "@/types/auth.types";
 import type { SessionPayload } from "@/lib/auth/session";
 
 export { MEGA_EVENTS_COMPANY_ID };
@@ -66,11 +67,42 @@ const toCompany = (row: CompanyRow): Company => ({
 });
 
 /**
+ * The tours companies a tours_agent is assigned to. May be EMPTY: this role has
+ * no Mega Events floor, so "no membership" and "the memberships cannot be
+ * read" both mean "works nowhere" (fail closed - the opposite of staff).
+ * Only companies that sell tours count; a stray membership in an events
+ * company gives the role nothing.
+ */
+async function listToursAgentCompanies(userId: string): Promise<Company[]> {
+  try {
+    const { data, error } = await supabaseTyped
+      .from("company_members")
+      .select(`companies!inner(${COLUMNS}, is_active, created_at)`)
+      .eq("user_id", userId);
+    if (error || !data) {
+      if (error) console.error("listToursAgentCompanies:", JSON.stringify(error));
+      return [];
+    }
+    return data
+      .map((m) => m.companies as unknown as CompanyRow & { is_active: boolean; created_at: string })
+      .filter((c) => c && c.is_active)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      .map(toCompany)
+      .filter((c) => c.productTypes.includes("tours"));
+  } catch (e) {
+    console.error("listToursAgentCompanies:", e);
+    return [];
+  }
+}
+
+/**
  * The companies this session may work in. superadmin: every active company.
- * Everyone else: their company_members rows. Never empty - Mega Events is the floor.
+ * Everyone else: their company_members rows. Never empty - Mega Events is the
+ * floor - except for a tours_agent, which works only where it was assigned.
  */
 export async function listCompaniesFor(session: SessionPayload | null): Promise<Company[]> {
   if (!session) return [MEGA_EVENTS_FALLBACK];
+  if (session.role === TOURS_AGENT_ROLE) return listToursAgentCompanies(session.sub);
   try {
     if (session.role === "superadmin") {
       const { data, error } = await supabaseTyped
@@ -96,10 +128,17 @@ export async function listCompaniesFor(session: SessionPayload | null): Promise<
   }
 }
 
-/** The company this request works in. Falls back to Mega Events on any doubt. */
+/**
+ * The company this request works in. Falls back to Mega Events on any doubt -
+ * except for a tours_agent with no company, where it THROWS
+ * (COMPANY_UNASSIGNED_ERROR): that role must never be handed Mega Events.
+ */
 export async function getActiveCompany(session?: SessionPayload | null): Promise<Company> {
   const actor = session === undefined ? await getSession() : session;
   const companies = await listCompaniesFor(actor);
+  if (actor?.role === TOURS_AGENT_ROLE && companies.length === 0) {
+    throw new Error(COMPANY_UNASSIGNED_ERROR);
+  }
   const store = await cookies();
   const wanted = store.get(ACTIVE_COMPANY_COOKIE)?.value;
   return (
@@ -153,4 +192,34 @@ export async function requireCompany(
     throw new Error(`Forbidden: the active company (${company.slug}) does not sell "${productType}"`);
   }
   return { session, company };
+}
+
+/**
+ * Guard of the READ side that a tours_agent shares with staff - today the
+ * departures board and its read-only card, later the agents portal.
+ *
+ * Admits:
+ *  - staff, exactly as requireCompany() does -> readOnly: false;
+ *  - a tours_agent that is a member of the active company -> readOnly: true.
+ *    Its session was already checked against the live profile (getSession), its
+ *    company comes from its own memberships only, and with no membership this
+ *    throws COMPANY_UNASSIGNED_ERROR.
+ * Everyone else (partners, forms_operator, no session) is refused.
+ *
+ * `readOnly: true` obliges the caller to answer with the viewer's field list
+ * only (no cost, PNR, docket, notes, block operations). Mutations, exports and
+ * settings never call this - they keep requireCompany(), which refuses the role.
+ */
+export async function requireCompanyViewer(
+  productType?: ProductType,
+): Promise<{ session: SessionPayload; company: Company; readOnly: boolean }> {
+  const session = await getSession();
+  if (session?.role !== TOURS_AGENT_ROLE) {
+    return { ...(await requireCompany(productType)), readOnly: false };
+  }
+  const company = await getActiveCompany(session);
+  if (productType && !company.productTypes.includes(productType)) {
+    throw new Error(`Forbidden: the active company (${company.slug}) does not sell "${productType}"`);
+  }
+  return { session, company, readOnly: true };
 }

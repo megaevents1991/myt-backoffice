@@ -74,6 +74,8 @@ import {
   ROLES,
   ADMIN_ROLES,
   PARTNER_ROLES,
+  ROLE_LABELS,
+  TOURS_AGENT_ROLE,
   type Role,
   type UserProfile,
 } from "@/types/auth.types";
@@ -97,6 +99,12 @@ const emptyForm: FormState = {
   partner_tracking_code: "",
   phone: "",
 };
+
+/** The role id, with its Hebrew name where the id alone is not clear (tours_agent vs agent). */
+function roleLabel(role: Role) {
+  const label = ROLE_LABELS[role];
+  return label ? `${role} · ${label.he}` : role;
+}
 
 function roleBadgeVariant(role: Role) {
   if (role === "superadmin") return "destructive" as const;
@@ -212,6 +220,8 @@ export function UsersClient({
   const [resetPassword, setResetPassword] = useState("");
 
   const needsPartner = PARTNER_ROLES.includes(form.role);
+  // A tours_agent belongs to a tours company, not to a Mega Events partner: no partner link at all.
+  const isToursAgent = form.role === TOURS_AGENT_ROLE;
 
   const openCreate = () => {
     setEditing(null);
@@ -273,7 +283,7 @@ export function UsersClient({
 
     // Partner roles REQUIRE a partner link; staff roles may carry one too -
     // it lights up "מצב סוכן" in the sidebar (dual-role: admin + own portal).
-    const partnerCode = form.partner_tracking_code || null;
+    const partnerCode = isToursAgent ? null : form.partner_tracking_code || null;
 
     startTransition(async () => {
       let targetId: string | null;
@@ -446,7 +456,7 @@ export function UsersClient({
                   <TableCell className="font-medium">{user.email}</TableCell>
                   <TableCell>{user.display_name || "-"}</TableCell>
                   <TableCell>
-                    <Badge variant={roleBadgeVariant(user.role)}>{user.role}</Badge>
+                    <Badge variant={roleBadgeVariant(user.role)}>{roleLabel(user.role)}</Badge>
                   </TableCell>
                   <TableCell>{user.partner_tracking_code || "-"}</TableCell>
                   <TableCell>
@@ -556,30 +566,38 @@ export function UsersClient({
                 <SelectContent>
                   {assignableRoles.map((role) => (
                     <SelectItem key={role} value={role}>
-                      {role}
+                      {roleLabel(role)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="space-y-1.5">
-              <Label>{needsPartner ? "Partner" : "Partner (optional - dual-role)"}</Label>
-              <PartnerCombobox
-                value={form.partner_tracking_code}
-                onChange={(code) =>
-                  setForm({ ...form, partner_tracking_code: code })
-                }
-                partners={partners}
-                clearable={!needsPartner}
-              />
-              {!needsPartner && (
-                <p className="text-xs text-muted-foreground">
-                  קישור שותף למשתמש צוות מדליק לו את &quot;מצב סוכן&quot; בתפריט -
-                  הדשבורד נשאר, והפורטל נפתח כהשותף המקושר.
-                </p>
-              )}
-            </div>
+            {isToursAgent ? (
+              <p dir="rtl" className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                סוכן טיולים הוא סוכן מכירות של חברת טיולים (מגה תיירות), לא שותף של מגה איבנטס, ולכן אין לו קישור
+                לשותף. הוא רואה רק את לוח היציאות של החברה שלו, לצפייה בלבד. אחרי היצירה משייכים אותו לחברה במסך
+                &quot;הגדרות חברה&quot; של חברת הטיולים. עד השיוך הוא לא רואה כלום.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                <Label>{needsPartner ? "Partner" : "Partner (optional - dual-role)"}</Label>
+                <PartnerCombobox
+                  value={form.partner_tracking_code}
+                  onChange={(code) =>
+                    setForm({ ...form, partner_tracking_code: code })
+                  }
+                  partners={partners}
+                  clearable={!needsPartner}
+                />
+                {!needsPartner && (
+                  <p className="text-xs text-muted-foreground">
+                    קישור שותף למשתמש צוות מדליק לו את &quot;מצב סוכן&quot; בתפריט -
+                    הדשבורד נשאר, והפורטל נפתח כהשותף המקושר.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label htmlFor="user-phone">Phone</Label>

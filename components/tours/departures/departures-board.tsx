@@ -9,6 +9,13 @@
  * series, filtering, selection) happens here. The filters live in the query
  * string so a view can be sent as a link, and `?code=CBEA1014` opens that
  * departure's card.
+ *
+ * `readOnly` is the board of a sales agent (role tours_agent): the server
+ * sends it only the departures on sale and only the fields an agent may see,
+ * and this component then draws no checkbox, no publish toggle, no docket, no
+ * edit in place and no action button; the card opens as DepartureViewCard.
+ * The flag only decides what is drawn - every edit action refuses that role
+ * on the server whatever the screen shows.
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -18,6 +25,7 @@ import {
   ClipboardPaste,
   Copy,
   Download,
+  Eye,
   Loader2,
   Plus,
   RefreshCw,
@@ -51,9 +59,10 @@ import {
 } from "./board-dialogs";
 import { BoardRowView, type CardTab } from "./board-row";
 import { DepartureCard, type CardTarget } from "./departure-card";
+import { DepartureViewCard, VIEW_TABS } from "./departure-view-card";
 import { doublePricePerPerson, nightsBetween, periodLabel, periodsOverlapping, todayIso } from "./departure-utils";
 import type { BoardData, BoardRow, BulkOutcome } from "./types";
-import { Ltr, Notice, selectClass } from "./ui-bits";
+import { Chip, Ltr, Notice, selectClass } from "./ui-bits";
 import { afterUrlWrite, useQueryState } from "./use-query-state";
 
 const CARD_TABS: readonly CardTab[] = ["general", "prices", "promotions", "flights", "sales"];
@@ -87,6 +96,8 @@ const NO_FILTERS = {
   q: "",
 };
 const COLUMN_COUNT = 15;
+/** Without the checkbox, the publish toggle and the docket. */
+const READ_ONLY_COLUMN_COUNT = 12;
 
 const th =
   "sticky top-0 z-10 h-9 whitespace-nowrap bg-muted px-1.5 text-start text-xs font-semibold text-muted-foreground shadow-[inset_0_-1px_0_hsl(var(--border))]";
@@ -125,33 +136,30 @@ function FilterToggle({ label, active, onChange, tone }: { label: string; active
   );
 }
 
-export function DeparturesBoard() {
+export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly?: boolean } = {}) {
   const thisYear = useMemo(() => Number(todayIso().slice(0, 4)), []);
   const today = useMemo(() => todayIso(), []);
-
-  // ---- view state: filters in the URL, folded groups in the browser tab
-  const [params, setParams] = useQueryState(QUERY_KEYS);
-  const {
-    year: yearParam,
-    season,
-    series: seriesCode,
-    page: pageId,
-    status,
-    published,
-    noflight: noFlight,
-    noprice: noPrice,
-    upcoming,
-    deleted,
-    q: query,
-    code: codeParam,
-  } = params;
-  const tab: CardTab = (CARD_TABS as readonly string[]).includes(params.tab) ? (params.tab as CardTab) : "general";
-  const setTab = useCallback((next: CardTab) => setParams({ tab: next === "general" ? "" : next }), [setParams]);
-  const [collapsed, setCollapsed] = useSessionState<string[]>("departures:collapsed", []);
 
   // ---- data
   const [data, setData] = useState<BoardData | null>(null);
   const [rows, setRows] = useState<BoardRow[]>([]);
+  // The page says who is looking (the session's role); the server's answer says it again with the data.
+  const readOnly = readOnlyViewer || data?.readOnly === true;
+  const columnCount = readOnly ? READ_ONLY_COLUMN_COUNT : COLUMN_COUNT;
+
+  // ---- view state: filters in the URL, folded groups in the browser tab
+  const [params, setParams] = useQueryState(QUERY_KEYS);
+  const { year: yearParam, season, series: seriesCode, page: pageId, status, upcoming, q: query, code: codeParam } = params;
+  // Filters of things a read-only viewer never has (drafts, deleted, data gaps) are off for it, link or no link.
+  const published = readOnly ? "" : params.published;
+  const noFlight = readOnly ? "" : params.noflight;
+  const noPrice = readOnly ? "" : params.noprice;
+  const deleted = readOnly ? "" : params.deleted;
+  const cardTabs = readOnly ? VIEW_TABS : CARD_TABS;
+  const tab: CardTab = (cardTabs as readonly string[]).includes(params.tab) ? (params.tab as CardTab) : "general";
+  const setTab = useCallback((next: CardTab) => setParams({ tab: next === "general" ? "" : next }), [setParams]);
+  const [collapsed, setCollapsed] = useSessionState<string[]>("departures:collapsed", []);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
@@ -470,8 +478,18 @@ export function DeparturesBoard() {
     <div dir="rtl" className="min-w-0">
       <PageHeader
         title="לוח יציאות"
-        description="כל היציאות של החברה, מקובצות לפי סדרה. כאן מעדכנים פרסום, סטטוס מכירה, תגיות ומחיר בלחיצה על התא. כל שאר הפרטים בכרטיס היציאה."
+        description={
+          readOnly
+            ? "היציאות שבמכירה, מקובצות לפי סדרה: תאריכים, מסלול, מחיר, הטבות, טיסה ומקומות פנויים. לחיצה על קוד היציאה פותחת את כל הפרטים."
+            : "כל היציאות של החברה, מקובצות לפי סדרה. כאן מעדכנים פרסום, סטטוס מכירה, תגיות ומחיר בלחיצה על התא. כל שאר הפרטים בכרטיס היציאה."
+        }
         actions={
+          readOnly ? (
+            <Chip className="gap-1 px-2.5 py-1 text-xs" title="אין לחשבון הזה הרשאת עריכה">
+              <Eye className="h-3.5 w-3.5" />
+              צפייה בלבד
+            </Chip>
+          ) : (
           <>
             <Button variant="outline" size="sm" asChild>
               <Link href="/tours/series">סדרות ושכפול עונה</Link>
@@ -490,6 +508,7 @@ export function DeparturesBoard() {
             </Button>
             <PublishSiteButton />
           </>
+          )
         }
       />
 
@@ -541,15 +560,19 @@ export function DeparturesBoard() {
             </option>
           ))}
         </select>
-        <select aria-label="פרסום" className={selectClass} value={published} onChange={(e) => setParams({ published: e.target.value })}>
-          <option value="">מפורסם + טיוטה</option>
-          <option value="yes">מפורסם</option>
-          <option value="no">לא מפורסם</option>
-        </select>
-        <FilterToggle label="בלי טיסה חיה" tone="bad" active={noFlight === "1"} onChange={(v) => setParams({ noflight: v ? "1" : "" })} />
-        <FilterToggle label="בלי מחיר" tone="bad" active={noPrice === "1"} onChange={(v) => setParams({ noprice: v ? "1" : "" })} />
+        {!readOnly && (
+          <>
+            <select aria-label="פרסום" className={selectClass} value={published} onChange={(e) => setParams({ published: e.target.value })}>
+              <option value="">מפורסם + טיוטה</option>
+              <option value="yes">מפורסם</option>
+              <option value="no">לא מפורסם</option>
+            </select>
+            <FilterToggle label="בלי טיסה חיה" tone="bad" active={noFlight === "1"} onChange={(v) => setParams({ noflight: v ? "1" : "" })} />
+            <FilterToggle label="בלי מחיר" tone="bad" active={noPrice === "1"} onChange={(v) => setParams({ noprice: v ? "1" : "" })} />
+          </>
+        )}
         <FilterToggle label="רק עתידיות" active={upcoming === "1"} onChange={(v) => setParams({ upcoming: v ? "1" : "" })} />
-        <FilterToggle label="מחוקות" active={showDeleted} onChange={(v) => setParams({ deleted: v ? "1" : "" })} />
+        {!readOnly && <FilterToggle label="מחוקות" active={showDeleted} onChange={(v) => setParams({ deleted: v ? "1" : "" })} />}
         <Input
           dir="ltr"
           aria-label="חיפוש לפי קוד"
@@ -608,8 +631,10 @@ export function DeparturesBoard() {
         ) : (
           <>
             <span className="text-muted-foreground">
-              {loading && !data ? "טוען…" : `${filtered.length} מתוך ${rows.filter((r) => (showDeleted ? r.is_deleted : !r.is_deleted)).length} יציאות`}
-              {!loading && filtered.length > 0 && (
+              {loading && !data
+                ? "טוען…"
+                : `${filtered.length} מתוך ${rows.filter((r) => (showDeleted ? r.is_deleted : !r.is_deleted)).length} יציאות${readOnly ? " במכירה" : ""}`}
+              {!loading && !readOnly && filtered.length > 0 && (
                 <>
                   {" · "}
                   {publishedCount} מפורסמות
@@ -648,17 +673,19 @@ export function DeparturesBoard() {
           <table className="w-full text-sm">
             <thead>
               <tr>
-                <th className={cn(th, "w-8 ps-2")}>
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
-                    aria-label="בחירת כל היציאות שבתצוגה"
-                    checked={allVisibleSelected}
-                    onChange={(e) => setSelected(e.target.checked ? new Set(filtered.map((r) => r.id)) : new Set())}
-                  />
-                </th>
-                <th className={th}>פרסום</th>
-                <th className={th}>קוד</th>
+                {!readOnly && (
+                  <th className={cn(th, "w-8 ps-2")}>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
+                      aria-label="בחירת כל היציאות שבתצוגה"
+                      checked={allVisibleSelected}
+                      onChange={(e) => setSelected(e.target.checked ? new Set(filtered.map((r) => r.id)) : new Set())}
+                    />
+                  </th>
+                )}
+                {!readOnly && <th className={th}>פרסום</th>}
+                <th className={cn(th, readOnly && "ps-3")}>קוד</th>
                 <th className={th}>תאריכים</th>
                 <th className={cn(th, "text-center")}>לילות</th>
                 <th className={th}>מסלול</th>
@@ -671,25 +698,34 @@ export function DeparturesBoard() {
                 </th>
                 <th className={th}>הטבה פעילה</th>
                 <th className={th}>טיסה</th>
-                <th className={cn(th, "text-center")} title="מושבים משויכים בבלוקים חיים / נמכרו / יתרה">
+                <th
+                  className={cn(th, "text-center", readOnly && "pe-2")}
+                  title={readOnly ? "מקומות בטיסות המאושרות / נמכרו / נשארו" : "מושבים משויכים בבלוקים חיים / נמכרו / יתרה"}
+                >
                   מושבים
                 </th>
-                <th className={cn(th, "pe-2")}>Docket</th>
+                {!readOnly && <th className={cn(th, "pe-2")}>Docket</th>}
               </tr>
             </thead>
             <tbody>
               {loading && !data ? (
                 Array.from({ length: 12 }).map((_, i) => (
                   <tr key={i}>
-                    <td colSpan={COLUMN_COUNT} className="border-b px-3 py-2">
+                    <td colSpan={columnCount} className="border-b px-3 py-2">
                       <Skeleton className="h-5 w-full" />
                     </td>
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={COLUMN_COUNT} className="px-3 py-16 text-center text-muted-foreground">
-                    <p className="mb-3">{rows.length === 0 ? "אין יציאות בשנים שנבחרו." : "אין יציאות שמתאימות לסינון."}</p>
+                  <td colSpan={columnCount} className="px-3 py-16 text-center text-muted-foreground">
+                    <p className="mb-3">
+                      {rows.length === 0
+                        ? readOnly
+                          ? "אין יציאות במכירה בשנים שנבחרו."
+                          : "אין יציאות בשנים שנבחרו."
+                        : "אין יציאות שמתאימות לסינון."}
+                    </p>
                     {filterCount > 0 && (
                       <Button variant="outline" size="sm" onClick={clearFilters}>
                         ניקוי הסינון
@@ -706,32 +742,34 @@ export function DeparturesBoard() {
                   return (
                     <Fragment key={g.seriesId}>
                       <tr className="cursor-pointer select-none bg-secondary/80 hover:bg-secondary" data-series={g.series?.code} onClick={() => toggleGroup(g.seriesId)}>
-                        <td className="border-b border-t px-1.5 py-1.5 ps-2" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
-                            aria-label={`בחירת כל היציאות של ${g.series?.code ?? "הסדרה"}`}
-                            checked={groupSelected}
-                            onChange={(e) =>
-                              setSelected((prev) => {
-                                const next = new Set(prev);
-                                for (const r of g.rows) {
-                                  if (e.target.checked) next.add(r.id);
-                                  else next.delete(r.id);
-                                }
-                                return next;
-                              })
-                            }
-                          />
-                        </td>
-                        <td colSpan={COLUMN_COUNT - 1} className="border-b border-t px-2 py-1.5">
+                        {!readOnly && (
+                          <td className="border-b border-t px-1.5 py-1.5 ps-2" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
+                              aria-label={`בחירת כל היציאות של ${g.series?.code ?? "הסדרה"}`}
+                              checked={groupSelected}
+                              onChange={(e) =>
+                                setSelected((prev) => {
+                                  const next = new Set(prev);
+                                  for (const r of g.rows) {
+                                    if (e.target.checked) next.add(r.id);
+                                    else next.delete(r.id);
+                                  }
+                                  return next;
+                                })
+                              }
+                            />
+                          </td>
+                        )}
+                        <td colSpan={readOnly ? columnCount : columnCount - 1} className="border-b border-t px-2 py-1.5">
                           <span className="flex items-center gap-2">
                             {folded ? <ChevronLeft className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                             <Ltr className="font-mono text-sm font-bold">{g.series?.code ?? "?"}</Ltr>
                             {g.series?.label && <span className="text-sm font-medium">{g.series.label}</span>}
                             <span className="truncate text-sm text-muted-foreground">{pkg?.name ?? "אין עמוד באתר"}</span>
                             <span className="rounded-full bg-background px-2 py-0.5 text-xs font-semibold tabular-nums">{g.rows.length}</span>
-                            {live > 0 && <span className="text-xs text-success">{live} מפורסמות</span>}
+                            {live > 0 && !readOnly && <span className="text-xs text-success">{live} מפורסמות</span>}
                           </span>
                         </td>
                       </tr>
@@ -754,6 +792,7 @@ export function DeparturesBoard() {
                             onLabels={onLabels}
                             onPriceEdit={setPriceEditId}
                             onDoublePrice={onDoublePrice}
+                            readOnly={readOnly}
                           />
                         ))}
                     </Fragment>
@@ -776,9 +815,13 @@ export function DeparturesBoard() {
         ))}
       </datalist>
 
-      <DepartureCard target={cardTarget} tab={tab} onTabChange={setTab} periods={periods} onClose={closeCard} onChanged={onCardChanged} />
+      {readOnly ? (
+        <DepartureViewCard target={cardTarget} tab={tab} onTabChange={setTab} periods={periods} onClose={closeCard} />
+      ) : (
+        <DepartureCard target={cardTarget} tab={tab} onTabChange={setTab} periods={periods} onClose={closeCard} onChanged={onCardChanged} />
+      )}
 
-      {data && (
+      {data && !readOnly && (
         <>
           <NewDepartureDialog
             open={dialog === "new"}

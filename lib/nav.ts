@@ -42,7 +42,8 @@ import {
   Factory,
   BookOpen,
 } from "lucide-react";
-import { ADMIN_ROLES, type Role } from "@/types/auth.types";
+import { ADMIN_ROLES, TOURS_AGENT_ROLE, type Role } from "@/types/auth.types";
+import { isToursAgentPath } from "@/lib/auth/tours-agent";
 // Type only - lib/company.ts is server code and must not reach the client bundle.
 import type { ProductType } from "@/lib/company";
 
@@ -328,6 +329,15 @@ export const TOURS_NAV_GROUP: NavGroup = {
       keywords: "tours overview home summary סקירה טיולים ראשי",
     },
     {
+      // What waits for a person: approvals only a manager gives, and data the
+      // import could not settle on its own. Company admins and superadmins.
+      name: "אישורים וטיפול",
+      href: "/tours/approvals",
+      icon: ClipboardCheck,
+      keywords: "approvals review human decisions pending אישורים אישור טיפול ממתין מנהל",
+      roles: ADMIN_ROLES,
+    },
+    {
       name: "לוח יציאות",
       href: "/tours/departures",
       icon: CalendarRange,
@@ -421,6 +431,7 @@ export const TOURS_NAV_GROUP: NavGroup = {
 export const DEFAULT_PRODUCT_TYPES: readonly ProductType[] = ["events"];
 
 const FLIGHTS_HREF = "/offline-flights";
+const TASKS_HREF = "/tasks";
 const SERIES_HREF = "/tours/series";
 
 /** Every group of every product type, in sidebar order: Tours sits right after Products. */
@@ -450,39 +461,54 @@ function groupsForRole(groups: NavGroup[], role: Role | undefined | null): NavGr
 /**
  * A company that sells tours and no events sees the Tours group and nothing
  * else. Every other screen of the backoffice is a Mega Events feature with no
- * company column behind it (reservations, tasks, users, the audit log, ...),
- * and the auth guards refuse them to a member of a tours company anyway
+ * company column behind it (reservations, users, the audit log, ...), and the
+ * auth guards refuse them to a member of a tours company anyway
  * (worksInMegaEvents in lib/auth/guards.ts) - the nav must not offer what the
  * server will refuse. Someone who works in both companies switches company.
  *
- * The one shared screen is the flights list: it is scoped by the active
- * company, so it moves into the Tours group, right after the series, under the
- * name its operators use.
+ * Two screens are shared, because their data carries a company column and is
+ * scoped by the active company. They move into the Tours group under the names
+ * its operators use: the flights list right after the series, and the task
+ * board right after the overview.
  */
 function asToursCompany(groups: NavGroup[]): NavGroup[] {
-  const flights = flattenNav(groups).find((item) => item.href === FLIGHTS_HREF);
+  const shared = flattenNav(groups);
+  const flights = shared.find((item) => item.href === FLIGHTS_HREF);
+  const tasks = shared.find((item) => item.href === TASKS_HREF);
+  const insertAfter = (items: NavItem[], anchorHref: string, item: NavItem): NavItem[] => {
+    const anchor = items.findIndex((entry) => entry.href === anchorHref);
+    const at = anchor === -1 ? items.length : anchor + 1;
+    return [...items.slice(0, at), item, ...items.slice(at)];
+  };
   return groups
     .filter((group) => group.productType === "tours")
     .map((group) => {
-      if (!flights) return group;
-      const series = group.items.findIndex((item) => item.href === SERIES_HREF);
-      const at = series === -1 ? group.items.length : series + 1;
-      const blocks: NavItem = {
-        ...flights,
-        name: "קבוצות טיסה",
-        keywords: "offline flights flight blocks groups seats allotment טיסות קבוצות בלוקים מושבים",
-      };
-      return { ...group, items: [...group.items.slice(0, at), blocks, ...group.items.slice(at)] };
+      let items = group.items;
+      if (flights) {
+        items = insertAfter(items, SERIES_HREF, {
+          ...flights,
+          name: "קבוצות טיסה",
+          keywords: "offline flights flight blocks groups seats allotment טיסות קבוצות בלוקים מושבים",
+        });
+      }
+      if (tasks) {
+        items = insertAfter(items, TOURS_HOME, {
+          ...tasks,
+          name: "משימות",
+          keywords: "tasks todo board work queue משימות לוח מטלות",
+        });
+      }
+      return { ...group, items };
     });
 }
 
 /**
  * The screens a company that sells tours and no events works in: its own
- * module and the company-scoped flights list. The dashboard layout sends such
- * a company home (TOURS_HOME) from anywhere else.
+ * module, the company-scoped flights list and the company-scoped task board.
+ * The dashboard layout sends such a company home (TOURS_HOME) from anywhere else.
  */
 export function isToursCompanyPath(pathname: string): boolean {
-  return [TOURS_HOME, FLIGHTS_HREF].some(
+  return [TOURS_HOME, FLIGHTS_HREF, TASKS_HREF].some(
     (root) => pathname === root || pathname.startsWith(`${root}/`),
   );
 }
@@ -490,7 +516,8 @@ export function isToursCompanyPath(pathname: string): boolean {
 /**
  * Groups this role may see in a company that sells `productTypes`.
  * forms_operator lives entirely inside /forms - the rest of the nav would just
- * be a wall of middleware redirects.
+ * be a wall of middleware redirects. tours_agent likewise: only the screens
+ * middleware lets it open (lib/auth/tours-agent.ts), whatever the company.
  *
  * An entry tagged with a product type the company does not sell is hidden.
  * Pure - the sidebar and the command palette both call it with the active
@@ -505,6 +532,15 @@ export function visibleGroups(
       {
         label: "Forms",
         items: NAV_GROUPS.flatMap((g) => g.items).filter((i) => i.href === "/forms"),
+      },
+    ];
+  }
+
+  if (role === TOURS_AGENT_ROLE) {
+    return [
+      {
+        ...TOURS_NAV_GROUP,
+        items: TOURS_NAV_GROUP.items.filter((item) => !item.roles && isToursAgentPath(item.href)),
       },
     ];
   }
@@ -612,6 +648,8 @@ const TOURS_SEGMENT_LABELS: Record<string, string> = {
   pages: "עמודי תוכן",
   leads: "לידים",
   settings: "הגדרות חברה",
+  approvals: "אישורים וטיפול",
+  flights: "קבוצות טיסה",
   new: "חדש",
   edit: "עריכה",
 };

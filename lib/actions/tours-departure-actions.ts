@@ -9,11 +9,19 @@
  * that company. Expected failures come back as { success: false, error } in
  * Hebrew; nothing here throws to the client.
  *
+ * Two READ actions start with requireCompanyViewer("tours") instead, because a
+ * sales agent of the company (role tours_agent) shares them: getDeparturesBoard
+ * and getDepartureView. For that viewer they answer with departures on sale
+ * only and with the viewer's field list only (viewerBoardRow, DepartureViewData)
+ * - no cost, PNR, docket, notes, markup, block status or sales entries. Every
+ * other action here keeps requireCompany and so refuses the agent.
+ *
  * Spec: mega-family/docs/plans/MEGA-FAMILY-FUNCTIONAL-SPEC.md (4.4-4.6, 5.1, 5.2, 6).
  */
 import ExcelJS from "exceljs";
 import { logAudit } from "@/lib/audit";
-import { requireCompany } from "@/lib/company";
+import { COMPANY_UNASSIGNED_NOTICE } from "@/lib/auth/tours-agent";
+import { requireCompany, requireCompanyViewer } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { TOURS_PAGE_SIZE, toursDb } from "@/lib/tours/db";
 import { toPriceMatrix, type PriceMatrix } from "@/lib/tours/pricing";
@@ -51,6 +59,7 @@ import {
   promotionConflict,
   promotionSummary,
   publishBlockers,
+  readRoomPrices,
   seasonYearOf,
   todayIso,
 } from "@/components/tours/departures/departure-utils";
@@ -72,9 +81,13 @@ import type {
   CardSalesEntry,
   DepartureCardData,
   DepartureGeneralInput,
+  DepartureViewData,
   PriceCellInput,
   PromotionInput,
   VacationPricingInput,
+  ViewFlight,
+  ViewHotelOption,
+  ViewTicketOption,
 } from "@/components/tours/departures/types";
 
 // ---------------------------------------------------------------- plumbing
@@ -88,6 +101,9 @@ function fail(e: unknown): { success: false; error: string } {
     return { success: false, error: "המסך הזה זמין רק כשהחברה הפעילה מוכרת טיולים. החליפו חברה בסרגל העליון." };
   }
   if (message.startsWith("Unauthorized")) return { success: false, error: "אין הרשאה לפעולה הזו." };
+  if (message.startsWith("Unassigned")) {
+    return { success: false, error: `${COMPANY_UNASSIGNED_NOTICE}. מנהל החברה צריך לשייך את החשבון לחברה.` };
+  }
   console.error("tours-departure-actions:", e);
   return { success: false, error: `הפעולה נכשלה: ${message}` };
 }
@@ -247,7 +263,7 @@ async function allocationSums(
 
 async function loadBoardRows(
   companyId: string,
-  filter: { years?: number[]; ids?: string[]; includeDeleted?: boolean },
+  filter: { years?: number[]; ids?: string[]; includeDeleted?: boolean; onSaleOnly?: boolean },
 ): Promise<BoardRow[]> {
   const pageOf = (ids: string[] | null) => (from: number, to: number) => {
     let q = toursDb()
@@ -259,7 +275,9 @@ async function loadBoardRows(
       .eq("promotions.company_id", companyId)
       .eq("flight_allocations.company_id", companyId);
     if (filter.years?.length) q = q.in("season_year", filter.years);
-    if (!filter.includeDeleted) q = q.is("is_deleted", null);
+    // On sale = published and not deleted - what a read-only viewer may see.
+    if (filter.onSaleOnly) q = q.eq("is_published", true).is("is_deleted", null);
+    else if (!filter.includeDeleted) q = q.is("is_deleted", null);
     if (ids) q = q.in("id", ids);
     return q.order("start_date").order("code").order("id").range(from, to);
   };
@@ -399,14 +417,339 @@ function blockersOf(
   });
 }
 
+// ---------------------------------------------------------------- read-only viewer (tours_agent)
+/**
+ * A board row as a read-only viewer receives it. Built key by key - an
+ * allowlist - so a column added to BoardRow later does not reach the viewer by
+ * accident. Left out: the docket number, the parts a vacation price is made of
+ * (options, markup - the finished price goes in `doublePrice`), blocks that
+ * are not live, and the status of every block.
+ */
+function viewerBoardRow(r: BoardRow): BoardRow {
+  return {
+    id: r.id,
+    code: r.code,
+    series_id: r.series_id,
+    package_id: r.package_id,
+    season_year: r.season_year,
+    start_date: r.start_date,
+    end_date: r.end_date,
+    season: r.season,
+    currency: r.currency,
+    is_published: r.is_published,
+    sale_status: r.sale_status,
+    card_badge: r.card_badge,
+    date_labels: r.date_labels,
+    arrival_airport: r.arrival_airport,
+    return_airport: r.return_airport,
+    docket_no: null,
+    flight_mode: r.flight_mode,
+    flight_price: r.flight_price,
+    markup_fixed: null,
+    is_deleted: null,
+    prices: r.prices,
+    options: [],
+    doublePrice: doublePricePerPerson(r),
+    promotions: r.promotions.map((p) => ({
+      id: p.id,
+      kind: p.kind,
+      value: p.value,
+      label: p.label,
+      valid_until: p.valid_until,
+      show_on_card: p.show_on_card,
+      is_active: p.is_active,
+      scope: p.scope,
+    })),
+    flights: r.flights
+      .filter((f) => f.isLive)
+      .map((f) => ({
+        allocationId: f.allocationId,
+        flightId: f.flightId,
+        seats: f.seats,
+        legs: f.legs,
+        airline: f.airline,
+        blockStatus: null,
+        isLive: true,
+      })),
+    stats: {
+      allocated: r.stats.allocated,
+      liveBlocks: r.stats.liveBlocks,
+      totalBlocks: r.stats.liveBlocks,
+      sold: r.stats.sold,
+      remaining: r.stats.remaining,
+    },
+  };
+}
+
+/** The board of a read-only viewer: departures on sale, and only the series and pages they belong to. */
+async function loadViewerBoard(companyId: string, years: number[]): Promise<BoardData> {
+  const edge = (ascending: boolean) =>
+    toursDb()
+      .from("departures")
+      .select("season_year")
+      .eq("company_id", companyId)
+      .eq("is_published", true)
+      .is("is_deleted", null)
+      .order("season_year", { ascending })
+      .limit(1)
+      .maybeSingle();
+
+  const [rows, series, packages, periods, first, last] = await Promise.all([
+    loadBoardRows(companyId, { years, onSaleOnly: true }),
+    loadSeries(companyId),
+    fetchAll<BoardPackage>((from, to) =>
+      toursDb().from("packages").select("id, name, kind, slug").eq("company_id", companyId).order("name").range(from, to),
+    ),
+    fetchAll<BoardPeriod>((from, to) =>
+      supabaseTyped
+        .from("calendar_periods")
+        .select("id, name, kind, year, holiday_date, start_date, end_date")
+        .or(`company_id.eq.${companyId},company_id.is.null`)
+        .order("year")
+        .order("id")
+        .range(from, to),
+    ),
+    edge(true),
+    edge(false),
+  ]);
+
+  const seriesIds = new Set(rows.map((r) => r.series_id));
+  const packageIds = new Set(rows.map((r) => r.package_id));
+  const min = must(first)?.season_year;
+  const max = must(last)?.season_year;
+  return {
+    rows: rows.map(viewerBoardRow),
+    // The planned group size of a series is an operations figure, not a selling one.
+    series: series.filter((s) => seriesIds.has(s.id)).map((s) => ({ ...s, default_capacity: null })),
+    packages: packages.filter((p) => packageIds.has(p.id)),
+    periods,
+    yearRange: min != null && max != null ? { min, max } : null,
+    loadedYears: years,
+    readOnly: true,
+  };
+}
+
+/** The columns a read-only viewer's departure is built from. markup_fixed is read to price a vacation, never sent. */
+const VIEW_DEPARTURE_SELECT =
+  "id, package_id, series_id, code, season_year, start_date, end_date, season, currency, sale_status, card_badge, date_labels, arrival_airport, return_airport, itinerary_id, meeting_at, flight_mode, flight_price, baggage_included, meal_included, transfers_included, connection_out, connection_back, child_max_age, senior_min_age, senior_discount, markup_fixed";
+
+/** A block's schedule. block_status and is_deleted are read to keep live blocks only, never sent. */
+const VIEW_FLIGHT_SELECT =
+  "id, block_status, is_deleted, airline_code, inbound_airline_code, metadata_name, outbound_flight_number, outbound_departure_airport, outbound_arrival_airport, outbound_departure_time, outbound_arrival_time, inbound_flight_number, inbound_departure_airport, inbound_arrival_airport, inbound_departure_time, inbound_arrival_time";
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * One departure for a read-only viewer: what a sales agent needs to sell it
+ * and nothing else (the shape itself is the allowlist - see DepartureViewData).
+ * Only a departure on sale (published, not deleted) is found. Staff may call it
+ * too and get the same view.
+ */
+export async function getDepartureView(ref: { id?: string; code?: string }): Promise<ActionResult<DepartureViewData>> {
+  try {
+    const { company } = await requireCompanyViewer("tours");
+    const db = toursDb();
+    const onSale = () =>
+      db
+        .from("departures")
+        .select(VIEW_DEPARTURE_SELECT)
+        .eq("company_id", company.id)
+        .eq("is_published", true)
+        .is("is_deleted", null);
+
+    let found: NonNullable<Awaited<ReturnType<typeof onSale>>["data"]>[number] | null = null;
+    if (ref.id && UUID.test(ref.id)) {
+      found = must(await onSale().eq("id", ref.id).maybeSingle());
+    } else if (ref.code && ref.code.trim()) {
+      // A code repeats across season years: the next one to depart, else the latest.
+      const matches = must(await onSale().eq("code", ref.code.trim().toUpperCase()).order("start_date", { ascending: true })) ?? [];
+      const today = todayIso();
+      found = matches.find((m) => m.end_date >= today) ?? matches[matches.length - 1] ?? null;
+    }
+    if (!found) throw new UserError("היציאה לא נמצאה, או שהיא לא במכירה כרגע");
+    const dep = found;
+
+    const [series, pkg, itinerary, prices, options, promotions, allocations, stats] = await Promise.all([
+      db
+        .from("series")
+        .select("code, label, arrival_airport, return_airport, child_max_age, senior_min_age, senior_discount")
+        .eq("company_id", company.id)
+        .eq("id", dep.series_id)
+        .maybeSingle(),
+      db.from("packages").select("name, kind").eq("company_id", company.id).eq("id", dep.package_id).maybeSingle(),
+      dep.itinerary_id
+        ? db
+            .from("package_itineraries")
+            .select("label, arrival_city, return_city")
+            .eq("company_id", company.id)
+            .eq("package_id", dep.package_id)
+            .eq("id", dep.itinerary_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      db.from("departure_prices").select("pax_type, room_position, price").eq("company_id", company.id).eq("departure_id", dep.id),
+      db
+        .from("departure_options")
+        .select("kind, position, ref_code, label, board, nights, price, room_prices")
+        .eq("company_id", company.id)
+        .eq("departure_id", dep.id)
+        .order("kind")
+        .order("position"),
+      db
+        .from("promotions")
+        .select("id, kind, value, label, valid_until, show_on_card, is_active, departure_id")
+        .eq("company_id", company.id)
+        .eq("is_active", true)
+        .or(`departure_id.eq.${dep.id},series_id.eq.${dep.series_id}`)
+        .order("kind"),
+      db
+        .from("flight_allocations")
+        .select("flight_id, legs, created_at")
+        .eq("company_id", company.id)
+        .eq("departure_id", dep.id)
+        .order("created_at"),
+      loadStats(company.id, [dep.id]),
+    ]);
+
+    const seriesRow = must(series);
+    const pkgRow = must(pkg);
+    const itineraryRow = must(itinerary);
+    const priceRows = must(prices) ?? [];
+    const optionRows = must(options) ?? [];
+    const allocationRows = must(allocations) ?? [];
+    const flightIds = Array.from(new Set(allocationRows.map((a) => a.flight_id)));
+    const hotelCodes = optionRows.flatMap((o) => (o.kind === "hotel" && o.ref_code ? [o.ref_code] : []));
+
+    const [flightRows, hotelRows] = await Promise.all([
+      flightIds.length
+        ? supabaseTyped.from("flights").select(VIEW_FLIGHT_SELECT).eq("company_id", company.id).in("id", flightIds)
+        : Promise.resolve({ data: [], error: null }),
+      hotelCodes.length
+        ? db.from("hotels").select("code, name, city").eq("company_id", company.id).in("code", hotelCodes)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    const flightById = new Map((must(flightRows) ?? []).map((f) => [f.id, f]));
+    const hotelByCode = new Map((must(hotelRows) ?? []).map((h) => [h.code, h]));
+
+    // Live blocks only, and only their schedule.
+    const flights: ViewFlight[] = [];
+    for (const a of allocationRows) {
+      const f = flightById.get(a.flight_id);
+      if (!f || !isLiveBlock(f)) continue;
+      flights.push({
+        legs: a.legs as AllocationLegs,
+        airline_code: f.airline_code,
+        inbound_airline_code: f.inbound_airline_code,
+        airline_name: f.metadata_name || null,
+        outbound_flight_number: f.outbound_flight_number,
+        outbound_departure_airport: f.outbound_departure_airport,
+        outbound_arrival_airport: f.outbound_arrival_airport,
+        outbound_departure_time: f.outbound_departure_time,
+        outbound_arrival_time: f.outbound_arrival_time,
+        inbound_flight_number: f.inbound_flight_number,
+        inbound_departure_airport: f.inbound_departure_airport,
+        inbound_arrival_airport: f.inbound_arrival_airport,
+        inbound_departure_time: f.inbound_departure_time,
+        inbound_arrival_time: f.inbound_arrival_time,
+      });
+    }
+
+    // Vacation parts, priced the way the site prices them (vacationDoublePerPerson
+    // in departure-utils): room / people + default ticket + flight + fixed
+    // markup. The viewer gets the finished price per person, not the parts.
+    const ticketRows = optionRows.filter((o) => o.kind === "ticket");
+    const defaultTicket = Number(ticketRows[0]?.price ?? 0);
+    const flightPart = dep.flight_mode === "priced" ? Number(dep.flight_price ?? 0) : 0;
+    const markup = Number(dep.markup_fixed ?? 0);
+    const perPerson = (room: number | null, people: number): number | null =>
+      room != null && room > 0 ? round2(room / people + defaultTicket + flightPart + markup) : null;
+    const hotels: ViewHotelOption[] = optionRows
+      .filter((o) => o.kind === "hotel")
+      .map((o) => {
+        const room = readRoomPrices(o.room_prices);
+        const catalog = o.ref_code ? hotelByCode.get(o.ref_code) : undefined;
+        return {
+          name: catalog?.name ?? o.label ?? o.ref_code ?? "מלון",
+          city: catalog?.city ?? null,
+          board: o.board,
+          nights: o.nights,
+          perPerson: { double: perPerson(room.double, 2), triple: perPerson(room.triple, 3), quad: perPerson(room.quad, 4) },
+        };
+      });
+    const tickets: ViewTicketOption[] = ticketRows.map((o) => ({
+      label: o.label,
+      extra: o.price == null ? null : round2(Number(o.price) - defaultTicket),
+    }));
+
+    const stat = stats.get(dep.id) ?? EMPTY_STATS;
+    return ok({
+      departure: {
+        id: dep.id,
+        code: dep.code,
+        season_year: dep.season_year,
+        start_date: dep.start_date,
+        end_date: dep.end_date,
+        season: dep.season,
+        currency: dep.currency,
+        sale_status: dep.sale_status,
+        card_badge: dep.card_badge,
+        date_labels: dep.date_labels,
+        arrival_airport: dep.arrival_airport ?? seriesRow?.arrival_airport ?? null,
+        return_airport: dep.return_airport ?? seriesRow?.return_airport ?? null,
+        meeting_at: dep.meeting_at,
+        flight_mode: dep.flight_mode,
+        flight_price: dep.flight_price,
+        baggage_included: dep.baggage_included,
+        meal_included: dep.meal_included,
+        transfers_included: dep.transfers_included,
+        connection_out: dep.connection_out,
+        connection_back: dep.connection_back,
+        child_max_age: dep.child_max_age ?? seriesRow?.child_max_age ?? null,
+        senior_min_age: dep.senior_min_age ?? seriesRow?.senior_min_age ?? null,
+        senior_discount: dep.senior_discount ?? seriesRow?.senior_discount ?? null,
+      },
+      series: seriesRow ? { code: seriesRow.code, label: seriesRow.label } : null,
+      package: pkgRow ? { name: pkgRow.name, kind: pkgRow.kind } : null,
+      itinerary: itineraryRow
+        ? { label: itineraryRow.label, arrival_city: itineraryRow.arrival_city, return_city: itineraryRow.return_city }
+        : null,
+      prices: priceRows.map((p) => ({ pax_type: p.pax_type, room_position: p.room_position, price: Number(p.price) })),
+      hotels,
+      tickets,
+      doublePrice: doublePricePerPerson({
+        prices: toPriceMatrix(priceRows),
+        options: optionRows,
+        flight_mode: dep.flight_mode,
+        flight_price: dep.flight_price,
+        markup_fixed: dep.markup_fixed,
+      }),
+      promotions: (must(promotions) ?? []).map((p) => ({
+        id: p.id,
+        kind: p.kind,
+        value: p.value,
+        label: p.label,
+        valid_until: p.valid_until,
+        show_on_card: p.show_on_card,
+        is_active: p.is_active,
+        scope: p.departure_id ? ("departure" as const) : ("series" as const),
+      })),
+      flights,
+      seats: { allocated: stat.allocated, sold: stat.sold, remaining: stat.remaining },
+    });
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 // ---------------------------------------------------------------- board
 export async function getDeparturesBoard(input: {
   years: number[];
   includeDeleted?: boolean;
 }): Promise<ActionResult<BoardData>> {
   try {
-    const { company } = await requireCompany("tours");
+    // Staff, or a sales agent of the company - the agent gets the viewer's board.
+    const { company, readOnly } = await requireCompanyViewer("tours");
     const years = (input.years ?? []).filter((y) => Number.isInteger(y) && y > 2000 && y < 2100);
+    if (readOnly) return ok(await loadViewerBoard(company.id, years));
 
     const edge = (ascending: boolean) =>
       toursDb()

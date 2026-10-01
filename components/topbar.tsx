@@ -8,6 +8,8 @@ import { BookOpen, ChevronRight, Search } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { guideLinkFor } from "@/lib/guide-link";
 import { breadcrumbsFor } from "@/lib/nav";
+import { isToursAgentPath } from "@/lib/auth/tours-agent";
+import { TOURS_AGENT_ROLE } from "@/types/auth.types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -23,9 +25,13 @@ import { CompanySwitcher } from "@/components/company-switcher";
 export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const pathname = usePathname();
   const { user } = useAuth();
-  const crumbs = breadcrumbsFor(pathname);
-  // Not on the guide itself, and not for forms_operator (middleware keeps them in /forms).
-  const showGuide = !pathname.startsWith("/guide") && user?.role !== "forms_operator";
+  const isToursAgent = user?.role === TOURS_AGENT_ROLE;
+  // A tours_agent sees only the crumbs it may open - the rest would be links
+  // that middleware bounces straight back.
+  const crumbs = breadcrumbsFor(pathname).filter((crumb) => !isToursAgent || isToursAgentPath(crumb.href));
+  // Not on the guide itself, and not for forms_operator or tours_agent
+  // (middleware keeps them in /forms and on the departures board).
+  const showGuide = !pathname.startsWith("/guide") && user?.role !== "forms_operator" && !isToursAgent;
 
   return (
     <header className="surface-chrome sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b px-3">

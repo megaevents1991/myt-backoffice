@@ -20,6 +20,7 @@ import {
   ADMIN_ROLES,
   PARTNER_ROLES,
   STAFF_ROLES,
+  TOURS_AGENT_ROLE,
   type Role,
 } from "@/types/auth.types";
 import { supabase } from "@/lib/supabase-server";
@@ -36,7 +37,8 @@ import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
  * above the real session.
  *
  * A STAFF session is checked against the live profile (liveStaffSession), so
- * what /users says now - not what it said at sign-in - decides.
+ * what /users says now - not what it said at sign-in - decides. A tours_agent
+ * session gets the same check (liveToursAgentSession).
  */
 export async function getSession(): Promise<SessionPayload | null> {
   const store = await cookies();
@@ -51,7 +53,28 @@ export async function getSession(): Promise<SessionPayload | null> {
   if (session && STAFF_ROLES.includes(session.role)) {
     return liveStaffSession(session);
   }
+  if (session && session.role === TOURS_AGENT_ROLE) {
+    return liveToursAgentSession(session);
+  }
   return session;
+}
+
+/**
+ * A tours_agent holds the site-wide cookie like staff, signed for a week. The
+ * same live re-check partners and forms_operator get (assertActorActive), done
+ * here so EVERY reader of the session sees it - the guard of the departures
+ * board, the company context of the client, the audit log:
+ *  - no row, a failed read or is_active=false -> no session (fail closed);
+ *  - the role is no longer tours_agent -> no session. The cookie cannot carry
+ *    another role (middleware routes by the role it was signed with), so a
+ *    promoted or moved account signs in again.
+ */
+async function liveToursAgentSession(
+  session: SessionPayload,
+): Promise<SessionPayload | null> {
+  const profile = await loadActorProfile(session.sub);
+  if (!profile || profile.is_active === false) return null;
+  return profile.role === TOURS_AGENT_ROLE ? session : null;
 }
 
 /**
@@ -147,11 +170,13 @@ async function readActorProfile(sub: string): Promise<ActorProfile | null> {
  *    failed). This gate must never lock the Mega Events team out of its own
  *    backoffice, so a failed read opens it.
  * Who is refused: admin / editor whose memberships exist and none of them is
- * Mega Events.
+ * Mega Events; and every tours_agent - that role belongs to a tours company
+ * and has no Mega Events floor, whatever its memberships say.
  */
 export async function worksInMegaEvents(
   session: SessionPayload,
 ): Promise<boolean> {
+  if (session.role === TOURS_AGENT_ROLE) return false;
   if (session.role !== "admin" && session.role !== "editor") return true;
   const companyIds = await loadCompanyIds(session.sub);
   if (companyIds === null || companyIds.length === 0) return true;

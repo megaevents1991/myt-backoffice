@@ -3,7 +3,7 @@
 import { requireAdmin } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import type { Role, UserProfile } from "@/types/auth.types";
-import { ADMIN_ROLES, PARTNER_ROLES } from "@/types/auth.types";
+import { ADMIN_ROLES, PARTNER_ROLES, TOURS_AGENT_ROLE } from "@/types/auth.types";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
 import { createManagedUser, resetPasswordById } from "@/lib/auth/user-create";
 import { generateAgentSlug } from "@/lib/portal-attribution";
@@ -27,8 +27,9 @@ const CONTRACT_TYPES: Record<string, string> = {
 
 /**
  * Hierarchy: superadmin manages everyone; admin manages only editor/agent/
- * affiliate. Admins can never touch admin, superadmin or office_manager
- * accounts - appointing/managing office managers is a superadmin call (Dor).
+ * affiliate and the other non-staff roles (forms_operator, tours_agent).
+ * Admins can never touch admin, superadmin or office_manager accounts -
+ * appointing/managing office managers is a superadmin call (Dor).
  */
 function canManage(actorRole: Role, targetRole: Role): boolean {
   if (actorRole === "superadmin") return true;
@@ -100,7 +101,9 @@ export async function createUser(input: {
     password: input.password,
     display_name: input.display_name,
     role: input.role,
-    partner_tracking_code: input.partner_tracking_code ?? null,
+    // A tours_agent is not a Mega Events partner: it never carries a partner link.
+    partner_tracking_code:
+      input.role === TOURS_AGENT_ROLE ? null : (input.partner_tracking_code ?? null),
     phone: input.phone ?? null,
     created_by: actor.sub,
   });
@@ -164,6 +167,13 @@ export async function updateUser(
     update.partner_tracking_code = input.partner_tracking_code;
   if (input.phone !== undefined) update.phone = input.phone;
   if (input.is_active !== undefined) update.is_active = input.is_active;
+  // A tours_agent is not a Mega Events partner: saving one drops any partner link.
+  if (
+    (input.role ?? targetRole) === TOURS_AGENT_ROLE &&
+    (input.role !== undefined || input.partner_tracking_code !== undefined)
+  ) {
+    update.partner_tracking_code = null;
+  }
 
   // A role change INTO a partner role must leave the user with a slug, or
   // their links carry no utm_content and every sale lands unattributed.

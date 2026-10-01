@@ -11,6 +11,12 @@
  * caller asks to keep it there, and the last membership of an account is never
  * removed here - that would silently turn it into a Mega Events account.
  *
+ * A sales agent of the company (role tours_agent) is assigned here too, and the
+ * rules above do not apply to it: that role has no Mega Events floor
+ * (lib/company.ts). It never gets a Mega Events row - "keep Mega Events" is
+ * ignored for it - and its last membership may be removed: it then works
+ * nowhere until it is assigned again.
+ *
  * Company admins and superadmins only. The account itself (name, password,
  * role, active) is managed in the Users screen; this file only assigns it.
  */
@@ -20,10 +26,11 @@ import { requireCompany, type Company } from "@/lib/company";
 import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
+import { TOURS_AGENT_ROLE } from "@/types/auth.types";
 import type { SessionPayload } from "@/lib/auth/session";
 import type { ActionResult, CompanyMemberRow } from "@/components/tours/content/shared";
 
-const ASSIGNABLE_ROLES = ["admin", "editor"];
+const ASSIGNABLE_ROLES = ["admin", "editor", TOURS_AGENT_ROLE];
 
 const NOT_ADMIN = { success: false as const, error: "שיוך משתמשים לחברה פתוח למנהל החברה בלבד" };
 const isAdmin = (session: SessionPayload): boolean => session.role === "superadmin" || session.role === "admin";
@@ -65,9 +72,10 @@ export interface AddMemberResult {
 }
 
 /**
- * Adds an existing staff account to the active company, by its email.
- * `keepMegaEvents` matters only for an account that has no membership yet (a
- * Mega Events account by default): true keeps it in Mega Events as well.
+ * Adds an existing staff account, or a tours_agent, to the active company, by
+ * its email. `keepMegaEvents` matters only for a STAFF account that has no
+ * membership yet (a Mega Events account by default): true keeps it in Mega
+ * Events as well. It never applies to a tours_agent.
  */
 export async function addCompanyMember(
   email: string,
@@ -93,7 +101,7 @@ export async function addCompanyMember(
       return { success: false, error: "מנהל-על רואה כל חברה, אין צורך לשייך אותו." };
     }
     if (!ASSIGNABLE_ROLES.includes(profile.role)) {
-      return { success: false, error: "אפשר לשייך רק משתמשי צוות (מנהל או עורך)." };
+      return { success: false, error: "אפשר לשייך רק משתמשי צוות (מנהל או עורך) או סוכן טיולים." };
     }
     if (!profile.is_active) return { success: false, error: "המשתמש מושבת. מפעילים אותו במסך המשתמשים לפני השיוך." };
 
@@ -105,29 +113,44 @@ export async function addCompanyMember(
     const companyIds = (existing ?? []).map((row) => row.company_id);
     if (companyIds.includes(company.id)) return { success: false, error: "המשתמש כבר משויך לחברה הזו." };
 
-    // An account nobody assigned yet works in Mega Events by default.
+    // A tours_agent works only where it is assigned: no Mega Events default, and never a Mega Events row.
+    const isToursAgent = profile.role === TOURS_AGENT_ROLE;
+    // A staff account nobody assigned yet works in Mega Events by default.
     const unassigned = companyIds.length === 0;
+    const keepsEvents = !isToursAgent && unassigned && keepMegaEvents && company.id !== MEGA_EVENTS_COMPANY_ID;
     const rows = [{ user_id: profile.id, company_id: company.id, role: profile.role }];
-    if (unassigned && keepMegaEvents && company.id !== MEGA_EVENTS_COMPANY_ID) {
+    if (keepsEvents) {
       rows.push({ user_id: profile.id, company_id: MEGA_EVENTS_COMPANY_ID, role: profile.role });
     }
     const { error: insertError } = await supabaseTyped.from("company_members").insert(rows);
     if (insertError) throw insertError;
 
     const name = profile.display_name || profile.email;
-    const staysInEvents = companyIds.includes(MEGA_EVENTS_COMPANY_ID) || (unassigned && keepMegaEvents);
-    const note = staysInEvents
-      ? `${name} עובד/ת מעכשיו גם ב-${company.name} וגם במגה איבנטס.`
-      : unassigned
-        ? `${name} עובד/ת מעכשיו רק ב-${company.name}, בלי גישה למסכי מגה איבנטס.`
-        : `${name} שויך/ה ל-${company.name}.`;
+    const staysInEvents = !isToursAgent && (companyIds.includes(MEGA_EVENTS_COMPANY_ID) || keepsEvents);
+    const note = isToursAgent
+      ? `${name} שויך/ה ל-${company.name} כסוכן/ת טיולים: לוח היציאות בלבד, לצפייה.`
+      : staysInEvents
+        ? `${name} עובד/ת מעכשיו גם ב-${company.name} וגם במגה איבנטס.`
+        : unassigned
+          ? `${name} עובד/ת מעכשיו רק ב-${company.name}, בלי גישה למסכי מגה איבנטס.`
+          : `${name} שויך/ה ל-${company.name}.`;
 
     await logAudit({
       action: "create",
       entityType: "company_member",
       entityId: profile.id,
-      changes: { companies: { from: unassigned ? ["mega-events (default)"] : companyIds, to: rows.map((r) => r.company_id) } },
-      metadata: { company: company.slug, email: profile.email, keepMegaEvents: unassigned ? keepMegaEvents : null },
+      changes: {
+        companies: {
+          from: unassigned ? (isToursAgent ? [] : ["mega-events (default)"]) : companyIds,
+          to: rows.map((r) => r.company_id),
+        },
+      },
+      metadata: {
+        company: company.slug,
+        email: profile.email,
+        role: profile.role,
+        keepMegaEvents: unassigned && !isToursAgent ? keepMegaEvents : null,
+      },
     });
     revalidatePath("/tours/settings");
     return { success: true, data: { members: await membersOf(company), note } };
@@ -150,7 +173,19 @@ export async function removeCompanyMember(userId: string): Promise<ActionResult<
     if (existingError) throw existingError;
     const companyIds = (existing ?? []).map((row) => row.company_id);
     if (!companyIds.includes(company.id)) return { success: false, error: "המשתמש לא משויך לחברה הזו." };
-    if (companyIds.length === 1) {
+
+    // The "last membership" rule protects staff from turning into Mega Events
+    // accounts. A tours_agent has no such default - with no membership it
+    // simply works nowhere - so its last membership may go. A failed read of
+    // the role keeps the rule (the stricter answer).
+    const { data: target, error: targetError } = await supabaseTyped
+      .from("user_profiles")
+      .select("role")
+      .eq("id", userId)
+      .maybeSingle();
+    if (targetError) throw targetError;
+    const isToursAgent = target?.role === TOURS_AGENT_ROLE;
+    if (companyIds.length === 1 && !isToursAgent) {
       return {
         success: false,
         error:

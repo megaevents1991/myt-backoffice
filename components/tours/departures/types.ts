@@ -122,6 +122,13 @@ export interface BoardRow
   promotions: BoardPromotion[];
   flights: BoardFlight[];
   stats: BoardStats;
+  /**
+   * Set by the server for a read-only viewer (tours_agent) only: the price per
+   * person in a double room, already worked out. That viewer does not receive
+   * the parts a vacation price is derived from (`options`, `markup_fixed`), so
+   * the row cannot compute it.
+   */
+  doublePrice?: { price: number | null; derived: boolean };
 }
 
 export interface BoardData {
@@ -133,6 +140,11 @@ export interface BoardData {
   yearRange: { min: number; max: number } | null;
   /** The season years `rows` was loaded for; empty = every year. */
   loadedYears: number[];
+  /**
+   * The caller is a read-only viewer (tours_agent): `rows` hold only departures
+   * on sale and only the viewer's fields, and every edit action will refuse.
+   */
+  readOnly?: boolean;
 }
 
 // ---------------------------------------------------------------- card
@@ -216,6 +228,98 @@ export interface DepartureCardData {
   allocations: CardAllocation[];
   sales: CardSalesEntry[];
   stats: BoardStats;
+}
+
+// ---------------------------------------------------------------- read-only view
+/**
+ * A departure as a sales agent (tours_agent) receives it - getDepartureView.
+ * These shapes are the allowlist: there is no field here for cost, PNR, docket,
+ * supplier or contract, internal notes, capacity, markup, block status or who
+ * entered a sale, so none of them can reach that viewer. The future agents
+ * portal reads the same shapes.
+ */
+export interface ViewDeparture {
+  id: string;
+  code: string;
+  season_year: number;
+  start_date: string;
+  end_date: string;
+  season: string | null;
+  currency: string;
+  sale_status: string;
+  card_badge: string | null;
+  date_labels: string[];
+  /** Both ends of the route, the series' value where the departure has none. */
+  arrival_airport: string | null;
+  return_airport: string | null;
+  meeting_at: string | null;
+  flight_mode: string;
+  /** What a passenger pays for the flight when it is priced apart. */
+  flight_price: number;
+  baggage_included: boolean;
+  meal_included: boolean;
+  transfers_included: boolean;
+  connection_out: string | null;
+  connection_back: string | null;
+  /** Age rules, the series' value where the departure has none. */
+  child_max_age: number | null;
+  senior_min_age: number | null;
+  senior_discount: number | null;
+}
+
+/** The schedule of one live flight block. No id, no status, no PNR, no cost. */
+export interface ViewFlight {
+  legs: AllocationLegs;
+  airline_code: string;
+  inbound_airline_code: string | null;
+  airline_name: string | null;
+  outbound_flight_number: string;
+  outbound_departure_airport: string;
+  outbound_arrival_airport: string;
+  outbound_departure_time: string;
+  outbound_arrival_time: string;
+  inbound_flight_number: string;
+  inbound_departure_airport: string;
+  inbound_arrival_airport: string;
+  inbound_departure_time: string;
+  inbound_arrival_time: string;
+}
+
+/** A hotel of a vacation package, priced the way the customer sees it. */
+export interface ViewHotelOption {
+  name: string;
+  city: string | null;
+  board: string | null;
+  nights: number | null;
+  /** Price per person by room type, with the default ticket, the flight and the markup inside. */
+  perPerson: { double: number | null; triple: number | null; quad: number | null };
+}
+
+/** A ticket category of a vacation package. */
+export interface ViewTicketOption {
+  label: string | null;
+  /** Per person, on top of the default (first) category. 0 for the default itself. */
+  extra: number | null;
+}
+
+export interface DepartureViewData {
+  departure: ViewDeparture;
+  series: { code: string; label: string | null } | null;
+  package: { name: string; kind: string } | null;
+  /** The day-by-day variant this departure follows, when it is not the main one. */
+  itinerary: { label: string | null; arrival_city: string | null; return_city: string | null } | null;
+  /** The occupancy matrix (organized trips): price per person by room position. */
+  prices: { pax_type: string; room_position: number; price: number }[];
+  /** Vacation packages: hotels and ticket categories. Empty for an organized trip. */
+  hotels: ViewHotelOption[];
+  tickets: ViewTicketOption[];
+  /** Per person in a double room: the matrix row, else the vacation "from" price. */
+  doublePrice: { price: number | null; derived: boolean };
+  /** Active promotions only - the departure's own and its series'. */
+  promotions: BoardPromotion[];
+  /** Live blocks only (confirmed / operational / ticketed). Empty = "flight details to follow". */
+  flights: ViewFlight[];
+  seats: { allocated: number; sold: number; remaining: number };
 }
 
 // ---------------------------------------------------------------- inputs

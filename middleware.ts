@@ -6,7 +6,8 @@ import {
   SESSION_COOKIE,
   verifySessionValue,
 } from "@/lib/auth/session";
-import { PARTNER_ROLES } from "@/types/auth.types";
+import { PARTNER_ROLES, TOURS_AGENT_ROLE } from "@/types/auth.types";
+import { TOURS_AGENT_HOME, isToursAgentPath } from "@/lib/auth/tours-agent";
 import { COMPANY_HOME_HINT_COOKIE } from "@/lib/company-ids";
 
 export async function middleware(req: NextRequest) {
@@ -53,7 +54,9 @@ export async function middleware(req: NextRequest) {
       ? "/portal"
       : session?.role === "forms_operator"
         ? "/forms"
-        : "/dashboard";
+        : session?.role === TOURS_AGENT_ROLE
+          ? TOURS_AGENT_HOME
+          : "/dashboard";
 
   // Signed-in user hitting an auth page → send to their home.
   if (session && isAuthPage) {
@@ -96,14 +99,30 @@ export async function middleware(req: NextRequest) {
     ) {
       return NextResponse.redirect(new URL("/forms", req.url));
     }
+    // tours_agent may ONLY use its own screens (today the departures board of
+    // its company, read-only) - same confinement pattern. The login page and
+    // the OAuth callback send every non-partner to /dashboard, so this
+    // redirect is also its landing. What it may READ there is decided on the
+    // server (requireCompanyViewer); this only keeps it off the other pages.
+    if (
+      session.role === TOURS_AGENT_ROLE &&
+      pathname !== "/" &&
+      !isToursAgentPath(pathname)
+    ) {
+      return NextResponse.redirect(new URL(TOURS_AGENT_HOME, req.url));
+    }
     // A staff browser that works in a company with no events (Mega Family)
     // lands on that company's home instead of the Mega Events dashboard - the
     // login page and the OAuth callback both send staff to /dashboard. A
     // routing hint only (lib/company-ids.ts): partners and forms_operator were
     // already sent home above, and Mega Events browsers never carry "tours".
+    // Not when the URL carries a company deep link (`?company=<slug>`,
+    // contexts/company-context.tsx): the link may be about to change the
+    // company, and this redirect would drop it.
     if (
       pathname === "/dashboard" &&
-      req.cookies.get(COMPANY_HOME_HINT_COOKIE)?.value === "tours"
+      req.cookies.get(COMPANY_HOME_HINT_COOKIE)?.value === "tours" &&
+      !req.nextUrl.searchParams.has("company")
     ) {
       return NextResponse.redirect(new URL("/tours", req.url));
     }

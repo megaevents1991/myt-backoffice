@@ -17,6 +17,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useCompany } from "@/contexts/company-context";
 import { useToast } from "@/hooks/use-toast";
 import { switchToMyPartnerPortal } from "@/lib/actions/impersonate-actions";
+import { ROLE_LABELS, TOURS_AGENT_ROLE } from "@/types/auth.types";
 import {
   Collapsible,
   CollapsibleContent,
@@ -77,6 +78,8 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const groups = visibleGroups(user?.role, productTypes);
   const active = activeHref(pathname, groups);
   const isFormsOperator = user?.role === "forms_operator";
+  // A tours_agent is not a Mega Events partner: no "מצב סוכן" for it either.
+  const isToursAgent = user?.role === TOURS_AGENT_ROLE;
   const displayName = user?.display_name || user?.email || "";
 
   const closeOnMobile = () => {
@@ -180,7 +183,7 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
                       {displayName}
                     </span>
                     <span className="block truncate text-[10px] capitalize text-sidebar-foreground/60">
-                      {user?.role}
+                      {(user && ROLE_LABELS[user.role]?.he) ?? user?.role}
                     </span>
                   </span>
                 </SidebarMenuButton>
@@ -188,8 +191,9 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
               <DropdownMenuContent side="top" align="start" className="w-56">
                 {/* Dual-role: a staff user linked to a partner code opens /portal
                     as that partner in a new tab - the dashboard session stays.
-                    Not for forms operators - they have no partner identity. */}
-                {!isFormsOperator && (
+                    Not for forms operators or tours agents - they have no
+                    partner identity. */}
+                {!isFormsOperator && !isToursAgent && (
                   <DropdownMenuItem
                     className="gap-2"
                     onSelect={async () => {

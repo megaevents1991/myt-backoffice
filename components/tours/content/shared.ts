@@ -432,6 +432,7 @@ export const COMPANY_ROLE_LABELS: Record<string, string> = {
   agent: "סוכן",
   affiliate: "שותף",
   forms_operator: "מפעיל טפסים",
+  tours_agent: "סוכן טיולים",
 };
 
 // ---------------------------------------------------------------- small helpers

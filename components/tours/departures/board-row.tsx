@@ -25,7 +25,7 @@ import {
   suggestedSaleStatus,
 } from "./departure-utils";
 import type { BoardRow, BoardSeries } from "./types";
-import { Chip, Ltr, SaleStatusSelect, Toggle } from "./ui-bits";
+import { Chip, Ltr, SaleStatusBadge, SaleStatusSelect, Toggle } from "./ui-bits";
 import { SALE_STATUS_LABELS } from "@/types/tours.types";
 
 export type CardTab = "general" | "prices" | "promotions" | "flights" | "sales";
@@ -48,6 +48,11 @@ export interface BoardRowProps {
   onPriceEdit: (id: string | null) => void;
   /** `next` = also move the editor to the row below (Enter), like a spreadsheet. */
   onDoublePrice: (row: BoardRow, price: number | null, next: boolean) => void;
+  /**
+   * A sales agent's view: no checkbox, no publish toggle, no docket, nothing
+   * editable in place. The cells that opened an editor open the card instead.
+   */
+  readOnly?: boolean;
 }
 
 const cell = "px-1.5 py-1.5 align-middle";
@@ -174,16 +179,20 @@ function BoardRowImpl({
   onLabels,
   onPriceEdit,
   onDoublePrice,
+  readOnly = false,
 }: BoardRowProps) {
   const [editingLabels, setEditingLabels] = useState(false);
   const deleted = Boolean(row.is_deleted);
+  /** Cells that edit in place do nothing of the kind on a deleted row or for a read-only viewer. */
+  const locked = deleted || readOnly;
   const route = effectiveRoute(row, series);
   const type = routeType(route.arrival_airport, route.return_airport);
   const routeLabel = departureRouteLabel(route.arrival_airport, route.return_airport);
   const inheritedRoute = !row.arrival_airport || !row.return_airport;
   const nights = nightsBetween(row.start_date, row.end_date);
 
-  const { price: double, derived } = doublePricePerPerson(row);
+  // A read-only viewer gets the finished price from the server (it has no options or markup to derive it from).
+  const { price: double, derived } = row.doublePrice ?? doublePricePerPerson(row);
   const discount = activeFixedDiscount(row.promotions);
   const sym = currencySymbol(row.currency);
 
@@ -206,31 +215,35 @@ function BoardRowImpl({
         (isPast || deleted) && "text-muted-foreground",
       )}
     >
-      <td className={cn(cell, "w-8 ps-2")}>
-        <input
-          type="checkbox"
-          className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
-          checked={selected}
-          aria-label={`בחירת ${row.code}`}
-          onChange={(e) => onSelect(row.id, e.target.checked)}
-        />
-      </td>
-
-      <td className={cn(cell, "w-12")}>
-        {busy ? (
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        ) : (
-          <Toggle
-            size="sm"
-            checked={row.is_published}
-            disabled={deleted}
-            label={row.is_published ? "מפורסם באתר - לחצו להסרה" : "לא מפורסם - לחצו לפרסום"}
-            onChange={(next) => onPublish(row, next)}
+      {!readOnly && (
+        <td className={cn(cell, "w-8 ps-2")}>
+          <input
+            type="checkbox"
+            className="h-4 w-4 cursor-pointer accent-[hsl(var(--primary))]"
+            checked={selected}
+            aria-label={`בחירת ${row.code}`}
+            onChange={(e) => onSelect(row.id, e.target.checked)}
           />
-        )}
-      </td>
+        </td>
+      )}
 
-      <td className={cn(cell, "whitespace-nowrap")}>
+      {!readOnly && (
+        <td className={cn(cell, "w-12")}>
+          {busy ? (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          ) : (
+            <Toggle
+              size="sm"
+              checked={row.is_published}
+              disabled={deleted}
+              label={row.is_published ? "מפורסם באתר - לחצו להסרה" : "לא מפורסם - לחצו לפרסום"}
+              onChange={(next) => onPublish(row, next)}
+            />
+          )}
+        </td>
+      )}
+
+      <td className={cn(cell, "whitespace-nowrap", readOnly && "ps-3")}>
         <button
           type="button"
           onClick={() => onOpen(row)}
@@ -281,13 +294,17 @@ function BoardRowImpl({
       <td className={cn(cell, "whitespace-nowrap")}>{row.season ?? ""}</td>
 
       <td className={cell}>
-        <SaleStatusSelect value={row.sale_status} disabled={deleted || busy} onChange={(next) => onSaleStatus(row, next)} />
+        {readOnly ? (
+          <SaleStatusBadge status={row.sale_status} />
+        ) : (
+          <SaleStatusSelect value={row.sale_status} disabled={deleted || busy} onChange={(next) => onSaleStatus(row, next)} />
+        )}
       </td>
 
       <td
-        className={cn(cell, "min-w-24 max-w-52", !deleted && "cursor-text")}
-        onClick={() => !deleted && !editingLabels && setEditingLabels(true)}
-        title={deleted ? undefined : "לחצו לעריכת תגיות התאריך"}
+        className={cn(cell, "min-w-24 max-w-52", !locked && "cursor-text")}
+        onClick={() => !locked && !editingLabels && setEditingLabels(true)}
+        title={locked ? undefined : "לחצו לעריכת תגיות התאריך"}
       >
         {editingLabels ? (
           <LabelsEditor
@@ -301,7 +318,10 @@ function BoardRowImpl({
         ) : row.date_labels.length || row.card_badge ? (
           <span className="flex flex-wrap gap-1">
             {row.card_badge && (
-              <Chip className="border-destructive/30 bg-destructive/10 text-destructive" title="תגית הכרטיס - נערכת בכרטיס היציאה">
+              <Chip
+                className="border-destructive/30 bg-destructive/10 text-destructive"
+                title={readOnly ? "תגית הכרטיס באתר" : "תגית הכרטיס - נערכת בכרטיס היציאה"}
+              >
                 {row.card_badge}
               </Chip>
             )}
@@ -309,7 +329,7 @@ function BoardRowImpl({
               <Chip key={l}>{l}</Chip>
             ))}
           </span>
-        ) : (
+        ) : readOnly ? null : (
           <span className="text-muted-foreground/50">+</span>
         )}
       </td>
@@ -322,13 +342,15 @@ function BoardRowImpl({
         className={cn(cell, "whitespace-nowrap text-end tabular-nums", !deleted && "cursor-pointer")}
         onClick={() => {
           if (deleted || priceEditing) return;
-          if (derived) onOpen(row, "prices");
+          if (derived || readOnly) onOpen(row, "prices");
           else onPriceEdit(row.id);
         }}
         title={
           deleted
             ? undefined
-            : derived
+            : readOnly
+              ? "מחיר לאדם בחדר זוגי. לחצו לכל המחירים."
+              : derived
               ? "חבילת נופש: המחיר מחושב ממלון, כרטיס, טיסה ו-markup. לחצו לפתיחת לשונית המחירים."
               : "מחיר לאדם בחדר זוגי - לחצו לעריכה, Enter עובר לשורה הבאה"
         }
@@ -384,7 +406,17 @@ function BoardRowImpl({
 
       <td className={cn(cell, "whitespace-nowrap")}>
         <button type="button" onClick={() => onOpen(row, "flights")} className="text-start text-xs hover:underline">
-          {noLiveFlight ? (
+          {readOnly ? (
+            // The viewer gets live blocks only, and no block status.
+            noLiveFlight ? (
+              <span className="text-muted-foreground">יעודכן</span>
+            ) : (
+              <span>
+                <Ltr className="font-mono font-semibold">{Array.from(new Set(liveFlights.map((f) => f.airline))).join("+")}</Ltr>
+                {liveFlights.length > 1 && <span className="text-muted-foreground"> ×{liveFlights.length}</span>}
+              </span>
+            )
+          ) : noLiveFlight ? (
             <span className="font-semibold text-destructive">
               אין טיסה
               {row.flights.length > 0 && (
@@ -408,8 +440,13 @@ function BoardRowImpl({
       <td className={cn(cell, "whitespace-nowrap text-center tabular-nums")}>
         <button
           type="button"
-          onClick={() => onOpen(row, "sales")}
-          title={`משויכים ${row.stats.allocated} · נמכרו ${row.stats.sold} · יתרה ${row.stats.remaining}`}
+          // The sales tab is staff only; the viewer's card opens on the flights (the seats sit there).
+          onClick={() => onOpen(row, readOnly ? "flights" : "sales")}
+          title={
+            readOnly
+              ? `מקומות ${row.stats.allocated} · נמכרו ${row.stats.sold} · נשארו ${row.stats.remaining}`
+              : `משויכים ${row.stats.allocated} · נמכרו ${row.stats.sold} · יתרה ${row.stats.remaining}`
+          }
           className="hover:underline"
         >
           <Ltr>
@@ -424,7 +461,7 @@ function BoardRowImpl({
             </span>
           </Ltr>
         </button>
-        {suggestion && (
+        {suggestion && !readOnly && (
           <span
             className="ms-1 inline-flex align-middle text-warning"
             title={`לפי היתרה כדאי לשקול לשנות את סטטוס המכירה ל"${SALE_STATUS_LABELS[suggestion]}"`}
@@ -434,9 +471,11 @@ function BoardRowImpl({
         )}
       </td>
 
-      <td className={cn(cell, "pe-2 text-xs tabular-nums")} title={row.docket_no ?? undefined}>
-        <Ltr className="block max-w-[3.5rem] truncate">{row.docket_no ?? ""}</Ltr>
-      </td>
+      {!readOnly && (
+        <td className={cn(cell, "pe-2 text-xs tabular-nums")} title={row.docket_no ?? undefined}>
+          <Ltr className="block max-w-[3.5rem] truncate">{row.docket_no ?? ""}</Ltr>
+        </td>
+      )}
     </tr>
   );
 }
