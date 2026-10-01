@@ -20,6 +20,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import {
+  ArrowUpDown,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -240,6 +241,42 @@ function useScrollEdges(tableRef: React.RefObject<HTMLTableElement | null>): Scr
  * The table's own outline while the first rows load, in place of a bare
  * "Loading…" line that jumps into a full table when the data lands.
  */
+/** The empty state of a list - the one DataTable draws, for lists that are not a DataTable. */
+export function EmptyState({
+  title,
+  description,
+  action,
+}: {
+  title: string;
+  description?: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="mx-auto flex max-w-sm flex-col items-center gap-2 text-center">
+      <Inbox className="h-7 w-7 text-muted-foreground/60" />
+      <p className="font-medium">{title}</p>
+      {description && <p className="text-sm text-muted-foreground">{description}</p>}
+      {action}
+    </div>
+  );
+}
+
+/** A column header that sorts its column - the button every sortable DataTable column uses. */
+export function SortableHeader({
+  label,
+  column,
+}: {
+  label: React.ReactNode;
+  column: { toggleSorting: (desc?: boolean) => void; getIsSorted: () => false | "asc" | "desc" };
+}) {
+  return (
+    <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+      {label}
+      <ArrowUpDown className="ml-2 h-4 w-4" />
+    </Button>
+  );
+}
+
 export function DataTableSkeleton({
   rows = 8,
   label = "Loading",
@@ -593,22 +630,18 @@ export function DataTable<TData, TValue>({
             ) : (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={allColumns.length} className="h-40">
-                  <div className="mx-auto flex max-w-sm flex-col items-center gap-2 text-center">
-                    <Inbox className="h-7 w-7 text-muted-foreground/60" />
-                    <p className="font-medium">
-                      {searchValue
-                        ? "Nothing matches that search"
-                        : (emptyState?.title ?? "Nothing here yet")}
-                    </p>
-                    {(emptyState?.description || searchValue) && (
-                      <p className="text-sm text-muted-foreground">
-                        {searchValue
-                          ? "Try a shorter search, or clear the filters above."
-                          : emptyState?.description}
-                      </p>
-                    )}
-                    {!searchValue && emptyState?.action}
-                  </div>
+                  {searchValue ? (
+                    <EmptyState
+                      title="Nothing matches that search"
+                      description="Try a shorter search, or clear the filters above."
+                    />
+                  ) : (
+                    <EmptyState
+                      title={emptyState?.title ?? "Nothing here yet"}
+                      description={emptyState?.description}
+                      action={emptyState?.action}
+                    />
+                  )}
                 </TableCell>
               </TableRow>
             )}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, Download, ExternalLink, Loader2, PlusCircle, RefreshCw } from "lucide-react";
+import { Download, ExternalLink, Loader2, PlusCircle, RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { PageHeader } from "@/components/page-header";
-import { DataTable, DataTableSkeleton } from "@/components/data-table";
+import { DataTable, DataTableSkeleton, SortableHeader } from "@/components/data-table";
+import { downloadBase64 } from "@/lib/download";
+import { fmtInstant } from "@/lib/tours/format";
 import { useToast } from "@/hooks/use-toast";
 import { useSessionState } from "@/hooks/use-view-state";
 import { useCompany } from "@/contexts/company-context";
@@ -21,7 +23,6 @@ import type { ReservationPrefill } from "@/components/tours/reservations/types";
 import {
   LEAD_STATUSES,
   LEAD_STATUS_LABELS,
-  formatDayTime,
   leadStatusLabel,
   type LeadRow,
   type LeadsMeta,
@@ -64,31 +65,6 @@ function siteIdOf(path: string | null): number | null {
   const id = Number(new URLSearchParams(query).get("product_id"));
   return Number.isInteger(id) && id > 0 ? id : null;
 }
-
-function download(base64: string, fileName: string) {
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-  const blob = new Blob([bytes], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-const sortable = (label: string) =>
-  function SortHeader({ column }: { column: { toggleSorting: (desc?: boolean) => void; getIsSorted: () => false | "asc" | "desc" } }) {
-    return (
-      <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-        {label}
-        <ArrowUpDown className="ml-2 h-4 w-4" />
-      </Button>
-    );
-  };
 
 /**
  * /tours/leads - everything the site's forms sent, on the shared DataTable:
@@ -149,7 +125,7 @@ export function LeadsInbox() {
     const result = await exportLeads({ status: view === ALL ? "" : view, kind: kind === ALL ? "" : kind });
     setExporting(false);
     if (!result.success) return fail(result.error);
-    download(result.data.base64, result.data.fileName);
+    downloadBase64(result.data.base64, result.data.fileName);
     toast({ title: "Export ready", description: `${result.data.rows} leads` });
   };
 
@@ -157,8 +133,8 @@ export function LeadsInbox() {
     () => [
       {
         accessorKey: "createdAt",
-        header: sortable("Date"),
-        cell: ({ row }) => <div className="whitespace-nowrap tabular">{formatDayTime(row.original.createdAt)}</div>,
+        header: ({ column }) => <SortableHeader label="Date" column={column} />,
+        cell: ({ row }) => <div className="whitespace-nowrap tabular">{fmtInstant(row.original.createdAt)}</div>,
       },
       { accessorKey: "kind", header: "Type", cell: ({ row }) => <div className="whitespace-nowrap">{kindLabel(row.original.kind)}</div> },
       { accessorKey: "name", header: "Name", cell: ({ row }) => <div dir="auto">{row.original.name || "-"}</div> },
@@ -198,7 +174,7 @@ export function LeadsInbox() {
         ),
       },
       { accessorKey: "assignedTo", header: "Assigned To", cell: ({ row }) => assigneeName(row.original.assignedTo) || "-" },
-      { accessorKey: "status", header: sortable("Status"), cell: ({ row }) => <StatusBadge status={row.original.status} /> },
+      { accessorKey: "status", header: ({ column }) => <SortableHeader label="Status" column={column} />, cell: ({ row }) => <StatusBadge status={row.original.status} /> },
     ],
     [assigneeName],
   );
@@ -290,7 +266,7 @@ export function LeadsInbox() {
               <SheetHeader className="pe-6 text-start">
                 <SheetTitle dir="auto">{open.name || open.phone || open.email || "Lead"}</SheetTitle>
                 <SheetDescription>
-                  {kindLabel(open.kind)} · {formatDayTime(open.createdAt)}
+                  {kindLabel(open.kind)} · {fmtInstant(open.createdAt)}
                 </SheetDescription>
               </SheetHeader>
 

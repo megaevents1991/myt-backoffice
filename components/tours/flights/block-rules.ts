@@ -157,7 +157,7 @@ export function checkTransition(
 export type AllocationLegs = "both" | "outbound" | "inbound";
 export const ALLOCATION_LEGS: readonly AllocationLegs[] = ["both", "outbound", "inbound"];
 export const ALLOCATION_LEGS_LABELS: Record<AllocationLegs, string> = {
-  both: "Both directions",
+  both: "Round trip",
   outbound: "Outbound only",
   inbound: "Return only",
 };

@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { requireCompany, type Company } from "@/lib/company";
+import { requireCompany } from "@/lib/company";
 import type { SessionPayload } from "@/lib/auth/session";
 import { isManagerRole } from "@/components/tours/flights/block-rules";
 import { PageHeader } from "@/components/page-header";
@@ -19,9 +19,8 @@ export const dynamic = "force-dynamic";
  */
 export default async function ToursDashboardPage() {
   let session: SessionPayload;
-  let company: Company;
   try {
-    ({ session, company } = await requireCompany("tours"));
+    ({ session } = await requireCompany("tours"));
   } catch (e) {
     // The active company does not sell tours (Mega Events) - say so, do not crash.
     // Anything else (no staff session) goes to the dashboard error boundary like on every guarded page.
@@ -33,7 +32,7 @@ export default async function ToursDashboardPage() {
     <div className="space-y-6">
       <PageHeader
         title="Dashboard"
-        description={`Tours, reservations and leads of ${company.name}. Every number opens the screen that holds its rows.`}
+        description="Tours, reservations and leads at a glance. Every number opens the screen that holds its rows."
         actions={<PublishSiteButton />}
       />
       <ToursDashboard isManager={isManagerRole(session.role)} />

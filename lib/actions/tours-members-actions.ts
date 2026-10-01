@@ -29,21 +29,14 @@ import { logAudit } from "@/lib/audit";
 import { TOURS_AGENT_ROLE } from "@/types/auth.types";
 import type { SessionPayload } from "@/lib/auth/session";
 import type { ActionResult, CompanyMemberRow } from "@/components/tours/content/shared";
+import { actionFail } from "@/lib/tours/action-kit";
+
+const failure = (e: unknown, fallback: string) => actionFail(e, "tours-members-actions", fallback);
 
 const ASSIGNABLE_ROLES = ["admin", "editor", TOURS_AGENT_ROLE];
 
 const NOT_ADMIN = { success: false as const, error: "Only company admins can manage members" };
 const isAdmin = (session: SessionPayload): boolean => session.role === "superadmin" || session.role === "admin";
-
-function failure(e: unknown, fallback: string): { success: false; error: string } {
-  const message = e instanceof Error ? e.message : String(e);
-  if (message.startsWith("Forbidden: the active company")) {
-    return { success: false, error: "This screen belongs to a company that sells tours. Switch companies in the top bar." };
-  }
-  if (message === "Unauthorized") return { success: false, error: "You don't have permission to do this" };
-  console.error(`${fallback}:`, e);
-  return { success: false, error: fallback };
-}
 
 async function membersOf(company: Company): Promise<CompanyMemberRow[]> {
   const { data, error } = await supabaseTyped

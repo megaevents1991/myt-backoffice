@@ -18,7 +18,7 @@ import { supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { toursDb } from "@/lib/tours/db";
 import { addDays, todayIso } from "@/lib/tours/deadlines";
-import { actionFail, actionOk, chunk, UserError, type ActionResult } from "@/lib/tours/action-kit";
+import { actionFail, actionOk, chunk, UserError, UUID, type ActionResult } from "@/lib/tours/action-kit";
 import { departureSiteId } from "@/types/tours.types";
 import type {
   ReservationDeparture,
@@ -30,7 +30,6 @@ const SCOPE = "tours-reservation-actions";
 const ROWS_MAX = 20000;
 /** Departures the picker offers: from a month back (late entries) onwards. */
 const PICKER_PAST_DAYS = 30;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ENTRY_COLUMNS =
   "id, departure_id, pax, docket_no, note, customer_name, customer_phone, customer_email, lead_id, entered_by, created_at";
 

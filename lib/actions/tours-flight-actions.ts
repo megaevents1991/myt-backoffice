@@ -53,6 +53,9 @@ import {
   type FlightContract,
 } from "@/types/tours.types";
 import type { Database } from "@/types/database.types";
+import { dbFail as databaseFail, plainFail as fail } from "@/lib/tours/action-kit";
+
+const dbFail = (where: string, error: unknown) => databaseFail("tours-flight-actions", where, error);
 
 type FlightRow = Database["public"]["Tables"]["flights"]["Row"];
 type FlightUpdate = Database["public"]["Tables"]["flights"]["Update"];
@@ -178,13 +181,6 @@ const EVENTS_MAX = 500;
 /** Timeline kinds an operator may add by hand (the rest are written by the lifecycle actions). */
 const MANUAL_EVENT_KINDS: readonly BlockEventKind[] = ["note", "quoted", "names_sent", "schedule_change"];
 const EVENT_CURRENCIES: readonly string[] = [...CURRENCIES, "ILS"];
-
-const fail = (error: string): { success: false; error: string } => ({ success: false, error });
-
-function dbFail(where: string, error: unknown): { success: false; error: string } {
-  console.error(`tours-flight-actions: ${where} failed`, JSON.stringify(error));
-  return fail("The action failed. Try again, and if it happens again, contact support.");
-}
 
 const validId = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value > 0;

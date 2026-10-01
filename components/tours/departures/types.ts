@@ -6,17 +6,11 @@
 import type { PriceMatrix } from "@/lib/tours/pricing";
 import type { TourDeparture, TourDepartureOption, TourPromotion, TourSeries } from "@/types/tours.types";
 
-export type ActionResult<T = undefined> =
-  | { success: true; data: T; warning?: string }
-  | { success: false; error: string };
+export type { ActionResult } from "@/lib/tours/action-kit";
 
-export type AllocationLegs = "both" | "outbound" | "inbound";
-
-export const LEGS_LABELS: Record<AllocationLegs, string> = {
-  both: "Round trip",
-  outbound: "Outbound only",
-  inbound: "Return only",
-};
+// One wording for the legs of an allocation, shared with the flight block panel.
+export { ALLOCATION_LEGS_LABELS as LEGS_LABELS, type AllocationLegs } from "@/components/tours/flights/block-rules";
+import type { AllocationLegs } from "@/components/tours/flights/block-rules";
 
 export type BoardSeries = Pick<
   TourSeries,

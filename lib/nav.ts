@@ -523,6 +523,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
   events: "Events",
   reservations: "Reservations",
+  tasks: "Tasks",
   coupons: "Coupons",
   partners: "Partners",
   forms: "Forms",

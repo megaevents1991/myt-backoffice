@@ -13,6 +13,9 @@ import { logAudit } from "@/lib/audit";
 import { isDateOnly } from "@/lib/tours/deadlines";
 import { CALENDAR_KINDS, type CalendarPeriod } from "@/types/tours.types";
 import type { ToursResult } from "@/lib/actions/tours-flight-actions";
+import { dbFail as databaseFail, plainFail as fail } from "@/lib/tours/action-kit";
+
+const dbFail = (where: string, error: unknown) => databaseFail("tours-calendar-actions", where, error);
 
 export interface CalendarPeriodRow extends CalendarPeriod {
   /** Shared by every company; read-only unless the viewer is a superadmin. */
@@ -33,13 +36,6 @@ export interface CalendarPeriodInput {
 }
 
 const ROWS_MAX = 5000;
-
-const fail = (error: string): { success: false; error: string } => ({ success: false, error });
-
-function dbFail(where: string, error: unknown): { success: false; error: string } {
-  console.error(`tours-calendar-actions: ${where} failed`, JSON.stringify(error));
-  return fail("הפעולה נכשלה. נסו שוב, ואם זה חוזר פנו לתמיכה.");
-}
 
 /** The periods of one year (the company's and the global ones) and every year that has any. */
 export async function listCalendarPeriods(

@@ -31,6 +31,9 @@ import { STAFF_ROLES, type Role } from "@/types/auth.types";
 import { LIVE_BLOCK_STATUSES } from "@/types/tours.types";
 import type { TaskSourceRef } from "@/types/task.types";
 import type { ToursResult } from "@/lib/actions/tours-flight-actions";
+import { dbFail as databaseFail, plainFail as fail } from "@/lib/tours/action-kit";
+
+const dbFail = (where: string, error: unknown) => databaseFail("tours-reports-actions", where, error);
 
 // ------------------------------------------------------------------ types
 
@@ -151,13 +154,6 @@ const UPCOMING_DAYS = 30;
 const DEADLINE_TASK_LEAD_DAYS = 7;
 const DEAD_STATUSES: readonly string[] = ["cancelled", "declined"];
 const IN_CHUNK = 200;
-
-const fail = (error: string): { success: false; error: string } => ({ success: false, error });
-
-function dbFail(where: string, error: unknown): { success: false; error: string } {
-  console.error(`tours-reports-actions: ${where} failed`, JSON.stringify(error));
-  return fail("טעינת הנתונים נכשלה. נסו שוב, ואם זה חוזר פנו לתמיכה.");
-}
 
 // One literal so the typed client can parse the column list.
 const REPORT_BLOCK_COLUMNS =

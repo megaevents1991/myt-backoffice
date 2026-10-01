@@ -14,6 +14,9 @@ import { logAudit } from "@/lib/audit";
 import { isDateOnly } from "@/lib/tours/deadlines";
 import { CURRENCIES, type FlightContract } from "@/types/tours.types";
 import type { ToursResult } from "@/lib/actions/tours-flight-actions";
+import { dbFail as databaseFail, plainFail as fail } from "@/lib/tours/action-kit";
+
+const dbFail = (where: string, error: unknown) => databaseFail("tours-contract-actions", where, error);
 
 export interface TourContractRow extends FlightContract {
   /** Flight blocks of the company that use this contract. */
@@ -43,13 +46,6 @@ export interface TourContractInput {
 const CONTRACT_KINDS = ["series_contract", "closed_group"];
 const COMMITMENT_UNITS = ["per_group", "per_pax", "pct_of_fare"];
 const BLOCKS_MAX = 50_000;
-
-const fail = (error: string): { success: false; error: string } => ({ success: false, error });
-
-function dbFail(where: string, error: unknown): { success: false; error: string } {
-  console.error(`tours-contract-actions: ${where} failed`, JSON.stringify(error));
-  return fail("הפעולה נכשלה. נסו שוב, ואם זה חוזר פנו לתמיכה.");
-}
 
 const isDays = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 730;

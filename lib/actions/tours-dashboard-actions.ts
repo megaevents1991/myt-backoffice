@@ -16,6 +16,7 @@ import { toursDb } from "@/lib/tours/db";
 import { addDays, todayIso } from "@/lib/tours/deadlines";
 import { dailySeries, seriesWindow } from "@/lib/dashboard-series";
 import { LEAD_KIND_LABELS } from "@/types/tours.types";
+import type { ActionResult } from "@/lib/tours/action-kit";
 import type { TopItem } from "@/components/dashboard/top-list-card";
 import type { TrendPoint, TrendRange } from "@/components/dashboard/trend-chart";
 
@@ -62,10 +63,6 @@ export interface ToursDashboard {
   truncated: boolean;
 }
 
-export type ToursDashboardResult =
-  | { success: true; data: ToursDashboard }
-  | { success: false; error: string };
-
 const top = (counts: Map<string, number>): TopItem[] =>
   [...counts.entries()]
     .filter(([, count]) => count > 0)
@@ -94,7 +91,7 @@ function packageSlugOf(sourcePath: string | null): string | null {
   }
 }
 
-export async function getToursDashboard(): Promise<ToursDashboardResult> {
+export async function getToursDashboard(): Promise<ActionResult<ToursDashboard>> {
   const { company } = await requireCompany("tours");
   const today = todayIso();
   const windowEnd = addDays(today, DEPARTURES_WINDOW_DAYS);

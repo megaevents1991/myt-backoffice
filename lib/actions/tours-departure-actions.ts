@@ -20,10 +20,9 @@
  */
 import ExcelJS from "exceljs";
 import { logAudit } from "@/lib/audit";
-import { COMPANY_UNASSIGNED_NOTICE } from "@/lib/auth/tours-agent";
 import { requireCompany, requireCompanyViewer } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
-import { TOURS_PAGE_SIZE, toursDb } from "@/lib/tours/db";
+import { toursDb } from "@/lib/tours/db";
 import { toPriceMatrix, type PriceMatrix } from "@/lib/tours/pricing";
 import {
   ROUTE_TYPE_LABELS,
@@ -88,61 +87,10 @@ import type {
   ViewHotelOption,
   ViewTicketOption,
 } from "@/components/tours/departures/types";
+import { actionFail, actionOk as ok, chunk, fetchAll, must, mustRow, UserError, UUID } from "@/lib/tours/action-kit";
 
-// ---------------------------------------------------------------- plumbing
-/** A failure the operator can act on; its message is shown as is. */
-class UserError extends Error {}
+const fail = (e: unknown) => actionFail(e, "tours-departure-actions");
 
-function fail(e: unknown): { success: false; error: string } {
-  if (e instanceof UserError) return { success: false, error: e.message };
-  const message = e instanceof Error ? e.message : String(e);
-  if (message.startsWith("Forbidden")) {
-    return { success: false, error: "This screen is available only when the active company sells tours. Switch company in the top bar." };
-  }
-  if (message.startsWith("Unauthorized")) return { success: false, error: "You don't have permission for this action." };
-  if (message.startsWith("Unassigned")) {
-    return { success: false, error: `${COMPANY_UNASSIGNED_NOTICE}. A company admin needs to assign the account to a company.` };
-  }
-  console.error("tours-departure-actions:", e);
-  return { success: false, error: `Action failed: ${message}` };
-}
-
-const ok = <T>(data: T, warning?: string): ActionResult<T> =>
-  warning ? { success: true, data, warning } : { success: true, data };
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
-
-type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
-
-/** PostgREST answers at most 1000 rows - walk the pages until a short one. */
-async function fetchAll<T>(page: (from: number, to: number) => Page<T>): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; ; from += TOURS_PAGE_SIZE) {
-    const { data, error } = await page(from, from + TOURS_PAGE_SIZE - 1);
-    if (error) throw new Error(error.message);
-    const rows = data ?? [];
-    out.push(...rows);
-    if (rows.length < TOURS_PAGE_SIZE) return out;
-  }
-}
-
-const must = <T>(result: { data: T; error: { message: string } | null }): T => {
-  if (result.error) throw new Error(result.error.message);
-  return result.data;
-};
-
-/** A single row that must exist (insert ... select().single()). */
-const mustRow = <T>(result: { data: T; error: { message: string } | null }): NonNullable<T> => {
-  if (result.error) throw new Error(result.error.message);
-  if (result.data == null) throw new Error("no row returned");
-  return result.data;
-};
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const cleanIds = (ids: unknown): string[] =>
   Array.isArray(ids) ? Array.from(new Set(ids.filter((v): v is string => typeof v === "string" && UUID.test(v)))) : [];
 

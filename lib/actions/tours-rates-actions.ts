@@ -12,6 +12,9 @@ import { logAudit } from "@/lib/audit";
 import { isDateOnly, todayIso } from "@/lib/tours/deadlines";
 import { CURRENCIES, type CompanyExchangeRate, type TourCurrency } from "@/types/tours.types";
 import type { ToursResult } from "@/lib/actions/tours-flight-actions";
+import { dbFail as databaseFail, plainFail as fail } from "@/lib/tours/action-kit";
+
+const dbFail = (where: string, error: unknown) => databaseFail("tours-rates-actions", where, error);
 
 export interface TourRateStatus {
   currency: TourCurrency;
@@ -37,13 +40,6 @@ export interface TourRatesData {
 }
 
 const HISTORY_MAX = 300;
-
-const fail = (error: string): { success: false; error: string } => ({ success: false, error });
-
-function dbFail(where: string, error: unknown): { success: false; error: string } {
-  console.error(`tours-rates-actions: ${where} failed`, JSON.stringify(error));
-  return fail("הפעולה נכשלה. נסו שוב, ואם זה חוזר פנו לתמיכה.");
-}
 
 export async function getTourRates(): Promise<ToursResult<TourRatesData>> {
   const { company } = await requireCompany("tours");

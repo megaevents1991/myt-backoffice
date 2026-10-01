@@ -7,9 +7,7 @@
  */
 
 /** Every content / leads / settings action answers with this. Expected failures never throw. */
-export type ActionResult<T = undefined> =
-  | { success: true; data: T }
-  | { success: false; error: string };
+export type { ActionResult } from "@/lib/tours/action-kit";
 
 // ---------------------------------------------------------------- trip pages
 export const PACKAGE_KINDS = ["organized", "vacation", "village"] as const;

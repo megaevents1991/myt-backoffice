@@ -56,6 +56,9 @@ import {
   type TermKind,
   type TermListRow,
 } from "@/components/tours/content/shared";
+import { actionFail } from "@/lib/tours/action-kit";
+
+const failure = (e: unknown, fallback: string) => actionFail(e, "tours-content-actions", fallback);
 
 type Tours = Database["tours"]["Tables"];
 type JsonObject = { [key: string]: Json | undefined };
@@ -115,16 +118,6 @@ class RowPatch {
     if (Object.keys(this.data).length === 0) return { ...this.columns };
     return { ...this.columns, data: { ...asObject(currentData), ...this.data } };
   }
-}
-
-function failure(e: unknown, fallback: string): { success: false; error: string } {
-  const message = e instanceof Error ? e.message : String(e);
-  if (message.startsWith("Forbidden: the active company")) {
-    return { success: false, error: "This screen belongs to a company that sells tours. Switch companies in the top bar." };
-  }
-  if (message === "Unauthorized") return { success: false, error: "You don't have permission to do this" };
-  console.error(`${fallback}:`, e);
-  return { success: false, error: fallback };
 }
 
 const invalid = (error: z.ZodError): { success: false; error: string } => ({

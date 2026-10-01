@@ -24,6 +24,9 @@ import type {
   DeployHookChange,
   SitePublishRecord,
 } from "@/components/tours/content/shared";
+import { actionFail } from "@/lib/tours/action-kit";
+
+const failure = (e: unknown, fallback: string) => actionFail(e, "tours-settings-actions", fallback);
 
 type CompanyRow = Database["public"]["Tables"]["companies"]["Row"];
 type JsonObject = { [key: string]: Json | undefined };
@@ -35,16 +38,6 @@ const SETTINGS_CURRENCIES = ["USD", "EUR", "GBP", "ILS"] as const;
 const asObject = (value: Json | null | undefined): JsonObject =>
   value && typeof value === "object" && !Array.isArray(value) ? value : {};
 const text = (value: Json | undefined): string => (typeof value === "string" ? value : "");
-
-function failure(e: unknown, fallback: string): { success: false; error: string } {
-  const message = e instanceof Error ? e.message : String(e);
-  if (message.startsWith("Forbidden: the active company")) {
-    return { success: false, error: "This screen belongs to a company that sells tours. Switch companies in the top bar." };
-  }
-  if (message === "Unauthorized") return { success: false, error: "You don't have permission to do this" };
-  console.error(`${fallback}:`, e);
-  return { success: false, error: fallback };
-}
 
 const NOT_ADMIN = { success: false as const, error: "Settings are open to company admins only" };
 const isAdmin = (session: SessionPayload): boolean => session.role === "superadmin" || session.role === "admin";

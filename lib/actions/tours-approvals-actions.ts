@@ -20,7 +20,7 @@
  */
 import { requireCompany } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
-import { toursDb, TOURS_PAGE_SIZE } from "@/lib/tours/db";
+import { toursDb } from "@/lib/tours/db";
 import { logAudit } from "@/lib/audit";
 import { toPriceMatrix } from "@/lib/tours/pricing";
 import { checkBlockFitsDeparture, departureRouteLabel, flightRouteLabel } from "@/lib/tours/routes";
@@ -45,6 +45,9 @@ import {
 import { addTourBlockEvent, setTourBlockReviewed } from "@/lib/actions/tours-flight-actions";
 import { LIVE_BLOCK_STATUSES, type BlockStatus } from "@/types/tours.types";
 import type { Database } from "@/types/database.types";
+import { chunk, dbFail as databaseFail, fetchAll, plainFail as fail, UUID } from "@/lib/tours/action-kit";
+
+const dbFail = (where: string, error: unknown) => databaseFail("tours-approvals-actions", where, error);
 
 // ------------------------------------------------------------------ shapes
 
@@ -217,37 +220,6 @@ const BULK_REVIEW_MAX = 200;
 const ID_CHUNK = 100;
 
 const MANAGERS_ONLY = "Managers only.";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const fail = (error: string): { success: false; error: string } => ({ success: false, error });
-
-function dbFail(where: string, error: unknown): { success: false; error: string } {
-  console.error(
-    `tours-approvals-actions: ${where} failed`,
-    error instanceof Error ? error.message : JSON.stringify(error),
-  );
-  return fail("The action failed. Try again, and if it happens again, contact support.");
-}
-
-type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
-
-/** PostgREST answers at most 1000 rows - walk the pages until a short one. */
-async function fetchAll<T>(page: (from: number, to: number) => Page<T>): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; ; from += TOURS_PAGE_SIZE) {
-    const { data, error } = await page(from, from + TOURS_PAGE_SIZE - 1);
-    if (error) throw new Error(error.message);
-    const rows = data ?? [];
-    out.push(...rows);
-    if (rows.length < TOURS_PAGE_SIZE) return out;
-  }
-}
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
 
 // ------------------------------------------------------------------ flight blocks
 

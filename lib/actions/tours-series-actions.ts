@@ -13,7 +13,7 @@
 import { logAudit } from "@/lib/audit";
 import { requireCompany } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
-import { TOURS_PAGE_SIZE, toursDb } from "@/lib/tours/db";
+import { toursDb } from "@/lib/tours/db";
 import { CURRENCIES } from "@/types/tours.types";
 import {
   departureCode,
@@ -36,49 +36,9 @@ import {
   type SeriesTerm,
   type SeriesTermKind,
 } from "@/components/tours/series/types";
+import { actionFail, actionOk as ok, chunk, fetchAll, must, UserError, UUID } from "@/lib/tours/action-kit";
 
-// ---------------------------------------------------------------- plumbing
-/** A failure the operator can act on; its message is shown as is. */
-class UserError extends Error {}
-
-function fail(e: unknown): { success: false; error: string } {
-  if (e instanceof UserError) return { success: false, error: e.message };
-  const message = e instanceof Error ? e.message : String(e);
-  if (message.startsWith("Forbidden")) {
-    return { success: false, error: "This screen is only available when the active company sells tours. Switch company in the top bar." };
-  }
-  if (message.startsWith("Unauthorized")) return { success: false, error: "You don't have permission for this action." };
-  console.error("tours-series-actions:", e);
-  return { success: false, error: `The action failed: ${message}` };
-}
-
-const ok = <T>(data: T): ActionResult<T> => ({ success: true, data });
-
-type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
-
-async function fetchAll<T>(page: (from: number, to: number) => Page<T>): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; ; from += TOURS_PAGE_SIZE) {
-    const { data, error } = await page(from, from + TOURS_PAGE_SIZE - 1);
-    if (error) throw new Error(error.message);
-    const rows = data ?? [];
-    out.push(...rows);
-    if (rows.length < TOURS_PAGE_SIZE) return out;
-  }
-}
-
-const must = <T>(result: { data: T; error: { message: string } | null }): T => {
-  if (result.error) throw new Error(result.error.message);
-  return result.data;
-};
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const fail = (e: unknown) => actionFail(e, "tours-series-actions");
 
 const SERIES_SELECT =
   "id, code, label, package_id, arrival_airport, arrival_weekday, return_airport, return_weekday, default_nights, default_capacity, default_currency, child_max_age, senior_min_age, senior_discount, is_active";

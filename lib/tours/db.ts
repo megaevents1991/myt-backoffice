@@ -15,5 +15,4 @@ import { supabaseTyped } from "@/lib/supabase-server";
 
 export const toursDb = () => supabaseTyped.schema("tours");
 
-/** PostgREST caps a response at 1000 rows - page through everything that can grow past that. */
-export const TOURS_PAGE_SIZE = 1000;
+export { TOURS_PAGE_SIZE } from "@/lib/tours/action-kit";

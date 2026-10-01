@@ -1,17 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { DataTable } from "@/components/data-table";
+import { DataTable, SortableHeader } from "@/components/data-table";
 import { useConfirm } from "@/components/confirm-provider";
 import { useToast } from "@/hooks/use-toast";
-import { formatDateShort } from "@/lib/tours/deadlines";
-import { fmtInstant } from "@/components/tours/departures/departure-utils";
+import { fmtInstant, formatDateShort } from "@/lib/tours/format";
 import { deleteToursReservation } from "@/lib/actions/tours-reservation-actions";
 import type { ToursReservationRow } from "@/components/tours/reservations/types";
 
@@ -26,16 +25,6 @@ interface ToursReservationsTableProps {
   readOnly?: boolean;
 }
 
-const sortable = (label: string) =>
-  function SortHeader({ column }: { column: { toggleSorting: (desc?: boolean) => void; getIsSorted: () => false | "asc" | "desc" } }) {
-    return (
-      <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-        {label}
-        <ArrowUpDown className="ml-2 h-4 w-4" />
-      </Button>
-    );
-  };
-
 /**
  * The reservations of a tours company on the shared DataTable - the same
  * table look as the Mega Events Reservations screen. One row per booking
@@ -46,6 +35,9 @@ export function ToursReservationsTable({ rows, onDeleted, oneDeparture, readOnly
   const { toast } = useToast();
   const [view, setView] = useState<View>("all");
   const [removing, setRemoving] = useState<string | null>(null);
+  // The columns are memoized; the delete button must still call the latest callback.
+  const onDeletedRef = useRef(onDeleted);
+  onDeletedRef.current = onDeleted;
 
   const remove = async (row: ToursReservationRow) => {
     const agreed = await confirm({
@@ -63,14 +55,14 @@ export function ToursReservationsTable({ rows, onDeleted, oneDeparture, readOnly
       return;
     }
     toast({ title: "Reservation deleted" });
-    onDeleted(row.id);
+    onDeletedRef.current(row.id);
   };
 
   const columns = useMemo<ColumnDef<ToursReservationRow>[]>(() => {
     const all: (ColumnDef<ToursReservationRow> | false)[] = [
       {
         accessorKey: "createdAt",
-        header: sortable("Created At"),
+        header: ({ column }) => <SortableHeader label="Created At" column={column} />,
         cell: ({ row }) => <div className="whitespace-nowrap tabular">{fmtInstant(row.original.createdAt)}</div>,
       },
       {
@@ -86,12 +78,12 @@ export function ToursReservationsTable({ rows, onDeleted, oneDeparture, readOnly
       { accessorKey: "customerEmail", header: "Email", cell: ({ row }) => row.original.customerEmail || "-" },
       !oneDeparture && {
         accessorKey: "tourName",
-        header: sortable("Tour"),
+        header: ({ column }) => <SortableHeader label="Tour" column={column} />,
         cell: ({ row }) => <div dir="auto">{row.original.tourName || "-"}</div>,
       },
       !oneDeparture && {
         accessorKey: "departureCode",
-        header: sortable("Departure"),
+        header: ({ column }) => <SortableHeader label="Departure" column={column} />,
         cell: ({ row }) => (
           <Link
             href={`/tours/departures?code=${encodeURIComponent(row.original.departureCode)}`}
@@ -108,7 +100,7 @@ export function ToursReservationsTable({ rows, onDeleted, oneDeparture, readOnly
       },
       {
         accessorKey: "pax",
-        header: sortable("Travelers"),
+        header: ({ column }) => <SortableHeader label="Travelers" column={column} />,
         cell: ({ row }) => (
           <div className={cn("font-semibold tabular", row.original.pax < 0 ? "text-destructive" : "text-success")}>
             {row.original.pax > 0 ? `+${row.original.pax}` : row.original.pax}
