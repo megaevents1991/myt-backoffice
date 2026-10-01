@@ -23,6 +23,7 @@ import {
   type Role,
 } from "@/types/auth.types";
 import { supabase } from "@/lib/supabase-server";
+import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
 
 /**
  * Verified session payload from the request cookie, or null.
@@ -125,10 +126,98 @@ async function readActorProfile(sub: string): Promise<ActorProfile | null> {
   }
 }
 
-/** Server-action guard: caller must hold one of the given roles. Returns the actor. */
-export async function requireRole(...roles: Role[]): Promise<SessionPayload> {
+/**
+ * Company gate of the Mega Events features.
+ *
+ * Every guard in this file fronts a screen that existed before companies, and
+ * all of those are Mega Events features. A staff member who was added to
+ * another company ONLY (a Mega Family operator) must not run them: the
+ * service-role client would hand over Mega Events data. The tours module and
+ * the shared flights screens do not come through here - they use
+ * requireCompany() (lib/company.ts), which resolves the active company from
+ * the caller's own memberships.
+ *
+ * Who passes:
+ *  - superadmin, and every non-staff role (partners, forms_operator): they are
+ *    Mega Events accounts and are not looked up;
+ *  - admin / editor with a Mega Events membership;
+ *  - admin / editor with NO membership at all: an account nobody assigned to a
+ *    company is a Mega Events account - the same floor lib/company.ts uses;
+ *  - anyone, when the memberships cannot be read (table missing, query
+ *    failed). This gate must never lock the Mega Events team out of its own
+ *    backoffice, so a failed read opens it.
+ * Who is refused: admin / editor whose memberships exist and none of them is
+ * Mega Events.
+ */
+export async function worksInMegaEvents(
+  session: SessionPayload,
+): Promise<boolean> {
+  if (session.role !== "admin" && session.role !== "editor") return true;
+  const companyIds = await loadCompanyIds(session.sub);
+  if (companyIds === null || companyIds.length === 0) return true;
+  return companyIds.includes(MEGA_EVENTS_COMPANY_ID);
+}
+
+/** Per-request memo, keyed on the cookie store exactly like actorProfileReads. */
+const companyIdReads = new WeakMap<
+  object,
+  Map<string, Promise<string[] | null>>
+>();
+
+/** Ids of the companies the user is a member of; null when they cannot be read. */
+async function loadCompanyIds(sub: string): Promise<string[] | null> {
+  const store = await cookies();
+  let reads = companyIdReads.get(store);
+  if (!reads) {
+    reads = new Map();
+    companyIdReads.set(store, reads);
+  }
+  let read = reads.get(sub);
+  if (!read) {
+    read = readCompanyIds(sub);
+    reads.set(sub, read);
+  }
+  return read;
+}
+
+async function readCompanyIds(sub: string): Promise<string[] | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any)
+      .from("company_members")
+      .select("company_id")
+      .eq("user_id", sub);
+    if (error) {
+      console.error("loadCompanyIds:", JSON.stringify(error));
+      return null;
+    }
+    return ((data as { company_id: string }[] | null) ?? []).map(
+      (row) => row.company_id,
+    );
+  } catch (e) {
+    console.error("loadCompanyIds:", e);
+    return null;
+  }
+}
+
+/** The role check alone, with no company gate. */
+async function requireRoleInAnyCompany(
+  ...roles: Role[]
+): Promise<SessionPayload> {
   const session = await getSession();
   if (!session || !roles.includes(session.role)) {
+    throw new Error("Unauthorized");
+  }
+  return session;
+}
+
+/**
+ * Server-action guard: caller must hold one of the given roles AND work in
+ * Mega Events (see worksInMegaEvents). Returns the actor.
+ */
+export async function requireRole(...roles: Role[]): Promise<SessionPayload> {
+  const session = await requireRoleInAnyCompany(...roles);
+  if (!(await worksInMegaEvents(session))) {
     throw new Error("Unauthorized");
   }
   return session;
@@ -137,6 +226,15 @@ export async function requireRole(...roles: Role[]): Promise<SessionPayload> {
 /** superadmin, admin or editor - the default guard for all dashboard mutations. */
 export async function requireStaff(): Promise<SessionPayload> {
   return requireRole("superadmin", "admin", "editor");
+}
+
+/**
+ * Staff of whatever company - the role check without the Mega Events gate.
+ * ONLY for code that resolves the company itself and scopes every query by it:
+ * requireCompany() in lib/company.ts. Anything else wants requireStaff().
+ */
+export async function requireStaffOfAnyCompany(): Promise<SessionPayload> {
+  return requireRoleInAnyCompany("superadmin", "admin", "editor");
 }
 
 /**
@@ -237,9 +335,20 @@ export async function requireOfficeManager(): Promise<
  * Despite the name it admits EVERY staff role (editor included) - the route
  * twin of requireStaff(). For an admin-only route use guardAdminOnlyRoute.
  */
-export async function guardAdminRoute(): Promise<NextResponse | null> {
+export async function guardAdminRoute({
+  anyCompany = false,
+}: { anyCompany?: boolean } = {}): Promise<NextResponse | null> {
   const session = await getSession();
-  if (session && STAFF_ROLES.includes(session.role)) return null;
+  if (
+    session &&
+    STAFF_ROLES.includes(session.role) &&
+    // `anyCompany` is for the few routes that resolve the active company
+    // themselves (the flights API and the flight exports). Every other route
+    // is a Mega Events feature and takes the same gate as requireStaff().
+    (anyCompany || (await worksInMegaEvents(session)))
+  ) {
+    return null;
+  }
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
@@ -249,7 +358,13 @@ export async function guardAdminRoute(): Promise<NextResponse | null> {
  */
 export async function guardAdminOnlyRoute(): Promise<NextResponse | null> {
   const session = await getSession();
-  if (session && ADMIN_ROLES.includes(session.role)) return null;
+  if (
+    session &&
+    ADMIN_ROLES.includes(session.role) &&
+    (await worksInMegaEvents(session))
+  ) {
+    return null;
+  }
   return session
     ? NextResponse.json({ error: "Admins only" }, { status: 403 })
     : NextResponse.json({ error: "Unauthorized" }, { status: 401 });

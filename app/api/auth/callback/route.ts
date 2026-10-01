@@ -14,6 +14,8 @@ import {
   setPortalSessionId,
 } from "@/lib/auth/portal-session-id";
 import { logAudit, requestIp } from "@/lib/audit";
+import { COMPANY_HOME_HINT_COOKIE } from "@/lib/company-ids";
+import { companyHomeHintFor, companyHomeHintOptions } from "@/lib/company";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -106,6 +108,13 @@ export async function GET(request: Request) {
         maxAge: SESSION_MAX_AGE,
         path: "/",
       });
+    } else {
+      // Routing hint (no auth value) - see the login route.
+      redirect.cookies.set(
+        COMPANY_HOME_HINT_COOKIE,
+        await companyHomeHintFor(profile),
+        companyHomeHintOptions(),
+      );
     }
     // Clear the temporary Supabase PKCE cookies.
     cookieStore.getAll().forEach(({ name }) => {

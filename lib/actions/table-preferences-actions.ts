@@ -1,6 +1,6 @@
 "use server";
 
-import { requireStaff } from "@/lib/auth/guards";
+import { requireStaffOfAnyCompany } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 
 // Not in the generated types yet - cast at the call site like the other
@@ -18,7 +18,8 @@ export type TablePreferences = Record<string, unknown>;
 export async function getTablePreferences(
   tableKey: string,
 ): Promise<TablePreferences | null> {
-  const session = await requireStaff();
+  // The caller's own rows only (user_id), so staff of any company may keep them.
+  const session = await requireStaffOfAnyCompany();
   if (!tableKey) throw new Error("tableKey is required");
 
   const { data, error } = await prefsTable()
@@ -39,7 +40,8 @@ export async function saveTablePreferences(
   tableKey: string,
   preferences: TablePreferences,
 ): Promise<void> {
-  const session = await requireStaff();
+  // The caller's own rows only (user_id), so staff of any company may keep them.
+  const session = await requireStaffOfAnyCompany();
   if (!tableKey) throw new Error("tableKey is required");
 
   const { error } = await prefsTable().upsert(

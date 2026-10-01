@@ -13,6 +13,8 @@ import {
 } from "@/lib/auth/portal-session-id";
 import { PARTNER_ROLES, type UserProfile } from "@/types/auth.types";
 import { logAudit, requestIp } from "@/lib/audit";
+import { COMPANY_HOME_HINT_COOKIE } from "@/lib/company-ids";
+import { companyHomeHintFor, companyHomeHintOptions } from "@/lib/company";
 
 async function respondWithSession(profile: UserProfile, request: Request) {
   await logAudit({
@@ -74,6 +76,14 @@ async function respondWithSession(profile: UserProfile, request: Request) {
       maxAge: SESSION_MAX_AGE,
       path: "/",
     });
+  } else {
+    // Routing hint (no auth value): an account that works only in a company
+    // with no events lands on its own home, not on the Mega Events dashboard.
+    response.cookies.set(
+      COMPANY_HOME_HINT_COOKIE,
+      await companyHomeHintFor(profile),
+      companyHomeHintOptions(),
+    );
   }
   return response;
 }

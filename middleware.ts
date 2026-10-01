@@ -7,6 +7,7 @@ import {
   verifySessionValue,
 } from "@/lib/auth/session";
 import { PARTNER_ROLES } from "@/types/auth.types";
+import { COMPANY_HOME_HINT_COOKIE } from "@/lib/company-ids";
 
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
@@ -94,6 +95,17 @@ export async function middleware(req: NextRequest) {
       !pathname.startsWith("/forms/")
     ) {
       return NextResponse.redirect(new URL("/forms", req.url));
+    }
+    // A staff browser that works in a company with no events (Mega Family)
+    // lands on that company's home instead of the Mega Events dashboard - the
+    // login page and the OAuth callback both send staff to /dashboard. A
+    // routing hint only (lib/company-ids.ts): partners and forms_operator were
+    // already sent home above, and Mega Events browsers never carry "tours".
+    if (
+      pathname === "/dashboard" &&
+      req.cookies.get(COMPANY_HOME_HINT_COOKIE)?.value === "tours"
+    ) {
+      return NextResponse.redirect(new URL("/tours", req.url));
     }
     // /users is for superadmin/admin only.
     if (

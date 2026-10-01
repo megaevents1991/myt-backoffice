@@ -13,11 +13,16 @@
  */
 import { cookies } from "next/headers";
 import { supabaseTyped } from "@/lib/supabase-server";
-import { getSession, requireStaff } from "@/lib/auth/guards";
+import { getSession, requireStaffOfAnyCompany } from "@/lib/auth/guards";
+import {
+  COMPANY_HOME_HINT_MAX_AGE,
+  MEGA_EVENTS_COMPANY_ID,
+  type CompanyHomeHint,
+} from "@/lib/company-ids";
+import type { Role } from "@/types/auth.types";
 import type { SessionPayload } from "@/lib/auth/session";
 
-/** Fixed in supabase/migrations/20261001100000_companies_core.sql. Also the default of flights.company_id. */
-export const MEGA_EVENTS_COMPANY_ID = "a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f601";
+export { MEGA_EVENTS_COMPANY_ID };
 export const ACTIVE_COMPANY_COOKIE = "active_company";
 
 export type ProductType = "events" | "tours";
@@ -105,6 +110,33 @@ export async function getActiveCompany(session?: SessionPayload | null): Promise
   );
 }
 
+/** Where a company's home is: "tours" only for a company that sells no events. */
+export const companyHomeHint = (company: Pick<Company, "productTypes">): CompanyHomeHint =>
+  company.productTypes.includes("events") ? "events" : "tours";
+
+/** Cookie options of COMPANY_HOME_HINT_COOKIE (lib/company-ids.ts). */
+export const companyHomeHintOptions = () => ({
+  httpOnly: false,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+  maxAge: COMPANY_HOME_HINT_MAX_AGE,
+  path: "/",
+});
+
+/**
+ * The home hint of an account that is signing in (its session cookie is not
+ * set yet, so the account is passed in). Never throws; any doubt is "events".
+ */
+export async function companyHomeHintFor(user: { id: string; email: string; role: Role }): Promise<CompanyHomeHint> {
+  try {
+    const session = { sub: user.id, email: user.email, role: user.role, partner_code: null } as SessionPayload;
+    return companyHomeHint(await getActiveCompany(session));
+  } catch (e) {
+    console.error("companyHomeHintFor:", e);
+    return "events";
+  }
+}
+
 /**
  * Server-action guard for company-scoped work: a staff session plus the active
  * company. Pass a product type to refuse the action when the active company
@@ -113,7 +145,9 @@ export async function getActiveCompany(session?: SessionPayload | null): Promise
 export async function requireCompany(
   productType?: ProductType,
 ): Promise<{ session: SessionPayload; company: Company }> {
-  const session = await requireStaff();
+  // No Mega Events gate here: the company comes from the caller's own
+  // memberships (listCompaniesFor) and every query after it is scoped by it.
+  const session = await requireStaffOfAnyCompany();
   const company = await getActiveCompany(session);
   if (productType && !company.productTypes.includes(productType)) {
     throw new Error(`Forbidden: the active company (${company.slug}) does not sell "${productType}"`);

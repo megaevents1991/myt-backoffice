@@ -10,9 +10,12 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth/guards";
 import { STAFF_ROLES } from "@/types/auth.types";
+import { COMPANY_HOME_HINT_COOKIE } from "@/lib/company-ids";
 import {
   ACTIVE_COMPANY_COOKIE,
   MEGA_EVENTS_FALLBACK,
+  companyHomeHint,
+  companyHomeHintOptions,
   getActiveCompany,
   listCompaniesFor,
   type Company,
@@ -52,6 +55,8 @@ export async function setActiveCompany(slug: string): Promise<{ success: boolean
     maxAge: 60 * 60 * 24 * 365,
     path: "/",
   });
+  // Routing hint for middleware and the dashboard layout - see lib/company-ids.ts.
+  store.set(COMPANY_HOME_HINT_COOKIE, companyHomeHint(target), companyHomeHintOptions());
   revalidatePath("/", "layout");
   return { success: true };
 }
