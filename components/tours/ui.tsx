@@ -5,9 +5,14 @@
  * card, an inline notice, a chip, a figure, an on/off toggle. One copy each, in
  * the look of the shadcn forms the Mega Events screens use.
  */
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ALL_CURRENCIES } from "@/lib/tours/format";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 /** Codes, numbers, prices and dates: one line, tabular figures. */
 export function Ltr({ children, className, title }: { children: ReactNode; className?: string; title?: string }) {
@@ -108,7 +113,18 @@ export function Notice({
   return <div className={cn("rounded-md border px-3 py-2 text-sm", NOTICE_TONES[tone], className)}>{children}</div>;
 }
 
-export type ChipTone = "muted" | "outline" | "danger";
+export type ChipTone = "muted" | "outline" | "danger" | "info" | "warning" | "success" | "error";
+
+const CHIP_TONES: Record<ChipTone, string> = {
+  muted: "bg-muted text-muted-foreground",
+  outline: "text-foreground",
+  danger: "border-transparent bg-destructive text-destructive-foreground",
+  // the same palette as Notice
+  info: "border-info/30 bg-info-muted text-info",
+  warning: "border-warning/40 bg-warning-muted text-warning",
+  success: "border-success/30 bg-success-muted text-success",
+  error: "border-destructive/30 bg-destructive/10 text-destructive",
+};
 
 /** A small inline pill (a <span>, so it may sit inside text). */
 export function Chip({
@@ -127,14 +143,161 @@ export function Chip({
       title={title}
       className={cn(
         "inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        tone === "muted" && "bg-muted text-muted-foreground",
-        tone === "outline" && "text-foreground",
-        tone === "danger" && "border-transparent bg-destructive text-destructive-foreground",
+        CHIP_TONES[tone],
         className,
       )}
     >
       {children}
     </span>
+  );
+}
+
+/** Active / Inactive of a row - one wording and look for every tours list and editor. */
+export function ActiveChip({ active, className }: { active: boolean; className?: string }) {
+  return (
+    <Chip tone={active ? "outline" : "danger"} className={className}>
+      {active ? "Active" : "Inactive"}
+    </Chip>
+  );
+}
+
+/** How many rows wait in a list: red while there are some, grey at zero. */
+export function CountBadge({ count, className }: { count: number; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
+        count > 0 ? "bg-destructive text-destructive-foreground" : "bg-secondary text-secondary-foreground",
+        className,
+      )}
+    >
+      {count.toLocaleString("en-US")}
+    </span>
+  );
+}
+
+/** A label and its value in a details list. An empty value shows "-". */
+export function Fact({ label, children, className }: { label: ReactNode; children?: ReactNode; className?: string }) {
+  const empty = children === null || children === undefined || children === "" || children === false;
+  return (
+    <div className={cn("grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 py-1 text-sm", className)}>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words">{empty ? <span className="text-muted-foreground">-</span> : children}</dd>
+    </div>
+  );
+}
+
+/** A list of Facts. */
+export function FactList({ children, className }: { children: ReactNode; className?: string }) {
+  return <dl className={cn("divide-y", className)}>{children}</dl>;
+}
+
+/** "Nothing here" inside a card or a tab - one look for every empty sub-list. */
+export function EmptyLine({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <p className={cn("rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground", className)}>
+      {children}
+    </p>
+  );
+}
+
+/** What a screen or a card shows when its data could not be loaded, with a retry when one helps. */
+export function LoadError({
+  message,
+  onRetry,
+  children,
+  className,
+}: {
+  message: string;
+  onRetry?: () => void;
+  /** Extra content under the message, e.g. a link back to the list. */
+  children?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("rounded-lg border border-destructive/40 bg-destructive/5 p-6", className)} role="alert">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+        <div className="space-y-2">
+          <p className="font-medium">{message}</p>
+          {onRetry && (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <RefreshCw className="h-4 w-4" />
+              Try Again
+            </Button>
+          )}
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A checkbox with its label (shadcn Checkbox). The departures board rows keep native boxes for speed. */
+export function CheckField({
+  checked,
+  onCheckedChange,
+  label,
+  hint,
+  disabled,
+  className,
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  label: ReactNode;
+  hint?: ReactNode;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const id = useId();
+  return (
+    <div className={cn("flex items-start gap-2", className)}>
+      <Checkbox
+        id={id}
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(value) => onCheckedChange(value === true)}
+        className="mt-0.5"
+      />
+      <div className="grid gap-0.5">
+        <Label htmlFor={id} className="font-normal">
+          {label}
+        </Label>
+        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** A currency picker - one list of currencies for every tours form. */
+export function CurrencySelect({
+  value,
+  onChange,
+  currencies = ALL_CURRENCIES,
+  id,
+  disabled,
+  className,
+}: {
+  value: string;
+  onChange: (currency: string) => void;
+  currencies?: readonly string[];
+  id?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger id={id} className={cn("h-9 w-28", className)} aria-label="Currency">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {currencies.map((c) => (
+          <SelectItem key={c} value={c}>
+            {c}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 

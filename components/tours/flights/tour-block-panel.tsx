@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useActionToast, type ActionAnswer } from "@/hooks/use-action-toast";
+import { useActionToast, type ActionAnswer, type OkMessage } from "@/hooks/use-action-toast";
 import { getTourBlock, type TourBlockData } from "@/lib/actions/tours-flight-actions";
 import { Notice } from "@/components/tours/ui";
 import { BlockLifecycleSection } from "@/components/tours/flights/block-lifecycle-section";
@@ -71,7 +71,7 @@ export function TourBlockPanel({ flightId }: TourBlockPanelProps) {
 
   const toastRun = useActionToast();
   const run = useCallback(
-    async <A extends ActionAnswer>(action: () => Promise<A>, okMessage?: string): Promise<A> => {
+    async <A extends ActionAnswer>(action: () => Promise<A>, okMessage?: OkMessage<A>): Promise<A> => {
       const res = await toastRun(action, okMessage);
       if (res.success) await load();
       return res;

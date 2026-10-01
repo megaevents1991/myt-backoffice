@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { WidgetCard } from "@/components/dashboard/widget-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getApprovalsQueue, type ApprovalsData } from "@/lib/actions/tours-approvals-actions";
 
@@ -40,18 +40,7 @@ export function NeedsAttention() {
   const open = rows?.filter((row) => row.count > 0) ?? [];
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle className="text-base">Needs attention</CardTitle>
-        <Link
-          href="/tours/approvals"
-          className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-        >
-          Approvals
-          <ArrowLeft className="h-3.5 w-3.5 rtl:rotate-180" />
-        </Link>
-      </CardHeader>
-      <CardContent className="space-y-2">
+    <WidgetCard title="Needs attention" href="/tours/approvals" linkLabel="Approvals">
         {error ? (
           <p className="text-sm text-destructive">{error}</p>
         ) : rows === null ? (
@@ -79,7 +68,6 @@ export function NeedsAttention() {
             </Link>
           ))
         )}
-      </CardContent>
-    </Card>
+    </WidgetCard>
   );
 }

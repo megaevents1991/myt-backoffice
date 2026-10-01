@@ -96,7 +96,13 @@ export function fmtInstant(iso: string | null | undefined): string {
   return local ? fmtDateTime(local) : "";
 }
 
+/** What a cell shows when there is no value - the Mega Events tables show "-" too. */
+export const EMPTY = "-";
+
 // ---------------------------------------------------------------- numbers and money
+/** Every currency a tours company prices, costs or pays in. */
+export const ALL_CURRENCIES = ["USD", "EUR", "GBP", "ILS"] as const;
+
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", ILS: "₪" };
 export const currencySymbol = (currency: string | null | undefined): string =>
   CURRENCY_SYMBOLS[currency ?? ""] ?? currency ?? "";
@@ -111,11 +117,20 @@ export function formatNumber(value: number | null | undefined): string {
 /** The board's price cell: "2,145" (no currency sign), "" when there is none. */
 export const fmtMoney = (value: number | null | undefined): string => formatNumber(value);
 
-/** "1,234.5 USD", or a dash when there is no amount. */
-export function formatMoney(value: number | null | undefined, currency: string | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+/**
+ * A price or a cost as every tours screen shows it, in the order of the Mega
+ * Events screens: "$2,145", "€1,234.5", "₪350"; a currency with no symbol is
+ * written after the number ("2,145 CHF"); "-" when there is no amount.
+ */
+export function fmtPrice(value: number | null | undefined, currency: string | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return EMPTY;
+  const symbol = CURRENCY_SYMBOLS[currency ?? ""];
+  if (symbol) return `${symbol}${NUMBER.format(value)}`;
   return currency ? `${NUMBER.format(value)} ${currency}` : NUMBER.format(value);
 }
+
+/** The same as fmtPrice - kept for the callers that already use the name. */
+export const formatMoney = fmtPrice;
 
 /** A typed number field: "" -> null, a number -> itself, anything else -> undefined (invalid). */
 export function parseNumber(text: string): number | null | undefined {

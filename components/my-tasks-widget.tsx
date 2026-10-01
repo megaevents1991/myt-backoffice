@@ -1,11 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { WidgetCard } from "@/components/dashboard/widget-card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { listMyOpenTasks, setTaskStatus } from "@/lib/actions/task-actions";
@@ -45,18 +44,7 @@ export function MyTasksWidget() {
   };
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle className="text-base">My tasks</CardTitle>
-        <Link
-          href="/tasks"
-          className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-        >
-          All tasks
-          <ArrowLeft className="h-3.5 w-3.5 rtl:rotate-180" />
-        </Link>
-      </CardHeader>
-      <CardContent className="space-y-2">
+    <WidgetCard title="My tasks" href="/tasks" linkLabel="All tasks">
         {tasks === null ? (
           <>
             <Skeleton className="h-9 w-full" />
@@ -103,7 +91,6 @@ export function MyTasksWidget() {
             </div>
           ))
         )}
-      </CardContent>
-    </Card>
+    </WidgetCard>
   );
 }
