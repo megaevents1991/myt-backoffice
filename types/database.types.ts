@@ -5209,6 +5209,13 @@ export type Database = {
             foreignKeyName: "costings_departure_id_fkey"
             columns: ["departure_id"]
             isOneToOne: false
+            referencedRelation: "departure_stats"
+            referencedColumns: ["departure_id"]
+          },
+          {
+            foreignKeyName: "costings_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
             referencedRelation: "departures"
             referencedColumns: ["id"]
           },
@@ -5281,6 +5288,13 @@ export type Database = {
             foreignKeyName: "departure_options_departure_id_fkey"
             columns: ["departure_id"]
             isOneToOne: false
+            referencedRelation: "departure_stats"
+            referencedColumns: ["departure_id"]
+          },
+          {
+            foreignKeyName: "departure_options_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
             referencedRelation: "departures"
             referencedColumns: ["id"]
           },
@@ -5309,6 +5323,13 @@ export type Database = {
           room_position?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "departure_prices_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departure_stats"
+            referencedColumns: ["departure_id"]
+          },
           {
             foreignKeyName: "departure_prices_departure_id_fkey"
             columns: ["departure_id"]
@@ -5353,6 +5374,13 @@ export type Database = {
           pax?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "departure_sales_entries_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departure_stats"
+            referencedColumns: ["departure_id"]
+          },
           {
             foreignKeyName: "departure_sales_entries_departure_id_fkey"
             columns: ["departure_id"]
@@ -5545,6 +5573,13 @@ export type Database = {
           seats?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "flight_allocations_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
+            referencedRelation: "departure_stats"
+            referencedColumns: ["departure_id"]
+          },
           {
             foreignKeyName: "flight_allocations_departure_id_fkey"
             columns: ["departure_id"]
@@ -5868,6 +5903,13 @@ export type Database = {
             foreignKeyName: "promotions_departure_id_fkey"
             columns: ["departure_id"]
             isOneToOne: false
+            referencedRelation: "departure_stats"
+            referencedColumns: ["departure_id"]
+          },
+          {
+            foreignKeyName: "promotions_departure_id_fkey"
+            columns: ["departure_id"]
+            isOneToOne: false
             referencedRelation: "departures"
             referencedColumns: ["id"]
           },
@@ -6019,7 +6061,34 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      departure_stats: {
+        Row: {
+          allocated_seats: number | null
+          company_id: string | null
+          departure_id: string | null
+          live_blocks: number | null
+          remaining: number | null
+          sold: number | null
+          total_blocks: number | null
+        }
+        Relationships: []
+      }
+      flight_realization: {
+        Row: {
+          actual_cost: number | null
+          airline_code: string | null
+          company_id: string | null
+          fees_paid: number | null
+          groups_cancelled: number | null
+          groups_ordered: number | null
+          groups_realized: number | null
+          month: string | null
+          pax_ordered: number | null
+          potential_cost: number | null
+          seats_realized: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never

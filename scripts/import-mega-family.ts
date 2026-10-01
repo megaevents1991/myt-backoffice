@@ -700,6 +700,8 @@ async function importFlightWorkbook(
     const year = num(c(C.YEAR));
     const depDate = isoDate(c(C.DEPT_DATE));
     if (!year || year < YEAR_FROM || !depDate) continue;
+    // total / subtotal rows of the workbook carry a year and a date but no series and no destination
+    if ((!str(c(C.SERIES)) && !str(c(C.DEST))) || /TOTAL/i.test(str(c(C.TOUR))) || /TOTAL/i.test(str(c(C.SERIES)))) continue;
     let retDate = isoDate(c(C.RET_DATE));
     if (!retDate || retDate < depDate) { note("block_bad_return_date", `row ${r}`, `${str(c(C.SERIES))} ${depDate} -> ${retDate ?? "empty"}`); retDate = depDate; }
 
