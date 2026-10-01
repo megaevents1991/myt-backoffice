@@ -8,6 +8,7 @@ import { Check, ClipboardCheck, ListTodo, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
+import { useUrlState } from "@/hooks/use-view-state";
 import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,7 +61,8 @@ export function PriceChangesClient() {
   const isManager = !!user && (ADMIN_ROLES as readonly string[]).includes(user.role);
   const [rows, setRows] = useState<SyncLogRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState("changes");
+  // The view is kept in `?view=` (hooks/use-view-state.ts) - a refresh used to reset it.
+  const [view, setView] = useUrlState<string>("view", "changes");
   // Events that already have an open price-review task.
   const [taken, setTaken] = useState<Set<string>>(new Set());
   const [editor, setEditor] = useState<TaskEditorState>({ open: false, task: null });

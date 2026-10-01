@@ -29,6 +29,8 @@ import {
 
 import { cn } from "@/lib/utils";
 import { matchesSearch } from "@/lib/search";
+import { tableStateKey } from "@/lib/view-state";
+import { useSessionState } from "@/hooks/use-view-state";
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/search-input";
 import {
@@ -96,6 +98,20 @@ interface DataTableProps<TData, TValue> {
   expandedRowId?: string | null;
   /** The detail panel - rendered full-width under the expanded row. */
   renderExpandedRow?: (row: TData) => React.ReactNode;
+  /**
+   * Name under which this table remembers its search, sort, page and hidden
+   * columns for the browser tab (a refresh, or coming back from an editor,
+   * lands where you were). Defaults to a key made from the column ids - pass
+   * one only when the columns change with the data (price-light's competitors).
+   */
+  stateKey?: string;
+}
+
+/** The id TanStack gives a column: its own `id`, else the accessor key. */
+function columnIdOf<TData, TValue>(column: ColumnDef<TData, TValue>): string {
+  if (column.id) return column.id;
+  const accessorKey = (column as { accessorKey?: unknown }).accessorKey;
+  return typeof accessorKey === "string" ? accessorKey : "";
 }
 
 /** A click that landed on a control inside the row belongs to that control. */
@@ -280,20 +296,31 @@ export function DataTable<TData, TValue>({
   onRowClick,
   expandedRowId,
   renderExpandedRow,
+  stateKey,
 }: DataTableProps<TData, TValue>) {
-  const [sorting, setSorting] = useState<SortingState>(defaultSorting ?? []);
+  // Search, sort, page and hidden columns are remembered for the browser tab
+  // (hooks/use-view-state.ts) - a refresh used to throw you back to page 1 of
+  // an unfiltered list. The selection is not: ticked rows are a pending action.
+  const memory = `table:${stateKey ?? tableStateKey(columns.map(columnIdOf))}`;
+  const [sorting, setSorting] = useSessionState<SortingState>(
+    `${memory}:sort`,
+    defaultSorting ?? [],
+  );
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [columnVisibility, setColumnVisibility] = useSessionState<VisibilityState>(
+    `${memory}:columns`,
+    {},
+  );
   const [internalRowSelection, setInternalRowSelection] = useState<RowSelectionState>(
     {},
   );
   const isControlled = controlledRowSelection !== undefined;
   const rowSelection = isControlled ? controlledRowSelection : internalRowSelection;
-  const [pagination, setPagination] = useState<PaginationState>({
+  const [pagination, setPagination] = useSessionState<PaginationState>(`${memory}:page`, {
     pageIndex: 0,
     pageSize: defaultPageSize ?? 25,
   });
-  const [globalFilter, setGlobalFilter] = useState<string>("");
+  const [globalFilter, setGlobalFilter] = useSessionState<string>(`${memory}:search`, "");
 
   // Add selection column if row selection is enabled
   const selectionColumns: ColumnDef<TData, TValue>[] = enableRowSelection

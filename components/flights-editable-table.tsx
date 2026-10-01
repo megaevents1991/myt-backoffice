@@ -76,6 +76,7 @@ import {
 import type { FlightWritableColumn } from "@/lib/actions/offline-flight-columns";
 import { FlightAllocationsPanel } from "@/components/flight-allocations-panel";
 import { useTablePreferences } from "@/hooks/use-table-preferences";
+import { useSessionState } from "@/hooks/use-view-state";
 
 // Preferences are stored per staff account (see useTablePreferences), so the
 // same column choice follows you between machines.
@@ -156,8 +157,10 @@ export function FlightsEditableTable({
   const [columnPrefs, setColumnPrefs] = useTablePreferences<{
     visibleColumns: FlightWritableColumn[];
   }>(TABLE_KEY, { visibleColumns: DEFAULT_VISIBLE_COLUMNS });
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [showFilters, setShowFilters] = useState(false);
+  // Remembered for the browser tab, per screen (hooks/use-view-state.ts) - a refresh used
+  // to clear the filters and fold the panel. The columns are a per-account preference above.
+  const [filters, setFilters] = useSessionState<Filters>("flights:filters", EMPTY_FILTERS);
+  const [showFilters, setShowFilters] = useSessionState("flights:showFilters", false);
   const [events, setEvents] = useState<Pick<Event, "id" | "name" | "date">[]>([]);
   const [bulkField, setBulkField] = useState<string>("");
   const [bulkValue, setBulkValue] = useState<string>("");

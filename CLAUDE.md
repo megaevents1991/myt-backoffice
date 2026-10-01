@@ -170,6 +170,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   still wins; the portal keeps `default`. **Search boxes** are `components/search-input.tsx`
 >   (`SearchInput`: glass, clear button, Esc, logical sides for RTL) - used by DataTable and
 >   every list screen; do not draw another.
+>   **A refresh keeps your place (2026-10-01).** Screens held their tab / view / filters in
+>   `useState`, so F5 reset them (Tasks READ `?tab=` on arrival and never wrote it). One rule,
+>   pure in `lib/view-state.ts` (`scripts/view-state-selftest.ts`), two hooks in
+>   `hooks/use-view-state.ts`: **which tab / view I am on -> the URL** (`useUrlState`, or
+>   `components/url-tabs.tsx` `UrlTabs` for a screen's main tabs; `history.replaceState`, the
+>   default value is never written); **how I narrowed the list -> `sessionStorage`**
+>   (`useSessionState`, a drop-in for `useState`, key `myt:view:<path>:<name>`; a stored value
+>   that lost the default's shape is ignored). `DataTable` remembers search / sort / page /
+>   hidden columns by itself (key from the column ids; pass `stateKey` when the columns change
+>   with the data - price-light). New screen: use these, not a bare `useState`, for anything a
+>   refresh should keep. `useSessionState` reads storage on first render, so it is for
+>   dashboard content only (mounted after the session check), never server-rendered markup.
 > - **Deep links:** `id="fix-*"` / `id="section-*"` anchors flash on arrival
 >   (`:target` keyframes in globals.css + `components/deep-link-scroll.tsx`).
 >   Event editor sections carry `data-editor-section` for the `EditorRail`.

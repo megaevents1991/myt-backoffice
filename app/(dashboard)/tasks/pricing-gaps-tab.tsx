@@ -7,6 +7,7 @@ import { AlertTriangle, Check, ExternalLink, ListTodo, Wrench } from "lucide-rea
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useSessionState } from "@/hooks/use-view-state";
 import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -64,14 +65,25 @@ export function PricingGapsTab({
   const [sourceErrors, setSourceErrors] = useState<{ source: PricingGapSource; error: string }[]>([]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
-  const [sourceFilter, setSourceFilter] = useState<PricingGapSource | "all">("all");
-  const [scopeFilter, setScopeFilter] = useState<string>("all");
+  // The filters are remembered for the browser tab (hooks/use-view-state.ts) - a refresh
+  // used to reset them all.
+  const [sourceFilter, setSourceFilter] = useSessionState<PricingGapSource | "all">(
+    "pricing:source",
+    "all",
+  );
+  const [scopeFilter, setScopeFilter] = useSessionState<string>("pricing:scope", "all");
   // Gap range, both ends (Alon, 18.09: "עד הפרש מסויים ולא מהפרש מסויים, או סרגל
   // טווח כמו במלון"). null = untouched = every row, unknown gaps included.
-  const [gapRange, setGapRange] = useState<[number, number] | null>(null);
+  const [gapRange, setGapRange] = useSessionState<[number, number] | null>(
+    "pricing:gapRange",
+    null,
+    (value): value is [number, number] | null =>
+      value === null ||
+      (Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === "number")),
+  );
   // On by default (brief): the point of this tab is what still needs a human,
   // and a row someone already picked up is not that.
-  const [hideWithTask, setHideWithTask] = useState(true);
+  const [hideWithTask, setHideWithTask] = useSessionState("pricing:hideWithTask", true);
 
   const load = useCallback(async () => {
     try {

@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/page-header";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UrlTabs } from "@/components/url-tabs";
 import { getPartnersOverview } from "@/lib/actions/partners-dashboard-actions";
 import type { InsightsRange } from "@/lib/actions/partner-performance-actions";
 import { AddPartnerButton } from "./add-partner-button";
@@ -28,7 +29,8 @@ export default async function PartnersPage({
         actions={<AddPartnerButton />}
       />
 
-      <Tabs defaultValue="insights">
+      {/* The open tab is kept in `?tab=` - a refresh on the list used to land on Insights. */}
+      <UrlTabs defaultValue="insights" values={["insights", "list"]}>
         <TabsList>
           <TabsTrigger value="insights">Insights</TabsTrigger>
           <TabsTrigger value="list">Partners list</TabsTrigger>
@@ -39,7 +41,7 @@ export default async function PartnersPage({
         <TabsContent value="list" className="mt-4">
           <PartnersTable />
         </TabsContent>
-      </Tabs>
+      </UrlTabs>
     </div>
   );
 }

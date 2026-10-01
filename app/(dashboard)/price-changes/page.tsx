@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { PageHeader } from "@/components/page-header";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PriceChangesClient } from "./price-changes-client";
 
 // What the nightly base-price sync did, and the ">$400" changes it froze
@@ -10,7 +12,10 @@ export default function PriceChangesPage() {
         title="שינויי מחיר"
         description="מה הסנכרון הלילי עדכן, ומה נעצר לבדיקה ידנית (שינוי מעל $400)."
       />
-      <PriceChangesClient />
+      {/* The client keeps its view in the URL (useSearchParams) - that needs a boundary. */}
+      <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+        <PriceChangesClient />
+      </Suspense>
     </div>
   );
 }

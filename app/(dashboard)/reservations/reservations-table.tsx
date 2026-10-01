@@ -19,6 +19,7 @@ import {
   bulkSoftDeleteReservations,
 } from "@/lib/actions/reservation-actions";
 import { useToast } from "@/hooks/use-toast";
+import { useSessionState } from "@/hooks/use-view-state";
 import { useConfirm } from "@/components/confirm-provider";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -32,8 +33,9 @@ export function ReservationsTable() {
   const [isIdle, setIsIdle] = useState(false);
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [bulkStatus, setBulkStatus] = useState<string>("");
-  const [offlineOnly, setOfflineOnly] = useState(false);
-  const [showDeleted, setShowDeleted] = useState(false);
+  // Remembered for the browser tab (hooks/use-view-state.ts) - a refresh used to reset both.
+  const [offlineOnly, setOfflineOnly] = useSessionState("offlineOnly", false);
+  const [showDeleted, setShowDeleted] = useSessionState("showDeleted", false);
   const { toast } = useToast();
   const confirm = useConfirm();
   const { user } = useAuth();

@@ -25,7 +25,9 @@ import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UrlTabs } from "@/components/url-tabs";
+import { useSessionState, useUrlState } from "@/hooks/use-view-state";
 import {
   Select,
   SelectContent,
@@ -94,6 +96,8 @@ import {
 
 /** Every tab `?tab=` may deep-link to. */
 const TAB_IDS = ["tasks", "kanban", "roadmap", "marketing", "gaps", "pricing", "rules"] as const;
+/** The Tasks table's saved views - `?view=`. */
+const VIEW_IDS = ["open", "done", "all"] as const;
 
 /** Small badge on sourced tasks - where the work came from. */
 const SOURCE_BADGE: Partial<Record<TaskSource, string>> = {
@@ -140,22 +144,23 @@ export function TasksClient() {
 
   const [tasks, setTasks] = useState<TaskWithNames[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState("open");
-  const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  // Where you are survives a refresh (hooks/use-view-state.ts): the tab and the Open / Done /
+  // All view in the URL, the owner filter and the kanban grouping for the browser tab.
+  const [view, setView] = useUrlState<string>("view", "open", VIEW_IDS);
+  const [groupBy, setGroupBy] = useSessionState<GroupBy>("groupBy", "none");
   // The whole board is visible (16.09) - the owner filter says whose tasks are on screen:
   // mine (an editor's default), everyone's (an admin's default - they assign work), the ones
-  // I handed to someone else, or - admins - one person's (30.09).
-  const [owner, setOwner] = useState<OwnerFilter>("mine");
-  const didInitFilter = useRef(false);
+  // I handed to someone else, or - admins - one person's (30.09). Null = not chosen yet, so
+  // the role's default applies (and is not pinned by a stored copy).
+  const [ownerChoice, setOwner] = useSessionState<OwnerFilter | null>(
+    "owner",
+    null,
+    (value): value is OwnerFilter | null => value === null || typeof value === "string",
+  );
+  const owner: OwnerFilter = ownerChoice ?? (isManager ? "all" : "mine");
   const [editor, setEditor] = useState<TaskEditorState>({ open: false, task: null });
   const handledTaskRef = useRef<string | null>(null);
   const activeTabRef = useRef<string>(initialTab);
-
-  useEffect(() => {
-    if (!user || didInitFilter.current) return;
-    didInitFilter.current = true;
-    setOwner(isManager ? "all" : "mine");
-  }, [user, isManager]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -713,8 +718,11 @@ export function TasksClient() {
     );
 
   return (
-    <Tabs
-      defaultValue={initialTab}
+    // The open tab is written to `?tab=` - it was only ever READ from there, so a refresh
+    // on Kanban landed back on the Tasks list.
+    <UrlTabs
+      defaultValue="tasks"
+      values={TAB_IDS}
       onValueChange={(next) => {
         // "Run now" on the rules tab creates tasks - refresh the board when leaving it.
         if (activeTabRef.current === "rules" && next !== "rules") reload();
@@ -960,7 +968,7 @@ export function TasksClient() {
       >
         {editor.task ? subtasksPanel(editor.task) : null}
       </TaskEditor>
-    </Tabs>
+    </UrlTabs>
   );
 }
 

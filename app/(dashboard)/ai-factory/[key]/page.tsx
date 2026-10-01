@@ -65,7 +65,7 @@ export default async function AgentDetailPage({
   const { key: rawKey } = await params;
   if (!isAgentKey(rawKey)) notFound();
   const key = rawKey;
-  const { tab, logPage: logPageRaw } = await searchParams;
+  const { logPage: logPageRaw } = await searchParams;
   const logPage = Math.max(0, Number.parseInt(logPageRaw ?? "0", 10) || 0);
 
   const [detail, log, maturity] = await Promise.all([
@@ -338,8 +338,8 @@ export default async function AgentDetailPage({
           <CardTitle className="text-sm font-medium text-muted-foreground">Agent</CardTitle>
         </CardHeader>
         <CardContent>
+          {/* `?tab=` (memory / log / maturity) is read and written by AgentTabs itself. */}
           <AgentTabs
-            defaultTab={tab === "memory" || tab === "log" || tab === "maturity" ? tab : "identity"}
             identity={identityTab}
             memory={memoryTab}
             log={logTab}

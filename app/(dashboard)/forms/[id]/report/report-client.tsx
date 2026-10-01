@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToastAction } from "@/components/ui/toast";
 import { useToast } from "@/hooks/use-toast";
+import { useSessionState, useUrlState } from "@/hooks/use-view-state";
 import { useConfirm } from "@/components/confirm-provider";
 import {
   Select,
@@ -161,13 +162,15 @@ export function ReportClient({
   const router = useRouter();
   const { toast } = useToast();
   const confirm = useConfirm();
-  const [prefix, setPrefix] = useState("");
-  const [num, setNum] = useState("");
-  const [escort, setEscort] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [year, setYear] = useState("all");
-  const [tab, setTab] = useState("trips");
+  // A refresh keeps the report where it was (hooks/use-view-state.ts): the filters for the
+  // browser tab (per form - the key carries this page's path), the open tab in `?tab=`.
+  const [prefix, setPrefix] = useSessionState("report:prefix", "");
+  const [num, setNum] = useSessionState("report:num", "");
+  const [escort, setEscort] = useSessionState("report:escort", "");
+  const [fromDate, setFromDate] = useSessionState("report:from", "");
+  const [toDate, setToDate] = useSessionState("report:to", "");
+  const [year, setYear] = useSessionState("report:year", "all");
+  const [tab, setTab] = useUrlState<string>("tab", "trips");
   const [openTrip, setOpenTrip] = useState<number | null | undefined>(undefined);
   const [viewingId, setViewingId] = useState<number | null>(null);
   // Answers corrected in the popup this session - shown at once, while

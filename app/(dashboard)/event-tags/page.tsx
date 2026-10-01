@@ -4,12 +4,8 @@ import { TagsRulesTabs } from "./tags-rules-tabs";
 
 export const dynamic = "force-dynamic";
 
-export default async function EventTagsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ tab?: string }>;
-}) {
-  const { tab } = await searchParams;
+// `?tab=rules` opens the Rules tab - TagsRulesTabs reads and writes it itself.
+export default async function EventTagsPage() {
   const [tags, counts, rules] = await Promise.all([
     listTags(),
     getTagEventCounts(),
@@ -24,12 +20,7 @@ export default async function EventTagsPage({
           אוטומטית (הוספה בלבד - לא מוחקים תיוג ידני).
         </p>
       </div>
-      <TagsRulesTabs
-        initialTab={tab === "rules" ? "rules" : "tags"}
-        tags={tags}
-        counts={counts}
-        rules={rules}
-      />
+      <TagsRulesTabs tags={tags} counts={counts} rules={rules} />
     </div>
   );
 }

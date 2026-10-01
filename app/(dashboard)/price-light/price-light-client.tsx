@@ -4,12 +4,12 @@
 // and what to do about a red light. Pattern = price-changes-client.tsx.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Columns2, ExternalLink, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useUrlState } from "@/hooks/use-view-state";
 import { DataTable, type DataTableView } from "@/components/data-table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -129,6 +129,9 @@ function noPriceText(answer: PriceLightScopeCell["competitors"][number]): string
 
 /** Column order for the competitor columns - the registry order staff already know from the panel. */
 const COMPETITOR_ORDER: CompetitorKey[] = ["liveevents", "issta", "golasso", "ontour", "livetickets"];
+/** What `?scope=` and `?comp=` may hold ("" = no competitor picked). */
+const SCOPE_IDS: readonly ScopeFilter[] = ["all", "package", "ticket"];
+const COMP_IDS: readonly string[] = ["", ...COMPETITOR_ORDER];
 
 /** One competitor's answer for one scope of a row, or null when that competitor is not in play there. */
 function answerFor(cell: PriceLightScopeCell, competitor: CompetitorKey): CompetitorAnswer | null {
@@ -268,7 +271,6 @@ function LightBadge({ cell }: { cell: PriceLightScopeCell }) {
 
 export function PriceLightClient() {
   const { toast } = useToast();
-  const searchParams = useSearchParams();
   const [rows, setRows] = useState<PriceLightRow[]>([]);
   const [runs, setRuns] = useState<CrawlPanelRow[]>([]);
   const [cost, setCost] = useState<{ usd: number; calls: number } | null>(null);
@@ -277,18 +279,24 @@ export function PriceLightClient() {
   // about red is unknown until the full list lands, and is shown as "…" rather than as 0.
   const [partial, setPartial] = useState(false);
   const [runsLoading, setRunsLoading] = useState(true);
-  const [view, setView] = useState("pending");
-  const [scope, setScope] = useState<ScopeFilter>("all");
+  // The view (`?f=`), the package/ticket lens (`?scope=`) and the picked competitor (`?comp=`)
+  // all live in the URL (hooks/use-view-state.ts), so a filtered table can be linked to and
+  // survives a refresh. Only `comp` was written before - `f` and `scope` were read once on
+  // arrival and then lost.
+  const [viewParam, setView] = useUrlState<string>("f", "pending");
+  const [scopeParam, setScope] = useUrlState<ScopeFilter>("scope", "all", SCOPE_IDS);
+  // An old link's `?f=package` / `?f=ticket` meant "every row, under that lens".
+  const legacyLens = viewParam === "package" || viewParam === "ticket" ? viewParam : null;
+  const view = legacyLens ? "all" : viewParam;
+  const scope: ScopeFilter = scopeParam !== "all" ? scopeParam : (legacyLens ?? "all");
   const [compare, setCompare] = useState<PriceLightRow | null>(null);
-  // The competitor picked from a column header (note 3) - kept in the URL (`?comp=`) next to
-  // `?scope=`, so a filtered table can be linked to and survives a refresh.
-  const [comp, setComp] = useState<CompetitorKey | null>(null);
-  const pickCompetitor = useCallback((next: CompetitorKey | null) => {
-    setComp(next);
-    const url = new URL(window.location.href);
-    if (next) url.searchParams.set("comp", next); else url.searchParams.delete("comp");
-    window.history.replaceState(null, "", url);
-  }, []);
+  // The competitor picked from a column header (note 3).
+  const [compParam, setCompParam] = useUrlState<string>("comp", "", COMP_IDS);
+  const comp = compParam ? (compParam as CompetitorKey) : null;
+  const pickCompetitor = useCallback(
+    (next: CompetitorKey | null) => setCompParam(next ?? ""),
+    [setCompParam],
+  );
   /** A decision hands back the ONE fresh row (note 14): patch it in place - a full reload re-sorted
    *  the table and the row the reader was on jumped away. null = the row no longer belongs here. */
   const patchRow = useCallback((eventId: number, fresh: PriceLightRow | null) => {
@@ -356,18 +364,6 @@ export function PriceLightClient() {
     void reloadRuns();
     void reloadCost();
   }, [reloadRows, reloadRuns, reloadCost]);
-
-  // ?f= preselects a view, ?scope= the package/ticket lens, on arrival (e.g. a link from the
-  // dashboard widget) - read once.
-  useEffect(() => {
-    const f = searchParams.get("f");
-    if (f) setView(f === "package" || f === "ticket" ? "all" : f);
-    const s = searchParams.get("scope") ?? (f === "package" || f === "ticket" ? f : null);
-    if (s === "package" || s === "ticket") setScope(s);
-    const c = searchParams.get("comp");
-    if (c && (COMPETITOR_ORDER as string[]).includes(c)) setComp(c as CompetitorKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // The rows that have anything to say under the current lens - a ticket-only lens drops events
   // that have no ticket conclusion at all.
@@ -724,7 +720,11 @@ export function PriceLightClient() {
           <button
             key={s.id}
             type="button"
-            onClick={() => setScope(s.id)}
+            onClick={() => {
+              // Leaving an old `?f=package` link: the lens now lives in `?scope=` alone.
+              if (legacyLens) setView("all");
+              setScope(s.id);
+            }}
             aria-pressed={scope === s.id}
             className={cn(
               "rounded-md px-3 py-1 transition-colors",
@@ -770,6 +770,9 @@ export function PriceLightClient() {
         activeView={view}
         onViewChange={setView}
         defaultSorting={[{ id: "diff", desc: true }]}
+        // Its own key: the competitor columns come and go with the rows on screen, so a key
+        // made from the column ids would change (and forget the page) as the data loads.
+        stateKey="price-light"
         dense
         getRowId={(row) => row.id}
         emptyState={emptyState}

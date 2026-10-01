@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useState, useTransition } from "react";
+import { Fragment, useEffect, useState, useTransition } from "react";
+import { useSessionState } from "@/hooks/use-view-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -88,7 +89,8 @@ const emptyFilters: FilterState = {
 
 export function AuditClient({ initialRows }: { initialRows: AuditRow[] }) {
   const [rows, setRows] = useState<AuditRow[]>(initialRows);
-  const [filters, setFilters] = useState<FilterState>(emptyFilters);
+  // Remembered for the browser tab (hooks/use-view-state.ts) - a refresh used to clear them.
+  const [filters, setFilters] = useSessionState<FilterState>("filters", emptyFilters);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -104,6 +106,14 @@ export function AuditClient({ initialRows }: { initialRows: AuditRow[] }) {
       setRows(result);
     });
   };
+
+  // The page arrives with the UNFILTERED rows; restored filters have to be applied once,
+  // or the boxes would say one thing and the table another.
+  useEffect(() => {
+    if (JSON.stringify(filters) !== JSON.stringify(emptyFilters)) handleApply();
+    // Mount only - afterwards the Apply button decides.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleExpanded = (id: number) => {
     setExpandedId((current) => (current === id ? null : id));

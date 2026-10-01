@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { PageHeader } from "@/components/page-header";
+import { Skeleton } from "@/components/ui/skeleton";
 import { FactoryClient } from "./factory-client";
 
 // The events factory (spec docs/superpowers/specs/2026-09-02, section 8):
@@ -11,7 +13,10 @@ export default function FactoryPage() {
         title="מפעל האירועים"
         description="טיוטות נבנות אוטומטית — כרטיסים מזיכרון האצטדיון, מחירים חיים, iata — ואתה מאשר בבת אחת. שולחים לכאן מכל טבלת ספק (Send to factory)."
       />
-      <FactoryClient />
+      {/* The client keeps its view in the URL (useSearchParams) - that needs a boundary. */}
+      <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+        <FactoryClient />
+      </Suspense>
     </div>
   );
 }

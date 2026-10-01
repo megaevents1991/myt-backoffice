@@ -7,6 +7,7 @@ import { Check, ExternalLink, Loader2, Square, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useUrlState } from "@/hooks/use-view-state";
 import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,7 +110,8 @@ export function FactoryClient() {
   const { toast } = useToast();
   const [drafts, setDrafts] = useState<EventDraft[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState("all");
+  // The view is kept in `?view=` (hooks/use-view-state.ts) - a refresh used to reset it.
+  const [view, setView] = useUrlState<string>("view", "all");
   const [selection, setSelection] = useState<Record<string, boolean>>({});
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [buildTotal, setBuildTotal] = useState(0);

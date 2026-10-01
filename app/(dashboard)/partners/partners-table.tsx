@@ -43,6 +43,7 @@ import { describeCommission } from "@/lib/partner-commission";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
+import { useSessionState } from "@/hooks/use-view-state";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -80,8 +81,9 @@ function partnerType(partner: PartnerListItem): PartnerType {
 export function PartnersTable() {
   const [partners, setPartners] = useState<PartnerListItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  // Remembered for the browser tab (hooks/use-view-state.ts) - a refresh used to reset both.
+  const [typeFilter, setTypeFilter] = useSessionState<TypeFilter>("typeFilter", "all");
+  const [statusFilter, setStatusFilter] = useSessionState<StatusFilter>("statusFilter", "active");
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   // Refund rows live in their own tab and load on demand - there are thousands,

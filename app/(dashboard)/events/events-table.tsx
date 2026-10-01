@@ -42,6 +42,7 @@ import {
 } from "@/components/taxonomy/event-taxonomy-select";
 import type { AssignMode } from "@/types/taxonomy.types";
 import { useToast } from "@/hooks/use-toast";
+import { useSessionState } from "@/hooks/use-view-state";
 import { useConfirm } from "@/components/confirm-provider";
 import {
   AlertDialog,
@@ -244,10 +245,12 @@ function UsualPriceCell({
 export function EventsTable() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showDeleted, setShowDeleted] = useState(false);
-  const [hideSold, setHideSold] = useState(false);
-  const [hidePast, setHidePast] = useState(false);
-  const [showTicketOnly, setShowTicketOnly] = useState(false);
+  // The filters are remembered for the browser tab (hooks/use-view-state.ts): a refresh, or
+  // coming back from an event's editor, used to drop every one of them.
+  const [showDeleted, setShowDeleted] = useSessionState("showDeleted", false);
+  const [hideSold, setHideSold] = useSessionState("hideSold", false);
+  const [hidePast, setHidePast] = useSessionState("hidePast", false);
+  const [showTicketOnly, setShowTicketOnly] = useSessionState("showTicketOnly", false);
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkMarkupOpen, setBulkMarkupOpen] = useState(false);
@@ -268,8 +271,8 @@ export function EventsTable() {
   const [rawCats, setRawCats] = useState<EventCategory[]>([]);
   const [catsByEvent, setCatsByEvent] = useState<Record<number, number[]>>({});
   const [tagsByEvent, setTagsByEvent] = useState<Record<number, number[]>>({});
-  const [filterCatId, setFilterCatId] = useState("");
-  const [filterTagId, setFilterTagId] = useState("");
+  const [filterCatId, setFilterCatId] = useSessionState("filterCatId", "");
+  const [filterTagId, setFilterTagId] = useSessionState("filterTagId", "");
 
   const refreshTaxonomyLinks = async () => {
     try {

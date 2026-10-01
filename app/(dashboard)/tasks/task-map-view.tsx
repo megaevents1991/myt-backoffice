@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { MessageSquare, Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/search-input";
+import { useSessionState } from "@/hooks/use-view-state";
 import { Progress } from "@/components/ui/progress";
 import { PRIORITY_LABEL } from "@/components/task-editor";
 import { initialsOf, PRIORITY_STYLE, STATUS_LABEL } from "@/lib/tasks/kanban";
@@ -54,8 +55,9 @@ export function TaskMapView({
   onOpenTask: (task: TaskWithNames) => void;
   onAddTask: (defaults: MapTaskDefaults) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [assignee, setAssignee] = useState<string>("all");
+  // Per map (roadmap / marketing share this component and this path), kept for the browser tab.
+  const [query, setQuery] = useSessionState(`map:${mode}:search`, "");
+  const [assignee, setAssignee] = useSessionState<string>(`map:${mode}:assignee`, "all");
 
   const people = useMemo(() => {
     const byId = new Map<string, string>();
