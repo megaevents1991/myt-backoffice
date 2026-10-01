@@ -58,6 +58,9 @@ export async function OverviewContent({ links }: { links: NavItem[] }) {
 
   const o = result.data;
   const upcomingBlocks = o.blocksByStatus.reduce((sum, s) => sum + s.upcoming, 0);
+  // `links` is the sidebar's own list, already cut by the viewer's role: the
+  // approvals screen is in it only for the company manager and for superadmin.
+  const approvals = links.find((item) => item.href === "/tours/approvals");
 
   const departureRows: AttentionRow[] = o.departuresWithoutBlock.map((d) => ({
     key: d.id,
@@ -131,9 +134,19 @@ export async function OverviewContent({ links }: { links: NavItem[] }) {
       </div>
 
       <section aria-labelledby="tours-attention" className="space-y-3">
-        <h2 id="tours-attention" className="font-display text-lg font-semibold">
-          דורש טיפול
-        </h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 id="tours-attention" className="font-display text-lg font-semibold">
+            דורש טיפול
+          </h2>
+          {approvals && (
+            <Link
+              href={approvals.href}
+              className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+            >
+              לכל מה שמחכה לאישור ולטיפול של מנהל
+            </Link>
+          )}
+        </div>
         <div className="grid gap-4 lg:grid-cols-2">
           <AttentionList
             title="יציאות מפורסמות בלי קבוצת טיסה פעילה"

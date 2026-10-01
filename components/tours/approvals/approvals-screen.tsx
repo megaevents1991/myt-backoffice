@@ -1,0 +1,266 @@
+"use client";
+
+/**
+ * /tours/approvals ("אישורים וטיפול") - the manager's morning queue of a tours
+ * company: what only a manager approves, and what the import left for a person
+ * to settle. Every row is handled in place or is one click from where it is
+ * fixed, and leaves the list once handled.
+ *
+ * The page guards the route on the server; this component loads the queue
+ * through its own server action (which checks the role again), runs every
+ * action through one `run` and reloads after each, so the counts are always
+ * what the database holds.
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CheckCircle2, RefreshCw } from "lucide-react";
+import { toast } from "react-hot-toast";
+
+import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  getApprovalsQueue,
+  getApprovalsReviewPage,
+  type ApprovalsData,
+} from "@/lib/actions/tours-approvals-actions";
+import { formatDateShort } from "@/lib/tours/deadlines";
+import { Notice } from "@/components/tours/flights/block-ui";
+import { BlockApprovals } from "./block-approvals";
+import { DeparturesWithoutBlock } from "./departures-without-block";
+import { DeparturesWithoutPrice } from "./departures-without-price";
+import { ExceptionsSummary } from "./exceptions-summary";
+import { UnmatchedHotels } from "./unmatched-hotels";
+import type { QueueRun } from "./queue-ui";
+
+const LOAD_FAILED = "טעינת הנתונים נכשלה. רעננו את הדף, ואם זה חוזר פנו לתמיכה.";
+
+export function ApprovalsScreen({ companyName }: { companyName: string }) {
+  const [data, setData] = useState<ApprovalsData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  /** Bumped after every change, so the data-problems summary counts again. */
+  const [changes, setChanges] = useState(0);
+  const busyRef = useRef<string | null>(null);
+  const reviewPage = useRef(1);
+  /** Only the newest load may write its answer. */
+  const loadSeq = useRef(0);
+
+  const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    setLoading(true);
+    try {
+      const res = await getApprovalsQueue({ reviewPage: reviewPage.current });
+      if (seq !== loadSeq.current) return;
+      if (res.success) {
+        setData(res.data);
+        reviewPage.current = res.data.review.page;
+        setError(null);
+      } else {
+        setError(res.error);
+      }
+    } catch (e) {
+      console.error("approvals: load failed", e);
+      if (seq === loadSeq.current) setError(LOAD_FAILED);
+    } finally {
+      if (seq === loadSeq.current) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // One action at a time: the ref refuses a second press before React has re-rendered the buttons as disabled.
+  const begin = useCallback((key: string): boolean => {
+    if (busyRef.current !== null) return false;
+    busyRef.current = key;
+    setBusy(key);
+    return true;
+  }, []);
+  const end = useCallback(() => {
+    busyRef.current = null;
+    setBusy(null);
+  }, []);
+
+  const run: QueueRun = useCallback(
+    async (key, action, okMessage) => {
+      if (!begin(key)) return false;
+      try {
+        const res = await action();
+        if (!res.success) {
+          toast.error(res.error, { duration: 7000 });
+          return false;
+        }
+        if (okMessage) toast.success(okMessage);
+        if (res.warning) toast(res.warning, { duration: 8000 });
+        await load();
+        setChanges((n) => n + 1);
+        return true;
+      } catch (e) {
+        console.error("approvals: action failed", e);
+        toast.error("הפעולה נכשלה. נסו שוב.");
+        return false;
+      } finally {
+        end();
+      }
+    },
+    [begin, end, load],
+  );
+
+  const refresh = useCallback(async () => {
+    if (!begin("refresh")) return;
+    try {
+      await load();
+      setChanges((n) => n + 1);
+    } finally {
+      end();
+    }
+  }, [begin, end, load]);
+
+  /** Another page of the review list: only that list is read again. */
+  const showReviewPage = useCallback(async (page: number) => {
+    if (!begin("review:page")) return;
+    try {
+      const res = await getApprovalsReviewPage(page);
+      if (res.success) {
+        reviewPage.current = res.data.page;
+        setData((prev) => (prev ? { ...prev, review: res.data } : prev));
+      } else {
+        toast.error(res.error);
+      }
+    } catch (e) {
+      console.error("approvals: review page failed", e);
+      toast.error(LOAD_FAILED);
+    } finally {
+      end();
+    }
+  }, [begin, end]);
+
+  return (
+    <div dir="rtl">
+      <PageHeader
+        eyebrow={companyName}
+        title="אישורים וטיפול"
+        description="מה שמחכה להחלטה של מנהל: אישורים לקבוצות טיסה, ויציאות ונתונים שהטעינה מהגיליונות לא יכלה לסגור לבד. מטפלים בשורה במקום, והיא יורדת מהרשימה."
+        actions={
+          <Button type="button" size="sm" variant="outline" onClick={() => void refresh()} disabled={busy !== null || loading}>
+            <RefreshCw className={cn(loading && data !== null && "animate-spin")} aria-hidden />
+            רענון
+          </Button>
+        }
+      />
+
+      {error && (
+        <div className="mb-4 flex flex-wrap items-center gap-3" role="alert">
+          <div className="min-w-0 flex-1">
+            <Notice tone="danger">{error}</Notice>
+          </div>
+          {data === null && (
+            <Button type="button" size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
+              ניסיון נוסף
+            </Button>
+          )}
+        </div>
+      )}
+
+      {data === null ? (
+        error ? null : (
+          <QueueSkeleton />
+        )
+      ) : (
+        <div className="space-y-4">
+          <Summary data={data} />
+          <BlockApprovals data={data} run={run} busy={busy} onReviewPage={(page) => void showReviewPage(page)} />
+          <DeparturesWithoutBlock data={data} run={run} busy={busy} />
+          <UnmatchedHotels data={data} run={run} busy={busy} />
+          <DeparturesWithoutPrice data={data} run={run} busy={busy} />
+          <ExceptionsSummary refreshKey={changes} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The total and a count per section; each count jumps to its section. */
+function Summary({ data }: { data: ApprovalsData }) {
+  const sections = [
+    {
+      id: "blocks",
+      label: "אישורי מנהל לקבוצות טיסה",
+      count: data.awaitingApproval.total + data.cancelDecisions.total + data.review.total,
+    },
+    { id: "no-block", label: "יציאות בלי קבוצת טיסה", count: data.departuresWithoutBlock.length },
+    { id: "hotels", label: "מלונות שלא בקטלוג", count: data.unmatchedHotels.length },
+    { id: "no-price", label: "יציאות בלי מחיר", count: data.departuresWithoutPrice.length },
+  ];
+  const total = sections.reduce((sum, s) => sum + s.count, 0);
+
+  // Scrolls without touching the URL: nothing on this screen lives in the address bar.
+  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border bg-card px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-3">
+        {total === 0 ? (
+          <CheckCircle2 className="h-7 w-7 text-emerald-600" aria-hidden />
+        ) : (
+          <span className="font-display text-3xl font-bold tabular-nums leading-none tracking-tight">
+            {total.toLocaleString("he-IL")}
+          </span>
+        )}
+        <div>
+          <div className="text-sm font-medium">{total === 0 ? "אין מה לטפל כרגע" : "ממתינים לטיפול"}</div>
+          <div className="text-xs text-muted-foreground">
+            נכון ל-<span dir="ltr">{formatDateShort(data.today)}</span>
+          </div>
+        </div>
+      </div>
+      <nav aria-label="חלקי המסך" className="flex flex-wrap items-center gap-2">
+        {sections.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => jump(s.id)}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              s.count === 0 && "text-muted-foreground",
+            )}
+          >
+            {s.label}
+            <span className={cn("tabular-nums", s.count > 0 ? "font-semibold" : "font-normal")}>
+              {s.count.toLocaleString("he-IL")}
+            </span>
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => jump("exceptions")}
+          className="inline-flex items-center rounded-full border border-dashed px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          פערים שהטעינה מצאה
+        </button>
+      </nav>
+    </div>
+  );
+}
+
+function QueueSkeleton() {
+  return (
+    <div className="space-y-4" aria-busy="true" aria-label="טוען נתונים">
+      <Skeleton className="h-16 w-full" />
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="rounded-lg border bg-card p-4 shadow-sm">
+          <Skeleton className="h-5 w-64" />
+          <Skeleton className="mt-2 h-3 w-full max-w-xl" />
+          <div className="mt-4 space-y-2.5">
+            {[0, 1, 2, 3].map((row) => (
+              <Skeleton key={row} className="h-10 w-full" />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
