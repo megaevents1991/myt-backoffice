@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   campaignInputHash,
   creativeGap,
+  creativePlaceText,
   creativeVersion,
   creativeWorkOrder,
   expectedCampaignHash,
@@ -25,6 +26,13 @@ const order = creativeWorkOrder([
   { id: 6, campaign_image_url: "f.png", campaign_generated_at: null }, // a picture with no stamp is the oldest
 ]).map((e) => e.id);
 assert.deepEqual(order, [2, 4, 6, 3, 1, 5]);
+
+/* creative place: the ad names the city of the SHOW alone - the flight city is the site's business (Dor 01.10) */
+const london = { name: "לונדון, בריטניה", latitude: 51.5, longitude: -0.12, city_iata: "LON" };
+const manchester = { name: "מנצ'סטר", latitude: 53.48, longitude: -2.24 };
+assert.equal(creativePlaceText({ location: london, event_location: manchester }), "מנצ'סטר");
+assert.equal(creativePlaceText({ location: london }), "לונדון, בריטניה", "one city - the location name as before");
+assert.equal(creativePlaceText({ location: london, event_location: { ...london, name: "London" } }), "לונדון, בריטניה", "same point = one city");
 
 /* feed file: the ids Meta will list */
 const csv = 'id,image_link,title\r\n1154,https://x/a.png,"אואזיס, מדריד"\r\n"717",https://x/b.png,ריאל\r\n';

@@ -27,7 +27,7 @@ import {
   type CreativeParams,
 } from "@/lib/creative/input";
 import { computePackagePrice } from "@/lib/package-price";
-import { hasEventCity, placeLabel } from "@/lib/lodging";
+import { eventCityName, hasEventCity, type LodgingEvent } from "@/lib/lodging";
 import type { Event } from "@/types/app.types";
 
 export type CreativeDefaults = {
@@ -421,6 +421,19 @@ export function creativeGap(
   return event.card_image_url || event.art_image_url ? "event-photo" : "bare";
 }
 
+/**
+ * The place a creative prints: on a two-city event the city of the SHOW alone
+ * ("מנצ'סטר") - `location` is the flight city, and "טיסה ללונדון" belongs to the
+ * site and the feed text, not the ad picture (Dor 01.10). One city: the location
+ * name as it is. Pure.
+ */
+export function creativePlaceText(event: LodgingEvent | null | undefined): string {
+  if (!event?.location) return "";
+  return hasEventCity(event)
+    ? eventCityName(event)
+    : (event.location.name ?? "").trim();
+}
+
 /** Auto-derive everything a creative needs from an event (no auth guard). */
 export async function deriveCreativeDefaults(
   eventId: number,
@@ -445,8 +458,7 @@ export async function deriveCreativeDefaults(
   // would shift stored midnight to 02:00/03:00 Israel time).
   const { dateText, timeText } = eventDateTexts(event.date);
 
-  // "מנצ'סטר · טיסה ללונדון" on a two-city event - `location` alone is the flight city.
-  const locationText = placeLabel(event);
+  const locationText = creativePlaceText(event);
   const price = computePackagePrice(event);
   if (price === null)
     warnings.push("אין כרטיסים זמינים - מחיר לא חושב, מלא ידנית");
@@ -552,10 +564,13 @@ export function campaignInputHash(
   // either re-rendered only the events it concerns, never the whole catalog.
   const gallerySegment = galleryUrl ? `|${galleryUrl}` : "";
   const gapSegment = gap ? `|gap:${gap}` : "";
-  // Only a two-city event carries its place: the creative prints placeLabel, and
-  // until 2026-09-30 it printed the flight city alone ("לונדון" on a Manchester
-  // show). Everyone else keeps a byte-identical hash, so only those redraw.
-  const placeSegment = hasEventCity(event) ? `|place:${placeLabel(event)}` : "";
+  // Only a two-city event carries its place: the creative prints the show's
+  // city (creativePlaceText), and until 2026-09-30 it printed the flight city
+  // ("לונדון" on a Manchester show). Everyone else keeps a byte-identical hash,
+  // so only those redraw.
+  const placeSegment = hasEventCity(event)
+    ? `|place:${creativePlaceText(event)}`
+    : "";
   return createHash("sha1")
     .update(
       `${RENDER_VERSION}|${dateText}|${price ?? "none"}|${event.name}|${event.card_image_url ?? ""}|${event.art_image_url ?? ""}${gallerySegment}${gapSegment}${placeSegment}`,
