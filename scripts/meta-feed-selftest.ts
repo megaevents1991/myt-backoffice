@@ -14,6 +14,7 @@ import {
   type SubjectRow,
 } from "../lib/creative/auto";
 import { activityIdsOf } from "../lib/feed/publish-meta-feed";
+import { addToPool, moveToPool, removeFromPools } from "../lib/person-gallery";
 
 /* creatives: an event that never got one goes first (date order kept), then the least
    recently drawn - a far-out event must not wait behind near ones whose price moves daily */
@@ -102,6 +103,27 @@ assert.equal(gapOf(fixture, [], []), "bare");
 assert.equal(gapOf({ ...fixture, card_image_url: "https://x/card.jpg" }, [], []), "event-photo");
 // a team matched on both sides but one has no picture is not the full look either
 assert.equal(gapOf(fixture, [], [bayern, { ...schalke, logo_url: null }]), "bare");
+
+/* two picture pools: a picture is a mood photo (page) or an event picture, never both */
+const mood1 = "https://x/mood1.jpg";
+const cut1 = "https://x/oasis-cutout-1.png";
+const pools = { page: [mood1], events: [cut1] };
+assert.deepEqual(addToPool(pools, "page", [" https://x/mood2.jpg ", "", cut1, mood1]), {
+  page: [mood1, "https://x/mood2.jpg"],
+  events: [cut1],
+});
+assert.deepEqual(moveToPool(pools, mood1, "events"), { page: [], events: [cut1, mood1] });
+assert.deepEqual(moveToPool(pools, cut1, "page"), { page: [mood1, cut1], events: [] });
+assert.equal(moveToPool(pools, "https://x/unknown.jpg", "events"), pools);
+assert.deepEqual(removeFromPools(pools, cut1), { page: [mood1], events: [] });
+
+/* creatives rotate through the EVENT pool only - the artist row carries no mood photo at all */
+const oasisRow = person({ id: 44, name: "אואזיס", name_english: "Oasis", art_image_url: "https://x/oasis-art.png" });
+const oasisShow = ev({ id: 1176, name: "אואזיס", name_english: "Oasis" });
+assert.equal(resolveCreativeSubject(oasisShow, [oasisRow], []).artistImageUrl, "https://x/oasis-art.png");
+const oasisWithPool = { ...oasisRow, eventGallery: ["https://x/a-cutout.png", "https://x/b-cutout.png"] };
+assert.equal(resolveCreativeSubject(oasisShow, [oasisWithPool], []).artistImageUrl, "https://x/a-cutout.png"); // 1176 % 2
+assert.notEqual(expectedCampaignHash(oasisShow, [oasisRow], []), expectedCampaignHash(oasisShow, [oasisWithPool], []));
 
 console.log("meta-feed selftest: all assertions passed");
 process.exit(0);

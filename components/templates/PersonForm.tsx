@@ -28,6 +28,7 @@ import { ArtBlobPicker } from "@/components/art-blob-picker";
 import { CrestLibraryUpload } from "@/components/templates/CrestLibraryUpload";
 import { HeroImageField } from "@/components/templates/HeroImageField";
 import { GalleryField } from "@/components/templates/gallery-field";
+import type { GalleryPools } from "@/lib/person-gallery";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import * as artist from "@/lib/actions/artist-actions";
 import * as football from "@/lib/actions/football-actions";
@@ -109,7 +110,12 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
   const [artBgScale, setArtBgScale] = useState(initial?.art_bg_scale ?? 1);
   const [artImageOffsetX, setArtImageOffsetX] = useState(initial?.art_image_offset_x ?? 0);
   const [artImageOffsetY, setArtImageOffsetY] = useState(initial?.art_image_offset_y ?? 0);
-  const [gallery, setGallery] = useState<string[]>(initial?.gallery ?? []);
+  // page = the mood gallery, events = what event cards and ads rotate through.
+  const initialPools = (): GalleryPools => ({
+    page: initial?.gallery ?? [],
+    events: initial?.event_gallery ?? [],
+  });
+  const [pools, setPools] = useState<GalleryPools>(initialPools);
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -140,7 +146,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
     artBgScale: initial?.art_bg_scale ?? 1,
     artImageOffsetX: initial?.art_image_offset_x ?? 0,
     artImageOffsetY: initial?.art_image_offset_y ?? 0,
-    gallery: initial?.gallery ?? [],
+    pools: initialPools(),
   });
   const isDirty =
     form.formState.isDirty ||
@@ -154,7 +160,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
       artBgScale,
       artImageOffsetX,
       artImageOffsetY,
-      gallery,
+      pools,
     }) !== initialExtras;
 
   // Logo must be a .png - satori (creative generator) cannot render SVG logos.
@@ -170,7 +176,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
     setArtBgScale(initial?.art_bg_scale ?? 1);
     setArtImageOffsetX(initial?.art_image_offset_x ?? 0);
     setArtImageOffsetY(initial?.art_image_offset_y ?? 0);
-    setGallery(initial?.gallery ?? []);
+    setPools(initialPools());
   };
 
   function onSubmit(values: FormData) {
@@ -199,7 +205,8 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           meta_tags: values.meta_tags || null,
           hero_video_url: values.hero_video_url || null,
           banners: parseBanners(values.banners),
-          gallery,
+          gallery: pools.page,
+          event_gallery: pools.events,
           videos: parseVideos(values.videos),
           is_active: values.is_active,
         };
@@ -336,7 +343,7 @@ export function PersonForm({ kind, initial }: { kind: PersonKind; initial?: Pers
           )} />
           <div className="space-y-2">
             <label className="text-sm font-medium">Gallery images</label>
-            <GalleryField value={gallery} onChange={setGallery} />
+            <GalleryField value={pools} onChange={setPools} withEvents={kind === "artists"} />
             <p className="text-xs text-muted-foreground">
               Pick multiple from any storage bucket, paste an external URL, or
               &quot;Upload + cut out&quot; to add a background-removed cut-out.

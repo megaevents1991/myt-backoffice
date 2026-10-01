@@ -118,8 +118,8 @@ export function PageContentField({
           <section className="space-y-2">
             <label className="text-sm font-medium">גלריית תמונות</label>
             <GalleryField
-              value={value.gallery ?? []}
-              onChange={(urls) => patch({ gallery: urls })}
+              value={{ page: value.gallery ?? [], events: [] }}
+              onChange={(pools) => patch({ gallery: pools.page })}
             />
           </section>
 
@@ -131,8 +131,8 @@ export function PageContentField({
               בהדרגה; תמונה אחת = רקע קבוע. ריק = עיצוב אוטומטי.
             </p>
             <GalleryField
-              value={value.tile_images ?? []}
-              onChange={(urls) => patch({ tile_images: urls })}
+              value={{ page: value.tile_images ?? [], events: [] }}
+              onChange={(pools) => patch({ tile_images: pools.page })}
             />
           </section>
 

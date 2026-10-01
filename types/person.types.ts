@@ -37,7 +37,12 @@ export interface Person {
   // Page enrichments (doc 19b/20/21/24) - read by myt-main artist/team pages.
   hero_video_url: string | null;
   banners: { image_url?: string; link_url?: string; title?: string }[] | null;
+  // TWO picture pools (2026-10-01, lib/person-gallery.ts): `gallery` is the mood
+  // gallery on the page; `event_gallery` is what an artist's site event cards and
+  // Meta creatives rotate through. A picture lives in one of them. Teams keep
+  // `event_gallery` empty - their events wear the crest.
   gallery: string[] | null;
+  event_gallery: string[] | null;
   videos: { url?: string; label?: string }[] | null;
   is_active: boolean;
   is_deleted: boolean;

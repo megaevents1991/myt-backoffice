@@ -126,6 +126,18 @@ export function PeopleTable({ kind }: { kind: PersonKind }) {
                         ))}
                       </span>
                       <Badge variant="secondary">{r.gallery.length}</Badge>
+                      {r.event_gallery?.length ? (
+                        <Badge variant="outline" title="Event pictures - event cards and ads rotate through them">
+                          +{r.event_gallery.length} events
+                        </Badge>
+                      ) : null}
+                    </Link>
+                  ) : r.event_gallery?.length ? (
+                    <Link
+                      href={`${a.base}/${r.id}/edit`}
+                      title={`No mood gallery; ${r.event_gallery.length} event pictures - click to manage`}
+                    >
+                      <Badge variant="outline">{r.event_gallery.length} events</Badge>
                     </Link>
                   ) : (
                     <span className="text-xs text-muted-foreground">-</span>

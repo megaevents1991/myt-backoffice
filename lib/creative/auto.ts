@@ -67,9 +67,11 @@ export type PersonRow = {
   logo_url: string | null;
   art_image_url: string | null;
   image_url: string | null;
-  // artists.gallery (jsonb) - array of image URLs, empty for most rows.
+  // artists.event_gallery (jsonb) - the pictures an artist's events rotate
+  // through, empty for most rows. NOT `gallery`: that one is the page's mood
+  // gallery and never reaches an ad (2026-10-01 - Oasis' mood photos did).
   // Only loaded for artists; football_teams/logos subjects leave it unset.
-  gallery?: string[] | null;
+  eventGallery?: string[] | null;
 };
 
 // PersonRow + where it came from, so a match maps back to a subject ref.
@@ -118,14 +120,32 @@ async function loadArtistRows(
   // Ordered: matchPerson keeps the FIRST containment hit, and the subject it
   // picks is part of the creative hash - an unordered read could pick another
   // row next run and re-render an unchanged event.
-  const { data, error } = await supabase
-    .from("artists")
-    .select("id,name,name_english,art_image_url,image_url,gallery")
-    .eq("is_deleted", false)
-    .order("id", { ascending: true });
+  type ArtistRead = Omit<PersonRow, "logo_url" | "eventGallery"> & {
+    event_gallery?: string[] | null;
+    gallery?: string[] | null;
+  };
+  const read = (pool: "event_gallery" | "gallery") =>
+    supabase
+      .from("artists")
+      .select(`id,name,name_english,art_image_url,image_url,${pool}`)
+      .eq("is_deleted", false)
+      .order("id", { ascending: true });
+  let { data, error } = await read("event_gallery");
+  let pool: "event_gallery" | "gallery" = "event_gallery";
+  if (error && ["42703", "PGRST204"].includes(error.code ?? "")) {
+    // The deploy beat its migration (20261001150000): the event pictures still
+    // live in `gallery`. Reading nothing instead would redraw every artist ad
+    // without its artist.
+    ({ data, error } = await read("gallery"));
+    pool = "gallery";
+  }
   if (error) console.error(JSON.stringify(error));
-  const rows: PersonRow[] = ((data || []) as Omit<PersonRow, "logo_url">[]).map(
-    (r) => ({ ...r, logo_url: null }),
+  const rows: PersonRow[] = ((data || []) as unknown as ArtistRead[]).map(
+    ({ event_gallery, gallery, ...r }) => ({
+      ...r,
+      logo_url: null,
+      eventGallery: (pool === "event_gallery" ? event_gallery : gallery) ?? null,
+    }),
   );
   if (caches) caches.artists = rows;
   return rows;
@@ -302,17 +322,18 @@ export function resolveCreativeSubject(
     if (match) {
       artistName = match.name;
       if (!artistImageUrl) {
-        // Gallery first: a per-event rotating pick beats the one static
+        // Event pictures first: a per-event rotating pick beats the one static
         // artist image - that's what makes each product's creative (and so
         // the Meta feed) look different per event of the same artist. Falls
-        // back to the artist cut-out/photo when the gallery is empty.
+        // back to the artist cut-out/photo when the pool is empty.
         //
-        // Gallery images ARE cut-outs (the gallery editor's upload pipeline
+        // Event pictures ARE cut-outs (the gallery editor's upload pipeline
         // strips backgrounds) - so they get the blob card with the seeded
         // per-event color/shape, not the plain avatar circle a raw photo
         // gets (2026-08-11: a cutout crammed into a cover-cropped circle
-        // rendered as a floating torso).
-        const galleryPick = pickGalleryImage(match.gallery, event.id);
+        // rendered as a floating torso). The page's mood gallery is another
+        // column and is never read here.
+        const galleryPick = pickGalleryImage(match.eventGallery, event.id);
         if (galleryPick) {
           artistImageUrl = galleryPick;
           artistIsCutout = true;
@@ -591,7 +612,7 @@ export function expectedCampaignHash(
 ): string {
   const galleryMatch = matchArtistForEvent(event, artists);
   const galleryUrl = galleryMatch
-    ? pickGalleryImage(galleryMatch.gallery, event.id)
+    ? pickGalleryImage(galleryMatch.eventGallery, event.id)
     : null;
   const gap = creativeGap(resolveCreativeSubject(event, artists, subjects), event);
   return campaignInputHash(event, galleryUrl, gap);
