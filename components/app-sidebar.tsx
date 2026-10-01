@@ -14,6 +14,7 @@ import {
   type NavItem,
 } from "@/lib/nav";
 import { useAuth } from "@/contexts/auth-context";
+import { useCompany } from "@/contexts/company-context";
 import { useToast } from "@/hooks/use-toast";
 import { switchToMyPartnerPortal } from "@/lib/actions/impersonate-actions";
 import {
@@ -71,7 +72,9 @@ export function AppSidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const { toast } = useToast();
   const { isMobile, setOpenMobile } = useSidebar();
 
-  const groups = visibleGroups(user?.role);
+  // Mega Events' product types until the company context has loaded.
+  const { productTypes } = useCompany();
+  const groups = visibleGroups(user?.role, productTypes);
   const active = activeHref(pathname, groups);
   const isFormsOperator = user?.role === "forms_operator";
   const displayName = user?.display_name || user?.email || "";

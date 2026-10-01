@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { visibleGroups } from "@/lib/nav";
 import { useAuth } from "@/contexts/auth-context";
+import { useCompany } from "@/contexts/company-context";
 import {
   CommandDialog,
   CommandEmpty,
@@ -27,7 +28,9 @@ export function CommandPalette({
 }) {
   const router = useRouter();
   const { user } = useAuth();
-  const groups = visibleGroups(user?.role);
+  // Same filter as the sidebar: the screens of the active company only.
+  const { productTypes } = useCompany();
+  const groups = visibleGroups(user?.role, productTypes);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

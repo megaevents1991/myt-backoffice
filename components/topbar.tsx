@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CompanySwitcher } from "@/components/company-switcher";
 
 /**
  * Persistent header: where am I (breadcrumbs), how do I get elsewhere (search),
@@ -60,6 +61,8 @@ export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
       </nav>
 
       <div className="ml-auto flex items-center gap-1">
+        {/* Renders nothing unless the user belongs to more than one company. */}
+        <CompanySwitcher />
         <Button
           variant="outline"
           size="sm"
