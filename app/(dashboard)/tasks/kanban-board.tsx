@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useSessionState } from "@/hooks/use-view-state";
 import { Progress } from "@/components/ui/progress";
 import {
   Select,
@@ -24,6 +25,20 @@ import {
 import { TASK_STATUSES, type TaskStatus, type TaskWithNames } from "@/types/task.types";
 
 const DRAG_MIME = "text/task-id";
+
+const DEFAULT_COLLAPSED: TaskStatus[] = ["cancelled"];
+const isStatusList = (value: unknown): value is TaskStatus[] =>
+  Array.isArray(value) &&
+  value.every((s) => (TASK_STATUSES as readonly unknown[]).includes(s));
+
+/** The board never shrinks below this, however short the window. */
+const MIN_BOARD_HEIGHT = 320;
+/** The dashboard's own bottom padding (md:p-6) - the board ends where the page does. */
+const BOARD_BOTTOM_GAP = 24;
+
+/** "2026-10-05" -> "05.10" on a card (the full date is in the tooltip). */
+const shortDate = (iso: string) =>
+  /^\d{4}-\d{2}-\d{2}/.test(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : iso;
 
 /**
  * Native HTML5 drag-and-drop kanban - no dnd library (spec: none allowed).
@@ -54,15 +69,19 @@ export function KanbanBoard({
     setLocalTasks(tasks);
   }, [tasks]);
 
-  // cancelled starts folded - it is rarely where anyone is working.
-  const [collapsed, setCollapsed] = useState<Set<TaskStatus>>(new Set(["cancelled"]));
+  // cancelled starts folded - it is rarely where anyone is working. Any column
+  // folds (a long Done list is the usual one), and the folded set is remembered
+  // for the browser tab like the rest of this screen (hooks/use-view-state.ts).
+  const [collapsedList, setCollapsedList] = useSessionState<TaskStatus[]>(
+    "kanban:collapsed",
+    DEFAULT_COLLAPSED,
+    isStatusList,
+  );
+  const collapsed = new Set(collapsedList);
   const toggleCollapsed = (status: TaskStatus) =>
-    setCollapsed((current) => {
-      const next = new Set(current);
-      if (next.has(status)) next.delete(status);
-      else next.add(status);
-      return next;
-    });
+    setCollapsedList((current) =>
+      current.includes(status) ? current.filter((s) => s !== status) : [...current, status],
+    );
 
   // HTML5 drag does not fire on touch - below md a card gets a status
   // <Select> instead of being draggable. Effect has cleanup per the brief.
@@ -74,6 +93,50 @@ export function KanbanBoard({
     query.addEventListener("change", apply);
     return () => query.removeEventListener("change", apply);
   }, []);
+
+  // From md up the board takes exactly what is left of the screen and each
+  // column scrolls inside itself - on a 15" laptop the page used to run far
+  // below the fold, with the column heads (the drop targets) out of sight.
+  // Measured rather than a fixed offset: what sits above the board (header,
+  // board pills, tabs, filters) wraps differently at every width.
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [boardHeight, setBoardHeight] = useState<number | null>(null);
+  useEffect(() => {
+    if (!canDrag) {
+      setBoardHeight(null);
+      return;
+    }
+    const fit = () => {
+      const board = boardRef.current;
+      if (!board) return;
+      const top = board.getBoundingClientRect().top + window.scrollY;
+      setBoardHeight(Math.max(MIN_BOARD_HEIGHT, window.innerHeight - top - BOARD_BOTTOM_GAP));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [canDrag]);
+
+  // One drop rule for an open column and a folded one.
+  const dropHandlers = (status: TaskStatus) => ({
+    onDragOver: (event: DragEvent<HTMLElement>) => {
+      // Only claim this as a valid dropzone for one of OUR cards - anything
+      // else (a file from the OS, text from another app) must fall through
+      // to the browser's own handling instead of being silently "accepted".
+      if (canDrag && event.dataTransfer.types.includes(DRAG_MIME)) {
+        event.preventDefault();
+      }
+    },
+    onDrop: (event: DragEvent<HTMLElement>) => {
+      // Always prevent the browser's default drop action first (e.g.
+      // navigating to / opening a dropped file) - reading the id only
+      // decides whether WE act on it, it must not gate this.
+      event.preventDefault();
+      if (!canDrag) return;
+      const id = event.dataTransfer.getData(DRAG_MIME);
+      if (id) void move(id, status);
+    },
+  });
 
   const move = async (id: string, status: TaskStatus) => {
     const moved = localTasks.find((task) => task.id === id);
@@ -98,7 +161,13 @@ export function KanbanBoard({
   const canMove = (task: TaskWithNames) => canChangeStatus(role, task, userId);
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-2">
+    <div
+      ref={boardRef}
+      // The height is set from md up only (boardHeight is null below it):
+      // phones keep the sideways strip of full-width columns.
+      style={boardHeight ? { height: boardHeight } : undefined}
+      className="flex gap-2 overflow-x-auto pb-1"
+    >
       {TASK_STATUSES.map((status) => {
         const columnTasks = localTasks.filter((task) => task.status === status);
         const isCollapsed = collapsed.has(status);
@@ -109,9 +178,12 @@ export function KanbanBoard({
               key={status}
               type="button"
               onClick={() => toggleCollapsed(status)}
-              className="flex h-fit shrink-0 items-center gap-1.5 rounded-lg border bg-muted/40 px-2 py-3 text-xs font-medium text-muted-foreground hover:text-foreground"
+              // A folded column still takes a dropped card.
+              {...dropHandlers(status)}
+              aria-label={`Expand ${STATUS_LABEL[status]} (${columnTasks.length})`}
+              className="flex h-fit shrink-0 flex-col items-center gap-1.5 rounded-lg border bg-muted/40 px-1.5 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground md:h-auto"
             >
-              <ChevronRight className="h-3.5 w-3.5" />
+              <ChevronRight className="h-3.5 w-3.5 shrink-0" />
               <span className="[writing-mode:vertical-rl]">
                 {STATUS_LABEL[status]} ({columnTasks.length})
               </span>
@@ -122,46 +194,30 @@ export function KanbanBoard({
         return (
           <section
             key={status}
-            onDragOver={(event) => {
-              // Only claim this as a valid dropzone for one of OUR cards -
-              // anything else (a file from the OS, text from another app)
-              // must fall through to the browser's own handling instead of
-              // being silently "accepted" here.
-              if (canDrag && event.dataTransfer.types.includes(DRAG_MIME)) {
-                event.preventDefault();
-              }
-            }}
-            onDrop={(event) => {
-              // Always prevent the browser's default drop action first (e.g.
-              // navigating to / opening a dropped file) - reading the id only
-              // decides whether WE act on it, it must not gate this.
-              event.preventDefault();
-              if (!canDrag) return;
-              const id = event.dataTransfer.getData(DRAG_MIME);
-              if (id) void move(id, status);
-            }}
-            className="flex w-72 shrink-0 flex-col rounded-lg border bg-muted/20"
+            {...dropHandlers(status)}
+            // Phones: fixed-width columns in a sideways strip. From md up the
+            // open columns share the row, down to a width a card still reads at.
+            className="flex min-h-0 w-72 shrink-0 flex-col rounded-lg border bg-muted/20 md:w-auto md:min-w-[10.5rem] md:flex-1"
           >
-            <div className="flex items-center justify-between px-3 py-2">
-              <h3 className="text-sm font-semibold">
+            <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+              <h3 className="truncate text-[13px] font-semibold">
                 {STATUS_LABEL[status]}{" "}
                 <span className="font-normal text-muted-foreground">
                   ({columnTasks.length})
                 </span>
               </h3>
-              {status === "cancelled" && (
-                <button
-                  type="button"
-                  onClick={() => toggleCollapsed(status)}
-                  className="text-muted-foreground hover:text-foreground"
-                  aria-label="Collapse column"
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => toggleCollapsed(status)}
+                className="-me-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={`Collapse ${STATUS_LABEL[status]}`}
+                title="Collapse column"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
             </div>
 
-            <div className="flex-1 space-y-3 px-2 pb-2">
+            <div className="scrollbar-rail min-h-0 flex-1 space-y-2.5 overflow-y-auto px-1.5 pb-1.5">
               {groupTasks(columnTasks, groupBy).map((group) => (
                 <div key={group.key} className="space-y-1.5">
                   {group.label && (
@@ -223,16 +279,22 @@ function KanbanCard({
         onClick();
       }}
       className={cn(
-        "rounded-lg border bg-card p-3 shadow-sm",
+        "rounded-md border bg-card p-2 shadow-sm",
         canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
       )}
     >
-      <p className="mb-2 line-clamp-2 text-sm font-medium">{task.title}</p>
+      <p className="line-clamp-2 text-[13px] font-medium leading-snug">{task.title}</p>
 
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+      {task.board === "marketing" && (
+        <Progress value={task.progress ?? 0} className="mt-1.5 h-1" />
+      )}
+
+      {/* One line under the title: priority, owner, then due date and comments
+          at the far end - two rows of it made every card a third taller. */}
+      <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <span
           className={cn(
-            "inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold",
+            "inline-flex shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold",
             PRIORITY_STYLE[task.priority],
           )}
         >
@@ -240,21 +302,22 @@ function KanbanCard({
         </span>
         <span
           title={task.assignee_name ?? "Unassigned"}
-          className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-secondary text-[10px] font-semibold text-secondary-foreground"
+          className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-secondary text-[9px] font-semibold text-secondary-foreground"
         >
           {task.assignee_name ? initialsOf(task.assignee_name) : "?"}
         </span>
-      </div>
-
-      {task.board === "marketing" && (
-        <Progress value={task.progress ?? 0} className="mb-2 h-1.5" />
-      )}
-
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>{task.due_date ?? "—"}</span>
+        {task.due_date && (
+          <span className="ms-auto shrink-0 tabular-nums" title={`Due ${task.due_date}`}>
+            {shortDate(task.due_date)}
+          </span>
+        )}
         {task.comment_count > 0 && (
           <span
-            className={cn("inline-flex items-center gap-1", task.unread_count > 0 && "font-semibold text-primary")}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-0.5",
+              !task.due_date && "ms-auto",
+              task.unread_count > 0 && "font-semibold text-primary",
+            )}
             title={task.unread_count > 0 ? `${task.unread_count} תגובות חדשות שלא קראת` : undefined}
           >
             <MessageSquare className="h-3 w-3" />

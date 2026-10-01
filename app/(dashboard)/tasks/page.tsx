@@ -5,10 +5,14 @@ import { TasksClient } from "./tasks-client";
 
 export default function TasksPage() {
   return (
-    <div className="space-y-6">
+    // One short line of heading: this screen's boards (Kanban above all) need the
+    // height on a laptop - what each tab holds is in the Guide. `mb-0` because the
+    // wrapper's own gap already separates the heading from the board pills.
+    <div className="space-y-4">
       <PageHeader
         title="Tasks"
-        description="The team's work queue - admins create and assign, everyone works their own list. The Creative gaps tab lists every visual asset still missing on the site and turns any of them into a task in one click."
+        description="The team's work queue - admins assign, everyone works their own list."
+        className="mb-0"
       />
       <Suspense fallback={<Skeleton className="h-64 w-full" />}>
         <TasksClient />
