@@ -488,6 +488,7 @@ export type Database = {
           hero_image: string | null
           hotels: Json | null
           id: string | null
+          instructor_ids: string[] | null
           included: string[] | null
           is_active: boolean | null
           is_deleted: string | null
@@ -521,6 +522,7 @@ export type Database = {
           hero_image?: string | null
           hotels?: Json | null
           id?: string | null
+          instructor_ids?: string[]
           included?: string[] | null
           is_active?: boolean | null
           is_deleted?: string | null
@@ -554,6 +556,7 @@ export type Database = {
           hero_image?: string | null
           hotels?: Json | null
           id?: string | null
+          instructor_ids?: string[]
           included?: string[] | null
           is_active?: boolean | null
           is_deleted?: string | null
@@ -5457,6 +5460,7 @@ export type Database = {
           flight_mode: string
           flight_price: number
           id: string
+          leader_id: string | null
           is_deleted: string | null
           is_published: boolean
           itinerary_id: string | null
@@ -5500,6 +5504,7 @@ export type Database = {
           flight_mode?: string
           flight_price?: number
           id?: string
+          leader_id?: string | null
           is_deleted?: string | null
           is_published?: boolean
           itinerary_id?: string | null
@@ -5543,6 +5548,7 @@ export type Database = {
           flight_mode?: string
           flight_price?: number
           id?: string
+          leader_id?: string | null
           is_deleted?: string | null
           is_published?: boolean
           itinerary_id?: string | null
@@ -5827,6 +5833,7 @@ export type Database = {
           hero_image: string | null
           hotels: Json
           id: string
+          instructor_ids: string[]
           included: string[]
           is_active: boolean
           is_deleted: string | null
@@ -5860,6 +5867,7 @@ export type Database = {
           hero_image?: string | null
           hotels?: Json
           id?: string
+          instructor_ids?: string[]
           included?: string[]
           is_active?: boolean
           is_deleted?: string | null
@@ -5893,6 +5901,7 @@ export type Database = {
           hero_image?: string | null
           hotels?: Json
           id?: string
+          instructor_ids?: string[]
           included?: string[]
           is_active?: boolean
           is_deleted?: string | null

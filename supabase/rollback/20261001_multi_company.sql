@@ -8,12 +8,13 @@
 --   20261001100600_tasks_company_and_tours_agent
 --   20261002100000_tours_reservations
 --   20261002110000_tours_media_bucket
+--   20261002120000_tours_group_leaders
 --
 -- This file lives OUTSIDE supabase/migrations on purpose: the CLI never runs it.
 -- Run it by hand (SQL editor or psql) only when the migrations must be undone,
--- then mark the nine versions as reverted so the history matches the schema:
---   npx supabase migration repair --status reverted 20261002110000 20261002100000 20261001100600 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
--- and remove (or revert the commit of) the nine migration files on master,
+-- then mark the ten versions as reverted so the history matches the schema:
+--   npx supabase migration repair --status reverted 20261002120000 20261002110000 20261002100000 20261001100600 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
+-- and remove (or revert the commit of) the ten migration files on master,
 -- otherwise the next push applies them again.
 --
 -- Everything here is new since the migrations: no Mega Events data is deleted.
@@ -21,6 +22,13 @@
 -- original block_status check back.
 
 begin;
+
+-- 10. tours group leaders --------------------------------------------------
+-- Undoes 20261002120000 alone too (run just this block). The leaders typed in
+-- are lost; the site views are re-provisioned without the column.
+alter table tours.departures drop column if exists leader_id;
+alter table tours.packages drop column if exists instructor_ids cascade;
+select public.reprovision_all_companies();
 
 -- 9. tours media bucket ------------------------------------------------------
 -- Undoes 20261002110000. Nothing to run in SQL: the bucket media-mega-family
