@@ -2,10 +2,16 @@
 // (lib/nav.ts is the ONE source - a screen added to the menu shows up here
 // with its guide sections, and scripts/guide-selftest.ts fails while it has
 // none), inline links, and the text a search reads. No React, no DB.
+//
+// One guide for every company: it follows the menu of the company's product
+// types (navFor), and keeps the sections written for those product types plus
+// the shared (untagged) ones.
 
-import { NAV_GROUPS, type NavItem } from "@/lib/nav";
+import { DEFAULT_PRODUCT_TYPES, navFor, type NavItem } from "@/lib/nav";
 import { anchorFor, START } from "@/lib/guide-link";
 import { ADMIN_ROLES, type Role } from "@/types/auth.types";
+// Type only - lib/company.ts is server code and must not reach the client bundle.
+import type { ProductType } from "@/lib/company";
 import type { GuideSection, L } from "./guide-content";
 
 // Anchors live beside the top bar's "Guide" button (lib/guide-link.ts).
@@ -57,6 +63,18 @@ export const NAV_LABELS: Record<string, L> = {
   "/guide": l("Guide", "מדריך"),
   "/users": l("Users", "משתמשים"),
   "/audit-log": l("Audit Log", "לוג ביקורת"),
+  // Tours (Mega Family)
+  "/tours": l("Dashboard", "דשבורד"),
+  "/tours/reservations": l("Reservations", "הזמנות"),
+  "/tours/leads": l("Leads", "לידים"),
+  "/tours/approvals": l("Approvals", "אישורים"),
+  "/tours/packages": l("Tours", "טיולים"),
+  "/tours/departures": l("Departures", "יציאות"),
+  "/tours/pages": l("Content Pages", "עמודי תוכן"),
+  "/tours/terms": l("Categories & Tags", "קטגוריות ותגיות"),
+  "/tours/hotels": l("Hotels", "מלונות"),
+  "/tours/instructors": l("Group Leaders", "מלווים"),
+  "/tours/settings": l("Settings", "הגדרות"),
 };
 
 /** A sub-screen whose href equals its parent's gets its own chip label. */
@@ -77,15 +95,28 @@ export type GuideItem = {
 
 export type GuideGroup = { key: string; label: L; items: GuideItem[] };
 
+/** The sections a company that sells `productTypes` reads: its own and the shared ones, in order. */
+export function sectionsFor(
+  sections: GuideSection[],
+  productTypes: readonly ProductType[] = DEFAULT_PRODUCT_TYPES,
+): GuideSection[] {
+  return sections.filter((s) => !s.productType || productTypes.includes(s.productType));
+}
+
 /**
- * The sidebar, with each screen carrying the guide sections written for it.
- * A section whose `nav` is not in the menu is dropped (the selftest catches
+ * The sidebar of a company that sells `productTypes` (Mega Events' when not
+ * known yet), with each screen carrying the guide sections written for it. A
+ * section whose `nav` is not in that menu is dropped (the selftest catches
  * that); a screen with no section is kept only with `keepEmpty` (the selftest
  * uses it to find the holes).
  */
-export function buildGuide(sections: GuideSection[], keepEmpty = false): GuideGroup[] {
+export function buildGuide(
+  sections: GuideSection[],
+  productTypes: readonly ProductType[] = DEFAULT_PRODUCT_TYPES,
+  keepEmpty = false,
+): GuideGroup[] {
   const byNav = new Map<string, GuideSection[]>();
-  for (const s of sections) byNav.set(s.nav, [...(byNav.get(s.nav) ?? []), s]);
+  for (const s of sectionsFor(sections, productTypes)) byNav.set(s.nav, [...(byNav.get(s.nav) ?? []), s]);
 
   const start: GuideGroup = {
     key: START,
@@ -103,7 +134,7 @@ export function buildGuide(sections: GuideSection[], keepEmpty = false): GuideGr
     ],
   };
 
-  const groups: GuideGroup[] = NAV_GROUPS.map((group) => ({
+  const groups: GuideGroup[] = navFor(productTypes).map((group) => ({
     key: group.label,
     label: GROUP_LABELS[group.label] ?? l(group.label, group.label),
     items: group.items.map((item) => ({

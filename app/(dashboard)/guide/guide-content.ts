@@ -9,8 +9,19 @@
 // new tab. scripts/guide-selftest.ts checks every menu screen has a section and
 // every link lands on a real route.
 //
+// One guide, every company (02.10): `productType` says which companies read a
+// section - "events" (Mega Events) or "tours" (Mega Family). Untagged = shared
+// by every company, so its text and links must hold in all of them. A shared
+// screen (Tasks, Offline Flights, Users) whose story differs per company gets
+// one section per product type. The Mega Events sections come first, then the
+// tours ones; each company sees its own in this order.
+//
 // Keep it honest: when a flow changes (pricing rules, cron cadence, batch
 // behavior), update the matching section here in the same PR.
+
+// Type only - lib/company.ts is server code and must not reach the client bundle.
+import type { ProductType } from "@/lib/company";
+import { TOURS_GUIDE_SECTIONS } from "./guide-content-tours";
 
 export type L = { en: string; he: string };
 
@@ -40,6 +51,8 @@ export interface GuideSection {
   id: string;
   /** The sidebar screen this section documents (lib/nav.ts href), or "start". */
   nav: string;
+  /** Only companies that sell this product type read it. Unset = shared by every company. */
+  productType?: ProductType;
   title: L;
   intro: L;
   /** Step-by-step recipes - shown first, numbered. */
@@ -59,6 +72,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "getting-around",
     nav: "start",
+    productType: "events",
     howTo: [
       {
         title: t("Use this guide", "להשתמש במדריך הזה"),
@@ -120,6 +134,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "reservations",
     nav: "/reservations",
+    productType: "events",
     title: t("Reservations - customer bookings", "הזמנות - הזמנות הלקוחות"),
     intro: t(
       "Every customer booking, written here by the site at checkout - one row per order with its package, payment status and source. Here you follow up with customers, buy what the order needs, and record status, accounting number and comments.",
@@ -190,6 +205,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "dashboard",
     nav: "/dashboard",
+    productType: "events",
     howTo: [
       {
         title: t("Start the day from the dashboard", "לפתוח את היום מהדשבורד"),
@@ -260,6 +276,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "events",
     nav: "/events",
+    productType: "events",
     howTo: [
       {
         title: t("Find and edit an event", "למצוא אירוע ולערוך אותו"),
@@ -393,6 +410,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "ticket-only",
     nav: "/events",
+    productType: "events",
     title: t("Ticket-only events", "אירועי כרטיס-בלבד"),
     intro: t(
       "An event sold as a ticket alone - no flight, no hotel (e.g. a show in a city with no convenient flight). The site skips both steps and charges exactly ticket + Ticket-Only Markup.",
@@ -436,6 +454,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "lodging",
     nav: "/events",
+    productType: "events",
     title: t("Lodging - event city & split stay", "לינה - עיר המשחק ושהות מפוצלת"),
     intro: t(
       "When the match is in one city and the flight lands in another (a Liverpool game on a London flight), the event gets an EVENT CITY next to its flight city. The hotel step opens on the ordinary hotel list of the default city; above it \"איפה ישנים?\" offers three buttons - \"לינה בלונדון\", \"לינה בליברפול\" and \"פיצול מלונות\" (the event's default split: 2 nights around the match in the match city, the rest in the flight city). With a split on, \"עריכת הפיצול\" opens the night squares in place (a tap moves a night between the cities, then \"עדכון הלינה\"). The first visit to such an event shows a one-time bubble on the split button. Coming back to the same city after the match city defaults to the SAME hotel (tag \"חוזרים לאותו מלון\"); swapping that hotel moves the other nights in that city with it. City names show without the country (\"לונדון\", not \"לונדון, בריטניה\").",
@@ -494,6 +513,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "pricing",
     nav: "/price-changes",
+    productType: "events",
     howTo: [
       {
         title: t("Review a frozen price change", "בדיקת שינוי מחיר קפוא"),
@@ -596,6 +616,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "price-light",
     nav: "/price-light",
+    productType: "events",
     howTo: [
       {
         title: t("Work the pending queue", "עבודה על תור הממתינים"),
@@ -764,6 +785,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "ai-factory",
     nav: "/ai-factory",
+    productType: "events",
     title: t("AI Factory", "AI Factory"),
     adminOnly: true,
     intro: t(
@@ -853,6 +875,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "offline-flights",
     nav: "/offline-flights",
+    productType: "events",
     title: t("Offline flights - our own seats", "טיסות אופליין - המושבים שלנו"),
     intro: t(
       "Mega's own flight inventory: seats we hold on charters and group blocks. A flight linked to an event is offered on that event's package, and the nightly price sync then leaves that event's flight price alone - the price of fixed inventory is your decision.",
@@ -914,6 +937,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "offline-hotels",
     nav: "/offline-hotels",
+    productType: "events",
     title: t("Offline hotels - our own rooms", "מלונות אופליין - החדרים שלנו"),
     intro: t(
       "Mega's own hotel inventory: rooms we hold for fixed dates. A hotel linked to an event is offered on it, and its cheapest free room per person becomes the event's base hotel price - only when the stay matches the event's default travel dates.",
@@ -959,6 +983,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "sources",
     nav: "/sports-events",
+    productType: "events",
     howTo: [
       {
         title: t("Find a match or show", "למצוא משחק או הופעה"),
@@ -1040,6 +1065,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "batch-factory",
     nav: "/factory",
+    productType: "events",
     howTo: [
       {
         title: t("Send provider events to the factory (admins)", "לשלוח אירועי ספק למפעל (מנהלים)"),
@@ -1133,6 +1159,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "creative-feed",
     nav: "/creative-generator",
+    productType: "events",
     howTo: [
       {
         title: t("Make an ad image for an event", "יצירת תמונת מודעה לאירוע"),
@@ -1238,6 +1265,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "taxonomy",
     nav: "/event-tags",
+    productType: "events",
     howTo: [
       {
         title: t("Create a tag", "יצירת תגית"),
@@ -1311,6 +1339,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "categories",
     nav: "/templates/categories",
+    productType: "events",
     title: t("Categories - the /c/ pages", "קטגוריות - עמודי ה-/c/"),
     intro: t(
       "Categories are the site's /c/ pages and the category tiles. Each one is a node in a tree and collects events through its tags - you never put an event into a category directly.",
@@ -1360,6 +1389,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "homepage",
     nav: "/homepage",
+    productType: "events",
     howTo: [
       {
         title: t("Reorder or hide a section", "שינוי סדר או הסתרה של סקשן"),
@@ -1453,6 +1483,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "tasks",
     nav: "/tasks",
+    productType: "events",
     howTo: [
       {
         title: t("Create a task and assign it", "ליצור משימה ולשבץ אותה"),
@@ -1583,6 +1614,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "partners",
     nav: "/partners",
+    productType: "events",
     howTo: [
       {
         title: t("Create a partner (admins)", "יצירת שותף (מנהלים)"),
@@ -1665,6 +1697,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "meta-feed",
     nav: "/meta-feed",
+    productType: "events",
     title: t("Meta product feed", "פיד המוצרים למטא"),
     intro: t(
       "The state of the file Meta reads. The feed is built live from the catalog; publishing copies it into the fixed file registered in Meta Commerce Manager, and Meta fetches that file by itself every hour.",
@@ -1709,6 +1742,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "coupons",
     nav: "/coupons",
+    productType: "events",
     title: t("Coupons", "קופונים"),
     intro: t(
       "Discount codes customers type on the order summary. The bigger discount wins - a coupon never adds on top of a partner's follower discount. Codes are saved in capitals and match whatever case the customer types.",
@@ -1747,6 +1781,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "forms",
     nav: "/forms",
+    productType: "events",
     howTo: [
       {
         title: t("Build a new form", "בניית טופס חדש"),
@@ -1829,6 +1864,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "assets",
     nav: "/assets",
+    productType: "events",
     title: t("Assets - the crest library", "Assets - ספריית הסמלים"),
     intro: t(
       "The football crest library. The site, the team pages and the creative generator all take a team's crest from here, matched by the team's English name.",
@@ -1867,6 +1903,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "storage",
     nav: "/storage",
+    productType: "events",
     title: t("Storage - raw files", "Storage - קבצים"),
     intro: t(
       "A raw file browser over the site's media buckets - to get a file's direct URL, or upload a file outside the regular forms.",
@@ -1897,6 +1934,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "locations",
     nav: "/locations",
+    productType: "events",
     title: t("Locations - cities and hotels", "מיקומים - ערים ומלונות"),
     intro: t(
       "The cities events happen in, each with coordinates and an optional IATA code. The IATA drives flight pricing and the automatic lookup in the wizard and the factory (keep this table growing); \"טען מלונות\" loads a city's hotels before it goes on sale.",
@@ -1934,6 +1972,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "templates",
     nav: "/templates",
+    productType: "events",
     title: t("Templates - artist, team and blog pages", "תבניות - עמודי אמנים, קבוצות ובלוג"),
     intro: t(
       "The site's content pages outside events: artists, football teams and blog posts (categories have their own screen). Each page is edited in one form - text, hero image, blob card art and gallery; missing visuals show up in the gaps radar automatically.",
@@ -1994,6 +2033,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "users",
     nav: "/users",
+    productType: "events",
     title: t("Users & roles", "משתמשים ותפקידים"),
     adminOnly: true,
     intro: t(
@@ -2055,6 +2095,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "audit-log",
     nav: "/audit-log",
+    productType: "events",
     title: t("Audit log - who changed what", "לוג ביקורת - מי שינה מה"),
     adminOnly: true,
     intro: t(
@@ -2098,6 +2139,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       },
     ],
   },
+  // Mega Family (tours) - guide-content-tours.ts, every section tagged "tours".
+  ...TOURS_GUIDE_SECTIONS,
 ];
 
 export const GUIDE_UI: Record<string, L> = {

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { BookOpen, ChevronRight, Search } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
+import { useCompany } from "@/contexts/company-context";
 import { guideLinkFor } from "@/lib/guide-link";
 import { breadcrumbsFor } from "@/lib/nav";
 import { isToursAgentPath } from "@/lib/auth/tours-agent";
@@ -32,6 +33,8 @@ export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
   // Not on the guide itself, and not for forms_operator or tours_agent
   // (middleware keeps them in /forms and on the departures board).
   const showGuide = !pathname.startsWith("/guide") && user?.role !== "forms_operator" && !isToursAgent;
+  // The guide of the active company: a tours screen lands on its tours section.
+  const { productTypes } = useCompany();
 
   return (
     <header className="surface-chrome sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b px-3">
@@ -91,7 +94,7 @@ export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
         {showGuide && (
           <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 px-2.5 text-xs">
             <a
-              href={guideLinkFor(pathname)}
+              href={guideLinkFor(pathname, productTypes)}
               target="_blank"
               rel="noopener noreferrer"
               title="המדריך של המסך הזה - נפתח בלשונית חדשה"

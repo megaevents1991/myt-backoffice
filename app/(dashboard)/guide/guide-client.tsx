@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, ChevronDown, ExternalLink, Search, ShieldAlert } from "lucide-react";
+import { ArrowRight, ChevronDown, ExternalLink, Loader2, Search, ShieldAlert } from "lucide-react";
 
+import { useCompany } from "@/contexts/company-context";
 import { cn } from "@/lib/utils";
 import { matchesSearch } from "@/lib/search";
 import { Button } from "@/components/ui/button";
@@ -307,14 +308,19 @@ export function GuideClient() {
     setLangReady(true);
   }, []);
 
+  // The active company decides which guide this is (Mega Events' screens or
+  // Mega Family's) - the same product types the sidebar follows.
+  const { productTypes, isLoading: companyLoading } = useCompany();
+
   // Arriving from a screen's "Guide" button (/guide#nav-events): land on that
-  // screen once the stored language is on screen - switching to English after
-  // the browser's own jump moves every section below the top.
+  // screen once the stored language and the company's guide are on screen -
+  // switching to English after the browser's own jump moves every section
+  // below the top, and a tours screen's anchor exists only in the tours guide.
   useEffect(() => {
-    if (!langReady) return;
+    if (!langReady || companyLoading) return;
     const id = window.location.hash.slice(1);
     if (id) document.getElementById(id)?.scrollIntoView({ block: "start" });
-  }, [langReady]);
+  }, [langReady, companyLoading]);
 
   const pick = (value: Lang) => {
     setLang(value);
@@ -325,7 +331,7 @@ export function GuideClient() {
     }
   };
 
-  const all = useMemo(() => buildGuide(GUIDE_SECTIONS), []);
+  const all = useMemo(() => buildGuide(GUIDE_SECTIONS, productTypes), [productTypes]);
   const searching = query.trim().length > 0;
   const groups = useMemo(() => {
     if (!searching) return all;
@@ -346,6 +352,16 @@ export function GuideClient() {
 
   const text = (value: L) => value[lang];
   const dir = lang === "he" ? "rtl" : "ltr";
+
+  // Until the company is known, wait - rather than show a Mega Family reader
+  // the Mega Events guide for a moment.
+  if (companyLoading) {
+    return (
+      <div className="flex h-[30vh] items-center justify-center">
+        <Loader2 aria-label="Loading the guide" className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
