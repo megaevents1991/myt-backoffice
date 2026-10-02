@@ -1,19 +1,31 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
+import { Loader2, PlusCircle } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { DataTable, SortableHeader } from "@/components/data-table";
 import { PageHeader } from "@/components/page-header";
 import { StickySaveBar } from "@/components/sticky-save-bar";
+import { useActionToast } from "@/hooks/use-action-toast";
 import { useSessionState } from "@/hooks/use-view-state";
 import { saveTourInstructor } from "@/lib/actions/tours-content-actions";
-import { ActiveChip, Field, Section } from "@/components/tours/ui";
+import { createTourInstructor } from "@/lib/actions/tours-catalog-actions";
+import { ActiveChip, Field, Notice, Section } from "@/components/tours/ui";
 import { activeColumn, editColumn, imageColumn } from "@/components/tours/content/columns";
 import { GalleryItemsEditor, IMAGE_FIELDS_NOTE, ImageUrlField } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
@@ -92,9 +104,81 @@ export function InstructorsTable({ rows, siteUrl }: { rows: InstructorListRow[];
       stateKey="tours-instructors"
       emptyState={{
         title: rows.length === 0 ? "No group leaders yet" : "No group leaders match the filter",
-        description: rows.length === 0 ? "Group leaders are created when the site's data is imported." : "Try a different search.",
+        description:
+          rows.length === 0 ? "Add the first one with Add Group Leader at the top of the page." : "Try a different search.",
       }}
     />
+  );
+}
+
+/** "Add Group Leader" in the page header: the name, then the leader's page to finish it. */
+export function AddInstructorButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>
+        <PlusCircle className="me-2 h-4 w-4" />
+        Add Group Leader
+      </Button>
+      {open && <AddInstructorDialog onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function AddInstructorDialog({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const run = useActionToast();
+  const problem = !name.trim() ? "Enter the group leader's name" : null;
+
+  const create = (event: FormEvent) => {
+    event.preventDefault();
+    if (problem || isPending) return;
+    startTransition(async () => {
+      const result = await run(
+        () => createTourInstructor({ name: name.trim() }),
+        (answer) => (answer.warning ? "Already in the list" : "Group leader added"),
+      );
+      if (!result.success) return;
+      router.push(`/tours/instructors/${result.data.id}`);
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && !isPending && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <form onSubmit={create} className="grid gap-4">
+          <DialogHeader className="pt-4 text-start sm:text-start">
+            <DialogTitle>Add Group Leader</DialogTitle>
+            <DialogDescription>
+              It opens on its own page next, where you add a photo, destinations, content and a gallery.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Name" htmlFor="new-leader-name" hint="As the site shows it. The slug is made from the name.">
+            <Input
+              id="new-leader-name"
+              dir="auto"
+              autoFocus
+              maxLength={300}
+              value={name}
+              disabled={isPending}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+          <Notice tone="info">It is created active, last in the site&apos;s order. The site shows it after you publish.</Notice>
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={isPending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!!problem || isPending} title={problem ?? undefined}>
+              {isPending && <Loader2 className="animate-spin" />}
+              Add
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

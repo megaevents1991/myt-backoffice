@@ -1,21 +1,47 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
+import { Loader2, PlusCircle } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DataTable, SortableHeader } from "@/components/data-table";
+import { useActionToast } from "@/hooks/use-action-toast";
 import { useSessionState } from "@/hooks/use-view-state";
+import { viewStateKey } from "@/lib/view-state";
+import { createTourTerm } from "@/lib/actions/tours-catalog-actions";
+import { Field, Notice } from "@/components/tours/ui";
 import { activeColumn, editColumn } from "@/components/tours/content/columns";
-import { TERM_KINDS, TERM_KIND_LABELS, type TermKind, type TermListRow } from "@/components/tours/content/shared";
+import {
+  PACKAGE_TERM_KINDS,
+  TERM_KINDS,
+  TERM_KIND_LABELS,
+  type TermKind,
+  type TermListRow,
+} from "@/components/tours/content/shared";
 
 const isKind = (value: unknown): value is TermKind => TERM_KINDS.includes(value as TermKind);
+
+/** The table's view (a kind) is kept per tab under this name; Add reads it to start on the same kind. */
+const KIND_STATE = "kind";
+const DEFAULT_KIND: TermKind = "destinations";
 
 /** The taxonomies of the site on the shared DataTable, one kind (a view) at a time. */
 export function TermsTable({ rows }: { rows: TermListRow[] }) {
   const router = useRouter();
-  const [kind, setKind] = useSessionState<TermKind>("kind", "destinations", isKind);
+  const [kind, setKind] = useSessionState<TermKind>(KIND_STATE, DEFAULT_KIND, isKind);
 
   const byKind = useMemo(() => {
     const map = new Map<string, TermListRow[]>();
@@ -79,8 +105,115 @@ export function TermsTable({ rows }: { rows: TermListRow[] }) {
       stateKey="tours-terms"
       emptyState={{
         title: `No ${TERM_KIND_LABELS[kind].toLowerCase()} in this company yet`,
-        description: "Categories and tags are created when the site's data is imported.",
+        description: PACKAGE_TERM_KINDS.includes(kind)
+          ? "Add one with Add Category or Tag at the top of the page."
+          : "A tour's own term comes with the site's data and is not added here.",
       }}
     />
+  );
+}
+
+/** The last kind the table showed in this tab, when a tour can be attached to it. */
+function lastViewedKind(pathname: string): TermKind {
+  try {
+    const raw = window.sessionStorage.getItem(viewStateKey(pathname, KIND_STATE));
+    const stored: unknown = raw ? JSON.parse(raw) : null;
+    if (isKind(stored) && PACKAGE_TERM_KINDS.includes(stored)) return stored;
+  } catch {
+    // blocked storage or an old value - start on the default
+  }
+  return DEFAULT_KIND;
+}
+
+/** "Add Category or Tag" in the page header: kind + name, then the new term's page to finish it. */
+export function AddTermButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>
+        <PlusCircle className="me-2 h-4 w-4" />
+        Add Category or Tag
+      </Button>
+      {open && <AddTermDialog onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function AddTermDialog({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
+  const pathname = usePathname() ?? "/tours/terms";
+  const [kind, setKind] = useState<TermKind>(() => lastViewedKind(pathname));
+  const [name, setName] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const run = useActionToast();
+  const problem = !name.trim() ? "Enter a name" : null;
+
+  const create = (event: FormEvent) => {
+    event.preventDefault();
+    if (problem || isPending) return;
+    startTransition(async () => {
+      const result = await run(
+        () => createTourTerm({ kind, name: name.trim() }),
+        (answer) => (answer.warning ? "Already in the list" : `Added to ${TERM_KIND_LABELS[kind]}`),
+      );
+      if (!result.success) return;
+      try {
+        // back on the list, the table opens on the kind just added to
+        window.sessionStorage.setItem(viewStateKey(pathname, KIND_STATE), JSON.stringify(result.data.kind));
+      } catch {
+        // not worth failing over
+      }
+      router.push(`/tours/terms/${result.data.id}`);
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && !isPending && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <form onSubmit={create} className="grid gap-4">
+          <DialogHeader className="pt-4 text-start sm:text-start">
+            <DialogTitle>Add Category or Tag</DialogTitle>
+            <DialogDescription>
+              It opens on its own page next, where you add a description and hero images.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Kind" htmlFor="new-term-kind">
+            <Select value={kind} onValueChange={(value) => setKind(value as TermKind)} disabled={isPending}>
+              <SelectTrigger id="new-term-kind">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PACKAGE_TERM_KINDS.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {TERM_KIND_LABELS[k]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Name" htmlFor="new-term-name" hint="As the site shows it. The slug is made from the name.">
+            <Input
+              id="new-term-name"
+              dir="auto"
+              autoFocus
+              maxLength={300}
+              value={name}
+              disabled={isPending}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+          <Notice tone="info">It is created active. The site shows it after you publish.</Notice>
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={isPending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!!problem || isPending} title={problem ?? undefined}>
+              {isPending && <Loader2 className="animate-spin" />}
+              Add
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
