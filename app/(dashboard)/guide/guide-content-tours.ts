@@ -73,7 +73,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Every form a customer sends from the site lands in [Leads](/tours/leads).", "כל טופס שלקוח שולח מהאתר נוחת ב[לידים](/tours/leads)."),
           t("Open the lead and click \"Create Reservation\". The customer's details are filled in (and the date, when the lead came from a date's page). Set the travelers and click \"Save Reservation\" - they count on the date's seats at once, and the lead turns \"Done\".", "פותחים את הליד ולוחצים \"Create Reservation\". פרטי הלקוח כבר ממולאים (וגם התאריך, כשהליד הגיע מעמוד של תאריך). קובעים את מספר הנוסעים ולוחצים \"Save Reservation\" - הם נספרים מיד על המושבים של התאריך, והליד עובר ל-\"Done\"."),
-          t("Watch the seats on the [Departures](/tours/departures) board, and set the sale status (\"Last places\", \"Sold out\") when the board suggests it.", "עוקבים אחרי המושבים ב[לוח היציאות](/tours/departures), ומשנים את סטטוס המכירה (\"Last places\", \"Sold out\") כשהלוח מציע."),
+          t("Watch the seats on the [Departures](/tours/departures) board. \"Last places\" and \"Sold out\" follow the seats on their own - nothing to change by hand.", "עוקבים אחרי המושבים ב[לוח היציאות](/tours/departures). \"Last places\" ו-\"Sold out\" מתעדכנים לבד לפי המושבים - אין מה לשנות ידנית."),
         ],
       },
     ],
@@ -439,7 +439,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     points: [
       t("A date's code is the series code + month + two-digit day: BBC on 3 July = BBC703.", "קוד התאריך הוא קוד הסדרה + חודש + יום בשתי ספרות: BBC ב-3 ביולי = BBC703."),
       t("\"Seats\" reads Allocated / Sold / Left. Only live blocks count (\"Confirmed by airline\", \"Handed to operations\", \"Ticketed\"); sold = the reservations.", "\"Seats\" מציג Allocated / Sold / Left. רק בלוקים חיים נספרים (\"Confirmed by airline\", \"Handed to operations\", \"Ticketed\"); נמכר = ההזמנות."),
-      t("The board suggests \"Last places\" at 5 seats or fewer and \"Sold out\" at none - it never changes the status by itself.", "הלוח מציע \"Last places\" ב-5 מושבים או פחות ו-\"Sold out\" כשאין - הוא אף פעם לא משנה את הסטטוס לבד."),
+      t("A date with flight seats shows \"Last places\" on the site at 5 seats or fewer and \"Sold out\" at none - on its own, and back again when a cancellation frees seats. The board marks it (\"Sold out on site\"). \"Closed\" and a \"Sold out\" you set by hand always win.", "תאריך עם מושבי טיסה מוצג באתר כ-\"Last places\" כשנשארו 5 מושבים או פחות, וכ-\"Sold out\" כשלא נשאר - לבד, וחוזר כשביטול מפנה מקום. הלוח מסמן את זה (\"Sold out on site\"). \"Closed\" ו-\"Sold out\" שקבעתם ידנית תמיד גוברים."),
       t("A percent-off-the-order discount and a fixed discount per traveler can't be active together on one date.", "הנחה באחוזים על ההזמנה והנחה קבועה לנוסע לא יכולות להיות פעילות יחד על אותו תאריך."),
       t("A tours agent sees this board read-only: published dates only, with no cost, docket or notes.", "סוכן טיולים רואה את הלוח הזה לקריאה בלבד: רק תאריכים מפורסמים, בלי עלויות, docket או הערות."),
     ],

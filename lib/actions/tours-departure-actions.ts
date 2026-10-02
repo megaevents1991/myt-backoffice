@@ -57,6 +57,7 @@ import {
   publishBlockers,
   readRoomPrices,
   seasonYearOf,
+  siteSaleStatus,
 } from "@/components/tours/departures/departure-utils";
 import type {
   ActionResult,
@@ -397,7 +398,8 @@ function viewerBoardRow(r: BoardRow): BoardRow {
     season: r.season,
     currency: r.currency,
     is_published: r.is_published,
-    sale_status: r.sale_status,
+    // the agent sees what the customer sees: sold out / last places follow the seats
+    sale_status: siteSaleStatus({ sale_status: r.sale_status, allocated: r.stats.allocated, remaining: r.stats.remaining }),
     card_badge: r.card_badge,
     date_labels: r.date_labels,
     arrival_airport: r.arrival_airport,

@@ -7,7 +7,7 @@
  * untouched rows stay identical between renders.
  */
 import { memo, useEffect, useRef, useState } from "react";
-import { CalendarDays, Clock, Loader2, TriangleAlert } from "lucide-react";
+import { CalendarDays, Clock, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Chip, Ltr, Toggle } from "@/components/tours/ui";
 import { fmtDateRange, fmtPrice, nightsBetween, parsePrice } from "@/lib/tours/format";
@@ -19,7 +19,7 @@ import {
   effectiveRoute,
   isExpired,
   promotionSummary,
-  suggestedSaleStatus,
+  siteSaleStatus,
 } from "./departure-utils";
 import type { BoardRow, BoardSeries } from "./types";
 import { OpenJawMark, SaleStatusBadge, SaleStatusSelect } from "./ui-bits";
@@ -195,7 +195,8 @@ function BoardRowImpl({
 
   const liveFlights = row.flights.filter((f) => f.isLive);
   const noLiveFlight = row.stats.liveBlocks === 0;
-  const suggestion = suggestedSaleStatus({
+  // what the site shows: sold out / last places follow the seats on their own
+  const siteStatus = siteSaleStatus({
     sale_status: row.sale_status,
     allocated: row.stats.allocated,
     remaining: row.stats.remaining,
@@ -445,12 +446,12 @@ function BoardRowImpl({
             </span>
           </Ltr>
         </button>
-        {suggestion && !readOnly && (
+        {siteStatus !== row.sale_status && !readOnly && (
           <span
-            className="ms-1 inline-flex align-middle text-warning"
-            title={`Based on the seats left, consider setting the sale status to "${SALE_STATUS_LABELS[suggestion]}"`}
+            className="ms-1 inline-flex align-middle text-[11px] font-medium text-warning"
+            title={`The site shows "${SALE_STATUS_LABELS[siteStatus as SaleStatus] ?? siteStatus}" on its own, from the seats left`}
           >
-            <TriangleAlert className="h-3.5 w-3.5" />
+            {SALE_STATUS_LABELS[siteStatus as SaleStatus] ?? siteStatus} on site
           </span>
         )}
       </td>

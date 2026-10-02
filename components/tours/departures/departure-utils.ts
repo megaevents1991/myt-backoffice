@@ -210,20 +210,17 @@ export const SALE_STATUS_STYLES: Record<SaleStatus, string> = {
 export const LAST_PLACES_THRESHOLD = 5;
 
 /**
- * The status the seat count hints at, or null. Never applied by the system -
- * the screen offers it and the operator decides (functional spec 4.4).
+ * The sale status the site shows - the same rule as the site view
+ * c_<slug>.departures (migration 20261002130000): the operator's "closed" and
+ * "sold_out" always win; otherwise a date with flight seats allocated and none
+ * left is sold out, and one with LAST_PLACES_THRESHOLD or fewer is "last
+ * places". Seats freed by a cancellation bring the operator's status back.
  */
-export function suggestedSaleStatus(input: {
-  sale_status: string;
-  allocated: number;
-  remaining: number;
-}): SaleStatus | null {
-  if (input.allocated <= 0) return null;
-  if (input.remaining <= 0) return input.sale_status === "sold_out" || input.sale_status === "closed" ? null : "sold_out";
-  if (input.remaining <= LAST_PLACES_THRESHOLD) {
-    return input.sale_status === "open" || input.sale_status === "guaranteed" ? "last_places" : null;
-  }
-  return null;
+export function siteSaleStatus(input: { sale_status: string; allocated: number; remaining: number }): string {
+  if (input.sale_status === "closed" || input.sale_status === "sold_out") return input.sale_status;
+  if (input.allocated > 0 && input.remaining <= 0) return "sold_out";
+  if (input.allocated > 0 && input.remaining <= LAST_PLACES_THRESHOLD) return "last_places";
+  return input.sale_status;
 }
 
 // ---------------------------------------------------------------- holiday calendar

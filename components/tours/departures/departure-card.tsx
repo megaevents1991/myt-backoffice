@@ -11,7 +11,7 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import { Loader2, RotateCcw, Trash2 } from "lucide-react";
-import { Ltr, Notice } from "@/components/tours/ui";
+import { Notice } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -33,7 +33,7 @@ import { CardPricesTab } from "./card-prices-tab";
 import { CardPromotionsTab } from "./card-promotions-tab";
 import { CardSalesTab } from "./card-sales-tab";
 import { DepartureSheet, DepartureSheetHeader, type CardTarget } from "./departure-sheet";
-import { effectiveRoute, publishBlockers, suggestedSaleStatus } from "./departure-utils";
+import { effectiveRoute, publishBlockers, siteSaleStatus } from "./departure-utils";
 import type { BoardPeriod, DepartureCardData } from "./types";
 import { SaleStatusSelect, usePublishToast } from "./ui-bits";
 
@@ -99,7 +99,7 @@ function StaffCard({
       route,
       blockers,
       activePromotions: data.promotions.filter((p) => p.is_active),
-      suggestion: suggestedSaleStatus({ sale_status: dep.sale_status, allocated: data.stats.allocated, remaining: data.stats.remaining }),
+      siteStatus: siteSaleStatus({ sale_status: dep.sale_status, allocated: data.stats.allocated, remaining: data.stats.remaining }),
     };
   }, [data]);
 
@@ -185,30 +185,11 @@ function StaffCard({
             The departure is published without a live flight block. The site shows &quot;flight details will be updated&quot;.
           </Notice>
         )}
-        {derived.suggestion && !d.is_deleted && (
-          <Notice tone="warning" className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-xs">
-            <span>
-              {data.stats.remaining > 0 ? (
-                `${data.stats.remaining} seats left.`
-              ) : (
-                <>
-                  No seats left (balance <Ltr>{data.stats.remaining}</Ltr>).
-                </>
-              )}{" "}
-              Consider changing the sale status to &quot;{SALE_STATUS_LABELS[derived.suggestion]}&quot;.
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs"
-              disabled={busy}
-              onClick={() => {
-                const next = derived.suggestion as SaleStatus;
-                void run(() => updateDeparture(d.id, { sale_status: next }), `Sale status: ${SALE_STATUS_LABELS[next]}`);
-              }}
-            >
-              Update Status
-            </Button>
+        {derived.siteStatus !== d.sale_status && !d.is_deleted && (
+          <Notice tone="info" className="py-1.5 text-xs">
+            {data.stats.remaining > 0 ? `${data.stats.remaining} seats left` : "No seats left"}, so the site shows this date
+            as &quot;{SALE_STATUS_LABELS[derived.siteStatus as SaleStatus] ?? derived.siteStatus}&quot; on its own. It goes back to
+            &quot;{SALE_STATUS_LABELS[d.sale_status as SaleStatus] ?? d.sale_status}&quot; by itself when seats free up.
           </Notice>
         )}
       </DepartureSheetHeader>
