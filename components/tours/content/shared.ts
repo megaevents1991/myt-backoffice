@@ -105,6 +105,16 @@ export interface PackageForm {
   termIds: string[];
   /** The hotels of the tour, in the order the site shows them. */
   hotels: TourHotelStay[];
+  /** The group leaders of the tour (tours.instructors ids), in the order the site lists them. */
+  leaderIds: string[];
+}
+
+/** A group leader a tour can list. */
+export interface LeaderOption {
+  id: string;
+  name: string;
+  image: string | null;
+  isActive: boolean;
 }
 
 /**
@@ -176,6 +186,8 @@ export interface NewTourInput {
   dates: { start: string; end: string }[];
   /** One price list for every new date (adult in a double room is the one the site needs). */
   prices: { paxType: string; position: number; price: number | null }[];
+  /** The day-by-day plan (the main itinerary). */
+  itinerary: ItineraryDay[];
   /** Flight blocks to link, by the start date of the new date they serve. */
   flights: { start: string; flightId: number; seats: number; legs: "both" | "outbound" | "inbound" }[];
 }
@@ -184,6 +196,7 @@ export interface NewTourContext {
   siteUrl: string | null;
   terms: TermOption[];
   hotels: TourHotelPick[];
+  leaders: LeaderOption[];
   /** Series codes in use - a new series needs a free one. */
   seriesCodes: string[];
   /** Slugs in use - the page address must be free. */
@@ -270,6 +283,8 @@ export interface PackageEditorData {
   terms: TermOption[];
   /** The company's hotel catalog - what the Hotels tab picks from. */
   hotelCatalog: TourHotelPick[];
+  /** The company's group leaders - what the tour's leaders pick from. */
+  leaderOptions: LeaderOption[];
   /** Last change of the tour row (ISO) - "published after the last change" compares with it. */
   updatedAt: string;
   siteUrl: string | null;

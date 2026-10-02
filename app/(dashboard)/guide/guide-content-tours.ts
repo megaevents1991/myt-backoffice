@@ -19,8 +19,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     productType: "tours",
     title: t("How to create a new tour", "איך מקימים טיול חדש"),
     intro: t(
-      "A new tour is built in two places. \"Add Tour\" creates it in one go - details, series, first dates, prices, flights and hotels. The tour's own page finishes it - itinerary, FAQ, SEO, more dates. Nothing reaches the customer site until the tour is active, its dates are published and someone clicks \"Publish Site\".",
-      "טיול חדש נבנה בשני מקומות. \"Add Tour\" יוצר אותו בבת אחת - פרטים, סדרה, תאריכים ראשונים, מחירים, טיסות ומלונות. עמוד הטיול עצמו משלים אותו - מסלול, שאלות נפוצות, SEO, עוד תאריכים. שום דבר לא מגיע לאתר הלקוחות עד שהטיול פעיל, התאריכים שלו מפורסמים ומישהו לוחץ \"Publish Site\".",
+      "\"Add Tour\" builds a whole tour on one page - details, series, first dates, prices, flights, itinerary, what's included, hotels, group leaders, pictures and categories; a new category, tag or group leader is created right there. The tour's own page edits all of it later and adds FAQ, SEO and more dates. Nothing reaches the customer site until the tour is active, its dates are published and someone clicks \"Publish Site\".",
+      "\"Add Tour\" בונה טיול שלם בעמוד אחד - פרטים, סדרה, תאריכים ראשונים, מחירים, טיסות, מסלול יום-יום, מה כלול, מלונות, מלווים, תמונות וקטגוריות; קטגוריה, תגית או מלווה חדשים יוצרים במקום. עמוד הטיול עצמו עורך את כל זה אחר כך ומוסיף שאלות נפוצות, SEO ועוד תאריכים. שום דבר לא מגיע לאתר הלקוחות עד שהטיול פעיל, התאריכים שלו מפורסמים ומישהו לוחץ \"Publish Site\".",
     ),
     howTo: [
       {
@@ -34,7 +34,10 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
           t("\"Offline Flights\": each date lists the flight blocks that fly within 2 days of it. Tick the ones that serve it and set \"Seats\". No block yet? \"New Flight\" opens [Offline Flights](/offline-flights/new) in a new tab - create the block there, come back and click \"Refresh\".", "\"Offline Flights\": לכל תאריך מופיעים בלוקי הטיסה שטסים בטווח של יומיים ממנו. מסמנים את אלה שמשרתים אותו וקובעים \"Seats\". אין עדיין בלוק? \"New Flight\" פותח את [הטיסות האופליין](/offline-flights/new) בלשונית חדשה - יוצרים שם את הבלוק, חוזרים ולוחצים \"Refresh\"."),
           t("\"Hotels\": pick one in \"Choose a hotel from the catalog…\" → \"Add from Catalog\", or \"New Hotel\"; set this tour's \"Nights\" and \"Board\". The order here is the order on the site.", "\"Hotels\": בוחרים ב-\"Choose a hotel from the catalog…\" ← \"Add from Catalog\", או \"New Hotel\"; קובעים לטיול הזה \"Nights\" ו-\"Board\" (בסיס אירוח). הסדר כאן הוא הסדר באתר."),
           t("\"Images & Description\": \"Hero image (top of the page)\" and \"Card image (in lists)\" - \"Upload\" a picture or paste its address (/media/... or https://) - and the \"Tour description\".", "\"Images & Description\": \"Hero image (top of the page)\" ו-\"Card image (in lists)\" - מעלים תמונה ב-\"Upload\" או מדביקים כתובת (/media/... או https://) - ואת \"Tour description\"."),
-          t("\"Categories & Tags\": tick its destinations, audiences and tags. The audience decides the homepage tab the tour shows under - a tour with no audience is missing from those tabs.", "\"Categories & Tags\": מסמנים יעדים, קהלים ותגיות. הקהל (Audiences) קובע באיזו לשונית של עמוד הבית הטיול מופיע - טיול בלי קהל חסר בלשוניות האלה."),
+          t("\"Itinerary\": \"Add Day\" for each day, then open it - \"Title (the day's route)\", \"Subtitle\", \"Image\", \"Day description\".", "\"Itinerary\": \"Add Day\" לכל יום, ואז פותחים אותו - \"Title (the day's route)\", \"Subtitle\", \"Image\", \"Day description\"."),
+          t("\"What's Included\": the \"Included\" and \"Not included\" lists, and \"Additional info\".", "\"What's Included\": רשימות \"Included\" ו-\"Not included\" (כלול / לא כלול), ו-\"Additional info\"."),
+          t("\"Group Leaders\": who escorts the tour - the site lists them on the tour page. Pick one and click \"Add\", or type a new name → \"New Group Leader\" (finish their picture and text later on [Group Leaders](/tours/instructors)). The leader of each date is set later in that date's card.", "\"Group Leaders\": מי מלווה את הטיול - האתר מציג אותם בעמוד הטיול. בוחרים ולוחצים \"Add\", או מקלידים שם חדש ← \"New Group Leader\" (את התמונה והטקסט משלימים אחר כך ב[מלווים](/tours/instructors)). המלווה של כל תאריך נקבע אחר כך בכרטיס של התאריך."),
+          t("\"Categories & Tags\": tick its destinations, audiences and tags - or type a new one in the card of its kind and click \"Add\"; it is created and ticked at once. The audience decides the homepage tab the tour shows under - a tour with no audience is missing from those tabs.", "\"Categories & Tags\": מסמנים יעדים, קהלים ותגיות - או מקלידים חדש בכרטיס של הסוג שלו ולוחצים \"Add\"; הוא נוצר ומסומן מיד. הקהל (Audiences) קובע באיזו לשונית של עמוד הבית הטיול מופיע - טיול בלי קהל חסר בלשוניות האלה."),
         ],
       },
       {
@@ -48,7 +51,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
       {
         title: t("3. Finish the tour page", "3. משלימים את עמוד הטיול"),
         steps: [
-          t("\"Itinerary\": \"Add Day\" for each day - \"Title (the day's route)\", \"Subtitle\", \"Image\", \"Day description\". Sold in the opposite direction too? \"New Variant\" copies the saved itinerary with its own arrival and return cities.", "\"Itinerary\": \"Add Day\" לכל יום - \"Title (the day's route)\", \"Subtitle\", \"Image\", \"Day description\". נמכר גם בכיוון ההפוך? \"New Variant\" מעתיק את המסלול השמור עם ערי נחיתה וחזרה משלו."),
+          t("\"Itinerary\": edit the days, or \"Add Day\". Sold in the opposite direction too? \"New Variant\" copies the saved itinerary with its own arrival and return cities.", "\"Itinerary\": עורכים את הימים או \"Add Day\". נמכר גם בכיוון ההפוך? \"New Variant\" מעתיק את המסלול השמור עם ערי נחיתה וחזרה משלו."),
+          t("The leader of a date: open the date's card → \"Group leader\" (in \"Internal\"). It is for operations only - the site shows the tour's group leaders, not the date's.", "המלווה של תאריך: פותחים את כרטיס התאריך ← \"Group leader\" (באזור \"Internal\"). זה לתפעול בלבד - האתר מציג את המלווים של הטיול, לא של התאריך."),
           t("\"FAQ\": \"Add Question\" and its answer. \"SEO\": the title and description search engines show.", "\"FAQ\": \"Add Question\" והתשובה שלה. \"SEO\": הכותרת והתיאור שמנועי החיפוש מציגים."),
           t("Click \"Save\" in the bottom bar after editing. The toast reminds you the site changes only after Publish Site.", "לוחצים \"Save\" בסרגל התחתון אחרי עריכה. ההודעה מזכירה שהאתר משתנה רק אחרי Publish Site."),
           t("\"Dates & Prices\": click a date to open its card - \"Prices\", \"Flights\", \"Promotions\", \"Reservations\", and the switch that puts it on the site. A red \"Add price\" or an amber \"Link a flight\" in a row opens the tab that is missing.", "\"Dates & Prices\": לוחצים על תאריך כדי לפתוח את הכרטיס שלו - \"Prices\", \"Flights\", \"Promotions\", \"Reservations\", והמתג שמעלה אותו לאתר. \"Add price\" אדום או \"Link a flight\" כתום בשורה פותחים את הלשונית שחסרה."),
@@ -76,8 +80,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     flow: {
       title: t("From a new tour to a booking", "מטיול חדש להזמנה"),
       steps: [
-        { label: t("Add Tour", "Add Tour"), sub: t("details, series, dates, prices, flights, hotels", "פרטים, סדרה, תאריכים, מחירים, טיסות, מלונות") },
-        { label: t("Tour page", "עמוד הטיול"), sub: t("itinerary, FAQ, SEO - until Ready for the site", "מסלול, שאלות, SEO - עד Ready for the site") },
+        { label: t("Add Tour", "Add Tour"), sub: t("the whole tour on one page", "הטיול כולו בעמוד אחד") },
+        { label: t("Tour page", "עמוד הטיול"), sub: t("FAQ, SEO, more dates - until Ready for the site", "שאלות, SEO, עוד תאריכים - עד Ready for the site") },
         { label: t("Active + dates published", "פעיל + תאריכים מפורסמים") },
         { label: t("Publish Site", "Publish Site"), sub: t("the site rebuilds", "האתר נבנה מחדש") },
         { label: t("Lead", "ליד") },
@@ -87,6 +91,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     rules: [
       t("Nothing reaches the customer site before \"Publish Site\" - saving only stores it in the backoffice.", "שום דבר לא מגיע לאתר הלקוחות לפני \"Publish Site\" - שמירה רק שומרת בבק-אופיס."),
       t("Once a tour has dates, its slug - its address on the site - is locked.", "ברגע שיש לטיול תאריכים, ה-slug שלו - הכתובת שלו באתר - ננעל."),
+      t("Created a tour by mistake? \"Delete Tour\" (Details tab) removes it with its dates while nothing was sold on it and no date is on the site; otherwise switch it off with \"Active on site\". The slug and series code stay taken.", "נוצר טיול בטעות? \"Delete Tour\" (לשונית Details) מוחק אותו עם התאריכים שלו כל עוד לא נמכר בו כלום ואף תאריך לא באתר; אחרת מכבים אותו ב-\"Active on site\". ה-slug וקוד הסדרה נשארים תפוסים."),
     ],
     links: [
       { label: t("Add Tour", "הוספת טיול"), href: "/tours/packages/new" },

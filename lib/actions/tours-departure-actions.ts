@@ -110,7 +110,7 @@ const BOARD_SELECT =
   "id, code, series_id, package_id, season_year, start_date, end_date, season, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, docket_no, flight_mode, flight_price, markup_fixed, is_deleted, departure_prices(pax_type, room_position, price), departure_options(kind, position, price, room_prices), promotions(id, kind, value, label, valid_until, show_on_card, is_active), flight_allocations(id, flight_id, seats, legs)";
 
 const CARD_SELECT =
-  "id, company_id, package_id, series_id, code, season_year, start_date, end_date, season, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, itinerary_id, capacity, docket_no, meeting_at, flight_mode, flight_price, baggage_included, meal_included, transfers_included, connection_out, connection_back, child_max_age, senior_min_age, senior_discount, markup_percent, markup_fixed, price_source, costing_id, legacy_product_id, site_id, notes, is_deleted, created_at, updated_at";
+  "id, company_id, package_id, series_id, code, season_year, start_date, end_date, season, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, itinerary_id, leader_id, capacity, docket_no, meeting_at, flight_mode, flight_price, baggage_included, meal_included, transfers_included, connection_out, connection_back, child_max_age, senior_min_age, senior_discount, markup_percent, markup_fixed, price_source, costing_id, legacy_product_id, site_id, notes, is_deleted, created_at, updated_at";
 
 /** What the publish rules and the price writers need to know about a departure. */
 const CORE_SELECT =
@@ -753,12 +753,32 @@ export async function getTourDates(packageId: string): Promise<ActionResult<Tour
   try {
     const { company } = await requireCompany("tours");
     if (typeof packageId !== "string" || !UUID.test(packageId)) throw new UserError("Tour not found");
-    const [rows, series, periods] = await Promise.all([
+    const [rows, series, periods, leaders] = await Promise.all([
       loadBoardRows(company.id, { packageId }),
       loadSeries(company.id),
       loadPeriods(company.id),
+      fetchAll<{ id: string; leader_id: string | null }>((from, to) =>
+        toursDb()
+          .from("departures")
+          .select("id, leader_id")
+          .eq("company_id", company.id)
+          .eq("package_id", packageId)
+          .not("leader_id", "is", null)
+          .order("id")
+          .range(from, to),
+      ),
     ]);
-    return ok({ rows, series: series.filter((s) => s.package_id === packageId), periods });
+    const leaderIds = [...new Set(leaders.map((d) => d.leader_id).filter((id): id is string => !!id))];
+    const names = leaderIds.length
+      ? (must(await toursDb().from("instructors").select("id, name").eq("company_id", company.id).in("id", leaderIds)) ?? [])
+      : [];
+    const nameById = new Map(names.map((n) => [n.id, n.name]));
+    const leaderNames: Record<string, string> = {};
+    for (const d of leaders) {
+      const name = d.leader_id ? nameById.get(d.leader_id) : undefined;
+      if (name) leaderNames[d.id] = name;
+    }
+    return ok({ rows, series: series.filter((s) => s.package_id === packageId), periods, leaderNames });
   } catch (e) {
     return fail(e);
   }
@@ -846,12 +866,13 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
     const pkgRow = must(pkg);
     const allocationRows = must(allocations) ?? [];
     const flightIds = allocationRows.map((a) => a.flight_id);
-    const [flights, sums, hotels] = await Promise.all([
+    const [flights, sums, hotels, leaders] = await Promise.all([
       loadFlights(company.id, flightIds),
       allocationSums(company.id, flightIds),
       pkgRow?.kind === "vacation"
         ? db.from("hotels").select("code, name, city").eq("company_id", company.id).order("name")
         : Promise.resolve({ data: [], error: null }),
+      db.from("instructors").select("id, name, is_active").eq("company_id", company.id).order("name"),
     ]);
 
     const cardAllocations: CardAllocation[] = [];
@@ -874,6 +895,7 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
       package: pkgRow,
       itineraries: must(itineraries) ?? [],
       hotels: must(hotels) ?? [],
+      leaders: (must(leaders) ?? []).map((l) => ({ id: l.id, name: l.name, isActive: l.is_active })),
       prices: must(prices) ?? [],
       options: must(options) ?? [],
       promotions: must(promotions) ?? [],
@@ -952,6 +974,16 @@ export async function updateDeparture(id: string, input: DepartureGeneralInput):
         if (!found) throw new UserError("The itinerary version doesn't belong to the departure's tour page");
       }
       patch.itinerary_id = itineraryId;
+    }
+    if (has("leader_id")) {
+      const leaderId = input.leader_id || null;
+      if (leaderId) {
+        const found = UUID.test(leaderId)
+          ? must(await toursDb().from("instructors").select("id").eq("company_id", company.id).eq("id", leaderId).maybeSingle())
+          : null;
+        if (!found) throw new UserError("Group leader not found in the active company");
+      }
+      patch.leader_id = leaderId;
     }
     if (has("capacity")) patch.capacity = intOrNull(input.capacity, 0, 2000, "Capacity");
     if (has("docket_no")) patch.docket_no = text(input.docket_no, 60);

@@ -32,6 +32,7 @@ import {
 import { PackageGeneralFields, PackageTermsPicker } from "@/components/tours/content/package-general-fields";
 import { TourDates } from "@/components/tours/content/tour-dates";
 import { TourHotelsEditor } from "@/components/tours/content/tour-hotels-editor";
+import { TourLeadersPicker } from "@/components/tours/content/tour-leaders-picker";
 import { TourReadinessStrip, tourReadiness } from "@/components/tours/content/tour-readiness";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { ItineraryEditor } from "@/components/tours/content/itinerary-editor";
@@ -192,14 +193,17 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
   const remove = async () => {
     const ok = await confirm({
       title: `Delete the tour "${saved.form.name}"?`,
-      description: "The tour will be removed from the backoffice and the site. A tour with series or dates cannot be deleted, only deactivated.",
+      description:
+        dateCount > 0
+          ? `The tour and its ${dateCount} dates will be removed from the backoffice and the site, their flight links released and its series switched off. Only a tour with no reservations and no date on the site can be deleted; the data is kept (soft delete).`
+          : "The tour will be removed from the backoffice and the site. The data is kept (soft delete).",
       confirmLabel: "Delete Tour",
       cancelLabel: "Cancel",
       destructive: true,
     });
     if (!ok) return;
     setIsDeleting(true);
-    const result = await run(() => deleteTourPackage(saved.id), "Tour deleted");
+    const result = await run(() => deleteTourPackage(saved.id, dateCount > 0), "Tour deleted");
     setIsDeleting(false);
     if (!result.success) return;
     router.push("/tours/packages");
@@ -299,7 +303,23 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
             />
           </Section>
 
-          <Section title="Delete Tour" description="Soft delete: the tour leaves the lists and the site, and its data is kept.">
+          <Section
+            title="Group Leaders"
+            description="Who escorts this tour - listed on the tour page on the site. The leader of each date is set in its card (Dates & Prices)."
+          >
+            <TourLeadersPicker
+              value={form.leaderIds}
+              onChange={(ids) => set("leaderIds", ids)}
+              options={saved.leaderOptions}
+              onOptionCreated={(leader) => setSaved((s) => ({ ...s, leaderOptions: [...s.leaderOptions, leader] }))}
+              siteUrl={siteUrl}
+            />
+          </Section>
+
+          <Section
+            title="Delete Tour"
+            description="For a tour created by mistake: possible while nothing was sold on it and no date is on the site. Otherwise deactivate it. The data is kept (soft delete)."
+          >
             <Button type="button" variant="outline" className="text-destructive" disabled={isDeleting} onClick={() => void remove()}>
               <Trash2 />
               Delete Tour
@@ -520,7 +540,12 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
 
         {/* ------------------------------------------------------------ terms */}
         <TabsContent value="terms" className="space-y-4">
-          <PackageTermsPicker terms={saved.terms} value={form.termIds} onChange={(ids) => set("termIds", ids)} />
+          <PackageTermsPicker
+            terms={saved.terms}
+            value={form.termIds}
+            onChange={(ids) => set("termIds", ids)}
+            onTermCreated={(term) => setSaved((s) => ({ ...s, terms: [...s.terms, term] }))}
+          />
         </TabsContent>
       </Tabs>
 

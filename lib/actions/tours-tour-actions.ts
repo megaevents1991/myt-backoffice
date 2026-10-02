@@ -20,7 +20,7 @@ import { actionFail, actionOk, must, UserError, type ActionResult } from "@/lib/
 import { isDateOnly, nightsBetween, weekdayOf } from "@/lib/tours/format";
 import { normalizeAirport } from "@/components/tours/departures/departure-utils";
 import { CURRENCIES } from "@/types/tours.types";
-import { createTourPackage } from "@/lib/actions/tours-content-actions";
+import { createTourPackage, saveTourItinerary } from "@/lib/actions/tours-content-actions";
 import { saveSeries } from "@/lib/actions/tours-series-actions";
 import { addFlightAllocation, createDeparture, saveDeparturePrices } from "@/lib/actions/tours-departure-actions";
 import type { NewTourInput, NewTourResult } from "@/components/tours/content/shared";
@@ -76,6 +76,13 @@ export async function createTour(input: NewTourInput): Promise<ActionResult<NewT
       revalidatePath("/tours/departures");
       return actionOk<NewTourResult>({ id, departures, flights, problems });
     };
+
+    // --- 1b. the day-by-day plan
+    const days = (input.itinerary ?? []).filter((d) => d.title.trim() || d.subtitle.trim() || d.html.trim());
+    if (days.length) {
+      const itinerary = await saveTourItinerary(id, null, { label: "מסלול ראשי", arrivalCity: "", returnCity: "", days });
+      if (!itinerary.success) problems.push(`The itinerary was not saved: ${itinerary.error}`);
+    }
 
     // --- 2. its series: route, currency and capacity of every date
     const sorted = [...dates].sort((a, b) => a.start.localeCompare(b.start));

@@ -131,6 +131,8 @@ export interface TourDatesData {
   /** The series that sell on this tour. */
   series: BoardSeries[];
   periods: BoardPeriod[];
+  /** departure id -> the name of its group leader, for the dates that have one. */
+  leaderNames: Record<string, string>;
 }
 
 export interface BoardData {
@@ -207,12 +209,20 @@ export interface CardHotel {
   city: string | null;
 }
 
+/** A group leader the card can pick for the date. */
+export interface CardLeader {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
 export interface DepartureCardData {
   departure: CardDeparture;
   series: BoardSeries | null;
   package: BoardPackage | null;
   itineraries: CardItinerary[];
   hotels: CardHotel[];
+  leaders: CardLeader[];
   prices: { pax_type: string; room_position: number; price: number }[];
   options: CardOption[];
   promotions: CardPromotion[];
@@ -324,6 +334,8 @@ export interface DepartureGeneralInput {
   arrival_airport?: string | null;
   return_airport?: string | null;
   itinerary_id?: string | null;
+  /** The group leader of this date (a tours.instructors id); operations only, the site never sees it. */
+  leader_id?: string | null;
   capacity?: number | null;
   docket_no?: string | null;
   meeting_at?: string | null;

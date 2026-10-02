@@ -17,12 +17,15 @@ import {
   FileText,
   Hotel,
   Info,
+  ListChecks,
+  Map as MapIcon,
   Plane,
   Plus,
   RefreshCw,
   Route,
   Tag,
   Trash2,
+  Users,
   Wallet,
 } from "lucide-react";
 
@@ -34,7 +37,9 @@ import { StickySaveBar } from "@/components/sticky-save-bar";
 import { useToast } from "@/hooks/use-toast";
 import { useActionData } from "@/hooks/use-action-data";
 import { CurrencySelect, EmptyLine, Field, Ltr, Notice } from "@/components/tours/ui";
-import { ImageUrlField } from "@/components/tours/content/fields";
+import { ImageUrlField, StringListEditor } from "@/components/tours/content/fields";
+import { ItineraryDaysEditor } from "@/components/tours/content/itinerary-days-editor";
+import { TourLeadersPicker } from "@/components/tours/content/tour-leaders-picker";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { PackageGeneralFields, PackageTermsPicker, slugFromName } from "@/components/tours/content/package-general-fields";
 import { TourHotelsEditor } from "@/components/tours/content/tour-hotels-editor";
@@ -45,7 +50,13 @@ import { checkBlockFitsDeparture, flightRouteLabel } from "@/lib/tours/routes";
 import { departureCode } from "@/components/tours/departures/departure-utils";
 import { CURRENCIES, PRICE_MATRIX_ROWS } from "@/types/tours.types";
 import type { CardFlight } from "@/components/tours/departures/types";
-import { createProblemsKey, type NewTourContext, type NewTourSeries, type PackageForm } from "@/components/tours/content/shared";
+import {
+  createProblemsKey,
+  type ItineraryDay,
+  type NewTourContext,
+  type NewTourSeries,
+  type PackageForm,
+} from "@/components/tours/content/shared";
 
 const EMPTY_FORM: PackageForm = {
   name: "",
@@ -73,6 +84,7 @@ const EMPTY_FORM: PackageForm = {
   seoDescription: "",
   termIds: [],
   hotels: [],
+  leaderIds: [],
 };
 
 /** Blocks fly within this many days of the date they serve (the allocation rule). */
@@ -154,6 +166,10 @@ export function CreateTour({ context }: { context: NewTourContext }) {
   const [prices, setPrices] = useState<Record<string, string>>({});
   /** `${start}|${flightId}` -> seats */
   const [links, setLinks] = useState<Record<string, number>>({});
+  const [days, setDays] = useState<ItineraryDay[]>([]);
+  // what is created here joins the lists at once
+  const [terms, setTerms] = useState(context.terms);
+  const [leaders, setLeaders] = useState(context.leaders);
   const [saving, setSaving] = useState(false);
   const blocks = useActionData(() => listUpcomingBlocks(), []);
 
@@ -233,6 +249,7 @@ export function CreateTour({ context }: { context: NewTourContext }) {
       series: { ...series, code },
       dates: filledDates,
       prices: parsedPrices.map(({ paxType, position, price }) => ({ paxType, position, price: price ?? null })),
+      itinerary: days,
       flights: Object.entries(links)
         .map(([key, seats]) => {
           const [start, id] = key.split("|");
@@ -284,8 +301,7 @@ export function CreateTour({ context }: { context: NewTourContext }) {
         <div className="ms-4">
           <h1 className="text-3xl font-bold tracking-tight">Create Tour</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Everything a tour needs on one page. The itinerary, FAQ and the rest are finished on the tour page after it is
-            created.
+            Everything a tour needs, on one page. FAQ and SEO can be added on the tour page after it is created.
           </p>
         </div>
       </div>
@@ -567,12 +583,61 @@ export function CreateTour({ context }: { context: NewTourContext }) {
       </SectionCard>
 
       <SectionCard
+        id="section-itinerary"
+        icon={MapIcon}
+        title="Itinerary"
+        description="The day-by-day plan. Open a day to write its route and text; a picture per day is optional."
+      >
+        <ItineraryDaysEditor
+          days={days}
+          onChange={setDays}
+          siteUrl={siteUrl}
+          removeNote="The day will be removed from the itinerary."
+        />
+      </SectionCard>
+
+      <SectionCard id="section-included" icon={ListChecks} title="What's Included">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <StringListEditor label="Included" value={form.included} onChange={(value) => set("included", value)} />
+          <StringListEditor label="Not included" value={form.notIncluded} onChange={(value) => set("notIncluded", value)} />
+        </div>
+        <HtmlField
+          label="Additional info"
+          value={form.extraInfoHtml}
+          onChange={(value) => set("extraInfoHtml", value)}
+          siteUrl={siteUrl}
+          rows={6}
+          hint="A plain list (bullets) shows on the site as bullet points."
+        />
+      </SectionCard>
+
+      <SectionCard
+        id="section-leaders"
+        icon={Users}
+        title="Group Leaders"
+        description="Who escorts the tour - listed on the tour page on the site. A new one is created by name; the leader of each date is set later in its card."
+      >
+        <TourLeadersPicker
+          value={form.leaderIds}
+          onChange={(ids) => set("leaderIds", ids)}
+          options={leaders}
+          onOptionCreated={(leader) => setLeaders((list) => [...list, leader])}
+          siteUrl={siteUrl}
+        />
+      </SectionCard>
+
+      <SectionCard
         id="section-terms"
         icon={Tag}
         title="Categories & Tags"
-        description="The audience decides the homepage tab the tour shows under."
+        description="Tick existing ones or add a new one in place. The audience decides the homepage tab the tour shows under."
       >
-        <PackageTermsPicker terms={context.terms} value={form.termIds} onChange={(ids) => set("termIds", ids)} />
+        <PackageTermsPicker
+          terms={terms}
+          value={form.termIds}
+          onChange={(ids) => set("termIds", ids)}
+          onTermCreated={(term) => setTerms((list) => [...list, term])}
+        />
       </SectionCard>
 
       <StickySaveBar

@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ChevronDown, CopyPlus, Loader2, Plus, Trash2 } from "lucide-react";
+import { CopyPlus, Loader2, Trash2 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,15 +18,9 @@ import { useConfirm } from "@/components/confirm-provider";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
 import { createTourItineraryVariant, deleteTourItineraryVariant } from "@/lib/actions/tours-content-actions";
-import { EmptyLine, Field, Section } from "@/components/tours/ui";
-import { ImageUrlField, RowControls } from "@/components/tours/content/fields";
-import { HtmlField } from "@/components/tours/content/html-field";
-import type { ItineraryDay, ItineraryVariant, PackageEditorData } from "@/components/tours/content/shared";
-
-const isSequential = (days: ItineraryDay[]) => days.every((day, index) => day.n === index + 1);
-/** Days numbered 1..N stay numbered 1..N after a move or a removal; hand-set numbers are kept. */
-const renumber = (before: ItineraryDay[], after: ItineraryDay[]) =>
-  isSequential(before) ? after.map((day, index) => ({ ...day, n: index + 1 })) : after;
+import { Field, Section } from "@/components/tours/ui";
+import { ItineraryDaysEditor } from "@/components/tours/content/itinerary-days-editor";
+import type { ItineraryVariant, PackageEditorData } from "@/components/tours/content/shared";
 
 interface ItineraryEditorProps {
   packageId: string;
@@ -57,7 +50,6 @@ export function ItineraryEditor({
   const confirm = useConfirm();
   const run = useActionToast();
   const [activeKey, setActiveKey] = useState(variants[0]?.key ?? "main");
-  const [openDay, setOpenDay] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -67,45 +59,6 @@ export function ItineraryEditor({
 
   const patchActive = (change: Partial<ItineraryVariant>) =>
     onChange(variants.map((v) => (v.key === active.key ? { ...v, ...change } : v)));
-  const patchDay = (index: number, change: Partial<ItineraryDay>) =>
-    patchActive({ days: active.days.map((day, i) => (i === index ? { ...day, ...change } : day)) });
-
-  const moveDay = (index: number, delta: -1 | 1) => {
-    const target = index + delta;
-    if (target < 0 || target >= active.days.length) return;
-    const next = [...active.days];
-    // the content moves, the day numbers stay where they were
-    const [a, b] = [next[index], next[target]];
-    next[index] = { ...b, n: a.n };
-    next[target] = { ...a, n: b.n };
-    patchActive({ days: next });
-    setOpenDay((open) => (open === index ? target : open === target ? index : open));
-  };
-
-  const removeDay = async (index: number) => {
-    const day = active.days[index];
-    const hasText = day.title || day.subtitle || day.html;
-    if (
-      hasText &&
-      !(await confirm({
-        title: `Remove Day ${day.n}?`,
-        description: "The day will be removed from the itinerary. The change is kept only when you save.",
-        confirmLabel: "Remove",
-        cancelLabel: "Cancel",
-        destructive: true,
-      }))
-    )
-      return;
-    patchActive({ days: renumber(active.days, active.days.filter((_, i) => i !== index)) });
-    setOpenDay(null);
-  };
-
-  const addDay = () => {
-    const n = active.days.reduce((max, day) => Math.max(max, day.n), 0) + 1;
-    patchActive({ days: [...active.days, { n, title: "", subtitle: "", html: "" }] });
-    setOpenDay(active.days.length);
-  };
-
   const removeVariant = async () => {
     if (!active.id) return;
     const ok = await confirm({
@@ -121,7 +74,6 @@ export function ItineraryEditor({
       const result = await run(() => deleteTourItineraryVariant(packageId, id), "Variant deleted");
       if (!result.success) return;
       setActiveKey("main");
-      setOpenDay(null);
       onVariantsChanged(result.data, { deleted: key });
     });
   };
@@ -141,7 +93,6 @@ export function ItineraryEditor({
               type="button"
               onClick={() => {
                 setActiveKey(variant.key);
-                setOpenDay(null);
               }}
               className={cn(
                 "flex items-center gap-2 rounded-md border px-3 py-2 text-sm",
@@ -228,85 +179,12 @@ export function ItineraryEditor({
         </div>
       </Section>
 
-      <div className="space-y-2">
-        {active.days.length === 0 && <EmptyLine>This itinerary has no days yet. Add the first day.</EmptyLine>}
-        {active.days.map((day, index) => {
-          const open = openDay === index;
-          return (
-            <div key={index} className="rounded-lg border bg-card">
-              <div className="flex items-center gap-2 p-2 ps-3">
-                <button
-                  type="button"
-                  onClick={() => setOpenDay(open ? null : index)}
-                  aria-expanded={open}
-                  className="flex min-w-0 flex-1 items-center gap-3 text-start"
-                >
-                  <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-180")} />
-                  <Badge variant="secondary" className="shrink-0">
-                    Day {day.n}
-                  </Badge>
-                  <span className="min-w-0 truncate font-medium">{day.title || "Untitled"}</span>
-                  {day.subtitle && (
-                    <span className="hidden min-w-0 truncate text-sm text-muted-foreground md:inline">
-                      {day.subtitle}
-                    </span>
-                  )}
-                </button>
-                <RowControls
-                  index={index}
-                  count={active.days.length}
-                  onMove={(delta) => moveDay(index, delta)}
-                  onRemove={() => void removeDay(index)}
-                  removeLabel="Remove Day"
-                />
-              </div>
-              {open && (
-                <div className="space-y-4 border-t p-4">
-                  <div className="grid gap-4 md:grid-cols-6">
-                    <Field label="Day number">
-                      <Input
-                        type="number"
-                        min={1}
-                        dir="ltr"
-                        value={Number.isFinite(day.n) ? day.n : ""}
-                        onChange={(event) => patchDay(index, { n: Math.max(1, Math.trunc(Number(event.target.value)) || 1) })}
-                      />
-                    </Field>
-                    <Field label="Title (the day's route)" className="md:col-span-2">
-                      <Input dir="auto" value={day.title} onChange={(event) => patchDay(index, { title: event.target.value })} />
-                    </Field>
-                    <Field label="Subtitle" className="md:col-span-3">
-                      <Input
-                        dir="auto"
-                        value={day.subtitle}
-                        onChange={(event) => patchDay(index, { subtitle: event.target.value })}
-                      />
-                    </Field>
-                  </div>
-                  <ImageUrlField
-                    label="Image"
-                    value={day.image ?? ""}
-                    onChange={(image) => patchDay(index, { image })}
-                    siteUrl={siteUrl}
-                    folder="itinerary"
-                  />
-                  <HtmlField
-                    label="Day description"
-                    value={day.html}
-                    onChange={(html) => patchDay(index, { html })}
-                    siteUrl={siteUrl}
-                    rows={10}
-                  />
-                </div>
-              )}
-            </div>
-          );
-        })}
-        <Button type="button" variant="outline" onClick={addDay}>
-          <Plus />
-          Add Day
-        </Button>
-      </div>
+      <ItineraryDaysEditor
+        key={active.key}
+        days={active.days}
+        onChange={(days) => patchActive({ days })}
+        siteUrl={siteUrl}
+      />
 
       {dialogOpen && (
         <NewVariantDialog
@@ -317,7 +195,6 @@ export function ItineraryEditor({
           onCreated={(data, key) => {
             setDialogOpen(false);
             setActiveKey(key);
-            setOpenDay(null);
             onVariantsChanged(data, { created: key });
           }}
         />

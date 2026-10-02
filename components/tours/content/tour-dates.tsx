@@ -108,6 +108,12 @@ export function TourDates({
         },
       },
       {
+        id: "leader",
+        header: "Group leader",
+        cell: ({ row }) =>
+          data.leaderNames[row.original.id] ?? <span className="text-xs text-muted-foreground">-</span>,
+      },
+      {
         id: "seats",
         header: "Seats / Sold",
         cell: ({ row }) => (
@@ -145,7 +151,7 @@ export function TourDates({
     ],
     // `open` only sets state
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [data.leaderNames],
   );
 
   return (

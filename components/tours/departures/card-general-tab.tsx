@@ -35,6 +35,7 @@ interface Draft {
   card_badge: string;
   date_labels: string;
   itinerary_id: string;
+  leader_id: string;
   child_max_age: string;
   senior_min_age: string;
   senior_discount: string;
@@ -61,6 +62,7 @@ function toDraft(d: DepartureCardData["departure"]): Draft {
     card_badge: inputValue(d.card_badge),
     date_labels: d.date_labels.join(", "),
     itinerary_id: inputValue(d.itinerary_id),
+    leader_id: inputValue(d.leader_id),
     child_max_age: inputValue(d.child_max_age),
     senior_min_age: inputValue(d.senior_min_age),
     senior_discount: inputValue(d.senior_discount),
@@ -94,6 +96,7 @@ function changes(base: Draft, draft: Draft): DepartureGeneralInput {
   if (draft.card_badge !== base.card_badge) out.card_badge = textOrNull(draft.card_badge);
   if (draft.date_labels !== base.date_labels) out.date_labels = labelsOf(draft.date_labels);
   if (draft.itinerary_id !== base.itinerary_id) out.itinerary_id = draft.itinerary_id || null;
+  if (draft.leader_id !== base.leader_id) out.leader_id = draft.leader_id || null;
   if (draft.child_max_age !== base.child_max_age) out.child_max_age = inputNumber(draft.child_max_age);
   if (draft.senior_min_age !== base.senior_min_age) out.senior_min_age = inputNumber(draft.senior_min_age);
   if (draft.senior_discount !== base.senior_discount) out.senior_discount = inputNumber(draft.senior_discount);
@@ -291,6 +294,19 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
 
       <Section title="Internal">
         <div className="grid grid-cols-2 gap-3">
+          <Field label="Group leader" hint="Who escorts this date. Operations only - the site does not show it." className="col-span-2">
+            <select className={`${selectClass} w-full`} value={draft.leader_id} onChange={(e) => set("leader_id", e.target.value)}>
+              <option value="">No group leader yet</option>
+              {data.leaders
+                .filter((l) => l.isActive || l.id === draft.leader_id)
+                .map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                    {l.isActive ? "" : " (inactive)"}
+                  </option>
+                ))}
+            </select>
+          </Field>
           <Field label="Docket number" hint="The accounting number. Stored as a field only">
             <Input dir="ltr" className="h-9" value={draft.docket_no} onChange={(e) => set("docket_no", e.target.value)} />
           </Field>

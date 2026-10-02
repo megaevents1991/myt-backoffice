@@ -44,6 +44,7 @@ import {
   type InstructorEditorData,
   type InstructorForm,
   type InstructorList,
+  type LeaderOption,
   type NewTourContext,
   type TourHotelPick,
   type TourHotelStay,
@@ -241,6 +242,7 @@ const packageSchema = z.object({
   seoDescription: shortText,
   termIds: z.array(z.string().uuid()).max(1000),
   hotels: z.array(hotelStaySchema).max(40),
+  leaderIds: z.array(z.string().uuid()).max(30),
 });
 
 const daySchema = z
@@ -413,6 +415,7 @@ function toPackageForm(pkg: TourPackage, termIds: string[]): PackageForm {
     seoDescription: typeof seo.description === "string" ? seo.description : "",
     termIds,
     hotels: toHotels(pkg.hotels),
+    leaderIds: pkg.instructor_ids ?? [],
   };
 }
 
@@ -430,7 +433,7 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
   if (error) throw error;
   if (!pkg) return null;
 
-  const [itineraries, links, terms, series, departures, hotels] = await Promise.all([
+  const [itineraries, links, terms, series, departures, hotels, leaders] = await Promise.all([
     db.from("package_itineraries").select("*").eq("company_id", company.id).eq("package_id", id),
     db
       .from("package_terms")
@@ -458,6 +461,7 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
         .range(from, to),
     ),
     loadHotelCatalog(company),
+    loadLeaderOptions(company),
   ]);
   for (const res of [itineraries, links, series]) if (res.error) throw res.error;
 
@@ -486,6 +490,7 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
     itineraries: variants,
     terms: terms.map((t) => ({ id: t.id, kind: t.kind, name: t.name, isActive: t.is_active })),
     hotelCatalog: hotels,
+    leaderOptions: leaders,
     // the tour or one of its dates, whichever changed last
     updatedAt: departures.reduce(
       (latest, d) => (Date.parse(d.updated_at) > Date.parse(latest) ? d.updated_at : latest),
@@ -493,6 +498,20 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
     ),
     siteUrl: company.siteUrl,
   };
+}
+
+/** The company's group leaders, as a tour's leaders pick from them. */
+async function loadLeaderOptions(company: Company): Promise<LeaderOption[]> {
+  const rows = await fetchAll((from, to) =>
+    toursDb()
+      .from("instructors")
+      .select("id, name, image, is_active")
+      .eq("company_id", company.id)
+      .order("name")
+      .order("id")
+      .range(from, to),
+  );
+  return rows.map((l) => ({ id: l.id, name: l.name, image: l.image, isActive: l.is_active }));
 }
 
 /** The company's hotel catalog, as the Hotels tab of a tour picks from it. */
@@ -715,6 +734,18 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
     patch.set("faq", toFaq(before.faq), faq, "faq", faq);
     const hotels = cleanHotels(input.hotels);
     patch.set("hotels", toHotels(before.hotels), hotels, "hotels", hotels as unknown as Json);
+    // group leaders: ids of this company's leaders only, in the chosen order
+    const leaderIds = [...new Set(input.leaderIds)];
+    if (leaderIds.length) {
+      const { data: found, error: leadersError } = await db
+        .from("instructors")
+        .select("id")
+        .eq("company_id", company.id)
+        .in("id", leaderIds);
+      if (leadersError) throw leadersError;
+      if ((found ?? []).length !== leaderIds.length) return { success: false, error: "A group leader was not found in the active company" };
+    }
+    patch.set("instructor_ids", before.instructor_ids ?? [], leaderIds);
 
     const seoBefore = asObject(before.seo);
     const seoTitle = input.seoTitle.trim();
@@ -954,7 +985,7 @@ export async function getNewTourContext(): Promise<ActionResult<NewTourContext>>
   try {
     const { company } = await requireCompany("tours");
     const db = toursDb();
-    const [terms, hotels, series, slugs] = await Promise.all([
+    const [terms, hotels, series, slugs, leaders] = await Promise.all([
       fetchAll((from, to) =>
         db
           .from("terms")
@@ -968,6 +999,7 @@ export async function getNewTourContext(): Promise<ActionResult<NewTourContext>>
       loadHotelCatalog(company),
       fetchAll((from, to) => db.from("series").select("code").eq("company_id", company.id).order("code").range(from, to)),
       fetchAll((from, to) => db.from("packages").select("slug").eq("company_id", company.id).order("slug").range(from, to)),
+      loadLeaderOptions(company),
     ]);
     return {
       success: true,
@@ -975,6 +1007,7 @@ export async function getNewTourContext(): Promise<ActionResult<NewTourContext>>
         siteUrl: company.siteUrl,
         terms: terms.map((t) => ({ id: t.id, kind: t.kind, name: t.name, isActive: t.is_active })),
         hotels,
+        leaders,
         seriesCodes: series.map((s) => s.code),
         slugs: slugs.map((p) => p.slug),
       },
@@ -984,8 +1017,14 @@ export async function getNewTourContext(): Promise<ActionResult<NewTourContext>>
   }
 }
 
-/** Soft delete. A page that series or departures still sell on is refused. */
-export async function deleteTourPackage(id: string): Promise<ActionResult> {
+/**
+ * Soft delete of a tour. A tour with dates can go only while nothing has been
+ * sold on it and no date is on the site - a tour created by mistake. Then its
+ * dates are soft-deleted with it, their flight links are released and its
+ * series are switched off (a series code stays taken). `withDates` is the
+ * operator's confirmation that the dates go too.
+ */
+export async function deleteTourPackage(id: string, withDates = false): Promise<ActionResult> {
   try {
     const { company } = await requireCompany("tours");
     const db = toursDb();
@@ -1000,21 +1039,43 @@ export async function deleteTourPackage(id: string): Promise<ActionResult> {
     if (!pkg) return { success: false, error: "Page not found" };
 
     const [series, departures] = await Promise.all([
-      db.from("series").select("id", { count: "exact", head: true }).eq("company_id", company.id).eq("package_id", id),
-      db
-        .from("departures")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", company.id)
-        .eq("package_id", id)
-        .is("is_deleted", null),
+      db.from("series").select("id").eq("company_id", company.id).eq("package_id", id),
+      db.from("departures").select("id, is_published").eq("company_id", company.id).eq("package_id", id).is("is_deleted", null),
     ]);
     if (series.error) throw series.error;
     if (departures.error) throw departures.error;
-    if ((departures.count ?? 0) > 0) {
-      return { success: false, error: `The page has departures (${departures.count}). You can deactivate it, but not delete it` };
+    const dates = departures.data ?? [];
+    const dateIds = dates.map((d) => d.id);
+    if (dates.some((d) => d.is_published)) {
+      return { success: false, error: "Some dates of this tour are on the site. Unpublish them first, or deactivate the tour instead" };
     }
-    if ((series.count ?? 0) > 0) {
-      return { success: false, error: `Series sell on this page (${series.count}). Move them to another page before deleting it` };
+    if (dateIds.length) {
+      const { count, error: salesError } = await db
+        .from("departure_sales_entries")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", company.id)
+        .in("departure_id", dateIds)
+        .is("is_deleted", null);
+      if (salesError) throw salesError;
+      if ((count ?? 0) > 0) return { success: false, error: "This tour has reservations. Deactivate it instead of deleting it" };
+      if (!withDates) return { success: false, error: `The tour has ${dateIds.length} dates. Confirm that they are deleted with it` };
+    }
+
+    const today = todayIso();
+    if (dateIds.length) {
+      const { error: linksError } = await db.from("flight_allocations").delete().eq("company_id", company.id).in("departure_id", dateIds);
+      if (linksError) throw linksError;
+      const { error: datesError } = await db
+        .from("departures")
+        .update({ is_deleted: today, is_published: false })
+        .eq("company_id", company.id)
+        .in("id", dateIds);
+      if (datesError) throw datesError;
+    }
+    const seriesIds = (series.data ?? []).map((s) => s.id);
+    if (seriesIds.length) {
+      const { error: seriesError } = await db.from("series").update({ is_active: false }).eq("company_id", company.id).in("id", seriesIds);
+      if (seriesError) throw seriesError;
     }
 
     const { error: updateError } = await db
@@ -1027,12 +1088,14 @@ export async function deleteTourPackage(id: string): Promise<ActionResult> {
       action: "delete",
       entityType: "tours_package",
       entityId: id,
+      changes: { dates_deleted: dateIds.length, series_switched_off: seriesIds.length },
       metadata: { ...companyAudit(company), slug: pkg.slug, name: pkg.name },
     });
     revalidatePath("/tours/packages");
+    revalidatePath("/tours/departures");
     return { success: true, data: undefined };
   } catch (e) {
-    return failure(e, "Failed to delete the page");
+    return failure(e, "Failed to delete the tour");
   }
 }
 
