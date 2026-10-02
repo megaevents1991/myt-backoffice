@@ -455,7 +455,7 @@ export function DeparturesBoard({ readOnly: readOnlyViewer = false }: { readOnly
   return (
     <div className="min-w-0">
       <PageHeader
-        title="Tours"
+        title="Departures"
         description={
           readOnly
             ? "The departures on sale, grouped by series: dates, route, price, promotions, flight and seats left. Click a departure code for its full details."

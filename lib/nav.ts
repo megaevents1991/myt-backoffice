@@ -147,11 +147,20 @@ const NAV: NavGroup[] = [
         productType: "events",
       },
       {
-        // The departures board: every date of every tour, grouped by series.
+        // The tours list - the tours side of Events: each tour opens its page
+        // (details, content, dates, prices, flights, hotels); Add Tour is there.
         name: "Tours",
-        href: "/tours/departures",
+        href: "/tours/packages",
         icon: MapIcon,
-        keywords: "tours trips departures dates prices series טיולים יציאות תאריכים מחירים סדרות",
+        keywords: "tours trips packages tour pages add tour new tour itinerary טיולים טיול חדש עמודי טיולים מסלול",
+        productType: "tours",
+      },
+      {
+        // The departures board: every date of every tour, grouped by series.
+        name: "Departures",
+        href: "/tours/departures",
+        icon: CalendarDays,
+        keywords: "departures dates prices series board יציאות תאריכים מחירים סדרות לוח",
         productType: "tours",
       },
       {
@@ -308,14 +317,6 @@ const NAV: NavGroup[] = [
         productType: "events",
       },
       {
-        // The tour product pages of the site: itinerary, included, gallery, FAQ.
-        name: "Tour Pages",
-        href: "/tours/packages",
-        icon: LayoutTemplate,
-        keywords: "packages tour pages itinerary site content חבילות עמודי טיולים מסלול",
-        productType: "tours",
-      },
-      {
         name: "Content Pages",
         href: "/tours/pages",
         icon: FileText,
@@ -370,16 +371,16 @@ const NAV: NavGroup[] = [
         name: "Guide",
         href: "/guide",
         icon: BookOpen,
-        keywords: "help manual docs מדריך הדרכה",
-        productType: "events",
+        // Shared: each company reads the guide of its own screens (app/(dashboard)/guide).
+        keywords: "help manual docs how to מדריך הדרכה איך",
       },
       {
+        // Shared: in a tours company the same screen manages that company's people.
         name: "Users",
         href: "/users",
         icon: UserCog,
-        keywords: "roles permissions",
+        keywords: "roles permissions people members team משתמשים צוות הרשאות",
         roles: ADMIN_ROLES,
-        productType: "events",
       },
       {
         name: "Audit Log",
@@ -394,7 +395,7 @@ const NAV: NavGroup[] = [
         name: "Settings",
         href: "/tours/settings",
         icon: Settings,
-        keywords: "company settings brand contact members users הגדרות חברה משתמשים",
+        keywords: "company settings brand contact site connection הגדרות חברה אתר",
         roles: ADMIN_ROLES,
         productType: "tours",
       },
@@ -410,6 +411,8 @@ export const DEFAULT_PRODUCT_TYPES: readonly ProductType[] = ["events"];
 
 const FLIGHTS_HREF = "/offline-flights";
 const TASKS_HREF = "/tasks";
+const USERS_HREF = "/users";
+const GUIDE_HREF = "/guide";
 
 /**
  * The menu of a company that sells `productTypes`: entries of another product
@@ -435,6 +438,10 @@ function forProducts(groups: NavGroup[], productTypes: readonly ProductType[]): 
  */
 export const NAV_GROUPS: NavGroup[] = forProducts(NAV, DEFAULT_PRODUCT_TYPES);
 
+/** The menu of a company that sells `productTypes` (Mega Events' when unknown), before any role filter - the guide of that company follows it. */
+export const navFor = (productTypes: readonly ProductType[] = DEFAULT_PRODUCT_TYPES): NavGroup[] =>
+  forProducts(NAV, productTypes);
+
 /** Flat list of every navigable item (parents + children), for search. */
 export function flattenNav(groups: NavGroup[] = NAV_GROUPS): NavItem[] {
   return groups.flatMap((group) =>
@@ -456,11 +463,12 @@ function groupsForRole(groups: NavGroup[], role: Role | undefined | null): NavGr
 
 /**
  * The screens a company that sells tours and no events works in: its own
- * module, the company-scoped flights list and the company-scoped task board.
+ * module and the shared screens that follow the active company (flights,
+ * tasks, users, the guide).
  * The dashboard layout sends such a company home (TOURS_HOME) from anywhere else.
  */
 export function isToursCompanyPath(pathname: string): boolean {
-  return [TOURS_HOME, FLIGHTS_HREF, TASKS_HREF].some(
+  return [TOURS_HOME, FLIGHTS_HREF, TASKS_HREF, USERS_HREF, GUIDE_HREF].some(
     (root) => pathname === root || pathname.startsWith(`${root}/`),
   );
 }
@@ -565,11 +573,11 @@ const SEGMENT_LABELS: Record<string, string> = {
 /**
  * The tours screens under /tours, named as the menu names them. /tours itself
  * is the tours dashboard; below it the trail starts at the screen, so
- * /tours/departures reads "Tours", not "Dashboard / Tours".
+ * /tours/packages reads "Tours", not "Dashboard / Tours".
  */
 const TOURS_SEGMENT_LABELS: Record<string, string> = {
   tours: "Dashboard",
-  departures: "Tours",
+  departures: "Departures",
   reservations: "Reservations",
   series: "Series",
   contracts: "Flight Contracts",
@@ -577,7 +585,7 @@ const TOURS_SEGMENT_LABELS: Record<string, string> = {
   rates: "Daily Rates",
   reports: "Reports",
   exceptions: "Data Problems",
-  packages: "Tour Pages",
+  packages: "Tours",
   terms: "Categories & Tags",
   instructors: "Group Leaders",
   hotels: "Hotels",

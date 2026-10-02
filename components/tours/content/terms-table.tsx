@@ -46,7 +46,7 @@ export function TermsTable({ rows }: { rows: TermListRow[] }) {
       },
       {
         accessorKey: "pages",
-        header: ({ column }) => <SortableHeader label="Tour Pages" column={column} />,
+        header: ({ column }) => <SortableHeader label="Tours" column={column} />,
         cell: ({ row }) => (row.original.pages > 0 ? row.original.pages : <span className="text-muted-foreground">0</span>),
       },
       {

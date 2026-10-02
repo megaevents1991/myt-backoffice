@@ -22,14 +22,14 @@ import { EMPTY, WEEKDAY_LABELS, addDays, fmtDate, fmtDateRange, isDateOnly, nigh
 import { departureRouteLabel } from "@/lib/tours/routes";
 import { createSeasonDepartures, getSeasonContext } from "@/lib/actions/tours-series-actions";
 import { departureCode, periodLabel, periodsOverlapping, seasonYearOf } from "@/components/tours/departures/departure-utils";
-import type { BoardPeriod } from "@/components/tours/departures/types";
-import { type SeasonContext, type SeasonCreateResult, type SeriesListRow } from "./types";
+import type { BoardPeriod, BoardSeries } from "@/components/tours/departures/types";
+import { type SeasonContext, type SeasonCreateResult } from "./types";
 import { seriesBoardHref } from "@/lib/tours/links";
 
 const MAX_PROPOSALS = 120;
 
 /** The trip length the series usually runs: its own default, else what its departures show, else the weekday gap. */
-function defaultNights(series: SeriesListRow, context: SeasonContext | null): number | null {
+function defaultNights(series: BoardSeries, context: SeasonContext | null): number | null {
   if (series.default_nights != null) return series.default_nights;
   const counts = new Map<number, number>();
   for (const d of context?.existing ?? []) {
@@ -50,7 +50,8 @@ export function SeasonDialog({
   onClose,
   onCreated,
 }: {
-  series: SeriesListRow | null;
+  /** Any series row: the dialog reads only the series' own fields (the board's BoardSeries). */
+  series: BoardSeries | null;
   periods: BoardPeriod[];
   onClose: () => void;
   onCreated: () => void;
@@ -190,7 +191,7 @@ export function SeasonDialog({
               </Button>
               {series && createdYear && (
                 <Button asChild>
-                  <Link href={seriesBoardHref(series.code, createdYear)}>Open in Tours</Link>
+                  <Link href={seriesBoardHref(series.code, createdYear)}>Open on the Departures Board</Link>
                 </Button>
               )}
             </DialogFooter>

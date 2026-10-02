@@ -1,3 +1,7 @@
+import Link from "next/link";
+import { PlusCircle } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { listTourPackages } from "@/lib/actions/tours-content-actions";
 import { PackagesTable } from "@/components/tours/content/packages-table";
@@ -12,9 +16,19 @@ export default async function TourPackagesPage() {
   return (
     <div>
       <PageHeader
-        title="Tour Pages"
-        description="Each page here is a product page on the site: name, images, description, itinerary and FAQ. Series and departures are sold on the page. Changes reach the site after you save and publish."
-        actions={<PublishSiteButton />}
+        title="Tours"
+        description="Every tour of the site: its page, dates, prices, flights and hotels. Open a tour to edit it; changes reach the site after you save and publish."
+        actions={
+          <>
+            <PublishSiteButton />
+            <Button asChild>
+              <Link href="/tours/packages/new">
+                <PlusCircle className="me-2 h-4 w-4" />
+                Add Tour
+              </Link>
+            </Button>
+          </>
+        }
       />
       {result.success ? (
         <PackagesTable rows={result.data.rows} siteUrl={result.data.siteUrl} />

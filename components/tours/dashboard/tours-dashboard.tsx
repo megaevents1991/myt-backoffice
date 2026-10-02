@@ -40,7 +40,7 @@ export function ToursDashboard({ isManager }: { isManager: boolean }) {
           value={v((d) => d.toursOnSale)}
           hint={data ? `${n(data.publishedDepartures)} published departures` : "Published, future dates"}
           icon={MapIcon}
-          href="/tours/departures"
+          href="/tours/packages"
         />
         <StatCard
           label={`Departures (${data?.departuresWindowDays ?? 60} Days)`}

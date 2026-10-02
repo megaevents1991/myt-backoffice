@@ -5,28 +5,34 @@ import { useRouter } from "next/navigation";
 import { Info, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/page-header";
 import { StickySaveBar } from "@/components/sticky-save-bar";
-import { UrlTabs } from "@/components/url-tabs";
 import { useConfirm } from "@/components/confirm-provider";
 import { useToast } from "@/hooks/use-toast";
 import { useActionToast } from "@/hooks/use-action-toast";
+import { useActionData } from "@/hooks/use-action-data";
+import { useUrlState } from "@/hooks/use-view-state";
 import { deleteTourPackage, saveTourItinerary, saveTourPackage } from "@/lib/actions/tours-content-actions";
-import { ActiveChip, Chip, EmptyLine, Field, Section } from "@/components/tours/ui";
+import { getTourDates } from "@/lib/actions/tours-departure-actions";
+import { getSitePublishStatus } from "@/lib/tours/site-publish";
+import { ActiveChip, Chip, EmptyLine, Field, LoadError, Section } from "@/components/tours/ui";
 import {
+  IMAGE_FIELDS_NOTE,
   ImageListEditor,
   ImageUrlField,
-  NO_UPLOAD_NOTE,
   RowControls,
   StringListEditor,
   moved,
 } from "@/components/tours/content/fields";
+import { PackageGeneralFields, PackageTermsPicker } from "@/components/tours/content/package-general-fields";
+import { TourDates } from "@/components/tours/content/tour-dates";
+import { TourHotelsEditor } from "@/components/tours/content/tour-hotels-editor";
+import { TourReadinessStrip, tourReadiness } from "@/components/tours/content/tour-readiness";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { ItineraryEditor } from "@/components/tours/content/itinerary-editor";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
@@ -37,25 +43,21 @@ import {
   ViewOnSiteButton,
 } from "@/components/tours/content/save-bar";
 import {
-  PACKAGE_BRANDS,
-  PACKAGE_BRAND_COLORS,
-  PACKAGE_BRAND_LABELS,
-  PACKAGE_KINDS,
-  PACKAGE_KIND_LABELS,
-  PACKAGE_TERM_KINDS,
-  TERM_KIND_LABELS,
   siteAssetUrl,
   type ItineraryVariant,
   type PackageEditorData,
   type PackageForm,
 } from "@/components/tours/content/shared";
 
-const TABS = ["general", "images", "description", "itinerary", "faq", "seo", "terms"] as const;
-const TAB_LABELS: Record<(typeof TABS)[number], string> = {
-  general: "General",
+const TABS = ["general", "images", "description", "itinerary", "dates", "hotels", "faq", "seo", "terms"] as const;
+type Tab = (typeof TABS)[number];
+const TAB_LABELS: Record<Tab, string> = {
+  general: "Details",
   images: "Images",
   description: "Description",
   itinerary: "Itinerary",
+  dates: "Dates & Prices",
+  hotels: "Hotels",
   faq: "FAQ",
   seo: "SEO",
   terms: "Categories & Tags",
@@ -70,13 +72,12 @@ const variantKey = (variant: ItineraryVariant) =>
     days: variant.days.map(({ image, ...day }) => (image ? { ...day, image } : day)),
   });
 
-const numberOrNull = (value: string): number | null => {
-  if (value.trim() === "") return null;
-  const n = Math.trunc(Number(value));
-  return Number.isFinite(n) && n >= 0 ? n : null;
-};
-
-/** The editor of one trip page: every tab edits one form, saved together from the bar at the bottom. */
+/**
+ * The page of one tour - its "event page": details, content, dates with their
+ * prices and flights, hotels. The content tabs edit one form saved from the bar
+ * at the bottom; Dates & Prices saves each change as it is made, in the
+ * departure card.
+ */
 export function PackageEditor({ initial }: { initial: PackageEditorData }) {
   const router = useRouter();
   const confirm = useConfirm();
@@ -87,6 +88,9 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
   const [variants, setVariants] = useState<ItineraryVariant[]>(initial.itineraries);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [tab, setTab] = useUrlState<Tab>("tab", "general", TABS);
+  const dates = useActionData(() => getTourDates(initial.id), [initial.id]);
+  const publish = useActionData(() => getSitePublishStatus(), []);
 
   const set = <K extends keyof PackageForm>(key: K, value: PackageForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -98,7 +102,15 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
   }, [variants, saved.itineraries]);
   const isDirty = formDirty || dirtyKeys.length > 0;
 
-  const problem = !form.name.trim() ? "Page name is required" : !form.slug.trim() ? "Page slug is required" : null;
+  const problem = !form.name.trim() ? "Tour name is required" : !form.slug.trim() ? "Slug is required" : null;
+  const readiness = tourReadiness({
+    form: saved.form,
+    itineraries: saved.itineraries,
+    terms: saved.terms,
+    dates: dates.data,
+    updatedAt: saved.updatedAt,
+    lastPublish: publish.data?.last ?? null,
+  });
 
   const save = async () => {
     if (problem || isSaving) return;
@@ -160,15 +172,15 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
 
   const remove = async () => {
     const ok = await confirm({
-      title: `Delete the page "${saved.form.name}"?`,
-      description: "The page will be removed from the backoffice and the site. A page with series or departures cannot be deleted, only deactivated.",
-      confirmLabel: "Delete Page",
+      title: `Delete the tour "${saved.form.name}"?`,
+      description: "The tour will be removed from the backoffice and the site. A tour with series or dates cannot be deleted, only deactivated.",
+      confirmLabel: "Delete Tour",
       cancelLabel: "Cancel",
       destructive: true,
     });
     if (!ok) return;
     setIsDeleting(true);
-    const result = await run(() => deleteTourPackage(saved.id), "Page deleted");
+    const result = await run(() => deleteTourPackage(saved.id), "Tour deleted");
     setIsDeleting(false);
     if (!result.success) return;
     router.push("/tours/packages");
@@ -177,15 +189,12 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
 
   const siteUrl = saved.siteUrl;
   const liveUrl = saved.form.isActive ? siteAssetUrl(siteUrl, `/package/${saved.form.slug}/`) : null;
-  const selectedTerms = new Set(form.termIds);
-  const toggleTerm = (id: string, on: boolean) =>
-    set("termIds", on ? [...form.termIds, id] : form.termIds.filter((t) => t !== id));
 
   return (
     <div className="space-y-4 pb-24">
-      <BackLink href="/tours/packages">Back to Tour Pages</BackLink>
+      <BackLink href="/tours/packages">Back to Tours</BackLink>
       <PageHeader
-        eyebrow="Tour page"
+        eyebrow="Tour"
         title={saved.form.name}
         description={
           <span className="flex flex-wrap items-center gap-2">
@@ -199,7 +208,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                 </span>
               </span>
             )}
-            <span>{saved.departures} departures</span>
+            <span>{saved.departures} dates</span>
           </span>
         }
         actions={
@@ -214,21 +223,21 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
         <div className="flex items-start gap-3 rounded-lg border bg-muted/40 p-4 text-sm">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <p>
-            The data import created this page so its series has a page, and it has no content yet. Once you add a
-            description or an image and save, it counts as a page with content. To show it on the site, also mark it
+            The data import created this tour so its series has a page, and it has no content yet. Once you add a
+            description or an image and save, it counts as a tour with content. To show it on the site, also mark it
             active and publish.
           </p>
         </div>
       )}
 
-      <UrlTabs defaultValue="general" values={TABS} className="space-y-4">
+      <TourReadinessStrip items={readiness} onOpen={(next) => setTab(next as Tab)} />
+
+      <Tabs value={tab} onValueChange={(next) => setTab(next as Tab)} className="space-y-4">
         <TabsList className="h-auto flex-wrap justify-start">
-          {TABS.map((tab) => (
-            <TabsTrigger key={tab} value={tab}>
-              {TAB_LABELS[tab]}
-              {tab === "itinerary" && dirtyKeys.length > 0 && (
-                <span className="ms-1.5 h-2 w-2 rounded-full bg-amber-500" />
-              )}
+          {TABS.map((t) => (
+            <TabsTrigger key={t} value={t}>
+              {TAB_LABELS[t]}
+              {t === "itinerary" && dirtyKeys.length > 0 && <span className="ms-1.5 h-2 w-2 rounded-full bg-amber-500" />}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -236,125 +245,52 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
         {/* ------------------------------------------------------------ general */}
         <TabsContent value="general" className="space-y-4">
           <Section>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Page name">
-                <Input dir="auto" value={form.name} onChange={(e) => set("name", e.target.value)} />
-              </Field>
-              <Field label="Subtitle">
-                <Input dir="auto" value={form.subtitle} onChange={(e) => set("subtitle", e.target.value)} />
-              </Field>
-              <Field
-                label="Slug"
-                hint={
-                  saved.slugLocked
-                    ? "The page has departures, so its address on the site is locked."
-                    : "The last part of the page address on the site. No spaces."
-                }
-                className="md:col-span-2"
-              >
-                <Input
-                  dir="auto"
-                  value={form.slug}
-                  disabled={saved.slugLocked}
-                  onChange={(e) => set("slug", e.target.value)}
-                />
-              </Field>
-              <Field label="Type" htmlFor="pkg-kind">
-                <Select value={form.kind} onValueChange={(value) => set("kind", value)}>
-                  <SelectTrigger id="pkg-kind">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PACKAGE_KINDS.map((kind) => (
-                      <SelectItem key={kind} value={kind}>
-                        {PACKAGE_KIND_LABELS[kind]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Card color on site" htmlFor="pkg-brand">
-                <Select value={form.brand} onValueChange={(value) => set("brand", value)}>
-                  <SelectTrigger id="pkg-brand">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PACKAGE_BRANDS.map((brand) => (
-                      <SelectItem key={brand} value={brand}>
-                        <span className="flex items-center gap-2">
-                          <span
-                            aria-hidden
-                            className="inline-block h-3 w-3 rounded-full"
-                            style={{ backgroundColor: PACKAGE_BRAND_COLORS[brand] }}
-                          />
-                          {PACKAGE_BRAND_LABELS[brand]}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Days">
-                <Input
-                  type="number"
-                  min={0}
-                  dir="ltr"
-                  value={form.days ?? ""}
-                  onChange={(e) => set("days", numberOrNull(e.target.value))}
-                />
-              </Field>
-              <Field label="Nights">
-                <Input
-                  type="number"
-                  min={0}
-                  dir="ltr"
-                  value={form.nights ?? ""}
-                  onChange={(e) => set("nights", numberOrNull(e.target.value))}
-                />
-              </Field>
-              <Field label="Countries" hint='As shown on the site, e.g. "מדינה אחת" or "3 מדינות"'>
-                <Input dir="auto" value={form.countries} onChange={(e) => set("countries", e.target.value)} />
-              </Field>
-              <div className="flex items-center gap-3 self-end rounded-md border p-3">
-                <Switch id="pkg-active" checked={form.isActive} onCheckedChange={(on) => set("isActive", on)} />
-                <label htmlFor="pkg-active" className="text-sm">
-                  <span className="font-medium">Active on site</span>
-                  <span className="block text-xs text-muted-foreground">An inactive page is left out of the site build.</span>
-                </label>
-              </div>
-            </div>
-            <StringListEditor
-              label="Seasons"
-              value={form.seasons}
-              onChange={(value) => set("seasons", value)}
-              placeholder="קיץ, חנוכה, פסח..."
-              addLabel="Add Season"
+            <PackageGeneralFields
+              form={form}
+              set={set}
+              slugLocked={saved.slugLocked}
+              slugHint={
+                saved.slugLocked
+                  ? "The tour has dates, so its address on the site is locked."
+                  : "The last part of the tour's address on the site. No spaces."
+              }
+              extra={
+                <div className="flex items-center gap-3 self-end rounded-md border p-3">
+                  <Switch id="pkg-active" checked={form.isActive} onCheckedChange={(on) => set("isActive", on)} />
+                  <label htmlFor="pkg-active" className="text-sm">
+                    <span className="font-medium">Active on site</span>
+                    <span className="block text-xs text-muted-foreground">An inactive tour is left out of the site build.</span>
+                  </label>
+                </div>
+              }
             />
           </Section>
 
-          <Section title="Delete Page" description="Soft delete: the page leaves the lists and the site, and its data is kept.">
+          <Section title="Delete Tour" description="Soft delete: the tour leaves the lists and the site, and its data is kept.">
             <Button type="button" variant="outline" className="text-destructive" disabled={isDeleting} onClick={() => void remove()}>
               <Trash2 />
-              Delete Page
+              Delete Tour
             </Button>
           </Section>
         </TabsContent>
 
         {/* ------------------------------------------------------------ images */}
         <TabsContent value="images" className="space-y-4">
-          <Section description={NO_UPLOAD_NOTE}>
+          <Section description={IMAGE_FIELDS_NOTE}>
             <div className="grid gap-4 lg:grid-cols-2">
               <ImageUrlField
                 label="Hero image (top of the page)"
                 value={form.heroImage}
                 onChange={(value) => set("heroImage", value)}
                 siteUrl={siteUrl}
+                folder="packages"
               />
               <ImageUrlField
                 label="Card image (in lists)"
                 value={form.cardImage}
                 onChange={(value) => set("cardImage", value)}
                 siteUrl={siteUrl}
+                folder="packages"
               />
             </div>
           </Section>
@@ -365,8 +301,38 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
               onChange={(value) => set("gallery", value)}
               siteUrl={siteUrl}
               hint="The order here is the order on the site."
+              folder="packages"
             />
           </Section>
+        </TabsContent>
+
+        {/* ------------------------------------------------------------ dates */}
+        <TabsContent value="dates">
+          {dates.error && !dates.data ? (
+            <LoadError message={dates.error} onRetry={() => void dates.reload()} />
+          ) : !dates.data ? (
+            <Skeleton className="h-64 w-full" />
+          ) : (
+            <TourDates
+              tour={{ id: saved.id, name: saved.form.name, slug: saved.form.slug, kind: saved.form.kind }}
+              data={dates.data}
+              onChanged={() => void dates.reload({ quiet: true })}
+            />
+          )}
+        </TabsContent>
+
+        {/* ------------------------------------------------------------ hotels */}
+        <TabsContent value="hotels" className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            The hotels the tour stays in, in the order the site lists them. Pick one from the hotel catalog and set this
+            tour&apos;s nights and board.
+          </p>
+          <TourHotelsEditor
+            value={form.hotels}
+            onChange={(value) => set("hotels", value)}
+            catalog={saved.hotelCatalog}
+            siteUrl={siteUrl}
+          />
         </TabsContent>
 
         {/* ------------------------------------------------------------ description */}
@@ -456,7 +422,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
 
         {/* ------------------------------------------------------------ faq */}
         <TabsContent value="faq" className="space-y-3">
-          {form.faq.length === 0 && <EmptyLine>This page has no FAQ yet.</EmptyLine>}
+          {form.faq.length === 0 && <EmptyLine>This tour has no FAQ yet.</EmptyLine>}
           {form.faq.map((item, index) => (
             <Section key={index}>
               <div className="flex items-start gap-2">
@@ -521,29 +487,9 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
 
         {/* ------------------------------------------------------------ terms */}
         <TabsContent value="terms" className="space-y-4">
-          {PACKAGE_TERM_KINDS.map((kind) => {
-            const options = saved.terms.filter((term) => term.kind === kind);
-            if (options.length === 0) return null;
-            const chosen = options.filter((term) => selectedTerms.has(term.id)).length;
-            return (
-              <Section key={kind} title={`${TERM_KIND_LABELS[kind]} (${chosen})`}>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {options.map((term) => (
-                    <label key={term.id} className="flex cursor-pointer items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={selectedTerms.has(term.id)}
-                        onCheckedChange={(on) => toggleTerm(term.id, on === true)}
-                      />
-                      <span>{term.name}</span>
-                      {!term.isActive && <span className="text-xs text-muted-foreground">(Inactive)</span>}
-                    </label>
-                  ))}
-                </div>
-              </Section>
-            );
-          })}
+          <PackageTermsPicker terms={saved.terms} value={form.termIds} onChange={(ids) => set("termIds", ids)} />
         </TabsContent>
-      </UrlTabs>
+      </Tabs>
 
       <StickySaveBar
         isDirty={isDirty}

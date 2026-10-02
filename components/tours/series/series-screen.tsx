@@ -96,7 +96,7 @@ export function SeriesScreen() {
         actions={
           <>
             <Button variant="outline" asChild>
-              <Link href="/tours/departures">Tours</Link>
+              <Link href="/tours/departures">Departures</Link>
             </Button>
             <Button onClick={() => setEditing("new")} disabled={!data}>
               <PlusCircle />

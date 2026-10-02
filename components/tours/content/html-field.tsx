@@ -92,7 +92,8 @@ interface HtmlFieldProps {
  */
 export function HtmlField({ label, value, onChange, siteUrl, rows = 10, hint, className }: HtmlFieldProps) {
   const id = useId();
-  const [mode, setMode] = useState<Mode>("code");
+  // Text editor first, like the Mega Events editors - unless the stored HTML is more than it can keep.
+  const [mode, setMode] = useState<Mode>(() => (isSimpleHtml(value) ? "visual" : "code"));
   const preview = useDebounced(value, 350);
   const simple = useMemo(() => isSimpleHtml(value), [value]);
   const visual = mode === "visual" && simple;

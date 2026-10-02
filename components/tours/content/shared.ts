@@ -103,6 +103,121 @@ export interface PackageForm {
   seoDescription: string;
   /** Terms attached to the page - every kind except the page's own "packages" term. */
   termIds: string[];
+  /** The hotels of the tour, in the order the site shows them. */
+  hotels: TourHotelStay[];
+}
+
+/**
+ * A hotel of a tour as the site shows it (the site's HotelStay, lib/types.ts of
+ * mega-family). A vacation package shows its first hotel in the booking funnel;
+ * an organized tour lists them on its page. `code` points at the hotel catalog
+ * row it was picked from - the site ignores it.
+ */
+export interface TourHotelStay {
+  name: string;
+  location: string;
+  stars: number | null;
+  nights: string;
+  image: string;
+  html: string;
+  board?: string;
+  dates?: string;
+  distance?: string;
+  amenities?: string[];
+  roomFeatures?: string[];
+  href?: string;
+  code?: string;
+}
+
+/** A catalog hotel offered when a hotel is added to a tour. */
+export interface TourHotelPick {
+  id: string;
+  code: string;
+  name: string;
+  city: string | null;
+  stars: number | null;
+  image: string | null;
+  excerpt: string | null;
+  contentHtml: string | null;
+  amenities: string[];
+}
+
+/** A catalog hotel as a tour hotel: what "Add from catalog" puts in the list. */
+export function hotelStayOf(hotel: TourHotelPick): TourHotelStay {
+  return {
+    name: hotel.name,
+    location: hotel.city ?? "",
+    stars: hotel.stars,
+    nights: "",
+    image: hotel.image ?? "",
+    html: hotel.contentHtml || (hotel.excerpt ? `<p>${hotel.excerpt}</p>` : ""),
+    amenities: hotel.amenities,
+    code: hotel.code,
+  };
+}
+
+// ---------------------------------------------------------------- new tour
+/** The series a new tour sells on: its code is the prefix of every date code. */
+export interface NewTourSeries {
+  code: string;
+  label: string;
+  arrivalAirport: string;
+  returnAirport: string;
+  currency: string;
+  capacity: number | null;
+  childMaxAge: number;
+}
+
+/** Everything "Create Tour" saves in one go. */
+export interface NewTourInput {
+  /** The same form the tour page edits. */
+  page: PackageForm;
+  series: NewTourSeries;
+  dates: { start: string; end: string }[];
+  /** One price list for every new date (adult in a double room is the one the site needs). */
+  prices: { paxType: string; position: number; price: number | null }[];
+  /** Flight blocks to link, by the start date of the new date they serve. */
+  flights: { start: string; flightId: number; seats: number; legs: "both" | "outbound" | "inbound" }[];
+}
+
+export interface NewTourContext {
+  siteUrl: string | null;
+  terms: TermOption[];
+  hotels: TourHotelPick[];
+  /** Series codes in use - a new series needs a free one. */
+  seriesCodes: string[];
+  /** Slugs in use - the page address must be free. */
+  slugs: string[];
+}
+
+/** What reached the database. The tour exists once `id` is set, even when a later step failed. */
+export interface NewTourResult {
+  id: string;
+  departures: number;
+  flights: number;
+  /** Steps that failed, in words - shown on the tour page so nothing is lost silently. */
+  problems: string[];
+}
+
+// ---------------------------------------------------------------- ready for the site
+export type ReadinessState = "done" | "todo" | "warn";
+
+export interface TourReadinessItem {
+  key: string;
+  label: string;
+  state: ReadinessState;
+  detail: string;
+  /** The tab of the tour page that fixes it. */
+  tab?: string;
+}
+
+export interface TourReadiness {
+  items: TourReadinessItem[];
+  /** Every item but the warnings is done. */
+  ready: boolean;
+  /** The last change to the tour or its dates (ISO) - compared with the last site publish. */
+  changedAt: string | null;
+  lastPublish: SitePublishRecord | null;
 }
 
 export interface ItineraryVariant {
@@ -150,6 +265,10 @@ export interface PackageEditorData {
   seriesCodes: string[];
   itineraries: ItineraryVariant[];
   terms: TermOption[];
+  /** The company's hotel catalog - what the Hotels tab picks from. */
+  hotelCatalog: TourHotelPick[];
+  /** Last change of the tour row (ISO) - "published after the last change" compares with it. */
+  updatedAt: string;
   siteUrl: string | null;
 }
 
@@ -407,14 +526,6 @@ export interface CompanySettingsForm {
 /** What to do with the deploy hook on save. The stored URL itself never reaches the browser. */
 export type DeployHookChange = { action: "keep" } | { action: "clear" } | { action: "set"; url: string };
 
-export interface CompanyMemberRow {
-  userId: string;
-  name: string;
-  email: string;
-  role: string;
-  isActive: boolean;
-}
-
 export interface SitePublishRecord {
   at: string;
   by: string;
@@ -434,22 +545,7 @@ export interface CompanySettingsData {
   form: CompanySettingsForm;
   deployHookSet: boolean;
   lastPublish: SitePublishRecord | null;
-  members: CompanyMemberRow[];
 }
-
-/**
- * Names of the member roles that ROLE_LABELS (types/auth.types.ts) does not
- * label yet. ROLE_LABELS is read first, so a role it names is named there only.
- */
-export const COMPANY_ROLE_LABELS: Record<string, string> = {
-  superadmin: "Superadmin",
-  admin: "Admin",
-  editor: "Editor",
-  office_manager: "Office manager",
-  agent: "Agent",
-  affiliate: "Affiliate",
-  forms_operator: "Forms operator",
-};
 
 // ---------------------------------------------------------------- small helpers
 // Dates and times: lib/tours/format.ts (fmtDate, fmtInstant).

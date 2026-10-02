@@ -44,6 +44,9 @@ import {
   type InstructorEditorData,
   type InstructorForm,
   type InstructorList,
+  type NewTourContext,
+  type TourHotelPick,
+  type TourHotelStay,
   type ItineraryDay,
   type ItineraryInput,
   type ItineraryVariant,
@@ -165,6 +168,36 @@ const wholeNumber = z.number().int().min(0).max(100000);
 
 const cleanList = (list: string[]): string[] => list.map((s) => s.trim()).filter(Boolean);
 
+/** A hotel of a tour (the site's HotelStay). Keys this editor does not know are kept as they are. */
+const hotelStaySchema = z
+  .object({
+    name: z.string().trim().min(1, "Every hotel needs a name").max(300),
+    location: z.string().max(300),
+    stars: z.number().int().min(1).max(7).nullable(),
+    nights: z.string().max(60),
+    image: imagePath,
+    html: htmlText,
+    board: z.string().max(200).optional(),
+    dates: z.string().max(200).optional(),
+    distance: z.string().max(200).optional(),
+    amenities: textList.optional(),
+    roomFeatures: textList.optional(),
+    href: z.string().max(700).optional(),
+    code: z.string().max(60).optional(),
+  })
+  .passthrough();
+
+const cleanHotels = (hotels: z.infer<typeof hotelStaySchema>[]): TourHotelStay[] =>
+  hotels.map((h) => ({
+    ...h,
+    name: h.name.trim(),
+    location: h.location.trim(),
+    nights: h.nights.trim(),
+    image: h.image.trim(),
+    ...(h.amenities ? { amenities: cleanList(h.amenities) } : {}),
+    ...(h.roomFeatures ? { roomFeatures: cleanList(h.roomFeatures) } : {}),
+  }));
+
 const packageSchema = z.object({
   name: z.string().trim().min(1, "Page name is required").max(200),
   subtitle: shortText,
@@ -195,6 +228,7 @@ const packageSchema = z.object({
   seoTitle: shortText,
   seoDescription: shortText,
   termIds: z.array(z.string().uuid()).max(1000),
+  hotels: z.array(hotelStaySchema).max(40),
 });
 
 const daySchema = z
@@ -281,6 +315,23 @@ const toFaq = (value: Json): FaqItem[] =>
       })
     : [];
 
+/** The stored hotels of a tour, every key kept (a save writes back what it read). */
+const toHotels = (value: Json): TourHotelStay[] =>
+  Array.isArray(value)
+    ? value.map((item) => {
+        const o = asObject(item);
+        return {
+          ...(o as Record<string, unknown>),
+          name: typeof o.name === "string" ? o.name : "",
+          location: typeof o.location === "string" ? o.location : "",
+          stars: typeof o.stars === "number" ? o.stars : null,
+          nights: typeof o.nights === "string" ? o.nights : typeof o.nights === "number" ? String(o.nights) : "",
+          image: typeof o.image === "string" ? o.image : "",
+          html: typeof o.html === "string" ? o.html : "",
+        } as TourHotelStay;
+      })
+    : [];
+
 const toDays = (value: Json): ItineraryDay[] =>
   Array.isArray(value)
     ? value.map((item, index) => {
@@ -333,6 +384,7 @@ function toPackageForm(pkg: TourPackage, termIds: string[]): PackageForm {
     seoTitle: typeof seo.title === "string" ? seo.title : "",
     seoDescription: typeof seo.description === "string" ? seo.description : "",
     termIds,
+    hotels: toHotels(pkg.hotels),
   };
 }
 
@@ -350,7 +402,7 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
   if (error) throw error;
   if (!pkg) return null;
 
-  const [itineraries, links, terms, series, departures] = await Promise.all([
+  const [itineraries, links, terms, series, departures, hotels] = await Promise.all([
     db.from("package_itineraries").select("*").eq("company_id", company.id).eq("package_id", id),
     db
       .from("package_terms")
@@ -377,6 +429,7 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
         .order("id")
         .range(from, to),
     ),
+    loadHotelCatalog(company),
   ]);
   for (const res of [itineraries, links, series]) if (res.error) throw res.error;
 
@@ -404,8 +457,35 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
     seriesCodes: (series.data ?? []).map((s) => s.code),
     itineraries: variants,
     terms: terms.map((t) => ({ id: t.id, kind: t.kind, name: t.name, isActive: t.is_active })),
+    hotelCatalog: hotels,
+    updatedAt: pkg.updated_at,
     siteUrl: company.siteUrl,
   };
+}
+
+/** The company's hotel catalog, as the Hotels tab of a tour picks from it. */
+async function loadHotelCatalog(company: Company): Promise<TourHotelPick[]> {
+  const rows = await fetchAll((from, to) =>
+    toursDb()
+      .from("hotels")
+      .select("id, code, name, city, stars, image, excerpt, content_html, amenities")
+      .eq("company_id", company.id)
+      .order("position")
+      .order("name")
+      .order("id")
+      .range(from, to),
+  );
+  return rows.map((h) => ({
+    id: h.id,
+    code: h.code,
+    name: h.name,
+    city: h.city,
+    stars: h.stars,
+    image: h.image,
+    excerpt: h.excerpt,
+    contentHtml: h.content_html,
+    amenities: h.amenities ?? [],
+  }));
 }
 
 /** The trip pages of the company with what sells on each. */
@@ -601,6 +681,8 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
 
     const faq = input.faq.map((f) => ({ q: f.q.trim(), aHtml: f.aHtml })).filter((f) => f.q || f.aHtml.trim());
     patch.set("faq", toFaq(before.faq), faq, "faq", faq);
+    const hotels = cleanHotels(input.hotels);
+    patch.set("hotels", toHotels(before.hotels), hotels, "hotels", hotels as unknown as Json);
 
     const seoBefore = asObject(before.seo);
     const seoTitle = input.seoTitle.trim();
@@ -718,6 +800,155 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
     return { success: true, data: fresh };
   } catch (e) {
     return failure(e, "Failed to save the page");
+  }
+}
+
+/**
+ * The hero badges of a new page, worded like the imported ones: "7 ימים",
+ * "6 לילות", "2 מדינות", "חנוכה CBP". syncDerivedLabels keeps them in step
+ * with later edits because they match its patterns.
+ */
+function derivedBadges(input: {
+  days: number | null;
+  nights: number | null;
+  countries: string | null;
+  season: string | undefined;
+  code: string;
+}): Badge[] {
+  const badges: Badge[] = [];
+  if (input.days) badges.push({ icon: "days", label: `${input.days} ימים` });
+  if (input.nights) badges.push({ icon: "nights", label: `${input.nights} לילות` });
+  if (input.countries) badges.push({ icon: "countries", label: input.countries });
+  if (input.season) badges.push({ icon: "season", label: input.code ? `${input.season} ${input.code}` : input.season });
+  return badges;
+}
+
+/**
+ * A new tour page. The row starts with the keys of `data` that have no column
+ * of their own (address, hero badges, dates box titles, the series code the card
+ * shows), worded like the imported pages; then the regular page save writes
+ * every column, the terms and their `data` keys. It starts inactive - the
+ * Ready for the Site list on the tour page says what is missing before it goes
+ * live.
+ */
+export async function createTourPackage(
+  form: PackageForm,
+  seriesCode: string | null,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const parsed = packageSchema.safeParse(form);
+    if (!parsed.success) return invalidInput(parsed.error);
+    const input = parsed.data;
+    // A new vacation package would be priced per room by the site and show double; villages come from the old site.
+    if (input.kind !== "organized") {
+      return { success: false, error: "Only organized tours can be created here for now" };
+    }
+    const db = toursDb();
+    // the slug is unique per company, deleted pages included
+    const { data: clash, error: clashError } = await db
+      .from("packages")
+      .select("id, is_deleted")
+      .eq("company_id", company.id)
+      .eq("slug", input.slug)
+      .limit(1);
+    if (clashError) throw clashError;
+    if (clash && clash.length > 0) {
+      return {
+        success: false,
+        error: clash[0].is_deleted ? "A deleted tour used this slug. Choose another slug." : "A tour with this slug already exists",
+      };
+    }
+
+    const code = (seriesCode ?? "").trim().toUpperCase();
+    const seasons = cleanList(input.seasons);
+    const countries = orNull(input.countries.trim());
+    const path = `/package/${input.slug}/`;
+    const data: JsonObject = {
+      path,
+      cardHref: path,
+      code,
+      template: input.kind,
+      badges: derivedBadges({ days: input.days, nights: input.nights, countries, season: seasons[0], code }) as Json,
+      datesTitle: "בחרו מתי תרצו לטוס?",
+      datesNote: "מחיר לנוסע לפי הרכב של זוג. מחירים להרכבים נוספים מופיעים בשלב הבא.",
+      datesPromo: "",
+      seasonLabel: seasons[0] ?? "",
+      itineraryTitle: input.days ? `מסלול הטיול | ${input.days} ימים` : "",
+      extraInfo: bulletsOf(input.extraInfoHtml),
+      extraSections: [],
+      flights: [],
+      vacation: null,
+    };
+    const { data: inserted, error } = await db
+      .from("packages")
+      .insert({
+        company_id: company.id,
+        slug: input.slug,
+        name: input.name,
+        kind: input.kind,
+        brand: input.brand,
+        is_active: false,
+        data,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      if (error.code === "23505") return { success: false, error: "A tour with this slug already exists" };
+      throw error;
+    }
+    await logAudit({
+      action: "create",
+      entityType: "tours_package",
+      entityId: inserted.id,
+      changes: { name: input.name, slug: input.slug, kind: input.kind },
+      metadata: { ...companyAudit(company), slug: input.slug },
+    });
+
+    // every other field, the terms and their data keys: the same save the tour page runs
+    const saved = await saveTourPackage(inserted.id, { ...form, isActive: false });
+    revalidatePath("/tours/packages");
+    if (!saved.success) {
+      return { success: true, data: { id: inserted.id }, warning: `The tour was created, but its details were not all saved: ${saved.error}` };
+    }
+    return { success: true, data: { id: inserted.id } };
+  } catch (e) {
+    return failure(e, "Failed to create the tour");
+  }
+}
+
+/** What the Create Tour screen offers: categories, the hotel catalog, the codes and slugs already taken. */
+export async function getNewTourContext(): Promise<ActionResult<NewTourContext>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const db = toursDb();
+    const [terms, hotels, series, slugs] = await Promise.all([
+      fetchAll((from, to) =>
+        db
+          .from("terms")
+          .select("id, kind, name, is_active")
+          .eq("company_id", company.id)
+          .order("position")
+          .order("name")
+          .order("id")
+          .range(from, to),
+      ),
+      loadHotelCatalog(company),
+      fetchAll((from, to) => db.from("series").select("code").eq("company_id", company.id).order("code").range(from, to)),
+      fetchAll((from, to) => db.from("packages").select("slug").eq("company_id", company.id).order("slug").range(from, to)),
+    ]);
+    return {
+      success: true,
+      data: {
+        siteUrl: company.siteUrl,
+        terms: terms.map((t) => ({ id: t.id, kind: t.kind, name: t.name, isActive: t.is_active })),
+        hotels,
+        seriesCodes: series.map((s) => s.code),
+        slugs: slugs.map((p) => p.slug),
+      },
+    };
+  } catch (e) {
+    return failure(e, "Failed to load what a new tour needs");
   }
 }
 

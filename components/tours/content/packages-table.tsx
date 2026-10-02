@@ -51,7 +51,7 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
         id: "name",
         accessorFn: (row) => [row.name, row.subtitle, row.slug].filter(Boolean).join(" "),
         sortingFn: (a, b) => a.original.name.localeCompare(b.original.name),
-        header: ({ column }) => <SortableHeader label="Page Name" column={column} />,
+        header: ({ column }) => <SortableHeader label="Tour" column={column} />,
         cell: ({ row }) => (
           <>
             <Link href={`/tours/packages/${row.original.id}`} className="font-medium hover:underline">
@@ -92,7 +92,7 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
       },
       {
         accessorKey: "futurePublished",
-        header: ({ column }) => <SortableHeader label="Upcoming Departures on Site" column={column} />,
+        header: ({ column }) => <SortableHeader label="Upcoming Dates on Site" column={column} />,
         cell: ({ row }) =>
           row.original.futurePublished > 0 ? (
             <span className="font-medium">{row.original.futurePublished}</span>
@@ -126,12 +126,12 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
       onRowClick={(row) => router.push(`/tours/packages/${row.id}`)}
       stateKey="tours-packages"
       emptyState={{
-        title: rows.length === 0 ? "No tour pages yet" : "No pages match the filter",
+        title: rows.length === 0 ? "No tours yet" : "No tours match the filter",
         description:
           rows.length === 0
-            ? "Tour pages are created when the company's data is imported."
+            ? "Click Add Tour to create the first one."
             : view === "content" && stubs > 0
-              ? `${stubs} pages have no content yet. They are listed under the "No content" tab.`
+              ? `${stubs} tours have no content yet. They are listed under the "No content" tab.`
               : "Try a different search or tab.",
       }}
     />

@@ -125,6 +125,14 @@ export interface BoardRow
   doublePrice?: { price: number | null; derived: boolean };
 }
 
+/** One tour's dates: what the Dates & Prices tab of a tour page shows (getTourDates). */
+export interface TourDatesData {
+  rows: BoardRow[];
+  /** The series that sell on this tour. */
+  series: BoardSeries[];
+  periods: BoardPeriod[];
+}
+
 export interface BoardData {
   rows: BoardRow[];
   series: BoardSeries[];

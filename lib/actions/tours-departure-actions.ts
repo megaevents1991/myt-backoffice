@@ -81,6 +81,7 @@ import type {
   VacationPricingInput,
   ViewFlight,
   ViewHotelOption,
+  TourDatesData,
   ViewTicketOption,
 } from "@/components/tours/departures/types";
 import { actionFail, actionOk as ok, chunk, fetchAll, intOrNull, must, mustRow, UserError, UUID } from "@/lib/tours/action-kit";
@@ -124,6 +125,19 @@ const isLiveBlock = (f: { block_status: string | null; is_deleted: boolean | nul
 const EMPTY_STATS: BoardStats = { allocated: 0, liveBlocks: 0, totalBlocks: 0, sold: 0, remaining: 0 };
 
 // ---------------------------------------------------------------- loaders
+/** The company's own holiday periods and the global ones (company_id is null). */
+async function loadPeriods(companyId: string): Promise<BoardPeriod[]> {
+  return fetchAll<BoardPeriod>((from, to) =>
+    supabaseTyped
+      .from("calendar_periods")
+      .select("id, name, kind, year, holiday_date, start_date, end_date")
+      .or(`company_id.eq.${companyId},company_id.is.null`)
+      .order("year")
+      .order("id")
+      .range(from, to),
+  );
+}
+
 async function loadSeries(companyId: string): Promise<BoardSeries[]> {
   return fetchAll<BoardSeries>((from, to) =>
     toursDb().from("series").select(SERIES_SELECT).eq("company_id", companyId).order("code").range(from, to),
@@ -207,7 +221,7 @@ async function allocationSums(
 
 async function loadBoardRows(
   companyId: string,
-  filter: { years?: number[]; ids?: string[]; includeDeleted?: boolean; onSaleOnly?: boolean },
+  filter: { years?: number[]; ids?: string[]; packageId?: string; includeDeleted?: boolean; onSaleOnly?: boolean },
 ): Promise<BoardRow[]> {
   const pageOf = (ids: string[] | null) => (from: number, to: number) => {
     let q = toursDb()
@@ -223,6 +237,7 @@ async function loadBoardRows(
     if (filter.onSaleOnly) q = q.eq("is_published", true).is("is_deleted", null);
     else if (!filter.includeDeleted) q = q.is("is_deleted", null);
     if (ids) q = q.in("id", ids);
+    if (filter.packageId) q = q.eq("package_id", filter.packageId);
     return q.order("start_date").order("code").order("id").range(from, to);
   };
 
@@ -237,7 +252,8 @@ async function loadBoardRows(
   if (raw.length === 0) return [];
 
   const [stats, flights, seriesPromotions] = await Promise.all([
-    loadStats(companyId, filter.ids),
+    // one tour's dates read their own stats, not the whole company's
+    loadStats(companyId, filter.ids ?? (filter.packageId ? raw.map((d) => d.id) : undefined)),
     loadFlights(
       companyId,
       raw.flatMap((d) => d.flight_allocations.map((a) => a.flight_id)),
@@ -444,15 +460,7 @@ async function loadViewerBoard(companyId: string, years: number[]): Promise<Boar
     fetchAll<BoardPackage>((from, to) =>
       toursDb().from("packages").select("id, name, kind, slug").eq("company_id", companyId).order("name").range(from, to),
     ),
-    fetchAll<BoardPeriod>((from, to) =>
-      supabaseTyped
-        .from("calendar_periods")
-        .select("id, name, kind, year, holiday_date, start_date, end_date")
-        .or(`company_id.eq.${companyId},company_id.is.null`)
-        .order("year")
-        .order("id")
-        .range(from, to),
-    ),
+    loadPeriods(companyId),
     edge(true),
     edge(false),
   ]);
@@ -716,16 +724,7 @@ export async function getDeparturesBoard(input: {
           .order("name")
           .range(from, to),
       ),
-      // The company's own periods and the global ones (company_id is null).
-      fetchAll<BoardPeriod>((from, to) =>
-        supabaseTyped
-          .from("calendar_periods")
-          .select("id, name, kind, year, holiday_date, start_date, end_date")
-          .or(`company_id.eq.${company.id},company_id.is.null`)
-          .order("year")
-          .order("id")
-          .range(from, to),
-      ),
+      loadPeriods(company.id),
       edge(true),
       edge(false),
     ]);
@@ -740,6 +739,26 @@ export async function getDeparturesBoard(input: {
       yearRange: min != null && max != null ? { min, max } : null,
       loadedYears: years,
     });
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/**
+ * The dates of one tour, for the Dates & Prices tab of its page: the board rows
+ * of every departure of the tour (all years, not deleted), the tour's series and
+ * the holiday periods the departure card marks.
+ */
+export async function getTourDates(packageId: string): Promise<ActionResult<TourDatesData>> {
+  try {
+    const { company } = await requireCompany("tours");
+    if (typeof packageId !== "string" || !UUID.test(packageId)) throw new UserError("Tour not found");
+    const [rows, series, periods] = await Promise.all([
+      loadBoardRows(company.id, { packageId }),
+      loadSeries(company.id),
+      loadPeriods(company.id),
+    ]);
+    return ok({ rows, series: series.filter((s) => s.package_id === packageId), periods });
   } catch (e) {
     return fail(e);
   }
@@ -1773,6 +1792,44 @@ export async function listCandidateBlocks(departureId: string): Promise<ActionRe
         allocatedOutbound: sums.get(b.id)?.outbound ?? 0,
         allocatedInbound: sums.get(b.id)?.inbound ?? 0,
         alreadyAllocated: mine.has(b.id),
+      })),
+    );
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/**
+ * The company's open flight blocks that fly from two days ago on, with their
+ * free seats - what Create Tour matches to the new dates before they exist.
+ * The match is only a proposal: addFlightAllocation checks route, dates and
+ * seats again when it links a block.
+ */
+export async function listUpcomingBlocks(): Promise<ActionResult<CardFlight[]>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const from = `${addDays(todayIso(), -ALLOCATION_DAY_WINDOW)}T00:00:00`;
+    const blocks = await fetchAll<Omit<CardFlight, "allocatedOutbound" | "allocatedInbound">>((start, end) =>
+      supabaseTyped
+        .from("flights")
+        .select(FLIGHT_SELECT)
+        .eq("company_id", company.id)
+        .not("is_deleted", "is", true)
+        .gte("outbound_departure_time", from)
+        .order("outbound_departure_time")
+        .order("id")
+        .range(start, end),
+    );
+    const open = blocks.filter((b) => b.block_status !== "cancelled" && b.block_status !== "declined");
+    const sums = await allocationSums(
+      company.id,
+      open.map((b) => b.id),
+    );
+    return ok(
+      open.map((b) => ({
+        ...b,
+        allocatedOutbound: sums.get(b.id)?.outbound ?? 0,
+        allocatedInbound: sums.get(b.id)?.inbound ?? 0,
       })),
     );
   } catch (e) {

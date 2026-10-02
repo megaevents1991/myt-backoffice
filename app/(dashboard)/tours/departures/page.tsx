@@ -5,7 +5,7 @@ import { getSession } from "@/lib/auth/guards";
 import { SESSION_COOKIE, verifySessionValue } from "@/lib/auth/session";
 import { TOURS_AGENT_ROLE } from "@/types/auth.types";
 
-export const metadata = { title: "Tours" };
+export const metadata = { title: "Departures" };
 
 /**
  * Departures board of the active company (product type "tours"). The board
