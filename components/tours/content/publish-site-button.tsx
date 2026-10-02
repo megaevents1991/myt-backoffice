@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Loader2, Rocket } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/confirm-provider";
@@ -12,14 +12,16 @@ import { getSitePublishStatus, publishSite } from "@/lib/tours/site-publish";
 import type { SitePublishStatus } from "@/components/tours/content/shared";
 
 /**
- * "Publish to site" for the active tours company. Self-contained: drop it in
+ * "Revalidate Pages" for the active tours company - the same button, name and
+ * icon as on the Mega Events screens. Self-contained: drop it in
  * the `actions` of any tours page header.
  *
  *   import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
  *   <PageHeader title="..." actions={<PublishSiteButton />} />
  *
  * The customer site is static and reads the database when it is built, so a
- * save in the backoffice reaches visitors only after a rebuild. The button asks
+ * save in the backoffice reaches visitors only after a rebuild: here the button
+ * rebuilds the site (about a minute), where on Mega Events it clears the cache. The button asks
  * for confirmation, triggers the rebuild on the server (the deploy hook URL
  * never reaches the browser) and shows when the site was last published.
  */
@@ -47,15 +49,15 @@ export function PublishSiteButton({ className }: { className?: string }) {
 
   const publish = async () => {
     const ok = await confirm({
-      title: "Publish changes to the site?",
+      title: "Revalidate the site?",
       description:
-        "The site will be rebuilt with everything saved in the backoffice so far. The build takes a few minutes, and until it finishes visitors see the previous version.",
-      confirmLabel: "Publish Site",
+        "The site will be rebuilt with everything saved in the backoffice so far. It takes about a minute, and until it finishes visitors see the previous version.",
+      confirmLabel: "Revalidate Pages",
       cancelLabel: "Cancel",
     });
     if (!ok) return;
     startTransition(async () => {
-      const result = await run(() => publishSite(), "The site build has started. Changes will appear in a few minutes.");
+      const result = await run(() => publishSite(), "Revalidating: the site is rebuilding. Changes appear in about a minute.");
       if (result.success) {
         setStatus({ configured: true, last: result.data });
       } else {
@@ -74,8 +76,8 @@ export function PublishSiteButton({ className }: { className?: string }) {
     : !status.configured
       ? "Site connection not set up"
       : last
-        ? `${last.ok ? "Last published" : "Last attempt failed"}: ${fmtInstant(last.at)}`
-        : "Not published from here yet";
+        ? `${last.ok ? "Last revalidated" : "Last attempt failed"}: ${fmtInstant(last.at)}`
+        : "Not revalidated from here yet";
 
   return (
     <div className={cn("flex items-center gap-3", className)}>
@@ -88,8 +90,8 @@ export function PublishSiteButton({ className }: { className?: string }) {
         </span>
       )}
       <Button type="button" variant="outline" onClick={() => void publish()} disabled={isPending}>
-        {isPending ? <Loader2 className="animate-spin" /> : <Rocket />}
-        {isPending ? "Publishing..." : "Publish Site"}
+        <RefreshCw className={cn(isPending && "animate-spin")} />
+        {isPending ? "Revalidating…" : "Revalidate Pages"}
       </Button>
     </div>
   );

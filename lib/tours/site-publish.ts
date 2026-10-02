@@ -123,6 +123,6 @@ export async function publishSite(): Promise<ActionResult<SitePublishRecord>> {
     if (problem) return { success: false, error: `The site build did not start: ${problem}` };
     return { success: true, data: record };
   } catch (e) {
-    return failure(e, "Failed to publish the site");
+    return failure(e, "Failed to revalidate the site");
   }
 }

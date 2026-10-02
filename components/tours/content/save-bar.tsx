@@ -14,10 +14,10 @@ import { Button } from "@/components/ui/button";
 import { LoadError } from "@/components/tours/ui";
 
 /** The note of the save bar while a content editor has unsaved changes. */
-export const CONTENT_UNSAVED_NOTE = "You have unsaved changes. They reach the site only after you save and publish.";
+export const CONTENT_UNSAVED_NOTE = "You have unsaved changes. They reach the site only after you save and revalidate.";
 
 /** The toast after a content save. */
-export const CONTENT_SAVED_NOTE = "Saved. Click Publish Site to show the change on the site.";
+export const CONTENT_SAVED_NOTE = "Saved. Click Revalidate Pages to show the change on the site.";
 
 /** "Back to the list" link above an editor. */
 export function BackLink({ href, children }: { href: string; children: ReactNode }) {

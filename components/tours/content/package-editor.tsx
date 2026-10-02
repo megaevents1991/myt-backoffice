@@ -248,7 +248,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
           <p>
             The data import created this tour so its series has a page, and it has no content yet. Once you add a
             description or an image and save, it counts as a tour with content. To show it on the site, also mark it
-            active and publish.
+            active and click Revalidate Pages.
           </p>
         </div>
       )}

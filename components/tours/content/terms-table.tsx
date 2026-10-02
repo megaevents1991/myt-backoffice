@@ -202,7 +202,7 @@ function AddTermDialog({ onClose }: { onClose: () => void }) {
               onChange={(event) => setName(event.target.value)}
             />
           </Field>
-          <Notice tone="info">It is created active. The site shows it after you publish.</Notice>
+          <Notice tone="info">It is created active. The site shows it after Revalidate Pages.</Notice>
           <DialogFooter className="gap-2">
             <Button type="button" variant="ghost" onClick={onClose} disabled={isPending}>
               Cancel

@@ -169,8 +169,8 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
       </Section>
 
       <Section
-        title="Publish Site"
-        description='The "Publish Site" button rebuilds the site through a Vercel deploy hook URL. The URL is a secret: anyone who has it can trigger a build, so it is not shown after saving. You can only replace or remove it.'
+        title="Revalidate Pages"
+        description='The "Revalidate Pages" button rebuilds the site through a Vercel deploy hook URL. The URL is a secret: anyone who has it can trigger a build, so it is not shown after saving. You can only replace or remove it.'
       >
         <div className="flex flex-wrap items-center gap-3 text-sm">
           {saved.deployHookSet ? (

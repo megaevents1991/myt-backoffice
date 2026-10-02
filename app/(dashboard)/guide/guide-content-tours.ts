@@ -19,8 +19,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     productType: "tours",
     title: t("How to create a new tour", "איך מקימים טיול חדש"),
     intro: t(
-      "\"Add Tour\" builds a whole tour on one page - details, series, first dates, prices, flights, itinerary, what's included, hotels, group leaders, pictures and categories; a new category, tag or group leader is created right there. The tour's own page edits all of it later and adds FAQ, SEO and more dates. Nothing reaches the customer site until the tour is active, its dates are published and someone clicks \"Publish Site\".",
-      "\"Add Tour\" בונה טיול שלם בעמוד אחד - פרטים, סדרה, תאריכים ראשונים, מחירים, טיסות, מסלול יום-יום, מה כלול, מלונות, מלווים, תמונות וקטגוריות; קטגוריה, תגית או מלווה חדשים יוצרים במקום. עמוד הטיול עצמו עורך את כל זה אחר כך ומוסיף שאלות נפוצות, SEO ועוד תאריכים. שום דבר לא מגיע לאתר הלקוחות עד שהטיול פעיל, התאריכים שלו מפורסמים ומישהו לוחץ \"Publish Site\".",
+      "\"Add Tour\" builds a whole tour on one page - details, series, first dates, prices, flights, itinerary, what's included, hotels, group leaders, pictures and categories; a new category, tag or group leader is created right there. The tour's own page edits all of it later and adds FAQ, SEO and more dates. Nothing reaches the customer site until the tour is active, its dates are published and someone clicks \"Revalidate Pages\".",
+      "\"Add Tour\" בונה טיול שלם בעמוד אחד - פרטים, סדרה, תאריכים ראשונים, מחירים, טיסות, מסלול יום-יום, מה כלול, מלונות, מלווים, תמונות וקטגוריות; קטגוריה, תגית או מלווה חדשים יוצרים במקום. עמוד הטיול עצמו עורך את כל זה אחר כך ומוסיף שאלות נפוצות, SEO ועוד תאריכים. שום דבר לא מגיע לאתר הלקוחות עד שהטיול פעיל, התאריכים שלו מפורסמים ומישהו לוחץ \"Revalidate Pages\".",
     ),
     howTo: [
       {
@@ -45,7 +45,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Click \"Create Tour\" in the bar at the bottom. It stays disabled, with the reason beside it, until the name, slug, series code, airports and dates are valid.", "לוחצים \"Create Tour\" בסרגל התחתון. הכפתור מושבת, והסיבה כתובה לידו, עד שהשם, ה-slug, קוד הסדרה, שדות התעופה והתאריכים תקינים."),
           t("The tour is created inactive with its dates unpublished, and its page opens on \"Dates & Prices\". If a step could not be done, a red toast lists it - finish it on the page.", "הטיול נוצר לא פעיל, התאריכים שלו לא מפורסמים, והעמוד שלו נפתח על \"Dates & Prices\". אם שלב כלשהו לא בוצע, הודעה אדומה מפרטת אותו - משלימים אותו בעמוד."),
-          t("At the top, \"Ready for the site\" shows the steps: Details, Images, Description, Itinerary, Categories, Dates, Prices, Flights, On sale, Active, Publish Site. Green = done. Hover a step to see what is missing; click it to open the tab that fixes it.", "למעלה, \"Ready for the site\" מציג את השלבים: Details, Images, Description, Itinerary, Categories, Dates, Prices, Flights, On sale, Active, Publish Site. ירוק = בוצע. ריחוף מעל שלב מראה מה חסר; לחיצה פותחת את הלשונית שמתקנת אותו."),
+          t("At the top, \"Ready for the site\" shows the steps: Details, Images, Description, Itinerary, Categories, Dates, Prices, Flights, On sale, Active, Revalidate. Green = done. Hover a step to see what is missing; click it to open the tab that fixes it.", "למעלה, \"Ready for the site\" מציג את השלבים: Details, Images, Description, Itinerary, Categories, Dates, Prices, Flights, On sale, Active, Revalidate. ירוק = בוצע. ריחוף מעל שלב מראה מה חסר; לחיצה פותחת את הלשונית שמתקנת אותו."),
         ],
       },
       {
@@ -54,7 +54,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
           t("\"Itinerary\": edit the days, or \"Add Day\". Sold in the opposite direction too? \"New Variant\" copies the saved itinerary with its own arrival and return cities.", "\"Itinerary\": עורכים את הימים או \"Add Day\". נמכר גם בכיוון ההפוך? \"New Variant\" מעתיק את המסלול השמור עם ערי נחיתה וחזרה משלו."),
           t("The leader of a date: open the date's card → \"Group leader\" (in \"Internal\"). It is for operations only - the site shows the tour's group leaders, not the date's.", "המלווה של תאריך: פותחים את כרטיס התאריך ← \"Group leader\" (באזור \"Internal\"). זה לתפעול בלבד - האתר מציג את המלווים של הטיול, לא של התאריך."),
           t("\"FAQ\": \"Add Question\" and its answer. \"SEO\": the title and description search engines show.", "\"FAQ\": \"Add Question\" והתשובה שלה. \"SEO\": הכותרת והתיאור שמנועי החיפוש מציגים."),
-          t("Click \"Save\" in the bottom bar after editing. The toast reminds you the site changes only after Publish Site.", "לוחצים \"Save\" בסרגל התחתון אחרי עריכה. ההודעה מזכירה שהאתר משתנה רק אחרי Publish Site."),
+          t("Click \"Save\" in the bottom bar after editing. The toast reminds you the site changes only after Revalidate Pages.", "לוחצים \"Save\" בסרגל התחתון אחרי עריכה. ההודעה מזכירה שהאתר משתנה רק אחרי Revalidate Pages."),
           t("\"Dates & Prices\": click a date to open its card - \"Prices\", \"Flights\", \"Promotions\", \"Reservations\", and the switch that puts it on the site. A red \"Add price\" or an amber \"Link a flight\" in a row opens the tab that is missing.", "\"Dates & Prices\": לוחצים על תאריך כדי לפתוח את הכרטיס שלו - \"Prices\", \"Flights\", \"Promotions\", \"Reservations\", והמתג שמעלה אותו לאתר. \"Add price\" אדום או \"Link a flight\" כתום בשורה פותחים את הלשונית שחסרה."),
           t("More dates: \"Add Date\" for one, \"Add Season\" for a weekly run between two dates (it can copy prices and promotions from an existing date) → \"Create N Departures\". They all come in as drafts.", "עוד תאריכים: \"Add Date\" לתאריך אחד, \"Add Season\" לסדרה שבועית בין שני תאריכים (אפשר להעתיק מחירים ומבצעים מתאריך קיים) ← \"Create N Departures\". כולם נכנסים כטיוטות."),
         ],
@@ -64,7 +64,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("\"Details\" tab: switch \"Active on site\" on and click \"Save\". An inactive tour is left out of the site build.", "לשונית \"Details\": מדליקים את \"Active on site\" ולוחצים \"Save\". טיול לא פעיל לא נכנס לבנייה של האתר."),
           t("Publish its dates: in each date's card turn on \"Published on the site\" (many at once: tick them on the [Departures](/tours/departures) board → \"Publish\"). A date without a double-room price, cities or currency is refused (\"Can't publish yet: …\"). A date with no live flight block is published, and the site says flight details will follow.", "מפרסמים את התאריכים: בכרטיס של כל תאריך מדליקים את \"Published on the site\" (הרבה בבת אחת: מסמנים אותם ב[לוח היציאות](/tours/departures) ← \"Publish\"). תאריך בלי מחיר חדר זוגי, ערים או מטבע נחסם (\"Can't publish yet: …\"). תאריך בלי בלוק טיסה חי מתפרסם, והאתר כותב שפרטי הטיסה יעודכנו."),
-          t("Click \"Publish Site\" at the top of the page and confirm. The site rebuilds in a few minutes; until then visitors see the previous version.", "לוחצים \"Publish Site\" בראש העמוד ומאשרים. האתר נבנה מחדש תוך כמה דקות; עד אז המבקרים רואים את הגרסה הקודמת."),
+          t("Click \"Revalidate Pages\" at the top of the page and confirm. The site rebuilds in about a minute; until then visitors see the previous version.", "לוחצים \"Revalidate Pages\" בראש העמוד ומאשרים. האתר נבנה מחדש תוך כדקה; עד אז המבקרים רואים את הגרסה הקודמת."),
           t("Once the tour is active, \"View on Site\" opens its page on the site.", "כשהטיול פעיל, \"View on Site\" פותח את העמוד שלו באתר."),
         ],
       },
@@ -83,13 +83,13 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         { label: t("Add Tour", "Add Tour"), sub: t("the whole tour on one page", "הטיול כולו בעמוד אחד") },
         { label: t("Tour page", "עמוד הטיול"), sub: t("FAQ, SEO, more dates - until Ready for the site", "שאלות, SEO, עוד תאריכים - עד Ready for the site") },
         { label: t("Active + dates published", "פעיל + תאריכים מפורסמים") },
-        { label: t("Publish Site", "Publish Site"), sub: t("the site rebuilds", "האתר נבנה מחדש") },
+        { label: t("Revalidate Pages", "Revalidate Pages"), sub: t("the site rebuilds", "האתר נבנה מחדש") },
         { label: t("Lead", "ליד") },
         { label: t("Reservation", "הזמנה"), sub: t("counts on the date's seats", "נספרת על המושבים של התאריך") },
       ],
     },
     rules: [
-      t("Nothing reaches the customer site before \"Publish Site\" - saving only stores it in the backoffice.", "שום דבר לא מגיע לאתר הלקוחות לפני \"Publish Site\" - שמירה רק שומרת בבק-אופיס."),
+      t("Nothing reaches the customer site before \"Revalidate Pages\" - saving only stores it in the backoffice.", "שום דבר לא מגיע לאתר הלקוחות לפני \"Revalidate Pages\" - שמירה רק שומרת בבק-אופיס."),
       t("Once a tour has dates, its slug - its address on the site - is locked.", "ברגע שיש לטיול תאריכים, ה-slug שלו - הכתובת שלו באתר - ננעל."),
       t("Created a tour by mistake? \"Delete Tour\" (Details tab) removes it with its dates while nothing was sold on it and no date is on the site; otherwise switch it off with \"Active on site\". The slug and series code stay taken.", "נוצר טיול בטעות? \"Delete Tour\" (לשונית Details) מוחק אותו עם התאריכים שלו כל עוד לא נמכר בו כלום ואף תאריך לא באתר; אחרת מכבים אותו ב-\"Active on site\". ה-slug וקוד הסדרה נשארים תפוסים."),
     ],
@@ -103,30 +103,30 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     id: "publish-site",
     nav: "start",
     productType: "tours",
-    title: t("Publish Site - when changes reach the site", "Publish Site - מתי שינויים מגיעים לאתר"),
+    title: t("Revalidate Pages - when changes reach the site", "Revalidate Pages - מתי שינויים מגיעים לאתר"),
     intro: t(
-      "The customer site is built from the backoffice data, and only when someone clicks \"Publish Site\". Saving a tour, a date, a page or a hotel stores it here; the site shows it after the next publish.",
-      "אתר הלקוחות נבנה מהנתונים של הבק-אופיס, ורק כשמישהו לוחץ \"Publish Site\". שמירה של טיול, תאריך, עמוד או מלון שומרת אותם כאן; האתר מציג אותם אחרי הפרסום הבא.",
+      "The customer site is built from the backoffice data, and only when someone clicks \"Revalidate Pages\". Saving a tour, a date, a page or a hotel stores it here; the site shows it after the next revalidate.",
+      "אתר הלקוחות נבנה מהנתונים של הבק-אופיס, ורק כשמישהו לוחץ \"Revalidate Pages\". שמירה של טיול, תאריך, עמוד או מלון שומרת אותם כאן; האתר מציג אותם אחרי ה-Revalidate הבא.",
     ),
     howTo: [
       {
         title: t("Publish the site", "לפרסם את האתר"),
         steps: [
           t("Save first - the bar at the bottom of an editor says when something is not saved yet.", "קודם שומרים - הסרגל בתחתית העורך אומר כשמשהו עוד לא נשמר."),
-          t("Click \"Publish Site\" at the top of a tours screen: the Dashboard, Tours and every tour, Departures, the Website screens, Settings.", "לוחצים \"Publish Site\" בראש מסך טיולים: הדשבורד, הטיולים וכל טיול, היציאות, מסכי האתר, ההגדרות."),
-          t("Confirm \"Publish changes to the site?\" with \"Publish Site\". The toast says the build has started.", "מאשרים את \"Publish changes to the site?\" עם \"Publish Site\". ההודעה אומרת שהבנייה התחילה."),
-          t("Give it a few minutes. Until the build finishes visitors see the previous version, so publish once after a round of changes, not after each one.", "נותנים לזה כמה דקות. עד שהבנייה מסתיימת המבקרים רואים את הגרסה הקודמת, אז מפרסמים פעם אחת אחרי סבב שינויים ולא אחרי כל שינוי."),
+          t("Click \"Revalidate Pages\" at the top of a tours screen: the Dashboard, Tours and every tour, Departures, the Website screens, Settings.", "לוחצים \"Revalidate Pages\" בראש מסך טיולים: הדשבורד, הטיולים וכל טיול, היציאות, מסכי האתר, ההגדרות."),
+          t("Confirm \"Revalidate the site?\" with \"Revalidate Pages\". The toast says the build has started.", "מאשרים את \"Revalidate the site?\" עם \"Revalidate Pages\". ההודעה אומרת שהבנייה התחילה."),
+          t("Give it about a minute. Until the build finishes visitors see the previous version, so revalidate once after a round of changes, not after each one.", "נותנים לזה כדקה. עד שהבנייה מסתיימת המבקרים רואים את הגרסה הקודמת, אז עושים Revalidate פעם אחת אחרי סבב שינויים ולא אחרי כל שינוי."),
         ],
       },
     ],
     points: [
-      t("Beside the button: \"Last published: …\", \"Last attempt failed: …\" (red), \"Not published from here yet\" or \"Site connection not set up\". Hover it to see who published.", "ליד הכפתור: \"Last published: …\", \"Last attempt failed: …\" (באדום), \"Not published from here yet\" או \"Site connection not set up\". ריחוף מראה מי פרסם."),
-      t("\"Site connection not set up\" means the site's deploy hook is missing. A company admin adds it in [Settings](/tours/settings), under \"Publish Site\".", "\"Site connection not set up\" אומר שחסר ה-deploy hook של האתר. מנהל החברה מוסיף אותו ב[הגדרות](/tours/settings), תחת \"Publish Site\"."),
+      t("Beside the button: \"Last revalidated: …\", \"Last attempt failed: …\" (red), \"Not revalidated from here yet\" or \"Site connection not set up\". Hover it to see who clicked it.", "ליד הכפתור: \"Last revalidated: …\", \"Last attempt failed: …\" (באדום), \"Not revalidated from here yet\" או \"Site connection not set up\". ריחוף מראה מי לחץ."),
+      t("\"Site connection not set up\" means the site's deploy hook is missing. A company admin adds it in [Settings](/tours/settings), under \"Revalidate Pages\".", "\"Site connection not set up\" אומר שחסר ה-deploy hook של האתר. מנהל החברה מוסיף אותו ב[הגדרות](/tours/settings), תחת \"Revalidate Pages\"."),
       t("Nothing publishes on its own - it is always this button. Every attempt, failed ones too, is recorded with who clicked it.", "שום דבר לא מתפרסם לבד - תמיד דרך הכפתור הזה. כל ניסיון, גם כושל, נרשם עם מי שלחץ."),
-      t("In a tour's \"Ready for the site\", the \"Publish Site\" step turns green only when the site was rebuilt after the tour's last change.", "ב-\"Ready for the site\" של טיול, השלב \"Publish Site\" נהיה ירוק רק כשהאתר נבנה מחדש אחרי השינוי האחרון בטיול."),
+      t("In a tour's \"Ready for the site\", the \"Revalidate\" step turns green only when the site was rebuilt after the tour's last change.", "ב-\"Ready for the site\" של טיול, השלב \"Revalidate\" נהיה ירוק רק כשהאתר נבנה מחדש אחרי השינוי האחרון בטיול."),
     ],
     rules: [
-      t("Saved is not live. A change is on the site only after \"Publish Site\" and a finished build.", "נשמר זה עוד לא באוויר. שינוי נמצא באתר רק אחרי \"Publish Site\" ובנייה שהסתיימה."),
+      t("Saved is not live. A change is on the site only after \"Revalidate Pages\" and a finished build.", "נשמר זה עוד לא באוויר. שינוי נמצא באתר רק אחרי \"Revalidate Pages\" ובנייה שהסתיימה."),
     ],
   },
   {
@@ -144,7 +144,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("On any screen, \"Guide\" at the right of the top bar opens this guide in a new tab, right at the part about that screen.", "בכל מסך, \"Guide\" בצד ימין של הסרגל העליון פותח את המדריך הזה בלשונית חדשה, ישר בחלק של אותו מסך."),
           t("The guide follows the sidebar: the same groups and screens, in the same order. Every link in it opens in a new tab, so the guide stays open beside your work.", "המדריך בנוי כמו התפריט: אותן קבוצות ואותם מסכים, באותו סדר. כל קישור בו נפתח בלשונית חדשה, כך שהמדריך נשאר פתוח ליד העבודה."),
-          t("The search box reads Hebrew and English together - type a button's name (\"Publish Site\") or a job (\"ליד\", \"מלון\").", "תיבת החיפוש קוראת עברית ואנגלית יחד - מקלידים שם של כפתור (\"Publish Site\") או פעולה (\"ליד\", \"מלון\")."),
+          t("The search box reads Hebrew and English together - type a button's name (\"Revalidate Pages\") or a job (\"ליד\", \"מלון\").", "תיבת החיפוש קוראת עברית ואנגלית יחד - מקלידים שם של כפתור (\"Revalidate Pages\") או פעולה (\"ליד\", \"מלון\")."),
         ],
       },
       {
@@ -187,7 +187,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
       },
     ],
     points: [
-      t("Reservation counts leave cancellation rows out. \"Publish Site\" sits at the top here too.", "ספירת ההזמנות לא כוללת שורות ביטול. גם כאן \"Publish Site\" נמצא למעלה."),
+      t("Reservation counts leave cancellation rows out. \"Revalidate Pages\" sits at the top here too.", "ספירת ההזמנות לא כוללת שורות ביטול. גם כאן \"Revalidate Pages\" נמצא למעלה."),
     ],
     links: [{ label: t("Dashboard", "דשבורד"), href: "/tours" }],
   },
@@ -328,7 +328,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         title: t("Fix what is on the site but incomplete", "לתקן מה שבאתר אבל לא שלם"),
         steps: [
           t("\"Published without a live flight\": the screen suggests blocks on the same cities within 2 days. Type \"Seats\" and \"Allocate\".", "\"Published without a live flight\": המסך מציע בלוקים לאותן ערים בטווח של יומיים. מקלידים \"Seats\" ו-\"Allocate\"."),
-          t("\"Published with no price\": type the double-room price → \"Save Price\", or \"Take Off Site\" (it leaves the site at the next publish).", "\"Published with no price\": מקלידים מחיר חדר זוגי ← \"Save Price\", או \"Take Off Site\" (התאריך יורד מהאתר בפרסום הבא)."),
+          t("\"Published with no price\": type the double-room price → \"Save Price\", or \"Take Off Site\" (it leaves the site at the next revalidate).", "\"Published with no price\": מקלידים מחיר חדר זוגי ← \"Save Price\", או \"Take Off Site\" (התאריך יורד מהאתר ב-Revalidate הבא)."),
           t("\"Hotels not in catalog\": pick the catalog hotel → \"Save\". A suggested match says so - check it is the right hotel.", "\"Hotels not in catalog\": בוחרים את המלון מהקטלוג ← \"Save\". התאמה מוצעת מסומנת ככזאת - בודקים שזה המלון הנכון."),
         ],
       },
@@ -350,7 +350,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     productType: "tours",
     title: t("Tours - the tour pages", "טיולים - עמודי הטיולים"),
     intro: t(
-      "Every tour of the site: its page, dates, prices, flights and hotels. Open a tour to edit it; changes reach the site after you save and publish. A new tour starts at \"Add Tour\" - step by step under Start here.",
+      "Every tour of the site: its page, dates, prices, flights and hotels. Open a tour to edit it; changes reach the site after you save and revalidate. A new tour starts at \"Add Tour\" - step by step under Start here.",
       "כל טיול באתר: העמוד שלו, התאריכים, המחירים, הטיסות והמלונות. פותחים טיול כדי לערוך אותו; שינויים מגיעים לאתר אחרי שמירה ופרסום. טיול חדש מתחיל ב-\"Add Tour\" - צעד אחר צעד תחת מתחילים כאן.",
     ),
     howTo: [
@@ -367,13 +367,13 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
           t("The tabs: \"Details\", \"Images\", \"Description\", \"Itinerary\", \"Dates & Prices\", \"Hotels\", \"FAQ\", \"SEO\", \"Categories & Tags\". \"Ready for the site\" above them says which one still needs work.", "הלשוניות: \"Details\", \"Images\", \"Description\", \"Itinerary\", \"Dates & Prices\", \"Hotels\", \"FAQ\", \"SEO\", \"Categories & Tags\". \"Ready for the site\" מעליהן אומר איזו עוד צריכה עבודה."),
           t("\"Description\" holds the \"Tour description\", \"Attractions\", \"Included\", \"Not included\", \"Additional info\", \"Booking terms\" and \"Cancellation terms\". \"Images\" holds the hero, the card image and the \"Gallery\" (its order is the site's order).", "ב-\"Description\": \"Tour description\", \"Attractions\", \"Included\", \"Not included\", \"Additional info\", \"Booking terms\" ו-\"Cancellation terms\". ב-\"Images\": תמונת הראש, תמונת הכרטיס וה-\"Gallery\" (הסדר שלה הוא הסדר באתר)."),
           t("A text field offers \"HTML & Preview\" or \"Visual Editor\" (the visual editor turns off when the HTML is too complex for it).", "שדה טקסט מציע \"HTML & Preview\" או \"Visual Editor\" (העורך הוויזואלי נכבה כשה-HTML מורכב מדי בשבילו)."),
-          t("Click \"Save\" in the bottom bar, then \"Publish Site\" when you are done.", "לוחצים \"Save\" בסרגל התחתון, ואז \"Publish Site\" כשמסיימים."),
+          t("Click \"Save\" in the bottom bar, then \"Revalidate Pages\" when you are done.", "לוחצים \"Save\" בסרגל התחתון, ואז \"Revalidate Pages\" כשמסיימים."),
         ],
       },
       {
         title: t("Take a tour off the site", "להוריד טיול מהאתר"),
         steps: [
-          t("\"Details\" tab: switch \"Active on site\" off, \"Save\", then \"Publish Site\". The tour and its data stay in the backoffice.", "לשונית \"Details\": מכבים את \"Active on site\", \"Save\", ואז \"Publish Site\". הטיול והנתונים שלו נשארים בבק-אופיס."),
+          t("\"Details\" tab: switch \"Active on site\" off, \"Save\", then \"Revalidate Pages\". The tour and its data stay in the backoffice.", "לשונית \"Details\": מכבים את \"Active on site\", \"Save\", ואז \"Revalidate Pages\". הטיול והנתונים שלו נשארים בבק-אופיס."),
           t("\"Delete Tour\" (same tab) only works for a tour with no series and no dates - such a tour can only be deactivated. Delete is soft: the data is kept.", "\"Delete Tour\" (באותה לשונית) עובד רק לטיול בלי סדרה ובלי תאריכים - טיול כזה אפשר רק להשבית. המחיקה רכה: הנתונים נשמרים."),
         ],
       },
@@ -412,7 +412,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
       {
         title: t("Work in the row", "לעבוד בתוך השורה"),
         steps: [
-          t("\"Published\": the switch puts the date on the site or takes it off (after the next Publish Site).", "\"Published\": המתג מעלה את התאריך לאתר או מוריד אותו (אחרי ה-Publish Site הבא)."),
+          t("\"Published\": the switch puts the date on the site or takes it off (after the next Revalidate Pages).", "\"Published\": המתג מעלה את התאריך לאתר או מוריד אותו (אחרי ה-Revalidate Pages הבא)."),
           t("\"Sale status\": \"Open\", \"Guaranteed\", \"Last places\", \"Sold out\", \"Closed\". To stop selling a date, set \"Closed\".", "\"Sale status\": \"Open\", \"Guaranteed\", \"Last places\", \"Sold out\", \"Closed\". כדי להפסיק למכור תאריך, בוחרים \"Closed\"."),
           t("\"Date tags\" and \"Double-room price\": click to edit; Enter saves and moves to the next row, like a spreadsheet.", "\"Date tags\" ו-\"Double-room price\": לוחצים לעריכה; Enter שומר ועובר לשורה הבאה, כמו בגיליון."),
           t("\"Active promotion\", \"Flight\" and \"Seats\" open the matching tab of the date's card.", "\"Active promotion\", \"Flight\" ו-\"Seats\" פותחים את הלשונית המתאימה בכרטיס התאריך."),
@@ -513,7 +513,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Open [Content Pages](/tours/pages), search by title or path and click the page.", "פותחים את [עמודי התוכן](/tours/pages), מחפשים לפי כותרת או נתיב ולוחצים על העמוד."),
           t("Change \"Title\", \"Page content\" and the \"SEO\" title and description. \"Active on site\" off hides the page.", "משנים \"Title\", \"Page content\" ואת כותרת ותיאור ה-\"SEO\". כיבוי \"Active on site\" מסתיר את העמוד."),
-          t("\"Save\", then \"Publish Site\".", "\"Save\", ואז \"Publish Site\"."),
+          t("\"Save\", then \"Revalidate Pages\".", "\"Save\", ואז \"Revalidate Pages\"."),
         ],
       },
     ],
@@ -538,7 +538,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Open [Categories & Tags](/tours/terms) and pick the kind: \"Destinations\", \"Audiences\", \"Tags\", \"Packages\", \"Artists\", \"Holiday villages\", \"Categories\".", "פותחים את [הקטגוריות והתגיות](/tours/terms) ובוחרים סוג: \"Destinations\", \"Audiences\", \"Tags\", \"Packages\", \"Artists\", \"Holiday villages\", \"Categories\"."),
           t("Click one: \"Name\", \"Position in list\" (lower comes first), \"Active on site\", \"Description\" (also the search-engine description) and \"Hero images\".", "לוחצים על אחת: \"Name\", \"Position in list\" (נמוך קודם), \"Active on site\", \"Description\" (גם התיאור למנועי חיפוש) ו-\"Hero images\"."),
-          t("\"Save\", then \"Publish Site\".", "\"Save\", ואז \"Publish Site\"."),
+          t("\"Save\", then \"Revalidate Pages\".", "\"Save\", ואז \"Revalidate Pages\"."),
         ],
       },
       {
@@ -570,7 +570,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Open [Hotels](/tours/hotels), search by name, city or code, and click the hotel.", "פותחים את [המלונות](/tours/hotels), מחפשים לפי שם, עיר או קוד, ולוחצים על המלון."),
           t("\"Name\", \"Code\", \"City\", \"Stars\", \"Excerpt\" (the card text), \"Main image\", \"Gallery\", \"Hotel description\" and \"Facilities & services\" (\"Add Facility\").", "\"Name\", \"Code\", \"City\", \"Stars\", \"Excerpt\" (הטקסט בכרטיס), \"Main image\", \"Gallery\", \"Hotel description\" ו-\"Facilities & services\" (\"Add Facility\")."),
-          t("\"Save\", then \"Publish Site\".", "\"Save\", ואז \"Publish Site\"."),
+          t("\"Save\", then \"Revalidate Pages\".", "\"Save\", ואז \"Revalidate Pages\"."),
         ],
       },
       {
@@ -602,7 +602,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Open [Group Leaders](/tours/instructors) and click the person.", "פותחים את [המלווים](/tours/instructors) ולוחצים על האדם."),
           t("\"Name\", \"Position in list\" (lower comes first), \"Active on site\", \"Destinations\", \"Excerpt\", \"Image\", \"Page content\" and \"Gallery (thank-you letters, photos)\".", "\"Name\", \"Position in list\" (נמוך קודם), \"Active on site\", \"Destinations\", \"Excerpt\", \"Image\", \"Page content\" ו-\"Gallery (thank-you letters, photos)\"."),
-          t("\"Save\", then \"Publish Site\". \"Active on site\" off hides the person.", "\"Save\", ואז \"Publish Site\". כיבוי \"Active on site\" מסתיר את האדם."),
+          t("\"Save\", then \"Revalidate Pages\". \"Active on site\" off hides the person.", "\"Save\", ואז \"Revalidate Pages\". כיבוי \"Active on site\" מסתיר את האדם."),
         ],
       },
     ],
@@ -668,13 +668,13 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
           t("Open [Settings](/tours/settings). \"Company details\": name, legal name, \"Site URL\", \"Default currency\".", "פותחים את [ההגדרות](/tours/settings). \"Company details\": שם, שם משפטי, \"Site URL\", \"Default currency\"."),
           t("\"Contact details\" (shown in the site's header, footer and contact page): phone, WhatsApp, email, address, \"Opening hours\" - one line per range.", "\"Contact details\" (מוצגים בכותרת, בתחתית ובעמוד צור הקשר של האתר): טלפון, וואטסאפ, מייל, כתובת, \"Opening hours\" - שורה לכל טווח."),
           t("\"Brand\" (logo, \"Primary color\"), \"Email\" (\"From\", \"Reply-to\", \"Leads email\") and \"Analytics\" (Google Tag Manager, Meta Pixel).", "\"Brand\" (לוגו, \"Primary color\"), \"Email\" (\"From\", \"Reply-to\", \"Leads email\") ו-\"Analytics\" (Google Tag Manager, Meta Pixel)."),
-          t("\"Save\" in the bottom bar, then \"Publish Site\" - the site reads these when it is built.", "\"Save\" בסרגל התחתון, ואז \"Publish Site\" - האתר קורא אותם כשהוא נבנה."),
+          t("\"Save\" in the bottom bar, then \"Revalidate Pages\" - the site reads these when it is built.", "\"Save\" בסרגל התחתון, ואז \"Revalidate Pages\" - האתר קורא אותם כשהוא נבנה."),
         ],
       },
       {
-        title: t("Connect Publish Site", "לחבר את Publish Site"),
+        title: t("Connect Revalidate Pages", "לחבר את Revalidate Pages"),
         steps: [
-          t("Under \"Publish Site\", paste the site's deploy hook into \"Deploy hook URL\" (it starts with https://api.vercel.com/...) and \"Save\". The badge turns \"Set up\".", "תחת \"Publish Site\" מדביקים את ה-deploy hook של האתר ב-\"Deploy hook URL\" (מתחיל ב-https://api.vercel.com/...) ו-\"Save\". התג עובר ל-\"Set up\"."),
+          t("Under \"Revalidate Pages\", paste the site's deploy hook into \"Deploy hook URL\" (it starts with https://api.vercel.com/...) and \"Save\". The badge turns \"Set up\".", "תחת \"Revalidate Pages\" מדביקים את ה-deploy hook של האתר ב-\"Deploy hook URL\" (מתחיל ב-https://api.vercel.com/...) ו-\"Save\". התג עובר ל-\"Set up\"."),
           t("The URL is secret and never shown again. Leave the field empty to keep it; \"Remove URL\" removes it on save.", "הכתובת סודית ולא מוצגת שוב. משאירים את השדה ריק כדי לשמור אותה; \"Remove URL\" מסיר אותה בשמירה."),
         ],
       },

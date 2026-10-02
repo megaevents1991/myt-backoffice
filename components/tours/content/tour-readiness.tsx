@@ -104,10 +104,10 @@ export function tourReadiness(input: {
     item("active", "Active", form.isActive ? "done" : "todo", form.isActive ? "The tour is active" : "Switch the tour on", "general"),
     item(
       "site",
-      "Publish Site",
+      "Revalidate",
       publishedAfterChange ? "done" : "todo",
       publishedAfterChange
-        ? "Rebuilt after the last change of the tour or its dates. After editing prices, flights or the itinerary, publish again."
+        ? "Rebuilt after the last change of the tour or its dates. After editing prices, flights or the itinerary, revalidate again."
         : "Rebuild the site to show the changes",
       "general",
     ),
