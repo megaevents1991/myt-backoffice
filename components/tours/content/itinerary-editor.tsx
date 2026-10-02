@@ -288,6 +288,7 @@ export function ItineraryEditor({
                     value={day.image ?? ""}
                     onChange={(image) => patchDay(index, { image })}
                     siteUrl={siteUrl}
+                    folder="itinerary"
                   />
                   <HtmlField
                     label="Day description"

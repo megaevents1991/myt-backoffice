@@ -15,7 +15,7 @@ import { StickySaveBar } from "@/components/sticky-save-bar";
 import { saveTourHotel } from "@/lib/actions/tours-content-actions";
 import { Field, Section } from "@/components/tours/ui";
 import { editColumn, imageColumn } from "@/components/tours/content/columns";
-import { ImageListEditor, ImageUrlField, NO_UPLOAD_NOTE, StringListEditor } from "@/components/tours/content/fields";
+import { IMAGE_FIELDS_NOTE, ImageListEditor, ImageUrlField, StringListEditor } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
 import { BackLink, CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
@@ -161,9 +161,9 @@ export function HotelFormEditor({ initial }: { initial: HotelEditorData }) {
         </div>
       </Section>
 
-      <Section description={NO_UPLOAD_NOTE}>
-        <ImageUrlField label="Main image" value={form.image} onChange={(value) => set("image", value)} siteUrl={saved.siteUrl} />
-        <ImageListEditor label="Gallery" value={form.gallery} onChange={(value) => set("gallery", value)} siteUrl={saved.siteUrl} />
+      <Section description={IMAGE_FIELDS_NOTE}>
+        <ImageUrlField label="Main image" value={form.image} onChange={(value) => set("image", value)} siteUrl={saved.siteUrl} folder="hotels" />
+        <ImageListEditor label="Gallery" value={form.gallery} onChange={(value) => set("gallery", value)} siteUrl={saved.siteUrl} folder="hotels" />
       </Section>
 
       <Section>

@@ -7,12 +7,13 @@
 --   20261001100500_tours_views
 --   20261001100600_tasks_company_and_tours_agent
 --   20261002100000_tours_reservations
+--   20261002110000_tours_media_bucket
 --
 -- This file lives OUTSIDE supabase/migrations on purpose: the CLI never runs it.
 -- Run it by hand (SQL editor or psql) only when the migrations must be undone,
--- then mark the eight versions as reverted so the history matches the schema:
---   npx supabase migration repair --status reverted 20261002100000 20261001100600 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
--- and remove (or revert the commit of) the eight migration files on master,
+-- then mark the nine versions as reverted so the history matches the schema:
+--   npx supabase migration repair --status reverted 20261002110000 20261002100000 20261001100600 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
+-- and remove (or revert the commit of) the nine migration files on master,
 -- otherwise the next push applies them again.
 --
 -- Everything here is new since the migrations: no Mega Events data is deleted.
@@ -20,6 +21,17 @@
 -- original block_status check back.
 
 begin;
+
+-- 9. tours media bucket ------------------------------------------------------
+-- Undoes 20261002110000. Nothing to run in SQL: the bucket media-mega-family
+-- holds the pictures staff uploaded from the tours editors, and content rows
+-- (tours.* image / gallery / hero_images columns and their `data`) point at
+-- them by URL - removing it breaks those pictures on the site at the next
+-- publish. Only when that is intended: Supabase dashboard -> Storage ->
+-- media-mega-family -> Empty bucket, then Delete bucket (or the Storage API
+-- with the service role: emptyBucket, then deleteBucket). Never by SQL on
+-- storage.objects / storage.buckets: the files live outside the database and
+-- Storage refuses direct deletes. Leaving the bucket in place is harmless.
 
 -- 8. tours reservations ------------------------------------------------------
 -- Undoes 20261002100000 alone too (run just this block): the seats view goes back

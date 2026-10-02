@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import { saveTourTerm } from "@/lib/actions/tours-content-actions";
 import { ActiveChip, Field, Section } from "@/components/tours/ui";
-import { ImageListEditor, NO_UPLOAD_NOTE } from "@/components/tours/content/fields";
+import { IMAGE_FIELDS_NOTE, ImageListEditor } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
 import { BackLink, CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
@@ -71,12 +71,13 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
         />
       </Section>
 
-      <Section description={NO_UPLOAD_NOTE}>
+      <Section description={IMAGE_FIELDS_NOTE}>
         <ImageListEditor
           label="Hero images"
           value={form.heroImages}
           onChange={(value) => set("heroImages", value)}
           siteUrl={saved.siteUrl}
+          folder="terms"
         />
       </Section>
 

@@ -34,7 +34,7 @@ export async function uploadFile(bucket: string, path: string, file: File) {
  * mislabelled image never renders - the browser shows a broken (black) tile.
  * Trusting magic bytes over the filename fixes the upload once, at the door.
  */
-function sniffImageType(head: Uint8Array): { ext: string; mime: string } | null {
+export function sniffImageType(head: Uint8Array): { ext: string; mime: string } | null {
   const ascii = (start: number, length: number) =>
     String.fromCharCode(...head.subarray(start, start + length));
 

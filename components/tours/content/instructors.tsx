@@ -15,7 +15,7 @@ import { useSessionState } from "@/hooks/use-view-state";
 import { saveTourInstructor } from "@/lib/actions/tours-content-actions";
 import { ActiveChip, Field, Section } from "@/components/tours/ui";
 import { activeColumn, editColumn, imageColumn } from "@/components/tours/content/columns";
-import { GalleryItemsEditor, ImageUrlField, NO_UPLOAD_NOTE } from "@/components/tours/content/fields";
+import { GalleryItemsEditor, IMAGE_FIELDS_NOTE, ImageUrlField } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
 import { BackLink, CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
@@ -150,8 +150,8 @@ export function InstructorFormEditor({ initial }: { initial: InstructorEditorDat
         </div>
       </Section>
 
-      <Section description={NO_UPLOAD_NOTE}>
-        <ImageUrlField label="Image" value={form.image} onChange={(value) => set("image", value)} siteUrl={saved.siteUrl} />
+      <Section description={IMAGE_FIELDS_NOTE}>
+        <ImageUrlField label="Image" value={form.image} onChange={(value) => set("image", value)} siteUrl={saved.siteUrl} folder="instructors" />
       </Section>
 
       <Section>
@@ -170,6 +170,7 @@ export function InstructorFormEditor({ initial }: { initial: InstructorEditorDat
           value={form.gallery}
           onChange={(value) => set("gallery", value)}
           siteUrl={saved.siteUrl}
+          folder="instructors"
         />
       </Section>
 

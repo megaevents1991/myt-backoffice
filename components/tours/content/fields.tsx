@@ -4,13 +4,31 @@
  * The list and image controls of the site-content editors: ordered lists of
  * texts, images and gallery items, and a picture served by the company's site.
  * Field, Section and Chip come from components/tours/ui.tsx.
+ *
+ * An image field takes an address (`/media/...` on the site, or a full URL) or
+ * an uploaded file: the file goes to the company's public media bucket
+ * (lib/actions/tours-media-actions.ts) and the field gets its public URL. The
+ * `folder` prop says where in the bucket the editor's uploads are filed.
  */
-import { useId, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, ImageOff, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, ImageOff, Loader2, Plus, Trash2, TriangleAlert, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { createTourMediaUpload } from "@/lib/actions/tours-media-actions";
+import { supabase } from "@/lib/supabase-client";
+import { plainFail, type ActionResult } from "@/lib/tours/action-kit";
+import {
+  TOUR_MEDIA_ACCEPT,
+  TOUR_MEDIA_MAX_BYTES,
+  TOUR_MEDIA_TYPES_LABEL,
+  isTourMediaType,
+  siteImageWarning,
+  type TourMediaFolder,
+} from "@/lib/tours/media";
+import { sniffImageType } from "@/lib/upload-helper";
 import { cn } from "@/lib/utils";
 import { EmptyLine, Field } from "@/components/tours/ui";
 import { siteAssetUrl, type GalleryItem } from "@/components/tours/content/shared";
@@ -116,39 +134,194 @@ export function SiteImage({
   );
 }
 
-/** One image address with its thumbnail. */
+// ---------------------------------------------------------------- upload
+const MAX_MB = TOUR_MEDIA_MAX_BYTES / 1024 / 1024;
+
+/** Host of this project's Storage: an uploaded picture's URL starts with it. */
+const STORAGE_HOST = (() => {
+  try {
+    return process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).host : null;
+  } catch {
+    return null;
+  }
+})();
+
+/** Upload one picture to the active company's media bucket; answers its public URL. */
+async function uploadSiteImage(file: File, folder: TourMediaFolder): Promise<ActionResult<string>> {
+  try {
+    if (file.size > TOUR_MEDIA_MAX_BYTES) return plainFail(`The file is larger than ${MAX_MB} MB`);
+    // The bytes decide the type, not the name: a WebP saved as .jpg is stored as WebP (lib/upload-helper.ts).
+    const sniffed = sniffImageType(new Uint8Array(await file.slice(0, 16).arrayBuffer()));
+    const contentType = sniffed?.mime ?? file.type;
+    if (!isTourMediaType(contentType)) return plainFail(`Only ${TOUR_MEDIA_TYPES_LABEL} images can be uploaded`);
+
+    const grant = await createTourMediaUpload({ folder, fileName: file.name, contentType, size: file.size });
+    if (!grant.success) return grant;
+    // Straight to Storage with the one-time token; the path is unique, so the file never changes.
+    const { error } = await supabase.storage
+      .from(grant.data.bucket)
+      .uploadToSignedUrl(grant.data.path, grant.data.token, file, { contentType, cacheControl: "31536000" });
+    if (error) return plainFail(`The upload failed: ${error.message}`);
+    return { success: true, data: grant.data.publicUrl };
+  } catch (e) {
+    return plainFail(`The upload failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/** Uploads files one by one, with progress, and reports the outcome in one toast. */
+function useSiteImageUpload(folder: TourMediaFolder) {
+  const { toast } = useToast();
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const upload = useCallback(
+    async (files: File[]): Promise<string[]> => {
+      const urls: string[] = [];
+      const failures: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        setProgress({ done: i, total: files.length });
+        const answer = await uploadSiteImage(files[i], folder);
+        if (answer.success) urls.push(answer.data);
+        else failures.push(files.length > 1 ? `${files[i].name}: ${answer.error}` : answer.error);
+      }
+      setProgress(null);
+      if (failures.length > 0) {
+        toast({
+          variant: "destructive",
+          title: files.length > 1 ? `${failures.length} of ${files.length} images were not uploaded` : "The image was not uploaded",
+          description: failures.join(" · "),
+        });
+      } else if (urls.length > 0) {
+        toast({
+          title: urls.length > 1 ? `${urls.length} images uploaded` : "Image uploaded",
+          description: "Save the page to keep it.",
+        });
+      }
+      return urls;
+    },
+    [folder, toast],
+  );
+  return { progress, upload };
+}
+
+/** The latest value of a prop, for a callback that finishes after later renders (an upload). */
+function useLatest<T>(value: T) {
+  const ref = useRef(value);
+  useEffect(() => {
+    ref.current = value;
+  }, [value]);
+  return ref;
+}
+
+/** Pick picture file(s) and upload them; `onUploaded` gets their public URLs. */
+function UploadButton({
+  folder,
+  onUploaded,
+  multiple = false,
+  label = "Upload",
+  compact = false,
+}: {
+  folder: TourMediaFolder;
+  onUploaded: (urls: string[]) => void;
+  multiple?: boolean;
+  label?: string;
+  /** Icon only, for a list row. */
+  compact?: boolean;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const { progress, upload } = useSiteImageUpload(folder);
+  const busy = progress !== null;
+  const busyLabel = progress && progress.total > 1 ? `Uploading ${progress.done + 1}/${progress.total}…` : "Uploading…";
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        accept={TOUR_MEDIA_ACCEPT}
+        multiple={multiple}
+        className="hidden"
+        tabIndex={-1}
+        aria-hidden
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = ""; // the same file can be picked again
+          if (files.length === 0) return;
+          void upload(files).then((urls) => {
+            if (urls.length > 0) onUploaded(urls);
+          });
+        }}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size={compact ? "icon" : "sm"}
+        className={compact ? "h-8 w-8 shrink-0" : "shrink-0"}
+        disabled={busy}
+        aria-busy={busy}
+        aria-label={busy ? busyLabel : label}
+        title={busy ? busyLabel : `${label} (${TOUR_MEDIA_TYPES_LABEL}, up to ${MAX_MB} MB)`}
+        onClick={() => input.current?.click()}
+      >
+        {busy ? <Loader2 className="animate-spin" /> : <Upload />}
+        {!compact && (busy ? busyLabel : label)}
+      </Button>
+    </>
+  );
+}
+
+/** A line under an image address the site will not show (siteImageWarning). */
+function HostWarning({ value, className }: { value: string; className?: string }) {
+  const warning = siteImageWarning(value, STORAGE_HOST);
+  if (!warning) return null;
+  return (
+    <p className={cn("flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400", className)}>
+      <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      {warning}
+    </p>
+  );
+}
+
+// ---------------------------------------------------------------- image fields
+/** One image address with its thumbnail, or an uploaded file. */
 export function ImageUrlField({
   label,
   value,
   onChange,
   siteUrl,
   hint,
+  folder = "general",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   siteUrl: string | null | undefined;
   hint?: ReactNode;
+  /** Where this editor's uploads are filed in the bucket. */
+  folder?: TourMediaFolder;
 }) {
   const id = useId();
   return (
     <Field label={label} hint={hint} htmlFor={id}>
       <div className="flex items-start gap-3">
         <SiteImage siteUrl={siteUrl} path={value} className="h-20 w-32 shrink-0" alt={label} />
-        <Input
-          id={id}
-          dir="ltr"
-          placeholder="/media/2026/07/picture.jpg"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="font-mono text-xs"
-        />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Input
+              id={id}
+              dir="ltr"
+              placeholder="/media/2026/07/picture.jpg"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              className="font-mono text-xs"
+            />
+            <UploadButton folder={folder} onUploaded={([url]) => onChange(url)} />
+          </div>
+          <HostWarning value={value} />
+        </div>
       </div>
     </Field>
   );
 }
 
-/** An ordered list of image addresses with thumbnails: reorder, remove, add by address. */
+/** An ordered list of image addresses with thumbnails: reorder, remove, add by address or upload. */
 export function ImageListEditor({
   label,
   value,
@@ -156,6 +329,7 @@ export function ImageListEditor({
   siteUrl,
   hint,
   addLabel = "Add Image",
+  folder = "general",
 }: {
   label: string;
   value: string[];
@@ -163,7 +337,10 @@ export function ImageListEditor({
   siteUrl: string | null | undefined;
   hint?: ReactNode;
   addLabel?: string;
+  /** Where this editor's uploads are filed in the bucket. */
+  folder?: TourMediaFolder;
 }) {
+  const latest = useLatest(value);
   return (
     <div className="space-y-2">
       <Label>
@@ -172,47 +349,68 @@ export function ImageListEditor({
       {value.length === 0 && <EmptyLine>No images</EmptyLine>}
       <ul className="space-y-2">
         {value.map((path, index) => (
-          <li key={index} className="flex items-center gap-3 rounded-md border bg-background p-2">
-            <span className="w-5 shrink-0 text-center text-xs text-muted-foreground">{index + 1}</span>
-            <SiteImage siteUrl={siteUrl} path={path} className="h-12 w-20 shrink-0" />
-            <Input
-              dir="ltr"
-              aria-label={`${label} ${index + 1}`}
-              placeholder="/media/2026/07/picture.jpg"
-              value={path}
-              onChange={(event) => onChange(value.map((v, i) => (i === index ? event.target.value : v)))}
-              className="font-mono text-xs"
-            />
-            <RowControls
-              index={index}
-              count={value.length}
-              onMove={(delta) => onChange(moved(value, index, delta))}
-              onRemove={() => onChange(value.filter((_, i) => i !== index))}
-            />
+          <li key={index} className="rounded-md border bg-background p-2">
+            <div className="flex items-center gap-3">
+              <span className="w-5 shrink-0 text-center text-xs text-muted-foreground">{index + 1}</span>
+              <SiteImage siteUrl={siteUrl} path={path} className="h-12 w-20 shrink-0" />
+              <Input
+                dir="ltr"
+                aria-label={`${label} ${index + 1}`}
+                placeholder="/media/2026/07/picture.jpg"
+                value={path}
+                onChange={(event) => onChange(value.map((v, i) => (i === index ? event.target.value : v)))}
+                className="font-mono text-xs"
+              />
+              <UploadButton
+                compact
+                folder={folder}
+                label="Upload a file for this image"
+                onUploaded={([url]) => onChange(latest.current.map((v, i) => (i === index ? url : v)))}
+              />
+              <RowControls
+                index={index}
+                count={value.length}
+                onMove={(delta) => onChange(moved(value, index, delta))}
+                onRemove={() => onChange(value.filter((_, i) => i !== index))}
+              />
+            </div>
+            <HostWarning value={path} className="mt-1.5 ps-8" />
           </li>
         ))}
       </ul>
-      <Button type="button" variant="outline" size="sm" onClick={() => onChange([...value, ""])}>
-        <Plus />
-        {addLabel}
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={() => onChange([...value, ""])}>
+          <Plus />
+          {addLabel}
+        </Button>
+        <UploadButton
+          multiple
+          folder={folder}
+          label="Upload Images"
+          onUploaded={(urls) => onChange([...latest.current, ...urls])}
+        />
+      </div>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
 
-/** An instructor gallery: address, title and caption per picture. */
+/** An instructor gallery: address (or upload), title and caption per picture. */
 export function GalleryItemsEditor({
   label,
   value,
   onChange,
   siteUrl,
+  folder = "general",
 }: {
   label: string;
   value: GalleryItem[];
   onChange: (value: GalleryItem[]) => void;
   siteUrl: string | null | undefined;
+  /** Where this editor's uploads are filed in the bucket. */
+  folder?: TourMediaFolder;
 }) {
+  const latest = useLatest(value);
   const patch = (index: number, change: Partial<GalleryItem>) =>
     onChange(value.map((item, i) => (i === index ? { ...item, ...change } : item)));
   return (
@@ -226,14 +424,25 @@ export function GalleryItemsEditor({
           <li key={index} className="flex items-start gap-3 rounded-md border bg-background p-2">
             <SiteImage siteUrl={siteUrl} path={item.src} className="h-16 w-24 shrink-0" alt={item.title} />
             <div className="grid min-w-0 flex-1 gap-2 md:grid-cols-2">
-              <Input
-                dir="ltr"
-                aria-label="Image URL"
-                placeholder="/media/2026/01/picture.webp"
-                value={item.src}
-                onChange={(event) => patch(index, { src: event.target.value })}
-                className="font-mono text-xs md:col-span-2"
-              />
+              <div className="flex items-center gap-2 md:col-span-2">
+                <Input
+                  dir="ltr"
+                  aria-label="Image URL"
+                  placeholder="/media/2026/01/picture.webp"
+                  value={item.src}
+                  onChange={(event) => patch(index, { src: event.target.value })}
+                  className="font-mono text-xs"
+                />
+                <UploadButton
+                  compact
+                  folder={folder}
+                  label="Upload a file for this image"
+                  onUploaded={([url]) =>
+                    onChange(latest.current.map((current, i) => (i === index ? { ...current, src: url } : current)))
+                  }
+                />
+              </div>
+              <HostWarning value={item.src} className="md:col-span-2" />
               <Input
                 dir="auto"
                 aria-label="Title"
@@ -258,15 +467,23 @@ export function GalleryItemsEditor({
           </li>
         ))}
       </ul>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => onChange([...value, { src: "", title: "", caption: "" }])}
-      >
-        <Plus />
-        Add Image
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onChange([...value, { src: "", title: "", caption: "" }])}
+        >
+          <Plus />
+          Add Image
+        </Button>
+        <UploadButton
+          multiple
+          folder={folder}
+          label="Upload Images"
+          onUploaded={(urls) => onChange([...latest.current, ...urls.map((src) => ({ src, title: "", caption: "" }))])}
+        />
+      </div>
     </div>
   );
 }
@@ -320,6 +537,8 @@ export function StringListEditor({
   );
 }
 
-/** The note every image editor carries in this version. */
-export const NO_UPLOAD_NOTE =
-  "File upload is not available yet: enter the image path as it is on the site (/media/...) and the image loads from there.";
+/** The note every image editor carries. */
+export const IMAGE_FIELDS_NOTE = `Upload a picture (${TOUR_MEDIA_TYPES_LABEL}, up to ${MAX_MB} MB), or enter its address: a path on the site (/media/...) or a full https:// URL. A new picture reaches the site when the page is saved and published.`;
+
+/** @deprecated The old name of IMAGE_FIELDS_NOTE, kept while package-editor.tsx imports it. */
+export const NO_UPLOAD_NOTE = IMAGE_FIELDS_NOTE;
